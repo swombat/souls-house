@@ -2152,7 +2152,11 @@ def _public_auth_state():
     return {
         key: value
         for key, value in _auth_state.items()
-        if key not in ("verification_url", "user_code")
+        # The verification URL is required while the browser ceremony is live:
+        # a slow start may first reach the UI through status polling. The
+        # provider's one-time device code remains confined to the initial start
+        # response.
+        if key != "user_code"
     }
 
 

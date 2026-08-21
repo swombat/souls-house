@@ -226,6 +226,23 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal true, result["process_preserved"]
   end
 
+  test "polled auth state keeps the live verification URL but not a device code" do
+    out = run_shim_python(<<~PY)
+      mod._auth_state = {
+          "status": "awaiting_code",
+          "provider": "gemini",
+          "verification_url": "https://accounts.example.com/live",
+          "user_code": "SECRET-ONCE",
+      }
+      print(json.dumps(mod._public_auth_state()))
+    PY
+
+    result = JSON.parse(out)
+    assert_equal "awaiting_code", result["status"]
+    assert_equal "https://accounts.example.com/live", result["verification_url"]
+    assert_not result.key?("user_code")
+  end
+
   test "a second trigger for the same session is rejected" do
     out = run_shim_python(<<~PY)
       import types
