@@ -188,6 +188,44 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal 0, result["launch_count"]
   end
 
+  test "slow Gemini browser handoff remains a polling ceremony instead of failing" do
+    out = run_shim_python(<<~PY)
+      import types
+      class Process:
+          stdin = None
+          stdout = []
+          def poll(self): return None
+
+      class Thread:
+          def __init__(self, *args, **kwargs): pass
+          def start(self): pass
+
+      process = Process()
+      mod.request = types.SimpleNamespace(
+          headers={"Authorization": "Bearer tr_test"},
+          get_json=lambda silent=True: {"provider": "gemini"},
+      )
+      mod.jsonify = lambda value: value
+      mod._antigravity_oauth_token_fingerprint = lambda: None
+      mod.subprocess.Popen = lambda *args, **kwargs: process
+      mod.threading.Thread = Thread
+      mod._auth_code_ready.wait = lambda timeout: False
+
+      body, status = mod.auth_start()
+      print(json.dumps({
+          "body": body,
+          "status": status,
+          "process_preserved": mod._auth_process is process,
+      }))
+    PY
+
+    result = JSON.parse(out)
+    assert_equal 202, result["status"]
+    assert_equal "starting", result.dig("body", "status")
+    assert_equal "gemini", result.dig("body", "provider")
+    assert_equal true, result["process_preserved"]
+  end
+
   test "a second trigger for the same session is rejected" do
     out = run_shim_python(<<~PY)
       import types

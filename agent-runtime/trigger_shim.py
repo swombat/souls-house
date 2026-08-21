@@ -1608,6 +1608,12 @@ def auth_start():
     _auth_code_ready.wait(timeout=10)
     with _auth_lock:
         expected_status = "awaiting_code" if _browser_code_provider(provider) else "pending"
+        # Fresh Antigravity homes sometimes take longer than ten seconds to
+        # initialize their browser handoff. Keep the live ceremony polling
+        # instead of reporting a terminal provider failure while the process is
+        # still legitimately starting.
+        if _auth_state.get("status") == "starting":
+            return jsonify(_public_auth_state()), 202
         if _auth_state.get("status") != expected_status:
             return jsonify(_public_auth_state()), 502
         if not _auth_state.get("verification_url"):

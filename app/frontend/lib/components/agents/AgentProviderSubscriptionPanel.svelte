@@ -144,6 +144,8 @@
       } else if (status.status === 'failed' || status.status === 'expired') {
         stopPolling();
         ceremony = status;
+      } else {
+        ceremony = status;
       }
     } catch (error) {
       stopPolling();
