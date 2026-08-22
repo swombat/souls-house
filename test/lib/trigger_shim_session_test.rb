@@ -10,6 +10,8 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
   test "runtime image includes the journald companion required for resume" do
     dockerfile = Rails.root.join("agent-runtime/Dockerfile").read
     entrypoint = Rails.root.join("agent-runtime/entrypoint.sh").read
+    antigravity_egress_patch =
+      Rails.root.join("agent-runtime/patches/chaos-antigravity-daily-cloudcode-egress.patch").read
 
     assert_includes dockerfile, "cargo build --release --bin chaos_journald"
     assert_includes dockerfile, "COPY --from=builder /usr/local/bin/chaos_journald /usr/local/bin/chaos_journald"
@@ -23,6 +25,8 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes dockerfile, "chaos-antigravity-daily-cloudcode-egress.patch"
     assert_includes dockerfile, "git apply --check /tmp/chaos-antigravity-daily-cloudcode-egress.patch"
     assert_includes dockerfile, "antigravity-daily-cloudcode-egress"
+    assert_includes antigravity_egress_patch, '"daily-cloudcode-pa.googleapis.com"'
+    assert_includes antigravity_egress_patch, '"www.googleapis.com"'
     assert_includes dockerfile, "ARG ANTIGRAVITY_VERSION=1.1.15"
     assert_includes dockerfile, "sha512sum -c -"
     assert_includes dockerfile, "agy --version"
