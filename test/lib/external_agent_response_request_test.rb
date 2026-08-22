@@ -215,6 +215,50 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     )
   end
 
+  test "Gemini model discovery API key warning does not expire an Antigravity connection" do
+    agent = agents(:research_assistant)
+    agent.update!(
+      model_id: "google/gemini-3.7-flash",
+      provider_auth_modes: { "gemini" => "oauth_account" }
+    )
+    request = ExternalAgentResponseRequest.new(
+      agent: agent,
+      chat: agent.account.chats.create!(model_id: "google/gemini-3.7-flash", title: "Clamp failure")
+    )
+
+    refute request.send(
+      :subscription_auth_failure?,
+      status: 500,
+      body: {
+        "stderr" => <<~TEXT,
+          failed to refresh available models: No credentials found for provider `Gemini`. Set `GEMINI_API_KEY` in your environment.
+        TEXT
+        "stdout" => "Antigravity protocol error: invalid managed Antigravity configuration"
+      }
+    )
+  end
+
+  test "Gemini authentication failures still expire an Antigravity connection" do
+    agent = agents(:research_assistant)
+    agent.update!(
+      model_id: "google/gemini-3.7-flash",
+      provider_auth_modes: { "gemini" => "oauth_account" }
+    )
+    request = ExternalAgentResponseRequest.new(
+      agent: agent,
+      chat: agent.account.chats.create!(model_id: "google/gemini-3.7-flash", title: "Expired clamp")
+    )
+
+    assert request.send(
+      :subscription_auth_failure?,
+      status: 500,
+      body: {
+        "stderr" => "failed to refresh available models: No credentials found for provider `Gemini`.",
+        "stdout" => "Antigravity invocation failed: authentication required"
+      }
+    )
+  end
+
   test "does not build a request_delta when persistent_session is disabled" do
     agent = agents(:research_assistant)
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Delta prompt")

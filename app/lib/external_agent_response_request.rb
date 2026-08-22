@@ -70,9 +70,17 @@ class ExternalAgentResponseRequest
 
     body = result[:body].to_h
     diagnostic = [ body["error"], body["stderr"], body["stdout"] ].compact.join("\n")
+    diagnostic = diagnostic.lines.reject { |line| expected_gemini_api_key_warning?(line) }.join
     diagnostic.match?(
       /unauthori[sz]ed|authentication|auth(?:entication)?[^a-z]+expired|token[^a-z]+expired|missing provider credentials|provider auth missing|no (?:usable )?credentials|\b401\b/i
     )
+  end
+
+  def expected_gemini_api_key_warning?(line)
+    provider == "gemini" &&
+      line.match?(
+        /failed to refresh available models: No credentials found for provider [`']?Gemini[`']?\./i
+      )
   end
 
   def surface_subscription_auth_failure!

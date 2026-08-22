@@ -39,11 +39,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 COPY patches/chaos-stop-hook-continuation-user-turn.patch /tmp/chaos-stop-hook-continuation-user-turn.patch
+COPY patches/chaos-antigravity-empty-managed-config.patch /tmp/chaos-antigravity-empty-managed-config.patch
 RUN git clone --filter=blob:none ${CHAOS_REPO} chaos \
     && cd chaos \
     && git checkout ${CHAOS_REF} \
     && git apply --check /tmp/chaos-stop-hook-continuation-user-turn.patch \
-    && git apply /tmp/chaos-stop-hook-continuation-user-turn.patch
+    && git apply /tmp/chaos-stop-hook-continuation-user-turn.patch \
+    && git apply --check /tmp/chaos-antigravity-empty-managed-config.patch \
+    && git apply /tmp/chaos-antigravity-empty-managed-config.patch
 
 WORKDIR /build/chaos
 RUN cargo build --release --bin chaos \
@@ -59,7 +62,7 @@ FROM node:22-bookworm-slim AS runtime
 
 ARG CHAOS_REF
 LABEL house.souls.chaos-ref="${CHAOS_REF}"
-LABEL house.souls.chaos-patches="stop-hook-continuation-user-turn"
+LABEL house.souls.chaos-patches="stop-hook-continuation-user-turn,antigravity-empty-managed-config"
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
