@@ -27,6 +27,7 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes dockerfile, "antigravity-daily-cloudcode-egress"
     assert_includes antigravity_egress_patch, '"daily-cloudcode-pa.googleapis.com"'
     assert_includes antigravity_egress_patch, '"www.googleapis.com"'
+    assert_includes antigravity_egress_patch, '"lh3.googleusercontent.com"'
     assert_includes dockerfile, "ARG ANTIGRAVITY_VERSION=1.1.15"
     assert_includes dockerfile, "sha512sum -c -"
     assert_includes dockerfile, "agy --version"
