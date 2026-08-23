@@ -1,5 +1,10 @@
 class HostedAgentRuntimeReconcileJob < ApplicationJob
 
+  LEGACY_MANAGED_RUNTIME_REPOSITORIES = %w[
+    helixkit-agent-runtime
+    dtenner/helix-kit-agent-runtime
+  ].freeze
+
   queue_as :default
 
   retry_on Agents::Sandbox::SandboxError, wait: 5.minutes, attempts: 3
@@ -17,6 +22,7 @@ class HostedAgentRuntimeReconcileJob < ApplicationJob
   def reconcile_agent(agent, raise_on_error:)
     return unless agent.externally_hosted?
 
+    normalize_managed_runtime_image!(agent)
     sandbox = Agents::Sandbox.new(agent)
     return unless sandbox.stale_container?
 
@@ -36,6 +42,28 @@ class HostedAgentRuntimeReconcileJob < ApplicationJob
     )
     Rails.logger.error("hosted agent runtime reconcile failed for agent #{agent.id}: #{e.class}: #{e.message}")
     raise if raise_on_error
+  end
+
+  def normalize_managed_runtime_image!(agent)
+    default_image = Agents::Config.default_image
+    return if agent.container_image == default_image
+    return unless managed_runtime_image?(agent.container_image, default_image:)
+
+    previous_image = agent.container_image
+    agent.update!(container_image: default_image)
+    Rails.logger.info(
+      "hosted agent runtime reconcile moved agent #{agent.id} from #{previous_image} to #{default_image}"
+    )
+  end
+
+  def managed_runtime_image?(image, default_image:)
+    repository = image_repository(image)
+    managed_repositories = LEGACY_MANAGED_RUNTIME_REPOSITORIES + [ image_repository(default_image) ]
+    repository.present? && managed_repositories.compact.include?(repository)
+  end
+
+  def image_repository(image)
+    image.to_s.split("@", 2).first.sub(/:[^\/]+\z/, "").presence
   end
 
 end
