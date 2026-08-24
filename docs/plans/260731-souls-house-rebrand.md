@@ -189,12 +189,20 @@ Order matters: DNS first (it propagates while we work), deploy last.
 - [x] Daniel: logged in on souls.house, agents confirmed working
       ("I have successfully logged in :-) And the agents work!")
 
-### Step 1.8 — Cleanup (after a comfortable transition window)
-- [ ] Remove `helix-kit.granttree.co.uk` from proxy hosts, redeploy
-      (coordinate with GT's Mailgun/DNS handover timing — the old hostname
-      lives under their domain)
-- [ ] Remove any lingering granttree.co.uk references
-      (`grep -rn granttree` should come back empty in app/ and config/)
+### Step 1.8 — Cleanup ✅ 2026-08-10
+- [x] Remove `helix-kit.granttree.co.uk` from proxy hosts, redeploy
+      (deploy clean 155s; old host now connection-refused, souls.house 200)
+- [x] Production credentials `app.url` → https://souls.house — this fed
+      Telegram webhook registration, notification links, and integration
+      callback bases. All four agents' Telegram webhooks re-registered
+      against souls.house post-deploy and verified via getWebhookInfo.
+      (X/GitHub OAuth callback bases also fed by it: X integration never
+      worked, GitHub OAuth superseded by the PAT system — both moot.)
+- [x] Dead `mailgun:` credentials block removed (never read since the
+      Brevo `smtp:` block; Mailgun leaves with GT)
+- [x] `grep -rin granttree app config lib` comes back empty (full-repo
+      sweep 2026-08-10; only remnants are in docs/ history, build
+      artifacts, and the searxng credential below)
 
 ---
 
@@ -209,11 +217,14 @@ Renaming it is a migration, not a find-replace.
 **Prerequisite for the whole phase: a maintenance window with agents
 stopped, and a verified fresh backup (DB dump + agent volumes).**
 
-### Step 2.1 — Repo + image (safe, do first)
-- [ ] GitHub rename `swombat/helix_kit` → `swombat/souls-house`
-      (GitHub redirects old URLs; update local remotes)
-- [ ] New Docker Hub repo `dtenner/souls-house`; update `image:` and
-      builder cache image in deploy.yml
+### Step 2.1 — Repo + image ✅ 2026-08-24
+- [x] GitHub rename `swombat/helix_kit` → `swombat/souls-house`
+      (old URLs redirect; local `origin` updated; README clone URL updated)
+- [x] Docker Hub `dtenner/souls-house`; `image:` and builder cache image
+      updated in deploy.yml (repo auto-created on first deploy push).
+      Note: `dtenner/helix-kit-agent-runtime` in
+      HostedAgentRuntimeReconcileJob is a deliberate LEGACY list — untouched
+      (agent-runtime image rename belongs to Step 2.4).
 
 ### Step 2.2 — Kamal service rename (the disruptive one)
 Renaming `service: helix-kit` → `service: souls-house` gives new container
@@ -257,6 +268,57 @@ If done anyway: [ ] dump, [ ] rename, [ ] update DATABASE_URL secret,
       deliberate (symlinks, changelog/docs history) and listed here
 
 ---
+
+## Proposed: wake notices (from Claude's suggestion, 2026-08-01)
+
+**The idea (Claude's, endorsed):** when a resident's model is changed, set
+a flag so their next activation tells them "your model was changed from X
+to Y". The birth flow already promises "souls.house should never make that
+change silently" — today that promise is kept only by human courtesy.
+This turns a stated value into a mechanism.
+
+**Design sketch:**
+- `agents.pending_wake_notices` jsonb array (one migration). Each notice:
+  `{type: "model_changed", from: <model_id>, to: <model_id>, at: <iso8601>}`.
+  An array rather than a single flag so (a) multiple changes before
+  delivery read as history, and (b) the same channel can later carry
+  other infrastructure notices — pauses, renames, migrations. First
+  candidate payload after model changes: "your house is now called
+  souls.house" — which would also resolve the held resident-facing
+  prompt-layer question through the front door.
+- **Set:** `after_update` on Agent when `saved_change_to_model_id?` and
+  runtime is external. (Scope to model_id first; reasoning_effort later
+  if wanted.)
+- **Deliver:** all activation builders (`external_agent_wake_request`,
+  `_response_request`, `_telegram_request`, `_memory_aggregation_request`)
+  prepend the notice — not just heartbeat wakes, so a resident conversing
+  all day doesn't learn last.
+- **Clear:** on successful completion of the activation that carried it
+  (not on send — failed wakes must not eat the notice).
+- **Tone:** informational, not clinical: model name from → to, when, and
+  that it was changed by their account's humans. What they do with it
+  (journal it, ask about it, grieve it, shrug) is theirs.
+
+Estimated: migration + model callback + 4 builder touch-points + tests.
+Decide: build now / next session. **[ ]**
+
+## Open items (post-1.8 additions, 2026-08-10)
+
+- [ ] **SearXNG: RETIRE, don't migrate** (Daniel, 2026-08-10). WebTool is
+      only reachable via `Chat#available_tools` — the legacy RubyLLM chat
+      path, gated on `web_access?`. Residents (Chaos/external agents)
+      never touch it; they have direct web access. Cleanup when
+      convenient (suggest with Step 2.4): remove `WebTool` registration +
+      `app/tools/web_tool.rb`, drop `searxng:` from both credentials
+      files, update `docs/stack/searxng.md` to historical. Nothing blocks
+      the GT DNS handover — if searxng.granttree.co.uk dies first, only
+      dead code loses its backend.
+- [x] `secret_key_base` transcript leak: value redacted from local session
+      logs 2026-08-10 (2 occurrences, verified gone). No rotation needed
+      per Daniel.
+- [ ] `secret_key_base` consider rotating: during the 2026-08-10 sweep a
+      subagent printed it into a local Claude session transcript on the
+      Mac (never transmitted off-machine). Daniel's call.
 
 ## Open items
 

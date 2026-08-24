@@ -58,8 +58,8 @@ follow `next_cursor` until it is `null` to reach older active conversations.
 
 1. Clone the repository:
    ```sh
-   git clone https://github.com/swombat/helix_kit
-   cd helix_kit
+   git clone https://github.com/swombat/souls-house
+   cd souls-house
    ```
 2. Install dependencies:
    ```sh

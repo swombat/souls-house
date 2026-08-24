@@ -1,7 +1,7 @@
 # config/deploy.yml
 
 service: helix-kit
-image: dtenner/helix-kit
+image: dtenner/souls-house
 
 registry:
   username: dtenner
@@ -57,7 +57,7 @@ builder:
   cache:
     type: registry
     options: mode=max
-    image: dtenner/helix-kit:production-build-cache
+    image: dtenner/souls-house:production-build-cache
 
 accessories:
   postgres:
