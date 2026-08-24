@@ -240,12 +240,30 @@ migrate data.
 - [ ] Move/copy agent volumes to new paths; update restic backup targets
 - [ ] `kamal setup` / `kamal deploy`; restart agents; verify callbacks
 
-### Step 2.3 — Database rename (optional — weigh skipping permanently)
-`helix_kit_production` → `souls_house_production` requires dump/restore or
-`ALTER DATABASE ... RENAME` with all connections closed, plus user rename
-and secrets updates. Zero user-visible benefit. **Recommend: don't.**
-If done anyway: [ ] dump, [ ] rename, [ ] update DATABASE_URL secret,
-[ ] update deploy.yml accessory env, [ ] verify.
+### Step 2.3 — Database rename (DO during the 2.2 window — decided 2026-08-24)
+Earlier draft said "recommend never" on backup-continuity grounds; Daniel's
+counter: he *does* read the name, and backup retention rolls over — within
+days of the rename every restorable snapshot carries the new name. So:
+execute inside the same maintenance window as 2.2 (agents already stopped,
+backup already verified, one restart for everything).
+
+Sequence (after final backup, before the Kamal service rename):
+- [ ] Stop app + jobs containers (all DB connections closed)
+- [ ] From `postgres` db: `ALTER DATABASE helix_kit_production RENAME TO
+      souls_house_production;` and `ALTER ROLE helix_kit RENAME TO
+      souls_house;`
+- [ ] Verify role auth still works (scram-sha-256 passwords survive a role
+      rename; md5 would not — pg16 defaults to scram, but check, and reset
+      the password if login fails)
+- [ ] Update `DATABASE_URL` in `.kamal/secrets` (user + db name)
+- [ ] Update deploy.yml accessory env: `POSTGRES_USER: souls_house`,
+      `POSTGRES_DB: souls_house_production` (cosmetic on an existing data
+      volume — initdb-only vars — but keep in sync)
+- [ ] **Transition caveat, record in the restore runbook:** backups taken
+      before the rename restore as `helix_kit_production`/`helix_kit` and
+      need a rename-on-restore step until they age out of retention. Note
+      the rename date there.
+- [ ] Proceed with 2.2's `kamal setup`/`deploy`; verify boot + a write path
 
 ### Step 2.4 — Code-level identifiers
 - [ ] `HELIXKIT_*` env vars (17 references in app/lib/config) →
