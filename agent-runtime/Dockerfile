@@ -16,6 +16,8 @@
 # which rewrites var/proc/db/migrate/sqlite/0001_bigbang.sql.
 # The Stop-hook continuation patch restores a fix lost during Chaos's turn-loop
 # refactor; remove it once the equivalent upstream fix is included in CHAOS_REF.
+# The clamp image-output patch preserves structured image results across the MCP
+# bridge; remove it once swombat/chaos#4 (or its equivalent) is in CHAOS_REF.
 ARG CHAOS_REPO=https://github.com/seuros/chaos.git
 ARG CHAOS_REF=b9248d25ea0a00995dbdcce77829f73caf613823
 
@@ -41,6 +43,7 @@ WORKDIR /build
 COPY patches/chaos-stop-hook-continuation-user-turn.patch /tmp/chaos-stop-hook-continuation-user-turn.patch
 COPY patches/chaos-antigravity-empty-managed-config.patch /tmp/chaos-antigravity-empty-managed-config.patch
 COPY patches/chaos-antigravity-daily-cloudcode-egress.patch /tmp/chaos-antigravity-daily-cloudcode-egress.patch
+COPY patches/chaos-clamp-image-tool-output.patch /tmp/chaos-clamp-image-tool-output.patch
 RUN git clone --filter=blob:none ${CHAOS_REPO} chaos \
     && cd chaos \
     && git checkout ${CHAOS_REF} \
@@ -49,7 +52,9 @@ RUN git clone --filter=blob:none ${CHAOS_REPO} chaos \
     && git apply --check /tmp/chaos-antigravity-empty-managed-config.patch \
     && git apply /tmp/chaos-antigravity-empty-managed-config.patch \
     && git apply --check /tmp/chaos-antigravity-daily-cloudcode-egress.patch \
-    && git apply /tmp/chaos-antigravity-daily-cloudcode-egress.patch
+    && git apply /tmp/chaos-antigravity-daily-cloudcode-egress.patch \
+    && git apply --unidiff-zero --check /tmp/chaos-clamp-image-tool-output.patch \
+    && git apply --unidiff-zero /tmp/chaos-clamp-image-tool-output.patch
 
 WORKDIR /build/chaos
 RUN cargo build --release --bin chaos \
@@ -65,7 +70,7 @@ FROM node:22-bookworm-slim AS runtime
 
 ARG CHAOS_REF
 LABEL house.souls.chaos-ref="${CHAOS_REF}"
-LABEL house.souls.chaos-patches="stop-hook-continuation-user-turn,antigravity-empty-managed-config,antigravity-daily-cloudcode-egress"
+LABEL house.souls.chaos-patches="stop-hook-continuation-user-turn,antigravity-empty-managed-config,antigravity-daily-cloudcode-egress,clamp-image-tool-output"
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
