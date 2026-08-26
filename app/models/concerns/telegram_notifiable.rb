@@ -36,6 +36,14 @@ module TelegramNotifiable
     result
   end
 
+  def telegram_send_photo(chat_id, photo, caption: nil)
+    telegram_send_media("sendPhoto", chat_id, :photo, photo, caption)
+  end
+
+  def telegram_send_document(chat_id, document, caption: nil)
+    telegram_send_media("sendDocument", chat_id, :document, document, caption)
+  end
+
   def telegram_file_info(file_id)
     result = telegram_api_request("getFile", { file_id: file_id })
     return result.fetch("result") if result["ok"] && result.dig("result", "file_path").present?
@@ -143,6 +151,16 @@ module TelegramNotifiable
   end
 
   private
+
+  def telegram_send_media(method, chat_id, media_key, media, caption)
+    body = { chat_id: chat_id, media_key => media }
+    body.merge!(caption: caption, parse_mode: "HTML") if caption.present?
+    result = telegram_api_request(method, body)
+
+    raise TelegramError, result["description"] unless result["ok"]
+
+    result
+  end
 
   def telegram_api_request(method, body)
     uri = URI("https://api.telegram.org/bot#{telegram_bot_token}/#{method}")

@@ -90,6 +90,7 @@ line two with a literal $4.42 and `backticks`
 HELIXKIT_MESSAGE
 printf 'longer markdown' | helixkit-post-message CHAT_ID
 printf 'generated image' | helixkit-post-message CHAT_ID --attach /tmp/image.png
+printf 'caption' | helixkit-send-telegram daniel --attach /tmp/image.png
 ```
 
 It reads `HELIXKIT_APP_URL` and `HELIXKIT_BEARER_TOKEN` from the environment

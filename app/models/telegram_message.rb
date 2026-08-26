@@ -2,12 +2,13 @@ class TelegramMessage < ApplicationRecord
 
   include ObfuscatesId
 
-  MEDIA_KINDS = %w[photo voice video].freeze
+  MEDIA_KINDS = %w[photo voice video document].freeze
   MEDIA_STATUSES = %w[pending ready failed].freeze
   MEDIA_LIMITS = {
     "photo" => 20.megabytes,
     "voice" => 20.megabytes,
-    "video" => 20.megabytes
+    "video" => 20.megabytes,
+    "document" => 50.megabytes
   }.freeze
 
   belongs_to :telegram_subscription, touch: true
@@ -116,7 +117,7 @@ class TelegramMessage < ApplicationRecord
   private
 
   def media_placeholder
-    label = { "photo" => "Photo", "voice" => "Voice message", "video" => "Video" }.fetch(media_kind)
+    label = { "photo" => "Photo", "voice" => "Voice message", "video" => "Video", "document" => "Document" }.fetch(media_kind)
     return "[#{label} — processing]" if media_status == "pending"
     return "[#{label} could not be received]" if media_status == "failed"
 

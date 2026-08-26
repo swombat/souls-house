@@ -55,6 +55,97 @@ module Api
         assert_equal "Thread reply", @subscription.telegram_messages.last.text
       end
 
+      test "agent-scoped key sends an attached image as a Telegram photo" do
+        posts = []
+        fake_ok = OpenStruct.new(body: { "ok" => true, "result" => { "message_id" => 79 } }.to_json)
+
+        Net::HTTP.stub :post, ->(uri, body, headers) { posts << [ uri, JSON.parse(body), headers ]; fake_ok } do
+          post api_v1_telegram_messages_url,
+            params: {
+              recipient: "daniel",
+              text: "A <bright> thing",
+              media: fixture_file_upload("test_image.png", "image/png")
+            },
+            headers: { "Authorization" => "Bearer #{@token}" }
+        end
+
+        assert_response :created
+        assert_equal 1, posts.length
+        assert_equal "https://api.telegram.org/bot#{@agent.telegram_bot_token}/sendPhoto", posts.first[0].to_s
+        assert_equal "A &lt;bright&gt; thing", posts.first[1]["caption"]
+        assert_match %r{/rails/active_storage/}, posts.first[1]["photo"]
+
+        telegram_message = @subscription.telegram_messages.last
+        assert_equal "photo", telegram_message.media_kind
+        assert_equal "ready", telegram_message.media_status
+        assert_equal "A <bright> thing", telegram_message.text
+        assert telegram_message.media.attached?
+      end
+
+      test "agent-scoped key sends an attachment without text" do
+        posts = []
+        fake_ok = OpenStruct.new(body: { "ok" => true, "result" => { "message_id" => 80 } }.to_json)
+
+        Net::HTTP.stub :post, ->(uri, body, headers) { posts << [ uri, JSON.parse(body), headers ]; fake_ok } do
+          post api_v1_telegram_messages_url,
+            params: {
+              recipient: "daniel",
+              media: fixture_file_upload("test.txt", "text/plain")
+            },
+            headers: { "Authorization" => "Bearer #{@token}" }
+        end
+
+        assert_response :created
+        assert_equal "https://api.telegram.org/bot#{@agent.telegram_bot_token}/sendDocument", posts.first[0].to_s
+        assert_nil posts.first[1]["caption"]
+
+        telegram_message = @subscription.telegram_messages.last
+        assert_equal "document", telegram_message.media_kind
+        assert_equal "[Document: test.txt]", telegram_message.text
+        assert telegram_message.media.attached?
+      end
+
+      test "retries a rejected photo once as a document" do
+        posts = []
+        responses = [
+          OpenStruct.new(body: { "ok" => false, "description" => "Bad Request: PHOTO_INVALID_DIMENSIONS" }.to_json),
+          OpenStruct.new(body: { "ok" => true, "result" => { "message_id" => 81 } }.to_json)
+        ]
+
+        Net::HTTP.stub :post, ->(uri, body, headers) { posts << [ uri, JSON.parse(body), headers ]; responses.shift } do
+          post api_v1_telegram_messages_url,
+            params: {
+              recipient: "daniel",
+              media: fixture_file_upload("test_image.png", "image/png")
+            },
+            headers: { "Authorization" => "Bearer #{@token}" }
+        end
+
+        assert_response :created
+        assert_equal 2, posts.length
+        assert_equal "https://api.telegram.org/bot#{@agent.telegram_bot_token}/sendPhoto", posts.first[0].to_s
+        assert_equal "https://api.telegram.org/bot#{@agent.telegram_bot_token}/sendDocument", posts.second[0].to_s
+
+        telegram_message = @subscription.telegram_messages.last
+        assert_equal "document", telegram_message.media_kind
+        assert_equal "[Document: test_image.png]", telegram_message.text
+        assert_equal 81, telegram_message.telegram_message_id
+      end
+
+      test "rejects an overlong media caption before sending" do
+        post api_v1_telegram_messages_url,
+          params: {
+            recipient: "daniel",
+            text: "a" * 1_025,
+            media: fixture_file_upload("test_image.png", "image/png")
+          },
+          headers: { "Authorization" => "Bearer #{@token}" }
+
+        assert_response :unprocessable_entity
+        assert_equal "caption is too long (max 1024 characters)", JSON.parse(response.body)["error"]
+        assert_empty @subscription.telegram_messages
+      end
+
       test "user-scoped key cannot send telegram messages" do
         user_key = ApiKey.generate_for(@user, name: "User key")
 

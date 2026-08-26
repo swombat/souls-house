@@ -5,6 +5,8 @@ Send a direct Telegram message through HelixKit as the current hosted agent.
 Usage:
   helixkit-send-telegram RECIPIENT "message text"
   printf 'message text' | helixkit-send-telegram RECIPIENT
+  printf 'caption' | helixkit-send-telegram RECIPIENT --attach /tmp/image.png
+  helixkit-send-telegram RECIPIENT --attach /tmp/image.png
   helixkit-send-telegram all "message text"
   helixkit-send-telegram --reply-to THREAD_ID "message text"
 
@@ -13,30 +15,31 @@ RECIPIENT matches active Telegram subscribers for this agent by email/name
 Never prints bearer or bot tokens.
 """
 
+import argparse
 import json
+import mimetypes
 import os
+from pathlib import Path
 import sys
 import urllib.error
 import urllib.request
+import uuid
 
 
 def main() -> int:
-    reply_to = None
-    args = sys.argv[1:]
-    if args[:1] in (["-h"], ["--help"]):
-        print(__doc__.strip())
-        print()
-        print("Full HelixKit manual: /usr/local/share/helixkit-agent/helixkit-api.md")
-        return 0
-    if args[:1] == ["--reply-to"]:
-        if len(args) not in (2, 3):
-            print("usage: helixkit-send-telegram --reply-to THREAD_ID [MESSAGE]", file=sys.stderr)
-            return 64
-        reply_to = args[1]
-        args = args[2:]
-    elif len(args) not in (1, 2):
-        print("usage: helixkit-send-telegram RECIPIENT [MESSAGE]", file=sys.stderr)
-        return 64
+    parser = argparse.ArgumentParser(
+        prog="helixkit-send-telegram",
+        description="Send a direct Telegram message and optional attachment through HelixKit.",
+        epilog="Full HelixKit manual: /usr/local/share/helixkit-agent/helixkit-api.md",
+    )
+    parser.add_argument("--reply-to", metavar="THREAD_ID")
+    parser.add_argument("--attach", metavar="PATH")
+    parser.add_argument("recipient", nargs="?")
+    parser.add_argument("message", nargs="?")
+    args = parser.parse_args()
+
+    if not args.reply_to and not args.recipient:
+        parser.error("RECIPIENT is required unless --reply-to is used")
 
     app_url = os.environ.get("HELIXKIT_APP_URL")
     token = os.environ.get("HELIXKIT_BEARER_TOKEN")
@@ -47,33 +50,50 @@ def main() -> int:
         print("HELIXKIT_BEARER_TOKEN is missing", file=sys.stderr)
         return 65
 
-    recipient = args[0] if not reply_to else None
-    text = args[1] if not reply_to and len(args) == 2 else (args[0] if reply_to and args else sys.stdin.read())
+    if args.reply_to:
+        text_argument = args.message if args.message is not None else args.recipient
+        recipient = None
+    else:
+        text_argument = args.message
+        recipient = args.recipient
+
+    text = text_argument if text_argument is not None else sys.stdin.read()
     text = normalize_newlines(text).strip()
-    if not text:
-        print("message text is empty", file=sys.stderr)
+    attachment = Path(args.attach).expanduser() if args.attach else None
+
+    if attachment and not attachment.is_file():
+        print(f"attachment not found: {attachment}", file=sys.stderr)
+        return 66
+    if not text and not attachment:
+        print("message text and attachment are empty", file=sys.stderr)
         return 66
 
     url = f"{app_url.rstrip('/')}/api/v1/telegram_messages"
-    payload = {"text": text}
-    if reply_to:
-        payload["reply_to"] = reply_to
+    fields = {"text": text}
+    if args.reply_to:
+        fields["reply_to"] = args.reply_to
     else:
-        payload["recipient"] = recipient
-    body = json.dumps(payload).encode("utf-8")
+        fields["recipient"] = recipient
+
+    if attachment:
+        body, content_type = multipart_body(fields, attachment)
+    else:
+        body = json.dumps(fields).encode("utf-8")
+        content_type = "application/json"
+
     request = urllib.request.Request(
         url,
         data=body,
         headers={
             "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
+            "Content-Type": content_type,
             "Accept": "application/json",
         },
         method="POST",
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=120 if attachment else 30) as response:
             payload = response.read().decode("utf-8")
             print(payload)
             return 0 if 200 <= response.status < 300 else 1
@@ -88,6 +108,32 @@ def main() -> int:
 
 def normalize_newlines(content: str) -> str:
     return content.replace("\\r\\n", "\n").replace("\\n", "\n")
+
+
+def multipart_body(fields: dict[str, str], attachment: Path) -> tuple[bytes, str]:
+    boundary = f"helixkit-{uuid.uuid4().hex}"
+    chunks = []
+
+    def add(value: bytes) -> None:
+        chunks.append(value)
+        chunks.append(b"\r\n")
+
+    for name, value in fields.items():
+        add(f"--{boundary}".encode())
+        add(f'Content-Disposition: form-data; name="{name}"'.encode())
+        add(b"")
+        add(value.encode("utf-8"))
+
+    content_type = mimetypes.guess_type(attachment.name)[0] or "application/octet-stream"
+    filename = attachment.name.replace('"', "_")
+    add(f"--{boundary}".encode())
+    add(f'Content-Disposition: form-data; name="media"; filename="{filename}"'.encode("utf-8"))
+    add(f"Content-Type: {content_type}".encode())
+    add(b"")
+    add(attachment.read_bytes())
+
+    chunks.append(f"--{boundary}--\r\n".encode())
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
 
 
 if __name__ == "__main__":
