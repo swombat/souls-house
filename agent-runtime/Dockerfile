@@ -7,19 +7,18 @@
 # Local build:
 #   docker build -t helixkit-agent-runtime:local agent-runtime
 
-# Pin the current merged Chaos 47.1.0 runtime, including subscription auth,
-# clamp telemetry, model-visible compaction reflexes, and persistent MCP
-# approvals, so hosted runtime rebuilds do not depend on movement of a branch ref.
+# Pin the current merged Chaos runtime, including subscription auth, clamp
+# telemetry, model-visible compaction reflexes, persistent MCP approvals, and
+# structured clamp image output, so hosted runtime rebuilds do not depend on
+# movement of a branch ref.
 # Pin bumps must re-verify provider auth ceremony parsers and clamp subprocess
 # patterns in trigger_shim.py. This ref also preserves the original SQLx
 # migration checksum used by persisted Chaos journals; do not move to a ref
 # which rewrites var/proc/db/migrate/sqlite/0001_bigbang.sql.
 # The Stop-hook continuation patch restores a fix lost during Chaos's turn-loop
 # refactor; remove it once the equivalent upstream fix is included in CHAOS_REF.
-# The clamp image-output patch preserves structured image results across the MCP
-# bridge; remove it once swombat/chaos#4 (or its equivalent) is in CHAOS_REF.
 ARG CHAOS_REPO=https://github.com/seuros/chaos.git
-ARG CHAOS_REF=b9248d25ea0a00995dbdcce77829f73caf613823
+ARG CHAOS_REF=0db98596dee223b879cadee849becc96b56efaf1
 
 # =============================================================================
 # Stage 1 — pull and build chaos. Source tree is discarded after the binary copies.
@@ -43,7 +42,6 @@ WORKDIR /build
 COPY patches/chaos-stop-hook-continuation-user-turn.patch /tmp/chaos-stop-hook-continuation-user-turn.patch
 COPY patches/chaos-antigravity-empty-managed-config.patch /tmp/chaos-antigravity-empty-managed-config.patch
 COPY patches/chaos-antigravity-daily-cloudcode-egress.patch /tmp/chaos-antigravity-daily-cloudcode-egress.patch
-COPY patches/chaos-clamp-image-tool-output.patch /tmp/chaos-clamp-image-tool-output.patch
 RUN git clone --filter=blob:none ${CHAOS_REPO} chaos \
     && cd chaos \
     && git checkout ${CHAOS_REF} \
@@ -52,9 +50,7 @@ RUN git clone --filter=blob:none ${CHAOS_REPO} chaos \
     && git apply --check /tmp/chaos-antigravity-empty-managed-config.patch \
     && git apply /tmp/chaos-antigravity-empty-managed-config.patch \
     && git apply --check /tmp/chaos-antigravity-daily-cloudcode-egress.patch \
-    && git apply /tmp/chaos-antigravity-daily-cloudcode-egress.patch \
-    && git apply --unidiff-zero --check /tmp/chaos-clamp-image-tool-output.patch \
-    && git apply --unidiff-zero /tmp/chaos-clamp-image-tool-output.patch
+    && git apply /tmp/chaos-antigravity-daily-cloudcode-egress.patch
 
 WORKDIR /build/chaos
 RUN cargo build --release --bin chaos \
@@ -70,7 +66,7 @@ FROM node:22-bookworm-slim AS runtime
 
 ARG CHAOS_REF
 LABEL house.souls.chaos-ref="${CHAOS_REF}"
-LABEL house.souls.chaos-patches="stop-hook-continuation-user-turn,antigravity-empty-managed-config,antigravity-daily-cloudcode-egress,clamp-image-tool-output"
+LABEL house.souls.chaos-patches="stop-hook-continuation-user-turn,antigravity-empty-managed-config,antigravity-daily-cloudcode-egress"
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
