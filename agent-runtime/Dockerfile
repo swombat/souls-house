@@ -7,9 +7,10 @@
 # Local build:
 #   docker build -t helixkit-agent-runtime:local agent-runtime
 
-# Pin the current merged Chaos 47.1.0 runtime, including subscription auth,
-# clamp telemetry, model-visible compaction reflexes, and persistent MCP
-# approvals, so hosted runtime rebuilds do not depend on movement of a branch ref.
+# Pin the current merged Chaos runtime, including subscription auth, clamp
+# telemetry, model-visible compaction reflexes, persistent MCP approvals, and
+# structured clamp image output, so hosted runtime rebuilds do not depend on
+# movement of a branch ref.
 # Pin bumps must re-verify provider auth ceremony parsers and clamp subprocess
 # patterns in trigger_shim.py. This ref also preserves the original SQLx
 # migration checksum used by persisted Chaos journals; do not move to a ref
@@ -17,7 +18,7 @@
 # The Stop-hook continuation patch restores a fix lost during Chaos's turn-loop
 # refactor; remove it once the equivalent upstream fix is included in CHAOS_REF.
 ARG CHAOS_REPO=https://github.com/seuros/chaos.git
-ARG CHAOS_REF=b9248d25ea0a00995dbdcce77829f73caf613823
+ARG CHAOS_REF=0db98596dee223b879cadee849becc96b56efaf1
 
 # =============================================================================
 # Stage 1 — pull and build chaos. Source tree is discarded after the binary copies.
