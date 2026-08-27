@@ -4,34 +4,36 @@ module Notices
   class RendererTest < ActiveSupport::TestCase
 
     test "renders model history for the whole account and marks only the subject" do
-      subject = agents(:research_assistant)
-      housemate = subject.account.agents.create!(name: "Housemate")
-      changed_at = Time.zone.local(2026, 8, 1, 10)
-      Notice.create!(
-        scope: "account",
-        account: subject.account,
-        notice_type: "model_changed",
-        params: {
-          agent_id: subject.to_param,
-          agent_name: "Kestrel",
-          from: "anthropic/claude-fable-5",
-          to: "openai/gpt-5.2",
-          changed_at: changed_at.utc.iso8601
-        },
-        expires_at: Time.zone.local(2026, 8, 8, 10)
-      )
+      travel_to Time.zone.local(2026, 8, 2, 10) do
+        subject = agents(:research_assistant)
+        housemate = subject.account.agents.create!(name: "Housemate")
+        changed_at = Time.zone.local(2026, 8, 1, 10)
+        Notice.create!(
+          scope: "account",
+          account: subject.account,
+          notice_type: "model_changed",
+          params: {
+            agent_id: subject.to_param,
+            agent_name: "Kestrel",
+            from: "anthropic/claude-fable-5",
+            to: "openai/gpt-5.2",
+            changed_at: changed_at.utc.iso8601
+          },
+          expires_at: Time.zone.local(2026, 8, 8, 10)
+        )
 
-      subject_text = Renderer.section_for(subject)
-      housemate_text = Renderer.section_for(housemate)
+        subject_text = Renderer.section_for(subject)
+        housemate_text = Renderer.section_for(housemate)
 
-      assert_includes subject_text, "## Notices from the house"
-      assert_includes subject_text, "standing notices"
-      assert_includes subject_text, "[account · until 8 August 2026]"
-      assert_includes subject_text, "On 1 August 2026, Kestrel's configured model changed"
-      assert_includes subject_text, "This model change concerns you."
-      assert_includes housemate_text, "Kestrel's configured model changed"
-      refute_includes housemate_text, "This model change concerns you."
-      refute_includes subject_text, "currently running"
+        assert_includes subject_text, "## Notices from the house"
+        assert_includes subject_text, "standing notices"
+        assert_includes subject_text, "[account · until 8 August 2026]"
+        assert_includes subject_text, "On 1 August 2026, Kestrel's configured model changed"
+        assert_includes subject_text, "This model change concerns you."
+        assert_includes housemate_text, "Kestrel's configured model changed"
+        refute_includes housemate_text, "This model change concerns you."
+        refute_includes subject_text, "currently running"
+      end
     end
 
     test "renders system and announcement notices" do
