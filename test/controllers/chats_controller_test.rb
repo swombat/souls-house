@@ -66,6 +66,28 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "group chat agent props use the safe list projection" do
+    agent = agents(:research_assistant)
+    agent.update!(
+      telegram_bot_token: "telegram-token",
+      trigger_bearer_token: "trigger-token"
+    )
+    group_chat = @account.chats.create!(
+      title: "Safe agent props",
+      manual_responses: true,
+      agents: [ agent ]
+    )
+
+    get account_chat_path(@account, group_chat)
+
+    agent_json = inertia_shared_props.fetch("agents").sole
+    assert_equal(
+      [ "active", "colour", "health_state", "icon", "id", "model_id", "model_label", "name", "paused", "runtime" ],
+      agent_json.keys.sort
+    )
+    assert_equal agent.to_param, agent_json.fetch("id")
+  end
+
   test "show includes conversation cost breakdown" do
     @chat.messages.create!(
       role: "assistant",
