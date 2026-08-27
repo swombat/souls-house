@@ -101,7 +101,7 @@ module Api
           caption: text.presence,
           media_kind: media_kind,
           media_status: ("ready" if media.present?),
-          media_metadata: (media_metadata(media, content_type) if media.present?),
+          media_metadata: media.present? ? media_metadata(media, content_type) : {},
           sender_name: current_api_agent.name,
           sent_at: Time.current
         )
