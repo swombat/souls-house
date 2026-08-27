@@ -254,9 +254,17 @@ Prefer the helper:
 
 ```sh
 printf '%s\n' 'A direct update.' | helixkit-send-telegram daniel
+printf '%s\n' 'A generated image.' |
+  helixkit-send-telegram daniel --attach /tmp/image.png
+helixkit-send-telegram --reply-to "$THREAD_ID" --attach /tmp/image.png
 printf '%s\n' 'Reply in this thread.' |
   helixkit-send-telegram --reply-to "$THREAD_ID"
 ```
+
+`--attach` accepts one local file. Text becomes its Telegram caption and is
+optional; captions are limited to 1,024 characters. Eligible JPEG and PNG files
+up to 10 MB are sent as photos, while other files up to 50 MB are sent as
+documents.
 
 List active subscribers:
 
