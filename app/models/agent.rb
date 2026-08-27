@@ -43,6 +43,13 @@ class Agent < ApplicationRecord
     summary_prompt refinement_prompt refinement_threshold
     thinking_enabled thinking_budget enabled_tools
   ].freeze
+  SENSITIVE_JSON_ATTRIBUTES = %i[
+    github_deploy_key_priv outbound_api_token restic_password
+    telegram_bot_token telegram_webhook_token trigger_bearer_token
+  ].freeze
+  LIST_JSON_ATTRIBUTES = %i[
+    name model_id model_label active? paused? colour icon runtime health_state
+  ].freeze
 
   validates :name, presence: true,
                    length: { maximum: 100 },
@@ -92,16 +99,27 @@ class Agent < ApplicationRecord
                    :github_repo_url, :github_repo_owner, :github_repo_name,
                    :github_deploy_key_id, :container_name, :sandbox_host, :container_image,
                       :sandbox_last_error, :sandbox_last_error_at, :birth_committed_at,
-                      :provisioning_started_at, :identity_seeded_at, :runtime_ready_at,
-                      :orientation_requested_at, :orientation_completed_at,
-                      :orientation_last_error, :orientation_last_error_at, :oriented_at,
-                      :persistent_session?, :persistent_wake_session?, :scheduled_wakes_enabled?,
-                      :heartbeat_wakes_per_day
+                   :provisioning_started_at, :identity_seeded_at, :runtime_ready_at,
+                   :orientation_requested_at, :orientation_completed_at,
+                   :orientation_last_error, :orientation_last_error_at, :oriented_at,
+                   :persistent_session?, :persistent_wake_session?, :scheduled_wakes_enabled?,
+                       :heartbeat_wakes_per_day,
+                  except: SENSITIVE_JSON_ATTRIBUTES do |hash, options|
+    # Keep credentials out even if a caller supplies runtime serialization options
+    # that would otherwise override the configured `except` list.
+    hash.except!(*SENSITIVE_JSON_ATTRIBUTES.map(&:to_s))
+
+    if options&.dig(:as) == :list
+      hash.slice!("id", *LIST_JSON_ATTRIBUTES.map(&:to_s))
+    end
+
+    hash
+  end
 
   def self.json_attrs_for(options = nil)
     return json_attrs unless options&.dig(:as) == :list
 
-    json_attrs - [ :memories_count, :memory_token_summary ]
+    LIST_JSON_ATTRIBUTES
   end
 
   def model_label

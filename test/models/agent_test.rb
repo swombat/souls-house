@@ -59,6 +59,37 @@ class AgentTest < ActiveSupport::TestCase
     assert agent.active?
   end
 
+  test "json serialization never includes credential-bearing attributes" do
+    agent = agents(:research_assistant)
+    agent.update!(
+      github_deploy_key_priv: "private-key",
+      outbound_api_token: "outbound-token",
+      restic_password: "restic-password",
+      telegram_bot_token: "telegram-token",
+      telegram_webhook_token: "telegram-webhook-token",
+      trigger_bearer_token: "trigger-token"
+    )
+
+    [
+      agent.as_json,
+      agent.as_json(as: :list),
+      agent.as_json(only: [ :telegram_bot_token, :trigger_bearer_token ])
+    ].each do |json|
+      Agent::SENSITIVE_JSON_ATTRIBUTES.each do |attribute|
+        assert_not json.key?(attribute.to_s), "#{attribute} must not be serialized"
+      end
+    end
+  end
+
+  test "list json contains only fields used by agent pickers" do
+    agent = agents(:research_assistant)
+
+    assert_equal(
+      [ "active", "colour", "health_state", "icon", "id", "model_id", "model_label", "name", "paused", "runtime" ],
+      agent.as_json(as: :list).keys.sort
+    )
+  end
+
   test "defaults to twice-daily heartbeat wakes" do
     agent = @account.agents.create!(name: "Default Heartbeat Agent")
 
