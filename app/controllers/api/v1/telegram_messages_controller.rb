@@ -8,7 +8,6 @@ module Api
       MAX_PHOTO_SIZE = 10.megabytes
       PHOTO_CONTENT_TYPES = %w[image/jpeg image/png].freeze
       PHOTO_FALLBACK_EXCLUSIONS = [ "blocked", "chat not found" ].freeze
-      MEDIA_URL_TTL = 5.minutes
 
       def create
         return render json: { error: "Telegram messaging is only available to agent API keys" }, status: :forbidden unless current_api_agent
@@ -38,7 +37,7 @@ module Api
 
           begin
             outbound_message = build_outbound_message(subscription, text, media, media_kind, content_type)
-            result = send_outbound_message(subscription, text, outbound_message)
+            result = send_outbound_message(subscription, text, outbound_message, media)
             record_outbound_message(outbound_message, result)
             delivered << subscriber_json(subscription)
           rescue TelegramNotifiable::TelegramError => e
@@ -120,15 +119,20 @@ module Api
         message
       end
 
-      def send_outbound_message(subscription, text, message)
+      def send_outbound_message(subscription, text, message, media)
         escaped_text = ERB::Util.html_escape(text)
         return current_api_agent.telegram_send_message(subscription.telegram_chat_id, escaped_text) unless message.media.attached?
 
-        media_url = download_url_for(message.media)
+        upload_options = {
+          filename: message.media.filename.to_s,
+          content_type: message.media.content_type,
+          caption: escaped_text.presence
+        }
+
         if message.photo?
-          current_api_agent.telegram_send_photo(subscription.telegram_chat_id, media_url, caption: escaped_text.presence)
+          current_api_agent.telegram_send_photo(subscription.telegram_chat_id, media.tempfile, **upload_options)
         else
-          current_api_agent.telegram_send_document(subscription.telegram_chat_id, media_url, caption: escaped_text.presence)
+          current_api_agent.telegram_send_document(subscription.telegram_chat_id, media.tempfile, **upload_options)
         end
       rescue TelegramNotifiable::TelegramError => error
         raise unless message.photo? && retry_photo_as_document?(error)
@@ -137,7 +141,7 @@ module Api
           media_kind: "document",
           text: text.presence || media_placeholder("document", message.media.filename.to_s)
         )
-        current_api_agent.telegram_send_document(subscription.telegram_chat_id, media_url, caption: escaped_text.presence)
+        current_api_agent.telegram_send_document(subscription.telegram_chat_id, media.tempfile, **upload_options)
       end
 
       def record_outbound_message(message, result)
@@ -183,22 +187,6 @@ module Api
         description = error.message.downcase
         description.include?("bad request") &&
           PHOTO_FALLBACK_EXCLUSIONS.none? { |reason| description.include?(reason) }
-      end
-
-      def download_url_for(attachment)
-        ActiveStorage::Current.set(
-          url_options: {
-            protocol: request.protocol,
-            host: request.host,
-            port: request.optional_port
-          }
-        ) do
-          attachment.blob.url(
-            expires_in: MEDIA_URL_TTL,
-            disposition: :attachment,
-            filename: attachment.filename
-          )
-        end
       end
 
     end

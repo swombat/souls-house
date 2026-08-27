@@ -36,12 +36,28 @@ module TelegramNotifiable
     result
   end
 
-  def telegram_send_photo(chat_id, photo, caption: nil)
-    telegram_send_media("sendPhoto", chat_id, :photo, photo, caption)
+  def telegram_send_photo(chat_id, photo, filename:, content_type:, caption: nil)
+    telegram_send_media(
+      "sendPhoto",
+      chat_id,
+      :photo,
+      photo,
+      filename: filename,
+      content_type: content_type,
+      caption: caption
+    )
   end
 
-  def telegram_send_document(chat_id, document, caption: nil)
-    telegram_send_media("sendDocument", chat_id, :document, document, caption)
+  def telegram_send_document(chat_id, document, filename:, content_type:, caption: nil)
+    telegram_send_media(
+      "sendDocument",
+      chat_id,
+      :document,
+      document,
+      filename: filename,
+      content_type: content_type,
+      caption: caption
+    )
   end
 
   def telegram_file_info(file_id)
@@ -152,10 +168,19 @@ module TelegramNotifiable
 
   private
 
-  def telegram_send_media(method, chat_id, media_key, media, caption)
-    body = { chat_id: chat_id, media_key => media }
-    body.merge!(caption: caption, parse_mode: "HTML") if caption.present?
-    result = telegram_api_request(method, body)
+  def telegram_send_media(method, chat_id, media_key, media, filename:, content_type:, caption:)
+    media.rewind
+    form = [ [ "chat_id", chat_id.to_s ] ]
+    form.concat([ [ "caption", caption ], [ "parse_mode", "HTML" ] ]) if caption.present?
+    form << [ media_key.to_s, media, { filename: filename, content_type: content_type } ]
+
+    uri = telegram_api_uri(method)
+    request = Net::HTTP::Post.new(uri)
+    request.set_form(form, "multipart/form-data")
+    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https") do |http|
+      http.request(request)
+    end
+    result = JSON.parse(response.body)
 
     raise TelegramError, result["description"] unless result["ok"]
 
@@ -163,9 +188,13 @@ module TelegramNotifiable
   end
 
   def telegram_api_request(method, body)
-    uri = URI("https://api.telegram.org/bot#{telegram_bot_token}/#{method}")
+    uri = telegram_api_uri(method)
     response = Net::HTTP.post(uri, body.to_json, "Content-Type" => "application/json")
     JSON.parse(response.body)
+  end
+
+  def telegram_api_uri(method)
+    URI("https://api.telegram.org/bot#{telegram_bot_token}/#{method}")
   end
 
   def set_telegram_webhook_token

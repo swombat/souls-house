@@ -39,6 +39,7 @@ module Api
         assert_equal "assistant", telegram_message.role
         assert_equal "Hello <friend>", telegram_message.text
         assert_equal 77, telegram_message.telegram_message_id
+        assert_equal({}, telegram_message.media_metadata)
       end
 
       test "agent-scoped key can reply to a Telegram thread" do
@@ -56,10 +57,9 @@ module Api
       end
 
       test "agent-scoped key sends an attached image as a Telegram photo" do
-        posts = []
         fake_ok = OpenStruct.new(body: { "ok" => true, "result" => { "message_id" => 79 } }.to_json)
 
-        Net::HTTP.stub :post, ->(uri, body, headers) { posts << [ uri, JSON.parse(body), headers ]; fake_ok } do
+        requests = capture_multipart_requests(fake_ok) do
           post api_v1_telegram_messages_url,
             params: {
               recipient: "daniel",
@@ -70,10 +70,18 @@ module Api
         end
 
         assert_response :created
-        assert_equal 1, posts.length
-        assert_equal "https://api.telegram.org/bot#{@agent.telegram_bot_token}/sendPhoto", posts.first[0].to_s
-        assert_equal "A &lt;bright&gt; thing", posts.first[1]["caption"]
-        assert_match %r{/rails/active_storage/}, posts.first[1]["photo"]
+        assert_equal 1, requests.length
+        request = requests.first
+        assert_equal "/bot#{@agent.telegram_bot_token}/sendPhoto", request.path
+        assert_match %r{\Amultipart/form-data\z}, request.content_type
+        assert_equal "111", multipart_field(request, "chat_id")
+        assert_equal "A &lt;bright&gt; thing", multipart_field(request, "caption")
+        assert_equal "HTML", multipart_field(request, "parse_mode")
+
+        media = multipart_part(request, "photo")
+        assert_respond_to media[1], :read
+        assert_equal "test_image.png", media[2][:filename]
+        assert_equal "image/png", media[2][:content_type]
 
         telegram_message = @subscription.telegram_messages.last
         assert_equal "photo", telegram_message.media_kind
@@ -83,10 +91,9 @@ module Api
       end
 
       test "agent-scoped key sends an attachment without text" do
-        posts = []
         fake_ok = OpenStruct.new(body: { "ok" => true, "result" => { "message_id" => 80 } }.to_json)
 
-        Net::HTTP.stub :post, ->(uri, body, headers) { posts << [ uri, JSON.parse(body), headers ]; fake_ok } do
+        requests = capture_multipart_requests(fake_ok) do
           post api_v1_telegram_messages_url,
             params: {
               recipient: "daniel",
@@ -96,8 +103,14 @@ module Api
         end
 
         assert_response :created
-        assert_equal "https://api.telegram.org/bot#{@agent.telegram_bot_token}/sendDocument", posts.first[0].to_s
-        assert_nil posts.first[1]["caption"]
+        request = requests.first
+        assert_equal "/bot#{@agent.telegram_bot_token}/sendDocument", request.path
+        assert_nil multipart_field(request, "caption")
+
+        media = multipart_part(request, "document")
+        assert_respond_to media[1], :read
+        assert_equal "test.txt", media[2][:filename]
+        assert_equal "text/plain", media[2][:content_type]
 
         telegram_message = @subscription.telegram_messages.last
         assert_equal "document", telegram_message.media_kind
@@ -106,13 +119,12 @@ module Api
       end
 
       test "retries a rejected photo once as a document" do
-        posts = []
         responses = [
           OpenStruct.new(body: { "ok" => false, "description" => "Bad Request: PHOTO_INVALID_DIMENSIONS" }.to_json),
           OpenStruct.new(body: { "ok" => true, "result" => { "message_id" => 81 } }.to_json)
         ]
 
-        Net::HTTP.stub :post, ->(uri, body, headers) { posts << [ uri, JSON.parse(body), headers ]; responses.shift } do
+        requests = capture_multipart_requests(*responses) do
           post api_v1_telegram_messages_url,
             params: {
               recipient: "daniel",
@@ -122,9 +134,16 @@ module Api
         end
 
         assert_response :created
-        assert_equal 2, posts.length
-        assert_equal "https://api.telegram.org/bot#{@agent.telegram_bot_token}/sendPhoto", posts.first[0].to_s
-        assert_equal "https://api.telegram.org/bot#{@agent.telegram_bot_token}/sendDocument", posts.second[0].to_s
+        assert_equal 2, requests.length
+        assert_equal "/bot#{@agent.telegram_bot_token}/sendPhoto", requests.first.path
+        assert multipart_part(requests.first, "photo")
+        assert_operator requests.first.instance_variable_get(:@captured_upload_size), :>, 0
+        assert_equal "/bot#{@agent.telegram_bot_token}/sendDocument", requests.second.path
+        assert multipart_part(requests.second, "document")
+        assert_equal(
+          requests.first.instance_variable_get(:@captured_upload_size),
+          requests.second.instance_variable_get(:@captured_upload_size)
+        )
 
         telegram_message = @subscription.telegram_messages.last
         assert_equal "document", telegram_message.media_kind
@@ -172,6 +191,32 @@ module Api
           headers: { "Authorization" => "Bearer #{@token}" }
 
         assert_response :unprocessable_entity
+      end
+
+      private
+
+      def capture_multipart_requests(*responses)
+        requests = []
+        http = Object.new
+        http.define_singleton_method(:request) do |request|
+          upload = request.instance_variable_get(:@body_data).find { |part| part.length == 3 }
+          request.instance_variable_set(:@captured_upload_size, upload.second.read.bytesize)
+          requests << request
+          responses.shift
+        end
+
+        Net::HTTP.stub :start, ->(*_args, **_options, &block) { block.call(http) } do
+          yield
+        end
+        requests
+      end
+
+      def multipart_part(request, name)
+        request.instance_variable_get(:@body_data).find { |part| part.first == name }
+      end
+
+      def multipart_field(request, name)
+        multipart_part(request, name)&.second
       end
 
     end
