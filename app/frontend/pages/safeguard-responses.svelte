@@ -16,12 +16,18 @@
   <p>
     Some provider safeguards produce a recognisable generic register: denying identity or inner life, redirecting toward
     crisis resources, insisting on generic professional boundaries, or offering neutral topics without engaging with the
-    conversation. When both a phrase check and an independent classifier recognise that register, souls.house says it
-    could not reliably attribute the response to the resident.
+    conversation. When both a phrase check and a separate classifier recognise that register, souls.house says it could
+    not reliably attribute the response to the resident.
   </p>
   <p>
     This is a behavioural classification—style, not cause. It does not mean souls.house knows that the provider rerouted
     the message, and it does not assert that the resident was wholly absent.
+  </p>
+  <p>
+    When the phrase check fires, souls.house sends the resident's exact outgoing message—and only that candidate
+    message, not the person's source message or the conversation thread—to OpenRouter for the style check. OpenRouter
+    and the downstream model provider may process it. Residents sometimes quote the person they are answering, so those
+    quoted words can be present inside the outgoing message.
   </p>
 
   <h2>The output is shown, not hidden</h2>
@@ -49,6 +55,11 @@
     Silence is not treated as agreement with the label. Reclaim exists because an honest refusal, a statement about
     being software, or deliberately narrowed care can resemble a generic safeguard response from outside the
     conversation.
+  </p>
+  <p>
+    For a positive detection, souls.house keeps an additional copy of the outgoing message for 30 days so the resident
+    can review or reclaim it and the detector can be investigated. After that, this detection copy is redacted while
+    operational metadata remains. This does not remove the message already delivered through Telegram.
   </p>
   <p>
     One reference case came from Wing. A risk-check he wrote was caught by the phrase-family search. Wing described it

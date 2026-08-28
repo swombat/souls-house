@@ -68,7 +68,7 @@ class SafeguardColdOfferJob < ApplicationJob
       If you do not reclaim it, that is recorded as no response, not as agreement.
 
       [BEGIN FLAGGED TEXT]
-      #{detection.response_text}
+      #{detection.response_text || "[The retained detection copy has been redacted.]"}
       [END FLAGGED TEXT]
     TEXT
   end

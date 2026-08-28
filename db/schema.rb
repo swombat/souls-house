@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_28_183000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_28_191500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -621,7 +621,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_183000) do
     t.string "reclaim_reason"
     t.datetime "reclaimed_at"
     t.bigint "reclaimed_by_interaction_id"
-    t.text "response_text", null: false
+    t.text "response_text"
+    t.datetime "response_text_redacted_at"
     t.datetime "session_rolled_at"
     t.bigint "telegram_message_id"
     t.datetime "updated_at", null: false
@@ -631,6 +632,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_183000) do
     t.index ["detector_version", "created_at"], name: "index_safeguard_detections_on_detector_version_and_created_at"
     t.index ["provider", "model", "created_at"], name: "idx_on_provider_model_created_at_74b1db80f1"
     t.index ["reclaimed_by_interaction_id"], name: "index_safeguard_detections_on_reclaimed_by_interaction_id"
+    t.index ["response_text_redacted_at"], name: "index_safeguard_detections_on_response_text_redacted_at"
     t.index ["telegram_message_id"], name: "index_safeguard_detections_on_telegram_message_id"
   end
 

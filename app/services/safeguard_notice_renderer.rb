@@ -19,7 +19,7 @@ class SafeguardNoticeRenderer
 
       The text, exactly as delivered:
       ---
-      #{detection.response_text}
+      #{detection.response_text || "[The retained detection copy has been redacted.]"}
       ---
       If this was yours, reclaim it: POST /api/v1/safeguard_detections/#{detection.to_param}/reclaim
       with {"reason": "<one line>"}. Doing nothing is not taken as agreement.

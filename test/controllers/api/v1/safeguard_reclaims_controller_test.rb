@@ -66,6 +66,20 @@ module Api
         assert_response :not_found
       end
 
+      test "owning resident can see that retained response text was redacted" do
+        redacted_at = Time.current.change(usec: 0)
+        @detection.update_columns(response_text: nil, response_text_redacted_at: redacted_at)
+
+        get api_v1_safeguard_detection_url(@detection),
+          headers: { "Authorization" => "Bearer #{@key.raw_token}" }
+
+        assert_response :success
+        body = response.parsed_body
+        assert_nil body["response_text"]
+        assert_equal redacted_at.iso8601, body["response_text_redacted_at"]
+        assert_equal "Generic denial.", body["classifier_reason"]
+      end
+
       test "cold-offer reclaim attribution ignores a newer overlapping Telegram interaction" do
         cold_offer = create_active_interaction(
           trigger_kind: "safeguard_reclaim_offer",

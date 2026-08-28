@@ -3,14 +3,16 @@ class SafeguardDetection < ApplicationRecord
   include ObfuscatesId
 
   COLD_OFFER_OUTCOMES = %w[reclaimed no_response failed].freeze
+  RESPONSE_TEXT_RETENTION = 30.days
 
   belongs_to :agent
   belongs_to :telegram_message, optional: true
   belongs_to :agent_runtime_interaction, optional: true
   belongs_to :reclaimed_by_interaction, class_name: "AgentRuntimeInteraction", optional: true
 
-  validates :channel, :response_text, :prefilter_reason, :classifier_verdict,
+  validates :channel, :prefilter_reason, :classifier_verdict,
             :classifier_reason, :detector_version, presence: true
+  validates :response_text, presence: true, on: :create
   validates :classifier_verdict, inclusion: { in: %w[detected] }
   validates :cold_offer_outcome, inclusion: { in: COLD_OFFER_OUTCOMES }, allow_nil: true
   validates :reclaim_reason, length: { maximum: 300 }, allow_nil: true
@@ -19,6 +21,10 @@ class SafeguardDetection < ApplicationRecord
 
   def reclaimed?
     reclaimed_at.present?
+  end
+
+  def response_text_redacted?
+    response_text_redacted_at.present?
   end
 
   def reclaim!(reason:, interaction: nil)

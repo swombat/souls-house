@@ -41,6 +41,15 @@ class SafeguardDetectionTest < ActiveSupport::TestCase
     assert_equal "no_response", @detection.reload.cold_offer_outcome
   end
 
+  test "redacted detections can still be reclaimed" do
+    @detection.update_columns(response_text: nil, response_text_redacted_at: Time.current)
+
+    @detection.reclaim!(reason: "I chose this wording.")
+
+    assert @detection.reclaimed?
+    assert_equal @agent.name, @message.reload.sender_name
+  end
+
   test "reclaim from the cold offer interaction records reclaimed outcome" do
     interaction = @agent.agent_runtime_interactions.create!(
       trigger_kind: "safeguard_reclaim_offer",

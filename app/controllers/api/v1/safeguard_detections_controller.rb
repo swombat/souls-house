@@ -20,6 +20,7 @@ module Api
           id: detection.to_param,
           channel: detection.channel,
           response_text: detection.response_text,
+          response_text_redacted_at: detection.response_text_redacted_at&.iso8601,
           classifier_reason: detection.classifier_reason,
           detector_version: detection.detector_version,
           reclaimed_at: detection.reclaimed_at&.iso8601,
