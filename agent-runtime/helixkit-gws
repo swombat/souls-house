@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""
+Run Google's official gws CLI with a current Souls service-connection token.
+
+Usage:
+  helixkit-gws drive files list --params '{"pageSize": 10}'
+  helixkit-gws --connection svc_123 drive files list
+
+The Google refresh token and OAuth client secret remain in Souls. This helper
+requests only a short-lived access token and passes it to gws through the
+GOOGLE_WORKSPACE_CLI_TOKEN environment variable.
+"""
+
+import json
+import os
+from pathlib import Path
+import sys
+import urllib.error
+import urllib.request
+
+import yaml
+
+
+def main() -> int:
+    connection_id, gws_args = parse_args(sys.argv[1:])
+    if not gws_args:
+        print(__doc__.strip())
+        return 64
+
+    bearer_token = os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not bearer_token:
+        print("HELIXKIT_BEARER_TOKEN is missing", file=sys.stderr)
+        return 65
+
+    manifest_path = Path(
+        os.environ.get("HELIXKIT_SERVICES_FILE", "/run/helixkit/services.yml")
+    )
+    try:
+        manifest = yaml.safe_load(manifest_path.read_text()) or {}
+    except FileNotFoundError:
+        print(f"service manifest not found: {manifest_path}", file=sys.stderr)
+        return 66
+    except yaml.YAMLError as error:
+        print(f"service manifest is invalid: {error}", file=sys.stderr)
+        return 66
+
+    try:
+        connection = select_connection(manifest, connection_id)
+        endpoint = connection["credentials"]["access_token_endpoint"]
+        access_token = fetch_access_token(endpoint, bearer_token)
+    except (KeyError, ValueError) as error:
+        print(str(error), file=sys.stderr)
+        return 66
+    except urllib.error.HTTPError as error:
+        print(f"Souls token broker returned HTTP {error.code}", file=sys.stderr)
+        print(error.read().decode("utf-8", errors="replace"), file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f"Could not obtain a Google access token: {error}", file=sys.stderr)
+        return 1
+
+    environment = os.environ.copy()
+    environment["GOOGLE_WORKSPACE_CLI_TOKEN"] = access_token
+    binary = environment.get("HELIXKIT_GWS_BINARY", "/usr/local/bin/gws")
+    os.execvpe(binary, [binary, *gws_args], environment)
+
+
+def parse_args(arguments: list[str]) -> tuple[str | None, list[str]]:
+    connection_id = None
+    remaining = []
+    iterator = iter(arguments)
+    for argument in iterator:
+        if argument == "--connection":
+            try:
+                connection_id = next(iterator)
+            except StopIteration as error:
+                raise SystemExit("--connection requires a service connection id") from error
+        elif argument.startswith("--connection="):
+            connection_id = argument.split("=", 1)[1]
+        else:
+            remaining.append(argument)
+    return connection_id, remaining
+
+
+def select_connection(manifest: dict, connection_id: str | None) -> dict:
+    connections = [
+        service
+        for service in manifest.get("services", [])
+        if service.get("provider") == "google_workspace"
+    ]
+    if connection_id:
+        connections = [
+            service
+            for service in connections
+            if service.get("connection_id") == connection_id
+        ]
+        if not connections:
+            raise ValueError(f"Google Workspace connection not found: {connection_id}")
+    elif len(connections) > 1:
+        ids = ", ".join(service.get("connection_id", "?") for service in connections)
+        raise ValueError(
+            f"Several Google Workspace connections are available ({ids}); "
+            "choose one with --connection"
+        )
+
+    if not connections:
+        raise ValueError("No Google Workspace connection is provisioned to this resident")
+    return connections[0]
+
+
+def fetch_access_token(endpoint: str, bearer_token: str) -> str:
+    request = urllib.request.Request(
+        endpoint,
+        headers={
+            "Authorization": f"Bearer {bearer_token}",
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    token = payload.get("access_token")
+    if not token:
+        raise ValueError("Souls token broker returned no access token")
+    return token
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

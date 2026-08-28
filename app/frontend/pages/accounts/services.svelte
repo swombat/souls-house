@@ -1,7 +1,7 @@
 <script>
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { DropboxLogo, ArrowLeft, CheckCircle } from 'phosphor-svelte';
+  import { DropboxLogo, GoogleLogo, ArrowLeft, CheckCircle } from 'phosphor-svelte';
   import { submitNativePost } from '$lib/integration-forms';
 
   let { account, services = [], connections = [], can_manage = false } = $props();
@@ -54,8 +54,15 @@
       <div class="rounded-lg border p-5">
         <div class="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div class="flex gap-4">
-            <div class="flex size-11 items-center justify-center rounded-xl bg-blue-600 text-white">
-              <DropboxLogo size={24} weight="fill" />
+            <div
+              class={service.key === 'google_workspace'
+                ? 'flex size-11 items-center justify-center rounded-xl bg-green-600 text-white'
+                : 'flex size-11 items-center justify-center rounded-xl bg-blue-600 text-white'}>
+              {#if service.key === 'google_workspace'}
+                <GoogleLogo size={24} weight="bold" />
+              {:else}
+                <DropboxLogo size={24} weight="fill" />
+              {/if}
             </div>
             <div>
               <h3 class="font-semibold">{service.name}</h3>

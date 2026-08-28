@@ -53,6 +53,34 @@ class ServiceAuthorizationsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
+  test "starts Google Workspace authorization with offline access and PKCE" do
+    original_client_id = ENV["GOOGLE_WORKSPACE_CLIENT_ID"]
+    ENV["GOOGLE_WORKSPACE_CLIENT_ID"] = "google-client-id"
+    begin
+      post account_service_authorizations_path(@account), params: {
+        provider: "google_workspace",
+        management_scope: "personal",
+        access_profile: "read_only"
+      }
+    ensure
+      ENV["GOOGLE_WORKSPACE_CLIENT_ID"] = original_client_id
+    end
+
+    assert_response :redirect
+    uri = URI(response.location)
+    query = Rack::Utils.parse_query(uri.query)
+    attempt = ServiceAuthorizationAttempt.order(:id).last
+
+    assert_equal "accounts.google.com", uri.host
+    assert_equal "/o/oauth2/v2/auth", uri.path
+    assert_equal "offline", query.fetch("access_type")
+    assert_equal "consent", query.fetch("prompt")
+    assert_equal "S256", query.fetch("code_challenge_method")
+    assert_equal attempt.requested_scopes.sort, query.fetch("scope").split.sort
+    assert_equal service_authorization_callback_url, query.fetch("redirect_uri")
+    assert_not query.key?("client_secret")
+  end
+
   test "starts Oura authorization through the generic service callback" do
     post account_service_authorizations_path(@account), params: {
       provider: "oura",

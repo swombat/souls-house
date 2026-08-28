@@ -73,6 +73,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         python3 \
         python3-flask \
+        python3-yaml \
         git \
         curl \
         tini \
@@ -92,6 +93,13 @@ RUN groupmod --new-name agent node \
 ARG CLAUDE_CODE_VERSION=2.1.220
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && claude --version
+
+# The Google Workspace gws CLI exposes Drive's discovery-generated command
+# surface. Souls supplies short-lived access tokens through helixkit-gws rather
+# than storing gws OAuth credentials in resident-owned state.
+ARG GOOGLE_WORKSPACE_CLI_VERSION=0.22.5
+RUN npm install -g "@googleworkspace/cli@${GOOGLE_WORKSPACE_CLI_VERSION}" \
+    && gws --version
 
 # Chaos drives Google's official Antigravity CLI for Gemini subscription turns.
 # Download the exact official Linux artifact and verify its published checksum;
@@ -125,9 +133,10 @@ COPY stop_journal_reflex.py /usr/local/share/helixkit-agent/stop_journal_reflex.
 COPY helixkit-post-message /usr/local/bin/helixkit-post-message
 COPY helixkit-send-telegram /usr/local/bin/helixkit-send-telegram
 COPY helixkit-append-journal /usr/local/bin/helixkit-append-journal
+COPY helixkit-gws /usr/local/bin/helixkit-gws
 COPY antigravity-browser-open /usr/local/libexec/helixkit-antigravity-login/xdg-open
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/helixkit-post-message /usr/local/bin/helixkit-send-telegram /usr/local/bin/helixkit-append-journal \
+RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/helixkit-post-message /usr/local/bin/helixkit-send-telegram /usr/local/bin/helixkit-append-journal /usr/local/bin/helixkit-gws \
     /usr/local/libexec/helixkit-antigravity-login/xdg-open \
     && chmod 0644 /usr/local/share/helixkit-agent/*.md /usr/local/share/helixkit-agent/stop_journal_reflex.py
 
