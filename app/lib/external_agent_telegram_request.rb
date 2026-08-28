@@ -15,7 +15,7 @@ class ExternalAgentTelegramRequest
     request = request_text
     auth_mode = agent.provider_auth_mode(provider)
 
-    AgentRuntimeInteraction.record_trigger!(
+    result = AgentRuntimeInteraction.record_trigger!(
       agent: agent,
       chat: nil,
       trigger_kind: "telegram",
@@ -33,7 +33,7 @@ class ExternalAgentTelegramRequest
         session_id: "#{agent.uuid}-telegram-#{subscription.id}",
         trigger_kind: "telegram",
         request: request,
-        request_delta: request_delta_text,
+        request_delta: pending_safeguard_detection ? nil : request_delta_text,
         persistent_session: agent.persistent_session?,
         provider: provider,
         model: Agents::Sandbox.chaos_model_for(agent),
@@ -42,6 +42,8 @@ class ExternalAgentTelegramRequest
         trigger_payload: trigger_payload
       )
     end
+    acknowledge_safeguard_roll!(result)
+    result
   rescue StandardError => e
     Rails.logger.warn "[ExternalAgentTelegramRequest] #{agent.id} trigger failed: #{e.class}: #{e.message}"
     { status: 0, error: e.message }
@@ -65,8 +67,10 @@ class ExternalAgentTelegramRequest
       },
       text: telegram_message.text,
       thread_id: subscription.to_param,
-      history_cursor: telegram_message.to_param
+      history_cursor: telegram_message.to_param,
+      runtime_session_generation: subscription.runtime_session_generation
     }
+    payload[:roll_session] = true if pending_safeguard_detection
     payload[:media] = telegram_message.media_json if telegram_message.media?
     payload
   end
@@ -74,6 +78,7 @@ class ExternalAgentTelegramRequest
   def request_text
     [
       Notices::Renderer.section_for(agent),
+      safeguard_notice,
       <<~TEXT
       souls.house received a Telegram direct message for you.
 
@@ -115,6 +120,30 @@ class ExternalAgentTelegramRequest
     subscription.telegram_messages.chronological.last(TRANSCRIPT_WINDOW).map do |message|
       message.transcript_line
     end.join("\n")
+  end
+
+  def pending_safeguard_detection
+    return @pending_safeguard_detection if defined?(@pending_safeguard_detection)
+
+    @pending_safeguard_detection = subscription.pending_safeguard_detection
+  end
+
+  def safeguard_notice
+    SafeguardNoticeRenderer.for_resident(pending_safeguard_detection) if pending_safeguard_detection
+  end
+
+  def acknowledge_safeguard_roll!(result)
+    detection = pending_safeguard_detection
+    return unless detection && result[:status] == 200
+
+    body = result[:body].to_h
+    roll_reason = body["session_roll_reason"] || body.dig("telemetry", "session", "roll_reason")
+    session_outcome = body.dig("telemetry", "session", "outcome")
+
+    if roll_reason == "safeguard-detected" || session_outcome.in?(%w[fresh rolled fresh_fallback])
+      detection.update!(session_rolled_at: Time.current)
+    end
+    subscription.update!(pending_safeguard_detection: nil)
   end
 
 end

@@ -71,6 +71,37 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal "auth-mode-changed", result["changed"]
   end
 
+  test "explicit safeguard rolls and generation changes roll persistent sessions" do
+    out = run_shim_python(<<~PY)
+      record = {
+        "schema_version": mod.SIDECAR_SCHEMA_VERSION,
+        "provider": "openai",
+        "model": "gpt-5",
+        "auth_mode": "api_key",
+        "runtime_session_generation": 2,
+        "identity_fingerprint": mod.identity_fingerprint(),
+        "runtime_context_fingerprint": mod.runtime_context_fingerprint(),
+      }
+      print(json.dumps({
+        "same": mod.roll_decision(
+          record, "gpt-5", "openai", runtime_session_generation=2
+        )[0],
+        "generation_changed": mod.roll_decision(
+          record, "gpt-5", "openai", runtime_session_generation=3
+        )[0],
+        "safeguard": mod.roll_decision(
+          record, "gpt-5", "openai",
+          roll_session=True, runtime_session_generation=2
+        )[0],
+      }))
+    PY
+
+    result = JSON.parse(out)
+    assert_nil result["same"]
+    assert_equal "requested-generation-changed", result["generation_changed"]
+    assert_equal "safeguard-detected", result["safeguard"]
+  end
+
   test "API key runs preserve the original Chaos home and subscription runs use an isolated home" do
     out = run_shim_python(<<~PY)
       import types
@@ -1148,6 +1179,22 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal "DELTA ONLY".bytesize, second.dig("telemetry", "prompt", "selected_prompt_bytes")
     assert_nil second.dig("telemetry", "prompt", "full_prompt_bytes")
     assert_equal({}, second.dig("telemetry", "prompt", "components"))
+  end
+
+  test "explicit safeguard roll is reported even when no sidecar mapping exists" do
+    out = run_shim_python(<<~PY, fake_chaos: :echo_resumed_pid)
+      response, code = mod.persistent_trigger(
+          "sess-safeguard-no-record", "REQUEST FULL", None,
+          "claude-opus-4-7", 30, roll_session=True
+      )
+      print(json.dumps({"response": response, "code": code}))
+    PY
+
+    result = JSON.parse(out)
+    assert_equal 200, result["code"]
+    assert_equal "fresh", result.dig("response", "telemetry", "session", "outcome")
+    assert_equal "safeguard-detected", result.dig("response", "telemetry", "session", "roll_reason")
+    assert_equal "safeguard-detected", result.dig("response", "session_roll_reason")
   end
 
   test "successful resume does not rebuild the full prompt or reread journals" do

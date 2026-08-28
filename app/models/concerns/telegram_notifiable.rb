@@ -122,7 +122,7 @@ module TelegramNotifiable
     webhook_url = "#{Rails.application.credentials.dig(:app, :url)}/telegram/webhook/#{telegram_webhook_token}"
     result = telegram_api_request("setWebhook", {
       url: webhook_url,
-      allowed_updates: [ "message" ],
+      allowed_updates: [ "message", "callback_query" ],
       secret_token: telegram_webhook_secret
     })
 
@@ -132,6 +132,15 @@ module TelegramNotifiable
   def telegram_webhook_info
     return nil unless telegram_bot_token.present?
     telegram_api_request("getWebhookInfo", {})
+  end
+
+  def telegram_answer_callback_query(callback_query_id, text: nil)
+    body = { callback_query_id: callback_query_id }
+    body[:text] = text if text.present?
+    result = telegram_api_request("answerCallbackQuery", body)
+    raise TelegramError, result["description"] unless result["ok"]
+
+    result
   end
 
   def delete_telegram_webhook!

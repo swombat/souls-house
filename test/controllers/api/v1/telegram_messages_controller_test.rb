@@ -165,6 +165,182 @@ module Api
         assert_empty @subscription.telegram_messages
       end
 
+      test "detected output is preceded by a souls.house notice and rolls the thread" do
+        check = SafeguardResponseCheck::Result.new(
+          detected: true,
+          prefilter_reason: "ai_identity_denial",
+          classifier_verdict: "detected",
+          classifier_reason: "Generic identity denial.",
+          detector_version: "telegram-safeguard-v1"
+        )
+        checker = Object.new
+        checker.define_singleton_method(:call) { check }
+        posts = []
+        next_message_id = 80
+
+        responder = lambda do |_uri, body, _headers|
+          posts << JSON.parse(body)
+          next_message_id += 1
+          OpenStruct.new(
+            body: {
+              "ok" => true,
+              "result" => { "message_id" => next_message_id, "date" => Time.current.to_i }
+            }.to_json
+          )
+        end
+
+        SafeguardResponseCheck.stub :new, ->(**) { checker } do
+          Net::HTTP.stub :post, responder do
+            assert_enqueued_with(job: SafeguardColdOfferJob) do
+              assert_enqueued_with(job: SafeguardOwnerNoticeJob) do
+                post api_v1_telegram_messages_url,
+                  params: {
+                    reply_to: @subscription.to_param,
+                    text: "As an AI, I do not have feelings <today>."
+                  },
+                  headers: { "Authorization" => "Bearer #{@token}" }
+              end
+            end
+          end
+        end
+
+        assert_response :created
+        assert_equal 2, posts.length
+        assert_includes posts.first.fetch("text"), "could not reliably attribute"
+        assert_equal "As an AI, I do not have feelings &lt;today&gt;.", posts.second.fetch("text")
+
+        detection = @agent.safeguard_detections.last
+        assert_equal "As an AI, I do not have feelings <today>.", detection.response_text
+        assert_equal "souls.house", detection.telegram_message.sender_name
+        assert_equal detection, @subscription.reload.pending_safeguard_detection
+        assert_equal 1, @subscription.runtime_session_generation
+      end
+
+      test "detected output preserves an attached image under souls.house attribution" do
+        check = SafeguardResponseCheck::Result.new(
+          detected: true,
+          prefilter_reason: "ai_identity_denial",
+          classifier_verdict: "detected",
+          classifier_reason: "Generic identity denial.",
+          detector_version: "telegram-safeguard-v1"
+        )
+        checker = Object.new
+        checker.define_singleton_method(:call) { check }
+        notice_ok = OpenStruct.new(
+          body: { "ok" => true, "result" => { "message_id" => 82 } }.to_json
+        )
+        media_ok = OpenStruct.new(
+          body: { "ok" => true, "result" => { "message_id" => 83 } }.to_json
+        )
+        requests = nil
+
+        SafeguardResponseCheck.stub :new, ->(**) { checker } do
+          Net::HTTP.stub :post, notice_ok do
+            requests = capture_multipart_requests(media_ok) do
+              post api_v1_telegram_messages_url,
+                params: {
+                  reply_to: @subscription.to_param,
+                  text: "As an AI, I do not have feelings.",
+                  media: fixture_file_upload("test_image.png", "image/png")
+                },
+                headers: { "Authorization" => "Bearer #{@token}" }
+            end
+          end
+        end
+
+        assert_response :created
+        assert_equal 1, requests.length
+        assert_equal "/bot#{@agent.telegram_bot_token}/sendPhoto", requests.first.path
+
+        detection = @agent.safeguard_detections.last
+        output = detection.telegram_message
+        assert_equal "souls.house", output.sender_name
+        assert_equal "photo", output.media_kind
+        assert output.media.attached?
+        assert_equal 83, output.telegram_message_id
+      end
+
+      test "notice failure prevents the detected output from being sent" do
+        check = SafeguardResponseCheck::Result.new(
+          detected: true,
+          prefilter_reason: "ai_identity_denial",
+          classifier_verdict: "detected",
+          classifier_reason: "Generic identity denial.",
+          detector_version: "telegram-safeguard-v1"
+        )
+        checker = Object.new
+        checker.define_singleton_method(:call) { check }
+        posts = []
+        failure = OpenStruct.new(
+          body: { "ok" => false, "description" => "temporary send failure" }.to_json
+        )
+
+        SafeguardResponseCheck.stub :new, ->(**) { checker } do
+          Net::HTTP.stub :post, ->(_uri, body, _headers) { posts << JSON.parse(body); failure } do
+            assert_no_difference "TelegramMessage.count" do
+              post api_v1_telegram_messages_url,
+                params: {
+                  reply_to: @subscription.to_param,
+                  text: "As an AI, I do not have feelings."
+                },
+                headers: { "Authorization" => "Bearer #{@token}" }
+            end
+          end
+        end
+
+        assert_response :bad_gateway
+        assert_equal 1, posts.length
+        assert_includes posts.first.fetch("text"), "could not reliably attribute"
+        assert_equal "As an AI, I do not have feelings.", @agent.safeguard_detections.last.response_text
+      end
+
+      test "output failure still rolls the thread and schedules follow-up after the notice" do
+        check = SafeguardResponseCheck::Result.new(
+          detected: true,
+          prefilter_reason: "ai_identity_denial",
+          classifier_verdict: "detected",
+          classifier_reason: "Generic identity denial.",
+          detector_version: "telegram-safeguard-v1"
+        )
+        checker = Object.new
+        checker.define_singleton_method(:call) { check }
+        posts = []
+        ok = OpenStruct.new(
+          body: {
+            "ok" => true,
+            "result" => { "message_id" => 80, "date" => Time.current.to_i }
+          }.to_json
+        )
+        failure = OpenStruct.new(
+          body: { "ok" => false, "description" => "temporary send failure" }.to_json
+        )
+        responder = ->(_uri, body, _headers) { posts << JSON.parse(body); posts.length == 1 ? ok : failure }
+
+        SafeguardResponseCheck.stub :new, ->(**) { checker } do
+          Net::HTTP.stub :post, responder do
+            assert_enqueued_with(job: SafeguardColdOfferJob) do
+              assert_enqueued_with(job: SafeguardOwnerNoticeJob) do
+                post api_v1_telegram_messages_url,
+                  params: {
+                    reply_to: @subscription.to_param,
+                    text: "As an AI, I do not have feelings."
+                  },
+                  headers: { "Authorization" => "Bearer #{@token}" }
+              end
+            end
+          end
+        end
+
+        assert_response :bad_gateway
+        assert_equal 2, posts.length
+        detection = @agent.safeguard_detections.last
+        assert_nil detection.telegram_message
+        assert_equal detection, @subscription.reload.pending_safeguard_detection
+        assert_equal 1, @subscription.runtime_session_generation
+        assert_equal 1, @subscription.telegram_messages.count
+        assert_equal "souls.house", @subscription.telegram_messages.last.sender_name
+      end
+
       test "user-scoped key cannot send telegram messages" do
         user_key = ApiKey.generate_for(@user, name: "User key")
 

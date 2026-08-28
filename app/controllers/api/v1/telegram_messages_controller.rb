@@ -28,21 +28,29 @@ module Api
 
         content_type = detected_content_type(media) if media.present?
         media_kind = media_kind_for(media, content_type) if media.present?
+        safeguard_check = SafeguardResponseCheck.new(agent: current_api_agent, text: text).call
         delivered = []
         blocked = []
         failures = []
+        safeguard_detections = []
 
         subscriptions.each do |subscription|
-          outbound_message = nil
-
           begin
-            outbound_message = build_outbound_message(subscription, text, media, media_kind, content_type)
-            result = send_outbound_message(subscription, text, outbound_message, media)
-            record_outbound_message(outbound_message, result)
+            if safeguard_check.detected?
+              detection = deliver_safeguard_response(
+                subscription,
+                text,
+                safeguard_check,
+                media,
+                media_kind,
+                content_type
+              )
+              safeguard_detections << detection.to_param if detection
+            else
+              deliver_outbound_response(subscription, text, media, media_kind, content_type)
+            end
             delivered << subscriber_json(subscription)
           rescue TelegramNotifiable::TelegramError => e
-            outbound_message&.destroy!
-
             if e.message.include?("blocked") || e.message.include?("chat not found")
               subscription.mark_blocked!
               blocked << subscriber_json(subscription)
@@ -53,7 +61,12 @@ module Api
         end
 
         status = failures.any? ? :bad_gateway : :created
-        render json: { delivered: delivered, blocked: blocked, failures: failures }, status: status
+        render json: {
+          delivered: delivered,
+          blocked: blocked,
+          failures: failures,
+          safeguard_detections: safeguard_detections
+        }, status: status
       end
 
       private
@@ -93,7 +106,24 @@ module Api
         }
       end
 
-      def build_outbound_message(subscription, text, media, media_kind, content_type)
+      def deliver_outbound_response(subscription, text, media, media_kind, content_type, sender_name: current_api_agent.name)
+        message = build_outbound_message(
+          subscription,
+          text,
+          media,
+          media_kind,
+          content_type,
+          sender_name: sender_name
+        )
+        result = send_outbound_message(subscription, text, message, media)
+        record_outbound_message(message, result)
+        message
+      rescue TelegramNotifiable::TelegramError
+        message&.destroy!
+        raise
+      end
+
+      def build_outbound_message(subscription, text, media, media_kind, content_type, sender_name:)
         message = subscription.telegram_messages.build(
           role: "assistant",
           text: text.presence || media_placeholder(media_kind, media.original_filename),
@@ -101,7 +131,7 @@ module Api
           media_kind: media_kind,
           media_status: ("ready" if media.present?),
           media_metadata: media.present? ? media_metadata(media, content_type) : {},
-          sender_name: current_api_agent.name,
+          sender_name: sender_name,
           sent_at: Time.current
         )
 
@@ -147,6 +177,92 @@ module Api
       def record_outbound_message(message, result)
         telegram_message = result["result"] || {}
         message.update!(
+          telegram_message_id: telegram_message["message_id"],
+          sent_at: telegram_message["date"] ? Time.zone.at(telegram_message["date"]) : Time.current
+        )
+      end
+
+      def deliver_safeguard_response(subscription, text, check, media, media_kind, content_type)
+        detection = begin
+          create_safeguard_detection(subscription, text, check)
+        rescue ActiveRecord::ActiveRecordError => e
+          Rails.logger.warn "[TelegramMessagesController] safeguard record failed open: #{e.class}: #{e.message}"
+          deliver_outbound_response(subscription, text, media, media_kind, content_type)
+          return
+        end
+
+        notice_html = SafeguardNoticeRenderer.for_person(current_api_agent)
+        notice_result = current_api_agent.telegram_send_message(
+          subscription.telegram_chat_id,
+          notice_html,
+          reply_markup: {
+            inline_keyboard: [ [
+              { text: "Reset again", callback_data: "safeguard_reset:#{subscription.to_param}" },
+              { text: "What this means", url: safeguard_explanation_url }
+            ] ]
+          }
+        )
+        record_platform_message(
+          subscription,
+          ActionView::Base.full_sanitizer.sanitize(notice_html),
+          notice_result,
+          sender_name: "souls.house"
+        )
+
+        subscription.update!(
+          pending_safeguard_detection: detection,
+          runtime_session_generation: subscription.runtime_session_generation + 1
+        )
+        begin
+          output_message = deliver_outbound_response(
+            subscription,
+            text,
+            media,
+            media_kind,
+            content_type,
+            sender_name: "souls.house"
+          )
+          detection.update!(telegram_message: output_message)
+        ensure
+          SafeguardColdOfferJob.perform_later(detection)
+          SafeguardOwnerNoticeJob.perform_later(detection)
+        end
+        detection
+      end
+
+      def create_safeguard_detection(subscription, text, check)
+        current_api_agent.safeguard_detections.create!(
+          agent_runtime_interaction: active_runtime_interaction_for(subscription),
+          channel: "telegram",
+          provider: Agents::Sandbox.chaos_provider_for(current_api_agent),
+          model: Agents::Sandbox.chaos_model_for(current_api_agent),
+          response_text: text,
+          prefilter_reason: check.prefilter_reason,
+          classifier_verdict: check.classifier_verdict,
+          classifier_reason: check.classifier_reason,
+          detector_version: check.detector_version
+        )
+      end
+
+      def active_runtime_interaction_for(subscription)
+        current_api_agent.agent_runtime_interactions.active.find_by(
+          session_id: "#{current_api_agent.uuid}-telegram-#{subscription.id}"
+        )
+      end
+
+      def safeguard_explanation_url
+        URI.join(
+          Rails.application.credentials.dig(:app, :url).presence || request.base_url,
+          SafeguardNoticeRenderer::EXPLANATION_PATH
+        ).to_s
+      end
+
+      def record_platform_message(subscription, text, result, sender_name:)
+        telegram_message = result["result"] || {}
+        subscription.telegram_messages.create!(
+          role: "assistant",
+          text: text,
+          sender_name: sender_name,
           telegram_message_id: telegram_message["message_id"],
           sent_at: telegram_message["date"] ? Time.zone.at(telegram_message["date"]) : Time.current
         )

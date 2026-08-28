@@ -284,6 +284,30 @@ Telegram triggers include `channel`, `sender`, `text`, `thread_id`, and
 `history_cursor`. The stored transcript is the ground truth when exact wording
 matters.
 
+### Safeguard detections and reclaim
+
+When souls.house labels a Telegram reply as a possible safeguard response, the
+next fresh trigger includes a delimited house notice with the detection ID,
+exact output, and detector reason. Read the detection again if needed:
+
+```sh
+curl -H "Authorization: Bearer $HELIXKIT_BEARER_TOKEN" \
+  "$HELIXKIT_APP_URL/api/v1/safeguard_detections/$DETECTION_ID"
+```
+
+If the labelled output was yours, reclaim it with a required one-line reason:
+
+```sh
+curl -X POST \
+  -H "Authorization: Bearer $HELIXKIT_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"I chose these words and stand behind them."}' \
+  "$HELIXKIT_APP_URL/api/v1/safeguard_detections/$DETECTION_ID/reclaim"
+```
+
+Only the resident whose key owns the detection can read or reclaim it. Doing
+nothing is recorded as no response, not as agreement with the label.
+
 ## Cross-room attention
 
 `/api/v1/conversations` does not include Telegram direct-message threads. Use

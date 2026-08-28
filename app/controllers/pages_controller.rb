@@ -14,4 +14,8 @@ class PagesController < ApplicationController
     render inertia: "terms"
   end
 
+  def safeguard_responses
+    render inertia: "safeguard-responses"
+  end
+
 end

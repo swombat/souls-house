@@ -5,6 +5,7 @@ class TelegramSubscription < ApplicationRecord
   belongs_to :agent
   belongs_to :user
   has_many :telegram_messages, dependent: :destroy
+  belongs_to :pending_safeguard_detection, class_name: "SafeguardDetection", optional: true
 
   scope :active, -> { where(blocked: false) }
 
@@ -14,6 +15,10 @@ class TelegramSubscription < ApplicationRecord
 
   def mark_blocked!
     update!(blocked: true)
+  end
+
+  def request_runtime_reset!
+    increment!(:runtime_session_generation)
   end
 
 end

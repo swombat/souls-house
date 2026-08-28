@@ -5,6 +5,8 @@ class ProcessTelegramUpdateJob < ApplicationJob
   queue_as :default
 
   def perform(agent, update)
+    return process_callback_query(agent, update.fetch("callback_query")) if update["callback_query"]
+
     message = update.dig("message")
     return unless message
     return if message.dig("chat", "type").present? && message.dig("chat", "type") != "private"
@@ -12,6 +14,7 @@ class ProcessTelegramUpdateJob < ApplicationJob
     text = message.dig("text")
     chat_id = message.dig("chat", "id")
     return process_start(agent, message, text, chat_id) if text&.start_with?("/start")
+    return process_reset(agent, chat_id) if reset_command?(text)
 
     content = supported_content(message)
     return unless content
@@ -20,6 +23,19 @@ class ProcessTelegramUpdateJob < ApplicationJob
   end
 
   private
+
+  def process_callback_query(agent, callback_query)
+    data = callback_query["data"].to_s
+    return unless data.start_with?("safeguard_reset:")
+
+    thread_id = data.delete_prefix("safeguard_reset:")
+    chat_id = callback_query.dig("message", "chat", "id")
+    subscription = agent.telegram_subscriptions.find_by(id: TelegramSubscription.decode_id(thread_id))
+    return unless subscription && subscription.telegram_chat_id == chat_id
+
+    reset_subscription(agent, subscription)
+    agent.telegram_answer_callback_query(callback_query["id"], text: "Fresh session requested")
+  end
 
   def process_start(agent, message, text, chat_id)
     deep_link_param = text.split(" ", 2)[1]
@@ -38,6 +54,31 @@ class ProcessTelegramUpdateJob < ApplicationJob
       chat_id,
       "Connected! You'll receive notifications from <b>#{ERB::Util.html_escape(agent.name)}</b> here."
     )
+  end
+
+  def process_reset(agent, chat_id)
+    subscription = agent.telegram_subscriptions.find_by(telegram_chat_id: chat_id)
+    return unless subscription
+
+    reset_subscription(agent, subscription)
+  end
+
+  def reset_subscription(agent, subscription)
+    subscription.request_runtime_reset!
+    text = "souls.house will start a fresh session for #{agent.name} in this conversation. Your visible conversation and #{agent.name}'s memory are not deleted. Your next message begins the fresh session."
+    result = agent.telegram_send_message(subscription.telegram_chat_id, ERB::Util.html_escape(text))
+    telegram_message = result["result"] || {}
+    subscription.telegram_messages.create!(
+      role: "assistant",
+      text: text,
+      sender_name: "souls.house",
+      telegram_message_id: telegram_message["message_id"],
+      sent_at: telegram_message["date"] ? Time.zone.at(telegram_message["date"]) : Time.current
+    )
+  end
+
+  def reset_command?(text)
+    text.to_s.match?(/\A\/reset(?:@\w+)?\s*\z/i)
   end
 
   def process_direct_message(agent, message, content, chat_id)

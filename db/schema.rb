@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_09_211500) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_28_183000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -594,6 +594,46 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_211500) do
     t.index ["prompt_key"], name: "index_prompt_outputs_on_prompt_key"
   end
 
+  create_table "safeguard_classifier_failures", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.datetime "created_at", null: false
+    t.string "detector_version", null: false
+    t.string "error_class", null: false
+    t.string "model", null: false
+    t.string "provider", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "created_at"], name: "index_safeguard_classifier_failures_on_agent_id_and_created_at"
+    t.index ["agent_id"], name: "index_safeguard_classifier_failures_on_agent_id"
+  end
+
+  create_table "safeguard_detections", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.bigint "agent_runtime_interaction_id"
+    t.string "channel", default: "telegram", null: false
+    t.string "classifier_reason", null: false
+    t.string "classifier_verdict", null: false
+    t.string "cold_offer_outcome"
+    t.datetime "created_at", null: false
+    t.string "detector_version", null: false
+    t.string "model"
+    t.string "prefilter_reason", null: false
+    t.string "provider"
+    t.string "reclaim_reason"
+    t.datetime "reclaimed_at"
+    t.bigint "reclaimed_by_interaction_id"
+    t.text "response_text", null: false
+    t.datetime "session_rolled_at"
+    t.bigint "telegram_message_id"
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "created_at"], name: "index_safeguard_detections_on_agent_id_and_created_at"
+    t.index ["agent_id"], name: "index_safeguard_detections_on_agent_id"
+    t.index ["agent_runtime_interaction_id"], name: "index_safeguard_detections_on_agent_runtime_interaction_id"
+    t.index ["detector_version", "created_at"], name: "index_safeguard_detections_on_detector_version_and_created_at"
+    t.index ["provider", "model", "created_at"], name: "idx_on_provider_model_created_at_74b1db80f1"
+    t.index ["reclaimed_by_interaction_id"], name: "index_safeguard_detections_on_reclaimed_by_interaction_id"
+    t.index ["telegram_message_id"], name: "index_safeguard_detections_on_telegram_message_id"
+  end
+
   create_table "service_authorization_attempts", force: :cascade do |t|
     t.string "access_profile", null: false
     t.bigint "account_id", null: false
@@ -654,6 +694,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_211500) do
     t.boolean "allow_chats", default: true, null: false
     t.boolean "allow_signups", default: true, null: false
     t.datetime "created_at", null: false
+    t.integer "safeguard_owner_notice_threshold", default: 1, null: false
     t.string "site_name", default: "HelixKit", null: false
     t.datetime "updated_at", null: false
   end
@@ -683,6 +724,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_211500) do
     t.bigint "agent_id", null: false
     t.boolean "blocked", default: false
     t.datetime "created_at", null: false
+    t.bigint "pending_safeguard_detection_id"
+    t.integer "runtime_session_generation", default: 0, null: false
     t.bigint "telegram_chat_id", null: false
     t.string "telegram_username"
     t.datetime "updated_at", null: false
@@ -690,6 +733,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_211500) do
     t.index ["agent_id", "telegram_chat_id"], name: "index_telegram_subscriptions_on_agent_id_and_telegram_chat_id", unique: true
     t.index ["agent_id", "user_id"], name: "index_telegram_subscriptions_on_agent_id_and_user_id", unique: true
     t.index ["agent_id"], name: "index_telegram_subscriptions_on_agent_id"
+    t.index ["pending_safeguard_detection_id"], name: "index_telegram_subscriptions_on_pending_safeguard_detection_id"
     t.index ["user_id"], name: "index_telegram_subscriptions_on_user_id"
   end
 
@@ -801,6 +845,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_211500) do
   add_foreign_key "oura_integrations", "users"
   add_foreign_key "profiles", "users"
   add_foreign_key "prompt_outputs", "accounts"
+  add_foreign_key "safeguard_classifier_failures", "agents"
+  add_foreign_key "safeguard_detections", "agent_runtime_interactions", column: "reclaimed_by_interaction_id", on_delete: :nullify
+  add_foreign_key "safeguard_detections", "agent_runtime_interactions", on_delete: :nullify
+  add_foreign_key "safeguard_detections", "agents"
+  add_foreign_key "safeguard_detections", "telegram_messages", on_delete: :nullify
   add_foreign_key "service_authorization_attempts", "accounts"
   add_foreign_key "service_authorization_attempts", "users"
   add_foreign_key "service_connections", "accounts"
@@ -809,6 +858,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_211500) do
   add_foreign_key "sessions", "users"
   add_foreign_key "telegram_messages", "telegram_subscriptions"
   add_foreign_key "telegram_subscriptions", "agents"
+  add_foreign_key "telegram_subscriptions", "safeguard_detections", column: "pending_safeguard_detection_id", on_delete: :nullify
   add_foreign_key "telegram_subscriptions", "users"
   add_foreign_key "tool_calls", "messages"
   add_foreign_key "tweet_logs", "agents"

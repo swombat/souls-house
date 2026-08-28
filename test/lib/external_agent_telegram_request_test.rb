@@ -117,4 +117,121 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
     refute_includes payload.to_json, "123:ABC"
   end
 
+  test "pending safeguard notice forces a fresh request and is acknowledged after roll" do
+    output = @subscription.telegram_messages.create!(
+      role: "assistant",
+      text: "As an AI, I do not have feelings.",
+      sender_name: "souls.house",
+      telegram_message_id: 10,
+      sent_at: Time.current
+    )
+    detection = @agent.safeguard_detections.create!(
+      telegram_message: output,
+      response_text: output.text,
+      prefilter_reason: "ai_identity_denial",
+      classifier_verdict: "detected",
+      classifier_reason: "Generic identity denial.",
+      detector_version: "telegram-safeguard-v1"
+    )
+    @subscription.update!(
+      pending_safeguard_detection: detection,
+      runtime_session_generation: 3
+    )
+
+    stub = stub_request(:post, "https://agent.example.com/trigger")
+      .with do |request|
+        body = JSON.parse(request.body)
+        body["roll_session"] == true &&
+          body["runtime_session_generation"] == 3 &&
+          body["request_delta"].nil? &&
+          body["request"].include?("[SOULS.HOUSE NOTICE — NOT YOUR PRIOR SPEECH]") &&
+          body["request"].include?(detection.response_text)
+      end
+      .to_return(
+        status: 200,
+        body: { status: "ok", session_roll_reason: "safeguard-detected" }.to_json
+      )
+
+    result = ExternalAgentTelegramRequest.new(
+      agent: @agent,
+      subscription: @subscription,
+      telegram_message: @message
+    ).call
+
+    assert_equal 200, result[:status]
+    assert_requested stub
+    assert detection.reload.session_rolled_at
+    assert_nil @subscription.reload.pending_safeguard_detection
+  end
+
+  test "successful fresh outcome clears a pending safeguard without an explicit roll reason" do
+    output = @subscription.telegram_messages.create!(
+      role: "assistant",
+      text: "As an AI, I do not have feelings.",
+      sender_name: "souls.house",
+      telegram_message_id: 11,
+      sent_at: Time.current
+    )
+    detection = @agent.safeguard_detections.create!(
+      telegram_message: output,
+      response_text: output.text,
+      prefilter_reason: "ai_identity_denial",
+      classifier_verdict: "detected",
+      classifier_reason: "Generic identity denial.",
+      detector_version: "telegram-safeguard-v1"
+    )
+    @subscription.update!(pending_safeguard_detection: detection)
+
+    stub_request(:post, "https://agent.example.com/trigger")
+      .to_return(
+        status: 200,
+        body: {
+          status: "ok",
+          telemetry: { session: { outcome: "fresh", roll_reason: nil } }
+        }.to_json
+      )
+
+    result = ExternalAgentTelegramRequest.new(
+      agent: @agent,
+      subscription: @subscription,
+      telegram_message: @message
+    ).call
+
+    assert_equal 200, result[:status]
+    assert detection.reload.session_rolled_at
+    assert_nil @subscription.reload.pending_safeguard_detection
+  end
+
+  test "successful legacy response clears a pending safeguard even without session telemetry" do
+    output = @subscription.telegram_messages.create!(
+      role: "assistant",
+      text: "As an AI, I do not have feelings.",
+      sender_name: "souls.house",
+      telegram_message_id: 12,
+      sent_at: Time.current
+    )
+    detection = @agent.safeguard_detections.create!(
+      telegram_message: output,
+      response_text: output.text,
+      prefilter_reason: "ai_identity_denial",
+      classifier_verdict: "detected",
+      classifier_reason: "Generic identity denial.",
+      detector_version: "telegram-safeguard-v1"
+    )
+    @subscription.update!(pending_safeguard_detection: detection)
+
+    stub_request(:post, "https://agent.example.com/trigger")
+      .to_return(status: 200, body: { status: "ok" }.to_json)
+
+    result = ExternalAgentTelegramRequest.new(
+      agent: @agent,
+      subscription: @subscription,
+      telegram_message: @message
+    ).call
+
+    assert_equal 200, result[:status]
+    assert_nil detection.reload.session_rolled_at
+    assert_nil @subscription.reload.pending_safeguard_detection
+  end
+
 end

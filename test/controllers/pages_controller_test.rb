@@ -41,6 +41,13 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "terms", inertia_component
   end
 
+  test "should get safeguard explanation without authentication" do
+    get safeguard_responses_path
+
+    assert_response :success
+    assert_equal "safeguard-responses", inertia_component
+  end
+
   test "should handle inertia version conflicts gracefully" do
     get root_path, headers: { "X-Inertia" => true, "X-Inertia-Version" => "wrong-version" }
     assert_response :conflict

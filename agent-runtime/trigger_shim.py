@@ -19,7 +19,9 @@ Trigger payload (HelixKit ChaosTriggerClient shape):
       "session_id": "<agent-uuid>-<chat-id>",     # HelixKit's stable session key
       "request": "HelixKit received a request...",# full prompt (always present)
       "request_delta": "...",                     # optional slim prompt, used only on resume
-      "persistent_session": true,                 # optional; enables resume behaviour
+       "persistent_session": true,                 # optional; enables resume behaviour
+       "roll_session": true,                       # optional; force a fresh mapped session
+       "runtime_session_generation": 2,            # optional; roll when generation changes
        "conversation_id": "WYNWQe",                # optional, for logs only
        "requested_by": "user@example.com",         # optional, for logs only
        "provider": "anthropic",                    # optional; falls back to AGENT_PROVIDER env
@@ -212,6 +214,8 @@ def trigger():
     prompt = payload.get("request") or payload.get("prompt")
     request_delta = payload.get("request_delta")
     persistent_session = bool(payload.get("persistent_session"))
+    roll_session = bool(payload.get("roll_session"))
+    runtime_session_generation = _optional_int(payload.get("runtime_session_generation")) or 0
     provider = payload.get("provider", AGENT_PROVIDER)
     model = payload.get("model", AGENT_DEFAULT_MODEL)
     reasoning_effort = payload.get("reasoning_effort")
@@ -250,7 +254,8 @@ def trigger():
             return persistent_trigger(
                 session_id, prompt, request_delta, model, timeout_secs,
                 provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
-                session_lock=session_lock,
+                session_lock=session_lock, roll_session=roll_session,
+                runtime_session_generation=runtime_session_generation,
             )
         return legacy_trigger(
             session_id, prompt, model, timeout_secs,
@@ -340,6 +345,7 @@ def legacy_trigger(
 def persistent_trigger(
     session_id, prompt, request_delta, model, timeout_secs,
     provider=None, reasoning_effort=None, auth_mode="api_key", session_lock=None,
+    roll_session=False, runtime_session_generation=0,
 ):
     """Resume the session mapped to session_id, or start (and record) a fresh one.
 
@@ -381,8 +387,12 @@ def persistent_trigger(
         mapping_found = record is not None
         prior_process_id = record.get("chaos_process_id") if record else None
         roll, changed_identity_files = (
-            roll_decision(record, model, provider, auth_mode=auth_mode)
-            if record else (None, [])
+            roll_decision(
+                record, model, provider, auth_mode=auth_mode,
+                roll_session=roll_session,
+                runtime_session_generation=runtime_session_generation,
+            )
+            if record else ("safeguard-detected" if roll_session else None, [])
         )
         if record and roll:
             log.info(f"rolling session session_id={session_id} reason={roll}")
@@ -529,6 +539,7 @@ def persistent_trigger(
         if result.returncode == 0 and events["process_id"]:
             save_session_record(
                 session_id, model, events, provider=provider, auth_mode=auth_mode,
+                runtime_session_generation=runtime_session_generation,
             )
         if result.returncode != 0:
             outcome = "failed"
@@ -1048,7 +1059,10 @@ def load_session_record(session_id):
     return record
 
 
-def save_session_record(session_id, model, events, provider=None, auth_mode="api_key"):
+def save_session_record(
+    session_id, model, events, provider=None, auth_mode="api_key",
+    runtime_session_generation=0,
+):
     now = _utcnow_iso()
     record = {
         "schema_version": SIDECAR_SCHEMA_VERSION,
@@ -1057,6 +1071,7 @@ def save_session_record(session_id, model, events, provider=None, auth_mode="api
         "provider": provider or AGENT_PROVIDER,
         "auth_mode": auth_mode,
         "model": model,
+        "runtime_session_generation": runtime_session_generation,
         "created_at": now,
         "last_finished_at": now,
         "trigger_sequence": 1,
@@ -1099,8 +1114,13 @@ def retire_session_record(session_id, reason):
             pass
 
 
-def roll_decision(record, model, provider=None, auth_mode="api_key"):
+def roll_decision(
+    record, model, provider=None, auth_mode="api_key",
+    roll_session=False, runtime_session_generation=0,
+):
     """Return (reason, changed identity files); reason None means resume."""
+    if roll_session:
+        return "safeguard-detected", []
     schema_version = _optional_int(record.get("schema_version", 1))
     if schema_version is None or schema_version > SIDECAR_SCHEMA_VERSION:
         return "sidecar-schema-unsupported", []
@@ -1110,6 +1130,8 @@ def roll_decision(record, model, provider=None, auth_mode="api_key"):
         return "model-changed", []
     if record.get("auth_mode", "api_key") != auth_mode:
         return "auth-mode-changed", []
+    if (_optional_int(record.get("runtime_session_generation")) or 0) != runtime_session_generation:
+        return "requested-generation-changed", []
     changed_files = changed_identity_files(record.get("identity_fingerprint") or {})
     if changed_files:
         return "identity-changed", changed_files

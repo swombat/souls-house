@@ -180,6 +180,9 @@ Rails.application.routes.draw do
         as: :telegram_conversation_message_preview_frame
       resources :telegram_messages, only: :create
       resources :telegram_subscribers, only: :index
+      resources :safeguard_detections, only: :show do
+        resource :reclaim, only: :create, controller: "safeguard_reclaims"
+      end
       resource :attention, only: :show
       resources :service_connections, only: [] do
         resource :access_token, only: :show, controller: "service_connection_tokens"
@@ -214,6 +217,7 @@ Rails.application.routes.draw do
   # Defines the root path route ("/")
   get "privacy" => "pages#privacy", as: :privacy
   get "terms" => "pages#terms", as: :terms
+  get "safeguard-responses" => "pages#safeguard_responses", as: :safeguard_responses
   get "create_flash" => "pages#create_flash"
   root "pages#home"
 end

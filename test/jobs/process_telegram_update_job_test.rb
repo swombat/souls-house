@@ -210,6 +210,46 @@ class ProcessTelegramUpdateJobTest < ActiveSupport::TestCase
     end
   end
 
+  test "intercepts reset without storing it or triggering the resident" do
+    subscription = @agent.telegram_subscriptions.create!(user: @user, telegram_chat_id: 456)
+
+    Net::HTTP.stub :post, @fake_ok do
+      assert_no_enqueued_jobs only: TelegramAgentTriggerJob do
+        assert_difference "TelegramMessage.count", 1 do
+          ProcessTelegramUpdateJob.perform_now(@agent, build_update("/reset"))
+        end
+      end
+    end
+
+    assert_equal 1, subscription.reload.runtime_session_generation
+    assert_equal "souls.house", subscription.telegram_messages.last.sender_name
+    refute subscription.telegram_messages.exists?(role: "user", text: "/reset")
+  end
+
+  test "reset callback verifies the thread and bumps its generation" do
+    subscription = @agent.telegram_subscriptions.create!(user: @user, telegram_chat_id: 456)
+    methods = []
+    responder = lambda do |uri, _body, _headers|
+      methods << uri.path
+      @fake_ok
+    end
+    update = {
+      "callback_query" => {
+        "id" => "callback-1",
+        "data" => "safeguard_reset:#{subscription.to_param}",
+        "message" => { "chat" => { "id" => 456 } }
+      }
+    }
+
+    Net::HTTP.stub :post, responder do
+      ProcessTelegramUpdateJob.perform_now(@agent, update)
+    end
+
+    assert_equal 1, subscription.reload.runtime_session_generation
+    assert methods.any? { |path| path.end_with?("/sendMessage") }
+    assert methods.any? { |path| path.end_with?("/answerCallbackQuery") }
+  end
+
   private
 
   def build_update(text, username: nil)

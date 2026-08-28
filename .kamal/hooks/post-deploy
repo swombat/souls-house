@@ -10,16 +10,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 if [[ "${HELIXKIT_SKIP_AGENT_RECONCILE:-}" == "1" ]]; then
   echo "Skipping hosted-agent runtime reconciliation (HELIXKIT_SKIP_AGENT_RECONCILE=1)"
-  exit 0
+  POST_DEPLOY_JOBS="RefreshTelegramWebhooksJob.perform_later"
+else
+  POST_DEPLOY_JOBS="HostedAgentRuntimeReconcileJob.set(wait: 5.minutes).perform_later; RefreshTelegramWebhooksJob.perform_later"
 fi
 
-echo "Queueing hosted-agent runtime reconciliation for 5 minutes after deploy"
+echo "Queueing hosted-agent runtime reconciliation and Telegram webhook refresh"
 if [[ -n "${KAMAL_DESTINATION:-}" ]]; then
   "${ROOT}/bin/kamal" app exec --skip-hooks --reuse -r web -d "${KAMAL_DESTINATION}" \
-    "bin/rails runner 'HostedAgentRuntimeReconcileJob.set(wait: 5.minutes).perform_later'" \
-    || echo "WARNING: could not enqueue hosted-agent runtime reconciliation"
+    "bin/rails runner '${POST_DEPLOY_JOBS}'" \
+    || echo "WARNING: could not enqueue post-deploy jobs"
 else
   "${ROOT}/bin/kamal" app exec --skip-hooks --reuse -r web \
-    "bin/rails runner 'HostedAgentRuntimeReconcileJob.set(wait: 5.minutes).perform_later'" \
-    || echo "WARNING: could not enqueue hosted-agent runtime reconciliation"
+    "bin/rails runner '${POST_DEPLOY_JOBS}'" \
+    || echo "WARNING: could not enqueue post-deploy jobs"
 fi

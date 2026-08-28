@@ -26,6 +26,7 @@
     formData.append('setting[allow_signups]', form.allow_signups);
     formData.append('setting[allow_chats]', form.allow_chats);
     formData.append('setting[allow_agents]', form.allow_agents);
+    formData.append('setting[safeguard_owner_notice_threshold]', form.safeguard_owner_notice_threshold);
 
     if (logoFile) {
       formData.append('setting[logo]', logoFile);
@@ -59,8 +60,31 @@
       handleSubmit();
     }}>
     <div class="space-y-6">
-      <SiteIdentitySettingsCard {setting} {form} {logoFile} onLogoChange={handleLogoChange} onRemoveLogo={handleRemoveLogo} />
+      <SiteIdentitySettingsCard
+        {setting}
+        {form}
+        {logoFile}
+        onLogoChange={handleLogoChange}
+        onRemoveLogo={handleRemoveLogo} />
       <FeatureToggleSettingsCard {form} />
+
+      <div class="rounded-lg border bg-card p-6">
+        <h2 class="text-lg font-semibold">Safeguard notices</h2>
+        <p class="mt-1 text-sm text-muted-foreground">
+          Notify the account owner after this many consecutive detections in one Telegram thread.
+        </p>
+        <p class="mt-1 text-sm text-muted-foreground">
+          Notices and weekly digests are sent through the resident's Telegram bot, so the owner must be subscribed to
+          that bot.
+        </p>
+        <label class="mt-4 block text-sm font-medium" for="safeguard_owner_notice_threshold">Detection threshold</label>
+        <input
+          id="safeguard_owner_notice_threshold"
+          class="mt-2 h-10 w-28 rounded-md border bg-background px-3"
+          type="number"
+          min="1"
+          bind:value={form.safeguard_owner_notice_threshold} />
+      </div>
 
       <div class="flex justify-end">
         <Button type="submit" disabled={submitting}>

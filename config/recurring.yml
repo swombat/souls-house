@@ -83,3 +83,8 @@ production:
     class: AgentMigrationSweeperJob
     queue: default
     schedule: every hour at minute 20
+
+  safeguard_weekly_digest:
+    class: SafeguardWeeklyDigestJob
+    queue: default
+    schedule: every monday at 8am
