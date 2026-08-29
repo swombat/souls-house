@@ -1,5 +1,9 @@
 class ExternalAgentResponseRequest
 
+  TRANSCRIPT_MESSAGE_LIMIT = 30
+  TRANSCRIPT_BYTE_BUDGET = 80_000
+  TRANSCRIPT_SEPARATOR = "\n\n"
+
   def initialize(agent:, chat:, requested_by: "HelixKit", initiation_reason: nil)
     @agent = agent
     @chat = chat
@@ -172,11 +176,13 @@ class ExternalAgentResponseRequest
 
   def conversation_context
     messages = full_window_messages
-    lines = messages.map { |message| format_transcript_line(message) }
+    lines = full_window_lines
+    omitted_count = full_window_omitted_count
 
     return <<~TEXT.strip if lines.empty?
       LIVE HELIXKIT TRANSCRIPT FROM DATABASE:
       message_count_included: 0
+      messages_omitted_before_window: #{omitted_count}
 
       BEGIN LIVE HELIXKIT TRANSCRIPT FROM DATABASE
       _No messages yet._
@@ -188,12 +194,13 @@ class ExternalAgentResponseRequest
     <<~TEXT.strip
       LIVE HELIXKIT TRANSCRIPT FROM DATABASE:
       message_count_included: #{messages.length}
+      messages_omitted_before_window: #{omitted_count}
 
       BEGIN LIVE HELIXKIT TRANSCRIPT FROM DATABASE
-      #{lines.join("\n\n")}
+      #{lines.join(TRANSCRIPT_SEPARATOR)}
       END LIVE HELIXKIT TRANSCRIPT FROM DATABASE
 
-      Ground truth warning: Only the LIVE HELIXKIT TRANSCRIPT section above is the current stored conversation transcript. Recent journals, memories, summaries, prior tool output, and any other context are memory or diagnostics, not current chat messages.
+      Ground truth warning: Only the LIVE HELIXKIT TRANSCRIPT section above is the current stored conversation transcript context. It may be a bounded recent window when the full transcript is large. Recent journals, memories, summaries, prior tool output, and any other context are memory or diagnostics, not current chat messages.
     TEXT
   end
 
@@ -226,10 +233,52 @@ class ExternalAgentResponseRequest
   end
 
   def full_window_messages
-    @full_window_messages ||= chat.messages
+    full_window_entries.map(&:first)
+  end
+
+  def full_window_lines
+    full_window_entries.map(&:second)
+  end
+
+  def full_window_omitted_count
+    [ chat.messages.count - full_window_messages.length, 0 ].max
+  end
+
+  def full_window_entries
+    return @full_window_entries if defined?(@full_window_entries)
+
+    candidates = chat.messages
       .includes(:user, :agent, attachments_attachments: :blob)
       .order(:created_at)
-      .last(30)
+      .last(TRANSCRIPT_MESSAGE_LIMIT)
+    entries = []
+    bytes_used = 0
+
+    candidates.reverse_each do |message|
+      line = format_transcript_line(message)
+      separator_bytes = entries.empty? ? 0 : TRANSCRIPT_SEPARATOR.bytesize
+      available = TRANSCRIPT_BYTE_BUDGET - bytes_used - separator_bytes
+      break if available <= 0
+
+      if line.bytesize > available
+        break if entries.any?
+        line = truncate_transcript_line(line, available)
+      end
+
+      entries << [ message, line ]
+      bytes_used += separator_bytes + line.bytesize
+    end
+
+    @full_window_entries = entries.reverse
+  end
+
+  def truncate_transcript_line(line, available_bytes)
+    marker = "\n\n_[Message truncated to fit the external runtime transcript budget.]_"
+    return marker.byteslice(0, available_bytes).to_s if available_bytes <= marker.bytesize
+
+    prefix = line.byteslice(0, available_bytes - marker.bytesize).to_s
+    prefix = prefix.byteslice(0, prefix.bytesize - 1).to_s until prefix.valid_encoding?
+    "#{prefix}#{marker}"
   end
 
   # The most recent successful persistent-session trigger for this agent+chat.

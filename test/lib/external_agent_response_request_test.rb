@@ -113,6 +113,40 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     )
   end
 
+  test "full transcript keeps recent messages within the runtime byte budget" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Long transcript")
+    messages = 6.times.map do |index|
+      chat.messages.create!(
+        role: "user",
+        content: "message-#{index}-#{("x" * 20_000)}"
+      )
+    end
+
+    request = ExternalAgentResponseRequest.new(agent: agent, chat: chat)
+    text = request.send(:request_text)
+
+    assert_operator text.bytesize, :<, 90_000
+    assert_includes text, "message-5-"
+    refute_includes text, "message-0-"
+    assert_match(/messages_omitted_before_window: [1-9]/, text)
+    assert_equal messages.last.id, request.send(:computed_last_included_message_id)
+  end
+
+  test "oversized latest message is truncated without breaking unicode" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Oversized message")
+    message = chat.messages.create!(role: "user", content: "é" * 50_000)
+
+    request = ExternalAgentResponseRequest.new(agent: agent, chat: chat)
+    text = request.send(:request_text)
+
+    assert text.valid_encoding?
+    assert_operator text.bytesize, :<, 90_000
+    assert_includes text, "Message truncated to fit the external runtime transcript budget"
+    assert_equal message.id, request.send(:computed_last_included_message_id)
+  end
+
   test "records runtime stdout and stderr when triggering external agent" do
     agent = agents(:research_assistant)
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "External prompt")
