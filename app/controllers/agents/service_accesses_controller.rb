@@ -4,6 +4,12 @@ class Agents::ServiceAccessesController < ApplicationController
 
   def update
     enabled = ActiveModel::Type::Boolean.new.cast(params.require(:enabled))
+    if enabled && @connection.status != "connected"
+      redirect_back_or_to edit_account_agent_path(current_account, @agent, tab: "integrations"),
+                          alert: "Reconnect this service before enabling resident access"
+      return
+    end
+
     allowed = enabled ? @connection.provisionable_by?(Current.user) : @connection.manageable_by?(Current.user)
     unless allowed
       redirect_back_or_to edit_account_agent_path(current_account, @agent, tab: "integrations"),
@@ -21,8 +27,8 @@ class Agents::ServiceAccessesController < ApplicationController
           @connection,
           resident_id: @agent.to_param,
           provider: @connection.provider)
-    redirect_to edit_account_agent_path(current_account, @agent, tab: "integrations"),
-                notice: enabled ? "Service access will be provisioned" : "Service access will be removed"
+    redirect_back_or_to edit_account_agent_path(current_account, @agent, tab: "integrations"),
+                        notice: enabled ? "Service access will be provisioned" : "Service access will be removed"
   end
 
   private

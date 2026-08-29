@@ -1,6 +1,7 @@
 <script>
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
+  import { Switch } from '$lib/components/shadcn/switch/index.js';
   import { DropboxLogo, GithubLogo, GoogleLogo, Heartbeat, ArrowLeft } from 'phosphor-svelte';
   import { submitNativePost } from '$lib/integration-forms';
   import ServiceAuthoritySelector from '$lib/components/service-authority-selector.svelte';
@@ -10,6 +11,7 @@
   let authoritySelections = $state({});
   let connectionAuthoritySelections = $state({});
   let credentialValues = $state({});
+  let residentAccessUpdating = $state({});
 
   function profileFor(service) {
     return selectedProfiles[service.key] || service.access_profiles.find((profile) => profile.default)?.key;
@@ -101,6 +103,27 @@
     router.patch(`/accounts/${account.id}/service_connections/${connection.id}`, {
       service_connection: attributes,
     });
+  }
+
+  function residentAccessKey(connection, resident) {
+    return `${connection.id}:${resident.id}`;
+  }
+
+  function toggleResidentAccess(connection, resident, enabled) {
+    const key = residentAccessKey(connection, resident);
+    residentAccessUpdating = { ...residentAccessUpdating, [key]: true };
+    router.patch(
+      resident.access_update_url,
+      { enabled },
+      {
+        preserveScroll: true,
+        onFinish() {
+          const next = { ...residentAccessUpdating };
+          delete next[key];
+          residentAccessUpdating = next;
+        },
+      }
+    );
   }
 
   function removeConnection(connection) {
@@ -257,6 +280,39 @@
             {/if}
           {/if}
         {/if}
+        <div class="space-y-3 border-t pt-4">
+          <div>
+            <h4 class="text-sm font-medium">Resident access</h4>
+            <p class="text-xs text-muted-foreground">Choose which residents can use this complete credential.</p>
+          </div>
+          {#if connection.residents.length === 0}
+            <p class="text-sm text-muted-foreground">There are no residents in this account yet.</p>
+          {:else}
+            <div class="grid gap-2 sm:grid-cols-2">
+              {#each connection.residents as resident (resident.id)}
+                {@const updating = residentAccessUpdating[residentAccessKey(connection, resident)]}
+                <div class="flex items-center justify-between gap-4 rounded-md border px-3 py-2">
+                  <div class="min-w-0">
+                    <label class="block truncate text-sm font-medium" for={`${connection.id}-${resident.id}`}>
+                      {resident.name}
+                    </label>
+                    <p class="text-xs text-muted-foreground">
+                      {resident.active
+                        ? resident.provisioning_status || (resident.enabled ? 'Enabled' : 'Disabled')
+                        : 'Inactive'}
+                    </p>
+                  </div>
+                  <Switch
+                    id={`${connection.id}-${resident.id}`}
+                    checked={resident.enabled}
+                    disabled={updating || (!resident.enabled && connection.status !== 'connected')}
+                    onCheckedChange={(enabled) => toggleResidentAccess(connection, resident, enabled)}
+                    aria-label={`${resident.enabled ? 'Disable' : 'Enable'} ${connection.label} for ${resident.name}`} />
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
         <label class="flex items-center gap-3 text-sm">
           <input
             type="checkbox"
