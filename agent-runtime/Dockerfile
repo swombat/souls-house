@@ -97,14 +97,27 @@ RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
 # The Google Workspace gws CLI exposes Drive's discovery-generated command
 # surface. Souls supplies short-lived access tokens through helixkit-gws rather
 # than storing gws OAuth credentials in resident-owned state.
+ARG TARGETARCH
 ARG GOOGLE_WORKSPACE_CLI_VERSION=0.22.5
-RUN npm install -g "@googleworkspace/cli@${GOOGLE_WORKSPACE_CLI_VERSION}" \
+ARG GOOGLE_WORKSPACE_CLI_AMD64_SHA256=4db473dde4b1ab872e4ff35d769b0d4af1f1a6441a605e79d5cf8ada9c87e920
+ARG GOOGLE_WORKSPACE_CLI_ARM64_SHA256=e700fe63524932b10ec2130b47ece90aa850e66005fe52ccfc4cf8767bf9919a
+RUN case "${TARGETARCH}" in \
+      amd64) target=x86_64-unknown-linux-musl; checksum="${GOOGLE_WORKSPACE_CLI_AMD64_SHA256}" ;; \
+      arm64) target=aarch64-unknown-linux-musl; checksum="${GOOGLE_WORKSPACE_CLI_ARM64_SHA256}" ;; \
+      *) echo "Unsupported gws architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && artifact="google-workspace-cli-${target}.tar.gz" \
+    && url="https://github.com/googleworkspace/cli/releases/download/v${GOOGLE_WORKSPACE_CLI_VERSION}/${artifact}" \
+    && curl -fsSL "${url}" -o "/tmp/${artifact}" \
+    && echo "${checksum}  /tmp/${artifact}" | sha256sum -c - \
+    && tar -xzf "/tmp/${artifact}" -C /tmp ./gws \
+    && install -m 0755 /tmp/gws /usr/local/bin/gws \
+    && rm -f "/tmp/${artifact}" /tmp/gws \
     && gws --version
 
 # Chaos drives Google's official Antigravity CLI for Gemini subscription turns.
 # Download the exact official Linux artifact and verify its published checksum;
 # the unprivileged agent user cannot replace the root-owned binary at runtime.
-ARG TARGETARCH
 ARG ANTIGRAVITY_VERSION=1.1.15
 ARG ANTIGRAVITY_BUILD=5350383476932608
 ARG ANTIGRAVITY_AMD64_SHA512=7d6020caff2e06a5ddf2553f2d9d5b428e3becc69727d11032f10e40609b938db428578ccd5c72694bab5e4da483de9ad3121578cc172adf174aa5263ce51dcc
