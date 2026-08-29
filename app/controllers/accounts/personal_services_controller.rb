@@ -1,6 +1,8 @@
 class Accounts::PersonalServicesController < ApplicationController
 
   def show
+    service_definitions = Services::Definition.all
+      .select { |definition| definition.supports_management_scope?("personal") }
     agents = current_account.agents.by_name.to_a
     connections = current_account.service_connections.personal
       .where(connected_by_user: Current.user)
@@ -12,9 +14,8 @@ class Accounts::PersonalServicesController < ApplicationController
 
     render inertia: "accounts/personal_services", props: {
       account: current_account.as_json,
-      services: Services::Definition.all
-        .select { |definition| definition.supports_management_scope?("personal") }
-        .map(&:as_json),
+      services: service_definitions.map(&:as_json),
+      focused_service: service_definitions.find { |definition| definition.key == params[:connect] }&.as_json,
       connections: connections.map do |connection|
         connection.as_connection_json(current_user: Current.user).merge(
           residents: agents.map do |agent|

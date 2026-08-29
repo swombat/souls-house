@@ -48,4 +48,18 @@ class Accounts::PersonalServicesControllerTest < ActionDispatch::IntegrationTest
     )
   end
 
+  test "exposes one focused provider setup when requested" do
+    get account_personal_services_path(@account), params: { connect: "google_workspace" }
+
+    assert_response :success
+    assert_equal "google_workspace", inertia_shared_props.dig("focused_service", "key")
+  end
+
+  test "ignores an unknown focused provider" do
+    get account_personal_services_path(@account), params: { connect: "unknown" }
+
+    assert_response :success
+    assert_nil inertia_shared_props["focused_service"]
+  end
+
 end

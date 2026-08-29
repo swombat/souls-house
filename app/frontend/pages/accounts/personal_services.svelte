@@ -6,12 +6,13 @@
   import { submitNativePost } from '$lib/integration-forms';
   import ServiceAuthoritySelector from '$lib/components/service-authority-selector.svelte';
 
-  let { account, services = [], connections = [] } = $props();
+  let { account, services = [], connections = [], focused_service: focusedService = null } = $props();
   let selectedProfiles = $state({});
   let authoritySelections = $state({});
   let connectionAuthoritySelections = $state({});
   let credentialValues = $state({});
   let residentAccessUpdating = $state({});
+  let editingConnections = $state({});
 
   function profileFor(service) {
     return selectedProfiles[service.key] || service.access_profiles.find((profile) => profile.default)?.key;
@@ -99,6 +100,52 @@
     return 'Direct external-service access for selected residents.';
   }
 
+  function serviceIconClass(serviceKey) {
+    if (serviceKey === 'dropbox') return 'bg-blue-600 text-white';
+    if (serviceKey === 'google_workspace') return 'bg-green-600 text-white';
+    if (serviceKey === 'github') return 'bg-neutral-900 text-white';
+    return 'bg-red-500 text-white';
+  }
+
+  function shortScope(scope) {
+    return scope
+      .replace('https://www.googleapis.com/auth/', '')
+      .replace('https://mail.google.com/', 'mail')
+      .replace('https://www.googleapis.com/', '');
+  }
+
+  function visibleScopes(connection) {
+    return (connection.granted_scopes || [])
+      .map(shortScope)
+      .filter((scope) => !['openid', 'userinfo.email', 'email'].includes(scope));
+  }
+
+  function editingConnection(connection) {
+    return editingConnections[connection.id] || connection.status === 'reauthorizing';
+  }
+
+  function editConnection(connection) {
+    editingConnections = { ...editingConnections, [connection.id]: true };
+  }
+
+  function cancelEditingConnection(connection) {
+    const next = { ...editingConnections };
+    delete next[connection.id];
+    editingConnections = next;
+    const selections = { ...connectionAuthoritySelections };
+    delete selections[connection.id];
+    connectionAuthoritySelections = selections;
+  }
+
+  function residentTransition(resident) {
+    if (resident.provisioning_status === 'pending') return 'Adding…';
+    if (resident.provisioning_status === 'removal_pending') return 'Removing…';
+    if (resident.provisioning_status && resident.provisioning_status !== 'provisioned') {
+      return resident.provisioning_status.replaceAll('_', ' ');
+    }
+    return null;
+  }
+
   function updateConnection(connection, attributes) {
     router.patch(`/accounts/${account.id}/service_connections/${connection.id}`, {
       service_connection: attributes,
@@ -139,51 +186,38 @@
 
 <svelte:head><title>Personal Services</title></svelte:head>
 
-<div class="container mx-auto max-w-5xl space-y-8 p-8">
-  <a href="/user/edit" class="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-    <ArrowLeft size={16} /> User settings
-  </a>
-  <div>
-    <h1 class="text-3xl font-bold">Personal Services</h1>
-    <p class="mt-2 text-muted-foreground">
-      Connect your own external identities to {account.name}, then choose which residents you trust with each
-      credential.
-    </p>
-  </div>
-
-  <section class="grid gap-4 md:grid-cols-2">
-    {#each services as service}
-      <div class="space-y-4 rounded-lg border p-5">
-        <div class="flex gap-4">
-          <div
-            class={service.key === 'dropbox'
-              ? 'flex size-11 items-center justify-center rounded-xl bg-blue-600 text-white'
-              : service.key === 'google_workspace'
-                ? 'flex size-11 items-center justify-center rounded-xl bg-green-600 text-white'
-                : service.key === 'github'
-                  ? 'flex size-11 items-center justify-center rounded-xl bg-neutral-900 text-white'
-                  : 'flex size-11 items-center justify-center rounded-xl bg-red-500 text-white'}>
-            {#if service.key === 'dropbox'}
-              <DropboxLogo size={24} weight="fill" />
-            {:else if service.key === 'google_workspace'}
-              <GoogleLogo size={24} weight="bold" />
-            {:else if service.key === 'github'}
-              <GithubLogo size={24} weight="fill" />
+<div class="container mx-auto max-w-6xl space-y-8 p-8">
+  {#if focusedService}
+    <a
+      href={`/accounts/${account.id}/personal_services`}
+      class="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+      <ArrowLeft size={16} /> Personal Services
+    </a>
+    <div class="max-w-2xl space-y-6">
+      <div>
+        <h1 class="text-3xl font-bold">Connect {focusedService.name}</h1>
+        <p class="mt-2 text-muted-foreground">{serviceDescription(focusedService)}</p>
+      </div>
+      <div class="space-y-5 rounded-xl border bg-card p-6 shadow-sm">
+        <div class="flex items-center gap-4">
+          <div class={`flex size-12 items-center justify-center rounded-xl ${serviceIconClass(focusedService.key)}`}>
+            {#if focusedService.key === 'dropbox'}
+              <DropboxLogo size={26} weight="fill" />
+            {:else if focusedService.key === 'google_workspace'}
+              <GoogleLogo size={26} weight="bold" />
+            {:else if focusedService.key === 'github'}
+              <GithubLogo size={26} weight="fill" />
             {:else}
-              <Heartbeat size={24} weight="fill" />
+              <Heartbeat size={26} weight="fill" />
             {/if}
           </div>
-          <div>
-            <h3 class="font-semibold">{service.name}</h3>
-            <p class="text-sm text-muted-foreground">
-              {serviceDescription(service)}
-            </p>
-          </div>
+          <h2 class="text-xl font-semibold">{focusedService.name}</h2>
         </div>
-        {#if service.connection_method === 'credentials'}
-          <div class="space-y-3">
-            {#if service.key === 'github'}
-              <div class="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
+
+        {#if focusedService.connection_method === 'credentials'}
+          <div class="space-y-4">
+            {#if focusedService.key === 'github'}
+              <div class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
                 <a
                   href="https://github.com/settings/personal-access-tokens/new"
                   target="_blank"
@@ -191,144 +225,232 @@
                   class="font-medium text-primary underline underline-offset-4">
                   Create a fine-grained token on GitHub
                 </a>
-                with access to only one repository. Grant <strong>Contents: read and write</strong>; add pull-request or
-                workflow permissions only if the resident needs them.
+                with access to one repository and only the permissions it needs.
               </div>
             {/if}
-            {#each service.credential_fields as field}
-              <label class="block space-y-1">
+            {#each focusedService.credential_fields as field}
+              <label class="block space-y-1.5">
                 <span class="text-sm font-medium">{field.label}</span>
                 <input
                   type={field.type || 'text'}
-                  value={credentialsFor(service)[field.key] || ''}
+                  value={credentialsFor(focusedService)[field.key] || ''}
                   placeholder={field.placeholder || ''}
                   autocomplete={field.type === 'password' ? 'off' : 'on'}
                   class="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                  oninput={(event) => updateCredential(service, field, event.currentTarget.value)} />
+                  oninput={(event) => updateCredential(focusedService, field, event.currentTarget.value)} />
                 {#if field.help}<span class="block text-xs text-muted-foreground">{field.help}</span>{/if}
               </label>
             {/each}
           </div>
-        {:else if service.authority_groups.length > 0}
+        {:else if focusedService.authority_groups.length > 0}
           <ServiceAuthoritySelector
-            {service}
-            selection={authorityFor(service)}
-            onchange={(selection) => updateAuthority(service, selection)} />
-        {:else if service.access_profiles.length > 1}
+            service={focusedService}
+            selection={authorityFor(focusedService)}
+            onchange={(selection) => updateAuthority(focusedService, selection)} />
+        {:else if focusedService.access_profiles.length > 1}
           <select
             class="w-full rounded-md border bg-background px-3 py-2 text-sm"
-            value={profileFor(service)}
+            value={profileFor(focusedService)}
             onchange={(event) =>
-              (selectedProfiles = { ...selectedProfiles, [service.key]: event.currentTarget.value })}>
-            {#each service.access_profiles as profile}
+              (selectedProfiles = { ...selectedProfiles, [focusedService.key]: event.currentTarget.value })}>
+            {#each focusedService.access_profiles as profile}
               <option value={profile.key}>{profile.name}{profile.default ? ' — safest default' : ''}</option>
             {/each}
           </select>
         {/if}
-        <Button
-          type="button"
-          disabled={service.authority_groups.length > 0 && !hasAuthority(service)}
-          onclick={() =>
-            service.connection_method === 'credentials' ? connectCredentials(service) : connect(service)}>
-          Connect {service.name}
-        </Button>
-      </div>
-    {/each}
-  </section>
 
-  <section class="space-y-4">
-    <h2 class="text-xl font-semibold">Your connected identities</h2>
-    {#if connections.length === 0}
-      <p class="rounded-lg border p-5 text-sm text-muted-foreground">
-        No personal identities have been attached to this account yet.
-      </p>
-    {/if}
-    {#each connections as connection}
-      <div class="space-y-4 rounded-lg border p-5">
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h3 class="font-semibold">{connection.label}</h3>
-            <p class="text-sm text-muted-foreground">{connection.provider_name} · {connection.identity}</p>
-            {#if connection.status === 'reauthorizing'}
-              <p class="mt-1 text-xs text-amber-700">
-                Reauthorization required. Residents cannot use this connection until Google consent completes.
-              </p>
-            {/if}
-            {#if connection.authority_summary}
-              <p class="mt-2 text-xs">{connection.authority_summary}</p>
-            {:else if (connection.granted_scopes || []).length > 0}
-              <p class="mt-2 text-xs">Granted scopes: {connection.granted_scopes.join(', ')}</p>
-            {/if}
-          </div>
-          <Button type="button" variant="destructive" onclick={() => removeConnection(connection)}>Disconnect</Button>
+        <div class="flex justify-end gap-3 border-t pt-4">
+          <Button variant="outline" href={`/accounts/${account.id}/personal_services`}>Cancel</Button>
+          <Button
+            type="button"
+            disabled={focusedService.authority_groups.length > 0 && !hasAuthority(focusedService)}
+            onclick={() =>
+              focusedService.connection_method === 'credentials'
+                ? connectCredentials(focusedService)
+                : connect(focusedService)}>
+            Connect {focusedService.name}
+          </Button>
         </div>
-        {#if connection.provider === 'google_workspace'}
-          {@const googleService = serviceFor(connection)}
-          {#if googleService}
-            <ServiceAuthoritySelector
-              service={googleService}
-              selection={connectionAuthority(connection)}
-              disabled={!connection.can_manage}
-              onchange={(selection) => updateConnectionAuthority(connection, selection)} />
-            {#each connection.authority_warnings || [] as warning}
-              <p class="text-xs text-amber-700">{warning}</p>
-            {/each}
-            {#if connection.can_manage}
-              <Button type="button" variant="outline" onclick={() => reconnectGoogle(connection, googleService)}>
-                {connection.status === 'reauthorizing' ? 'Finish reconnecting Google' : 'Edit Google access'}
-              </Button>
-            {/if}
-          {/if}
-        {/if}
-        <div class="space-y-3 border-t pt-4">
-          <div>
-            <h4 class="text-sm font-medium">Resident access</h4>
-            <p class="text-xs text-muted-foreground">Choose which residents can use this complete credential.</p>
-          </div>
-          {#if connection.residents.length === 0}
-            <p class="text-sm text-muted-foreground">There are no residents in this account yet.</p>
-          {:else}
-            <div class="grid gap-2 sm:grid-cols-2">
-              {#each connection.residents as resident (resident.id)}
-                {@const updating = residentAccessUpdating[residentAccessKey(connection, resident)]}
-                <div class="flex items-center justify-between gap-4 rounded-md border px-3 py-2">
-                  <div class="min-w-0">
-                    <label class="block truncate text-sm font-medium" for={`${connection.id}-${resident.id}`}>
-                      {resident.name}
-                    </label>
-                    <p class="text-xs text-muted-foreground">
-                      {resident.active
-                        ? resident.provisioning_status || (resident.enabled ? 'Enabled' : 'Disabled')
-                        : 'Inactive'}
-                    </p>
-                  </div>
-                  <Switch
-                    id={`${connection.id}-${resident.id}`}
-                    checked={resident.enabled}
-                    disabled={updating || (!resident.enabled && connection.status !== 'connected')}
-                    onCheckedChange={(enabled) => toggleResidentAccess(connection, resident, enabled)}
-                    aria-label={`${resident.enabled ? 'Disable' : 'Enable'} ${connection.label} for ${resident.name}`} />
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-        <label class="flex items-center gap-3 text-sm">
-          <input
-            type="checkbox"
-            checked={connection.enabled_for_new_agents}
-            onchange={(event) =>
-              updateConnection(connection, { enabled_for_new_agents: event.currentTarget.checked })} />
-          Provision to newly created residents by default
-        </label>
-        <label class="flex items-center gap-3 text-sm">
-          <input
-            type="checkbox"
-            checked={connection.freely_provisionable}
-            onchange={(event) => updateConnection(connection, { freely_provisionable: event.currentTarget.checked })} />
-          Allow account administrators to provision this identity to residents
-        </label>
       </div>
-    {/each}
-  </section>
+    </div>
+  {:else}
+    <a href="/user/edit" class="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+      <ArrowLeft size={16} /> User settings
+    </a>
+    <div>
+      <h1 class="text-3xl font-bold">Personal Services</h1>
+      <p class="mt-2 text-muted-foreground">
+        Connect your own external identities to {account.name}, then choose which residents may use them.
+      </p>
+    </div>
+
+    <section class="space-y-3 rounded-xl border bg-muted/20 p-4">
+      <h2 class="text-sm font-semibold">Connect new…</h2>
+      <div class="flex flex-wrap gap-2">
+        {#each services as service}
+          <Button variant="outline" href={`/accounts/${account.id}/personal_services?connect=${service.key}`}>
+            {#if service.key === 'dropbox'}
+              <DropboxLogo weight="fill" />
+            {:else if service.key === 'google_workspace'}
+              <GoogleLogo weight="bold" />
+            {:else if service.key === 'github'}
+              <GithubLogo weight="fill" />
+            {:else}
+              <Heartbeat weight="fill" />
+            {/if}
+            {service.name}
+          </Button>
+        {/each}
+      </div>
+      <p class="text-xs text-muted-foreground">
+        You can connect more than one service of the same kind—for example, several GitHub repositories or Google
+        accounts.
+      </p>
+    </section>
+
+    <section class="space-y-4">
+      <div>
+        <h2 class="text-xl font-semibold">Connected services</h2>
+        <p class="text-sm text-muted-foreground">Manage each connection and choose which residents can use it.</p>
+      </div>
+      {#if connections.length === 0}
+        <p class="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
+          No personal services are connected yet.
+        </p>
+      {/if}
+      {#each connections as connection}
+        <article class="overflow-hidden rounded-xl border bg-card shadow-sm">
+          <div class="space-y-5 p-5 sm:p-6">
+            <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div class="flex min-w-0 items-center gap-4">
+                <div
+                  class={`flex size-12 shrink-0 items-center justify-center rounded-xl ${serviceIconClass(connection.provider)}`}>
+                  {#if connection.provider === 'dropbox'}
+                    <DropboxLogo size={26} weight="fill" />
+                  {:else if connection.provider === 'google_workspace'}
+                    <GoogleLogo size={26} weight="bold" />
+                  {:else if connection.provider === 'github'}
+                    <GithubLogo size={26} weight="fill" />
+                  {:else}
+                    <Heartbeat size={26} weight="fill" />
+                  {/if}
+                </div>
+                <div class="min-w-0">
+                  <h3 class="truncate text-lg font-semibold">
+                    {connection.provider === 'google_workspace' ? connection.identity : connection.label}
+                  </h3>
+                  {#if connection.status === 'reauthorizing'}
+                    <p class="text-sm text-amber-700">
+                      Reauthorization required before residents can use this connection.
+                    </p>
+                  {/if}
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                class="border-destructive/20 text-destructive shadow-none hover:bg-destructive/10 hover:text-destructive"
+                onclick={() => removeConnection(connection)}>
+                Disconnect
+              </Button>
+            </header>
+
+            {#if connection.provider === 'google_workspace'}
+              {@const googleService = serviceFor(connection)}
+              <div class="space-y-3">
+                {#if visibleScopes(connection).length > 0}
+                  <div class="flex flex-wrap gap-1.5">
+                    {#each visibleScopes(connection) as scope}
+                      <span class="rounded-full bg-muted px-2.5 py-1 font-mono text-xs">{scope}</span>
+                    {/each}
+                  </div>
+                {/if}
+                {#each connection.authority_warnings || [] as warning}
+                  <p class="text-xs text-amber-700">{warning}</p>
+                {/each}
+                {#if googleService && connection.can_manage}
+                  {#if editingConnection(connection)}
+                    <div class="space-y-4 rounded-lg border bg-muted/20 p-4">
+                      <ServiceAuthoritySelector
+                        service={googleService}
+                        selection={connectionAuthority(connection)}
+                        onchange={(selection) => updateConnectionAuthority(connection, selection)} />
+                      <div class="flex justify-end gap-2">
+                        {#if connection.status !== 'reauthorizing'}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onclick={() => cancelEditingConnection(connection)}>
+                            Cancel
+                          </Button>
+                        {/if}
+                        <Button type="button" size="sm" onclick={() => reconnectGoogle(connection, googleService)}>
+                          {connection.status === 'reauthorizing' ? 'Finish reconnecting' : 'Save and reconnect'}
+                        </Button>
+                      </div>
+                    </div>
+                  {:else}
+                    <Button type="button" variant="outline" size="sm" onclick={() => editConnection(connection)}>
+                      Edit access
+                    </Button>
+                  {/if}
+                {/if}
+              </div>
+            {/if}
+
+            <div class="space-y-3 border-t pt-4">
+              <h4 class="text-sm font-semibold">Resident access</h4>
+              {#if connection.residents.length === 0}
+                <p class="text-sm text-muted-foreground">There are no residents in this account yet.</p>
+              {:else}
+                <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {#each connection.residents as resident (resident.id)}
+                    {@const updating = residentAccessUpdating[residentAccessKey(connection, resident)]}
+                    {@const transition = residentTransition(resident)}
+                    <div class="flex items-center justify-between gap-4 rounded-lg border bg-background px-3 py-2.5">
+                      <div class="min-w-0">
+                        <label class="block truncate text-sm font-medium" for={`${connection.id}-${resident.id}`}>
+                          {resident.name}
+                        </label>
+                        {#if transition}
+                          <p class="text-xs capitalize text-amber-700">{transition}</p>
+                        {/if}
+                      </div>
+                      <Switch
+                        id={`${connection.id}-${resident.id}`}
+                        checked={resident.enabled}
+                        disabled={updating || (!resident.enabled && connection.status !== 'connected')}
+                        onCheckedChange={(enabled) => toggleResidentAccess(connection, resident, enabled)}
+                        aria-label={`${resident.enabled ? 'Disable' : 'Enable'} ${connection.label} for ${resident.name}`} />
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+
+            <div class="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:gap-8">
+              <label class="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={connection.enabled_for_new_agents}
+                  onchange={(event) =>
+                    updateConnection(connection, { enabled_for_new_agents: event.currentTarget.checked })} />
+                Provision to new residents by default
+              </label>
+              <label class="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={connection.freely_provisionable}
+                  onchange={(event) =>
+                    updateConnection(connection, { freely_provisionable: event.currentTarget.checked })} />
+                Allow account admins to provision this access
+              </label>
+            </div>
+          </div>
+        </article>
+      {/each}
+    </section>
+  {/if}
 </div>
