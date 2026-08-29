@@ -1,17 +1,17 @@
 diff --git a/sys/kern/kern/src/chaos/turn.rs b/sys/kern/kern/src/chaos/turn.rs
-index 03ef8ae9f..6ddaa4d1c 100644
+index 32e60c11e..2f023c52d 100644
 --- a/sys/kern/kern/src/chaos/turn.rs
 +++ b/sys/kern/kern/src/chaos/turn.rs
-@@ -8,6 +8,7 @@ use chaos_dtrace::HookResult;
+@@ -7,6 +7,7 @@ use chaos_dtrace::HookPayload;
+ use chaos_dtrace::HookResult;
  use chaos_epoll::OrCancelExt;
- use chaos_ipc::config_types::ModeKind;
  use chaos_ipc::items::TurnItem;
 +use chaos_ipc::models::ContentItem;
  use chaos_ipc::models::DeveloperInstructions;
  use chaos_ipc::models::ResponseInputItem;
  use chaos_ipc::models::ResponseItem;
-@@ -149,6 +150,19 @@ pub(crate) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
-     None
+@@ -167,6 +168,19 @@ async fn finalize_context_hook(
+     false
  }
  
 +pub(crate) fn stop_hook_continuation_message(prompt: String) -> ResponseItem {
@@ -27,10 +27,10 @@ index 03ef8ae9f..6ddaa4d1c 100644
 +    }
 +}
 +
- /// Takes a user message as input and runs a loop where, at each sampling
- /// request, the model replies with either:
- ///
-@@ -433,11 +447,11 @@ pub(crate) async fn run_turn(
+ async fn maybe_inject_session_title_reminder(sess: &Arc<Session>, turn_context: &Arc<TurnContext>) {
+     let instructions = {
+         let mut state = sess.state.lock().await;
+@@ -544,11 +558,11 @@ pub(crate) async fn run_turn(
                      if stop_outcome.should_block {
                          if let Some(continuation_prompt) = stop_outcome.continuation_prompt.clone()
                          {
@@ -46,7 +46,7 @@ index 03ef8ae9f..6ddaa4d1c 100644
                              .await;
                              stop_hook_active = true;
 diff --git a/sys/kern/kern/src/chaos_tests.rs b/sys/kern/kern/src/chaos_tests.rs
-index 47fd22385..4b0244ed6 100644
+index b2e8ad11e..95875ec66 100644
 --- a/sys/kern/kern/src/chaos_tests.rs
 +++ b/sys/kern/kern/src/chaos_tests.rs
 @@ -107,6 +107,26 @@ fn user_message(text: &str) -> ResponseItem {

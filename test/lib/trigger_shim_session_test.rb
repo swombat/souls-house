@@ -19,7 +19,8 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes dockerfile, "COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md"
     assert_includes dockerfile, "ARG CLAUDE_CODE_VERSION=2.1.220"
     assert_includes dockerfile, "claude --version"
-    assert_includes dockerfile, "ARG CHAOS_REF=0db98596dee223b879cadee849becc96b56efaf1"
+    assert_includes dockerfile, "ARG CHAOS_HEAD"
+    refute_match(/^ARG CHAOS_HEAD=[0-9a-f]{40}$/, dockerfile)
     assert_not_includes dockerfile, "chaos-clamp-image-tool-output.patch"
     assert_includes dockerfile, "chaos-antigravity-empty-managed-config.patch"
     assert_includes dockerfile, "git apply --check /tmp/chaos-antigravity-empty-managed-config.patch"
@@ -32,7 +33,7 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes dockerfile, "ARG ANTIGRAVITY_VERSION=1.1.15"
     assert_includes dockerfile, "sha512sum -c -"
     assert_includes dockerfile, "agy --version"
-    assert_includes dockerfile, 'LABEL house.souls.chaos-ref="${CHAOS_REF}"'
+    assert_includes dockerfile, 'LABEL house.souls.chaos-ref="${CHAOS_HEAD}"'
     assert_includes entrypoint, "gosu agent chaos_journald"
     assert_includes entrypoint, 'export CHAOS_JOURNALD_SOCKET="${CHAOS_JOURNALD_SOCKET:-$CHAOS_HOME/run/journald.sock}"'
     assert_includes entrypoint, 'CHAOS_JOURNALD_DB="${CHAOS_JOURNALD_DB:-$CHAOS_HOME/journal.sqlite}"'

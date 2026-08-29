@@ -20,7 +20,7 @@ module Backup
       @image = image
       @runtime_dir = runtime_dir
       @production_version = production_version || method(:latest_recorded_chaos_version)
-      @desired_chaos_ref = desired_chaos_ref || method(:pinned_chaos_ref)
+      @desired_chaos_ref = desired_chaos_ref || method(:latest_chaos_ref)
       @capture3 = capture3
       @system = system
     end
@@ -33,7 +33,7 @@ module Backup
 
       if current_version.present? && current_ref != expected_ref
         reason = if current_ref.present?
-          "its Chaos ref #{current_ref} does not match pinned #{expected_ref}"
+          "its Chaos ref #{current_ref} does not match latest master #{expected_ref}"
         else
           "it has no Chaos ref provenance"
         end
@@ -62,7 +62,7 @@ module Backup
     attr_reader :image, :runtime_dir, :production_version, :desired_chaos_ref, :capture3, :system
 
     def build_and_verify!(expected_version, expected_ref)
-      build!
+      build!(expected_ref)
       rebuilt_version = local_version
       raise BuildError, "Built #{image}, but could not read its Chaos version" if rebuilt_version.blank?
       if expected_version.present? && !version_at_least?(rebuilt_version, expected_version)
@@ -100,10 +100,14 @@ module Backup
       status.success? ? stdout.strip.presence : nil
     end
 
-    def pinned_chaos_ref
-      dockerfile = runtime_dir.join("Dockerfile").read
-      dockerfile.match(/^ARG CHAOS_REF=([0-9a-f]{40})$/)&.captures&.first ||
-        raise(BuildError, "Could not determine pinned Chaos ref from #{runtime_dir.join('Dockerfile')}")
+    def latest_chaos_ref
+      stdout, stderr, status = capture3.call(
+        "git", "ls-remote", "https://github.com/seuros/chaos.git", "refs/heads/master"
+      )
+      ref = stdout.split.first
+      return ref if status.success? && ref&.match?(/\A[0-9a-f]{40}\z/)
+
+      raise BuildError, "Could not resolve latest Chaos master: #{stderr.to_s.strip.presence || 'unknown error'}"
     end
 
     def version_at_least?(candidate, expected)
@@ -114,9 +118,12 @@ module Backup
         Gem::Version.new(expected.match(VERSION_PATTERN)[1])
     end
 
-    def build!
+    def build!(chaos_head)
       success = system.call(
-        "docker", "build", "-t", image, runtime_dir.to_s
+        "docker", "build",
+        "--build-arg", "CHAOS_HEAD=#{chaos_head}",
+        "-t", image,
+        runtime_dir.to_s
       )
       raise BuildError, "Could not build #{image}" unless success
     end

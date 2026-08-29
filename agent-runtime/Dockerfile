@@ -5,20 +5,21 @@
 # identity and state arrive through Docker volumes and environment variables.
 #
 # Local build:
-#   docker build -t helixkit-agent-runtime:local agent-runtime
+#   CHAOS_HEAD="$(git ls-remote https://github.com/seuros/chaos.git refs/heads/master | awk 'NR == 1 { print $1 }')"
+#   docker build --build-arg "CHAOS_HEAD=${CHAOS_HEAD}" -t helixkit-agent-runtime:local agent-runtime
 
-# Pin the current merged Chaos runtime, including subscription auth, clamp
-# telemetry, model-visible compaction reflexes, persistent MCP approvals, and
-# structured clamp image output, so hosted runtime rebuilds do not depend on
-# movement of a branch ref.
-# Pin bumps must re-verify provider auth ceremony parsers and clamp subprocess
-# patterns in trigger_shim.py. This ref also preserves the original SQLx
-# migration checksum used by persisted Chaos journals; do not move to a ref
-# which rewrites var/proc/db/migrate/sqlite/0001_bigbang.sql.
+# Build the latest Chaos master. Build callers resolve master immediately before
+# invoking Docker and pass its commit as CHAOS_HEAD. The commit is deliberately
+# not pinned in this repository: it is a cache key, a stable snapshot for this
+# individual build, and provenance for the resulting image.
+#
+# Upstream changes must continue to preserve the original SQLx migration
+# checksum used by persisted Chaos journals. Patch/application or runtime tests
+# should fail the deployment visibly when a new Chaos master is incompatible.
 # The Stop-hook continuation patch restores a fix lost during Chaos's turn-loop
-# refactor; remove it once the equivalent upstream fix is included in CHAOS_REF.
+# refactor; remove it once the equivalent upstream fix is included in master.
 ARG CHAOS_REPO=https://github.com/seuros/chaos.git
-ARG CHAOS_REF=0db98596dee223b879cadee849becc96b56efaf1
+ARG CHAOS_HEAD
 
 # =============================================================================
 # Stage 1 — pull and build chaos. Source tree is discarded after the binary copies.
@@ -26,7 +27,7 @@ ARG CHAOS_REF=0db98596dee223b879cadee849becc96b56efaf1
 FROM rust:1.97-bookworm AS builder
 
 ARG CHAOS_REPO
-ARG CHAOS_REF
+ARG CHAOS_HEAD
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -42,9 +43,10 @@ WORKDIR /build
 COPY patches/chaos-stop-hook-continuation-user-turn.patch /tmp/chaos-stop-hook-continuation-user-turn.patch
 COPY patches/chaos-antigravity-empty-managed-config.patch /tmp/chaos-antigravity-empty-managed-config.patch
 COPY patches/chaos-antigravity-daily-cloudcode-egress.patch /tmp/chaos-antigravity-daily-cloudcode-egress.patch
-RUN git clone --filter=blob:none ${CHAOS_REPO} chaos \
+RUN test -n "${CHAOS_HEAD}" \
+    && git clone --filter=blob:none ${CHAOS_REPO} chaos \
     && cd chaos \
-    && git checkout ${CHAOS_REF} \
+    && git checkout ${CHAOS_HEAD} \
     && git apply --check /tmp/chaos-stop-hook-continuation-user-turn.patch \
     && git apply /tmp/chaos-stop-hook-continuation-user-turn.patch \
     && git apply --check /tmp/chaos-antigravity-empty-managed-config.patch \
@@ -64,8 +66,8 @@ RUN cargo build --release --bin chaos_journald \
 # =============================================================================
 FROM node:22-trixie-slim AS runtime
 
-ARG CHAOS_REF
-LABEL house.souls.chaos-ref="${CHAOS_REF}"
+ARG CHAOS_HEAD
+LABEL house.souls.chaos-ref="${CHAOS_HEAD}"
 LABEL house.souls.chaos-patches="stop-hook-continuation-user-turn,antigravity-empty-managed-config,antigravity-daily-cloudcode-egress"
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -89,7 +91,7 @@ RUN groupmod --new-name agent node \
     && usermod --login agent --home /home/agent --move-home --shell /bin/bash node
 
 # Clamp speaks Claude Code's documented stream-json protocol. Keep this pin
-# beside CHAOS_REF: the Anthropic login ceremony parser is tested against it.
+# explicitly: the Anthropic login ceremony parser is tested against it.
 ARG CLAUDE_CODE_VERSION=2.1.220
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && claude --version

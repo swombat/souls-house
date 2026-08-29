@@ -38,7 +38,14 @@ class Backup::LocalAgentRuntimeImageTest < ActiveSupport::TestCase
     )
 
     assert_equal true, service.ensure_current!
-    assert_equal [ [ "docker", "build", "-t", "helixkit-agent-runtime:local", "/tmp/agent-runtime" ] ], builds
+    assert_equal [
+      [
+        "docker", "build",
+        "--build-arg", "CHAOS_HEAD=#{desired_ref}",
+        "-t", "helixkit-agent-runtime:local",
+        "/tmp/agent-runtime"
+      ]
+    ], builds
   end
 
   test "rebuilds a missing local image" do

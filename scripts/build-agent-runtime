@@ -11,8 +11,20 @@ IMAGE="${HELIXKIT_AGENT_RUNTIME_IMAGE:-helixkit-agent-runtime}"
 COMPAT_IMAGE="${HELIXKIT_AGENT_RUNTIME_COMPAT_IMAGE:-dtenner/helix-kit-agent-runtime}"
 SHA_TAG="${1:-$(git -C "${ROOT}" rev-parse --short HEAD)}"
 DOCKER_HOST="${HELIXKIT_AGENT_RUNTIME_DOCKER_HOST:-ssh://misc}"
+CHAOS_REPO="${HELIXKIT_CHAOS_REPO:-https://github.com/seuros/chaos.git}"
+CHAOS_BRANCH="${HELIXKIT_CHAOS_BRANCH:-master}"
+CHAOS_HEAD="$(
+  git ls-remote "${CHAOS_REPO}" "refs/heads/${CHAOS_BRANCH}" |
+    awk 'NR == 1 { print $1 }'
+)"
+
+if [[ ! "${CHAOS_HEAD}" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Could not resolve latest Chaos ${CHAOS_BRANCH} from ${CHAOS_REPO}" >&2
+  exit 1
+fi
 
 echo "Building hosted-agent runtime on Docker host: ${DOCKER_HOST}"
+echo "Chaos ${CHAOS_BRANCH}: ${CHAOS_HEAD}"
 echo "Tags:"
 echo "  ${IMAGE}:${SHA_TAG}"
 echo "  ${IMAGE}:latest"
@@ -20,6 +32,8 @@ echo "  ${COMPAT_IMAGE}:${SHA_TAG}"
 echo "  ${COMPAT_IMAGE}:latest"
 
 docker --host "${DOCKER_HOST}" build \
+  --build-arg "CHAOS_REPO=${CHAOS_REPO}" \
+  --build-arg "CHAOS_HEAD=${CHAOS_HEAD}" \
   -t "${IMAGE}:${SHA_TAG}" \
   -t "${IMAGE}:latest" \
   -t "${COMPAT_IMAGE}:${SHA_TAG}" \
