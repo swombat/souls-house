@@ -30,7 +30,10 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes antigravity_egress_patch, '"daily-cloudcode-pa.googleapis.com"'
     assert_includes antigravity_egress_patch, '"www.googleapis.com"'
     assert_includes antigravity_egress_patch, '"lh3.googleusercontent.com"'
-    assert_includes dockerfile, "ARG ANTIGRAVITY_VERSION=1.1.15"
+    # 1.1.22 makes denied native tool calls recoverable in print mode instead
+    # of failing the whole clamped turn before it can choose the Chaos MCP bridge.
+    assert_includes dockerfile, "ARG ANTIGRAVITY_VERSION=1.1.22"
+    assert_includes dockerfile, "ARG ANTIGRAVITY_BUILD=5711547746615296"
     assert_includes dockerfile, "sha512sum -c -"
     assert_includes dockerfile, "agy --version"
     assert_includes dockerfile, 'LABEL house.souls.chaos-ref="${CHAOS_HEAD}"'

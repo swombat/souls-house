@@ -28,6 +28,7 @@ FROM rust:1.97-bookworm AS builder
 
 ARG CHAOS_REPO
 ARG CHAOS_HEAD
+ARG CARGO_BUILD_JOBS
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -120,10 +121,12 @@ RUN case "${TARGETARCH}" in \
 # Chaos drives Google's official Antigravity CLI for Gemini subscription turns.
 # Download the exact official Linux artifact and verify its published checksum;
 # the unprivileged agent user cannot replace the root-owned binary at runtime.
-ARG ANTIGRAVITY_VERSION=1.1.15
-ARG ANTIGRAVITY_BUILD=5350383476932608
-ARG ANTIGRAVITY_AMD64_SHA512=7d6020caff2e06a5ddf2553f2d9d5b428e3becc69727d11032f10e40609b938db428578ccd5c72694bab5e4da483de9ad3121578cc172adf174aa5263ce51dcc
-ARG ANTIGRAVITY_ARM64_SHA512=2571031ded807a624fad5166bfb7ee2eb0c97862480fc423da673fde2025b71a35240d213ece6a42ad44d215959fa050a71750c76f358befdd245f5933c4a104
+# Version 1.1.22 is the first pinned release where denied native tool calls are
+# recoverable in print mode instead of failing the whole clamped turn.
+ARG ANTIGRAVITY_VERSION=1.1.22
+ARG ANTIGRAVITY_BUILD=5711547746615296
+ARG ANTIGRAVITY_AMD64_SHA512=40225d4b1f009412e905f0a234ba3d51487038d1ad1b8fa19331c84be55610a01f5b0ad9916fb871151cc45456c6bc30cc0b1ea5dab6c0616bc8fb262bcdd7a9
+ARG ANTIGRAVITY_ARM64_SHA512=b37a718330eb5e270e1ca70135bf964a407ba626fbff7537ac58e094ea31bc623e6d216ef197188fe8b5c46e6f57aee64a3b7c9e23fc855cefee43fe434179d3
 RUN case "${TARGETARCH}" in \
       amd64) artifact=cli_linux_x64.tar.gz; platform=linux-x64; checksum="${ANTIGRAVITY_AMD64_SHA512}" ;; \
       arm64) artifact=cli_linux_arm64.tar.gz; platform=linux-arm; checksum="${ANTIGRAVITY_ARM64_SHA512}" ;; \
