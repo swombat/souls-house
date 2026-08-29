@@ -62,7 +62,7 @@ RUN cargo build --release --bin chaos_journald \
 # =============================================================================
 # Stage 2 — runtime
 # =============================================================================
-FROM node:22-bookworm-slim AS runtime
+FROM node:22-trixie-slim AS runtime
 
 ARG CHAOS_REF
 LABEL house.souls.chaos-ref="${CHAOS_REF}"
