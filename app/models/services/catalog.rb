@@ -37,6 +37,88 @@ module Services
       https://www.googleapis.com/auth/presentations
       https://www.googleapis.com/auth/meetings.space.settings
     ]).freeze
+    GOOGLE_AUTHORITY_GROUPS = {
+      drive: {
+        name: "Drive",
+        default: "none",
+        options: {
+          none: { name: "None", rank: 0, scopes: [] },
+          read: { name: "Read only", rank: 1, scopes: [ "https://www.googleapis.com/auth/drive.readonly" ] },
+          write: { name: "Read and write", rank: 2, scopes: [ "https://www.googleapis.com/auth/drive" ] }
+        }
+      },
+      docs: {
+        name: "Docs",
+        parent: "drive",
+        default: "none",
+        options: {
+          none: { name: "None", rank: 0, scopes: [] },
+          read: { name: "Read only", rank: 1, scopes: [ "https://www.googleapis.com/auth/documents.readonly" ] },
+          write: { name: "Read and write", rank: 2, scopes: [ "https://www.googleapis.com/auth/documents" ] }
+        }
+      },
+      sheets: {
+        name: "Sheets",
+        parent: "drive",
+        default: "none",
+        options: {
+          none: { name: "None", rank: 0, scopes: [] },
+          read: { name: "Read only", rank: 1, scopes: [ "https://www.googleapis.com/auth/spreadsheets.readonly" ] },
+          write: { name: "Read and write", rank: 2, scopes: [ "https://www.googleapis.com/auth/spreadsheets" ] }
+        }
+      },
+      slides: {
+        name: "Slides",
+        parent: "drive",
+        default: "none",
+        options: {
+          none: { name: "None", rank: 0, scopes: [] },
+          read: { name: "Read only", rank: 1, scopes: [ "https://www.googleapis.com/auth/presentations.readonly" ] },
+          write: { name: "Read and write", rank: 2, scopes: [ "https://www.googleapis.com/auth/presentations" ] }
+        }
+      },
+      calendar: {
+        name: "Calendar",
+        default: "none",
+        options: {
+          none: { name: "None", rank: 0, scopes: [] },
+          read: { name: "Read only", rank: 1, scopes: [ "https://www.googleapis.com/auth/calendar.readonly" ] },
+          write: {
+            name: "Manage events",
+            rank: 2,
+            scopes: [
+              "https://www.googleapis.com/auth/calendar.readonly",
+              "https://www.googleapis.com/auth/calendar.events"
+            ]
+          }
+        }
+      },
+      gmail: {
+        name: "Gmail",
+        default: "none",
+        options: {
+          none: { name: "None", rank: 0, scopes: [] },
+          read: { name: "Read only", rank: 1, scopes: [ "https://www.googleapis.com/auth/gmail.readonly" ] },
+          write: {
+            name: "Read, organise, and send",
+            rank: 2,
+            scopes: [
+              "https://www.googleapis.com/auth/gmail.modify",
+              "https://www.googleapis.com/auth/gmail.send"
+            ]
+          }
+        }
+      },
+      meet: {
+        name: "Meet",
+        default: "none",
+        options: {
+          none: { name: "None", rank: 0, scopes: [] },
+          read: { name: "Read only", rank: 1, scopes: [ "https://www.googleapis.com/auth/meetings.space.readonly" ] },
+          write: { name: "Manage meeting spaces", rank: 2, scopes: [ "https://www.googleapis.com/auth/meetings.space.settings" ] }
+        }
+      }
+    }.freeze
 
     Services::Definition.register(
       key: "dropbox",
@@ -76,6 +158,8 @@ module Services
         full_access: GOOGLE_WORKSPACE_FULL
       },
       default_access_profile: "read_only",
+      authority_groups: GOOGLE_AUTHORITY_GROUPS,
+      base_scopes: GOOGLE_IDENTITY,
       runtime_notes: [
         "Use helixkit-gws to call Gmail, Calendar, Drive, Docs, Sheets, Slides, and Meet through gws.",
         "Run helixkit-gws --help or helixkit-gws <service> --help to inspect available commands.",

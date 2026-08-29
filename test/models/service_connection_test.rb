@@ -2,7 +2,7 @@ require "test_helper"
 
 class ServiceConnectionTest < ActiveSupport::TestCase
 
-  test "refresh broker exposes only the current access token and broker endpoint" do
+  test "refresh broker exposes only its broker endpoint" do
     user = users(:user_1)
     connection = accounts(:personal_account).service_connections.create!(
       connected_by_user: user,
@@ -23,7 +23,8 @@ class ServiceConnectionTest < ActiveSupport::TestCase
 
     credentials = connection.runtime_credentials(agent: agents(:research_assistant))
 
-    assert_equal "current-access-token", credentials["access_token"]
+    assert_not credentials.key?("access_token")
+    assert_not credentials.key?("expires_at")
     assert_not credentials.key?("refresh_token")
     assert_includes credentials["access_token_endpoint"], "/api/v1/service_connections/svc_#{connection.id}/access_token"
   end
@@ -48,6 +49,25 @@ class ServiceConnectionTest < ActiveSupport::TestCase
 
     assert_equal "new", connection.credential_payload_hash["access_token"]
     assert_equal "rotated", connection.credential_payload_hash["refresh_token"]
+  end
+
+  test "legacy Google scopes derive effective authority and request review" do
+    connection = accounts(:personal_account).service_connections.create!(
+      connected_by_user: users(:user_1),
+      provider: "google_workspace",
+      external_subject_id: "legacy-google-user",
+      management_scope: "personal",
+      credential_kind: "oauth2",
+      credential_payload_hash: { "refresh_token" => "legacy-refresh" },
+      credential_metadata: {
+        "credential_strategy" => "refresh_broker",
+        "granted_scopes" => [ "https://www.googleapis.com/auth/drive" ]
+      }
+    )
+
+    assert_equal "write", connection.effective_authority["drive"]
+    assert_equal "write", connection.effective_authority["docs"]
+    assert_includes connection.authority_warnings, "Review access and reconnect to choose granular authority."
   end
 
   test "allows several fingerprinted credentials for one provider identity" do

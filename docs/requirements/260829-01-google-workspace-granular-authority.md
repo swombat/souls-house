@@ -376,36 +376,28 @@ contraction, interruption, and successful reconnection.
 Changing Google authority always uses a new OAuth ceremony. Souls does not
 rewrite metadata and pretend an already-issued credential has become narrower.
 
-### 8.1 Empirically determine Google's revocation unit
+### 8.1 Observed Google revocation unit
 
-Before implementing expansion or contraction, test Google with two real offline
-grants for the same user and OAuth client:
+On August 29, 2026, we tested two real offline grants for the same Google user
+and a temporary OAuth client:
 
-1. obtain refresh token A;
-2. perform another consent ceremony and obtain refresh token B;
-3. verify that both refresh;
-4. revoke token A;
-5. test whether token B still refreshes.
+1. Google issued distinct refresh tokens A and B;
+2. both refreshed successfully;
+3. revoking A returned HTTP 200;
+4. five seconds later, both A and B failed refresh with HTTP 400
+   `invalid_grant` ("Token has been expired or revoked.").
 
-Google's documentation does not make the relevant boundary sufficiently clear.
-If revoking A also invalidates B, revocation operates at the user × client grant
-level. In that case:
+For this setup, revocation operates at the user × OAuth client grant level, not
+at one refresh token. Therefore:
 
 - staged credential swaps are impossible;
-- parallel connections for one identity are impossible;
-- revoke-first is the only safe contraction ordering;
-- expansion may also require temporary disconnection.
-
-Record the observed result here before Slice 3 is implemented.
+- parallel differently-scoped connections for one identity are unsafe;
+- all authority changes are revoke-first and temporarily disconnect Google.
 
 ### 8.2 Expansion
 
-Expansion requests the complete new desired scope set and must account for the
-superseded refresh token. The ordering—staged replacement followed by old-token
-revocation, or revoke-first temporary disconnection—depends on §8.1.
-
-Do not ship an expansion flow which simply overwrites the stored refresh token
-without resolving whether the superseded token remains valid.
+Expansion uses the same revoke-first flow as contraction. The existing grant is
+revoked and cleared before the new complete desired scope set is requested.
 
 ### 8.3 Contraction
 
@@ -592,12 +584,10 @@ Ship this independently rather than waiting for the matrix UI.
 - render post-connect summaries;
 - mark legacy connections for access review.
 
-### Slice 3 — editing, after the §8.1 test
+### Slice 3 — editing
 
-- record the Google revocation experiment;
 - add Edit Google access;
-- implement contraction with stable connection identity;
-- implement expansion with ordering justified by the experiment.
+- implement revoke-first authority changes with stable connection identity.
 
 ---
 
@@ -622,12 +612,10 @@ Decisions incorporated here:
 10. pre-redirect duplication, a Picker slice, and stored expansion/contraction
     classification are not built.
 
-One load-bearing question remains empirical:
-
-> Does revoking one of two Google refresh tokens for the same user and OAuth
-> client invalidate only that token, or the whole user × client grant?
-
-Slice 3 must not be designed past that seam until §8.1 records an answer.
+The revocation question was answered empirically: revoking either refresh token
+invalidated the whole user × client grant. The implementation therefore uses
+one stable connection per Google identity and a revoke-first flow for every
+authority change.
 
 ---
 
@@ -641,4 +629,3 @@ Slice 3 must not be designed past that seam until §8.1 records an answer.
   `https://developers.google.com/workspace/gmail/api/auth/scopes`
 - Calendar API scopes:  
   `https://developers.google.com/workspace/calendar/api/auth`
-

@@ -46,6 +46,16 @@ module Api
         assert_response :not_found
       end
 
+      test "does not expose a token while the connection is reauthorizing" do
+        @connection.update!(status: "reauthorizing")
+
+        get api_v1_service_connection_access_token_url(@connection.public_id),
+          headers: { "Authorization" => "Bearer #{@api_key.raw_token}" }
+
+        assert_response :conflict
+        assert_equal "This service connection is not currently connected", JSON.parse(response.body)["error"]
+      end
+
     end
   end
 end

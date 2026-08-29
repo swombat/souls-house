@@ -1,7 +1,7 @@
 class ServiceConnection < ApplicationRecord
 
   MANAGEMENT_SCOPES = %w[personal account_managed].freeze
-  STATUSES = %w[connected suspended revoked error].freeze
+  STATUSES = %w[connected reauthorizing suspended revoked error].freeze
 
   belongs_to :account
   belongs_to :connected_by_user, class_name: "User"
@@ -40,7 +40,27 @@ class ServiceConnection < ApplicationRecord
   end
 
   def granted_scopes
-    Array(credential_metadata.to_h["granted_scopes"])
+    value = credential_metadata.to_h["granted_scopes"]
+    value.nil? ? nil : Array(value)
+  end
+
+  def effective_authority
+    stored = credential_metadata.to_h["effective_authority"].to_h
+    return stored if stored.present?
+    return {} unless definition.structured_authority?
+
+    definition.effective_authority(
+      granted_scopes,
+      requested_selection: definition.default_authority_selection
+    ).fetch("selection")
+  end
+
+  def authority_warnings
+    warnings = Array(credential_metadata.to_h["authority_warnings"])
+    if definition.structured_authority? && credential_metadata.to_h["requested_authority"].blank?
+      warnings << "Review access and reconnect to choose granular authority."
+    end
+    warnings.uniq
   end
 
   def credential_strategy
@@ -91,6 +111,7 @@ class ServiceConnection < ApplicationRecord
       "credential_strategy" => credential_strategy,
       "credentials" => runtime_credentials(agent: agent),
       "access" => {
+        "authority" => effective_authority,
         "scopes" => granted_scopes,
         "api_origins" => definition.api_origins
       },
@@ -106,12 +127,9 @@ class ServiceConnection < ApplicationRecord
 
   def runtime_credentials(agent:)
     if credential_strategy == "refresh_broker"
-      payload = credential_payload_hash
       {
-        "access_token" => payload["access_token"],
-        "expires_at" => payload["expires_at"],
         "access_token_endpoint" => "#{Agents::Config.internal_url}#{Rails.application.routes.url_helpers.api_v1_service_connection_access_token_path(public_id)}"
-      }.compact
+      }
     else
       credential_payload_hash
     end
@@ -140,6 +158,15 @@ class ServiceConnection < ApplicationRecord
     )
   end
 
+  def begin_reauthorization!
+    definition.adapter.revoke!(self)
+    update!(
+      credential_payload: nil,
+      status: "reauthorizing",
+      credential_revision: credential_revision + 1
+    )
+  end
+
   def self.find_by_public_id!(value)
     find(value.to_s.delete_prefix("svc_"))
   end
@@ -154,6 +181,8 @@ class ServiceConnection < ApplicationRecord
       management_scope: management_scope,
       status: status,
       granted_scopes: granted_scopes,
+      effective_authority: effective_authority,
+      authority_warnings: authority_warnings,
       authority_summary: credential_metadata.to_h["authority_summary"],
       connection_metadata: runtime_metadata,
       enabled_for_new_agents: enabled_for_new_agents?,
@@ -168,7 +197,9 @@ class ServiceConnection < ApplicationRecord
   private
 
   def runtime_metadata
-    credential_metadata.to_h.except("credential_strategy", "granted_scopes")
+    credential_metadata.to_h.except(
+      "credential_strategy", "granted_scopes", "effective_authority", "authority_warnings"
+    )
   end
 
   def provider_contract

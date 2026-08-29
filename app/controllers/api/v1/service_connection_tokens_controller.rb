@@ -11,6 +11,10 @@ class Api::V1::ServiceConnectionTokensController < ActionController::API
       render json: { error: "This connection does not use the refresh broker" }, status: :unprocessable_entity
       return
     end
+    unless connection.status == "connected"
+      render json: { error: "This service connection is not currently connected" }, status: :conflict
+      return
+    end
 
     access_token = connection.definition.adapter.current_access_token(connection)
     payload = connection.reload.credential_payload_hash

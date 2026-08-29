@@ -51,11 +51,44 @@ module Services
         external_identity: identity["email"].presence || identity["name"],
         credential_kind: "oauth2",
         credential_payload: credential_payload(data),
-        credential_metadata: {
-          "granted_scopes" => data["scope"].to_s.split.presence || attempt.requested_scopes,
-          "credential_strategy" => definition.credential_strategy
-        }
+        credential_metadata: credential_metadata(data, attempt)
       }
+    end
+
+    def effective_authority(scopes, requested_selection:)
+      requested = definition.normalize_authority_selection(requested_selection.presence || {})
+      if scopes.nil?
+        return {
+          "selection" => apply_drive_floor(requested),
+          "warnings" => [ "Google did not confirm the granted scopes." ]
+        }
+      end
+
+      granted = Array(scopes)
+      drive = scope_level(granted,
+        read: %w[https://www.googleapis.com/auth/drive.readonly],
+        write: %w[https://www.googleapis.com/auth/drive])
+      selection = {
+        "drive" => drive,
+        "docs" => scope_level(granted,
+          read: %w[https://www.googleapis.com/auth/documents.readonly],
+          write: %w[https://www.googleapis.com/auth/documents]),
+        "sheets" => scope_level(granted,
+          read: %w[https://www.googleapis.com/auth/spreadsheets.readonly],
+          write: %w[https://www.googleapis.com/auth/spreadsheets]),
+        "slides" => scope_level(granted,
+          read: %w[https://www.googleapis.com/auth/presentations.readonly],
+          write: %w[https://www.googleapis.com/auth/presentations]),
+        "calendar" => calendar_level(granted),
+        "gmail" => gmail_level(granted),
+        "meet" => scope_level(granted,
+          read: %w[https://www.googleapis.com/auth/meetings.space.readonly],
+          write: %w[https://www.googleapis.com/auth/meetings.space.settings])
+      }
+      effective = apply_drive_floor(selection)
+      missing = effective.select { |group, level| rank(level) < rank(requested.fetch(group)) }.keys
+      warnings = missing.any? ? [ "Google did not grant all requested access: #{missing.map(&:humanize).join(', ')}." ] : []
+      { "selection" => effective, "warnings" => warnings }
     end
 
     def current_access_token(connection)
@@ -74,16 +107,81 @@ module Services
     end
 
     def revoke(connection)
-      payload = connection.credential_payload_hash
-      token = payload["refresh_token"].presence || payload["access_token"]
-      return if token.blank?
-
-      Net::HTTP.post_form(URI(REVOKE_URL), token: token)
+      revoke!(connection)
     rescue StandardError => e
       Rails.logger.warn("Google Workspace token revocation failed for service connection #{connection.id}: #{e.class}")
     end
 
+    def revoke!(connection)
+      payload = connection.credential_payload_hash
+      token = payload["refresh_token"].presence || payload["access_token"]
+      return if token.blank?
+
+      response = Net::HTTP.post_form(URI(REVOKE_URL), token: token)
+      raise Error, "Google Workspace credential revocation failed (#{response.code})" unless response.is_a?(Net::HTTPSuccess)
+    end
+
     private
+
+    def credential_metadata(data, attempt)
+      granted_scopes = data.key?("scope") ? data["scope"].to_s.split : nil
+      requested_authority = if attempt.authority_selection.present?
+        definition.normalize_authority_selection(attempt.authority_selection)
+      else
+        effective_authority(attempt.requested_scopes, requested_selection: definition.default_authority_selection)
+          .fetch("selection")
+      end
+      effective = effective_authority(granted_scopes, requested_selection: requested_authority)
+      {
+        "requested_authority" => requested_authority,
+        "granted_scopes" => granted_scopes,
+        "effective_authority" => effective.fetch("selection"),
+        "authority_warnings" => effective.fetch("warnings"),
+        "credential_strategy" => definition.credential_strategy
+      }
+    end
+
+    def apply_drive_floor(selection)
+      result = selection.stringify_keys
+      drive_rank = rank(result.fetch("drive"))
+      %w[docs sheets slides].each do |group|
+        result[group] = level_for_rank([ rank(result.fetch(group)), drive_rank ].max)
+      end
+      result
+    end
+
+    def scope_level(granted, read:, write:)
+      return "write" if (granted & write).any?
+      return "read" if (granted & read).any?
+      "none"
+    end
+
+    def gmail_level(granted)
+      return "write" if granted.include?("https://mail.google.com/") ||
+        (granted.include?("https://www.googleapis.com/auth/gmail.modify") &&
+          granted.include?("https://www.googleapis.com/auth/gmail.send"))
+      return "read" if (granted & %w[
+        https://www.googleapis.com/auth/gmail.readonly
+        https://www.googleapis.com/auth/gmail.modify
+      ]).any?
+      "none"
+    end
+
+    def calendar_level(granted)
+      return "write" if granted.include?("https://www.googleapis.com/auth/calendar") ||
+        (granted.include?("https://www.googleapis.com/auth/calendar.readonly") &&
+          granted.include?("https://www.googleapis.com/auth/calendar.events"))
+      return "read" if granted.include?("https://www.googleapis.com/auth/calendar.readonly")
+      "none"
+    end
+
+    def rank(level)
+      { "none" => 0, "read" => 1, "write" => 2 }.fetch(level.to_s)
+    end
+
+    def level_for_rank(value)
+      %w[none read write].fetch(value)
+    end
 
     def token_request(params)
       response = Net::HTTP.post_form(URI(TOKEN_URL), params.merge(

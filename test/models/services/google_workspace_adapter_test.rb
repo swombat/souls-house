@@ -48,6 +48,62 @@ class Services::GoogleWorkspaceAdapterTest < ActiveSupport::TestCase
     ], definition.scopes_for("full_access")
   end
 
+  test "compiles an exact granular authority selection without Gmail or Meet" do
+    definition = Services::Definition.fetch("google_workspace")
+    selection = {
+      drive: "write",
+      docs: "write",
+      sheets: "write",
+      slides: "write",
+      calendar: "read",
+      gmail: "none",
+      meet: "none"
+    }
+
+    scopes = definition.scopes_for_authority(selection)
+
+    assert_includes scopes, "https://www.googleapis.com/auth/drive"
+    assert_includes scopes, "https://www.googleapis.com/auth/calendar.readonly"
+    assert_not scopes.any? { |scope| scope.include?("gmail") || scope == "https://mail.google.com/" }
+    assert_not scopes.any? { |scope| scope.include?("meetings.space") }
+  end
+
+  test "Drive authority floors effective Docs Sheets and Slides authority" do
+    effective = @adapter.effective_authority(
+      [ "https://www.googleapis.com/auth/drive" ],
+      requested_selection: {
+        drive: "write", docs: "none", sheets: "none", slides: "none",
+        calendar: "none", gmail: "none", meet: "none"
+      }
+    )
+
+    assert_equal "write", effective.dig("selection", "drive")
+    assert_equal "write", effective.dig("selection", "docs")
+    assert_equal "write", effective.dig("selection", "sheets")
+    assert_equal "write", effective.dig("selection", "slides")
+  end
+
+  test "does not treat requested scopes as provider-confirmed when scope is omitted" do
+    attempt = ServiceAuthorizationAttempt.new(
+      authority_selection: {
+        drive: "none", docs: "none", sheets: "write", slides: "none",
+        calendar: "read", gmail: "none", meet: "none"
+      },
+      requested_scopes: [
+        "openid",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/calendar.readonly"
+      ]
+    )
+
+    metadata = @adapter.send(:credential_metadata, {}, attempt)
+
+    assert_nil metadata["granted_scopes"]
+    assert_includes metadata["authority_warnings"], "Google did not confirm the granted scopes."
+    assert_equal "write", metadata.dig("effective_authority", "sheets")
+  end
+
   test "refreshes through the broker without replacing the refresh token" do
     connection = accounts(:personal_account).service_connections.create!(
       connected_by_user: users(:user_1),

@@ -1,6 +1,6 @@
 # Google Workspace service setup
 
-**Last checked:** 2026-08-28
+**Last checked:** 2026-08-29
 
 Souls connects Gmail, Calendar, Drive, Docs, Sheets, Slides, and Meet through the
 generic service-integration OAuth flow. Residents use the Google Workspace `gws`
@@ -51,51 +51,40 @@ Project ID: souls-house
    Development may instead use `GOOGLE_WORKSPACE_CLIENT_ID` and
    `GOOGLE_WORKSPACE_CLIENT_SECRET`.
 
-## Scope profiles
+## Authority selection
 
-- `read_only` requests read-only scopes for Gmail, Calendar, Drive, Docs,
-  Sheets, Slides, and Meet, plus OpenID email identity.
-- `full_access` requests the full Gmail, Calendar, Drive, Docs, Sheets, Slides,
-  and Meet-space-settings scopes, plus OpenID email identity.
+Users choose `none`, `read`, or `write` independently for Drive, Docs, Sheets,
+Slides, Calendar, Gmail, and Meet. OpenID email identity is always requested so
+Souls can bind the grant to the correct Google identity.
 
-Exact read-only scopes:
+Drive authority is also an effective floor for Docs, Sheets, and Slides because
+Drive scopes grant access to those file types. The UI reflects this implication
+and the server recomputes it rather than trusting submitted values.
 
-```text
-openid
-https://www.googleapis.com/auth/userinfo.email
-https://www.googleapis.com/auth/gmail.readonly
-https://www.googleapis.com/auth/calendar.readonly
-https://www.googleapis.com/auth/drive.readonly
-https://www.googleapis.com/auth/documents.readonly
-https://www.googleapis.com/auth/spreadsheets.readonly
-https://www.googleapis.com/auth/presentations.readonly
-https://www.googleapis.com/auth/meetings.space.readonly
-```
+Calendar write requests `calendar.readonly` plus `calendar.events`. Gmail write
+requests `gmail.modify` plus `gmail.send`; Souls does not request the broader
+`mail.google.com` scope for new granular connections.
 
-Exact full-access scopes:
+The Google Auth Platform Data Access page must contain the union of every scope
+offered by the authority selector. Legacy `read_only` and `full_access` profiles
+remain only so authorization callbacks started before the granular migration can
+finish safely.
 
-```text
-openid
-https://www.googleapis.com/auth/userinfo.email
-https://mail.google.com/
-https://www.googleapis.com/auth/calendar
-https://www.googleapis.com/auth/drive
-https://www.googleapis.com/auth/documents
-https://www.googleapis.com/auth/spreadsheets
-https://www.googleapis.com/auth/presentations
-https://www.googleapis.com/auth/meetings.space.settings
-```
-
-The Google Auth Platform Data Access page must contain the union of both lists.
 Do not add generic Google Cloud scopes such as `cloud-platform`, `bigquery`, or
 `devstorage`; they are unrelated to resident Workspace access.
 
-The Gmail and Drive scopes include restricted scopes. `read_only` is therefore
-the product default, but it is not a low-sensitivity permission.
+The Gmail and Drive scopes include restricted scopes. Selecting read-only is not
+a low-sensitivity permission.
 
 The narrower `drive.file` scope was not used because it only covers files the
 app creates or files a user explicitly opens with the app; it does not provide
 general Workspace file access.
+
+Changing authority is revoke-first. A live experiment on August 29, 2026 showed
+that revoking one refresh token invalidated every refresh token for the same
+Google user and OAuth client. Souls therefore marks the connection
+`reauthorizing`, removes its runtime credentials, and reconnects the same
+connection row after consent succeeds.
 
 ## Testing-mode limitation
 

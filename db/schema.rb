@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_28_191500) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_29_131500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -637,8 +637,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_191500) do
   end
 
   create_table "service_authorization_attempts", force: :cascade do |t|
-    t.string "access_profile", null: false
+    t.string "access_profile"
     t.bigint "account_id", null: false
+    t.jsonb "authority_selection", default: {}, null: false
     t.datetime "consumed_at"
     t.datetime "created_at", null: false
     t.datetime "expires_at", null: false
@@ -647,10 +648,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_191500) do
     t.string "provider", null: false
     t.jsonb "requested_scopes", default: [], null: false
     t.string "return_path"
+    t.bigint "service_connection_id"
     t.string "state_digest", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.index ["account_id"], name: "index_service_authorization_attempts_on_account_id"
+    t.index ["service_connection_id"], name: "index_service_authorization_attempts_on_service_connection_id"
     t.index ["state_digest"], name: "index_service_authorization_attempts_on_state_digest", unique: true
     t.index ["user_id"], name: "index_service_authorization_attempts_on_user_id"
   end
@@ -853,6 +856,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_28_191500) do
   add_foreign_key "safeguard_detections", "agents"
   add_foreign_key "safeguard_detections", "telegram_messages", on_delete: :nullify
   add_foreign_key "service_authorization_attempts", "accounts"
+  add_foreign_key "service_authorization_attempts", "service_connections"
   add_foreign_key "service_authorization_attempts", "users"
   add_foreign_key "service_connections", "accounts"
   add_foreign_key "service_connections", "oura_integrations", column: "legacy_oura_integration_id"
