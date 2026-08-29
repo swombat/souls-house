@@ -1,5 +1,13 @@
 <script>
-  import { ArrowLeft, CheckCircle, TelegramLogo, DropboxLogo, GithubLogo, Heartbeat } from 'phosphor-svelte';
+  import {
+    ArrowLeft,
+    CheckCircle,
+    TelegramLogo,
+    DropboxLogo,
+    GoogleLogo,
+    GithubLogo,
+    Heartbeat,
+  } from 'phosphor-svelte';
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Input } from '$lib/components/shadcn/input';
@@ -29,6 +37,29 @@
 
   function toggleService(connection, enabled) {
     router.patch(connection.access_update_url, { enabled }, { preserveScroll: true });
+  }
+
+  function authorityDescription(connection) {
+    if (connection.authority_summary) return connection.authority_summary;
+
+    const labels = {
+      drive: 'Drive',
+      docs: 'Docs',
+      sheets: 'Sheets',
+      slides: 'Slides',
+      calendar: 'Calendar',
+      gmail: 'Gmail',
+      meet: 'Meet',
+    };
+    const authority = Object.entries(connection.effective_authority || {})
+      .filter(([, level]) => level !== 'none')
+      .map(
+        ([product, level]) => `${labels[product] || product}: ${level === 'write' ? 'read and write' : 'read only'}`
+      );
+    if (authority.length > 0) return authority.join('; ');
+
+    const scopes = connection.granted_scopes || [];
+    return scopes.length > 0 ? scopes.join(', ') : 'Google did not confirm the granted scopes';
   }
 </script>
 
@@ -201,11 +232,15 @@
             <div
               class={connection.provider === 'dropbox'
                 ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white'
-                : connection.provider === 'github'
-                  ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white'
-                  : 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white'}>
+                : connection.provider === 'google_workspace'
+                  ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white'
+                  : connection.provider === 'github'
+                    ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white'
+                    : 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white'}>
               {#if connection.provider === 'dropbox'}
                 <DropboxLogo size={24} weight="fill" />
+              {:else if connection.provider === 'google_workspace'}
+                <GoogleLogo size={24} weight="bold" />
               {:else if connection.provider === 'github'}
                 <GithubLogo size={24} weight="fill" />
               {:else}
@@ -226,8 +261,11 @@
               </div>
               <p class="text-sm text-muted-foreground">{connection.provider_name} · {connection.identity}</p>
               <p class="mt-1 text-xs text-muted-foreground">
-                This toggle provisions the complete credential authority: {connection.granted_scopes.join(', ')}
+                This toggle provisions the complete credential authority: {authorityDescription(connection)}
               </p>
+              {#each connection.authority_warnings || [] as warning}
+                <p class="mt-1 text-xs text-amber-700">{warning}</p>
+              {/each}
               {#if connection.provisioning_status}
                 <p class="mt-1 text-xs text-muted-foreground">Runtime: {connection.provisioning_status}</p>
               {/if}
