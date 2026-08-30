@@ -46,4 +46,22 @@ class Agents::ProviderSubscriptionUsagesControllerTest < ActionDispatch::Integra
     assert_equal 72, response.parsed_body.dig("windows", 0, "remaining_percent")
   end
 
+  test "allows confirmed account members to view resident usage" do
+    sign_in(users(:existing_user))
+    client = Object.new
+    client.define_singleton_method(:usage) do |provider:, model:, refresh:|
+      {
+        "provider" => provider,
+        "status" => "available",
+        "windows" => []
+      }
+    end
+
+    AgentProviderAuthClient.stub(:new, client) do
+      get account_agent_provider_subscription_usage_path(@account, @agent), as: :json
+    end
+
+    assert_response :success
+  end
+
 end

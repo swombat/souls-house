@@ -2,8 +2,6 @@ class Agents::ProviderSubscriptionUsagesController < ApplicationController
 
   include AgentScoped
 
-  before_action :require_account_owner!
-
   def show
     render json: AgentProviderAuthClient.new(@agent).usage(
       provider: Agents::Sandbox.chaos_provider_for(@agent),
