@@ -36,6 +36,8 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes dockerfile, "ARG ANTIGRAVITY_BUILD=5711547746615296"
     assert_includes dockerfile, "sha512sum -c -"
     assert_includes dockerfile, "agy --version"
+    assert_includes dockerfile, "ARG CODEXBAR_VERSION=0.56.1"
+    assert_includes dockerfile, "codexbar --version"
     assert_includes dockerfile, 'LABEL house.souls.chaos-ref="${CHAOS_HEAD}"'
     assert_includes entrypoint, "gosu agent chaos_journald"
     assert_includes entrypoint, 'export CHAOS_JOURNALD_SOCKET="${CHAOS_JOURNALD_SOCKET:-$CHAOS_HOME/run/journald.sock}"'

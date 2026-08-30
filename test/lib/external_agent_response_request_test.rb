@@ -210,7 +210,7 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
         body: {
           status: "error",
           returncode: 1,
-          stderr: "401 Unauthorized: access token expired"
+          error_kind: "auth_expired"
         }.to_json
       )
 
@@ -231,66 +231,46 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_equal "oauth_account", AgentRuntimeInteraction.order(:created_at).last.provider_auth_mode
   end
 
-  test "missing subscription credentials surface the reconnect guidance" do
+  test "subscription limit creates a reset message and keeps the connection active" do
     agent = agents(:research_assistant)
     agent.update!(
-      model_id: "openai/gpt-5",
-      provider_auth_modes: { "openai" => "oauth_account" }
+      model_id: "x-ai/grok-build-0.1",
+      runtime: "external",
+      uuid: SecureRandom.uuid_v7,
+      endpoint_url: "https://agent.example.com",
+      trigger_bearer_token: "tr_valid",
+      health_state: "healthy",
+      provider_auth_modes: { "xai" => "oauth_account" },
+      provider_connections: { "xai" => { "status" => "connected" } }
     )
-    request = ExternalAgentResponseRequest.new(
-      agent: agent,
-      chat: agent.account.chats.create!(model_id: "openai/gpt-5", title: "Missing subscription")
-    )
-
-    assert request.send(
-      :subscription_auth_failure?,
-      status: 500,
-      body: { "stderr" => "missing provider credentials" }
-    )
-  end
-
-  test "Gemini model discovery API key warning does not expire an Antigravity connection" do
-    agent = agents(:research_assistant)
-    agent.update!(
-      model_id: "google/gemini-3.7-flash",
-      provider_auth_modes: { "gemini" => "oauth_account" }
-    )
-    request = ExternalAgentResponseRequest.new(
-      agent: agent,
-      chat: agent.account.chats.create!(model_id: "google/gemini-3.7-flash", title: "Clamp failure")
-    )
-
-    refute request.send(
-      :subscription_auth_failure?,
-      status: 500,
+    chat = agent.account.chats.create!(model_id: "x-ai/grok-build-0.1", title: "Exhausted subscription")
+    chat.messages.create!(role: "user", user: users(:user_1), content: "Hello Grok")
+    stub_request(:post, "https://agent.example.com/trigger").to_return(
+      status: 429,
       body: {
-        "stderr" => <<~TEXT,
-          failed to refresh available models: No credentials found for provider `Gemini`. Set `GEMINI_API_KEY` in your environment.
-        TEXT
-        "stdout" => "Antigravity protocol error: invalid managed Antigravity configuration"
-      }
-    )
-  end
-
-  test "Gemini authentication failures still expire an Antigravity connection" do
-    agent = agents(:research_assistant)
-    agent.update!(
-      model_id: "google/gemini-3.7-flash",
-      provider_auth_modes: { "gemini" => "oauth_account" }
-    )
-    request = ExternalAgentResponseRequest.new(
-      agent: agent,
-      chat: agent.account.chats.create!(model_id: "google/gemini-3.7-flash", title: "Expired clamp")
+        status: "error",
+        error_kind: "subscription_limit",
+        subscription_usage: {
+          provider: "xai",
+          status: "limited",
+          windows: [
+            {
+              blocking: true,
+              remaining_percent: 0,
+              resets_at: 2.hours.from_now.iso8601
+            }
+          ]
+        }
+      }.to_json
     )
 
-    assert request.send(
-      :subscription_auth_failure?,
-      status: 500,
-      body: {
-        "stderr" => "failed to refresh available models: No credentials found for provider `Gemini`.",
-        "stdout" => "Antigravity invocation failed: authentication required"
-      }
-    )
+    assert_difference "chat.messages.count", 1 do
+      ExternalAgentResponseRequest.new(agent:, chat:).call
+    end
+
+    assert_includes chat.messages.order(:created_at).last.content, "Grok's subscription limit has been reached"
+    assert_equal "connected", agent.reload.provider_connection("xai").fetch("status")
+    assert_equal 429, AgentRuntimeInteraction.order(:created_at).last.transport_status
   end
 
   test "does not build a request_delta when persistent_session is disabled" do

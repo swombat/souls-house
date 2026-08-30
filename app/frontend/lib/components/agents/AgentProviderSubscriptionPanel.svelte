@@ -2,7 +2,11 @@
   import Button from '$lib/components/shadcn/button/button.svelte';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { Copy } from 'phosphor-svelte';
-  import { accountAgentProviderSubscriptionPath, cancelAccountAgentProviderSubscriptionPath } from '@/routes';
+  import {
+    accountAgentProviderSubscriptionPath,
+    accountAgentProviderSubscriptionUsagePath,
+    cancelAccountAgentProviderSubscriptionPath,
+  } from '@/routes';
 
   let { account, subscriptionAgent, canManage = false, showAgentName = true } = $props();
 
@@ -17,6 +21,9 @@
   let subscriptionSupported = $state(true);
   let browserCode = $state('');
   let submittingCode = $state(false);
+  let usage = $state(null);
+  let usageLoading = $state(false);
+  let usageError = $state(null);
   let isAnthropic = $derived(agent.provider === 'anthropic');
   let isGemini = $derived(agent.provider === 'gemini');
   let subscriptionModeLabel = $derived(
@@ -44,6 +51,11 @@
     checkCapabilities();
   });
 
+  $effect(() => {
+    if (!agent.available || agent.connection?.status !== 'connected') return;
+    loadUsage();
+  });
+
   function csrfToken() {
     return document.querySelector('meta[name="csrf-token"]')?.content || '';
   }
@@ -52,6 +64,10 @@
     return cancel
       ? cancelAccountAgentProviderSubscriptionPath(account.id, agent.id)
       : accountAgentProviderSubscriptionPath(account.id, agent.id);
+  }
+
+  function usagePath() {
+    return accountAgentProviderSubscriptionUsagePath(account.id, agent.id);
   }
 
   async function jsonRequest(url, options = {}) {
@@ -80,6 +96,42 @@
     } catch (error) {
       actionError = error.message;
     }
+  }
+
+  async function loadUsage(refresh = false) {
+    usageLoading = true;
+    usageError = null;
+    try {
+      usage = await jsonRequest(`${usagePath()}${refresh ? '?refresh=1' : ''}`);
+    } catch (error) {
+      usageError = error.message;
+    } finally {
+      usageLoading = false;
+    }
+  }
+
+  function usageLine(window) {
+    const remaining = Math.max(0, Math.min(100, Number(window.remaining_percent) || 0));
+    const reset = resetDescription(window.resets_at);
+    return `${remaining.toFixed(remaining % 1 === 0 ? 0 : 1)}% left${reset ? ` · ${reset}` : ''}`;
+  }
+
+  function resetDescription(value) {
+    if (!value) return '';
+    const seconds = Math.ceil((new Date(value).getTime() - Date.now()) / 1000);
+    if (seconds <= 0) return 'reset pending';
+    if (seconds < 3600) return `resets in ${Math.ceil(seconds / 60)}m`;
+    if (seconds < 86400) {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.ceil((seconds % 3600) / 60);
+      return `resets in ${hours}h${minutes ? ` ${minutes}m` : ''}`;
+    }
+    return `resets ${new Intl.DateTimeFormat(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(new Date(value))}`;
   }
 
   async function checkCapabilities() {
@@ -232,6 +284,41 @@
               ? 'Experimental Antigravity clamping is available; select it to draw usage from this Google AI plan.'
               : "Resident usage draws on this account's personal plan quota."}
         </p>
+        <div class="mt-3 space-y-1.5">
+          {#if usageLoading && !usage}
+            <p class="text-xs text-muted-foreground">Loading subscription usage…</p>
+          {:else if usage?.status === 'unknown' || usageError}
+            <div class="flex items-center gap-2">
+              <p class="text-xs text-muted-foreground">Usage temporarily unavailable</p>
+              <button
+                class="text-xs font-medium text-primary hover:underline"
+                type="button"
+                onclick={() => loadUsage(true)}>
+                Refresh
+              </button>
+            </div>
+          {:else if usage?.windows?.length}
+            {#each usage.windows as window (window.id)}
+              <div
+                class={[
+                  'flex items-center justify-between gap-3 rounded-sm px-2 py-1 text-xs',
+                  window.blocking && Number(window.remaining_percent) <= 0
+                    ? 'bg-amber-500/10 text-amber-800 dark:text-amber-300'
+                    : 'bg-muted/50 text-muted-foreground',
+                ]}>
+                <span class="font-medium">{window.label}</span>
+                <span>{usageLine(window)}</span>
+              </div>
+            {/each}
+            <button
+              class="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+              type="button"
+              disabled={usageLoading}
+              onclick={() => loadUsage(true)}>
+              {usageLoading ? 'Refreshing…' : 'Refresh usage'}
+            </button>
+          {/if}
+        </div>
       {:else}
         <p class="text-xs text-muted-foreground">
           {isAnthropic

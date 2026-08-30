@@ -82,7 +82,6 @@ import subprocess
 import threading
 import time
 import logging
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -114,6 +113,7 @@ SHIM_PORT = int(os.environ.get("SHIM_PORT", "4000"))
 CHAOS_BIN = os.environ.get("CHAOS_BIN", "/usr/local/bin/chaos")
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN", "/usr/local/bin/claude")
 AGY_BIN = os.environ.get("AGY_BIN", "/usr/local/bin/agy")
+CODEXBAR_BIN = os.environ.get("CODEXBAR_BIN", "/usr/local/bin/codexbar")
 SCRIPT_BIN = os.environ.get("SCRIPT_BIN", "/usr/bin/script")
 ANTIGRAVITY_BROWSER_HELPER_DIR = Path(os.environ.get(
     "ANTIGRAVITY_BROWSER_HELPER_DIR",
@@ -141,6 +141,8 @@ PROVIDER_API_KEY_ENV = {
     "xai": "XAI_API_KEY",
 }
 AUTH_CODE_TTL_SECS = 15 * 60
+SUBSCRIPTION_USAGE_TTL_SECS = 60
+SUBSCRIPTION_USAGE_TIMEOUT_SECS = 20
 SHIM_TELEMETRY_SCHEMA_VERSION = 1
 SIDECAR_SCHEMA_VERSION = 3
 SUPPORTED_CHAOS_TELEMETRY_SCHEMA_VERSION = 1
@@ -194,6 +196,9 @@ _auth_lock = threading.Lock()
 _auth_process = None
 _auth_state = {"status": "none"}
 _auth_code_ready = threading.Event()
+_subscription_usage_cache = {}
+_subscription_usage_locks = {}
+_subscription_usage_guard = threading.Lock()
 
 
 # ----- routes -----
@@ -232,6 +237,15 @@ def trigger():
         }), 400
     if auth_mode not in ("api_key", "oauth_account"):
         return jsonify({"error": "auth_mode must be api_key or oauth_account"}), 400
+
+    if auth_mode == "oauth_account":
+        usage = subscription_usage(provider, model)
+        if usage.get("status") == "limited":
+            return jsonify({
+                "status": "error",
+                "error_kind": "subscription_limit",
+                "subscription_usage": usage,
+            }), 429
 
     log.info(
         f"trigger session_id={session_id} conversation_id={conversation_id} "
@@ -841,6 +855,16 @@ def instrumented_response(
     }
     if roll:
         response["session_roll_reason"] = roll
+    error_kind = classify_provider_error(response, runtime.get("provider"))
+    if error_kind:
+        response["error_kind"] = error_kind
+        if error_kind == "subscription_limit":
+            cached_usage = cached_subscription_usage(
+                runtime.get("provider"),
+                runtime.get("model"),
+            )
+            if cached_usage:
+                response["subscription_usage"] = cached_usage
     log.info(
         f"trigger done session_id={session_id} rc={result.returncode} resumed={resumed} "
         f"chaos_session={events['process_id']} "
@@ -1508,6 +1532,291 @@ def _require_shim_auth(path):
 def _requested_auth_provider():
     payload = request.get_json(silent=True) or {}
     return payload.get("provider") or request.args.get("provider") or AGENT_PROVIDER
+
+
+def auth_usage():
+    _require_shim_auth("/auth/usage")
+    provider = request.args.get("provider") or AGENT_PROVIDER
+    model = request.args.get("model") or AGENT_DEFAULT_MODEL
+    if provider not in OAUTH_ACCOUNT_PROVIDERS:
+        return jsonify({"error": f"{provider} does not support subscription usage"}), 422
+    return jsonify(subscription_usage(provider, model, refresh=request.args.get("refresh") == "1"))
+
+
+def subscription_usage(provider, model, refresh=False):
+    key = (provider, model)
+    now = time.monotonic()
+    with _subscription_usage_guard:
+        cached = _subscription_usage_cache.get(key)
+        if not refresh and cached and now - cached["cached_at"] < SUBSCRIPTION_USAGE_TTL_SECS:
+            return _valid_cached_usage(cached["snapshot"])
+        lock = _subscription_usage_locks.setdefault(key, threading.Lock())
+
+    with lock:
+        now = time.monotonic()
+        with _subscription_usage_guard:
+            cached = _subscription_usage_cache.get(key)
+            if not refresh and cached and now - cached["cached_at"] < SUBSCRIPTION_USAGE_TTL_SECS:
+                return _valid_cached_usage(cached["snapshot"])
+        try:
+            snapshot = USAGE_PROBES[provider](provider, model)
+        except Exception as error:
+            log.warning(f"subscription usage unavailable provider={provider}: {type(error).__name__}")
+            with _subscription_usage_guard:
+                cached = _subscription_usage_cache.get(key)
+            if cached:
+                usable = _last_good_after_failed_refresh(cached["snapshot"])
+                if usable:
+                    return usable
+            return unknown_subscription_usage(provider)
+
+        snapshot = normalize_subscription_usage(snapshot, provider, model)
+        with _subscription_usage_guard:
+            _subscription_usage_cache[key] = {
+                "cached_at": time.monotonic(),
+                "snapshot": snapshot,
+            }
+        return snapshot
+
+
+def cached_subscription_usage(provider, model):
+    if not provider or not model:
+        return None
+    with _subscription_usage_guard:
+        cached = _subscription_usage_cache.get((provider, model))
+    return _valid_cached_usage(cached["snapshot"]) if cached else None
+
+
+def _valid_cached_usage(snapshot):
+    if snapshot.get("status") != "limited":
+        return snapshot
+    resets = [
+        _parse_timestamp(window.get("resets_at"))
+        for window in snapshot.get("windows", [])
+        if window.get("blocking")
+    ]
+    known_resets = [value for value in resets if value is not None]
+    if known_resets and max(known_resets) <= datetime.now(timezone.utc):
+        return unknown_subscription_usage(snapshot.get("provider"))
+    return snapshot
+
+
+def _last_good_after_failed_refresh(snapshot):
+    snapshot = _valid_cached_usage(snapshot)
+    if snapshot.get("status") == "unknown":
+        return None
+    resets = [
+        _parse_timestamp(window.get("resets_at"))
+        for window in snapshot.get("windows", [])
+    ]
+    now = datetime.now(timezone.utc)
+    return snapshot if any(value is not None and value > now for value in resets) else None
+
+
+def unknown_subscription_usage(provider):
+    return {
+        "provider": provider,
+        "plan": None,
+        "status": "unknown",
+        "windows": [],
+        "observed_at": datetime.now(timezone.utc).isoformat(),
+        "source": None,
+    }
+
+
+def probe_chaos_account_usage(provider, _model):
+    result = subprocess.run(
+        [CHAOS_BIN, "--provider", provider, "accounts", "usage", "--json"],
+        capture_output=True,
+        text=True,
+        timeout=SUBSCRIPTION_USAGE_TIMEOUT_SECS,
+        env=_oauth_account_env(),
+    )
+    if result.returncode != 0:
+        raise RuntimeError("Chaos account usage probe failed")
+    return json.loads(_bounded_output(result.stdout))
+
+
+def probe_claude_usage(_provider, _model):
+    status = _anthropic_account_status()
+    if status.get("status") != "connected":
+        raise RuntimeError("Claude subscription is not connected")
+    return _codexbar_usage("claude", _anthropic_subscription_env())
+
+
+def probe_antigravity_usage(_provider, _model):
+    status = _antigravity_account_status()
+    if status.get("status") != "connected":
+        raise RuntimeError("Antigravity subscription is not connected")
+    return _codexbar_usage("antigravity", _antigravity_cli_env())
+
+
+def _codexbar_usage(provider, env):
+    result = subprocess.run(
+        [CODEXBAR_BIN, "usage", "--provider", provider, "--source", "cli", "--format", "json"],
+        capture_output=True,
+        text=True,
+        timeout=SUBSCRIPTION_USAGE_TIMEOUT_SECS,
+        env=env,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("CodexBar usage probe failed")
+    payload = json.loads(_bounded_output(result.stdout))
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("CodexBar returned no usage snapshot")
+    return payload[0]
+
+
+def _bounded_output(value, limit=256_000):
+    if len(value) > limit:
+        raise ValueError("usage probe output exceeded limit")
+    return value
+
+
+def normalize_subscription_usage(payload, provider, model):
+    if provider in ("openai", "xai"):
+        windows = [
+            {
+                "id": str(window.get("id") or f"window-{index}"),
+                "label": str(window.get("label") or "Usage"),
+                "remaining_percent": _remaining_percent(window.get("used_percent")),
+                "resets_at": _iso_timestamp(window.get("resets_at")),
+                "blocking": True,
+            }
+            for index, window in enumerate(payload.get("windows") or [])
+            if isinstance(window, dict) and _number(window.get("used_percent")) is not None
+        ]
+        observed_at = _iso_timestamp(payload.get("observed_at"))
+        source = payload.get("source")
+        plan = payload.get("plan")
+    else:
+        usage = payload.get("usage") or {}
+        plan = usage.get("loginMethod") or (usage.get("identity") or {}).get("loginMethod")
+        source = payload.get("source") or "cli"
+        observed_at = _iso_timestamp(usage.get("updatedAt"))
+        windows = _codexbar_windows(provider, model, usage)
+
+    limited = any(window["blocking"] and window["remaining_percent"] <= 0 for window in windows)
+    return {
+        "provider": provider,
+        "plan": plan,
+        "status": "limited" if limited else ("available" if windows else "unknown"),
+        "windows": windows,
+        "observed_at": observed_at or datetime.now(timezone.utc).isoformat(),
+        "source": source,
+    }
+
+
+def _codexbar_windows(provider, model, usage):
+    candidates = []
+    if provider == "gemini" and usage.get("extraRateWindows"):
+        for item in usage["extraRateWindows"]:
+            candidates.append((item.get("id"), item.get("title"), item.get("window") or {}))
+    else:
+        labels = {"primary": "Session", "secondary": "Weekly", "tertiary": "Additional"}
+        for key, label in labels.items():
+            if isinstance(usage.get(key), dict):
+                candidates.append((key, label, usage[key]))
+        for item in usage.get("extraRateWindows") or []:
+            candidates.append((item.get("id"), item.get("title"), item.get("window") or {}))
+
+    windows = []
+    seen = set()
+    for index, (window_id, label, window) in enumerate(candidates):
+        if not isinstance(window, dict) or _number(window.get("usedPercent")) is None:
+            continue
+        key = (window_id, window.get("resetsAt"), window.get("usedPercent"))
+        if key in seen:
+            continue
+        seen.add(key)
+        windows.append({
+            "id": str(window_id or f"window-{index}"),
+            "label": str(label or "Usage"),
+            "remaining_percent": _remaining_percent(window.get("usedPercent")),
+            "resets_at": _iso_timestamp(window.get("resetsAt")),
+            "blocking": _window_blocks_model(provider, model, str(label or window_id or "")),
+        })
+    return windows
+
+
+def _window_blocks_model(provider, model, label):
+    if provider == "gemini":
+        is_gemini_model = "gemini" in (model or "").lower()
+        is_gemini_window = "gemini" in label.lower()
+        return is_gemini_model == is_gemini_window
+    if provider != "anthropic":
+        return True
+    lower = label.lower()
+    scoped_models = ("opus", "sonnet", "haiku")
+    named_scope = next((name for name in scoped_models if name in lower), None)
+    return named_scope is None or named_scope in (model or "").lower()
+
+
+def _remaining_percent(used_percent):
+    return round(max(0.0, min(100.0, 100.0 - float(used_percent))), 2)
+
+
+def _number(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_timestamp(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value, tz=timezone.utc)
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _iso_timestamp(value):
+    parsed = _parse_timestamp(value)
+    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if parsed else None
+
+
+def classify_provider_error(response, provider):
+    if response.get("status") != "error":
+        return None
+    diagnostic = "\n".join(
+        str(response.get(key) or "")
+        for key in ("error", "stderr", "stdout")
+    )
+    if provider == "gemini":
+        diagnostic = "\n".join(
+            line for line in diagnostic.splitlines()
+            if not re.search(
+                r"failed to refresh available models: No credentials found for provider [`']?Gemini[`']?\.",
+                line,
+                re.IGNORECASE,
+            )
+        )
+    if re.search(
+        r"rate.?limit|quota (?:is )?(?:exhausted|reached)|usage limit|too many requests|\b429\b",
+        diagnostic,
+        re.IGNORECASE,
+    ):
+        return "subscription_limit"
+    if re.search(
+        r"unauthori[sz]ed|authentication|auth(?:entication)?[^a-z]+expired|token[^a-z]+expired|"
+        r"missing provider credentials|provider auth missing|no (?:usable )?credentials|\b401\b",
+        diagnostic,
+        re.IGNORECASE,
+    ):
+        return "auth_expired"
+    return None
+
+
+USAGE_PROBES = {
+    "anthropic": probe_claude_usage,
+    "gemini": probe_antigravity_usage,
+    "openai": probe_chaos_account_usage,
+    "xai": probe_chaos_account_usage,
+}
 
 
 def auth_capabilities():
@@ -2194,6 +2503,7 @@ if app:
     app.get("/health")(health)
     app.post("/trigger")(trigger)
     app.get("/auth/capabilities")(auth_capabilities)
+    app.get("/auth/usage")(auth_usage)
     app.post("/auth/start")(auth_start)
     app.post("/auth/code")(auth_code)
     app.get("/auth/status")(auth_status)

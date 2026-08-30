@@ -118,6 +118,7 @@ Rails.application.routes.draw do
           post :cancel
           post :code
         end
+        resource :provider_subscription_usage, only: :show
         resources :service_accesses, only: :update
         resources :memories, only: [ :create ] do
           resource :discard, only: [ :create, :destroy ], module: :memories

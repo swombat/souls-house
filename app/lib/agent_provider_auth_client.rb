@@ -26,6 +26,10 @@ class AgentProviderAuthClient
     request(:get, "/auth/status", provider:)
   end
 
+  def usage(provider:, model:, refresh: false)
+    request(:get, "/auth/usage", provider:, model:, refresh: refresh ? 1 : nil)
+  end
+
   def start(provider:)
     request(:post, "/auth/start", provider:)
   end
@@ -50,7 +54,7 @@ class AgentProviderAuthClient
     raise Error, "Agent runtime is not available" if agent.trigger_bearer_token.blank?
 
     uri = URI("#{Agents::Endpoint.url_for(agent).delete_suffix("/")}#{path}")
-    uri.query = URI.encode_www_form(payload) if method == :get && payload.present?
+    uri.query = URI.encode_www_form(payload.compact) if method == :get && payload.present?
     request_class = method == :get ? Net::HTTP::Get : Net::HTTP::Post
     http_request = request_class.new(uri)
     http_request["Authorization"] = "Bearer #{agent.trigger_bearer_token}"

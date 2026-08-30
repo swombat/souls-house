@@ -67,6 +67,46 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
     assert_equal 409, result[:status]
   end
 
+  test "subscription limit sends a Telegram notice without launching a second request" do
+    @agent.update!(
+      model_id: "x-ai/grok-build-0.1",
+      provider_auth_modes: { "xai" => "oauth_account" },
+      provider_connections: { "xai" => { "status" => "connected" } }
+    )
+    stub_request(:post, "https://agent.example.com/trigger").to_return(
+      status: 429,
+      body: {
+        status: "error",
+        error_kind: "subscription_limit",
+        subscription_usage: {
+          provider: "xai",
+          status: "limited",
+          windows: [
+            {
+              blocking: true,
+              remaining_percent: 0,
+              resets_at: 2.hours.from_now.iso8601
+            }
+          ]
+        }
+      }.to_json
+    )
+    sent = []
+
+    @agent.stub(:telegram_send_message, ->(chat_id, text, **) { sent << [ chat_id, text ] }) do
+      result = ExternalAgentTelegramRequest.new(
+        agent: @agent,
+        subscription: @subscription,
+        telegram_message: @message
+      ).call
+
+      assert_equal 429, result[:status]
+    end
+
+    assert_equal @subscription.telegram_chat_id, sent.first.first
+    assert_includes sent.first.last, "Grok&#39;s subscription limit has been reached"
+  end
+
   test "Telegram full and delta requests include active house notices" do
     Notice.create!(
       scope: "account",

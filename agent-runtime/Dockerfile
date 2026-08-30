@@ -16,15 +16,13 @@
 # Upstream changes must continue to preserve the original SQLx migration
 # checksum used by persisted Chaos journals. Patch/application or runtime tests
 # should fail the deployment visibly when a new Chaos master is incompatible.
-# The Stop-hook continuation patch restores a fix lost during Chaos's turn-loop
-# refactor; remove it once the equivalent upstream fix is included in master.
 ARG CHAOS_REPO=https://github.com/seuros/chaos.git
 ARG CHAOS_HEAD
 
 # =============================================================================
 # Stage 1 — pull and build chaos. Source tree is discarded after the binary copies.
 # =============================================================================
-FROM rust:1.97-bookworm AS builder
+FROM rust:1.98-bookworm AS builder
 
 ARG CHAOS_REPO
 ARG CHAOS_HEAD
@@ -41,15 +39,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-COPY patches/chaos-stop-hook-continuation-user-turn.patch /tmp/chaos-stop-hook-continuation-user-turn.patch
 COPY patches/chaos-antigravity-empty-managed-config.patch /tmp/chaos-antigravity-empty-managed-config.patch
 COPY patches/chaos-antigravity-daily-cloudcode-egress.patch /tmp/chaos-antigravity-daily-cloudcode-egress.patch
 RUN test -n "${CHAOS_HEAD}" \
     && git clone --filter=blob:none ${CHAOS_REPO} chaos \
     && cd chaos \
     && git checkout ${CHAOS_HEAD} \
-    && git apply --check /tmp/chaos-stop-hook-continuation-user-turn.patch \
-    && git apply /tmp/chaos-stop-hook-continuation-user-turn.patch \
     && git apply --check /tmp/chaos-antigravity-empty-managed-config.patch \
     && git apply /tmp/chaos-antigravity-empty-managed-config.patch \
     && git apply --check /tmp/chaos-antigravity-daily-cloudcode-egress.patch \
@@ -69,7 +64,7 @@ FROM node:22-trixie-slim AS runtime
 
 ARG CHAOS_HEAD
 LABEL house.souls.chaos-ref="${CHAOS_HEAD}"
-LABEL house.souls.chaos-patches="stop-hook-continuation-user-turn,antigravity-empty-managed-config,antigravity-daily-cloudcode-egress"
+LABEL house.souls.chaos-patches="antigravity-empty-managed-config,antigravity-daily-cloudcode-egress"
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -82,6 +77,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tini \
         gosu \
         procps \
+        lsof \
         libdbus-1-3 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -141,12 +137,32 @@ RUN case "${TARGETARCH}" in \
     && rm -f /tmp/antigravity.tar.gz \
     && agy --version | grep -F "${ANTIGRAVITY_VERSION}"
 
+# CodexBar provides bounded, read-only quota probes for the official Claude
+# Code and Antigravity credential stores. Keep its bundle beside the binary.
+ARG CODEXBAR_VERSION=0.56.1
+ARG CODEXBAR_AMD64_SHA256=11fb79ab1a0760dfee7913a03d1d3df8f99fec7d080c2efacb88b4509f2dedaf
+ARG CODEXBAR_ARM64_SHA256=9b1fc1fbd0debb5513cda0577d53f245d640616a46791e8dcc1227089002d3dc
+RUN case "${TARGETARCH}" in \
+      amd64) arch=x86_64; checksum="${CODEXBAR_AMD64_SHA256}" ;; \
+      arm64) arch=aarch64; checksum="${CODEXBAR_ARM64_SHA256}" ;; \
+      *) echo "Unsupported CodexBar architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && artifact="CodexBarCLI-v${CODEXBAR_VERSION}-linux-${arch}.tar.gz" \
+    && curl -fsSL "https://github.com/steipete/CodexBar/releases/download/v${CODEXBAR_VERSION}/${artifact}" -o /tmp/codexbar.tar.gz \
+    && echo "${checksum}  /tmp/codexbar.tar.gz" | sha256sum -c - \
+    && mkdir -p /opt/codexbar \
+    && tar -xzf /tmp/codexbar.tar.gz -C /opt/codexbar \
+    && ln -s /opt/codexbar/CodexBarCLI /usr/local/bin/codexbar \
+    && rm /tmp/codexbar.tar.gz \
+    && codexbar --version | grep -F "${CODEXBAR_VERSION}"
+
 COPY --from=builder /usr/local/bin/chaos /usr/local/bin/chaos
 COPY --from=builder /usr/local/bin/chaos_journald /usr/local/bin/chaos_journald
 RUN mkdir -p /usr/local/share/helixkit-agent
 COPY --chown=agent:agent trigger_shim.py /home/agent/trigger_shim.py
 COPY docs/runtime-instructions.md /usr/local/share/helixkit-agent/runtime-instructions.md
 COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md
+COPY licenses/CodexBar-LICENSE /usr/local/share/licenses/CodexBar/LICENSE
 COPY stop_journal_reflex.py /usr/local/share/helixkit-agent/stop_journal_reflex.py
 COPY helixkit-post-message /usr/local/bin/helixkit-post-message
 COPY helixkit-send-telegram /usr/local/bin/helixkit-send-telegram

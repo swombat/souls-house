@@ -43,6 +43,7 @@ class ExternalAgentTelegramRequest
       )
     end
     acknowledge_safeguard_roll!(result)
+    surface_runtime_failure!(result) if auth_mode == "oauth_account"
     result
   rescue StandardError => e
     Rails.logger.warn "[ExternalAgentTelegramRequest] #{agent.id} trigger failed: #{e.class}: #{e.message}"
@@ -55,6 +56,21 @@ class ExternalAgentTelegramRequest
 
   def provider
     @provider ||= Agents::Sandbox.chaos_provider_for(agent)
+  end
+
+  def surface_runtime_failure!(result)
+    case result.dig(:body, "error_kind")
+    when "auth_expired"
+      agent.mark_provider_connection_status!(provider, "expired")
+      send_notice("Provider connection expired. Reconnect it in agent hosting settings.")
+    when "subscription_limit"
+      usage = AgentSubscriptionUsage.new(result.dig(:body, "subscription_usage"))
+      send_notice(usage.user_message(time_zone: subscription.user.timezone))
+    end
+  end
+
+  def send_notice(text)
+    agent.telegram_send_message(subscription.telegram_chat_id, ERB::Util.html_escape(text))
   end
 
   def trigger_payload

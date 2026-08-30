@@ -60,31 +60,19 @@ class ExternalAgentResponseRequest
         auth_mode: auth_mode
       )
     end
-    surface_subscription_auth_failure! if subscription_auth_failure?(result)
+    if auth_mode == "oauth_account"
+      case result.dig(:body, "error_kind")
+      when "auth_expired"
+        surface_subscription_auth_failure!
+      when "subscription_limit"
+        surface_subscription_limit!(result.dig(:body, "subscription_usage"))
+      end
+    end
     result
   end
 
   def provider
     @provider ||= Agents::Sandbox.chaos_provider_for(agent)
-  end
-
-  def subscription_auth_failure?(result)
-    return false unless agent.provider_auth_mode(provider) == "oauth_account"
-    return false if result[:status].to_i < 400
-
-    body = result[:body].to_h
-    diagnostic = [ body["error"], body["stderr"], body["stdout"] ].compact.join("\n")
-    diagnostic = diagnostic.lines.reject { |line| expected_gemini_api_key_warning?(line) }.join
-    diagnostic.match?(
-      /unauthori[sz]ed|authentication|auth(?:entication)?[^a-z]+expired|token[^a-z]+expired|missing provider credentials|provider auth missing|no (?:usable )?credentials|\b401\b/i
-    )
-  end
-
-  def expected_gemini_api_key_warning?(line)
-    provider == "gemini" &&
-      line.match?(
-        /failed to refresh available models: No credentials found for provider [`']?Gemini[`']?\./i
-      )
   end
 
   def surface_subscription_auth_failure!
@@ -99,6 +87,19 @@ class ExternalAgentResponseRequest
       agent: agent,
       content: "_Provider connection expired — [reconnect in agent hosting settings](#{settings_path})._"
     )
+  end
+
+  def surface_subscription_limit!(snapshot)
+    usage = AgentSubscriptionUsage.new(snapshot)
+    chat.messages.create!(
+      role: "assistant",
+      agent: agent,
+      content: "_#{usage.user_message(time_zone: requesting_user&.timezone)}_"
+    )
+  end
+
+  def requesting_user
+    chat.messages.includes(:user).where(role: "user").order(created_at: :desc).first&.user
   end
 
   def agent_unhealthy?
