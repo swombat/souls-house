@@ -56,6 +56,25 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes entrypoint, "https://openrouter.ai/api/v1"
   end
 
+  test "Claude subscription usage uses CodexBar's OAuth fetcher" do
+    out = run_shim_python(<<~PY)
+      calls = []
+      mod._anthropic_account_status = lambda: {"status": "connected"}
+      mod._anthropic_subscription_env = lambda: {"CLAUDE_CONFIG_DIR": "/tmp/claude"}
+      def capture(provider, env, source="cli"):
+          calls.append({"provider": provider, "source": source, "env": env})
+          return {"usage": {}}
+      mod._codexbar_usage = capture
+      mod.probe_claude_usage("anthropic", "claude-opus-5")
+      print(json.dumps(calls))
+    PY
+
+    calls = JSON.parse(out)
+    assert_equal "claude", calls.dig(0, "provider")
+    assert_equal "oauth", calls.dig(0, "source")
+    assert_equal "/tmp/claude", calls.dig(0, "env", "CLAUDE_CONFIG_DIR")
+  end
+
   test "auth mode changes roll persistent sessions" do
     out = run_shim_python(<<~PY)
       record = {

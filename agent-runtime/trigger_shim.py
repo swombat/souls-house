@@ -1641,7 +1641,7 @@ def probe_claude_usage(_provider, _model):
     status = _anthropic_account_status()
     if status.get("status") != "connected":
         raise RuntimeError("Claude subscription is not connected")
-    return _codexbar_usage("claude", _anthropic_subscription_env())
+    return _codexbar_usage("claude", _anthropic_subscription_env(), source="oauth")
 
 
 def probe_antigravity_usage(_provider, _model):
@@ -1651,9 +1651,9 @@ def probe_antigravity_usage(_provider, _model):
     return _codexbar_usage("antigravity", _antigravity_cli_env())
 
 
-def _codexbar_usage(provider, env):
+def _codexbar_usage(provider, env, source="cli"):
     result = subprocess.run(
-        [CODEXBAR_BIN, "usage", "--provider", provider, "--source", "cli", "--format", "json"],
+        [CODEXBAR_BIN, "usage", "--provider", provider, "--source", source, "--format", "json"],
         capture_output=True,
         text=True,
         timeout=SUBSCRIPTION_USAGE_TIMEOUT_SECS,
