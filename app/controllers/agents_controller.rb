@@ -12,7 +12,9 @@ class AgentsController < ApplicationController
     @agents = current_account.agents.by_name
 
     render inertia: "agents/index", props: {
-      agents: @agents.as_json,
+      agents: @agents.map { |agent|
+        agent.as_json.merge(provider_subscription: provider_subscription_for(agent))
+      },
       grouped_models: grouped_models,
       available_tools: tools_for_frontend,
       colour_options: Agent::VALID_COLOURS,
@@ -70,7 +72,7 @@ class AgentsController < ApplicationController
       hosting_diagnostics_url: account_agent_hosting_diagnostics_path(current_account, @agent),
       runtime_observability_url: Current.user&.is_site_admin? ? admin_agent_runtime_path(@agent) : nil,
       sandbox_recreation_url: account_agent_sandbox_recreation_path(current_account, @agent),
-      provider_subscription: provider_subscription,
+      provider_subscription: provider_subscription_for(@agent),
       service_connections: service_connections_for_agent,
       can_manage_provider_subscription: current_account.ai_credentials_manageable_by?(Current.user),
       interactions: interactions.map(&:as_session_json),
@@ -192,15 +194,15 @@ class AgentsController < ApplicationController
     end
   end
 
-  def provider_subscription
-    return unless @agent.externally_hosted?
+  def provider_subscription_for(agent)
+    return unless agent.externally_hosted?
 
-    provider = Agents::Sandbox.subscription_provider_for(@agent)
+    provider = Agents::Sandbox.subscription_provider_for(agent)
     return unless provider
 
     {
-      id: @agent.to_param,
-      name: @agent.name,
+      id: agent.to_param,
+      name: agent.name,
       provider: provider,
       provider_name: {
         "anthropic" => "Claude",
@@ -208,10 +210,10 @@ class AgentsController < ApplicationController
         "openai" => "ChatGPT",
         "xai" => "xAI"
       }.fetch(provider),
-      runtime: @agent.runtime,
-      available: @agent.external? && @agent.health_state == "healthy",
-      auth_mode: @agent.provider_auth_mode(provider),
-      connection: @agent.provider_connection(provider)
+      runtime: agent.runtime,
+      available: agent.external? && agent.health_state == "healthy",
+      auth_mode: agent.provider_auth_mode(provider),
+      connection: agent.provider_connection(provider)
     }
   rescue KeyError
     nil

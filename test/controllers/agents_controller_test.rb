@@ -29,6 +29,24 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to new_account_agent_path(@account)
   end
 
+  test "index exposes subscription metadata for OAuth residents" do
+    @agent.update!(
+      model_id: "x-ai/grok-build-0.1",
+      runtime: "external",
+      health_state: "healthy",
+      provider_auth_modes: { "xai" => "oauth_account" },
+      provider_connections: { "xai" => { "status" => "connected" } }
+    )
+
+    get account_agents_path(@account)
+
+    agent = inertia_shared_props.fetch("agents").find { |item| item.fetch("id") == @agent.to_param }
+    subscription = agent.fetch("provider_subscription")
+    assert_equal "xai", subscription.fetch("provider")
+    assert_equal "oauth_account", subscription.fetch("auth_mode")
+    assert_equal "connected", subscription.dig("connection", "status")
+  end
+
   test "should get new agent wizard" do
     get new_account_agent_path(@account)
 

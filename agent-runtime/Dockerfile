@@ -26,7 +26,7 @@ FROM rust:1.98-bookworm AS builder
 
 ARG CHAOS_REPO
 ARG CHAOS_HEAD
-ARG CARGO_BUILD_JOBS
+ARG CARGO_BUILD_JOBS=2
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -51,10 +51,10 @@ RUN test -n "${CHAOS_HEAD}" \
     && git apply /tmp/chaos-antigravity-daily-cloudcode-egress.patch
 
 WORKDIR /build/chaos
-RUN cargo build --release --bin chaos \
+RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
     && cp target/release/chaos /usr/local/bin/chaos \
     && /usr/local/bin/chaos --version
-RUN cargo build --release --bin chaos_journald \
+RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos_journald \
     && cp target/release/chaos_journald /usr/local/bin/chaos_journald
 
 # =============================================================================

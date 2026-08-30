@@ -5,6 +5,7 @@
   import { PencilSimple, Trash, Copy } from 'phosphor-svelte';
   import { agentIconFor } from '$lib/agent-icons';
   import { editAccountAgentPath } from '@/routes';
+  import AgentSubscriptionUsageSummary from '$lib/components/agents/AgentSubscriptionUsageSummary.svelte';
 
   let { agent, accountId, toolNameLookup = {}, onupgrade, ondelete } = $props();
   let IconComponent = $derived(agentIconFor(agent.icon));
@@ -58,6 +59,10 @@
           </span>
         {/if}
       </div>
+    {/if}
+
+    {#if agent.provider_subscription?.auth_mode === 'oauth_account'}
+      <AgentSubscriptionUsageSummary {accountId} agentId={agent.id} subscription={agent.provider_subscription} />
     {/if}
 
     {#if agent.enabled_tools?.length > 0}
