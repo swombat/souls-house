@@ -226,7 +226,17 @@ stopped, and a verified fresh backup (DB dump + agent volumes).**
       HostedAgentRuntimeReconcileJob is a deliberate LEGACY list — untouched
       (agent-runtime image rename belongs to Step 2.4).
 
-### Step 2.2 — Kamal service rename (the disruptive one)
+### Step 2.2 — Kamal service rename ✅ 2026-08-31 (executed with 2.3 in one ~15-min window)
+Execution notes: agent volumes (`hk-agent-*`, `chaos-home-*`) are NOT
+service-name-derived — no moves needed; only `~/helix-kit-postgres` →
+`~/souls-house-postgres` moved (parent-dir rename). `helix-kit-web` KEPT as
+transition network-alias (pre-rename agent containers bake the old callback
+URL; remove in 2.5). Shared kamal-proxy untouched (`kamal app remove`, never
+`kamal remove`/`proxy reboot` — annatam/ghost/mnemodyne/searxng live there).
+Deploy needs `bundle exec kamal` (2.7) — global 2.12 demands proxy ≥0.9.2.
+Leftover cruft for 2.5: `~/helix_kit-postgres` (stale underscore twin, Sep
+2025), `.kamal/apps/helix-kit/` env dir on host, old `dtenner/helix-kit`
+Docker Hub repo.
 Renaming `service: helix-kit` → `service: souls-house` gives new container
 names, new proxy registration, and **new volume paths** — Kamal will not
 migrate data.
@@ -240,7 +250,14 @@ migrate data.
 - [ ] Move/copy agent volumes to new paths; update restic backup targets
 - [ ] `kamal setup` / `kamal deploy`; restart agents; verify callbacks
 
-### Step 2.3 — Database rename (DO during the 2.2 window — decided 2026-08-24)
+### Step 2.3 — Database rename ✅ 2026-08-31
+Renamed in place via temp superuser (a role can't rename itself):
+`souls_house_production` + `_cache`/`_queue`/`_cable` (solid_* DBs derive
+from DATABASE_URL by suffix — all four had to move together), role
+`helix_kit` → `souls_house` (scram password survived, verified over TCP).
+Pre-rename dump kept at `~/backups/helix_kit_production_pre-rename-final.sql.gz`
+on the host. Old S3 dumps restore into the renamed DB unchanged
+(`--no-owner --no-acl`, no `-C`); new dumps are named `souls_house_production_*`.
 Earlier draft said "recommend never" on backup-continuity grounds; Daniel's
 counter: he *does* read the name, and backup retention rolls over — within
 days of the rename every restorable snapshot carries the new name. So:
