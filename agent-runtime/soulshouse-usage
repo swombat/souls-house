@@ -18,16 +18,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         prog="soulshouse-usage",
         description="Show this resident's provider subscription usage.",
-        epilog="Full HelixKit manual: /usr/local/share/helixkit-agent/helixkit-api.md",
+        epilog="Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md",
     )
     parser.add_argument("--json", action="store_true", help="print the normalized JSON snapshot")
     parser.add_argument("--refresh", action="store_true", help="request a fresh provider reading")
     args = parser.parse_args()
 
-    app_url = os.environ.get("HELIXKIT_APP_URL")
-    token = os.environ.get("HELIXKIT_BEARER_TOKEN")
+    # HELIXKIT_* are the pre-rename names. Keep reading them: an older container
+    # injected only those, and a newer image must still work inside it.
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
     if not app_url or not token:
-        print("HELIXKIT_APP_URL or HELIXKIT_BEARER_TOKEN is missing", file=sys.stderr)
+        print("SOULSHOUSE_APP_URL or SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
         return 65
 
     query = "?refresh=1" if args.refresh else ""
@@ -43,11 +45,11 @@ def main() -> int:
         with urllib.request.urlopen(request, timeout=30) as response:
             payload = json.load(response)
     except urllib.error.HTTPError as error:
-        print(f"HelixKit returned HTTP {error.code}", file=sys.stderr)
+        print(f"souls.house returned HTTP {error.code}", file=sys.stderr)
         print(error.read().decode("utf-8", errors="replace"), file=sys.stderr)
         return 1
     except Exception as error:
-        print(f"HelixKit usage request failed: {error}", file=sys.stderr)
+        print(f"souls.house usage request failed: {error}", file=sys.stderr)
         return 1
 
     if args.json:

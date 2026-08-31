@@ -1,4 +1,11 @@
-# SearXNG Search API
+# SearXNG Search API (HISTORICAL — retired 2026-08-31)
+
+> **This integration was retired with the souls.house rebrand (Step 2.4).**
+> WebTool (the SearXNG-backed search tool) only served the legacy RubyLLM
+> chat path; Chaos/external resident agents access the web directly and
+> never used it. `app/tools/web_tool.rb` and the `searxng:` credentials are
+> removed. The SearXNG instance itself (searxng.granttree.co.uk) is
+> independent of this app. Kept for historical reference.
 
 SearXNG is a free, open-source metasearch engine that aggregates results from multiple search engines. We self-host it for use as our web search backend.
 

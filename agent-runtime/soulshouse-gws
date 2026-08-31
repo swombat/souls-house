@@ -3,8 +3,10 @@
 Run Google's official gws CLI with a current Souls service-connection token.
 
 Usage:
-  helixkit-gws drive files list --params '{"pageSize": 10}'
-  helixkit-gws --connection svc_123 drive files list
+  soulshouse-gws drive files list --params '{"pageSize": 10}'
+  soulshouse-gws --connection svc_123 drive files list
+
+`helixkit-gws` is a permanent alias for this command.
 
 The Google refresh token and OAuth client secret remain in Souls. This helper
 requests only a short-lived access token and passes it to gws through the
@@ -27,13 +29,20 @@ def main() -> int:
         print(__doc__.strip())
         return 64
 
-    bearer_token = os.environ.get("HELIXKIT_BEARER_TOKEN")
+    # HELIXKIT_* are the pre-rename names. Keep reading them: an older container
+    # injected only those, and a newer image must still work inside it.
+    bearer_token = (
+        os.environ.get("SOULSHOUSE_BEARER_TOKEN")
+        or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    )
     if not bearer_token:
-        print("HELIXKIT_BEARER_TOKEN is missing", file=sys.stderr)
+        print("SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
         return 65
 
     manifest_path = Path(
-        os.environ.get("HELIXKIT_SERVICES_FILE", "/run/helixkit/services.yml")
+        os.environ.get("SOULSHOUSE_SERVICES_FILE")
+        or os.environ.get("HELIXKIT_SERVICES_FILE")
+        or "/run/helixkit/services.yml"
     )
     try:
         manifest = yaml.safe_load(manifest_path.read_text()) or {}
@@ -61,7 +70,11 @@ def main() -> int:
 
     environment = os.environ.copy()
     environment["GOOGLE_WORKSPACE_CLI_TOKEN"] = access_token
-    binary = environment.get("HELIXKIT_GWS_BINARY", "/usr/local/bin/gws")
+    binary = (
+        environment.get("SOULSHOUSE_GWS_BINARY")
+        or environment.get("HELIXKIT_GWS_BINARY")
+        or "/usr/local/bin/gws"
+    )
     os.execvpe(binary, [binary, *gws_args], environment)
 
 

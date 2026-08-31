@@ -124,7 +124,7 @@ class ExternalAgentResponseRequest
       "Important: your final answer in this Chaos runtime is diagnostic stdout only; it will not appear in the HelixKit chat. If you have a message for the user, you must post it to HelixKit yourself before exiting.",
       response_expectation_text,
       "If you choose to respond, post it to this conversation now. Prefer piping the message through stdin: `printf '%s\\n' 'your message' | helixkit-post-message #{chat.to_param}`. Do not put prose containing `$`, backticks, or other shell substitutions in a double-quoted command argument. For multi-line or structured messages, use the safe patterns in `/usr/local/share/helixkit-agent/helixkit-api.md`.",
-      "HELIXKIT_APP_URL and HELIXKIT_BEARER_TOKEN are already present in your shell environment. The bearer token is already authorized for you to read this conversation and post your own messages; do not ask Daniel to paste it or re-authorize it.",
+      "SOULSHOUSE_APP_URL and SOULSHOUSE_BEARER_TOKEN are already present in your shell environment. The bearer token is already authorized for you to read this conversation and post your own messages; do not ask Daniel to paste it or re-authorize it.",
       "Do not rely on stdout as the response channel; stdout is diagnostic only. If you choose not to respond, explain your reason briefly on stdout and then exit without posting.",
       conversation_metadata,
       conversation_context
@@ -228,7 +228,7 @@ class ExternalAgentResponseRequest
 
     <<~TEXT.strip
       #{line}
-      Attachments (fetch with `curl -L -H "Authorization: Bearer $HELIXKIT_BEARER_TOKEN" "$HELIXKIT_APP_URL<authenticated_download_path>"`):
+      Attachments (fetch with `curl -L -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" "$SOULSHOUSE_APP_URL<authenticated_download_path>"`):
       #{attachments.join("\n")}
     TEXT
   end

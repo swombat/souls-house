@@ -112,11 +112,11 @@ class AgentRepoCreator
   end
 
   def runtime_domain
-    ENV.fetch("HELIXKIT_AGENT_RUNTIME_DOMAIN", DEFAULT_RUNTIME_DOMAIN)
+    ENV.fetch("SOULSHOUSE_AGENT_RUNTIME_DOMAIN", DEFAULT_RUNTIME_DOMAIN)
   end
 
   def vm_host
-    ENV.fetch("HELIXKIT_AGENT_RUNTIME_VM_HOST", DEFAULT_VM_HOST)
+    ENV.fetch("SOULSHOUSE_AGENT_RUNTIME_VM_HOST", DEFAULT_VM_HOST)
   end
 
   attr_reader :account, :agent, :repo_name, :private_repo, :template_owner, :template_repo

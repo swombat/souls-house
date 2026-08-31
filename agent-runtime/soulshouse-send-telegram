@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-Send a direct Telegram message through HelixKit as the current hosted agent.
+Send a direct Telegram message through souls.house as the current hosted agent.
 
 Usage:
-  helixkit-send-telegram RECIPIENT "message text"
-  printf 'message text' | helixkit-send-telegram RECIPIENT
-  printf 'caption' | helixkit-send-telegram RECIPIENT --attach /tmp/image.png
-  helixkit-send-telegram RECIPIENT --attach /tmp/image.png
-  helixkit-send-telegram all "message text"
-  helixkit-send-telegram --reply-to THREAD_ID "message text"
+  soulshouse-send-telegram RECIPIENT "message text"
+  printf 'message text' | soulshouse-send-telegram RECIPIENT
+  printf 'caption' | soulshouse-send-telegram RECIPIENT --attach /tmp/image.png
+  soulshouse-send-telegram RECIPIENT --attach /tmp/image.png
+  soulshouse-send-telegram all "message text"
+  soulshouse-send-telegram --reply-to THREAD_ID "message text"
+
+`helixkit-send-telegram` is a permanent alias for this command.
 
 RECIPIENT matches active Telegram subscribers for this agent by email/name
-(case-insensitive substring). Requires HELIXKIT_APP_URL and HELIXKIT_BEARER_TOKEN.
+(case-insensitive substring). Requires SOULSHOUSE_APP_URL and
+SOULSHOUSE_BEARER_TOKEN (the older HELIXKIT_* names still work).
 Never prints bearer or bot tokens.
 """
 
@@ -28,9 +31,9 @@ import uuid
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        prog="helixkit-send-telegram",
-        description="Send a direct Telegram message and optional attachment through HelixKit.",
-        epilog="Full HelixKit manual: /usr/local/share/helixkit-agent/helixkit-api.md",
+        prog="soulshouse-send-telegram",
+        description="Send a direct Telegram message and optional attachment through souls.house.",
+        epilog="Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md",
     )
     parser.add_argument("--reply-to", metavar="THREAD_ID")
     parser.add_argument("--attach", metavar="PATH")
@@ -41,13 +44,15 @@ def main() -> int:
     if not args.reply_to and not args.recipient:
         parser.error("RECIPIENT is required unless --reply-to is used")
 
-    app_url = os.environ.get("HELIXKIT_APP_URL")
-    token = os.environ.get("HELIXKIT_BEARER_TOKEN")
+    # HELIXKIT_* are the pre-rename names. Keep reading them: an older container
+    # injected only those, and a newer image must still work inside it.
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
     if not app_url:
-        print("HELIXKIT_APP_URL is missing", file=sys.stderr)
+        print("SOULSHOUSE_APP_URL is missing", file=sys.stderr)
         return 65
     if not token:
-        print("HELIXKIT_BEARER_TOKEN is missing", file=sys.stderr)
+        print("SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
         return 65
 
     if args.reply_to:
@@ -98,11 +103,11 @@ def main() -> int:
             print(payload)
             return 0 if 200 <= response.status < 300 else 1
     except urllib.error.HTTPError as error:
-        print(f"HelixKit returned HTTP {error.code}", file=sys.stderr)
+        print(f"souls.house returned HTTP {error.code}", file=sys.stderr)
         print(error.read().decode("utf-8", errors="replace"), file=sys.stderr)
         return 1
     except Exception as error:
-        print(f"HelixKit Telegram send failed: {error}", file=sys.stderr)
+        print(f"souls.house Telegram send failed: {error}", file=sys.stderr)
         return 1
 
 
@@ -111,7 +116,7 @@ def normalize_newlines(content: str) -> str:
 
 
 def multipart_body(fields: dict[str, str], attachment: Path) -> tuple[bytes, str]:
-    boundary = f"helixkit-{uuid.uuid4().hex}"
+    boundary = f"soulshouse-{uuid.uuid4().hex}"
     chunks = []
 
     def add(value: bytes) -> None:

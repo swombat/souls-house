@@ -72,7 +72,7 @@ class AgentCredentialsEncryptor
   def helix_kit_app_url
     configured_url(:helix_kit_app_url) ||
       Rails.application.credentials.dig(:app, :url) ||
-      ENV["HELIXKIT_APP_URL"] ||
+      ENV["SOULSHOUSE_APP_URL"] ||
       "http://localhost:3100/"
   end
 

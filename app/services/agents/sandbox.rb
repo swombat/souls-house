@@ -144,7 +144,7 @@ module Agents
             container_configuration_current: container_configuration_current,
             image_stale: !container_image_current,
             container_stale: !container_image_current || !container_configuration_current,
-            container_helixkit_app_url: container_env_value(container, "HELIXKIT_APP_URL"),
+            container_helixkit_app_url: container_env_value(container, "SOULSHOUSE_APP_URL") || container_env_value(container, "HELIXKIT_APP_URL"),
             container_state: state["Status"],
             container_running: state["Running"],
             container_exit_code: state["ExitCode"],
@@ -409,6 +409,9 @@ module Agents
         "-e", "AGENT_PROVIDER=#{agent_provider}",
         "-e", "AGENT_DEFAULT_MODEL=#{agent_model}",
         "-e", "TRIGGER_BEARER_TOKEN=#{agent.trigger_bearer_token}",
+        "-e", "SOULSHOUSE_BEARER_TOKEN=#{agent.outbound_api_token}",
+        "-e", "SOULSHOUSE_APP_URL=#{Agents::Config.internal_url}",
+        # legacy alias: residents' notes and habits may reference the old name; keep indefinitely
         "-e", "HELIXKIT_BEARER_TOKEN=#{agent.outbound_api_token}",
         "-e", "HELIXKIT_APP_URL=#{Agents::Config.internal_url}"
       ]

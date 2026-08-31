@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 
-export HELIXKIT_DEV_WEB_PORT="${HELIXKIT_DEV_WEB_PORT:-${PORT:-3100}}"
-export PORT="${PORT:-$HELIXKIT_DEV_WEB_PORT}"
+export SOULSHOUSE_DEV_WEB_PORT="${SOULSHOUSE_DEV_WEB_PORT:-${HELIXKIT_DEV_WEB_PORT:-${PORT:-3100}}}"
+export PORT="${PORT:-$SOULSHOUSE_DEV_WEB_PORT}"
 
 if command -v overmind 1> /dev/null 2>&1
 then

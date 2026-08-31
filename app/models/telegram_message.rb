@@ -167,7 +167,7 @@ class TelegramMessage < ApplicationRecord
 
   def download_command(path, filename)
     safe_filename = filename.gsub(/[^a-zA-Z0-9_.-]/, "-")
-    %(Download: curl -L -H "Authorization: Bearer $HELIXKIT_BEARER_TOKEN" "$HELIXKIT_APP_URL#{path}" -o "/home/agent/work/#{safe_filename}")
+    %(Download: curl -L -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" "$SOULSHOUSE_APP_URL#{path}" -o "/home/agent/work/#{safe_filename}")
   end
 
 end

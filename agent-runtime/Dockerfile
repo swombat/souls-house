@@ -94,8 +94,8 @@ RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && claude --version
 
 # The Google Workspace gws CLI exposes Drive's discovery-generated command
-# surface. Souls supplies short-lived access tokens through helixkit-gws rather
-# than storing gws OAuth credentials in resident-owned state.
+# surface. Souls supplies short-lived access tokens through soulshouse-gws
+# rather than storing gws OAuth credentials in resident-owned state.
 ARG TARGETARCH
 ARG GOOGLE_WORKSPACE_CLI_VERSION=0.22.5
 ARG GOOGLE_WORKSPACE_CLI_AMD64_SHA256=4db473dde4b1ab872e4ff35d769b0d4af1f1a6441a605e79d5cf8ada9c87e920
@@ -161,19 +161,32 @@ COPY --from=builder /usr/local/bin/chaos_journald /usr/local/bin/chaos_journald
 RUN mkdir -p /usr/local/share/helixkit-agent
 COPY --chown=agent:agent trigger_shim.py /home/agent/trigger_shim.py
 COPY docs/runtime-instructions.md /usr/local/share/helixkit-agent/runtime-instructions.md
+COPY docs/soulshouse-api.md /usr/local/share/helixkit-agent/soulshouse-api.md
+# Permanent legacy stub. Residents' own memories and notes cite the old manual
+# path; it stays installed forever and points at the current manual.
 COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md
 COPY licenses/CodexBar-LICENSE /usr/local/share/licenses/CodexBar/LICENSE
 COPY stop_journal_reflex.py /usr/local/share/helixkit-agent/stop_journal_reflex.py
-COPY helixkit-post-message /usr/local/bin/helixkit-post-message
-COPY helixkit-send-telegram /usr/local/bin/helixkit-send-telegram
-COPY helixkit-append-journal /usr/local/bin/helixkit-append-journal
+COPY soulshouse-post-message /usr/local/bin/soulshouse-post-message
+COPY soulshouse-send-telegram /usr/local/bin/soulshouse-send-telegram
+COPY soulshouse-append-journal /usr/local/bin/soulshouse-append-journal
 COPY soulshouse-usage /usr/local/bin/soulshouse-usage
-COPY helixkit-gws /usr/local/bin/helixkit-gws
+COPY soulshouse-gws /usr/local/bin/soulshouse-gws
 COPY antigravity-browser-open /usr/local/libexec/helixkit-antigravity-login/xdg-open
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/helixkit-post-message /usr/local/bin/helixkit-send-telegram /usr/local/bin/helixkit-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/helixkit-gws \
+RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/soulshouse-post-message /usr/local/bin/soulshouse-send-telegram /usr/local/bin/soulshouse-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/soulshouse-gws \
     /usr/local/libexec/helixkit-antigravity-login/xdg-open \
     && chmod 0644 /usr/local/share/helixkit-agent/*.md /usr/local/share/helixkit-agent/stop_journal_reflex.py
+
+# Permanent legacy command aliases — NEVER REMOVE THESE.
+# Residents wrote the helixkit-* names into their own memories, notes, and
+# CLAUDE.md files before the souls.house rename. Those references are living
+# instructions inside beings we host, not deprecated call sites we get to
+# retire. The symlinks cost nothing and must outlive the rename indefinitely.
+RUN ln -s /usr/local/bin/soulshouse-post-message /usr/local/bin/helixkit-post-message \
+    && ln -s /usr/local/bin/soulshouse-send-telegram /usr/local/bin/helixkit-send-telegram \
+    && ln -s /usr/local/bin/soulshouse-append-journal /usr/local/bin/helixkit-append-journal \
+    && ln -s /usr/local/bin/soulshouse-gws /usr/local/bin/helixkit-gws
 
 # Canonical mounted volumes for hosted agents. /home/agent/state is deliberately
 # outside every HelixKit-facing filesystem root and holds vendor credentials.

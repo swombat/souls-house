@@ -4,11 +4,11 @@ module Agents
     module_function
 
     def network
-      ENV.fetch("HELIXKIT_AGENTS_NETWORK", "helixkit_agents")
+      ENV.fetch("SOULSHOUSE_AGENTS_NETWORK", "helixkit_agents")
     end
 
     def default_image
-      ENV.fetch("HELIXKIT_AGENT_IMAGE_DEFAULT", default_image_fallback)
+      ENV.fetch("SOULSHOUSE_AGENT_IMAGE_DEFAULT", default_image_fallback)
     end
 
     def default_image_fallback
@@ -16,31 +16,31 @@ module Agents
     end
 
     def internal_url
-      ENV.fetch("HELIXKIT_AGENT_INTERNAL_URL") do
-        local_development? ? "http://host.docker.internal:#{local_development_port}" : raise(KeyError, "HELIXKIT_AGENT_INTERNAL_URL is required")
+      ENV.fetch("SOULSHOUSE_AGENT_INTERNAL_URL") do
+        local_development? ? "http://host.docker.internal:#{local_development_port}" : raise(KeyError, "SOULSHOUSE_AGENT_INTERNAL_URL is required")
       end
     end
 
     def local_development_port
-      ENV.fetch("HELIXKIT_DEV_WEB_PORT") { ENV.fetch("PORT", "3100") }
+      ENV.fetch("SOULSHOUSE_DEV_WEB_PORT") { ENV.fetch("PORT", "3100") }
     end
 
     def sandbox_host
-      ENV.fetch("HELIXKIT_SANDBOX_HOST") do
-        local_development? ? "local-docker-desktop" : raise(KeyError, "HELIXKIT_SANDBOX_HOST is required")
+      ENV.fetch("SOULSHOUSE_SANDBOX_HOST") do
+        local_development? ? "local-docker-desktop" : raise(KeyError, "SOULSHOUSE_SANDBOX_HOST is required")
       end
     end
 
     def publish_ports?
-      ActiveModel::Type::Boolean.new.cast(ENV.fetch("HELIXKIT_AGENT_PUBLISH_PORTS") { local_development? })
+      ActiveModel::Type::Boolean.new.cast(ENV.fetch("SOULSHOUSE_AGENT_PUBLISH_PORTS") { local_development? })
     end
 
     def backups_enabled?
-      ActiveModel::Type::Boolean.new.cast(ENV.fetch("HELIXKIT_AGENT_BACKUPS_ENABLED", !local_development?))
+      ActiveModel::Type::Boolean.new.cast(ENV.fetch("SOULSHOUSE_AGENT_BACKUPS_ENABLED", !local_development?))
     end
 
     def cold_start?
-      ActiveModel::Type::Boolean.new.cast(ENV.fetch("HELIXKIT_AGENT_COLD_START") { Rails.env.development? })
+      ActiveModel::Type::Boolean.new.cast(ENV.fetch("SOULSHOUSE_AGENT_COLD_START") { Rails.env.development? })
     end
 
     def restart_policy

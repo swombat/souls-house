@@ -3,11 +3,13 @@ set -eu
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
   cat <<'HELP'
-Usage: helixkit-append-journal [TITLE]
+Usage: soulshouse-append-journal [TITLE]
 
 Append stdin as a new entry in today's hosted-agent daily journal.
 
-Full HelixKit manual: /usr/local/share/helixkit-agent/helixkit-api.md
+`helixkit-append-journal` is a permanent alias for this command.
+
+Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md
 HELP
   exit 0
 fi

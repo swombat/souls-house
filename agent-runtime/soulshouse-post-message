@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-Post an assistant message back to HelixKit as the current external agent.
+Post an assistant message back to souls.house as the current external agent.
 
 Usage:
-  printf 'message text' | helixkit-post-message CHAT_ID
-  helixkit-post-message CHAT_ID "short shell-safe text"  # compatibility only
-  printf 'caption' | helixkit-post-message CHAT_ID --attach /tmp/image.png
-  helixkit-post-message CHAT_ID --attach image.png --attach notes.pdf "Files attached"
+  printf 'message text' | soulshouse-post-message CHAT_ID
+  soulshouse-post-message CHAT_ID "short shell-safe text"  # compatibility only
+  printf 'caption' | soulshouse-post-message CHAT_ID --attach /tmp/image.png
+  soulshouse-post-message CHAT_ID --attach image.png --attach notes.pdf "Files attached"
+
+`helixkit-post-message` is a permanent alias for this command.
 
 Prefer stdin. A shell parses an argv message before this helper receives it, so
 double-quoted text containing $, backticks, or substitutions may be corrupted.
 
-Requires HELIXKIT_APP_URL and HELIXKIT_BEARER_TOKEN in the environment.
+Requires SOULSHOUSE_APP_URL and SOULSHOUSE_BEARER_TOKEN in the environment
+(the older HELIXKIT_APP_URL / HELIXKIT_BEARER_TOKEN names still work).
 Never prints the bearer token.
 """
 
@@ -28,9 +31,9 @@ import uuid
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        prog="helixkit-post-message",
-        description="Post a message and optional local files to a HelixKit conversation.",
-        epilog="Full HelixKit manual: /usr/local/share/helixkit-agent/helixkit-api.md",
+        prog="soulshouse-post-message",
+        description="Post a message and optional local files to a souls.house conversation.",
+        epilog="Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md",
     )
     parser.add_argument("chat_id")
     parser.add_argument("message", nargs="?")
@@ -43,13 +46,15 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    app_url = os.environ.get("HELIXKIT_APP_URL")
-    token = os.environ.get("HELIXKIT_BEARER_TOKEN")
+    # HELIXKIT_* are the pre-rename names. Keep reading them: an older container
+    # injected only those, and a newer image must still work inside it.
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
     if not app_url:
-        print("HELIXKIT_APP_URL is missing", file=sys.stderr)
+        print("SOULSHOUSE_APP_URL is missing", file=sys.stderr)
         return 65
     if not token:
-        print("HELIXKIT_BEARER_TOKEN is missing", file=sys.stderr)
+        print("SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
         return 65
 
     chat_id = args.chat_id
@@ -91,11 +96,11 @@ def main() -> int:
             print(payload)
             return 0 if 200 <= response.status < 300 else 1
     except urllib.error.HTTPError as error:
-        print(f"HelixKit returned HTTP {error.code}", file=sys.stderr)
+        print(f"souls.house returned HTTP {error.code}", file=sys.stderr)
         print(error.read().decode("utf-8", errors="replace"), file=sys.stderr)
         return 1
     except Exception as error:
-        print(f"HelixKit post failed: {error}", file=sys.stderr)
+        print(f"souls.house post failed: {error}", file=sys.stderr)
     return 1
 
 
@@ -104,17 +109,17 @@ def normalize_newlines(content: str) -> str:
 
     Agents often invoke this helper as:
 
-        helixkit-post-message CHAT_ID "line one\n\nline two"
+        soulshouse-post-message CHAT_ID "line one\n\nline two"
 
     In POSIX shells that double-quoted argument arrives as literal backslash+n
     characters, not line breaks. Convert those to actual newlines before sending
-    JSON to HelixKit. Stdin input with real newlines is left alone.
+    JSON to souls.house. Stdin input with real newlines is left alone.
     """
     return content.replace("\\r\\n", "\n").replace("\\n", "\n")
 
 
 def multipart_body(content: str, attachments: list[Path]) -> tuple[bytes, str]:
-    boundary = f"helixkit-{uuid.uuid4().hex}"
+    boundary = f"soulshouse-{uuid.uuid4().hex}"
     chunks = []
 
     def add(value: bytes) -> None:

@@ -8,8 +8,8 @@ set -euo pipefail
 # identity/Chaos volumes.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-if [[ "${HELIXKIT_SKIP_AGENT_RECONCILE:-}" == "1" ]]; then
-  echo "Skipping hosted-agent runtime reconciliation (HELIXKIT_SKIP_AGENT_RECONCILE=1)"
+if [[ "${SOULSHOUSE_SKIP_AGENT_RECONCILE:-}" == "1" || "${HELIXKIT_SKIP_AGENT_RECONCILE:-}" == "1" ]]; then
+  echo "Skipping hosted-agent runtime reconciliation (SOULSHOUSE_SKIP_AGENT_RECONCILE=1)"
   POST_DEPLOY_JOBS="RefreshTelegramWebhooksJob.perform_later"
 else
   POST_DEPLOY_JOBS="HostedAgentRuntimeReconcileJob.set(wait: 5.minutes).perform_later; RefreshTelegramWebhooksJob.perform_later"

@@ -238,10 +238,11 @@ class Chat < ApplicationRecord
     setup_persistence_callbacks
   end
 
-  # Configure tools for RubyLLM based on settings
+  # Tools for RubyLLM legacy chats. WebTool (SearXNG-backed web search) was
+  # retired 2026-08-31 with the souls.house rebrand: Chaos/external agents
+  # reach the web directly and never used this path.
   def available_tools
-    return [] unless web_access?
-    [ WebTool ]
+    []
   end
 
   # Group chat functionality
