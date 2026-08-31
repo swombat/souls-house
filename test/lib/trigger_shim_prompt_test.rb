@@ -23,6 +23,7 @@ class TriggerShimPromptTest < ActiveSupport::TestCase
       assert_includes prompt, "identity/runtime-instructions.md.new"
       assert_not_includes prompt, "STALE IDENTITY RUNTIME CONTEXT"
       assert_includes prompt, 'helixkit-post-message "$CHAT_ID" --attach /tmp/image.png'
+      assert_includes prompt, "helixkit-usage"
       assert_includes prompt, "/tmp/<image_id>.png"
       assert_includes prompt, "not recency-limited"
       assert_includes prompt, "next_cursor"
@@ -32,6 +33,34 @@ class TriggerShimPromptTest < ActiveSupport::TestCase
       assert_includes prompt, "Today I woke here."
       assert_includes prompt, "## 09:00 — Previous title"
       assert_not_includes prompt, "Older body should not load."
+    end
+  end
+
+  test "fresh prompt places dynamic runtime notice after the request and before memory" do
+    Dir.mktmpdir do |dir|
+      identity = Pathname.new(dir)
+      (identity / "memory" / "daily-journals").mkpath
+      (identity / "soul.md").write("SOUL FIRST\n")
+      (identity / "memory" / "daily-journals" / "2026-08-31.md").write("# Daily Journal\n\n## 08:00 — Earlier\n")
+
+      script = Rails.root.join("agent-runtime/trigger_shim.py")
+      command = <<~PY
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("trigger_shim", #{script.to_s.inspect})
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        print(mod.build_prompt_with_components("REQUEST", runtime_notice="USAGE NOTICE")[0])
+      PY
+      env = {
+        "TRIGGER_BEARER_TOKEN" => "tr_test",
+        "AGENT_IDENTITY_PATH" => identity.to_s,
+        "AGENT_RUNTIME_DOCS_PATH" => Rails.root.join("agent-runtime/docs").to_s
+      }
+      prompt, stderr, status = Open3.capture3(env, "python3", "-c", command)
+
+      assert status.success?, stderr
+      assert_operator prompt.index("REQUEST"), :<, prompt.index("USAGE NOTICE")
+      assert_operator prompt.index("USAGE NOTICE"), :<, prompt.index("## Memory context")
     end
   end
 

@@ -185,6 +185,7 @@ Rails.application.routes.draw do
         resource :reclaim, only: :create, controller: "safeguard_reclaims"
       end
       resource :attention, only: :show
+      resource :subscription_usage, only: :show
       resources :service_connections, only: [] do
         resource :access_token, only: :show, controller: "service_connection_tokens"
       end

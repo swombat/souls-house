@@ -13,10 +13,11 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     antigravity_egress_patch =
       Rails.root.join("agent-runtime/patches/chaos-antigravity-daily-cloudcode-egress.patch").read
 
-    assert_includes dockerfile, "cargo build --release --bin chaos_journald"
+    assert_includes dockerfile, 'cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos_journald'
     assert_includes dockerfile, "COPY --from=builder /usr/local/bin/chaos_journald /usr/local/bin/chaos_journald"
     assert_includes dockerfile, "COPY docs/runtime-instructions.md /usr/local/share/helixkit-agent/runtime-instructions.md"
     assert_includes dockerfile, "COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md"
+    assert_includes dockerfile, "COPY helixkit-usage /usr/local/bin/helixkit-usage"
     assert_includes dockerfile, "ARG CLAUDE_CODE_VERSION=2.1.220"
     assert_includes dockerfile, "claude --version"
     assert_includes dockerfile, "ARG CHAOS_HEAD"
@@ -73,6 +74,70 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal "claude", calls.dig(0, "provider")
     assert_equal "oauth", calls.dig(0, "source")
     assert_equal "/tmp/claude", calls.dig(0, "env", "CLAUDE_CONFIG_DIR")
+  end
+
+  test "subscription notice uses the selected Gemini pool and repeats only hourly per session" do
+    out = run_shim_python(<<~PY)
+      from datetime import datetime, timedelta, timezone
+      now = datetime(2026, 8, 31, 8, 0, tzinfo=timezone.utc)
+      snapshot = {
+          "provider": "gemini",
+          "model": "gemini-2.5-pro",
+          "status": "available",
+          "windows": [
+              {
+                  "id": "gemini-weekly",
+                  "label": "Gemini weekly",
+                  "remaining_percent": 15,
+                  "resets_at": (now + timedelta(days=3)).isoformat(),
+                  "blocking": True,
+              },
+              {
+                  "id": "claude-weekly",
+                  "label": "Claude/GPT weekly",
+                  "remaining_percent": 100,
+                  "resets_at": (now + timedelta(days=6)).isoformat(),
+                  "blocking": False,
+              },
+          ],
+      }
+      recent = {"subscription_notice_at": (now - timedelta(minutes=59)).isoformat()}
+      old = {"subscription_notice_at": (now - timedelta(minutes=61)).isoformat()}
+      print(json.dumps({
+          "notice": mod.subscription_usage_notice(snapshot, now=now),
+          "recent": mod.due_subscription_usage_notice(snapshot, recent, now=now),
+          "old": mod.due_subscription_usage_notice(snapshot, old, now=now),
+      }))
+    PY
+
+    result = JSON.parse(out)
+    assert_includes result["notice"], "15% remaining"
+    assert_not_includes result["notice"], "Claude/GPT"
+    assert_nil result["recent"]
+    assert_includes result["old"], "15% remaining"
+  end
+
+  test "subscription notice appears when projected weekly usage exceeds one hundred percent" do
+    out = run_shim_python(<<~PY)
+      from datetime import datetime, timedelta, timezone
+      now = datetime(2026, 8, 31, 8, 0, tzinfo=timezone.utc)
+      snapshot = {
+          "provider": "anthropic",
+          "model": "claude-sonnet-4-5",
+          "status": "available",
+          "windows": [{
+              "id": "weekly",
+              "label": "Weekly",
+              "remaining_percent": 40,
+              "resets_at": (now + timedelta(days=3.5)).isoformat(),
+              "blocking": True,
+          }],
+      }
+      print(json.dumps(mod.subscription_usage_notice(snapshot, now=now)))
+    PY
+
+    notice = JSON.parse(out)
+    assert_includes notice, "Predicted seven-day usage: 120%"
   end
 
   test "auth mode changes roll persistent sessions" do

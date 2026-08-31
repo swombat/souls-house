@@ -25,6 +25,7 @@ module Agents
       {
         id: @agent.to_param,
         name: @agent.name,
+        model: Agents::Sandbox.chaos_model_for(@agent),
         provider: provider,
         provider_name: PROVIDER_NAMES.fetch(provider),
         runtime: @agent.runtime,

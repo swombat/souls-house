@@ -143,6 +143,7 @@ PROVIDER_API_KEY_ENV = {
 AUTH_CODE_TTL_SECS = 15 * 60
 SUBSCRIPTION_USAGE_TTL_SECS = 60
 SUBSCRIPTION_USAGE_TIMEOUT_SECS = 20
+SUBSCRIPTION_NOTICE_INTERVAL_SECS = 60 * 60
 SHIM_TELEMETRY_SCHEMA_VERSION = 1
 SIDECAR_SCHEMA_VERSION = 3
 SUPPORTED_CHAOS_TELEMETRY_SCHEMA_VERSION = 1
@@ -238,13 +239,14 @@ def trigger():
     if auth_mode not in ("api_key", "oauth_account"):
         return jsonify({"error": "auth_mode must be api_key or oauth_account"}), 400
 
+    subscription_snapshot = None
     if auth_mode == "oauth_account":
-        usage = subscription_usage(provider, model)
-        if usage.get("status") == "limited":
+        subscription_snapshot = subscription_usage(provider, model)
+        if subscription_snapshot.get("status") == "limited":
             return jsonify({
                 "status": "error",
                 "error_kind": "subscription_limit",
-                "subscription_usage": usage,
+                "subscription_usage": subscription_snapshot,
             }), 429
 
     log.info(
@@ -270,10 +272,12 @@ def trigger():
                 provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
                 session_lock=session_lock, roll_session=roll_session,
                 runtime_session_generation=runtime_session_generation,
+                subscription_snapshot=subscription_snapshot,
             )
         return legacy_trigger(
             session_id, prompt, model, timeout_secs,
             provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
+            subscription_snapshot=subscription_snapshot,
         )
     finally:
         session_lock.release()
@@ -281,11 +285,15 @@ def trigger():
 
 def legacy_trigger(
     session_id, prompt, model, timeout_secs, provider=None,
-    reasoning_effort=None, auth_mode="api_key",
+    reasoning_effort=None, auth_mode="api_key", subscription_snapshot=None,
 ):
     """Run a fresh, unmapped Chaos process while still capturing JSON telemetry."""
     provider = provider or AGENT_PROVIDER
-    full_prompt, prompt_components = build_prompt_with_components(prompt)
+    subscription_notice = subscription_usage_notice(subscription_snapshot)
+    full_prompt, prompt_components = build_prompt_with_components(
+        prompt,
+        runtime_notice=subscription_notice,
+    )
     prompt_info = prompt_telemetry(
         full_prompt=full_prompt,
         delta_prompt=None,
@@ -359,7 +367,7 @@ def legacy_trigger(
 def persistent_trigger(
     session_id, prompt, request_delta, model, timeout_secs,
     provider=None, reasoning_effort=None, auth_mode="api_key", session_lock=None,
-    roll_session=False, runtime_session_generation=0,
+    roll_session=False, runtime_session_generation=0, subscription_snapshot=None,
 ):
     """Resume the session mapped to session_id, or start (and record) a fresh one.
 
@@ -413,14 +421,24 @@ def persistent_trigger(
             retire_session_record(session_id, reason=roll)
             record = None
 
+        subscription_notice = due_subscription_usage_notice(subscription_snapshot, record)
+        subscription_notice_at = _utcnow_iso() if subscription_notice else None
+
         if record:
-            resume_prompt = request_delta or prompt
+            resume_prompt = append_runtime_notice(request_delta or prompt, subscription_notice)
             prompt_info = prompt_telemetry(
                 full_prompt=None,
-                delta_prompt=request_delta,
+                delta_prompt=resume_prompt,
                 selected_prompt=resume_prompt,
                 mode="delta",
-                components=None,
+                components=(
+                    {
+                        "request": _byte_length(request_delta or prompt),
+                        "runtime_notice": _byte_length(subscription_notice),
+                    }
+                    if subscription_notice
+                    else None
+                ),
             )
             try:
                 result = run_chaos(
@@ -464,7 +482,12 @@ def persistent_trigger(
             if result.returncode == 0 and not stale:
                 usage = invocation_usage(record, events)
                 next_sequence = next_trigger_sequence(record)
-                update_session_record(session_id, record, events)
+                update_session_record(
+                    session_id,
+                    record,
+                    events,
+                    subscription_notice_at=subscription_notice_at,
+                )
                 return instrumented_response(
                     session_id, result, events, resume_prompt,
                     usage=usage,
@@ -506,7 +529,10 @@ def persistent_trigger(
         # Build this only after deciding not to resume. Reading journals on a
         # successful resume is unnecessary work and can make an append appear
         # to affect a turn whose actual prompt contains only the delta.
-        full_prompt, prompt_components = build_prompt_with_components(prompt)
+        full_prompt, prompt_components = build_prompt_with_components(
+            prompt,
+            runtime_notice=subscription_notice,
+        )
         prompt_info = prompt_telemetry(
             full_prompt=full_prompt,
             delta_prompt=request_delta,
@@ -554,6 +580,7 @@ def persistent_trigger(
             save_session_record(
                 session_id, model, events, provider=provider, auth_mode=auth_mode,
                 runtime_session_generation=runtime_session_generation,
+                subscription_notice_at=subscription_notice_at,
             )
         if result.returncode != 0:
             outcome = "failed"
@@ -1085,7 +1112,7 @@ def load_session_record(session_id):
 
 def save_session_record(
     session_id, model, events, provider=None, auth_mode="api_key",
-    runtime_session_generation=0,
+    runtime_session_generation=0, subscription_notice_at=None,
 ):
     now = _utcnow_iso()
     record = {
@@ -1102,15 +1129,19 @@ def save_session_record(
         "identity_fingerprint": identity_fingerprint(),
         "runtime_context_fingerprint": runtime_context_fingerprint(),
     }
+    if subscription_notice_at:
+        record["subscription_notice_at"] = subscription_notice_at
     _store_legacy_cumulative_usage(record, events)
     _atomic_write(session_record_path(session_id), record)
 
 
-def update_session_record(session_id, record, events):
+def update_session_record(session_id, record, events, subscription_notice_at=None):
     record["schema_version"] = SIDECAR_SCHEMA_VERSION
     record["last_finished_at"] = _utcnow_iso()
     record["trigger_sequence"] = next_trigger_sequence(record)
     record["identity_fingerprint"] = identity_fingerprint()
+    if subscription_notice_at:
+        record["subscription_notice_at"] = subscription_notice_at
     _store_legacy_cumulative_usage(record, events)
     _atomic_write(session_record_path(session_id), record)
 
@@ -1316,15 +1347,16 @@ def build_prompt(request_text: str) -> str:
     return prompt
 
 
-def build_prompt_with_components(request_text):
+def build_prompt_with_components(request_text, runtime_notice=None):
     """Build a fresh prompt and return byte sizes without retaining its contents twice."""
     identity = identity_context()
     journals = memory_context()
-    parts = [part for part in (identity, request_text, journals) if part]
+    parts = [part for part in (identity, request_text, runtime_notice, journals) if part]
     prompt = "\n\n".join(parts)
     return prompt, {
         "identity": _byte_length(identity),
         "request": _byte_length(request_text),
+        "runtime_notice": _byte_length(runtime_notice),
         "journal": _byte_length(journals),
     }
 
@@ -1616,12 +1648,134 @@ def _last_good_after_failed_refresh(snapshot):
 def unknown_subscription_usage(provider):
     return {
         "provider": provider,
+        "model": None,
         "plan": None,
         "status": "unknown",
         "windows": [],
         "observed_at": datetime.now(timezone.utc).isoformat(),
         "source": None,
     }
+
+
+def due_subscription_usage_notice(snapshot, record, now=None):
+    notice = subscription_usage_notice(snapshot, now=now)
+    if not notice or not record:
+        return notice
+
+    now = now or datetime.now(timezone.utc)
+    last_notice_at = _parse_timestamp(record.get("subscription_notice_at"))
+    if last_notice_at and (now - last_notice_at).total_seconds() < SUBSCRIPTION_NOTICE_INTERVAL_SECS:
+        return None
+    return notice
+
+
+def subscription_usage_notice(snapshot, now=None):
+    if not snapshot or snapshot.get("status") == "unknown":
+        return None
+
+    now = now or datetime.now(timezone.utc)
+    weekly = subscription_weekly_window(snapshot)
+    remaining = _number(weekly.get("remaining_percent")) if weekly else None
+    prediction = predicted_subscription_usage(weekly, now=now)
+    concerning = (
+        snapshot.get("status") == "limited"
+        or (remaining is not None and remaining < 25)
+        or (prediction is not None and prediction > 100)
+    )
+    if not concerning:
+        return None
+
+    lines = ["## Current subscription usage"]
+    if remaining is not None:
+        reset = subscription_reset_description(weekly.get("resets_at"))
+        lines.append(
+            f"Weekly allowance: {_format_percent(remaining)}% remaining"
+            f"{f'; {reset}' if reset else ''}."
+        )
+    if prediction is not None:
+        lines.append(f"Predicted seven-day usage: {prediction}%.")
+    lines.extend([
+        (
+            "This is current runtime-owned resource context. Consider conserving "
+            "provider requests or checking with the humans before expensive work."
+        ),
+        "Run `helixkit-usage` for the current details.",
+    ])
+    return "\n\n".join(lines)
+
+
+def append_runtime_notice(prompt, notice):
+    return "\n\n".join(part for part in (prompt, notice) if part)
+
+
+def subscription_weekly_window(snapshot):
+    windows = snapshot.get("windows") if isinstance(snapshot.get("windows"), list) else []
+    provider = snapshot.get("provider")
+    model = str(snapshot.get("model") or "").lower()
+
+    if provider == "gemini":
+        return next(
+            (
+                window for window in windows
+                if window.get("blocking") and "weekly" in _usage_window_label(window)
+            ),
+            None,
+        )
+    if provider == "anthropic":
+        return next((window for window in windows if _usage_window_label(window) == "weekly"), None)
+    if provider == "xai":
+        return windows[0] if windows else None
+    if provider == "openai":
+        if "codex-spark" in model:
+            return next(
+                (
+                    window for window in windows
+                    if "codex-spark" in _usage_window_label(window)
+                    and "weekly" in _usage_window_label(window)
+                ),
+                None,
+            )
+        return next(
+            (
+                window for window in windows
+                if str(window.get("id") or "").lower() == "session"
+                or _usage_window_label(window) == "session"
+            ),
+            None,
+        )
+    return next((window for window in windows if "weekly" in _usage_window_label(window)), None)
+
+
+def predicted_subscription_usage(weekly, now=None):
+    if not weekly:
+        return None
+    now = now or datetime.now(timezone.utc)
+    reset_at = _parse_timestamp(weekly.get("resets_at"))
+    remaining = _number(weekly.get("remaining_percent"))
+    if reset_at is None or remaining is None or reset_at <= now:
+        return None
+
+    week_seconds = 7 * 24 * 60 * 60
+    used = 100 - max(0, min(100, remaining))
+    elapsed = week_seconds - (reset_at - now).total_seconds()
+    if elapsed <= 0:
+        return 0 if used == 0 else None
+    return round((used * week_seconds) / elapsed)
+
+
+def subscription_reset_description(value):
+    reset_at = _parse_timestamp(value)
+    if not reset_at:
+        return None
+    return f"resets {reset_at.strftime('%-d %b at %H:%M UTC')}"
+
+
+def _usage_window_label(window):
+    return str(window.get("label") or "").lower()
+
+
+def _format_percent(value):
+    return f"{value:.0f}" if float(value).is_integer() else f"{value:.1f}"
 
 
 def probe_chaos_account_usage(provider, _model):
@@ -1699,6 +1853,7 @@ def normalize_subscription_usage(payload, provider, model):
     limited = any(window["blocking"] and window["remaining_percent"] <= 0 for window in windows)
     return {
         "provider": provider,
+        "model": model,
         "plan": plan,
         "status": "limited" if limited else ("available" if windows else "unknown"),
         "windows": windows,

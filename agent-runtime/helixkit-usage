@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""Show the current resident's provider subscription usage."""
+
+import argparse
+from datetime import datetime, timezone
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+WEEK_SECONDS = 7 * 24 * 60 * 60
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="helixkit-usage",
+        description="Show this resident's provider subscription usage.",
+        epilog="Full HelixKit manual: /usr/local/share/helixkit-agent/helixkit-api.md",
+    )
+    parser.add_argument("--json", action="store_true", help="print the normalized JSON snapshot")
+    parser.add_argument("--refresh", action="store_true", help="request a fresh provider reading")
+    args = parser.parse_args()
+
+    app_url = os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not app_url or not token:
+        print("HELIXKIT_APP_URL or HELIXKIT_BEARER_TOKEN is missing", file=sys.stderr)
+        return 65
+
+    query = "?refresh=1" if args.refresh else ""
+    request = urllib.request.Request(
+        f"{app_url.rstrip('/')}/api/v1/subscription_usage{query}",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as error:
+        print(f"HelixKit returned HTTP {error.code}", file=sys.stderr)
+        print(error.read().decode("utf-8", errors="replace"), file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f"HelixKit usage request failed: {error}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    windows = display_windows(payload)
+    if payload.get("status") == "unknown" or not windows:
+        print("Subscription usage is temporarily unavailable.")
+        return 0
+
+    now = datetime.now(timezone.utc)
+    for window in windows:
+        remaining = clamp_percent(window.get("remaining_percent"))
+        reset = reset_description(window.get("resets_at"), now)
+        suffix = f", {reset}" if reset else ""
+        print(f"{window['display_label']}: {format_percent(remaining)}% left{suffix}")
+
+    prediction = predicted_weekly_usage(windows, now)
+    if prediction is not None:
+        print(f"Predicted usage: {prediction}%")
+    return 0
+
+
+def display_windows(payload):
+    windows = payload.get("windows") if isinstance(payload.get("windows"), list) else []
+    provider = payload.get("provider")
+    model = str(payload.get("model") or "").lower()
+
+    if provider == "gemini":
+        gemini = [window for window in windows if label(window).startswith("gemini ")]
+        return compact([
+            find_window(gemini, "5-hour", "5-hour"),
+            find_window(gemini, "weekly", "Weekly"),
+        ])
+    if provider == "anthropic":
+        return compact([
+            find_exact_window(windows, "session", "5-hour"),
+            find_exact_window(windows, "weekly", "Weekly"),
+        ])
+    if provider == "xai":
+        return compact([display_window(windows[0], "Weekly") if windows else None])
+    if provider == "openai":
+        if "codex-spark" in model:
+            spark = [window for window in windows if "codex-spark" in label(window)]
+            return compact([
+                find_window(spark, "session", "5-hour"),
+                find_window(spark, "weekly", "Weekly"),
+            ])
+        weekly = next(
+            (
+                window
+                for window in windows
+                if str(window.get("id") or "").lower() == "session" or label(window) == "session"
+            ),
+            None,
+        )
+        return compact([display_window(weekly, "Weekly")])
+
+    return compact([display_window(window, window.get("label") or "Usage") for window in windows])
+
+
+def predicted_weekly_usage(windows, now):
+    weekly = next((window for window in windows if window["display_label"] == "Weekly"), None)
+    reset_at = parse_timestamp(weekly.get("resets_at")) if weekly else None
+    if not reset_at or reset_at <= now:
+        return None
+    used = 100 - clamp_percent(weekly.get("remaining_percent"))
+    elapsed = WEEK_SECONDS - (reset_at - now).total_seconds()
+    if elapsed <= 0:
+        return 0 if used == 0 else None
+    return round((used * WEEK_SECONDS) / elapsed)
+
+
+def reset_description(value, now):
+    reset_at = parse_timestamp(value)
+    if not reset_at:
+        return ""
+    total_minutes = max(0, int(((reset_at - now).total_seconds() + 59) // 60))
+    if total_minutes <= 0:
+        return "reset pending"
+    if total_minutes < 24 * 60:
+        hours, minutes = divmod(total_minutes, 60)
+        duration = f"{hours}h" if hours else ""
+        duration += f"{minutes}m" if minutes else ""
+        return f"resets in {duration}"
+    return f"resets {reset_at.astimezone().strftime('%-d %b, %-I:%M%p').lower()}"
+
+
+def find_window(windows, text, display_label):
+    return display_window(next((window for window in windows if text in label(window)), None), display_label)
+
+
+def find_exact_window(windows, text, display_label):
+    return display_window(next((window for window in windows if label(window) == text), None), display_label)
+
+
+def display_window(window, display_label):
+    return {**window, "display_label": display_label} if window else None
+
+
+def compact(windows):
+    return [window for window in windows if window and window.get("resets_at")]
+
+
+def label(window):
+    return str(window.get("label") or "").lower()
+
+
+def parse_timestamp(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def clamp_percent(value):
+    try:
+        return max(0.0, min(100.0, float(value)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def format_percent(value):
+    return f"{value:.0f}" if value.is_integer() else f"{value:.1f}"
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

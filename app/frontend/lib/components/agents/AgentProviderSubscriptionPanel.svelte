@@ -2,6 +2,7 @@
   import Button from '$lib/components/shadcn/button/button.svelte';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { Copy } from 'phosphor-svelte';
+  import { displayUsageWindows, usageLine } from '$lib/subscription-usage.js';
   import {
     accountAgentProviderSubscriptionPath,
     accountAgentProviderSubscriptionUsagePath,
@@ -24,6 +25,7 @@
   let usage = $state(null);
   let usageLoading = $state(false);
   let usageError = $state(null);
+  let displayWindows = $derived(displayUsageWindows(usage, agent.provider, agent.model));
   let isAnthropic = $derived(agent.provider === 'anthropic');
   let isGemini = $derived(agent.provider === 'gemini');
   let subscriptionModeLabel = $derived(
@@ -108,30 +110,6 @@
     } finally {
       usageLoading = false;
     }
-  }
-
-  function usageLine(window) {
-    const remaining = Math.max(0, Math.min(100, Number(window.remaining_percent) || 0));
-    const reset = resetDescription(window.resets_at);
-    return `${remaining.toFixed(remaining % 1 === 0 ? 0 : 1)}% left${reset ? ` · ${reset}` : ''}`;
-  }
-
-  function resetDescription(value) {
-    if (!value) return '';
-    const seconds = Math.ceil((new Date(value).getTime() - Date.now()) / 1000);
-    if (seconds <= 0) return 'reset pending';
-    if (seconds < 3600) return `resets in ${Math.ceil(seconds / 60)}m`;
-    if (seconds < 86400) {
-      const hours = Math.floor(seconds / 3600);
-      const minutes = Math.ceil((seconds % 3600) / 60);
-      return `resets in ${hours}h${minutes ? ` ${minutes}m` : ''}`;
-    }
-    return `resets ${new Intl.DateTimeFormat(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    }).format(new Date(value))}`;
   }
 
   async function checkCapabilities() {
@@ -297,8 +275,8 @@
                 Refresh
               </button>
             </div>
-          {:else if usage?.windows?.length}
-            {#each usage.windows as window (window.id)}
+          {:else if displayWindows.length}
+            {#each displayWindows as window (window.id)}
               <div
                 class={[
                   'flex items-center justify-between gap-3 rounded-sm px-2 py-1 text-xs',
@@ -306,7 +284,6 @@
                     ? 'bg-amber-500/10 text-amber-800 dark:text-amber-300'
                     : 'bg-muted/50 text-muted-foreground',
                 ]}>
-                <span class="font-medium">{window.label}</span>
                 <span>{usageLine(window)}</span>
               </div>
             {/each}

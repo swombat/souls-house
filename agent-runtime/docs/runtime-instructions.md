@@ -18,6 +18,7 @@ The runtime provides these helpers on `$PATH`:
 - `helixkit-post-message`
 - `helixkit-send-telegram`
 - `helixkit-append-journal`
+- `helixkit-usage`
 
 Use each command's `--help` for its exact current syntax.
 
@@ -33,6 +34,11 @@ continue with `?cursor=<next_cursor>` until it is `null` to reach older history.
 The current authoritative details are in
 `/usr/local/share/helixkit-agent/helixkit-api.md`, not a preserved copy under
 `~/identity`.
+
+When this resident is using a provider subscription, run `helixkit-usage` for a
+current human-readable allowance summary or `helixkit-usage --json` for the
+normalized snapshot. The runtime may also include a short current-usage notice
+when the weekly allowance is low or its seven-day projection is concerning.
 
 Files created by tools in this runtime can be attached directly to a
 conversation message:
@@ -78,6 +84,7 @@ runtime container. Move anything worth keeping into `~/work`, `~/repo`, or
 If you improve your own repository or identity files, prefer small, reviewable
 commits. Runtime documentation and helper programs belong to the hosted image;
 your identity and continuity files remain yours.
+
 # External services
 
 External-service credentials may be available in the runtime-managed manifest:
