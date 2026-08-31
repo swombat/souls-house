@@ -240,15 +240,19 @@ Docker Hub repo.
 Renaming `service: helix-kit` → `service: souls-house` gives new container
 names, new proxy registration, and **new volume paths** — Kamal will not
 migrate data.
-- [ ] Inventory host volumes under the old service name (incl. agent
+- [x] Inventory host volumes under the old service name (incl. agent
       persistent volumes)
-- [ ] Stop agents; final backup
-- [ ] `kamal remove` old service (proxy deregistration), keeping accessory
-      data intact — **verify postgres data volume survives or snapshot it**
-- [ ] Update deploy.yml: service, image, `network-alias: souls-house-web`
-- [ ] Update env: `HELIXKIT_AGENT_INTERNAL_URL: http://souls-house-web:3000`
-- [ ] Move/copy agent volumes to new paths; update restic backup targets
-- [ ] `kamal setup` / `kamal deploy`; restart agents; verify callbacks
+- [x] Stop agents; final backup (Daniel ×2 + host-side pg_dump)
+- [x] ~~`kamal remove` old service~~ **superseded: scoped `kamal app remove`
+      only** — `kamal remove` would have deleted the SHARED proxy; postgres
+      preserved by stop/rm container + parent-dir move of the data dir
+- [x] Update deploy.yml: service, image, `network-alias: souls-house-web`
+      (+ `helix-kit-web` transition alias)
+- [x] Update env: `HELIXKIT_AGENT_INTERNAL_URL: http://souls-house-web:3000`
+- [x] ~~Move/copy agent volumes~~ **not needed** — `hk-agent-*`/`chaos-home-*`
+      volumes aren't service-name-derived; restic targets unchanged
+- [x] `kamal accessory boot postgres` + `bundle exec kamal deploy`; agents
+      restarted; callbacks verified 200 over both aliases
 
 ### Step 2.3 — Database rename ✅ 2026-08-31
 Renamed in place via temp superuser (a role can't rename itself):
@@ -265,22 +269,18 @@ execute inside the same maintenance window as 2.2 (agents already stopped,
 backup already verified, one restart for everything).
 
 Sequence (after final backup, before the Kamal service rename):
-- [ ] Stop app + jobs containers (all DB connections closed)
-- [ ] From `postgres` db: `ALTER DATABASE helix_kit_production RENAME TO
-      souls_house_production;` and `ALTER ROLE helix_kit RENAME TO
-      souls_house;`
-- [ ] Verify role auth still works (scram-sha-256 passwords survive a role
-      rename; md5 would not — pg16 defaults to scram, but check, and reset
-      the password if login fails)
-- [ ] Update `DATABASE_URL` in `.kamal/secrets` (user + db name)
-- [ ] Update deploy.yml accessory env: `POSTGRES_USER: souls_house`,
-      `POSTGRES_DB: souls_house_production` (cosmetic on an existing data
-      volume — initdb-only vars — but keep in sync)
-- [ ] **Transition caveat, record in the restore runbook:** backups taken
-      before the rename restore as `helix_kit_production`/`helix_kit` and
-      need a rename-on-restore step until they age out of retention. Note
-      the rename date there.
-- [ ] Proceed with 2.2's `kamal setup`/`deploy`; verify boot + a write path
+- [x] Stop app + jobs containers (all DB connections closed)
+- [x] Renames executed via temp superuser (role can't rename itself) —
+      **plus the three the plan missed**: `_cache`/`_queue`/`_cable` derive
+      from DATABASE_URL by suffix; all four DBs renamed together
+- [x] Role auth verified over TCP post-rename (scram survived)
+- [x] `DATABASE_URL` updated in `.kamal/secrets` (user + **host container
+      name** `souls-house-postgres` + db name — the host renames too)
+- [x] deploy.yml accessory env updated
+- [x] Transition caveat recorded (execution note above; rename date
+      2026-08-31; pre-rename dumps restore as `helix_kit_production`)
+- [x] Deployed; boot + write path verified (agents/users counts, webhook
+      round-trips, API key 200)
 
 ### Step 2.4 — Code-level identifiers
 - [ ] `HELIXKIT_*` env vars (17 references in app/lib/config) →
