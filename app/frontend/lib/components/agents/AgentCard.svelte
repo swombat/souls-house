@@ -62,7 +62,11 @@
     {/if}
 
     {#if agent.provider_subscription?.auth_mode === 'oauth_account'}
-      <AgentSubscriptionUsageSummary {accountId} agentId={agent.id} subscription={agent.provider_subscription} />
+      <AgentSubscriptionUsageSummary
+        {accountId}
+        agentId={agent.id}
+        modelId={agent.model_id}
+        subscription={agent.provider_subscription} />
     {/if}
 
     {#if agent.enabled_tools?.length > 0}
