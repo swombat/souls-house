@@ -62,6 +62,26 @@ class PrepareTelegramMediaJobTest < ActiveSupport::TestCase
     assert_equal "too_large", message.media_error
   end
 
+  test "a failed media download wakes a later message that was waiting behind it" do
+    message = create_media_message("video")
+    @subscription.telegram_messages.create!(
+      role: "user",
+      text: "Did the video arrive?",
+      sender_name: "Daniel",
+      sent_at: 1.second.from_now
+    )
+    stub_request(:post, "https://api.telegram.org/bot123:ABC/getFile")
+      .to_return(status: 200, body: { ok: false, description: "Bad Request: file is too big" }.to_json)
+    stub_request(:post, "https://api.telegram.org/bot123:ABC/sendMessage")
+      .to_return(status: 200, body: { ok: true, result: {} }.to_json)
+
+    assert_enqueued_with(job: TelegramAgentTriggerJob, args: [ @subscription, message ]) do
+      PrepareTelegramMediaJob.perform_now(message, "large-video")
+    end
+
+    assert_equal "failed", message.reload.media_status
+  end
+
   test "voice transcription receives detected filename and content type" do
     message = create_media_message("voice", caption: "Listen")
     stub_telegram_download("voice/file.webm", file_fixture("test_audio.webm").binread)

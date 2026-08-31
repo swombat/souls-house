@@ -9,6 +9,7 @@ class ExternalAgentTelegramRequest
   end
 
   def call
+    return { status: 204, skipped: true } if telegram_messages.empty?
     return { status: 503, error: "external runtime unreachable" } if agent.offline?
 
     endpoint_url = Agents::Endpoint.url_for(agent)
@@ -24,7 +25,7 @@ class ExternalAgentTelegramRequest
       session_id: "#{agent.uuid}-telegram-#{subscription.id}",
       endpoint_url: endpoint_url,
       request_text: request,
-      last_included_message_id: telegram_message.id,
+      last_included_message_id: last_message.id,
       provider_auth_mode: auth_mode
     ) do
       ChaosTriggerClient.new(endpoint_url, agent.trigger_bearer_token).request_response(
@@ -81,13 +82,14 @@ class ExternalAgentTelegramRequest
         email: subscription.user.email_address,
         telegram_username: subscription.telegram_username
       },
-      text: telegram_message.text,
+      text: telegram_messages.map(&:text).join("\n\n"),
+      messages: telegram_messages.map(&:transcript_json),
       thread_id: subscription.to_param,
-      history_cursor: telegram_message.to_param,
+      history_cursor: last_message.to_param,
       runtime_session_generation: subscription.runtime_session_generation
     }
     payload[:roll_session] = true if pending_safeguard_detection
-    payload[:media] = telegram_message.media_json if telegram_message.media?
+    payload[:media] = last_message.media_json if telegram_messages.one? && last_message.media?
     payload
   end
 
@@ -100,11 +102,11 @@ class ExternalAgentTelegramRequest
 
       Channel: telegram
       Thread ID: #{subscription.to_param}
-      History cursor: #{telegram_message.to_param}
+      History cursor: #{last_message.to_param}
       Sender: #{subscription.subscriber_name} <#{subscription.user.email_address}>
       Telegram username: #{subscription.telegram_username.presence || "_unknown_"}
-      Message:
-      #{telegram_message.media_prompt}
+      New messages (#{telegram_messages.size}, oldest first):
+      #{messages_prompt}
 
       Telegram is a direct, push-to-phone channel. Decide whether and how to reply in that register.
       Your final Chaos stdout is diagnostic only. To reply, prefer piping the message through stdin:
@@ -123,19 +125,79 @@ class ExternalAgentTelegramRequest
     [
       Notices::Renderer.section_for(agent),
       <<~TEXT
-      New Telegram DM from #{subscription.subscriber_name} (thread #{subscription.to_param}):
-      #{telegram_message.media_prompt}
+      New Telegram DMs from #{subscription.subscriber_name} (thread #{subscription.to_param}), oldest first:
+      #{messages_prompt}
 
       Reply by piping stdin to `helixkit-send-telegram --reply-to #{subscription.to_param}` if appropriate. Stdout is diagnostic only.
-      History cursor: #{telegram_message.to_param}
+      History cursor: #{last_message.to_param}
       TEXT
     ].compact_blank.join("\n\n")
   end
 
   def transcript_text
-    subscription.telegram_messages.chronological.last(TRANSCRIPT_WINDOW).map do |message|
+    subscription.telegram_messages
+      .where("id <= ?", last_message.id)
+      .chronological
+      .last(TRANSCRIPT_WINDOW)
+      .map do |message|
       message.transcript_line
     end.join("\n")
+  end
+
+  def messages_prompt
+    telegram_messages.map do |message|
+      <<~TEXT.strip
+      [#{message.sent_at.iso8601} · cursor #{message.to_param}]
+      #{message.media_prompt}
+      TEXT
+    end.join("\n\n")
+  end
+
+  def telegram_messages
+    return @telegram_messages if defined?(@telegram_messages)
+
+    messages = subscription.telegram_messages
+      .where(role: "user")
+      .where("id > ?", message_cursor)
+      .order(:id)
+      .to_a
+
+    # A media preparation job will enqueue another wake when it reaches ready
+    # or failed. Keep later text behind it so the resident sees the conversation
+    # in the same order as the sender.
+    @telegram_messages = messages.take_while { |message| message.media_status != "pending" }
+  end
+
+  def message_cursor
+    return prior_cursor_message_id if prior_cursor_message_id
+
+    earlier_media_id = subscription.telegram_messages
+      .where(role: "user")
+      .where.not(media_kind: nil)
+      .where("id < ?", telegram_message.id)
+      .minimum(:id)
+
+    [ telegram_message.id, earlier_media_id ].compact.min - 1
+  end
+
+  def last_message
+    telegram_messages.last
+  end
+
+  # Failed and busy attempts must not advance the cursor. A later queued job
+  # should retry every message that the resident has not successfully received.
+  def prior_cursor_message_id
+    return @prior_cursor_message_id if defined?(@prior_cursor_message_id)
+
+    @prior_cursor_message_id = AgentRuntimeInteraction
+      .where(
+        agent: agent,
+        trigger_kind: "telegram",
+        conversation_obfuscated_id: subscription.to_param
+      )
+      .where.not(last_included_message_id: nil)
+      .where(transport_status: 200...300, runtime_status: "ok")
+      .maximum(:last_included_message_id)
   end
 
   def pending_safeguard_detection

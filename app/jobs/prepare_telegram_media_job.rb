@@ -156,12 +156,25 @@ class PrepareTelegramMediaJob < ApplicationJob
 
     telegram_message.update!(media_status: "failed", media_error: category)
     telegram_message.rebuild_text!
-    telegram_message.telegram_subscription.agent.telegram_send_message(
-      telegram_message.telegram_subscription.telegram_chat_id,
+    notify_media_failure(telegram_message, category)
+    enqueue_follow_up_wake(telegram_message)
+  end
+
+  def notify_media_failure(telegram_message, category)
+    subscription = telegram_message.telegram_subscription
+    subscription.agent.telegram_send_message(
+      subscription.telegram_chat_id,
       failure_message(telegram_message.media_kind, category)
     )
   rescue TelegramNotifiable::TelegramError => e
     Rails.logger.warn("[TelegramMedia] could not notify sender for message #{telegram_message.id}: #{e.class}")
+  end
+
+  def enqueue_follow_up_wake(telegram_message)
+    subscription = telegram_message.telegram_subscription
+    return unless subscription.telegram_messages.where(role: "user").where("id > ?", telegram_message.id).exists?
+
+    TelegramAgentTriggerJob.perform_later(subscription, telegram_message)
   end
 
   def error_category(error)

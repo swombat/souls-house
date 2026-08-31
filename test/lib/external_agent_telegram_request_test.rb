@@ -67,6 +67,158 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
     assert_equal 409, result[:status]
   end
 
+  test "batches every queued message into one ordered trigger" do
+    second = @subscription.telegram_messages.create!(
+      role: "user",
+      text: "And one more thing",
+      sender_name: "Daniel",
+      sent_at: 1.second.from_now
+    )
+    third = @subscription.telegram_messages.create!(
+      role: "user",
+      text: "Actually, two things",
+      sender_name: "Daniel",
+      sent_at: 2.seconds.from_now
+    )
+    request_body = nil
+    stub_request(:post, "https://agent.example.com/trigger")
+      .with { |request| request_body = JSON.parse(request.body) }
+      .to_return(status: 200, body: { status: "ok", chaos_session_id: "session-1" }.to_json)
+
+    result = ExternalAgentTelegramRequest.new(
+      agent: @agent,
+      subscription: @subscription,
+      telegram_message: @message
+    ).call
+
+    assert_equal 200, result[:status]
+    assert_equal(
+      [ "Can you hear me?", "And one more thing", "Actually, two things" ],
+      request_body.fetch("messages").pluck("text")
+    )
+    assert_equal third.to_param, request_body["history_cursor"]
+    assert_operator request_body["request_delta"].index("Can you hear me?"), :<,
+      request_body["request_delta"].index("And one more thing")
+    assert_operator request_body["request_delta"].index("And one more thing"), :<,
+      request_body["request_delta"].index("Actually, two things")
+    assert_equal third.id, @agent.agent_runtime_interactions.last.last_included_message_id
+    assert_equal [ @message, second, third ].map(&:to_param), request_body.fetch("messages").pluck("id")
+  end
+
+  test "a stale queued job is a no-op after an earlier job delivered its message" do
+    second = @subscription.telegram_messages.create!(
+      role: "user",
+      text: "Queued follow-up",
+      sender_name: "Daniel",
+      sent_at: 1.second.from_now
+    )
+    stub = stub_request(:post, "https://agent.example.com/trigger")
+      .to_return(status: 200, body: { status: "ok", chaos_session_id: "session-1" }.to_json)
+
+    ExternalAgentTelegramRequest.new(
+      agent: @agent,
+      subscription: @subscription,
+      telegram_message: @message
+    ).call
+    result = ExternalAgentTelegramRequest.new(
+      agent: @agent,
+      subscription: @subscription,
+      telegram_message: second
+    ).call
+
+    assert_equal({ status: 204, skipped: true }, result)
+    assert_requested stub, times: 1
+    assert_equal 1, @agent.agent_runtime_interactions.where(trigger_kind: "telegram").count
+  end
+
+  test "a failed batch remains available to the next queued job" do
+    @agent.agent_runtime_interactions.create!(
+      trigger_kind: "telegram",
+      conversation_obfuscated_id: @subscription.to_param,
+      requested_by: users(:user_1).email_address,
+      session_id: "#{@agent.uuid}-telegram-#{@subscription.id}",
+      last_included_message_id: @message.id,
+      transport_status: 200,
+      runtime_status: "ok",
+      started_at: 1.minute.ago
+    )
+    second = @subscription.telegram_messages.create!(
+      role: "user",
+      text: "Please do not lose this",
+      sender_name: "Daniel",
+      sent_at: 1.second.from_now
+    )
+    third = @subscription.telegram_messages.create!(
+      role: "user",
+      text: "Or this either",
+      sender_name: "Daniel",
+      sent_at: 2.seconds.from_now
+    )
+    request_bodies = []
+    stub_request(:post, "https://agent.example.com/trigger")
+      .to_return do |request|
+        request_bodies << JSON.parse(request.body)
+        if request_bodies.one?
+          { status: 500, body: { status: "error" }.to_json }
+        else
+          { status: 200, body: { status: "ok", chaos_session_id: "session-1" }.to_json }
+        end
+      end
+
+    first_result = ExternalAgentTelegramRequest.new(
+      agent: @agent,
+      subscription: @subscription,
+      telegram_message: @message
+    ).call
+    second_result = ExternalAgentTelegramRequest.new(
+      agent: @agent,
+      subscription: @subscription,
+      telegram_message: third
+    ).call
+
+    assert_equal 500, first_result[:status]
+    assert_equal 200, second_result[:status]
+    assert_equal 2, request_bodies.size
+    assert_equal(
+      request_bodies.first.fetch("messages").pluck("text"),
+      request_bodies.second.fetch("messages").pluck("text")
+    )
+    assert_equal [ second.text, third.text ], request_bodies.second.fetch("messages").pluck("text")
+  end
+
+  test "waits for earlier media before delivering later text" do
+    media = @subscription.telegram_messages.create!(
+      role: "user",
+      text: "[Photo — processing]",
+      media_kind: "photo",
+      media_status: "pending",
+      sender_name: "Daniel",
+      sent_at: 1.second.from_now
+    )
+    text = @subscription.telegram_messages.create!(
+      role: "user",
+      text: "What do you think?",
+      sender_name: "Daniel",
+      sent_at: 2.seconds.from_now
+    )
+    request = ExternalAgentTelegramRequest.new(
+      agent: @agent,
+      subscription: @subscription,
+      telegram_message: text
+    )
+
+    assert_empty request.send(:telegram_messages)
+
+    media.update!(media_status: "ready")
+    ready_request = ExternalAgentTelegramRequest.new(
+      agent: @agent,
+      subscription: @subscription,
+      telegram_message: text
+    )
+
+    assert_equal [ media, text ], ready_request.send(:telegram_messages)
+  end
+
   test "subscription limit sends a Telegram notice without launching a second request" do
     @agent.update!(
       model_id: "x-ai/grok-build-0.1",
@@ -149,7 +301,7 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
     payload = request.send(:trigger_payload)
 
     assert_includes prompt, "Typed caption: What is this?"
-    assert_includes prompt, "$HELIXKIT_BEARER_TOKEN"
+    assert_includes prompt, "$SOULSHOUSE_BEARER_TOKEN"
     assert_includes prompt, "/api/v1/telegram_conversations/"
     assert_equal "photo", payload.dig(:media, :kind)
     refute_includes prompt, "api.telegram.org/file"
