@@ -1,6 +1,6 @@
 # config/deploy.yml
 
-service: helix-kit
+service: souls-house
 image: dtenner/souls-house
 
 registry:
@@ -19,7 +19,7 @@ env:
     RAILS_ENV: production
     HELIXKIT_AGENTS_NETWORK: kamal # Agent containers join Kamal's private Docker network.
     HELIXKIT_AGENT_IMAGE_DEFAULT: helixkit-agent-runtime:latest
-    HELIXKIT_AGENT_INTERNAL_URL: http://helix-kit-web:3000 # Agent callbacks hit Rails over Docker DNS.
+    HELIXKIT_AGENT_INTERNAL_URL: http://souls-house-web:3000 # Agent callbacks hit Rails over Docker DNS.
     HELIXKIT_SANDBOX_HOST: 95.217.118.47 # Stored on promoted agents for operator diagnostics.
     HELIXKIT_AGENT_BACKUPS_ENABLED: true # Back up all hosted-agent persistent volumes during the nightly full backup.
   secret:
@@ -33,7 +33,9 @@ servers:
     options:
       volume: /var/run/docker.sock:/var/run/docker.sock
       group-add: 988 # Host docker group; lets the non-root rails user use the mounted socket.
-      network-alias: helix-kit-web
+      network-alias:
+        - souls-house-web
+        - helix-kit-web # transition alias: pre-rename agent containers have the old callback URL baked in; remove in Step 2.5
   jobs:
     hosts:
       - 95.217.118.47
@@ -65,8 +67,9 @@ accessories:
     host: 95.217.118.47
     env:
       clear:
-        POSTGRES_USER: helix_kit
-        POSTGRES_DB: helix_kit_production
+        # initdb-only vars — the existing data volume (renamed cluster) ignores them; kept in sync for clarity
+        POSTGRES_USER: souls_house
+        POSTGRES_DB: souls_house_production
       secret:
         - POSTGRES_PASSWORD
     directories:
