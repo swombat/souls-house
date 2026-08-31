@@ -11,6 +11,7 @@ class ChatsController < ApplicationController
       chats: Chat.cached_json_for(Array(@chats), as: :sidebar_json),
       agents: available_agents(as: :list),
       account: current_account.as_json,
+      show_usage_in_chat: Setting.instance.show_usage_in_chat,
       file_upload_config: file_upload_config
     }
   end
@@ -22,12 +23,16 @@ class ChatsController < ApplicationController
       chats: Chat.cached_json_for(@chats, as: :sidebar_json),
       account: current_account.as_json,
       agents: available_agents(as: :list),
+      show_usage_in_chat: Setting.instance.show_usage_in_chat,
       file_upload_config: file_upload_config
     }
   end
 
   def show
-    props = { account: current_account.as_json }
+    props = {
+      account: current_account.as_json,
+      show_usage_in_chat: Setting.instance.show_usage_in_chat
+    }
 
     if inertia_prop_requested?(:chats)
       chats = sidebar_chats
@@ -48,7 +53,7 @@ class ChatsController < ApplicationController
 
     props[:chat] = chat_json_with_whiteboard if inertia_prop_requested?(:chat)
     props[:models] = available_models if inertia_prop_requested?(:models)
-    props[:agents] = @chat.group_chat? ? @chat.agents.as_json(as: :list) : [] if inertia_prop_requested?(:agents)
+    props[:agents] = @chat.group_chat? ? agents_json(@chat.agents, as: :list) : [] if inertia_prop_requested?(:agents)
     props[:available_agents] = available_agents(as: :list) if inertia_prop_requested?(:available_agents)
     props[:addable_agents] = addable_agents_for_chat(as: :list) if inertia_prop_requested?(:addable_agents)
     props[:file_upload_config] = file_upload_config if inertia_prop_requested?(:file_upload_config)
@@ -162,13 +167,7 @@ class ChatsController < ApplicationController
   end
 
   def available_agents(as: nil)
-    scope = available_agents_scope
-
-    if as.present?
-      scope.as_json(as: as)
-    else
-      scope.as_json
-    end
+    agents_json(available_agents_scope, as: as)
   end
 
   def available_agents_scope
@@ -195,7 +194,15 @@ class ChatsController < ApplicationController
   def addable_agents_for_chat(as: nil)
     return [] unless @chat.group_chat?
     scope = current_account.agents.active.where.not(runtime: %w[provisioning migrating], id: @chat.agent_ids)
-    as.present? ? scope.as_json(as: as) : scope.as_json
+    agents_json(scope, as: as)
+  end
+
+  def agents_json(agents, as: nil)
+    agents.map do |agent|
+      json = as.present? ? agent.as_json(as: as) : agent.as_json
+      subscription = Agents::ProviderSubscriptionPresentation.call(agent)
+      subscription ? json.merge("provider_subscription" => subscription) : json
+    end
   end
 
   def runtime_interactions_for_timeline

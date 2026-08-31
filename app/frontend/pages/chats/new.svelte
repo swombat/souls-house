@@ -7,7 +7,13 @@
   import NewChatHeader from '$lib/components/chat/NewChatHeader.svelte';
   import { accountChatsPath } from '@/routes';
 
-  let { chats = [], account, agents = [], file_upload_config = null } = $props();
+  let {
+    chats = [],
+    account,
+    agents = [],
+    show_usage_in_chat: showUsageInChat = false,
+    file_upload_config = null,
+  } = $props();
 
   const unpausedAgentIds = () => agents.filter((agent) => agent.paused !== true).map((agent) => agent.id);
 
@@ -89,7 +95,7 @@
   <main class="flex-1 flex flex-col bg-background">
     <NewChatHeader onMenuOpen={() => (sidebarOpen = true)} />
 
-    <GroupChatAgentPicker {agents} bind:selectedAgentIds />
+    <GroupChatAgentPicker {agents} accountId={account.id} showUsage={showUsageInChat} bind:selectedAgentIds />
 
     <NewChatEmptyState />
 

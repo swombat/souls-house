@@ -78,6 +78,7 @@
     agents = [],
     available_agents = [],
     addable_agents = [],
+    show_usage_in_chat: showUsageInChat = false,
     file_upload_config = {},
     telegram_deep_link: telegramDeepLink = null,
   } = $props();
@@ -718,6 +719,7 @@
       {chat}
       {agents}
       accountId={account.id}
+      showUsage={showUsageInChat}
       {agentIsResponding}
       {activeRuntimeAgentIds}
       {responseMarker}

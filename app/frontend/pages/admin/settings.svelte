@@ -26,6 +26,7 @@
     formData.append('setting[allow_signups]', form.allow_signups);
     formData.append('setting[allow_chats]', form.allow_chats);
     formData.append('setting[allow_agents]', form.allow_agents);
+    formData.append('setting[show_usage_in_chat]', form.show_usage_in_chat);
     formData.append('setting[safeguard_owner_notice_threshold]', form.safeguard_owner_notice_threshold);
 
     if (logoFile) {

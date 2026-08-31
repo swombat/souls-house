@@ -48,6 +48,11 @@ export function predictedWeeklyUsage(windows, now = Date.now()) {
   return Math.round((used * WEEK_MS) / elapsed);
 }
 
+export function weeklyRemainingPercent(usage, provider, modelId = '') {
+  const weekly = displayUsageWindows(usage, provider, modelId).find((window) => window.displayLabel === 'Weekly');
+  return weekly ? clampPercent(weekly.remaining_percent) : null;
+}
+
 export function predictionTone(prediction) {
   if (prediction > 100) return 'danger';
   if (prediction >= 75) return 'warning';

@@ -4,12 +4,14 @@
   import { Spinner, UsersThree } from 'phosphor-svelte';
   import { accountChatAgentTriggerPath } from '@/routes';
   import { agentIconFor } from '$lib/agent-icons';
+  import AgentUsageName from '$lib/components/chat/AgentUsageName.svelte';
   import { onDestroy } from 'svelte';
 
   let {
     agents = [],
     accountId,
     chatId,
+    showUsage = false,
     disabled = false,
     activeRuntimeAgentIds = [],
     responseMarker = null,
@@ -127,7 +129,7 @@
               weight="duotone"
               class={agent.colour ? `text-${agent.colour}-600 dark:text-${agent.colour}-400` : ''} />
           {/if}
-          <span class="hidden md:inline">{agent.name}</span>
+          <span class="hidden md:inline"><AgentUsageName {accountId} {agent} {showUsage} /></span>
         </Button>
       {/each}
       {#if agents.length > 1}

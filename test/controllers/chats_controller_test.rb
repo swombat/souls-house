@@ -43,6 +43,24 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_includes agent_ids, agents(:code_reviewer).to_param
   end
 
+  test "new chat exposes OAuth subscription metadata and the chat usage setting" do
+    agent = agents(:research_assistant)
+    agent.update!(
+      model_id: "x-ai/grok-4.6",
+      runtime: "external",
+      health_state: "healthy",
+      provider_auth_modes: { "xai" => "oauth_account" },
+      provider_connections: { "xai" => { "status" => "connected" } }
+    )
+    Setting.instance.update!(show_usage_in_chat: true)
+
+    get new_account_chat_path(@account)
+
+    agent_json = inertia_shared_props.fetch("agents").find { |item| item.fetch("id") == agent.to_param }
+    assert_equal "xai", agent_json.dig("provider_subscription", "provider")
+    assert_equal true, inertia_shared_props.fetch("show_usage_in_chat")
+  end
+
   test "index redirects to agent creation when no active agents exist" do
     @account.agents.update_all(active: false)
 

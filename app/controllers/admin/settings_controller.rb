@@ -32,6 +32,7 @@ class Admin::SettingsController < ApplicationController
       :allow_signups,
       :allow_chats,
       :allow_agents,
+      :show_usage_in_chat,
       :safeguard_owner_notice_threshold,
       :logo
     )

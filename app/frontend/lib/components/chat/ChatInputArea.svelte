@@ -6,6 +6,7 @@
     chat,
     agents = [],
     accountId,
+    showUsage = false,
     agentIsResponding = false,
     activeRuntimeAgentIds = [],
     responseMarker = null,
@@ -22,6 +23,7 @@
   <AgentTriggerBar
     {agents}
     {accountId}
+    {showUsage}
     chatId={chat.id}
     disabled={agentIsResponding || !chat?.respondable}
     {activeRuntimeAgentIds}

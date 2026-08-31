@@ -1,7 +1,8 @@
 <script>
   import { agentIconFor } from '$lib/agent-icons';
+  import AgentUsageName from '$lib/components/chat/AgentUsageName.svelte';
 
-  let { agents = [], selectedAgentIds = $bindable([]) } = $props();
+  let { agents = [], accountId, showUsage = false, selectedAgentIds = $bindable([]) } = $props();
 
   function toggleAgent(agentId) {
     if (selectedAgentIds.includes(agentId)) {
@@ -36,7 +37,7 @@
             size={14}
             weight="duotone"
             class={agent.colour && !isSelected ? `text-${agent.colour}-600 dark:text-${agent.colour}-400` : ''} />
-          {agent.name}
+          <AgentUsageName {accountId} {agent} {showUsage} />
           {#if agent.paused === true}
             <span class="text-[10px] uppercase tracking-wide text-muted-foreground">Paused</span>
           {/if}

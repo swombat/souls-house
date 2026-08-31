@@ -22,12 +22,13 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
   test "admin can update settings" do
     sign_in @admin
     patch admin_settings_path, params: {
-      setting: { site_name: "New Name", allow_signups: false }
+      setting: { site_name: "New Name", allow_signups: false, show_usage_in_chat: true }
     }
 
     assert_redirected_to admin_settings_path
     assert_equal "New Name", Setting.instance.reload.site_name
     assert_not Setting.instance.allow_signups
+    assert Setting.instance.show_usage_in_chat
   end
 
 end

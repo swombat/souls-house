@@ -21,6 +21,11 @@
       label: 'Allow Residents',
       description: 'When disabled, resident management is hidden',
     },
+    {
+      id: 'show_usage_in_chat',
+      label: 'Show usage in chat',
+      description: 'Show weekly subscription usage beside resident names. Usage below 25% is always shown.',
+    },
   ];
 </script>
 
@@ -36,10 +41,7 @@
           <Label for={toggle.id}>{toggle.label}</Label>
           <p class="text-sm text-muted-foreground">{toggle.description}</p>
         </div>
-        <Switch
-          id={toggle.id}
-          checked={form[toggle.id]}
-          onCheckedChange={(checked) => (form[toggle.id] = checked)} />
+        <Switch id={toggle.id} checked={form[toggle.id]} onCheckedChange={(checked) => (form[toggle.id] = checked)} />
       </div>
     {/each}
   </CardContent>
