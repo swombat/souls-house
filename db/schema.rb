@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_31_082500) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_31_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -229,6 +229,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_082500) do
     t.index ["chat_id", "created_at"], name: "index_agent_runtime_interactions_on_chat_id_and_created_at"
     t.index ["chat_id"], name: "index_agent_runtime_interactions_on_chat_id"
     t.index ["session_id"], name: "index_agent_runtime_interactions_on_session_id"
+    t.index ["started_at"], name: "index_agent_runtime_interactions_on_started_at"
   end
 
   create_table "agent_service_accesses", force: :cascade do |t|

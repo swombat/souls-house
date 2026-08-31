@@ -140,6 +140,7 @@ Rails.application.routes.draw do
   end
 
   namespace :admin do
+    resources :runtime_sessions, only: :index, controller: "agent_runtime_sessions"
     resources :agents, only: [] do
       resource :runtime, only: :show, controller: "agent_runtime_sessions"
     end

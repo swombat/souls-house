@@ -5,6 +5,18 @@ class Admin::AgentRuntimeSessionsController < ApplicationController
   skip_before_action :set_current_account
   before_action :require_site_admin
 
+  def index
+    report = ResidentSessionActivityReport.new(
+      window: params[:window],
+      channel: params[:channel],
+      time_zone: Current.user.timezone.presence || "UTC"
+    ).call
+
+    render inertia: "admin/runtime-sessions", props: {
+      report: report
+    }
+  end
+
   def show
     agent = Agent.includes(:account).find(params[:agent_id])
     to = parse_time(params[:to]) || Time.current.utc

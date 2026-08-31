@@ -14,12 +14,54 @@ class Admin::AgentRuntimeSessionsControllerTest < ActionDispatch::IntegrationTes
     assert_redirected_to login_path
   end
 
+  test "site-wide session index requires authentication" do
+    get admin_runtime_sessions_path
+
+    assert_redirected_to login_path
+  end
+
   test "requires a site administrator" do
     login_as(@regular_user)
 
     get admin_agent_runtime_path(@agent)
 
     assert_redirected_to root_path
+  end
+
+  test "site-wide session index requires a site administrator" do
+    login_as(@regular_user)
+
+    get admin_runtime_sessions_path
+
+    assert_redirected_to root_path
+  end
+
+  test "renders sessions across accounts with weekly activity for site administrators" do
+    other_agent = agents(:other_account_agent)
+    @agent.agent_runtime_interactions.create!(
+      trigger_kind: "conversation",
+      session_id: "web-session",
+      started_at: 20.minutes.ago,
+      finished_at: 10.minutes.ago
+    )
+    other_agent.agent_runtime_interactions.create!(
+      trigger_kind: "telegram",
+      session_id: "telegram-session",
+      started_at: 5.minutes.ago
+    )
+    login_as(@site_admin)
+
+    get admin_runtime_sessions_path, params: { window: "1h" }
+
+    assert_response :success
+    assert_equal "admin/runtime-sessions", inertia_component
+    props = inertia_shared_props.fetch("report")
+    assert_equal "1h", props.fetch("window")
+    assert_equal 2, props.dig("summary", "active_residents")
+    assert_equal 2, props.dig("summary", "sessions")
+    assert_equal 7, props.dig("activity", "days").size
+    assert_equal [ "telegram-session", "web-session" ], props.fetch("sessions").map { |session| session["session_id"] }
+    assert_not props.fetch("sessions").first.key?("request_text")
   end
 
   test "renders a safe UTC session report for site administrators" do
