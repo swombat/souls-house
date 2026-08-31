@@ -60,6 +60,7 @@ class Admin::AgentRuntimeSessionsControllerTest < ActionDispatch::IntegrationTes
     assert_equal 2, props.dig("summary", "active_residents")
     assert_equal 2, props.dig("summary", "sessions")
     assert_equal 7, props.dig("activity", "days").size
+    assert_equal 84, props.dig("activity", "days").sum { |day| day.fetch("buckets").size }
     assert_equal [ "telegram-session", "web-session" ], props.fetch("sessions").map { |session| session["session_id"] }
     assert_not props.fetch("sessions").first.key?("request_text")
   end

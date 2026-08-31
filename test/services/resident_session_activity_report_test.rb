@@ -57,7 +57,7 @@ class ResidentSessionActivityReportTest < ActiveSupport::TestCase
     assert_equal "stale", sessions.fetch("stale").fetch(:status)
   end
 
-  test "builds seven local calendar days of activity including empty days" do
+  test "builds twelve two-hour buckets for each of seven local calendar days" do
     create_interaction!(@resident,
       started_at: Time.utc(2026, 8, 30, 22, 30),
       finished_at: Time.utc(2026, 8, 30, 22, 40),
@@ -68,10 +68,15 @@ class ResidentSessionActivityReportTest < ActiveSupport::TestCase
     days = report.dig(:activity, :days)
 
     assert_equal 7, days.size
+    assert_equal 84, days.sum { |day| day.fetch(:buckets).size }
     assert_equal "2026-08-25", days.first.fetch(:date)
     monday = days.find { |day| day[:date] == "2026-08-31" }
     assert_equal 1, monday.fetch(:interactions)
     assert_equal({ "wake" => 1 }, monday.fetch(:channels))
+    midnight = monday.fetch(:buckets).first
+    assert_equal "00:00", midnight.fetch(:label)
+    assert_equal 1, midnight.fetch(:interactions)
+    assert_equal({ "wake" => 1 }, midnight.fetch(:channels))
   end
 
   test "filters the selected window by channel without changing the weekly chart" do
@@ -92,6 +97,37 @@ class ResidentSessionActivityReportTest < ActiveSupport::TestCase
     assert_equal [ "telegram" ], report.fetch(:sessions).map { |session| session[:channel] }
     assert_equal 1, report.dig(:summary, :interactions)
     assert_equal 2, report.dig(:activity, :days).sum { |day| day[:interactions] }
+    assert_equal 2, report.dig(:activity, :days).sum { |day| day[:buckets].sum { |bucket| bucket[:interactions] } }
+  end
+
+  test "sums estimated interaction costs for each logical session" do
+    create_interaction!(@resident,
+      session_id: "costed-session",
+      telemetry_schema_version: 1,
+      usage_scope: "invocation",
+      usage_complete: true,
+      uncached_input_tokens: 1_000_000,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 100_000)
+    create_interaction!(@resident,
+      session_id: "costed-session",
+      started_at: @now - 1.minute,
+      telemetry_schema_version: 1,
+      usage_scope: "invocation",
+      usage_complete: true,
+      uncached_input_tokens: 500_000,
+      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 0,
+      output_tokens: 0)
+
+    report = ResidentSessionActivityReport.new(now: @now).call
+    cost = report.fetch(:sessions).first.fetch(:estimated_cost)
+
+    assert_equal "estimated", cost.fetch(:status)
+    assert_equal "10.5", cost.fetch(:amount_usd)
+    assert_equal "api", cost.fetch(:basis)
+    assert_equal 2, cost.fetch(:priced_interactions)
   end
 
   test "excludes session busy retries from site activity" do

@@ -64,8 +64,11 @@
   }
 
   function chartHeight(value) {
-    const maximum = Math.max(1, ...report.activity.days.map((day) => day.interactions));
-    return value === 0 ? 0 : Math.max(8, Math.round((value / maximum) * 100));
+    const maximum = Math.max(
+      1,
+      ...report.activity.days.flatMap((day) => day.buckets.map((bucket) => bucket.interactions))
+    );
+    return value === 0 ? 0 : Math.max(4, Math.round((value / maximum) * 100));
   }
 
   function channelBreakdown(channels) {
@@ -93,6 +96,28 @@
 
   function statusLabel(status) {
     return { running: 'Running now', failed: 'Failed', stale: 'Possibly interrupted', completed: 'Completed' }[status];
+  }
+
+  function estimatedCost(cost) {
+    if (!cost?.amount_usd) return 'Unavailable';
+
+    const amount = Number(cost.amount_usd);
+    const maximumFractionDigits = amount >= 1 ? 2 : amount >= 0.01 ? 3 : 4;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits,
+    }).format(amount);
+  }
+
+  function costNote(cost) {
+    if (!cost) return '';
+    const notes = [];
+    if (cost.basis === 'subscription_equivalent') notes.push('list-price equivalent');
+    if (cost.basis === 'mixed') notes.push('mixed billing');
+    if (cost.status === 'partial') notes.push(`${cost.priced_interactions}/${cost.interaction_count} priced`);
+    return notes.join(' · ');
   }
 
   function detailsPath(session) {
@@ -153,27 +178,24 @@
   <Card>
     <CardHeader>
       <CardTitle>Last seven days</CardTitle>
-      <CardDescription>Each bar is the number of resident runtime interactions started that day.</CardDescription>
+      <CardDescription>Each narrow bar is a two-hour block, with 12 bars per local calendar day.</CardDescription>
     </CardHeader>
     <CardContent>
-      <div class="grid h-64 grid-cols-7 gap-2 sm:gap-4">
+      <div class="grid h-64 grid-cols-7 gap-1 sm:gap-2">
         {#each report.activity.days as day}
           <div class="flex min-w-0 flex-col items-center gap-2">
-            <div class="flex w-full flex-1 items-end justify-center rounded bg-muted/30 px-1">
-              <div
-                class="group relative w-full max-w-20 rounded-t bg-primary/75 transition-colors hover:bg-primary"
-                style={`height: ${chartHeight(day.interactions)}%`}
-                title={`${day.interactions} interactions · ${day.sessions} sessions · ${day.residents} residents · ${channelBreakdown(day.channels)}`}>
-                {#if day.interactions > 0}
-                  <span class="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-medium">
-                    {number(day.interactions)}
-                  </span>
-                {/if}
-              </div>
+            <div class="grid w-full flex-1 grid-cols-12 items-end gap-px rounded bg-muted/30 px-0.5 pt-5">
+              {#each day.buckets as bucket}
+                <div
+                  class="w-full rounded-t-sm bg-primary/75 transition-colors hover:bg-primary"
+                  style={`height: ${chartHeight(bucket.interactions)}%`}
+                  title={`${day.label} ${day.date.slice(5)} ${bucket.label}–${String((Number(bucket.label.slice(0, 2)) + 2) % 24).padStart(2, '0')}:00 · ${bucket.interactions} interactions · ${bucket.sessions} sessions · ${bucket.residents} residents · ${channelBreakdown(bucket.channels)}`}>
+                </div>
+              {/each}
             </div>
             <div class="text-center">
               <div class="text-xs font-medium">{day.label}</div>
-              <div class="text-[11px] text-muted-foreground">{day.date.slice(5)}</div>
+              <div class="text-[11px] text-muted-foreground">{day.date.slice(5)} · {number(day.interactions)}</div>
             </div>
           </div>
         {/each}
@@ -220,7 +242,7 @@
         <p class="py-8 text-center text-sm text-muted-foreground">No resident sessions in this window.</p>
       {:else}
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[1050px] text-left text-sm">
+          <table class="w-full min-w-[1180px] text-left text-sm">
             <thead class="border-b text-xs text-muted-foreground">
               <tr>
                 <th class="px-3 py-2">Resident</th>
@@ -229,6 +251,7 @@
                 <th class="px-3 py-2">Last active</th>
                 <th class="px-3 py-2">Activity</th>
                 <th class="px-3 py-2">Runtime</th>
+                <th class="px-3 py-2">Estimated cost</th>
                 <th class="px-3 py-2"></th>
               </tr>
             </thead>
@@ -271,6 +294,12 @@
                     <div class="max-w-56 truncate text-xs text-muted-foreground">
                       {session.model || session.resident.runtime}
                     </div>
+                  </td>
+                  <td class="px-3 py-3">
+                    <div>{estimatedCost(session.estimated_cost)}</div>
+                    {#if costNote(session.estimated_cost)}
+                      <div class="text-xs text-muted-foreground">{costNote(session.estimated_cost)}</div>
+                    {/if}
                   </td>
                   <td class="px-3 py-3 text-right">
                     <Button variant="outline" size="sm" onclick={() => router.visit(detailsPath(session))}

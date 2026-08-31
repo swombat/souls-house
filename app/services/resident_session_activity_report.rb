@@ -105,6 +105,7 @@ class ResidentSessionActivityReport
       chaos_process_count: interactions.filter_map(&:chaos_session_id).uniq.size,
       provider: interactions.reverse_each.find { |row| row.provider.present? }&.provider,
       model: interactions.reverse_each.find { |row| row.model.present? }&.model,
+      estimated_cost: estimated_cost_for(interactions),
       latest_outcome: latest.session_outcome,
       latest_error: latest.error_message.present? || latest.transport_status.to_i >= 400 ||
         latest.runtime_returncode.to_i.nonzero?
@@ -149,9 +150,59 @@ class ResidentSessionActivityReport
         interactions: rows.size,
         sessions: rows.map { |row| [ row.agent_id, logical_session_id(row) ] }.uniq.size,
         residents: rows.map(&:agent_id).uniq.size,
+        channels: rows.group_by { |row| channel_for(row.trigger_kind) }.transform_values(&:size),
+        buckets: activity_buckets_for(date, rows)
+      }
+    end
+  end
+
+  def activity_buckets_for(date, interactions)
+    rows_by_hour = interactions.group_by do |row|
+      local = row.started_at.in_time_zone(time_zone)
+      local.hour - (local.hour % 2)
+    end
+
+    (0...24).step(2).map do |hour|
+      rows = rows_by_hour.fetch(hour, [])
+      started_at = time_zone.local(date.year, date.month, date.day, hour)
+
+      {
+        started_at: started_at.utc.iso8601,
+        label: started_at.strftime("%H:%M"),
+        interactions: rows.size,
+        sessions: rows.map { |row| [ row.agent_id, logical_session_id(row) ] }.uniq.size,
+        residents: rows.map(&:agent_id).uniq.size,
         channels: rows.group_by { |row| channel_for(row.trigger_kind) }.transform_values(&:size)
       }
     end
+  end
+
+  def estimated_cost_for(interactions)
+    costs = interactions.map(&:estimated_cost)
+    amounts = costs.filter_map { |cost| cost[:amount_usd] }
+    status = if amounts.empty?
+      "unavailable"
+    elsif amounts.size == interactions.size
+      "estimated"
+    else
+      "partial"
+    end
+
+    {
+      status: status,
+      amount_usd: amounts.any? ? amounts.sum { |amount| BigDecimal(amount) }.to_s("F") : nil,
+      basis: cost_basis_for(interactions),
+      priced_interactions: amounts.size,
+      interaction_count: interactions.size
+    }
+  end
+
+  def cost_basis_for(interactions)
+    subscription_rows = interactions.count(&:subscription_based?)
+    return "subscription_equivalent" if subscription_rows == interactions.size
+    return "api" if subscription_rows.zero?
+
+    "mixed"
   end
 
   def channel_options_for(interactions)
