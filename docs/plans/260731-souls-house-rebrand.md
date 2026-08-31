@@ -295,20 +295,57 @@ Sequence (after final backup, before the Kamal service rename):
       Session cookie key changes → one-time re-login for all users
 - [x] SearXNG/WebTool retired (folded in per Step 1.8 note): tool + test
       deleted, `searxng:` credentials stripped dev+prod, stack doc historical
-- [ ] Rebuild agent-runtime image; rolling-restart agents — image `936eebe`
-      built + tagged latest at deploy; reconcile job queued (117737),
-      roll-out in flight as of 16:40 CEST — tick when a recreated container
-      shows symlinks + both env sets
+- [x] Rebuild agent-runtime image; rolling-restart agents — all 8 containers
+      verified on image `936eebe`: `helixkit-*` names are symlinks, both env
+      sets present, callbacks 200. **Incident during roll**: retiring WebTool
+      left `"WebTool"` in three agents' `enabled_tools` rows; the validation
+      (registry scanned from `app/tools/*.rb`) then failed EVERY save on
+      those agents, killing the reconcile batch AND health checks. Fixed by
+      scrubbing the rows (`update_column`). Lesson: retiring a tool means
+      retiring its data references in the same change.
 - Deliberate leftovers: agent-credentials wire format (`helix_kit:` YAML
   keys — cross-side contract, coordinated migration later); resident-facing
   wake/export prose (house notice #7 posted 2026-08-31, expires 14 Sept —
   sweep after it has stood); image name `helixkit-agent-runtime` (2.5)
 
-### Step 2.5 — Verify
-- [ ] Each agent: trigger a wake, confirm callback round-trip
-- [ ] Nightly backup runs green against new volume paths
-- [ ] `grep -ri "helix" app config lib agent-runtime` — remaining hits are
-      deliberate (symlinks, changelog/docs history) and listed here
+### Step 2.5 — Verify ✅ 2026-08-31 (cruft cleanup still open below)
+- [x] Callback round-trip: all 8 containers reach `souls-house-web:3000/up`
+      (200); `AgentHealthCheckJob` run manually — all 8 externally-hosted
+      agents report `healthy` (health checks exercise the inbound path)
+- [x] Backup green under new names: manual `FullBackupJob(fail_fast: true)`
+      → `souls_house_production_2026-08-31_14-45-53.sql.gz` in S3 + all 8
+      `AgentBackupSnapshot ok: true`. (Agent restic repos are keyed by
+      volume names `hk-agent-*`, unchanged — no path updates needed.)
+- [x] Final grep: 165 hits across ~30 files, all in six deliberate buckets:
+      1. **Permanent compat aliases** — Dockerfile symlinks, sandbox.rb
+         legacy env injection, script env fallbacks, `helixkit-api.md` stub,
+         post-deploy hook compat. Never remove.
+      2. **Resident-facing prose** — external_agent_*_request.rb,
+         agent_identity_exporter.rb, orient_new_agent_job.rb, notices
+         renderer, attention renderer. Deferred sweep: notice #7 stands
+         until ~14 Sept; sweep after.
+      3. **Infra names staying put** — image `helixkit-agent-runtime`,
+         container/volume prefix `hk-agent-*`, `/run/helixkit/`,
+         `/usr/local/share/helixkit-agent/`, host dir `.helix-kit-agents`.
+         Renaming any of these churns resident containers/volumes for zero
+         benefit; the volume prefix is load-bearing for restic history.
+      4. **Credentials wire format** — `helix_kit:` YAML keys
+         (agent_credentials_encryptor, github_token_adapter). Coordinated
+         both-sides migration or leave forever.
+      5. **Dev/test DB names** — `helix_kit_development`/`_test` in
+         database.yml. Local-only; rename would force every checkout's
+         re-setup. Leave.
+      6. **Historical** — LEGACY list in reconcile job, `'helix_kit'`
+         dump-name fallback, comments, this plan.
+
+Cruft cleanup (open, non-urgent, any later pass):
+- [ ] Host: `~/helix_kit-postgres` (stale underscore twin, Sep 2025) — move
+      to `~/backups/graveyard/` then delete after a quiet week
+- [ ] Host: `.kamal/apps/helix-kit/` env dir (dead service's env files)
+- [ ] Docker Hub: old `dtenner/helix-kit` repo (Daniel's call — nothing
+      references it)
+- [ ] Eventually: drop `helix-kit-web` transition network-alias (only after
+      confirming no resident notes carry internal URLs; costs nothing to keep)
 
 ---
 
