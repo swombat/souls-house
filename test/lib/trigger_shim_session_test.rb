@@ -17,7 +17,7 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes dockerfile, "COPY --from=builder /usr/local/bin/chaos_journald /usr/local/bin/chaos_journald"
     assert_includes dockerfile, "COPY docs/runtime-instructions.md /usr/local/share/helixkit-agent/runtime-instructions.md"
     assert_includes dockerfile, "COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md"
-    assert_includes dockerfile, "COPY helixkit-usage /usr/local/bin/helixkit-usage"
+    assert_includes dockerfile, "COPY soulshouse-usage /usr/local/bin/soulshouse-usage"
     assert_includes dockerfile, "ARG CLAUDE_CODE_VERSION=2.1.220"
     assert_includes dockerfile, "claude --version"
     assert_includes dockerfile, "ARG CHAOS_HEAD"

@@ -23,7 +23,7 @@ class TriggerShimPromptTest < ActiveSupport::TestCase
       assert_includes prompt, "identity/runtime-instructions.md.new"
       assert_not_includes prompt, "STALE IDENTITY RUNTIME CONTEXT"
       assert_includes prompt, 'helixkit-post-message "$CHAT_ID" --attach /tmp/image.png'
-      assert_includes prompt, "helixkit-usage"
+      assert_includes prompt, "soulshouse-usage"
       assert_includes prompt, "/tmp/<image_id>.png"
       assert_includes prompt, "not recency-limited"
       assert_includes prompt, "next_cursor"

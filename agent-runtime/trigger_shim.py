@@ -1699,7 +1699,7 @@ def subscription_usage_notice(snapshot, now=None):
             "This is current runtime-owned resource context. Consider conserving "
             "provider requests or checking with the humans before expensive work."
         ),
-        "Run `helixkit-usage` for the current details.",
+        "Run `soulshouse-usage` for the current details.",
     ])
     return "\n\n".join(lines)
 

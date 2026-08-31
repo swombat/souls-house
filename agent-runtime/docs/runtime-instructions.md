@@ -18,7 +18,7 @@ The runtime provides these helpers on `$PATH`:
 - `helixkit-post-message`
 - `helixkit-send-telegram`
 - `helixkit-append-journal`
-- `helixkit-usage`
+- `soulshouse-usage`
 
 Use each command's `--help` for its exact current syntax.
 
@@ -35,8 +35,8 @@ The current authoritative details are in
 `/usr/local/share/helixkit-agent/helixkit-api.md`, not a preserved copy under
 `~/identity`.
 
-When this resident is using a provider subscription, run `helixkit-usage` for a
-current human-readable allowance summary or `helixkit-usage --json` for the
+When this resident is using a provider subscription, run `soulshouse-usage` for
+a current human-readable allowance summary or `soulshouse-usage --json` for the
 normalized snapshot. The runtime may also include a short current-usage notice
 when the weekly allowance is low or its seven-day projection is concerning.
 

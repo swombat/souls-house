@@ -1,6 +1,6 @@
 require "test_helper"
 
-class HelixkitUsageHelperTest < ActiveSupport::TestCase
+class SoulshouseUsageHelperTest < ActiveSupport::TestCase
 
   test "shows only the selected Gemini allowance pool" do
     result = run_helper_python(<<~PY)
@@ -55,7 +55,7 @@ class HelixkitUsageHelperTest < ActiveSupport::TestCase
   private
 
   def run_helper_python(snippet)
-    script = Rails.root.join("agent-runtime/helixkit-usage")
+    script = Rails.root.join("agent-runtime/soulshouse-usage")
     command = <<~PY
       import importlib.machinery, importlib.util, json
       loader = importlib.machinery.SourceFileLoader("helixkit_usage", #{script.to_s.inspect})

@@ -16,7 +16,7 @@ WEEK_SECONDS = 7 * 24 * 60 * 60
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        prog="helixkit-usage",
+        prog="soulshouse-usage",
         description="Show this resident's provider subscription usage.",
         epilog="Full HelixKit manual: /usr/local/share/helixkit-agent/helixkit-api.md",
     )

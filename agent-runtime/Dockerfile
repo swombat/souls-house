@@ -167,11 +167,11 @@ COPY stop_journal_reflex.py /usr/local/share/helixkit-agent/stop_journal_reflex.
 COPY helixkit-post-message /usr/local/bin/helixkit-post-message
 COPY helixkit-send-telegram /usr/local/bin/helixkit-send-telegram
 COPY helixkit-append-journal /usr/local/bin/helixkit-append-journal
-COPY helixkit-usage /usr/local/bin/helixkit-usage
+COPY soulshouse-usage /usr/local/bin/soulshouse-usage
 COPY helixkit-gws /usr/local/bin/helixkit-gws
 COPY antigravity-browser-open /usr/local/libexec/helixkit-antigravity-login/xdg-open
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/helixkit-post-message /usr/local/bin/helixkit-send-telegram /usr/local/bin/helixkit-append-journal /usr/local/bin/helixkit-usage /usr/local/bin/helixkit-gws \
+RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/helixkit-post-message /usr/local/bin/helixkit-send-telegram /usr/local/bin/helixkit-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/helixkit-gws \
     /usr/local/libexec/helixkit-antigravity-login/xdg-open \
     && chmod 0644 /usr/local/share/helixkit-agent/*.md /usr/local/share/helixkit-agent/stop_journal_reflex.py
 
