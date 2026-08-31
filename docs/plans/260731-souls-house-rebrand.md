@@ -282,19 +282,27 @@ Sequence (after final backup, before the Kamal service rename):
 - [x] Deployed; boot + write path verified (agents/users counts, webhook
       round-trips, API key 200)
 
-### Step 2.4 — Code-level identifiers
-- [ ] `HELIXKIT_*` env vars (17 references in app/lib/config) →
-      `SOULSHOUSE_*`, with deploy.yml updated in the same commit
-- [ ] agent-runtime scripts: `helixkit-post-message`,
-      `helixkit-send-telegram`, `helixkit-append-journal` — **these are on
-      PATH inside running agent containers and referenced in agent docs and
-      possibly agents' own CLAUDE.md files.** Ship new names with old names
-      as symlinks; keep symlinks indefinitely (agents' memories reference
-      the old names)
-- [ ] `agent-runtime/docs/helixkit-api.md` and runtime-instructions.md
-- [ ] Rails module `HelixKit` in `config/application.rb` (mechanical;
-      touches `config/environment.rb` references — do last, verify boot)
-- [ ] Rebuild agent-runtime image; rolling-restart agents
+### Step 2.4 — Code-level identifiers ✅ 2026-08-31 (commit 936eebe; roll verified 2.5-side)
+- [x] `HELIXKIT_*` env vars → `SOULSHOUSE_*` (app reads + deploy.yml +
+      kamal hooks + bin/dev, one commit). Containers get BOTH name sets
+      injected (sandbox.rb) — residents' notes reference old names, kept
+      indefinitely; scripts read new-then-old
+- [x] agent-runtime scripts renamed `soulshouse-*` (git mv) with permanent
+      `helixkit-*` symlinks installed in the Dockerfile
+- [x] `soulshouse-api.md` (old path kept as pointer stub — residents cite
+      it), runtime-instructions.md tells residents old names aren't stale
+- [x] Rails module `HelixKit` → `SoulsHouse`; zeitwerk + boot verified.
+      Session cookie key changes → one-time re-login for all users
+- [x] SearXNG/WebTool retired (folded in per Step 1.8 note): tool + test
+      deleted, `searxng:` credentials stripped dev+prod, stack doc historical
+- [ ] Rebuild agent-runtime image; rolling-restart agents — image `936eebe`
+      built + tagged latest at deploy; reconcile job queued (117737),
+      roll-out in flight as of 16:40 CEST — tick when a recreated container
+      shows symlinks + both env sets
+- Deliberate leftovers: agent-credentials wire format (`helix_kit:` YAML
+  keys — cross-side contract, coordinated migration later); resident-facing
+  wake/export prose (house notice #7 posted 2026-08-31, expires 14 Sept —
+  sweep after it has stood); image name `helixkit-agent-runtime` (2.5)
 
 ### Step 2.5 — Verify
 - [ ] Each agent: trigger a wake, confirm callback round-trip
