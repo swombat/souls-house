@@ -3,6 +3,11 @@ class TelegramAgentTriggerJob < ApplicationJob
   class SessionBusy < StandardError; end
 
   queue_as :default
+  limits_concurrency(
+    to: 1,
+    key: ->(subscription, _telegram_message) { "telegram-subscription-#{subscription.id}" },
+    duration: 35.minutes
+  )
   retry_on SessionBusy, wait: 30.seconds, attempts: 60
 
   def perform(subscription, telegram_message)

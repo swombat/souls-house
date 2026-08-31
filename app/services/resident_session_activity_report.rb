@@ -18,9 +18,14 @@ class ResidentSessionActivityReport
   end
 
   def call
-    week_rows = interactions_since(week_started_at)
-    visible_rows = week_rows.select { |row| row.started_at >= window_started_at }
-    visible_rows.select! { |row| channel_for(row.trigger_kind) == channel } if channel.present?
+    stored_week_rows = interactions_since(week_started_at)
+    week_rows = stored_week_rows.reject(&:session_busy?)
+    stored_visible_rows = stored_week_rows.select { |row| row.started_at >= window_started_at }
+    if channel.present?
+      stored_visible_rows.select! { |row| channel_for(row.trigger_kind) == channel }
+    end
+    visible_busy_retries = stored_visible_rows.count(&:session_busy?)
+    visible_rows = stored_visible_rows.reject(&:session_busy?)
     sessions = sessions_for(visible_rows)
 
     {
@@ -30,7 +35,9 @@ class ResidentSessionActivityReport
       window_started_at: window_started_at.utc.iso8601,
       selected_channel: channel,
       channel_options: channel_options_for(week_rows),
-      summary: summary_for(visible_rows, sessions),
+      summary: summary_for(visible_rows, sessions).merge(
+        busy_retries: visible_busy_retries
+      ),
       activity: {
         started_at: week_started_at.iso8601,
         days: activity_days_for(week_rows)

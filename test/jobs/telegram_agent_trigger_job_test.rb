@@ -30,4 +30,13 @@ class TelegramAgentTriggerJobTest < ActiveJob::TestCase
     request.verify
   end
 
+  test "serializes triggers for the same Telegram subscription" do
+    assert_equal 1, TelegramAgentTriggerJob.concurrency_limit
+    assert_equal(
+      "telegram-subscription-#{@subscription.id}",
+      TelegramAgentTriggerJob.concurrency_key.call(@subscription, @message)
+    )
+    assert_equal 35.minutes, TelegramAgentTriggerJob.concurrency_duration
+  end
+
 end

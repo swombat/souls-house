@@ -341,6 +341,10 @@ class AgentRuntimeInteraction < ApplicationRecord
     finished_at.blank? && started_at.present? && started_at >= ACTIVE_WINDOW.ago
   end
 
+  def session_busy?
+    transport_status == 409 && runtime_status == "already_running"
+  end
+
   private
 
   def interaction_summary

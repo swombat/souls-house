@@ -146,6 +146,26 @@ class AgentRuntimeUsageReportTest < ActiveSupport::TestCase
     assert_equal [ "inside-end", "inside-start" ], report.fetch(:sessions).map { |session| session[:session_id] }
   end
 
+  test "excludes session busy retries from usage and session timelines" do
+    create_interaction!(started_at: @from + 10.minutes, session_id: "telegram-session", trigger_kind: "telegram")
+    create_interaction!(
+      started_at: @from + 11.minutes,
+      session_id: "telegram-session",
+      trigger_kind: "telegram",
+      transport_status: 409,
+      runtime_status: "already_running",
+      telemetry_schema_version: nil,
+      usage_scope: nil,
+      usage_complete: nil
+    )
+
+    report = AgentRuntimeUsageReport.new(agent: @agent, from: @from, to: @to).call
+
+    assert_equal 1, report.dig(:summary, :interactions)
+    assert_equal 1, report.dig(:summary, :busy_retries)
+    assert_equal 1, report.dig(:sessions, 0, :interactions).size
+  end
+
   test "normalizes an explicitly offset window to UTC" do
     report = AgentRuntimeUsageReport.new(
       agent: @agent,

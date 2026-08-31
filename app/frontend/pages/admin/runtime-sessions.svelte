@@ -139,7 +139,14 @@
     </Card>
     <Card>
       <CardHeader class="pb-2"><CardDescription>Interactions in window</CardDescription></CardHeader>
-      <CardContent class="text-3xl font-semibold">{number(report.summary.interactions)}</CardContent>
+      <CardContent>
+        <div class="text-3xl font-semibold">{number(report.summary.interactions)}</div>
+        {#if report.summary.busy_retries > 0}
+          <div class="mt-1 text-xs text-muted-foreground">
+            {number(report.summary.busy_retries)} busy retries excluded
+          </div>
+        {/if}
+      </CardContent>
     </Card>
   </div>
 

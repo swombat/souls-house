@@ -230,7 +230,14 @@
   <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
     <Card>
       <CardHeader class="pb-2"><CardDescription>Interactions</CardDescription></CardHeader>
-      <CardContent class="text-2xl font-semibold">{number(report.summary.interactions)}</CardContent>
+      <CardContent>
+        <div class="text-2xl font-semibold">{number(report.summary.interactions)}</div>
+        {#if report.summary.busy_retries > 0}
+          <div class="mt-1 text-xs font-normal text-muted-foreground">
+            {number(report.summary.busy_retries)} busy retries excluded
+          </div>
+        {/if}
+      </CardContent>
     </Card>
     <Card>
       <CardHeader class="pb-2"><CardDescription>Logical sessions</CardDescription></CardHeader>

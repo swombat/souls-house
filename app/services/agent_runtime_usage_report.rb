@@ -28,7 +28,8 @@ class AgentRuntimeUsageReport
   end
 
   def call
-    interactions = scope.to_a
+    stored_interactions = scope.to_a
+    interactions = stored_interactions.reject(&:session_busy?)
 
     {
       window: {
@@ -38,7 +39,9 @@ class AgentRuntimeUsageReport
       },
       filters: filters,
       filter_options: filter_options,
-      summary: summary_for(interactions),
+      summary: summary_for(interactions).merge(
+        busy_retries: stored_interactions.count(&:session_busy?)
+      ),
       groups: groups_for(interactions),
       sessions: interactions
         .group_by { |interaction| logical_session_id(interaction) }

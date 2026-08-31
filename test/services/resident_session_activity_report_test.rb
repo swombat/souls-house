@@ -94,6 +94,28 @@ class ResidentSessionActivityReportTest < ActiveSupport::TestCase
     assert_equal 2, report.dig(:activity, :days).sum { |day| day[:interactions] }
   end
 
+  test "excludes session busy retries from site activity" do
+    create_interaction!(@resident,
+      started_at: @now - 30.minutes,
+      finished_at: @now - 20.minutes,
+      session_id: "telegram",
+      trigger_kind: "telegram")
+    create_interaction!(@resident,
+      started_at: @now - 10.minutes,
+      finished_at: @now - 10.minutes,
+      session_id: "telegram",
+      trigger_kind: "telegram",
+      transport_status: 409,
+      runtime_status: "already_running")
+
+    report = ResidentSessionActivityReport.new(now: @now).call
+
+    assert_equal 1, report.dig(:summary, :interactions)
+    assert_equal 1, report.dig(:summary, :busy_retries)
+    assert_equal 1, report.dig(:activity, :days).sum { |day| day[:interactions] }
+    assert_equal 1, report.dig(:sessions, 0, :interaction_count)
+  end
+
   private
 
   def create_interaction!(agent, **attributes)
