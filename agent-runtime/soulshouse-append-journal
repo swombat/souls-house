@@ -6,6 +6,7 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
 Usage: soulshouse-append-journal [TITLE]
 
 Append stdin as a new entry in today's hosted-agent daily journal.
+Empty or whitespace-only stdin is rejected without changing the journal.
 
 `helixkit-append-journal` is a permanent alias for this command.
 
@@ -21,6 +22,12 @@ NOW="$(date +%H:%M)"
 TITLE="${1:-Journal entry}"
 FILE="$JOURNAL_DIR/$TODAY.md"
 
+BODY="$(cat)"
+if [ -z "$(printf '%s' "$BODY" | tr -d '[:space:]')" ]; then
+  printf '%s\n' "soulshouse-append-journal: empty body on stdin; nothing written" >&2
+  exit 1
+fi
+
 mkdir -p "$JOURNAL_DIR"
 if [ ! -f "$FILE" ]; then
   printf '# Daily Journal: %s\n' "$TODAY" > "$FILE"
@@ -28,8 +35,7 @@ fi
 
 {
   printf '\n## %s — %s\n\n' "$NOW" "$TITLE"
-  cat
-  printf '\n'
+  printf '%s\n' "$BODY"
 } >> "$FILE"
 
 printf '%s\n' "$FILE"
