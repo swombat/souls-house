@@ -1,6 +1,6 @@
 class ApplicationController < ActionController::Base
 
-  include Pagy::Backend
+  include Pagy::Method
 
   include Authentication
   include AccountScoping
@@ -117,10 +117,10 @@ class ApplicationController < ActionController::Base
       last: pagy.last,
       from: pagy.from,
       to: pagy.to,
-      prev: pagy.prev,
+      prev: pagy.previous,
       next: pagy.next,
-      series: pagy.series.collect(&:to_s),
-      per_page: pagy.vars[:limit].to_s
+      series: pagy.send(:series).map(&:to_s),
+      per_page: pagy.limit.to_s
     }
   end
 

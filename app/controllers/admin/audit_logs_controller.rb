@@ -9,7 +9,7 @@ class Admin::AuditLogsController < ApplicationController
     logs = logs.includes(:user, :account).recent
 
     # Pagy handles pagination elegantly
-    @pagy, @audit_logs = pagy(logs, limit: params[:per_page] || 10)
+    @pagy, @audit_logs = pagy(:offset, logs, limit: params[:per_page] || 10)
 
     # Load selected log if requested
     @selected_log = AuditLog.find(params[:log_id]) if params[:log_id]

@@ -53,6 +53,7 @@ class AgentsController < ApplicationController
 
   def edit
     interactions_pagy, interactions = pagy(
+      :offset,
       @agent.agent_runtime_interactions.includes(:chat).recent,
       limit: 25
     )

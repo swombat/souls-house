@@ -107,7 +107,7 @@ class ChatsController < ApplicationController
     @query = params[:q].to_s.strip.first(500)
 
     if @query.present?
-      @pagy, @messages = pagy(Message.search_in_account(current_account, @query), limit: 20)
+      @pagy, @messages = pagy(:offset, Message.search_in_account(current_account, @query), limit: 20)
     end
 
     render inertia: "chats/search", props: {
