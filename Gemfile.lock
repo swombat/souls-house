@@ -448,11 +448,10 @@ GEM
       mutex_m
       rack-proxy (~> 0.6, >= 0.6.1)
       zeitwerk (~> 2.2)
-    web-console (4.2.1)
-      actionview (>= 6.0.0)
-      activemodel (>= 6.0.0)
+    web-console (4.3.0)
+      actionview (>= 8.0.0)
       bindex (>= 0.4.0)
-      railties (>= 6.0.0)
+      railties (>= 8.0.0)
     webmock (3.25.1)
       addressable (>= 2.8.0)
       crack (>= 0.3.2)
@@ -499,6 +498,7 @@ DEPENDENCIES
   js-routes (~> 2.3)
   kamal
   letter_opener
+  minitest (~> 5.27)
   pagy (~> 9.3)
   pg (~> 1.1)
   puma (>= 6.6.0)
