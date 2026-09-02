@@ -513,19 +513,14 @@ class AiResponseJobTest < ActiveJob::TestCase
     assert_includes ai_message.tools_used, "invalid"
   end
 
-  test "available_tools are used from chat when present" do
-    # Create chat with web access
+  test "retired model-chat web access does not expose tools" do
     chat_with_tools = @account.chats.create!(
       model_id: "openrouter/auto",
       web_access: true
     )
 
-    # Verify chat has available_tools method that returns WebTool
     assert chat_with_tools.respond_to?(:available_tools)
-    assert_includes chat_with_tools.available_tools, WebTool
-
-    # The actual usage of tools is tested in the integration with RubyLLM
-    # which picks up tools from the available_tools method automatically
+    assert_empty chat_with_tools.available_tools
   end
 
 end

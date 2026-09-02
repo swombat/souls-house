@@ -4,14 +4,14 @@ require "socket"
 
 class HelixkitSendTelegramTest < ActiveSupport::TestCase
 
-  SCRIPT = Rails.root.join("agent-runtime/helixkit-send-telegram")
+  SCRIPT = Rails.root.join("agent-runtime/soulshouse-send-telegram")
 
   test "help documents attachments and the canonical runtime manual" do
     stdout, stderr, status = Open3.capture3("python3", SCRIPT.to_s, "--help")
 
     assert status.success?, stderr
     assert_includes stdout, "--attach PATH"
-    assert_includes stdout, "/usr/local/share/helixkit-agent/helixkit-api.md"
+    assert_includes stdout, "/usr/local/share/helixkit-agent/soulshouse-api.md"
   end
 
   test "posts a multipart Telegram attachment with an optional caption" do

@@ -51,14 +51,14 @@ class AgentIdentityExporterTest < ActiveSupport::TestCase
   end
 
   test "runtime manual contains current generated image attachment instructions" do
-    manual = Rails.root.join("agent-runtime/docs/helixkit-api.md").read
+    manual = Rails.root.join("agent-runtime/docs/soulshouse-api.md").read
     instructions = Rails.root.join("agent-runtime/docs/runtime-instructions.md").read
 
     assert_includes manual, "Attach local files, including generated images"
-    assert_includes manual, "helixkit-post-message \"$CHAT_ID\" --attach /tmp/image.png"
+    assert_includes manual, "soulshouse-post-message \"$CHAT_ID\" --attach /tmp/image.png"
     assert_includes manual, "/tmp/<image_id>.png"
     assert_includes manual, "model, usage, or cost information"
-    assert_includes instructions, "helixkit-post-message \"$CHAT_ID\" --attach /tmp/image.png"
+    assert_includes instructions, "soulshouse-post-message \"$CHAT_ID\" --attach /tmp/image.png"
     assert_includes instructions, "/tmp/<image_id>.png"
     assert_includes manual, "not a recency cutoff"
     assert_includes manual, "next_cursor"

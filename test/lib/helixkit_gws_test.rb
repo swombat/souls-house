@@ -5,7 +5,7 @@ require "tempfile"
 
 class HelixkitGwsTest < ActiveSupport::TestCase
 
-  SCRIPT = Rails.root.join("agent-runtime/helixkit-gws")
+  SCRIPT = Rails.root.join("agent-runtime/soulshouse-gws")
 
   test "passes a brokered access token to gws without printing it" do
     request = capture_request do |endpoint|

@@ -59,7 +59,7 @@ class ChatToolsFlowTest < ActionDispatch::IntegrationTest
     assert_empty chat.available_tools, "No tools should be available by default"
   end
 
-  test "toggle web access on existing chat" do
+  test "legacy web access setting can be toggled without restoring retired tools" do
     # Create chat with web access disabled
     chat = @account.chats.create!(
       model_id: "openai/gpt-4o-mini",
@@ -76,7 +76,7 @@ class ChatToolsFlowTest < ActionDispatch::IntegrationTest
 
     chat.reload
     assert chat.web_access, "Web access should now be enabled"
-    assert_includes chat.available_tools, WebTool, "WebTool should now be available"
+    assert_empty chat.available_tools, "Retired model-chat tools should remain unavailable"
 
     # Disable web access again
     patch account_chat_path(@account, chat), params: {
@@ -89,24 +89,20 @@ class ChatToolsFlowTest < ActionDispatch::IntegrationTest
     assert_empty chat.available_tools, "Tools should no longer be available"
   end
 
-  test "AI response job uses tools when chat has web access" do
-    # Create chat with web access
+  test "legacy web access setting does not configure AI response tools" do
     chat = @account.chats.create!(
       model_id: "openai/gpt-4o-mini",
       web_access: true
     )
 
-    # Create a user message
-    user_message = chat.messages.create!(
+    chat.messages.create!(
       content: "Please check https://example.com",
       role: "user",
       user: @user
     )
 
-    # The job configuration is tested in ai_response_job_test.rb
-    # Here we just verify that the chat has the right tools configured
     assert chat.web_access
-    assert_includes chat.available_tools, WebTool
+    assert_empty chat.available_tools
   end
 
   test "tools_used tracked in message after AI response" do
@@ -190,7 +186,7 @@ class ChatToolsFlowTest < ActionDispatch::IntegrationTest
     # Reload and verify setting persists
     chat.reload
     assert chat.web_access
-    assert_includes chat.available_tools, WebTool
+    assert_empty chat.available_tools
 
     # View the chat list
     get account_chats_path(@account)
@@ -199,7 +195,7 @@ class ChatToolsFlowTest < ActionDispatch::IntegrationTest
     # Reload and verify setting still persists
     chat.reload
     assert chat.web_access
-    assert_includes chat.available_tools, WebTool
+    assert_empty chat.available_tools
   end
 
   test "different chats can have different web access settings" do
@@ -219,7 +215,7 @@ class ChatToolsFlowTest < ActionDispatch::IntegrationTest
 
     # Verify each chat has correct settings
     assert chat_with_web.web_access
-    assert_includes chat_with_web.available_tools, WebTool
+    assert_empty chat_with_web.available_tools
 
     assert_not chat_without_web.web_access
     assert_empty chat_without_web.available_tools

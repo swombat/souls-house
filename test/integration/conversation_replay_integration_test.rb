@@ -120,9 +120,10 @@ class ConversationReplayIntegrationTest < ActiveSupport::TestCase
       model_id: "google/gemini-3-pro-preview",
       system_prompt: "Use the web tool when asked.",
       thinking_enabled: true,
-      thinking_budget: 4000,
-      enabled_tools: [ "WebTool" ]
+      thinking_budget: 4000
     )
+    # The cassette preserves a response recorded when WebTool still existed.
+    # It tests replay persistence, not the retired tool's availability.
 
     chat = @account.chats.new(model_id: "google/gemini-3-pro-preview", manual_responses: true, title: "Gemini Tool Continuity", web_access: true)
     chat.agents = [ gem ]
@@ -172,7 +173,9 @@ class ConversationReplayIntegrationTest < ActiveSupport::TestCase
   test "gemini_legacy_tool_continuity_missing — replay omits missing signature; reasoning_skip_reason stamped" do
     skip_unless_cassette("gemini_legacy_tool_continuity_missing")
 
-    gem = @account.agents.create!(name: "Gem", model_id: "google/gemini-3-pro-preview", system_prompt: "Be brief.", thinking_enabled: true, thinking_budget: 4000, enabled_tools: [ "WebTool" ])
+    gem = @account.agents.create!(name: "Gem", model_id: "google/gemini-3-pro-preview", system_prompt: "Be brief.", thinking_enabled: true, thinking_budget: 4000)
+    # The stored legacy tool call below remains valid replay history even though
+    # new agents can no longer enable WebTool.
     chat = @account.chats.new(model_id: "google/gemini-3-pro-preview", manual_responses: true, title: "Gemini Legacy", web_access: true)
     chat.agents = [ gem ]
     chat.save!

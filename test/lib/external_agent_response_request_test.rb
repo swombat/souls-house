@@ -10,7 +10,7 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     request = ExternalAgentResponseRequest.new(agent: agent, chat: chat)
     text = request.send(:request_text)
 
-    assert_includes text, "HELIXKIT_BEARER_TOKEN"
+    assert_includes text, "SOULSHOUSE_BEARER_TOKEN"
     assert_includes text, "helixkit-post-message"
     assert_includes text, "/usr/local/share/helixkit-agent/helixkit-api.md"
     assert_includes text, "Prefer piping the message through stdin"
@@ -86,7 +86,7 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
       message,
       attachment
     )
-    assert_includes text, "HELIXKIT_BEARER_TOKEN"
+    assert_includes text, "SOULSHOUSE_BEARER_TOKEN"
   end
 
   test "trigger transcript exposes agent-posted image download paths" do

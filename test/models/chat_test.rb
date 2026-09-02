@@ -264,10 +264,9 @@ class ChatTest < ActiveSupport::TestCase
     assert_empty chat.available_tools
   end
 
-  test "available_tools includes WebTool when web access enabled" do
+  test "available_tools stays empty when legacy web access is enabled" do
     chat = Chat.create!(account: @account, web_access: true)
-    assert_includes chat.available_tools, WebTool
-    assert_equal 1, chat.available_tools.length
+    assert_empty chat.available_tools
   end
 
   test "web_access can be set on create" do

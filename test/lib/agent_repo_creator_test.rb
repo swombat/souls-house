@@ -95,18 +95,18 @@ class AgentRepoCreatorTest < ActiveSupport::TestCase
   end
 
   test "generated deploy yml supports configurable runtime domain and vm host" do
-    old_domain = ENV["HELIXKIT_AGENT_RUNTIME_DOMAIN"]
-    old_vm_host = ENV["HELIXKIT_AGENT_RUNTIME_VM_HOST"]
-    ENV["HELIXKIT_AGENT_RUNTIME_DOMAIN"] = "agents.example.test"
-    ENV["HELIXKIT_AGENT_RUNTIME_VM_HOST"] = "agent-vm"
+    old_domain = ENV["SOULSHOUSE_AGENT_RUNTIME_DOMAIN"]
+    old_vm_host = ENV["SOULSHOUSE_AGENT_RUNTIME_VM_HOST"]
+    ENV["SOULSHOUSE_AGENT_RUNTIME_DOMAIN"] = "agents.example.test"
+    ENV["SOULSHOUSE_AGENT_RUNTIME_VM_HOST"] = "agent-vm"
 
     deploy = YAML.safe_load(creator.deploy_yml(repo_result))
 
     assert_equal "https://research-assistant.agents.example.test", deploy.fetch("endpoint_url")
     assert_equal "agent-vm", deploy.fetch("vm_host")
   ensure
-    ENV["HELIXKIT_AGENT_RUNTIME_DOMAIN"] = old_domain
-    ENV["HELIXKIT_AGENT_RUNTIME_VM_HOST"] = old_vm_host
+    ENV["SOULSHOUSE_AGENT_RUNTIME_DOMAIN"] = old_domain
+    ENV["SOULSHOUSE_AGENT_RUNTIME_VM_HOST"] = old_vm_host
   end
 
   private
