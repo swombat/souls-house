@@ -85,7 +85,7 @@ gem "ruby-openai"
 # Ruby LLM - pin stable releases so provider and instrumentation behaviour is reproducible.
 gem "ruby_llm", "~> 1.16.0"
 
-gem "pagy", "~> 9.3"
+gem "pagy", "~> 43.6"
 
 gem "active_storage_validations"
 
