@@ -23,6 +23,8 @@ module SoulsHouse
     # in config/environments, which are processed later.
     #
     # config.time_zone = "Central Time (US & Canada)"
+    # Preserve the pre-1.5 Solid Queue behavior for schedules without a zone.
+    config.solid_queue.time_zone = nil
     # config.eager_load_paths << Rails.root.join("extras")
     #
     ## Disable unnecessary files when generating
