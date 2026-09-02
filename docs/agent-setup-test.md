@@ -21,7 +21,7 @@ Use this to test the current per-agent GitHub repo promotion flow end to end.
 
 ```bash
 cd ~/dev/helix_kit
-mise exec ruby@3.4.4 -- bin/rails db:migrate
+mise exec ruby@4.0.6 -- bin/rails db:migrate
 bin/dev
 ```
 

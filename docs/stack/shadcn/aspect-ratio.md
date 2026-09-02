@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add aspect-ratio
+bunx shadcn-svelte@latest add aspect-ratio
 ```
 
 ## Usage

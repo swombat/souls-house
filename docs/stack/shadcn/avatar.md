@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add avatar
+bunx shadcn-svelte@latest add avatar
 ```
 
 ## Usage

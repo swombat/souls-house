@@ -1,11 +1,14 @@
 # syntax=docker/dockerfile:1.7  # keep this at the very top of the Dockerfile
 
 ########################
-# BASE (from ruby:3.4.4-slim)
+# BASE (from ruby:4.0.6-slim)
 ########################
 
-# Make sure RUBY_VERSION matches the Ruby version in .ruby-version and Gemfile
-ARG RUBY_VERSION=3.4.4
+# Keep these runtime versions in sync with mise.toml and .ruby-version.
+ARG RUBY_VERSION=4.0.6
+ARG BUN_VERSION=1.4.0
+
+FROM registry.docker.com/oven/bun:$BUN_VERSION AS bun
 FROM registry.docker.com/library/ruby:$RUBY_VERSION-slim AS base
 
 # Rails app lives here
@@ -20,7 +23,7 @@ ENV BUNDLE_DEPLOYMENT="1" \
 ########################
 # DEPENDENCIES (from base)
 ########################
-# One consolidated apt layer (PGDG for psql 16, Node repo key, etc.)
+# One consolidated apt layer (PGDG for psql 16, etc.)
 
 # Dependencies base image to speed things up!
 FROM base AS dependencies
@@ -41,14 +44,7 @@ RUN set -eux; \
     echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
       > /etc/apt/sources.list.d/pgdg.list
 
-# 3) NodeSource repo (also just writes files)
-RUN set -eux; \
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-      | gpg --dearmor > /usr/share/keyrings/nodesource.gpg; \
-    echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
-      > /etc/apt/sources.list.d/nodesource.list
-
-# 4) System deps (cache mount again)
+# 3) System deps (cache mount again)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     set -eux; \
     apt-get update -o Acquire::Retries=3; \
@@ -59,19 +55,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       postgresql-client-16 ffmpeg poppler-utils docker.io; \
     rm -rf /var/lib/apt/lists/*
 
-# 5) Pin Node + enable Corepack (cache mount again)
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    set -eux; \
-    apt-get update -o Acquire::Retries=3; \
-    apt-get install -y --no-install-recommends nodejs=22.19.0-1nodesource1; \
-    rm -rf /var/lib/apt/lists/*; \
-    corepack enable
-
 ########################
 # BUILD (from dependencies)
 ########################
 
 FROM dependencies AS build
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 
 RUN apt-get update -qq
 
@@ -80,12 +69,9 @@ COPY Gemfile Gemfile.lock .ruby-version ./
 RUN --mount=type=cache,target=/usr/local/bundle/cache \
     bundle install && bundle exec bootsnap precompile --gemfile
 
-# 2) JS PM + deps
-COPY package.json yarn.lock ./
-# force node_modules linker for this build
-RUN corepack enable && yarn config set nodeLinker node-modules
-RUN --mount=type=cache,target=/root/.cache/node/corepack corepack prepare yarn@1.22.22 --activate
-RUN --mount=type=cache,target=/root/.cache/yarn yarn install --frozen-lockfile
+# 2) JavaScript dependencies
+COPY package.json bun.lock ./
+RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile
 
 # 3) Copy minimal inputs for assets (adjust for your stack)
 COPY app app

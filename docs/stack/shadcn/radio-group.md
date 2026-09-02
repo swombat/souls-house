@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add radio-group
+bunx shadcn-svelte@latest add radio-group
 ```
 
 ## Usage

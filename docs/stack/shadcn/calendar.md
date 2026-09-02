@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add calendar
+bunx shadcn-svelte@latest add calendar
 ```
 
 ## Usage

@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add popover
+bunx shadcn-svelte@latest add popover
 ```
 
 ## Usage

@@ -19,13 +19,13 @@ bin/rails test
 For focused frontend logic changes:
 
 ```bash
-yarn test:unit
+bun run test:unit
 ```
 
 For major refactors, synchronization changes, chat/agent changes, or deployment confidence after significant work:
 
 ```bash
-yarn test
+bun run test
 ```
 
 Run narrower commands while iterating, then the relevant full suite before considering the work complete. Playwright is intentionally a rarer, heavier confidence check; Rails tests should remain the default safety net.
@@ -114,8 +114,8 @@ Tailwind classes should only be tested when the class itself is the meaningful f
 Run Vitest with:
 
 ```bash
-yarn test:unit
-yarn test:unit:ui
+bun run test:unit
+bun run test:unit:ui
 ```
 
 When a Svelte file grows complicated, prefer extracting behavior into a plain JavaScript module and testing that module. Keep the component test surface small.

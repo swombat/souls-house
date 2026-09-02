@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add slider
+bunx shadcn-svelte@latest add slider
 ```
 
 ## Usage

@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add drawer
+bunx shadcn-svelte@latest add drawer
 ```
 
 ## Usage

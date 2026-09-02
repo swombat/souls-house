@@ -3,7 +3,7 @@ import SignupPage from '../../../app/frontend/pages/registrations/new.svelte';
 
 test.describe('Signup Page Tests', () => {
   // IMPORTANT: These tests require the Rails backend running on localhost:3200
-  // Run with: npm run test:integrated (automatically handles backend setup)
+  // Run with: bun run test:integrated (automatically handles backend setup)
 
   test('should render signup page with all elements', async ({ mount }) => {
     const page = await mount(SignupPage);

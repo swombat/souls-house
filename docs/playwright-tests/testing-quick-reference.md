@@ -9,7 +9,7 @@
 rails test
 
 # 2. Run Playwright component tests (REAL backend only, NO mocking!)
-yarn test
+bun run test
 
 # Both test suites MUST pass before committing changes!
 ```
@@ -20,14 +20,14 @@ yarn test
 
 ### Unit Tests (Vitest)
 - **Location**: `app/frontend/**/*.test.js`
-- **Run**: `yarn test`
+- **Run**: `bun run test:unit`
 - **What**: Component logic, utilities, isolated component behavior
 - **Environment**: jsdom (simulated browser)
 
 ### Component Tests (Playwright CT)
 - **Location**: `playwright/tests/pages/*.pw.js`
-- **Run**: `yarn test` - Automatically starts Rails backend, runs tests, cleans up
-- **Run with UI**: `yarn test:ui` - Debug with Playwright UI
+- **Run**: `bun run test` - Automatically starts Rails backend, runs tests, cleans up
+- **Run with UI**: `bun run test:e2e:ui` - Debug with Playwright UI
 - **What**: Page components in real browsers, UI interactions, form submissions against REAL backend
 - **Environment**: Real browsers with REAL Rails API (NO mocking allowed!)
 
@@ -40,19 +40,19 @@ yarn test
 
 ```bash
 # Run all Vitest unit tests
-yarn test
+bun run test:unit
 
 # Run Vitest with UI
-yarn test:ui
+bun run test:unit:ui
 
 # Run all Playwright component tests (REAL backend required)
-yarn test  # Automatically starts Rails, runs tests, and cleans up
+bun run test  # Automatically starts Rails, runs tests, and cleans up
 
 # Run Playwright with UI for debugging
-yarn test:ui
+bun run test:e2e:ui
 
 # Run specific Playwright test
-npx playwright test -c playwright-ct.config.js playwright/tests/pages/login-simple.pw.js
+bun x playwright test -c playwright-ct.config.js playwright/tests/pages/login-simple.pw.js
 
 # Run Rails tests
 rails test

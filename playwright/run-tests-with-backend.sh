@@ -88,11 +88,11 @@ echo "----------------------------------------"
 # Check if UI mode was requested
 if [[ "$1" == "--ui" ]]; then
     echo "Opening Playwright UI..."
-    npx playwright test -c playwright-ct.config.js --ui
+    bun x playwright test -c playwright-ct.config.js --ui
     TEST_EXIT_CODE=$?
 else
     # Run the Playwright tests and capture the exit code
-    npx playwright test -c playwright-ct.config.js
+    bun x playwright test -c playwright-ct.config.js
     TEST_EXIT_CODE=$?
 fi
 

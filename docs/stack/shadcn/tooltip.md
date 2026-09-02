@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add tooltip
+bunx shadcn-svelte@latest add tooltip
 ```
 
 ## Usage

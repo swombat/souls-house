@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add toast
+bunx shadcn-svelte@latest add toast
 ```
 
 ## Usage

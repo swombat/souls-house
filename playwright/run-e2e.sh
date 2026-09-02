@@ -41,4 +41,4 @@ for attempt in {1..30}; do
   sleep 1
 done
 
-npx playwright test -c playwright-e2e.config.js "$@"
+bun x playwright test -c playwright-e2e.config.js "$@"

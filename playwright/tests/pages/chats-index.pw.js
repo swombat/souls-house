@@ -3,7 +3,7 @@ import ChatsIndex from '../../../app/frontend/pages/Chats/index.svelte';
 
 test.describe('Chats Index Page Tests', () => {
   // IMPORTANT: These tests require the Rails backend running on localhost:3200
-  // Run with: npm run test:integrated (automatically handles backend setup)
+  // Run with: bun run test:integrated (automatically handles backend setup)
 
   test('should render empty state with new chat form', async ({ mount }) => {
     const component = await mount(ChatsIndex, {

@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add accordion
+bunx shadcn-svelte@latest add accordion
 ```
 
 ## Usage

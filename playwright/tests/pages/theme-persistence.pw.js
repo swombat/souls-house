@@ -4,7 +4,7 @@ import { page } from '../../test-inertia-adapter.js';
 
 test.describe('Theme Persistence Tests', () => {
   // IMPORTANT: These tests require the Rails backend running on localhost:3200
-  // Run with: npm test (automatically handles backend setup)
+  // Run with: bun run test (automatically handles backend setup)
 
   test.beforeEach(async () => {
     // Reset page store before each test

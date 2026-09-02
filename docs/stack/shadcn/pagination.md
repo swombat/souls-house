@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add pagination
+bunx shadcn-svelte@latest add pagination
 ```
 
 ## Usage

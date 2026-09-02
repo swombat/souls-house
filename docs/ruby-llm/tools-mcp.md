@@ -78,7 +78,7 @@ class LocalMCPService
       name: "local-filesystem",
       transport_type: :stdio,
       config: {
-        command: "npx",
+        command: "bunx",
         args: ["@modelcontextprotocol/server-filesystem", Rails.root.to_s],
         env: { "NODE_ENV" => "production" }
       }

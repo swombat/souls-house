@@ -18,6 +18,8 @@
 # should fail the deployment visibly when a new Chaos master is incompatible.
 ARG CHAOS_REPO=https://github.com/seuros/chaos.git
 ARG CHAOS_HEAD
+# Keep this in sync with mise.toml.
+ARG BUN_VERSION=1.4.0
 
 # =============================================================================
 # Stage 1 — pull and build chaos. Source tree is discarded after the binary copies.
@@ -60,13 +62,17 @@ RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos_journald \
 # =============================================================================
 # Stage 2 — runtime
 # =============================================================================
+FROM oven/bun:${BUN_VERSION} AS bun
 FROM node:22-trixie-slim AS runtime
 
 ARG CHAOS_HEAD
 LABEL house.souls.chaos-ref="${CHAOS_HEAD}"
 LABEL house.souls.chaos-patches="antigravity-empty-managed-config,antigravity-daily-cloudcode-egress"
 
-ENV DEBIAN_FRONTEND=noninteractive
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+
+ENV BUN_INSTALL=/usr/local \
+    DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         python3 \
@@ -90,7 +96,7 @@ RUN groupmod --new-name agent node \
 # Clamp speaks Claude Code's documented stream-json protocol. Keep this pin
 # explicitly: the Anthropic login ceremony parser is tested against it.
 ARG CLAUDE_CODE_VERSION=2.1.220
-RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+RUN bun install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && claude --version
 
 # The Google Workspace gws CLI exposes Drive's discovery-generated command

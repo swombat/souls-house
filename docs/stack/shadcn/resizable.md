@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add resizable
+bunx shadcn-svelte@latest add resizable
 ```
 
 ## Usage
@@ -176,7 +176,7 @@ npx shadcn-svelte@latest add resizable
               <div class="text-sm">Terminal</div>
             </div>
             <div class="flex-1 p-4 font-mono text-sm">
-              <div>$ yarn dev</div>
+              <div>$ bun run dev</div>
               <div class="text-green-400">✓ Server running on localhost:5173</div>
             </div>
           </div>

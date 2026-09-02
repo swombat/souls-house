@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add input
+bunx shadcn-svelte@latest add input
 ```
 
 ## Usage

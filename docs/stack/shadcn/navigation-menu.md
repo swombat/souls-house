@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add navigation-menu
+bunx shadcn-svelte@latest add navigation-menu
 ```
 
 ## Usage

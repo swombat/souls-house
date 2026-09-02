@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add card
+bunx shadcn-svelte@latest add card
 ```
 
 ## Usage
