@@ -30,7 +30,8 @@ gem "kamal", "~> 2.12.0", require: false
 gem "thruster", require: false
 
 # Use Active Storage variants [https://guides.rubyonrails.org/active_storage_overview.html#transforming-images]
-gem "image_processing", "~> 1.2"
+gem "image_processing", "~> 2.0.3"
+gem "ruby-vips", "~> 2.2.0"
 
 # Use Amazon S3 for Active Storage in production
 gem "aws-sdk-s3", require: false

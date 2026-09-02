@@ -809,7 +809,7 @@ class UserTest < ActiveSupport::TestCase
     thumb_variant = user.avatar.variant(:thumb)
     medium_variant = user.avatar.variant(:medium)
 
-    assert_not_nil thumb_variant
+    assert_not_nil thumb_variant.processed
     assert_not_nil medium_variant
   end
 
