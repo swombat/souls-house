@@ -42,7 +42,7 @@ WORKDIR /build
 COPY patches/chaos-antigravity-empty-managed-config.patch /tmp/chaos-antigravity-empty-managed-config.patch
 COPY patches/chaos-antigravity-daily-cloudcode-egress.patch /tmp/chaos-antigravity-daily-cloudcode-egress.patch
 RUN test -n "${CHAOS_HEAD}" \
-    && git clone --filter=blob:none ${CHAOS_REPO} chaos \
+    && git -c http.version=HTTP/1.1 clone --filter=blob:none ${CHAOS_REPO} chaos \
     && cd chaos \
     && git checkout ${CHAOS_HEAD} \
     && git apply --check /tmp/chaos-antigravity-empty-managed-config.patch \
