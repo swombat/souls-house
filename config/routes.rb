@@ -187,6 +187,7 @@ Rails.application.routes.draw do
       end
       resource :attention, only: :show
       resource :subscription_usage, only: :show
+      resources :youtube_reads, only: :create
       resources :service_connections, only: [] do
         resource :access_token, only: :show, controller: "service_connection_tokens"
       end

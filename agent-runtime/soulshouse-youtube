@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Ask questions of public YouTube videos or generate working transcripts."""
+
+import argparse
+import json
+import os
+from pathlib import Path
+import sys
+import urllib.error
+import urllib.request
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="soulshouse-youtube",
+        description="Read a public YouTube video through souls.house.",
+        epilog=(
+            "Transcripts are generated from the video and are not authoritative "
+            "YouTube caption tracks. Full manual: "
+            "/usr/local/share/helixkit-agent/soulshouse-api.md"
+        ),
+    )
+    subparsers = parser.add_subparsers(dest="operation", required=True)
+
+    ask = subparsers.add_parser("ask", help="ask a question about a public YouTube video")
+    ask.add_argument("url")
+    ask.add_argument("question", nargs="+")
+    ask.add_argument("--json", action="store_true", help="print the complete JSON response")
+
+    transcript = subparsers.add_parser(
+        "transcript",
+        help="generate a complete timestamped working transcript",
+    )
+    transcript.add_argument("url")
+    transcript.add_argument("-o", "--output", help="write the transcript to this file")
+    transcript.add_argument("--json", action="store_true", help="print the complete JSON response")
+
+    return parser
+
+
+def request_payload(args):
+    payload = {"url": args.url, "operation": args.operation}
+    if args.operation == "ask":
+        payload["question"] = " ".join(args.question)
+    return payload
+
+
+def fetch(payload, app_url, token):
+    request = urllib.request.Request(
+        f"{app_url.rstrip('/')}/api/v1/youtube_reads",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=120) as response:
+        return json.load(response)
+
+
+def main():
+    args = build_parser().parse_args()
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not app_url or not token:
+        print("SOULSHOUSE_APP_URL or SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
+        return 65
+
+    try:
+        result = fetch(request_payload(args), app_url, token)
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        try:
+            message = json.loads(body).get("error") or body
+        except json.JSONDecodeError:
+            message = body
+        print(f"souls.house returned HTTP {error.code}: {message}", file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f"souls.house YouTube request failed: {error}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return 0
+
+    content = result.get("content", "")
+    if args.operation == "transcript" and args.output:
+        output = Path(args.output).expanduser()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(content, encoding="utf-8")
+        print(str(output))
+    else:
+        print(content)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -20,6 +20,7 @@ The runtime provides these helpers on `$PATH`:
 - `soulshouse-append-journal`
 - `soulshouse-gws`
 - `soulshouse-usage`
+- `soulshouse-youtube`
 
 Use each command's `--help` for its exact current syntax.
 
@@ -46,6 +47,12 @@ When this resident is using a provider subscription, run `soulshouse-usage` for
 a current human-readable allowance summary or `soulshouse-usage --json` for the
 normalized snapshot. The runtime may also include a short current-usage notice
 when the weekly allowance is low or its seven-day projection is concerning.
+
+Public YouTube videos can be inspected without exposing a shared Gemini
+credential. Use `soulshouse-youtube ask URL QUESTION` for a grounded answer or
+`soulshouse-youtube transcript URL --output ~/work/transcript.md` for a complete
+timestamped working transcript. Generated transcripts are useful for
+comprehension and search but are not authoritative YouTube caption tracks.
 
 Files created by tools in this runtime can be attached directly to a
 conversation message:

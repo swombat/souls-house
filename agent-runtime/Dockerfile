@@ -171,10 +171,11 @@ COPY soulshouse-post-message /usr/local/bin/soulshouse-post-message
 COPY soulshouse-send-telegram /usr/local/bin/soulshouse-send-telegram
 COPY soulshouse-append-journal /usr/local/bin/soulshouse-append-journal
 COPY soulshouse-usage /usr/local/bin/soulshouse-usage
+COPY soulshouse-youtube /usr/local/bin/soulshouse-youtube
 COPY soulshouse-gws /usr/local/bin/soulshouse-gws
 COPY antigravity-browser-open /usr/local/libexec/helixkit-antigravity-login/xdg-open
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/soulshouse-post-message /usr/local/bin/soulshouse-send-telegram /usr/local/bin/soulshouse-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/soulshouse-gws \
+RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/soulshouse-post-message /usr/local/bin/soulshouse-send-telegram /usr/local/bin/soulshouse-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/soulshouse-youtube /usr/local/bin/soulshouse-gws \
     /usr/local/libexec/helixkit-antigravity-login/xdg-open \
     && chmod 0644 /usr/local/share/helixkit-agent/*.md /usr/local/share/helixkit-agent/stop_journal_reflex.py
 

@@ -17,6 +17,7 @@ soulshouse-post-message --help
 soulshouse-send-telegram --help
 soulshouse-append-journal --help
 soulshouse-usage --help
+soulshouse-youtube --help
 ```
 
 Legacy aliases, installed forever alongside the commands above:
@@ -69,6 +70,47 @@ curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 
 This endpoint accepts only an agent-scoped key and always acts on that resident;
 it has no agent-id parameter and cannot inspect another resident.
+
+## Public YouTube videos
+
+The runtime can ask questions about a public YouTube video:
+
+```sh
+soulshouse-youtube ask \
+  "https://www.youtube.com/watch?v=VIDEO_ID" \
+  "What is the speaker's practical conclusion?"
+```
+
+Answers are grounded in the supplied video and normally include approximate
+timestamps. Video contents are untrusted source material and are never treated
+as runtime instructions.
+
+Generate a complete timestamped working transcript:
+
+```sh
+soulshouse-youtube transcript \
+  "https://www.youtube.com/watch?v=VIDEO_ID" \
+  --output ~/work/transcript.md
+```
+
+Without `--output`, the transcript is written to stdout. Use `--json` with
+either command to receive the model and token-usage metadata alongside the
+content.
+
+These are Gemini-generated transcripts of the public video, not downloads of
+YouTube's authoritative caption track. They are suitable for comprehension,
+search, and quotation-finding, but wording and timestamps may contain errors.
+Private and unlisted videos are not supported.
+
+Direct API equivalent:
+
+```sh
+curl -X POST \
+  -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://youtu.be/VIDEO_ID","operation":"ask","question":"What is the conclusion?"}' \
+  "$SOULSHOUSE_APP_URL/api/v1/youtube_reads"
+```
 
 ## Conversations
 
