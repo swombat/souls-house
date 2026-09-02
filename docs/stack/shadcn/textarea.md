@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add textarea
+bunx shadcn-svelte@latest add textarea
 ```
 
 ## Usage

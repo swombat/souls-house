@@ -1,14 +1,13 @@
 {
   "mcpServers": {
     "playwright": {
-      "command": "npx",
+      "command": "bunx",
       "args": [
-        "-y",
         "@executeautomation/playwright-mcp-server"
       ]
     },
     "snap-happy": {
-      "command": "npx",
+      "command": "bunx",
       "args": [
         "@mariozechner/snap-happy"
       ]

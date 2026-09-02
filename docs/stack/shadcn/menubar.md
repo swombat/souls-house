@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add menubar
+bunx shadcn-svelte@latest add menubar
 ```
 
 ## Usage

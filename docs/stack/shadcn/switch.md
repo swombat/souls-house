@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add switch
+bunx shadcn-svelte@latest add switch
 ```
 
 ## Usage

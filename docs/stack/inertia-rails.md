@@ -19,7 +19,7 @@
 - **who-is-it-for.md** - Marketing fluff
 - **asset-versioning.md** - Basic, works out of the box
 - **authentication.md** - Standard Rails auth, nothing Inertia-specific
-- **client-side-setup.md** - Basic yarn install instructions
+- **client-side-setup.md** - Basic package installation instructions
 - **scroll-management.md** - Works automatically
 - **title-and-meta-tags.md** - Simple, well-documented elsewhere
 

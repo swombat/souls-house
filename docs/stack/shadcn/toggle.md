@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add toggle
+bunx shadcn-svelte@latest add toggle
 ```
 
 ## Usage

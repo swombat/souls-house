@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add date-picker
+bunx shadcn-svelte@latest add date-picker
 ```
 
 ## Usage

@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add context-menu
+bunx shadcn-svelte@latest add context-menu
 ```
 
 ## Usage

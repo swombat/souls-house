@@ -61,10 +61,11 @@ follow `next_cursor` until it is `null` to reach older active conversations.
    git clone https://github.com/swombat/souls-house
    cd souls-house
    ```
-2. Install dependencies:
+2. Install the pinned runtimes and dependencies:
    ```sh
+   mise install
    bundle install
-   npm install
+   bun install --frozen-lockfile
    ```
 3. Setup the database:
    ```sh
@@ -112,8 +113,8 @@ follow `next_cursor` until it is `null` to reach older active conversations.
 Necessary for Claude Code to be full featured.
 
 ```sh
-claude mcp add --scope=local playwright npx @executeautomation/playwright-mcp-server
-claude mcp add --scope=local snap-happy npx @mariozechner/snap-happy
+claude mcp add --scope=local playwright bunx @executeautomation/playwright-mcp-server
+claude mcp add --scope=local snap-happy bunx @mariozechner/snap-happy
 ```
 
 ## Architecture notes

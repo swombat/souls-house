@@ -3,7 +3,7 @@ import LoginPage from '../../../app/frontend/pages/sessions/new.svelte';
 
 test.describe('Login Page Tests', () => {
   // IMPORTANT: These tests require the Rails backend running on localhost:3200
-  // Run with: npm run test:integrated (automatically handles backend setup)
+  // Run with: bun run test:integrated (automatically handles backend setup)
 
   test('should render login page with all elements', async ({ mount }) => {
     const page = await mount(LoginPage);

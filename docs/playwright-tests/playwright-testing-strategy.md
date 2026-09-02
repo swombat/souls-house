@@ -153,19 +153,19 @@ The test Link component (`playwright/MockLink.svelte`) renders as a simple ancho
 
 ```bash
 # Run all Playwright component tests (REAL backend required)
-yarn test  # Automatically starts Rails, runs tests, stops Rails
+bun run test  # Automatically starts Rails, runs tests, stops Rails
 
 # Run with UI for debugging
-yarn test:ui
+bun run test:e2e:ui
 
 # Run with UI mode for debugging
-yarn test:ct-ui
+bun run test:ct:ui
 
 # Run specific test file
-npx playwright test -c playwright-ct.config.js playwright/tests/pages/login-simple.pw.js
+bun x playwright test -c playwright-ct.config.js playwright/tests/pages/login-simple.pw.js
 
 # Run only on Chrome
-npx playwright test -c playwright-ct.config.js --project chromium
+bun x playwright test -c playwright-ct.config.js --project chromium
 ```
 
 ### Important: Before Committing Changes
@@ -177,7 +177,7 @@ npx playwright test -c playwright-ct.config.js --project chromium
 rails test
 
 # 2. Run all Playwright component tests (real backend)
-yarn test
+bun run test
 
 # Both must pass before committing!
 ```
@@ -196,7 +196,7 @@ yarn test
 - **NO MOCKED TESTS ALLOWED**
 - Run against actual Rails server on port 3200
 - Test real authentication, database operations, and validation
-- Rails server automatically started by `yarn test`
+- Rails server automatically started by `bun run test`
 - Use seeded test data from `db/seeds/test.rb`
 
 ### Why No Mocking?

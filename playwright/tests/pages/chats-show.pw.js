@@ -3,7 +3,7 @@ import ChatsShow from '../../../app/frontend/pages/Chats/show.svelte';
 
 test.describe('Chats Show Page Tests', () => {
   // IMPORTANT: These tests require the Rails backend running on localhost:3200
-  // Run with: npm run test:integrated (automatically handles backend setup)
+  // Run with: bun run test:integrated (automatically handles backend setup)
 
   const mockChat = {
     id: 'chat-123',

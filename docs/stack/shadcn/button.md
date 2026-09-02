@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add button
+bunx shadcn-svelte@latest add button
 ```
 
 ## Usage

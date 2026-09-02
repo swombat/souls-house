@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add sheet
+bunx shadcn-svelte@latest add sheet
 ```
 
 ## Usage

@@ -502,7 +502,7 @@ Amharic, Lao, Somali, Nepali, Sinhala, Khmer, Burmese, and others
 
 **TypeScript/JavaScript:**
 ```bash
-npm install @elevenlabs/elevenlabs-js
+bun add @elevenlabs/elevenlabs-js
 ```
 
 **Python:**

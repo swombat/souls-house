@@ -194,8 +194,9 @@ helix_kit/
 ├── .ruby-version         # Ruby version specification
 ├── Gemfile               # Ruby dependencies
 ├── Gemfile.lock          # Locked gem versions
-├── package.json          # Node.js dependencies
-├── yarn.lock             # Locked yarn dependencies
+├── mise.toml             # Pinned development runtimes
+├── package.json          # JavaScript dependencies
+├── bun.lock              # Locked Bun dependencies
 ├── Procfile.dev          # Development process manager
 ├── Rakefile              # Rake task definitions
 ├── config.ru             # Rack configuration
@@ -297,6 +298,7 @@ Third-party code not managed by package managers
 
 - `Procfile.dev`: Defines processes for development
 - `.ruby-version`: Ensures consistent Ruby version
+- `mise.toml`: Pins Ruby and Bun for local development
 - `master.key`: Decrypts credentials (never commit!)
 
 ### Production Considerations

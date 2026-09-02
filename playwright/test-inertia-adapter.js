@@ -6,7 +6,7 @@ export { Link };
 
 // IMPORTANT: This is NOT a mock! This adapter makes REAL HTTP requests to the Rails backend.
 // NEVER mock the backend in tests - all tests must hit the real Rails API.
-// Run tests with: npm run test:integrated (which starts Rails automatically)
+// Run tests with: bun run test:integrated (which starts Rails automatically)
 export const useForm = (initialData = {}) => {
   // Create the reactive store with form data
   const store = writable({

@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add badge
+bunx shadcn-svelte@latest add badge
 ```
 
 ## Usage

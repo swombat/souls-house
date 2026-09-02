@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add dialog
+bunx shadcn-svelte@latest add dialog
 ```
 
 ## Usage

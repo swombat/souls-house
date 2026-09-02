@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add data-table
+bunx shadcn-svelte@latest add data-table
 ```
 
 ## Usage

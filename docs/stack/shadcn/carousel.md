@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add carousel
+bunx shadcn-svelte@latest add carousel
 ```
 
 ## Usage

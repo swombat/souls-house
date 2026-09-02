@@ -14,7 +14,7 @@ Only use DaisyUI when:
 DaisyUI requires Tailwind CSS 4:
 
 ```bash
-yarn add -D daisyui@latest
+bun add --dev daisyui@latest
 ```
 
 Configuration in CSS:

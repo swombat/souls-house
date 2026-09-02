@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add scroll-area
+bunx shadcn-svelte@latest add scroll-area
 ```
 
 ## Usage

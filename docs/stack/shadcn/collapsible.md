@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add collapsible
+bunx shadcn-svelte@latest add collapsible
 ```
 
 ## Usage

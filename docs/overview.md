@@ -6,7 +6,7 @@ This directory contains detailed documentation for the Helix Kit Rails applicati
 
 1. **Development Setup**: Run `bin/dev` to start the development server (Rails on port 3000, Vite for frontend assets)
 2. **Database Setup**: Run `rails db:setup` to create and seed the database
-3. **Run Tests**: Use `rails test`, `yarn test`, and `yarn test:unit` to run the test suite before declaring changes complete.
+3. **Run Tests**: Use `rails test`, `bun run test`, and `bun run test:unit` to run the test suite before declaring changes complete.
 4. **Dev Credentials**: See [dev-credentials.md](./dev-credentials.md) for local development login details
 
 ## Documentation Index

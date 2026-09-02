@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add dropdown-menu
+bunx shadcn-svelte@latest add dropdown-menu
 ```
 
 ## Usage

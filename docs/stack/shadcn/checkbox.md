@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add checkbox
+bunx shadcn-svelte@latest add checkbox
 ```
 
 ## Usage

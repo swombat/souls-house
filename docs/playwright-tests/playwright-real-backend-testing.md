@@ -27,10 +27,10 @@ Run everything with one command that handles the entire flow:
 
 ```bash
 # Run tests with automatic backend setup and cleanup
-yarn test
+bun run test
 
 # Or with UI for debugging
-yarn test:ui
+bun run test:e2e:ui
 ```
 
 This integrated script automatically:
@@ -48,7 +48,7 @@ If you prefer to run the backend and tests separately:
 #### 1. Start the Rails Test Server
 
 ```bash
-yarn test:backend-setup
+bun run test:backend-setup
 # or
 ./playwright/setup-test-server.sh
 ```
@@ -61,13 +61,13 @@ In a separate terminal:
 
 ```bash
 # Run all tests
-npx playwright test -c playwright-ct.config.js
+bun x playwright test -c playwright-ct.config.js
 
 # Run with UI for debugging
-npx playwright test -c playwright-ct.config.js --ui
+bun x playwright test -c playwright-ct.config.js --ui
 
 # Run specific test
-npx playwright test -c playwright-ct.config.js playwright/tests/pages/login.pw.js
+bun x playwright test -c playwright-ct.config.js playwright/tests/pages/login.pw.js
 ```
 
 ## Architecture
@@ -103,7 +103,7 @@ The test database is seeded with predictable data from `db/seeds/test.rb`:
 - **test@example.com** / password: `password123` - For successful login tests
 - **existing@example.com** / password: `password123` - For duplicate email tests
 
-These accounts are automatically created when running `yarn test`.
+These accounts are automatically created when running `bun run test`.
 New signups in tests should use timestamp-based emails to avoid conflicts between test runs.
 
 ## Writing Tests
@@ -144,7 +144,7 @@ test.describe('Login Form Component Tests (Real Backend)', () => {
 ## Best Practices
 
 1. **Unique test data**: Use timestamps for unique emails in signup tests
-2. **Run all tests before committing**: Always run both `rails test` and `yarn test`
+2. **Run all tests before committing**: Always run both `rails test` and `bun run test`
 3. **Test both success and failure paths**: Verify both valid and invalid inputs
 4. **Clean test environment**: The integrated script handles DB setup/teardown automatically
 5. **Database cleanup**: The setup script recreates the database each run

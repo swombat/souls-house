@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add breadcrumb
+bunx shadcn-svelte@latest add breadcrumb
 ```
 
 ## Usage

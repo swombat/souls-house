@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add tabs
+bunx shadcn-svelte@latest add tabs
 ```
 
 ## Usage

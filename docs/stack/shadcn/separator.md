@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-npx shadcn-svelte@latest add separator
+bunx shadcn-svelte@latest add separator
 ```
 
 ## Usage

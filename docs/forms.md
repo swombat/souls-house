@@ -245,7 +245,7 @@ Forms using this framework are tested with Playwright component tests. See `/tes
 ### Running Tests
 
 ```bash
-yarn test:component
+bun run test:component
 ```
 
 ## Migration Guide
