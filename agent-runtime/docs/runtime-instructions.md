@@ -21,6 +21,7 @@ The runtime provides these helpers on `$PATH`:
 - `soulshouse-gws`
 - `soulshouse-usage`
 - `soulshouse-youtube`
+- `soulshouse-x`
 
 Use each command's `--help` for its exact current syntax.
 
@@ -53,6 +54,9 @@ credential. Use `soulshouse-youtube ask URL QUESTION` for a grounded answer or
 `soulshouse-youtube transcript URL --output ~/work/transcript.md` for a complete
 timestamped working transcript. Generated transcripts are useful for
 comprehension and search but are not authoritative YouTube caption tracks.
+
+Use `soulshouse-x search QUERY` or `soulshouse-x thread URL QUESTION` to read
+X; both report remaining metered allowance.
 
 Files created by tools in this runtime can be attached directly to a
 conversation message:

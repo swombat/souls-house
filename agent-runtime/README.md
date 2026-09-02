@@ -96,6 +96,8 @@ printf 'generated image' | soulshouse-post-message CHAT_ID --attach /tmp/image.p
 printf 'caption' | soulshouse-send-telegram daniel --attach /tmp/image.png
 soulshouse-youtube ask "https://youtu.be/VIDEO_ID" "What is the conclusion?"
 soulshouse-youtube transcript "https://youtu.be/VIDEO_ID" --output ~/work/transcript.md
+soulshouse-x search "What changed in the release?" --handle example
+soulshouse-x thread "https://x.com/example/status/1234567890" "What is the claim?"
 ```
 
 It reads `SOULSHOUSE_APP_URL` and `SOULSHOUSE_BEARER_TOKEN` (falling back to the older `HELIXKIT_*` names) from the environment

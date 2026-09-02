@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Search X or read one X thread through the metered souls.house service."""
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+
+WINDOW_LABELS = {
+    "agent_hour": "resident hour",
+    "agent_day": "resident day",
+    "account_day": "account day",
+}
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="soulshouse-x",
+        description="Search X or inspect one public X thread through souls.house.",
+        epilog=(
+            "Every attempted upstream read counts against rolling request and spend "
+            "limits. Full manual: /usr/local/share/helixkit-agent/soulshouse-api.md"
+        ),
+    )
+    subparsers = parser.add_subparsers(dest="operation", required=True)
+
+    search = subparsers.add_parser("search", help="answer a question using current posts on X")
+    search.add_argument("query", nargs="+")
+    search.add_argument(
+        "--handle",
+        action="append",
+        default=[],
+        help="restrict results to an X handle; repeat for several handles",
+    )
+    search.add_argument("--from", dest="from_date", help="earliest date, YYYY-MM-DD")
+    search.add_argument("--to", dest="to_date", help="latest date, YYYY-MM-DD")
+    search.add_argument("--json", action="store_true", help="print the complete JSON response")
+
+    thread = subparsers.add_parser("thread", help="read one public X post and its thread")
+    thread.add_argument("url")
+    thread.add_argument("question", nargs="*")
+    thread.add_argument("--json", action="store_true", help="print the complete JSON response")
+
+    return parser
+
+
+def request_payload(args):
+    if args.operation == "search":
+        payload = {
+            "operation": "search",
+            "query": " ".join(args.query),
+        }
+        if args.handle:
+            payload["handles"] = args.handle
+        if args.from_date:
+            payload["from_date"] = args.from_date
+        if args.to_date:
+            payload["to_date"] = args.to_date
+        return payload
+
+    payload = {
+        "operation": "thread",
+        "url": args.url,
+    }
+    if args.question:
+        payload["question"] = " ".join(args.question)
+    return payload
+
+
+def fetch(payload, app_url, token):
+    request = urllib.request.Request(
+        f"{app_url.rstrip('/')}/api/v1/x_reads",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=150) as response:
+        return json.load(response)
+
+
+def allowance_summary(rate_limits):
+    windows = rate_limits.get("windows", []) if rate_limits else []
+    parts = []
+    for window in windows:
+        label = WINDOW_LABELS.get(window.get("id"), window.get("id", "window"))
+        requests = window.get("requests", {})
+        spend = window.get("spend", {})
+        parts.append(
+            f"{label}: {requests.get('remaining', '?')}/{requests.get('limit', '?')} requests left; "
+            f"${spend.get('remaining_usd', '?')}/${spend.get('cap_usd', '?')} left"
+        )
+    return " | ".join(parts)
+
+
+def print_allowance(result):
+    summary = allowance_summary(result.get("rate_limits"))
+    if summary:
+        print(f"[X allowance — {summary}]", file=sys.stderr)
+
+
+def main():
+    args = build_parser().parse_args()
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not app_url or not token:
+        print("SOULSHOUSE_APP_URL or SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
+        return 65
+
+    try:
+        result = fetch(request_payload(args), app_url, token)
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        try:
+            result = json.loads(body)
+            message = result.get("error") or body
+        except json.JSONDecodeError:
+            result = {}
+            message = body
+        print(f"souls.house returned HTTP {error.code}: {message}", file=sys.stderr)
+        print_allowance(result)
+        return 1
+    except Exception as error:
+        print(f"souls.house X request failed: {error}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    else:
+        print(result.get("content", ""))
+        print_allowance(result)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

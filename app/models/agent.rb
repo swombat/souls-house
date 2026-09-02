@@ -17,6 +17,7 @@ class Agent < ApplicationRecord
   has_many :chat_agents, dependent: :destroy
   has_many :agent_backup_snapshots, dependent: :destroy
   has_many :agent_runtime_interactions, dependent: :destroy
+  has_many :metered_action_events, dependent: :destroy
   has_many :safeguard_detections, dependent: :destroy
   has_many :safeguard_classifier_failures, dependent: :destroy
   has_many :chats, through: :chat_agents

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_31_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_02_204500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -541,6 +541,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_120000) do
     t.index ["user_id"], name: "index_messages_on_user_id"
   end
 
+  create_table "metered_action_events", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "action", null: false
+    t.bigint "agent_id", null: false
+    t.bigint "cost_in_usd_ticks"
+    t.datetime "created_at", null: false
+    t.string "outcome", default: "admitted", null: false
+    t.datetime "outcome_recorded_at"
+    t.string "provider"
+    t.string "provider_request_id"
+    t.string "request_id", null: false
+    t.datetime "updated_at", null: false
+    t.jsonb "usage", default: {}, null: false
+    t.index ["account_id"], name: "index_metered_action_events_on_account_id"
+    t.index ["action", "account_id", "created_at"], name: "idx_on_action_account_id_created_at_8885d8b84f"
+    t.index ["action", "agent_id", "created_at"], name: "idx_on_action_agent_id_created_at_8b71c5f0ce"
+    t.index ["agent_id"], name: "index_metered_action_events_on_agent_id"
+    t.index ["request_id"], name: "index_metered_action_events_on_request_id", unique: true
+  end
+
   create_table "notices", force: :cascade do |t|
     t.bigint "account_id"
     t.text "body"
@@ -847,6 +867,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_120000) do
   add_foreign_key "messages", "ai_models"
   add_foreign_key "messages", "chats"
   add_foreign_key "messages", "users"
+  add_foreign_key "metered_action_events", "accounts"
+  add_foreign_key "metered_action_events", "agents"
   add_foreign_key "notices", "accounts"
   add_foreign_key "notices", "users", column: "created_by_id"
   add_foreign_key "oura_integrations", "users"
