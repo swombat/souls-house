@@ -15,6 +15,7 @@ JsRoutes.setup do |c|
   # but lose the ability to match helper name
   # on backend and frontend consistently.
   c.camel_case = true
+  c.include_undefined_query_parameters = true
 
   # Generate only helpers that match specific pattern.
   # c.exclude = /^api_/
