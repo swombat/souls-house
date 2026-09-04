@@ -1181,6 +1181,9 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal "openai", args[args.index("--provider") + 1]
     assert_equal "gpt-5.2", args[args.index("-m") + 1]
     assert_includes args, 'model_reasoning_effort="high"'
+    assert_includes args, 'shell_environment_policy.inherit="all"'
+    assert_includes args, "shell_environment_policy.ignore_default_excludes=true"
+    assert_includes args, 'shell_environment_policy.exclude=["*KEY*","*SECRET*","TRIGGER_BEARER_TOKEN"]'
     assert_not_includes args, "--dangerously-bypass-approvals-and-sandbox"
   end
 

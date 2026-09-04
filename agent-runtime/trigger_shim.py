@@ -635,9 +635,15 @@ def run_chaos(
         "-m", model,
         # Docker is the sandbox boundary for hosted agents. Inside that
         # boundary the agent must be able to use Bash, write its mounted
-        # identity/state folders, and call HelixKit's API back.
+        # identity/state folders, and call souls.house's API back. Chaos's
+        # default environment filter removes every variable containing TOKEN,
+        # including the resident's outbound bearer token, even with
+        # inherit="all". Disable that broad default, then retain explicit
+        # protection for provider keys, secrets, and the inbound trigger token.
         "--headless",
         "-c", "shell_environment_policy.inherit=\"all\"",
+        "-c", "shell_environment_policy.ignore_default_excludes=true",
+        "-c", 'shell_environment_policy.exclude=["*KEY*","*SECRET*","TRIGGER_BEARER_TOKEN"]',
     ]
     selected_provider = provider or AGENT_PROVIDER
     if auth_mode == "oauth_account" and selected_provider == "anthropic":
