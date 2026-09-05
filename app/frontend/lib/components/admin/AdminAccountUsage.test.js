@@ -44,6 +44,10 @@ test('shows resident settings, failed storage freshness, integration status and 
       paused: true,
       health_state: 'unhealthy',
       model: 'Example model',
+      model_id: 'anthropic/claude-opus-4',
+      model_access: { provider: 'anthropic', mode: 'oauth_account', connection_status: 'connected' },
+      colour: 'violet',
+      icon: 'Moon',
       reasoning_effort: 'high',
       scheduled_wakes_enabled: true,
       heartbeat_wakes_per_day: 4,
@@ -74,6 +78,9 @@ test('shows resident settings, failed storage freshness, integration status and 
   render(AdminAccountUsage, { account });
   expect(screen.getByRole('heading', { name: 'Example resident' })).toBeInTheDocument();
   expect(screen.getByText('Example model')).toBeInTheDocument();
+  expect(screen.getByAltText('Anthropic logo')).toHaveAttribute('src', '/model-providers/anthropic.svg');
+  expect(screen.getByLabelText('Example resident icon')).toHaveClass('bg-violet-100');
+  expect(screen.getByText('OAuth · Anthropic')).toBeInTheDocument();
   expect(screen.getByText('4 wakes/day')).toBeInTheDocument();
   expect(screen.getByText('unavailable · stale')).toBeInTheDocument();
   expect(screen.getByText('Latest check failed; any size shown is an older reading.')).toBeInTheDocument();
@@ -82,6 +89,32 @@ test('shows resident settings, failed storage freshness, integration status and 
   expect(document.body.textContent).not.toMatch(/\bagents?\b/i);
   await fireEvent.click(screen.getByRole('button', { name: 'Measure storage' }));
   expect(router.post).toHaveBeenCalledWith('/admin/accounts/account-one/refresh_storage', {}, expect.any(Object));
+});
+
+test('greys out deprecated inline residents and omits external labels on hosted residents', () => {
+  const account = accountFixture();
+  const resident = {
+    id: 'hosted',
+    name: 'Hosted resident',
+    runtime: 'external',
+    active: true,
+    model: 'Example',
+    model_id: 'openai/gpt-5.5',
+    model_access: { provider: 'openrouter', mode: 'api_key' },
+    storage: {},
+    enabled_tools: [],
+    provider_auth: [],
+    services: [],
+    telegram: {},
+  };
+  account.usage.agents = [resident, { ...resident, id: 'old', name: 'Old resident', runtime: 'inline' }];
+  render(AdminAccountUsage, { account });
+  const deprecated = screen.getByRole('heading', { name: 'Old resident' }).closest('article');
+  expect(deprecated).toHaveClass('grayscale', 'opacity-60');
+  expect(screen.getByText('Deprecated · inline')).toBeInTheDocument();
+  expect(screen.queryByText('external', { exact: true })).not.toBeInTheDocument();
+  expect(screen.getAllByText('API · OpenRouter')).toHaveLength(2);
+  expect(screen.getAllByRole('link', { name: 'Inspect runtime →' })).toHaveLength(1);
 });
 
 test('switches chart metrics without navigation and links sessions to admin runtime details', async () => {

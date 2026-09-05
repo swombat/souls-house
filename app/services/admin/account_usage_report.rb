@@ -62,9 +62,11 @@ module Admin
       # Deliberate allowlist: never serialize prompts, credentials or runtime output.
       {
         id: agent.to_param, name: agent.name, created_at: agent.created_at,
+        icon: agent.icon, colour: agent.colour,
         active: agent.active?, paused: agent.paused?, runtime: agent.runtime,
         health_state: agent.health_state, last_health_check_at: agent.last_health_check_at,
         model: agent.model_label, model_id: agent.model_id, reasoning_effort: agent.reasoning_effort,
+        model_access: model_access(agent),
         thinking_enabled: agent.thinking_enabled?, thinking_budget: agent.thinking_budget,
         scheduled_wakes_enabled: agent.scheduled_wakes_enabled?,
         heartbeat_wakes_per_day: agent.heartbeat_wakes_per_day,
@@ -91,6 +93,21 @@ module Admin
           }
         end
       }
+    end
+
+    def model_access(agent)
+      provider = if agent.inline?
+        ResolvesProvider.resolve_provider(agent.model_id, account: @account).fetch(:provider).to_s
+      else
+        Agents::Sandbox.chaos_provider_for(agent)
+      end
+      mode = agent.inline? ? "api_key" : agent.provider_auth_mode(provider)
+      {
+        provider: provider, mode: mode,
+        connection_status: mode == "oauth_account" ? agent.provider_connection(provider)["status"] : nil
+      }
+    rescue KeyError
+      { provider: nil, mode: nil, connection_status: nil }
     end
 
     def activity

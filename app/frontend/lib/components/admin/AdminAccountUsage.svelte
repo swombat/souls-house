@@ -4,6 +4,8 @@
   import { Button } from '$lib/components/shadcn/button';
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/shadcn/card';
   import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '$lib/components/shadcn/table';
+  import { agentIconFor } from '$lib/agent-icons';
+  import ModelProviderLogo from '$lib/components/ModelProviderLogo.svelte';
 
   let { account } = $props();
   let metric = $state('sessions');
@@ -56,6 +58,13 @@
       to: new Date(new Date(session.last_at).getTime() + 1000).toISOString(),
     });
     return `/admin/agents/${session.agent_id}/runtime?${query}`;
+  }
+
+  function providerLabel(provider) {
+    return (
+      { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Google', xai: 'xAI', openrouter: 'OpenRouter' }[provider] ||
+      provider
+    );
   }
 </script>
 
@@ -159,26 +168,61 @@
     </CardHeader>
     <CardContent class="space-y-4">
       {#each usage.agents as agent (agent.id)}
-        <article class="rounded-lg border p-4">
+        {@const ResidentIcon = agentIconFor(agent.icon)}
+        {@const deprecated = agent.runtime === 'inline'}
+        {@const access = agent.model_access}
+        <article class={`rounded-lg border p-4 ${deprecated ? 'bg-muted/50 opacity-60 grayscale' : ''}`}>
           <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 class="font-semibold">{agent.name}</h3>
-              <div class="mt-1 flex flex-wrap gap-2">
-                <Badge variant={agent.active && !agent.paused ? 'secondary' : 'outline'}
-                  >{!agent.active ? 'Inactive' : agent.paused ? 'Paused' : 'Active'}</Badge>
-                <Badge variant="outline">{agent.runtime}</Badge>
-                {#if agent.runtime !== 'inline'}<Badge
-                    variant={agent.health_state === 'unhealthy' ? 'destructive' : 'outline'}>{agent.health_state}</Badge
-                  >{/if}
+            <div class="flex items-start gap-3">
+              <div
+                aria-label={`${agent.name} icon`}
+                class={`rounded-lg p-2 ${agent.colour ? `bg-${agent.colour}-100 dark:bg-${agent.colour}-900` : 'bg-primary/10'}`}>
+                <ResidentIcon
+                  weight="duotone"
+                  class={`size-6 ${agent.colour ? `text-${agent.colour}-700 dark:text-${agent.colour}-300` : 'text-primary'}`} />
+              </div>
+              <div>
+                <h3 class="font-semibold">{agent.name}</h3>
+                <div class="mt-1 flex flex-wrap gap-2">
+                  {#if deprecated}
+                    <Badge variant="outline">Deprecated · inline</Badge>
+                  {/if}
+                  <Badge variant={agent.active && !agent.paused ? 'secondary' : 'outline'}
+                    >{!agent.active ? 'Inactive' : agent.paused ? 'Paused' : 'Active'}</Badge>
+                  {#if !deprecated && agent.runtime !== 'external'}
+                    <Badge variant="outline">{agent.runtime}</Badge>
+                  {/if}
+                  {#if !deprecated}<Badge variant={agent.health_state === 'unhealthy' ? 'destructive' : 'outline'}
+                      >{agent.health_state}</Badge
+                    >{/if}
+                </div>
               </div>
             </div>
-            <a class="text-sm text-primary underline underline-offset-4" href={`/admin/agents/${agent.id}/runtime`}
-              >Inspect runtime →</a>
+            {#if !deprecated}
+              <a class="text-sm text-primary underline underline-offset-4" href={`/admin/agents/${agent.id}/runtime`}
+                >Inspect runtime →</a>
+            {/if}
           </div>
           <dl class="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 text-sm">
             <div>
               <dt class="text-muted-foreground">Model / reasoning</dt>
-              <dd class="break-words font-medium">{agent.model}</dd>
+              <dd class="flex items-center gap-2 break-words font-medium">
+                <ModelProviderLogo modelId={agent.model_id} />
+                <span>{agent.model}</span>
+              </dd>
+              <dd class="my-1 flex flex-wrap items-center gap-1.5">
+                {#if access?.mode}
+                  <Badge variant={access.mode === 'oauth_account' ? 'secondary' : 'outline'}>
+                    {access.mode === 'oauth_account' ? 'OAuth' : 'API'} · {providerLabel(access.provider)}
+                  </Badge>
+                  {#if access.mode === 'oauth_account'}
+                    <span class="text-xs text-muted-foreground"
+                      >{access.connection_status || 'Connection not confirmed'}</span>
+                  {/if}
+                {:else}
+                  <span class="text-xs text-muted-foreground">Authentication unknown</span>
+                {/if}
+              </dd>
               <dd>
                 {agent.reasoning_effort} reasoning{agent.thinking_enabled
                   ? ` · ${agent.thinking_budget.toLocaleString()} thinking budget`

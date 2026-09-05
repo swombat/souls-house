@@ -12,6 +12,7 @@
 @source inline("bg-slate-100 bg-slate-900 bg-gray-100 bg-gray-900 bg-zinc-100 bg-zinc-900 bg-neutral-100 bg-neutral-900 bg-stone-100 bg-stone-900 bg-red-100 bg-red-900 bg-orange-100 bg-orange-900 bg-amber-100 bg-amber-900 bg-yellow-100 bg-yellow-900 bg-lime-100 bg-lime-900 bg-green-100 bg-green-900 bg-emerald-100 bg-emerald-900 bg-teal-100 bg-teal-900 bg-cyan-100 bg-cyan-900 bg-sky-100 bg-sky-900 bg-blue-100 bg-blue-900 bg-indigo-100 bg-indigo-900 bg-violet-100 bg-violet-900 bg-purple-100 bg-purple-900 bg-fuchsia-100 bg-fuchsia-900 bg-pink-100 bg-pink-900 bg-rose-100 bg-rose-900");
 
 /* Safelist icon text colours for dynamic class names */
+@source inline("dark:text-{slate,gray,zinc,neutral,stone,red,orange,amber,yellow,lime,green,emerald,teal,cyan,sky,blue,indigo,violet,purple,fuchsia,pink,rose}-300");
 @source inline("text-slate-700 text-slate-300 text-gray-700 text-gray-300 text-zinc-700 text-zinc-300 text-neutral-700 text-neutral-300 text-stone-700 text-stone-300 text-red-700 text-red-300 text-orange-700 text-orange-300 text-amber-700 text-amber-300 text-yellow-700 text-yellow-300 text-lime-700 text-lime-300 text-green-700 text-green-300 text-emerald-700 text-emerald-300 text-teal-700 text-teal-300 text-cyan-700 text-cyan-300 text-sky-700 text-sky-300 text-blue-700 text-blue-300 text-indigo-700 text-indigo-300 text-violet-700 text-violet-300 text-purple-700 text-purple-300 text-fuchsia-700 text-fuchsia-300 text-pink-700 text-pink-300 text-rose-700 text-rose-300");
 
 /* Safelist agent trigger bar button colours */

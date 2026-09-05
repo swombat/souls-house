@@ -21,9 +21,16 @@ test('admin can inspect account usage, settings and empty states on desktop and 
     await expect(overview.getByRole('heading', { name: 'Last 10 runtime sessions' })).toBeVisible();
     await expect(overview.getByText('No conversations yet.')).toBeVisible();
     await expect(overview.getByRole('button', { name: 'Measure storage' })).toBeDisabled();
+    await expect(overview.getByText('Deprecated · inline', { exact: true })).toHaveCount(4);
+    await expect(overview.locator('article.grayscale')).toHaveCount(4);
+    await expect(overview.getByText('external', { exact: true })).toHaveCount(0);
+    await expect(overview.getByText(/^API · /)).toHaveCount(4);
+    const logos = overview.locator('img[src^="/model-providers/"]');
+    await expect(logos).toHaveCount(4);
+    await expect.poll(() => logos.evaluateAll((images) => images.every((image) => image.complete && image.naturalWidth > 0))).toBe(true);
 
     await overview.getByLabel('Activity metric').selectOption('conversations');
-    await expect(overview.getByRole('img')).toHaveAttribute('aria-label', /conversations over/);
+    await expect(overview.getByRole('img', { name: /conversations over/ })).toBeVisible();
     await overview.locator('summary').filter({ hasText: 'Settings, integrations' }).first().click();
     await expect(overview.getByText('Telegram: Not connected').first()).toBeVisible();
 

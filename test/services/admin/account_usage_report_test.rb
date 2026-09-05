@@ -115,7 +115,43 @@ class Admin::AccountUsageReportTest < ActiveSupport::TestCase
     assert_equal 1, report[:activity].sum { |day| day[:runs] }
   end
 
+  test "includes resident identity and current model OAuth mode rather than unrelated subscriptions" do
+    @agent.update_columns(
+      runtime: "external", model_id: "anthropic/claude-opus-4", icon: "Moon", colour: "violet",
+      provider_auth_modes: { "anthropic" => "oauth_account", "openai" => "oauth_account" },
+      provider_connections: { "anthropic" => { "status" => "connected", "email" => "private@example.com" } }
+    )
+    resident = resident_report
+    assert_equal "Moon", resident[:icon]
+    assert_equal "violet", resident[:colour]
+    assert_equal({ provider: "anthropic", mode: "oauth_account", connection_status: "connected" }, resident[:model_access])
+    assert_not_includes resident[:model_access].to_json, "private@example.com"
+  end
+
+  test "shows OpenRouter API routing even when another provider has an OAuth connection" do
+    @agent.update_columns(
+      runtime: "external", model_id: "anthropic/claude-opus-4",
+      provider_auth_modes: { "openai" => "oauth_account" }
+    )
+    RubyLLM.config.stub(:anthropic_api_key, nil) do
+      assert_equal({ provider: "openrouter", mode: "api_key", connection_status: nil }, resident_report[:model_access])
+    end
+  end
+
+  test "deprecated inline residents use API even with old subscription settings" do
+    @agent.update_columns(
+      runtime: "inline", model_id: "anthropic/claude-opus-4",
+      provider_auth_modes: { "anthropic" => "oauth_account" }
+    )
+    @account.update!(anthropic_api_key: "account-test-key")
+    assert_equal({ provider: "anthropic", mode: "api_key", connection_status: nil }, resident_report[:model_access])
+  end
+
   private
+
+  def resident_report
+    Admin::AccountUsageReport.new(@account, now: @now).call[:agents].find { |row| row[:id] == @agent.to_param }
+  end
 
   def record(agent, session_id, started_at, **attributes)
     AgentRuntimeInteraction.create!(

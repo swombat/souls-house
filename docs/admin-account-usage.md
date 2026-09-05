@@ -2,12 +2,21 @@
 
 Site admins can select an account at `/admin/accounts` to inspect:
 
-- Agent configuration, runtime/health, heartbeat cadence, conversation participation,
+- Resident icons/colours, configuration, health, heartbeat cadence, conversation participation,
   session counts, tool/voice configuration, subscription authentication and service grants.
 - Account service connections, legacy GitHub/X/Oura integrations and AI-key presence.
   Credentials, prompts, message bodies and runtime output are not included in this report.
 - Thirty UTC days of daily active sessions, trigger attempts or new conversations.
 - The ten most recently active runtime sessions and ten most recently updated conversations.
+
+Model logos identify the model's maker. The adjacent OAuth/API badge identifies the
+configured access route for the current model (for example, Anthropic via OpenRouter
+API versus Anthropic OAuth), using the same provider selection as runtime requests.
+OAuth connection status is shown separately; a saved OAuth selection is not itself
+proof that the subscription is connected. Logos are served locally.
+
+Inline residents are greyed out and marked deprecated. Hosted residents no longer
+carry the technical "external" label; offline/provisioning and health states remain visible.
 
 ## Counting semantics
 
