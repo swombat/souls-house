@@ -8,13 +8,7 @@ module Agents
     end
 
     def names
-      {
-        identity: "hk-agent-#{agent.uuid}-identity",
-        chaos: "chaos-home-#{agent.uuid}",
-        repo: "hk-agent-#{agent.uuid}-repo",
-        work: "hk-agent-#{agent.uuid}-work",
-        state: "hk-agent-#{agent.uuid}-state"
-      }
+      Agents::Resources.new(agent).volumes
     end
 
     def each(&block)

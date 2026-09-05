@@ -15,8 +15,10 @@ module Backup
       production_version: nil,
       desired_chaos_ref: nil,
       capture3: Open3.method(:capture3),
-      system: Kernel.method(:system)
+      system: Kernel.method(:system),
+      docker_guard: Agents::DockerLocalGuard.method(:check!)
     )
+      @docker_guard = docker_guard
       @image = image
       @runtime_dir = runtime_dir
       @production_version = production_version || method(:latest_recorded_chaos_version)
@@ -26,6 +28,7 @@ module Backup
     end
 
     def ensure_current!
+      @docker_guard.call
       expected_version = production_version.call
       expected_ref = desired_chaos_ref.call
       current_version = local_version

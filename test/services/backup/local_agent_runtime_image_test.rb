@@ -124,7 +124,7 @@ class Backup::LocalAgentRuntimeImageTest < ActiveSupport::TestCase
       true
     end
 
-    Backup::LocalAgentRuntimeImage.new(
+    Backup::LocalAgentRuntimeImage.new(docker_guard: -> { true },
       image: "helixkit-agent-runtime:local",
       runtime_dir: Pathname("/tmp/agent-runtime"),
       production_version: -> { production_version },

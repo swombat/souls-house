@@ -223,6 +223,7 @@ module Agents
     end
 
     def docker_capture(*args)
+      Agents::Resources.new(agent).verify_existing!
       stdout, stderr, status = Open3.capture3("docker", *args)
       { stdout: stdout, stderr: stderr, ok: status.success? }
     end

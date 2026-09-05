@@ -8,8 +8,8 @@
     "test": "bun run test:e2e",
     "test:e2e": "./playwright/run-e2e.sh",
     "test:e2e:ui": "./playwright/run-e2e.sh --ui",
-    "test:ct": "playwright test -c playwright-ct.config.js",
-    "test:ct:ui": "playwright test -c playwright-ct.config.js --ui",
+    "test:ct": "./playwright/run-tests-with-backend.sh",
+    "test:ct:ui": "./playwright/run-tests-with-backend.sh --ui",
     "test:backend-setup": "./playwright/setup-test-server.sh",
     "test:unit": "vitest",
     "test:unit:ui": "vitest --ui"

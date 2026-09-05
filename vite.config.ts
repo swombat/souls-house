@@ -7,6 +7,7 @@ import path from 'path';
 export default defineConfig({
   plugins: [svelte(), tailwindcss(), RubyPlugin()],
   assetsInclude: ['**/*.svg'],
+  server: { strictPort: true },
   resolve: {
     alias: {
       $lib: path.resolve('./app/frontend/lib'),

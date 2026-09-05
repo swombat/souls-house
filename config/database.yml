@@ -23,18 +23,18 @@ default: &default
 development:
   primary:
     <<: *default
-    database: helix_kit_development
+    database: <%= LocalInstance.current.database("development", :primary) %>
   cache:
     <<: *default
-    database: helix_kit_development_cache
+    database: <%= LocalInstance.current.database("development", :cache) %>
     migrations_paths: db/cache_migrate
   queue:
     <<: *default
-    database: helix_kit_development_queue
+    database: <%= LocalInstance.current.database("development", :queue) %>
     migrations_paths: db/queue_migrate
   cable:
     <<: *default
-    database: helix_kit_development_cable
+    database: <%= LocalInstance.current.database("development", :cable) %>
     migrations_paths: db/cable_migrate
 
   # The specified database role being used to connect to PostgreSQL.
@@ -69,7 +69,7 @@ development:
 # Do not set this db to the same as development or production.
 test:
   <<: *default
-  database: helix_kit_test
+  database: <%= LocalInstance.current.database("test", :primary) %>
 
 # As with config/credentials.yml, you never want to store sensitive information,
 # like your database password, in your source code. If your source code is

@@ -1,7 +1,9 @@
 #!/usr/bin/env sh
 
-export SOULSHOUSE_DEV_WEB_PORT="${SOULSHOUSE_DEV_WEB_PORT:-${HELIXKIT_DEV_WEB_PORT:-${PORT:-3100}}}"
-export PORT="${PORT:-$SOULSHOUSE_DEV_WEB_PORT}"
+cd "$(dirname "$0")/.." || exit 1
+if [ "${SOULSHOUSE_DEV_BOOTSTRAPPED:-}" != "1" ]; then
+  exec bin/instance exec dev -- env SOULSHOUSE_DEV_BOOTSTRAPPED=1 bin/dev "$@"
+fi
 
 if command -v overmind 1> /dev/null 2>&1
 then

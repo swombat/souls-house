@@ -4,6 +4,10 @@ module Backup
     module_function
 
     def docker_environment(agent)
+      if LocalInstance.current.namespace
+        raise ArgumentError, "Remote agent backups/restores are disabled for isolated local instances"
+      end
+      Agents::DockerLocalGuard.check!
       [
         "-e", "AWS_ACCESS_KEY_ID=#{aws_value(:access_key_id)}",
         "-e", "AWS_SECRET_ACCESS_KEY=#{aws_value(:secret_access_key)}",

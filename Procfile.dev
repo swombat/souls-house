@@ -1,4 +1,4 @@
 
-web: bin/rails s -p ${HELIXKIT_DEV_WEB_PORT:-3100}
+web: bin/rails s -p ${SOULSHOUSE_DEV_WEB_PORT:-3100}
 vite: bin/vite dev
 jobs: bin/jobs start

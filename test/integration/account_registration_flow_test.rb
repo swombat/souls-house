@@ -66,7 +66,7 @@ class AccountRegistrationFlowTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
 
     # Verify user is logged in via session
-    assert cookies[:session_id].present?
+    assert cookies[LocalInstance.current.cookie(:session_id)].present?
     # In tests, we need to decode the signed cookie differently
     user_session = Session.find_by(user: user)
     assert user_session.present?
@@ -262,16 +262,16 @@ class AccountRegistrationFlowTest < ActionDispatch::IntegrationTest
 
     # Not authenticated during signup
     post signup_path, params: { email_address: email }
-    assert_nil cookies[:session_id]
+    assert_nil cookies[LocalInstance.current.cookie(:session_id)]
 
     # Not authenticated during confirmation
     membership = Membership.last
     get email_confirmation_path(token: membership.confirmation_token_for_url)
-    assert_nil cookies[:session_id]
+    assert_nil cookies[LocalInstance.current.cookie(:session_id)]
 
     # Authenticated after setting password
     patch set_password_path, params: { password: "password123", password_confirmation: "password123", first_name: "Auth", last_name: "Flow" }
-    assert cookies[:session_id].present?
+    assert cookies[LocalInstance.current.cookie(:session_id)].present?
     # Verify the session belongs to the correct user
     user = User.last
     user_session = Session.find_by(user: user)

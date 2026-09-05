@@ -2,6 +2,8 @@ require_relative "boot"
 
 require "rails/all"
 
+LocalInstance.current.configure!
+
 # Require the gems listed in Gemfile, including any gems
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
@@ -11,6 +13,11 @@ module SoulsHouse
 
     # Initialize configuration defaults for originally generated Rails version.
     config.load_defaults 8.0
+
+    if LocalInstance.current.local?
+      config.middleware.use LocalInstance::Middleware
+      config.session_store :cookie_store, key: LocalInstance.current.cookie("_souls_house_session")
+    end
 
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.

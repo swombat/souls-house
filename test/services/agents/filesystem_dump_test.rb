@@ -12,9 +12,9 @@ module Agents
         case args
         when [ "info", "--format", "{{.ServerVersion}}" ]
           ok("27.0.0")
-        when [ "volume", "inspect", "hk-agent-#{agent.uuid}-identity" ]
+        when [ "volume", "inspect", "#{Agents::Resources.new(agent).volumes.fetch(:identity)}" ]
           ok("[]")
-        when [ "run", "--rm", "-v", "hk-agent-#{agent.uuid}-identity:/identity:ro", "-w", "/identity", "busybox", "sh", "-c", args.last ]
+        when [ "run", "--rm", "-v", "#{Agents::Resources.new(agent).volumes.fetch(:identity)}:/identity:ro", "-w", "/identity", "busybox", "sh", "-c", args.last ]
           assert_includes args.last, "find . -maxdepth 6 -print"
           ok("directory\t\t./memory\nfile\t12\t./soul.md\n")
         else
@@ -26,7 +26,7 @@ module Agents
         json = dump.as_json
         assert_nil json[:error]
         assert_equal "/home/agent/identity", json[:root]
-        assert_equal "hk-agent-#{agent.uuid}-identity", json[:volume_name]
+        assert_equal "#{Agents::Resources.new(agent).volumes.fetch(:identity)}", json[:volume_name]
         assert_equal 2, json[:entries].length
         assert_equal({ path: "memory", name: "memory", type: "directory", depth: 0 }, json[:entries].first)
         assert_equal "soul.md", json[:entries].second[:path]
@@ -88,11 +88,11 @@ module Agents
         case args
         when [ "info", "--format", "{{.ServerVersion}}" ]
           ok("27.0.0")
-        when [ "volume", "inspect", "hk-agent-#{agent.uuid}-identity" ]
+        when [ "volume", "inspect", "#{Agents::Resources.new(agent).volumes.fetch(:identity)}" ]
           ok("[]")
-        when [ "run", "--rm", "-v", "hk-agent-#{agent.uuid}-identity:/identity:ro", "-w", "/identity", "busybox", "head", "-c", "4000", "./soul.md" ]
+        when [ "run", "--rm", "-v", "#{Agents::Resources.new(agent).volumes.fetch(:identity)}:/identity:ro", "-w", "/identity", "busybox", "head", "-c", "4000", "./soul.md" ]
           ok("# Test Soul\n")
-        when [ "run", "--rm", "-v", "hk-agent-#{agent.uuid}-identity:/identity:ro", "-w", "/identity", "busybox", "wc", "-c", "./soul.md" ]
+        when [ "run", "--rm", "-v", "#{Agents::Resources.new(agent).volumes.fetch(:identity)}:/identity:ro", "-w", "/identity", "busybox", "wc", "-c", "./soul.md" ]
           ok("12 ./soul.md\n")
         else
           flunk "unexpected docker args: #{args.inspect}"

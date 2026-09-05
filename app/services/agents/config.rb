@@ -4,15 +4,23 @@ module Agents
     module_function
 
     def network
-      ENV.fetch("SOULSHOUSE_AGENTS_NETWORK", "helixkit_agents")
+      if LocalInstance.current.namespace
+        "#{LocalInstance.current.namespace}-agents"
+      else
+        ENV.fetch("SOULSHOUSE_AGENTS_NETWORK", "helixkit_agents")
+      end
     end
 
     def default_image
-      ENV.fetch("SOULSHOUSE_AGENT_IMAGE_DEFAULT", default_image_fallback)
+      if local_development? && !LocalInstance.current.number.zero?
+        LocalInstance.current.image
+      else
+        ENV.fetch("SOULSHOUSE_AGENT_IMAGE_DEFAULT", default_image_fallback)
+      end
     end
 
     def default_image_fallback
-      local_development? ? "helixkit-agent-runtime:local" : "helixkit-agent-runtime:latest"
+      local_development? ? LocalInstance.current.image : "helixkit-agent-runtime:latest"
     end
 
     def internal_url
@@ -22,6 +30,7 @@ module Agents
     end
 
     def local_development_port
+      return LocalInstance.current.port(:backend).to_s if Rails.env.test?
       ENV.fetch("SOULSHOUSE_DEV_WEB_PORT") { ENV.fetch("PORT", "3100") }
     end
 
@@ -36,6 +45,7 @@ module Agents
     end
 
     def backups_enabled?
+      return false if LocalInstance.current.namespace
       ActiveModel::Type::Boolean.new.cast(ENV.fetch("SOULSHOUSE_AGENT_BACKUPS_ENABLED", !local_development?))
     end
 

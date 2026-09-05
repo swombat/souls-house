@@ -6,6 +6,9 @@ module DbBackupHelpers
   module_function
 
   def ensure_not_production!
+    if LocalInstance.current.namespace
+      abort "Backup data import is disabled for secondary/test instances; use fresh instance setup."
+    end
     if Rails.env.production?
       abort "ERROR: This task cannot be run in the production environment!"
     end
@@ -266,6 +269,7 @@ namespace :db_backup do
   end
 
   task ensure_agent_restore_ready: :environment do
+    DbBackupHelpers.ensure_not_production!
     Backup::AgentResticRestore.ensure_docker_available! if Rails.env.development?
   end
 

@@ -148,11 +148,11 @@ test.describe('browser contracts', () => {
 
     await expect(page.locator('nav').getByRole('link', { name: 'Documentation', exact: true })).toBeHidden();
     await expect(page.locator('nav').getByRole('link', { name: 'About', exact: true })).toBeHidden();
-    const agentsLink = page.locator('nav').getByRole('link', { name: 'Agents', exact: true });
+    const agentsLink = page.locator('nav').getByRole('link', { name: 'Residents', exact: true });
     await expect(agentsLink).toHaveAttribute('href', new RegExp(`/accounts/${switchedAccountId}/agents$`));
     await agentsLink.click();
     await expect(page).toHaveURL(`/accounts/${switchedAccountId}/agents`);
-    await expect(page.getByRole('heading', { name: 'Agents' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Residents' })).toBeVisible();
 
     await accountMenu.click();
     const whiteboardsItem = page.getByRole('menuitem', { name: 'Whiteboards' });
@@ -292,7 +292,7 @@ test.describe('browser contracts', () => {
   test('agent settings can be edited and saved', async ({ page, request }) => {
     await login(page, setup.primary_user, setup.password);
     await page.goto(setup.agents[0].edit_url);
-    await expect(page.getByRole('heading', { name: 'Edit Agent' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Edit Resident' })).toBeVisible();
 
     await page.getByLabel('Display name').fill('E2E Refactor Sentinel');
     await page.getByRole('button', { name: 'Integrations' }).click();
@@ -312,10 +312,10 @@ test.describe('browser contracts', () => {
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
     await page.getByLabel('Heartbeat wakes per day').fill('4');
     await page.locator('label[for="paused"]').click();
-    await page.getByRole('button', { name: 'Update Agent' }).click();
+    await page.getByRole('button', { name: 'Update Resident' }).click();
 
     await expect(page).toHaveURL(/\/accounts\/[^/]+\/agents$/);
-    await expect(page.getByText(/Agent updated/).first()).toBeVisible();
+    await expect(page.getByText(/Resident updated/).first()).toBeVisible();
 
     const state = await getRunState(request, setup.run_id);
     expect(state.agents).toContainEqual(
@@ -329,21 +329,30 @@ test.describe('browser contracts', () => {
 
   test('account AI API keys can be configured without exposing saved values', async ({ page }) => {
     await login(page, setup.primary_user, setup.password);
-    await page.goto(`/accounts/${setup.account_id}/edit`);
+    await page.goto(`/accounts/${setup.account_id}/agent_api_keys`);
 
-    const openRouterKey = page.getByLabel('OpenRouter');
+    const openRouterKey = page.getByLabel('OpenRouter API key', { exact: true });
     await expect(openRouterKey).toHaveAttribute('type', 'password');
     await openRouterKey.fill('e2e-openrouter-secret');
     await expect(page.getByText('Shared AI keys are available as a fallback')).toBeHidden();
 
-    await page.getByRole('button', { name: 'Save Changes' }).click();
-    await expect(page).toHaveURL(/\/accounts\/[^/]+$/);
-
-    await page.goto(`/accounts/${setup.account_id}/edit`);
+    await Promise.all([
+      page.waitForResponse(
+        (response) => response.url().endsWith('/agent_api_keys') && response.request().method() === 'PUT'
+      ),
+      page.getByRole('button', { name: 'Save Resident API Keys' }).click(),
+    ]);
     await expect(page.getByText('Set', { exact: true })).toBeVisible();
-    await expect(page.getByText('Not set', { exact: true })).toHaveCount(5);
-    await expect(page.getByLabel('OpenRouter')).toHaveValue('');
-    await expect(page.getByLabel('OpenRouter')).toHaveAttribute('placeholder', 'Enter a replacement key');
+    await expect(page).toHaveURL(/\/accounts\/[^/]+\/agent_api_keys$/);
+
+    await page.goto(`/accounts/${setup.account_id}/agent_api_keys`);
+    await expect(page.getByText('Set', { exact: true })).toBeVisible();
+    await expect(page.getByText('Not set', { exact: true })).toHaveCount(7);
+    await expect(page.getByLabel('OpenRouter API key', { exact: true })).toHaveValue('');
+    await expect(page.getByLabel('OpenRouter API key', { exact: true })).toHaveAttribute(
+      'placeholder',
+      'Enter a replacement key'
+    );
     await expect(page.locator('body')).not.toContainText('e2e-openrouter-secret');
   });
 });

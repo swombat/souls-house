@@ -21,6 +21,7 @@ module Agents
         end
 
         agent.uuid ||= SecureRandom.uuid_v7
+        Agents::Resources.new(agent).validate!
         agent.save! unless agent.persisted?
         outbound_api_key = ApiKey.generate_for(
           user,
@@ -33,7 +34,7 @@ module Agents
           outbound_api_token: outbound_api_key.raw_token,
           trigger_bearer_token: "tr_#{SecureRandom.hex(24)}",
           restic_password: SecureRandom.hex(32),
-          container_name: agent.container_name.presence || "hk-agent-#{agent.uuid}",
+          container_name: LocalInstance.current.namespace ? Agents::Resources.new(agent).container : (agent.container_name.presence || Agents::Resources.new(agent).container),
           sandbox_host: configuration.fetch(:sandbox_host),
           container_image: configuration.fetch(:container_image),
           endpoint_url: configuration.fetch(:publish_ports) ? agent.endpoint_url : nil,

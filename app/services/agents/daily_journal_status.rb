@@ -2,6 +2,7 @@ require "open3"
 
 module Agents
   class DailyJournalStatus
+
     JOURNAL_DIR = "/home/agent/identity/memory/daily-journals".freeze
 
     attr_reader :agent
@@ -45,8 +46,10 @@ module Agents
     private
 
     def docker_capture(*args)
+      Agents::Resources.new(agent).verify_existing!
       stdout, stderr, status = Open3.capture3("docker", *args)
       { stdout: stdout, stderr: stderr, ok: status.success? }
     end
+
   end
 end

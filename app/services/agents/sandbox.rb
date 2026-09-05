@@ -96,7 +96,7 @@ module Agents
         endpoint_url: agent.endpoint_url,
         configured_helixkit_app_url: safe_config_value(:internal_url),
         volume_name: agent.uuid.present? ? Agents::Volume.new(agent).volume_name : nil,
-        chaos_volume_name: agent.uuid.present? ? "chaos-home-#{agent.uuid}" : nil,
+        chaos_volume_name: agent.uuid.present? ? Agents::Resources.new(agent).volumes.fetch(:chaos) : nil,
         repo_volume_name: agent.uuid.present? ? repo_volume_name : nil,
         work_volume_name: agent.uuid.present? ? work_volume_name : nil,
         state_volume_name: agent.uuid.present? ? state_volume_name : nil,
@@ -165,12 +165,12 @@ module Agents
     end
 
     def stop!
-      system("docker", "stop", agent.container_name, out: File::NULL, err: File::NULL)
+      docker_system("stop", agent.container_name, out: File::NULL, err: File::NULL)
     end
 
     def start!
       update_restart_policy!
-      system("docker", "start", agent.container_name, out: File::NULL, err: File::NULL) || raise(SandboxError, "failed to start #{agent.container_name}")
+      docker_system("start", agent.container_name, out: File::NULL, err: File::NULL) || raise(SandboxError, "failed to start #{agent.container_name}")
     end
 
     def running?
@@ -197,6 +197,9 @@ module Agents
         destroy_repo_volume!
         destroy_work_volume!
         destroy_state_volume!
+        if LocalInstance.current.namespace
+          docker_system("volume", "rm", "-f", Agents::Resources.new(agent).volumes.fetch(:chaos), out: File::NULL, err: File::NULL)
+        end
       end
     end
 
@@ -210,7 +213,17 @@ module Agents
     private
 
 
+    def verify_resources!
+      Agents::Resources.new(agent).verify_existing!
+    end
+
+    def docker_system(*args, **options)
+      verify_resources!
+      system("docker", *args, **options)
+    end
+
     def docker_capture(*args)
+      verify_resources!
       stdout, stderr, status = Open3.capture3("docker", *args)
       { stdout: stdout, stderr: stderr, ok: status.success? }
     end
@@ -275,7 +288,7 @@ module Agents
     end
 
     def container_exists?
-      system("docker", "container", "inspect", agent.container_name, out: File::NULL, err: File::NULL)
+      docker_system("container", "inspect", agent.container_name, out: File::NULL, err: File::NULL)
     end
 
     def container_current?
@@ -295,49 +308,49 @@ module Agents
     end
 
     def remove_container!
-      system("docker", "rm", "-f", agent.container_name, out: File::NULL, err: File::NULL)
+      docker_system("rm", "-f", agent.container_name, out: File::NULL, err: File::NULL)
     end
 
     def repo_volume_name
-      "hk-agent-#{agent.uuid}-repo"
+      Agents::Resources.new(agent).volumes.fetch(:repo)
     end
 
     def ensure_repo_volume!
       return true if volume_exists?(repo_volume_name)
 
-      system("docker", "volume", "create", repo_volume_name, out: File::NULL, err: File::NULL) || raise(SandboxError, "failed to create docker volume #{repo_volume_name}")
+      docker_system("volume", "create", *Agents::Resources.new(agent).labels, repo_volume_name, out: File::NULL, err: File::NULL) || raise(SandboxError, "failed to create docker volume #{repo_volume_name}")
     end
 
     def destroy_repo_volume!
-      system("docker", "volume", "rm", "-f", repo_volume_name, out: File::NULL, err: File::NULL) if agent.uuid.present?
+      docker_system("volume", "rm", "-f", repo_volume_name, out: File::NULL, err: File::NULL) if agent.uuid.present?
     end
 
     def work_volume_name
-      "hk-agent-#{agent.uuid}-work"
+      Agents::Resources.new(agent).volumes.fetch(:work)
     end
 
     def ensure_work_volume!
       return true if volume_exists?(work_volume_name)
 
-      system("docker", "volume", "create", work_volume_name, out: File::NULL, err: File::NULL) || raise(SandboxError, "failed to create docker volume #{work_volume_name}")
+      docker_system("volume", "create", *Agents::Resources.new(agent).labels, work_volume_name, out: File::NULL, err: File::NULL) || raise(SandboxError, "failed to create docker volume #{work_volume_name}")
     end
 
     def destroy_work_volume!
-      system("docker", "volume", "rm", "-f", work_volume_name, out: File::NULL, err: File::NULL) if agent.uuid.present?
+      docker_system("volume", "rm", "-f", work_volume_name, out: File::NULL, err: File::NULL) if agent.uuid.present?
     end
 
     def state_volume_name
-      "hk-agent-#{agent.uuid}-state"
+      Agents::Resources.new(agent).volumes.fetch(:state)
     end
 
     def ensure_state_volume!
       return true if volume_exists?(state_volume_name)
 
-      system("docker", "volume", "create", state_volume_name, out: File::NULL, err: File::NULL) || raise(SandboxError, "failed to create docker volume #{state_volume_name}")
+      docker_system("volume", "create", *Agents::Resources.new(agent).labels, state_volume_name, out: File::NULL, err: File::NULL) || raise(SandboxError, "failed to create docker volume #{state_volume_name}")
     end
 
     def destroy_state_volume!
-      system("docker", "volume", "rm", "-f", state_volume_name, out: File::NULL, err: File::NULL) if agent.uuid.present?
+      docker_system("volume", "rm", "-f", state_volume_name, out: File::NULL, err: File::NULL) if agent.uuid.present?
     end
 
     def migrate_repo_volume_from_container!
@@ -362,6 +375,7 @@ module Agents
         "docker cp #{Shellwords.escape(source)} -",
         "docker run --rm -i -v #{Shellwords.escape(destination_mount)} busybox tar xf - -C #{Shellwords.escape(destination_path)}"
       ].join(" | ")
+      verify_resources!
       raise SandboxError, "failed to migrate #{source_path} into #{volume_name}" unless system(cmd, out: File::NULL, err: File::NULL)
     end
 
@@ -386,20 +400,26 @@ module Agents
     end
 
     def run_container!
+      verify_resources!
       ensure_repo_volume!
       ensure_work_volume!
       ensure_state_volume!
+      chaos_volume = Agents::Resources.new(agent).volumes.fetch(:chaos)
+      unless volume_exists?(chaos_volume)
+        docker_system("volume", "create", *Agents::Resources.new(agent).labels, chaos_volume) || raise(SandboxError, "failed to create Chaos home")
+      end
       service_manifest_file = build_service_manifest_file
       container_created = false
       args = [
         "docker", "create",
         "--name", agent.container_name,
+        *Agents::Resources.new(agent).labels,
         "--network", Agents::Config.network,
         "--restart", Agents::Config.restart_policy,
         "--memory", "#{agent.container_memory_mb}m",
         "--cpu-shares", agent.container_cpu_shares.to_s,
         "-v", "#{Agents::Volume.new(agent).volume_name}:/home/agent/identity",
-        "-v", "chaos-home-#{agent.uuid}:/home/agent/.chaos",
+        "-v", "#{Agents::Resources.new(agent).volumes.fetch(:chaos)}:/home/agent/.chaos",
         "-v", "#{repo_volume_name}:#{REPO_PATH}",
         "-v", "#{work_volume_name}:#{WORK_PATH}",
          "-v", "#{state_volume_name}:#{STATE_PATH}",
@@ -438,8 +458,8 @@ module Agents
     end
 
     def update_restart_policy!
-      system(
-        "docker", "update", "--restart", Agents::Config.restart_policy, agent.container_name,
+      docker_system(
+        "update", "--restart", Agents::Config.restart_policy, agent.container_name,
         out: File::NULL, err: File::NULL
       ) || raise(SandboxError, "failed to update restart policy for #{agent.container_name}")
     end
@@ -453,6 +473,7 @@ module Agents
     end
 
     def refresh_dev_endpoint!
+      verify_resources!
       stdout, stderr, status = Open3.capture3("docker", "port", agent.container_name, "4000/tcp")
       raise SandboxError, "docker port failed: #{stderr}" unless status.success?
 

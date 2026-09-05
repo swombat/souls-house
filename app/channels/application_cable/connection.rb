@@ -12,7 +12,7 @@ module ApplicationCable
     private
 
     def find_verified_user
-      session_id = cookies.signed[:session_id]
+      session_id = cookies.signed[LocalInstance.current.cookie(:session_id)]
       info "🔌 Session ID from cookie: #{session_id.inspect}"
 
       if session_id && (session = Session.find_by(id: session_id))

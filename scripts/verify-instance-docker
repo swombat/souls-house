@@ -1,0 +1,85 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Opt-in smoke test: synthetic busybox containers only, never a resident runtime.
+ENV["RAILS_ENV"] = "test"
+require_relative "../config/boot"
+require "active_support/core_ext/object/blank"
+require "open3"
+require "securerandom"
+require_relative "../app/services/agents/resources"
+require_relative "../app/services/agents/docker_local_guard"
+require_relative "../app/services/agents/sandbox"
+
+created = []
+original_instance = ENV["SOULSHOUSE_INSTANCE"]
+
+def docker!(*args)
+  stdout, stderr, status = Open3.capture3("docker", *args)
+  raise "Docker smoke test failed: #{stderr}" unless status.success?
+  stdout.strip
+end
+
+begin
+  Agents::DockerLocalGuard.check!
+  uuid = "isolation-smoke-#{SecureRandom.hex(10)}"
+  resources = [ 1, 2 ].map do |number|
+    config = LocalInstance::Configuration.new(root: LocalInstance::ROOT, env: { "SOULSHOUSE_INSTANCE" => number.to_s }, environment: "test")
+    agent = Struct.new(:uuid, :container_name).new(uuid, nil)
+    resource = Agents::Resources.new(agent, instance: config)
+    agent.container_name = resource.container
+    resource.verify_existing!
+    resource.volumes.each_value do |name|
+      docker!("volume", "create", *resource.labels, name)
+      created << [ "volume", name ]
+    end
+    network = "#{config.namespace}-#{uuid}"
+    docker!("network", "create", *resource.labels, network)
+    created << [ "network", network ]
+    docker!("create", "--name", resource.container, *resource.labels, "--network", network,
+      "-v", "#{resource.volumes.fetch(:state)}:/state", "busybox:1.37", "sh", "-c", "echo #{number} > /state/marker; sleep 120")
+    created << [ "container", resource.container ]
+    docker!("start", resource.container)
+    resource
+  end
+  resources.each do |resource|
+    resource.verify_existing!
+    actual = docker!("exec", resource.container, "cat", "/state/marker")
+    raise "Shared volume contents" unless actual == resource.instance.number.to_s
+  end
+
+  first, second = resources
+  first.agent.container_name = second.container
+  begin
+    first.verify_existing!
+    raise "Foreign container was accepted"
+  rescue Agents::Resources::OwnershipError
+    puts "PASS: foreign stored container rejected"
+  ensure
+    first.agent.container_name = first.container
+  end
+
+  # Exercise the application's actual stop path, not just Docker directly.
+  ENV["SOULSHOUSE_INSTANCE"] = "1"
+  Agents::Sandbox.new(first.agent).stop!
+  raise "Other instance was stopped" unless docker!("inspect", "--format", "{{.State.Running}}", second.container) == "true"
+  puts "PASS: stopping instance 1 leaves instance 2 running"
+
+  # This volume belongs to this smoke test and is not mounted by the container.
+  identity = first.volumes.fetch(:identity)
+  docker!("volume", "rm", identity)
+  docker!("volume", "create", "--label", "house.souls.checkout=foreign", identity)
+  begin
+    Agents::Sandbox.new(first.agent).stop!
+    raise "Foreign volume labels were accepted"
+  rescue Agents::Resources::OwnershipError
+    puts "PASS: foreign volume labels block application Docker operations"
+  end
+  puts "PASS: two containers, two networks and ten volumes were independent"
+ensure
+  ENV["SOULSHOUSE_INSTANCE"] = original_instance
+  created.reverse_each do |kind, name|
+    arguments = kind == "network" ? [ kind, "rm", name ] : [ kind, "rm", "-f", name ]
+    system("docker", *arguments, out: File::NULL, err: File::NULL)
+  end
+end

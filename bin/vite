@@ -8,6 +8,9 @@
 # this file is here to facilitate running it.
 #
 
+require_relative "../config/local_instance"
+LocalInstance.current.configure!
+
 ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
 
 bundle_binstub = File.expand_path("bundle", __dir__)

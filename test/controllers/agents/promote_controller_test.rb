@@ -23,7 +23,7 @@ class Agents::PromoteControllerTest < ActionDispatch::IntegrationTest
 
     assert_equal "migrating", @agent.runtime
     assert_predicate @agent.uuid, :present?
-    assert_equal "hk-agent-#{@agent.uuid}", @agent.container_name
+    assert_equal Agents::Resources.new(@agent).container, @agent.container_name
     assert_equal Agents::Config.sandbox_host, @agent.sandbox_host
     assert_equal Agents::Config.default_image, @agent.container_image
     assert_predicate @agent.trigger_bearer_token, :present?

@@ -181,11 +181,11 @@ module Agents
       assert_equal true, status[:container_configuration_current]
       assert_equal true, status[:image_stale]
       assert_equal true, status[:container_stale]
-      assert_equal "hk-agent-#{agent.uuid}-repo", status[:repo_volume_name]
+      assert_equal "#{Agents::Resources.new(agent).volumes.fetch(:repo)}", status[:repo_volume_name]
       assert_equal true, status[:repo_volume_exists]
-      assert_equal "hk-agent-#{agent.uuid}-work", status[:work_volume_name]
+      assert_equal "#{Agents::Resources.new(agent).volumes.fetch(:work)}", status[:work_volume_name]
       assert_equal true, status[:work_volume_exists]
-      assert_equal "hk-agent-#{agent.uuid}-state", status[:state_volume_name]
+      assert_equal "#{Agents::Resources.new(agent).volumes.fetch(:state)}", status[:state_volume_name]
       assert_equal true, status[:state_volume_exists]
     end
 
@@ -270,6 +270,8 @@ module Agents
       calls = []
       success = Struct.new(:success?).new(true)
 
+      sandbox.define_singleton_method(:verify_resources!) { true }
+      sandbox.define_singleton_method(:volume_exists?) { |_name| true }
       sandbox.define_singleton_method(:ensure_repo_volume!) { true }
       sandbox.define_singleton_method(:ensure_work_volume!) { true }
       sandbox.define_singleton_method(:ensure_state_volume!) { true }

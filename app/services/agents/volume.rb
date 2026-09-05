@@ -10,8 +10,9 @@ module Agents
     end
 
     def ensure!
+      Agents::Resources.new(agent).verify_existing!
       return true if system("docker", "volume", "inspect", volume_name, out: File::NULL, err: File::NULL)
-      system("docker", "volume", "create", volume_name) || raise(SeedError, "failed to create docker volume #{volume_name}")
+      system("docker", "volume", "create", *Agents::Resources.new(agent).labels, volume_name) || raise(SeedError, "failed to create docker volume #{volume_name}")
     end
 
     def seed_from_exporter!
@@ -30,6 +31,7 @@ module Agents
     end
 
     def empty?
+      Agents::Resources.new(agent).verify_existing!
       cmd = [
         "docker", "run", "--rm", "-v", "#{volume_name}:/identity:ro", "busybox", "sh", "-c",
         "test -z \"$(find /identity -mindepth 1 -print -quit)\""
@@ -42,11 +44,12 @@ module Agents
     end
 
     def destroy!
+      Agents::Resources.new(agent).verify_existing!
       system("docker", "volume", "rm", "-f", volume_name)
     end
 
     def volume_name
-      "hk-agent-#{agent.uuid}-identity"
+      Agents::Resources.new(agent).volumes.fetch(:identity)
     end
 
   end

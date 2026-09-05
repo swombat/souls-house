@@ -1,0 +1,30 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../config/local_instance"
+require "open3"
+
+begin
+  config = LocalInstance.current
+  abort "Local builds require development mode" unless config.environment == "development"
+  config.configure!
+  # Require a local socket even if the shell's Docker context is remote.
+  stdout, _stderr, status = Open3.capture3("docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}")
+  host = ENV["DOCKER_CONTEXT"] ? stdout.strip : ENV.fetch("DOCKER_HOST", stdout.strip)
+  abort "Local runtime builds require a Unix-socket Docker endpoint" unless status.success? && host.start_with?("unix://")
+  unless ARGV.empty?
+    abort "Usage: scripts/build-local-agent-runtime [--from existing-local-image]" unless ARGV.shift == "--from" && ARGV.length == 1
+    source = ARGV.shift
+    image_id, _, status = Open3.capture3("docker", "image", "inspect", "--format", "{{.Id}}", source)
+    abort "Source image is not present locally" unless status.success? && image_id.strip.match?(/\Asha256:[0-9a-f]{64}\z/)
+    puts "Snapshotting local image #{source} to independent tag #{config.image}"
+    exec "docker", "image", "tag", image_id.strip, config.image
+  end
+  stdout, _stderr, status = Open3.capture3("git", "ls-remote", "https://github.com/seuros/chaos.git", "refs/heads/master")
+  ref = stdout.split.first
+  abort "Cannot resolve Chaos master" unless status.success? && ref&.match?(/\A[0-9a-f]{40}\z/)
+  puts "Building only #{config.image} on the local Docker daemon (no latest/deployment tags)"
+  exec "docker", "build", "--build-arg", "CHAOS_HEAD=#{ref}", "-t", config.image, File.join(config.root, "agent-runtime")
+rescue LocalInstance::Error => error
+  abort error.message
+end

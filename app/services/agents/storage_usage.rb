@@ -49,7 +49,7 @@ module Agents
         missing_volumes: (names.keys - existing.keys).map(&:to_s),
         measured_at: Time.current.iso8601, checked_at: Time.current.iso8601
       }
-    rescue MeasurementError, Timeout::Error, SystemCallError, KeyError
+    rescue Agents::Resources::OwnershipError, MeasurementError, Timeout::Error, SystemCallError, KeyError
       # Preserve the last reading, but never present it as a successful refresh.
       @agent.storage_usage.merge("status" => "unavailable", "checked_at" => Time.current.iso8601)
     ensure
@@ -67,6 +67,7 @@ module Agents
     end
 
     def capture(*args)
+      Agents::Resources.new(@agent).verify_existing!
       Open3.popen3("docker", *args, pgroup: true) do |stdin, stdout, stderr, process|
         stdin.close
         output = Thread.new { stdout.read }

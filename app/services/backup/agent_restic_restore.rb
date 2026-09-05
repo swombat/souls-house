@@ -4,6 +4,9 @@ module Backup
     class RestoreError < StandardError; end
 
     def self.restore_all!
+      if LocalInstance.current.namespace
+        raise RestoreError, "Shared agent restore is disabled for secondary/test instances"
+      end
       ensure_docker_available!
       Backup::LocalAgentRuntimeImage.ensure_current! if Rails.env.development?
 
@@ -25,6 +28,10 @@ module Backup
     end
 
     def restore!
+      if LocalInstance.current.namespace
+        raise RestoreError, "Restoring shared agent data into secondary/test instances is not supported"
+      end
+      Agents::Resources.new(agent).verify_existing!
       snapshot = agent.agent_backup_snapshots.where(ok: true).order(taken_at: :desc).first
       raise RestoreError, "No successful agent backup is recorded for #{agent.name}" unless snapshot
 

@@ -11,7 +11,9 @@ module Agents
       ENV.delete("SOULSHOUSE_DEV_WEB_PORT")
       ENV["PORT"] = "3200"
 
-      assert_equal "http://host.docker.internal:3200", Agents::Config.internal_url
+      Rails.stub(:env, ActiveSupport::StringInquirer.new("development")) do
+        assert_equal "http://host.docker.internal:3200", Agents::Config.internal_url
+      end
     ensure
       ENV["SOULSHOUSE_AGENT_INTERNAL_URL"] = old_internal_url
       ENV["SOULSHOUSE_DEV_WEB_PORT"] = old_dev_web_port
@@ -26,11 +28,17 @@ module Agents
       ENV["SOULSHOUSE_DEV_WEB_PORT"] = "3100"
       ENV["PORT"] = "3300"
 
-      assert_equal "http://host.docker.internal:3100", Agents::Config.internal_url
+      Rails.stub(:env, ActiveSupport::StringInquirer.new("development")) do
+        assert_equal "http://host.docker.internal:3100", Agents::Config.internal_url
+      end
     ensure
       ENV["SOULSHOUSE_AGENT_INTERNAL_URL"] = old_internal_url
       ENV["SOULSHOUSE_DEV_WEB_PORT"] = old_dev_web_port
       ENV["PORT"] = old_port
+    end
+
+    test "test callbacks return to the test backend rather than the development server" do
+      assert_equal LocalInstance.current.port(:backend).to_s, Agents::Config.local_development_port
     end
 
     test "cold starts can be configured per development instance" do

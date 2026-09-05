@@ -1,4 +1,10 @@
 #!/usr/bin/env ruby
+# Route ordinary Rails test invocations through the same lock as Playwright.
+if ARGV.first&.match?(/\Atest(?::|$)/) && ENV["SOULSHOUSE_TEST_LOCKED"] != "1"
+  exec({ "RAILS_ENV" => "test" }, File.expand_path("instance", __dir__), "exec", "test", "--",
+    "env", "SOULSHOUSE_TEST_LOCKED=1", File.expand_path(__FILE__), *ARGV)
+end
+
 APP_PATH = File.expand_path("../config/application", __dir__)
 require_relative "../config/boot"
 require "rails/commands"

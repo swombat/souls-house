@@ -1,7 +1,11 @@
 # Multi-Instance Local Development
 
-**Status:** investigation notes — defer implementation until the internal
-souls.house rebrand has progressed further
+**Status:** implemented and verified — 2026-09-05. See the operational guide for
+verification results and the remaining application-level browser stress failure.
+The original investigation below is retained as design history. The operational
+contract and current names are in [the development guide](../multi-instance-development.md).
+Key revisions: bounded IDs, fail-closed claims, browser/WebSocket cookie isolation,
+Docker ownership labels, and no dependency on completing the internal rebrand.
 
 **Date:** 2026-08-10
 
