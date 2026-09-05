@@ -6,6 +6,8 @@ class Mnemodyne::EraseVaultsJob < ApplicationJob
     rescue Mnemodyne::Erasure::Invalid
       # Fail closed on a changed graph; no graph payload goes to the job log.
       Rails.logger.warn("Mnemodyne erasure held: graph changed after export acknowledgement")
+    rescue StandardError => error
+      Rails.logger.error("Mnemodyne erasure failed: #{error.class.name}")
     end
   end
 

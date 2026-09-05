@@ -9,7 +9,8 @@ class Mnemodyne::DecayJob < ApplicationJob
         rate = vault.decay_rate
         vault.nodes.active.find_each do |node|
           next if node.decay_exempt?
-          node.update!(charge: [ node.charge - rate, 0.0 ].max)
+          # Decay never raises an intentionally low charge to the floor.
+          node.update!(charge: [ [ node.charge - vault.charge_decay_rate, vault.charge_decay_floor ].max, node.charge ].min)
         end
         vault.edges.update_all([ "weight = GREATEST(weight - ?, 0)", rate ])
         vault.uses.where("expires_at < ?", 1.day.ago).delete_all

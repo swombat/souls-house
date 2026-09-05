@@ -53,11 +53,6 @@ RUN test -n "${CHAOS_HEAD}" \
     && git apply /tmp/chaos-antigravity-daily-cloudcode-egress.patch
 
 WORKDIR /build/chaos
-COPY patches/chaos-linux-sandbox-log-denials.patch /tmp/chaos-linux-sandbox-log-denials.patch
-# Upstream 131b7275 declares this CLI field only on macOS, but destructures it
-# unconditionally. Align the binding; do not change sandbox enforcement.
-RUN git apply --check /tmp/chaos-linux-sandbox-log-denials.patch \
-    && git apply /tmp/chaos-linux-sandbox-log-denials.patch
 RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
     && cp target/release/chaos /usr/local/bin/chaos \
     && /usr/local/bin/chaos --version
@@ -180,6 +175,8 @@ COPY docs/soulshouse-api.md /usr/local/share/helixkit-agent/soulshouse-api.md
 COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md
 COPY licenses/CodexBar-LICENSE /usr/local/share/licenses/CodexBar/LICENSE
 COPY stop_journal_reflex.py /usr/local/share/helixkit-agent/stop_journal_reflex.py
+COPY memory_before_turn.py install_memory_hooks.py /usr/local/share/helixkit-agent/
+COPY docs/memory-guide.md /usr/local/share/helixkit-agent/memory-guide.md
 COPY soulshouse-post-message /usr/local/bin/soulshouse-post-message
 COPY soulshouse-send-telegram /usr/local/bin/soulshouse-send-telegram
 COPY soulshouse-append-journal /usr/local/bin/soulshouse-append-journal

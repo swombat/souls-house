@@ -30,6 +30,8 @@ if ENV["MNEMODYNE_LOCAL_SMOKE"] == "1"
       @agent.update!(outbound_api_key: key, outbound_api_token: key.raw_token)
       @resources.verify_existing!
       start_embeddings
+      vectors = 3.times.map { Thread.new { Mnemodyne::Embeddings.embed("Synthetic simultaneous probe") } }.map(&:value)
+      assert vectors.all? { |vector| vector.length == 384 }
       probe = Net::HTTP::Post.new(URI(ENV.fetch("MNEMODYNE_EMBEDDING_URL")), "Content-Type" => "application/json")
       probe.body = { input: "Synthetic authorization probe", model: ENV.fetch("MNEMODYNE_EMBEDDING_PROFILE") }.to_json
       uri = URI(ENV.fetch("MNEMODYNE_EMBEDDING_URL"))
@@ -45,7 +47,10 @@ if ENV["MNEMODYNE_LOCAL_SMOKE"] == "1"
       start_runtime
 
       assert cli("status")["enabled"] == false
-      cli("enable")
+      docker!("exec", "--user", "1000", "-i", @resources.container, "python3",
+        "/usr/local/share/helixkit-agent/memory_before_turn.py",
+        input: { input_messages: [ { content: "Synthetic first hosted turn" } ] }.to_json)
+      assert cli("status")["enabled"], "The lifecycle hook must provision without a manual enable command"
       dog = cli("--key", "dog", "remember", input: {
         node_type: "memory", content: "The dog played fetch with a tennis ball in the park.",
         source_uris: [ "identity://journal.md" ], disclosure: "automatic"
@@ -54,7 +59,7 @@ if ENV["MNEMODYNE_LOCAL_SMOKE"] == "1"
         node_type: "memory", content: "I baked sourdough bread in the kitchen.", disclosure: "automatic"
       }.to_json).fetch("node")
       need = cli("--key", "need", "remember", input: {
-        node_type: "need", content: "Play", disclosure: "automatic", metadata: { baseline_activation: 0.8 }
+        node_type: "need", content: "Play", metadata: { baseline_activation: 0.8 }
       }.to_json).fetch("node")
       cli("--key", "connect", "connect", input: {
         source_id: dog["id"], target_id: need["id"], edge_type: "surfaced_need", weight: 0.9
@@ -102,15 +107,44 @@ if ENV["MNEMODYNE_LOCAL_SMOKE"] == "1"
       docker!("exec", @resources.container, "python3", "-c",
         "from pathlib import Path; Path('/home/agent/identity/journal.md').write_text('Changed after backup')")
       @vault.nodes.find(dog["id"]).update!(content: "Changed after backup")
-      Backup::AgentResticRestore.new(@agent).restore!(wake: false)
+      # Real spawn/entrypoint/health path, with no provider keys or model call.
+      @agent.account.update!(use_system_ai_credentials: false,
+        **Account::AI_PROVIDERS.keys.to_h { |provider| [ "#{provider}_api_key", nil ] })
+      assert_empty @agent.account.ai_provider_keys
+      Agents::Config.stub(:internal_url, "http://host.docker.internal:#{@port}") do
+        Agents::Config.stub(:default_image, @agent.container_image) do
+          result = Backup::AgentResticRestore.new(@agent).restore!(wake: true)
+          assert result[:awake]
+        end
+      end
       assert_nil ApiKey.authenticate(old_token)
       assert_not_equal old_token, @agent.reload.outbound_api_token
       assert_equal dog["content"], @vault.nodes.find(dog["id"]).content
       assert_not @vault.reload.suspended_at?
-      start_runtime(write_source: false)
       assert_includes docker!("exec", @resources.container, "cat", "/home/agent/identity/journal.md"), "Synthetic original"
-      assert_empty docker!("exec", @resources.container, "find", "/home/agent/state", "-type", "f").strip
+      assert_equal @agent.outbound_api_token,
+        docker!("exec", @resources.container, "printenv", "SOULSHOUSE_BEARER_TOKEN").strip
       assert cli("status")["enabled"]
+      hooks = JSON.parse(docker!("exec", @resources.container, "cat", "/home/agent/repo/.chaos/hooks.json"))
+      assert_equal 1, hooks.fetch("hooks").fetch("BeforeTurn").length
+      assert_equal 1, hooks.fetch("hooks").fetch("Stop").length
+      @vault.nodes.reset
+      @vault.nodes.each { |node| Mnemodyne::EmbedNodeJob.perform_now(@vault.id, node.id) }
+      before_turn = docker!("exec", "--user", "1000", "-i", @resources.container, "python3",
+        "/home/agent/identity/automation/memory_before_turn.py",
+        input: { input_messages: [ { content: "A puppy chasing a ball outside" } ] }.to_json)
+      assert_includes JSON.parse(before_turn).dig("hookSpecificOutput", "additionalContext"), "fallible memory"
+      assert_includes cli_raw("guide"), "Your memory, with handles"
+      stop = <<~PY
+        import json, subprocess
+        result = subprocess.run(["python3", "/home/agent/identity/automation/stop_journal_reflex.py"],
+            input=json.dumps({"last_assistant_message": "Synthetic completed turn"}), capture_output=True, text=True)
+        assert result.returncode == 2
+        assert "house-memory remember" in result.stderr and "house-memory connect" in result.stderr
+        assert "no shape" in result.stderr
+        print("Automatic formation reflex present")
+      PY
+      assert_includes docker!("exec", "--user", "1000", @resources.container, "python3", "-c", stop), "Automatic formation reflex present"
 
       cli_raw("export", "--output", "/home/agent/work/export.json")
       exported_mode = docker!("exec", @resources.container, "stat", "-c", "%a", "/home/agent/work/export.json")
@@ -123,9 +157,10 @@ if ENV["MNEMODYNE_LOCAL_SMOKE"] == "1"
       travel 8.days do
         Mnemodyne::EraseVaultsJob.perform_now
         assert_not cli("status")["enabled"]
-        assert_raises(Backup::AgentResticRestore::RestoreError) do
+        error = assert_raises(Backup::AgentResticRestore::RestoreError) do
           Backup::AgentResticRestore.new(@agent.reload).restore!(wake: false)
         end
+        assert_includes error.message, "predates deliberate memory erasure"
       end
       puts "PASS: real CPU inference, HTTP API/image CLI, nonmutating recall, commit-on-open, runtime preview, encrypted paired restore, rotated credentials and erasure"
     ensure

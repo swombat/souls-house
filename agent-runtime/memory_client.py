@@ -62,14 +62,19 @@ class Client:
             raise
         except Exception as error:
             code = getattr(error, "code", None)
-            raise MemoryError(f"Memory API unavailable{f' (HTTP {code})' if code else ''}") from None
+            failure = MemoryError(f"Memory API unavailable{f' (HTTP {code})' if code else ''}")
+            failure.code = code
+            failure.failure_class = "timeout" if isinstance(error, TimeoutError) else "unavailable"
+            raise failure from None
 
-    def recall(self, query=None, seeds=None, automatic=False):
+    def recall(self, query=None, seeds=None, automatic=False, activations=None):
         payload = {"automatic": automatic, "limit": 5}
         if query:
             payload["query"] = query[:2000]
         if seeds:
             payload["seed_node_ids"] = seeds
+        if activations:
+            payload["node_activations"] = activations
         result = self.request("POST", "recalls", payload)
         if result.get("results"):
             self.store_receipt(result)
@@ -186,11 +191,19 @@ def preview_notice(envelope):
         return ""
     query = envelope.get("query")
     if not isinstance(query, str) or not query.strip():
+        print("mnemodyne_preview=empty", file=sys.stderr)
         return ""
     try:
-        result = Client(timeout=2).recall(query=query, automatic=True)
+        # Automatic lifecycle setup never resurrects a deliberately erased vault.
+        client = Client(timeout=2)
+        status = client.request("POST", "vault", {"automatic_lifecycle": True})
+        if not status.get("enabled") or status.get("suspended") or status.get("erase_after"):
+            print("mnemodyne_preview=held", file=sys.stderr)
+            return ""
+        result = client.recall(query=query, automatic=True)
         rows = result.get("results", [])[:5]
         if not rows:
+            print("mnemodyne_preview=empty", file=sys.stderr)
             return ""
         recall_id = checked_uuid(result["recall_id"])
         lines = ["## Recalled memory candidates — not current chat transcript",
@@ -203,8 +216,15 @@ def preview_notice(envelope):
             lines.append(json.dumps(item, ensure_ascii=False))
         lines.append(f"Inspect/use: house-memory open {recall_id} NODE_ID; house-memory use {recall_id} NODE_ID")
         rendered = "\n".join(lines)
-        return rendered if len(rendered.encode()) <= 12_000 else ""
-    except Exception:
+        if len(rendered.encode()) > 12_000:
+            print("mnemodyne_preview=unavailable", file=sys.stderr)
+            return ""
+        print("mnemodyne_preview=ok", file=sys.stderr)
+        return rendered
+    except Exception as error:
+        code = getattr(error, "code", None)
+        status = f"http_{code}" if isinstance(code, int) else getattr(error, "failure_class", "unavailable")
+        print(f"mnemodyne_preview={status}", file=sys.stderr)
         return ""
 
 
@@ -212,7 +232,7 @@ def main():
     parser = argparse.ArgumentParser(description="This resident's private Mnemodyne graph")
     parser.add_argument("--key", help="stable idempotency key for a write; reuse on retry")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("status", "enable", "remember", "connect", "cancel-erasure"):
+    for name in ("status", "enable", "remember", "connect", "cancel-erasure", "guide"):
         commands.add_parser(name)
     export = commands.add_parser("export")
     export.add_argument("--output", help="create a new private export file (0600)")
@@ -232,6 +252,7 @@ def main():
     recall = commands.add_parser("recall")
     recall.add_argument("query", nargs="?")
     recall.add_argument("--seed", action="append", default=[])
+    recall.add_argument("--activate", action="append", default=[], metavar="NODE_UUID=VALUE")
     recall.add_argument("--commit", action="store_true")
     for name in ("open", "use"):
         command = commands.add_parser(name)
@@ -241,8 +262,14 @@ def main():
             command.add_argument("--source-index", type=int, default=0)
     args = parser.parse_args()
     try:
-        client = Client()
         command = args.command
+        if command == "guide":
+            path = Path(os.environ.get("AGENT_RUNTIME_DOCS_PATH", "/usr/local/share/helixkit-agent")) / "memory-guide.md"
+            if not path.exists():
+                path = Path(__file__).with_name("docs") / "memory-guide.md"
+            print(path.read_text())
+            return 0
+        client = Client()
         key = args.key or str(uuid.uuid4())
         if command in ("remember", "connect", "update", "delete", "dormant", "revive"):
             print(f"Idempotency key: {key} (reuse --key on retry)", file=sys.stderr)
@@ -295,7 +322,16 @@ def main():
         elif command == "cancel-erasure":
             result = client.request("DELETE", "vault/erasure")
         elif command == "recall":
-            result = client.recall(query=args.query, seeds=[checked_uuid(node) for node in args.seed])
+            activations = {}
+            if len(args.activate) > 50:
+                raise MemoryError("At most 50 working activations are permitted")
+            for activation in args.activate:
+                node, value = activation.split("=", 1)
+                value = float(value)
+                if not 0 <= value <= 1:
+                    raise MemoryError("Working activations must be in [0, 1]")
+                activations[checked_uuid(node)] = value
+            result = client.recall(query=args.query, seeds=[checked_uuid(node) for node in args.seed], activations=activations)
             if args.commit:
                 for node in result.get("results", []):
                     client.use(result["recall_id"], node["id"], "explicit_recall")
@@ -323,6 +359,6 @@ if __name__ == "__main__":
         try:
             print(preview_notice(json.loads(sys.stdin.read(65_536))))
         except Exception:
-            pass
+            print("mnemodyne_preview=unavailable", file=sys.stderr)
     else:
         raise SystemExit(main())

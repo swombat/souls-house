@@ -26,6 +26,7 @@ class HouseMemoryTest < ActiveSupport::TestCase
       calls = []
       class Fake:
           def __init__(self, **kw): pass
+          def request(self, *args): return {"enabled": True}
           def recall(self, **kw):
               calls.append(kw)
               return {"recall_id": "11111111-1111-4111-8111-111111111111", "results": [

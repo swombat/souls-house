@@ -76,8 +76,8 @@ class ExternalAgentResponseRequest
   end
 
   def memory_trigger_payload
-    vault = agent.memory_vault
-    return {} unless agent.externally_hosted? && vault&.auto_preview_enabled? && !vault.suspended_at? && !vault.erasure_requested_at?
+    vault = Mnemodyne::Provision.call(agent)
+    return {} unless vault && !vault.suspended_at? && !vault.erasure_requested_at?
     message = full_window_messages.reverse.find { |item| item.role.in?(%w[user assistant]) && item.content.present? }
     return {} unless message
     { memory: { enabled: true, query: message.content.to_s.first(2_000) } }

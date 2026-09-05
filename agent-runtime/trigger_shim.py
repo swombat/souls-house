@@ -275,13 +275,13 @@ def trigger():
                 session_lock=session_lock, roll_session=roll_session,
                 runtime_session_generation=runtime_session_generation,
                 subscription_snapshot=subscription_snapshot,
-                **({"memory_notice": memory_notice} if memory_notice else {}),
+                **({"memory_notice": memory_notice} if memory_notice or isinstance(memory_notice, GraphMemoryNotice) else {}),
             )
         return legacy_trigger(
             session_id, prompt, model, timeout_secs,
             provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
             subscription_snapshot=subscription_snapshot,
-            **({"memory_notice": memory_notice} if memory_notice else {}),
+            **({"memory_notice": memory_notice} if memory_notice or isinstance(memory_notice, GraphMemoryNotice) else {}),
         )
     finally:
         session_lock.release()
@@ -440,9 +440,9 @@ def persistent_trigger(
                     {
                         "request": _byte_length(request_delta or prompt),
                         "runtime_notice": _byte_length(subscription_notice),
+                        "graph_memory": _byte_length(memory_notice),
+                        "graph_memory_status": getattr(memory_notice, "status", "ok" if memory_notice else "not_attempted"),
                     }
-                    if subscription_notice
-                    else None
                 ),
             )
             try:
@@ -1359,6 +1359,12 @@ def build_prompt(request_text: str) -> str:
     return prompt
 
 
+class GraphMemoryNotice(str):
+    def __new__(cls, text, status):
+        instance = super().__new__(cls, text)
+        instance.status = status
+        return instance
+
 def graph_memory_notice(envelope):
     if not isinstance(envelope, dict) or envelope.get("enabled") is not True:
         return ""
@@ -1370,9 +1376,16 @@ def graph_memory_notice(envelope):
             input=json.dumps(envelope), capture_output=True, text=True, timeout=2.5,
         )
         output = result.stdout.strip()
-        return output if result.returncode == 0 and len(output.encode()) <= 12_000 else ""
-    except Exception:
-        return ""
+        # Only forward a fixed vocabulary, never utility stderr or payloads.
+        match = re.search(r"mnemodyne_preview=(ok|empty|held|timeout|unavailable|http_[0-9]{3})\b", getattr(result, "stderr", "") or "")
+        status = match.group(1) if match else ("empty" if result.returncode == 0 else "unavailable")
+        if result.returncode != 0 or len(output.encode()) > 12_000:
+            status, output = "unavailable", ""
+        print(f"mnemodyne_preview={status}", file=sys.stderr)
+        return GraphMemoryNotice(output, status)
+    except Exception as error:
+        print("mnemodyne_preview=timeout" if isinstance(error, subprocess.TimeoutExpired) else "mnemodyne_preview=unavailable", file=sys.stderr)
+        return GraphMemoryNotice("", "timeout" if isinstance(error, subprocess.TimeoutExpired) else "unavailable")
 
 
 def build_prompt_with_components(request_text, runtime_notice=None, memory_notice=None):
@@ -1387,16 +1400,18 @@ def build_prompt_with_components(request_text, runtime_notice=None, memory_notic
         "runtime_notice": _byte_length(runtime_notice),
         "journal": _byte_length(journals),
         **({"graph_memory": _byte_length(memory_notice)} if memory_notice else {}),
+        "graph_memory_status": getattr(memory_notice, "status", "ok" if memory_notice else "not_attempted"),
     }
 
 
 def prompt_telemetry(full_prompt, delta_prompt, selected_prompt, mode, components):
     return {
+        "graph_memory_status": (components or {}).get("graph_memory_status", "not_attempted"),
         "mode": mode,
         "full_prompt_bytes": _byte_length(full_prompt),
         "delta_prompt_bytes": _byte_length(delta_prompt),
         "selected_prompt_bytes": _byte_length(selected_prompt),
-        "components": components or {},
+        "components": {key: value for key, value in (components or {}).items() if key != "graph_memory_status"},
     }
 
 

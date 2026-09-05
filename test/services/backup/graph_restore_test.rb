@@ -15,11 +15,14 @@ class Backup::GraphRestoreTest < ActiveSupport::TestCase
     @restore = Backup::AgentResticRestore.new(@agent)
   end
 
-  test "unpaired backup is refused before any destructive work" do
+  test "unpaired backup restores files but holds nonempty memory and never wakes" do
     @snapshot.update!(graph_checkpoint_digest: nil)
     with_fake_runtime do |events|
-      assert_raises(Backup::AgentResticRestore::RestoreError) { @restore.restore! }
-      assert_empty events
+      result = @restore.restore!
+      assert result[:memory_mismatch]
+      assert_equal %i[remove volumes restore configure], events
+      assert @vault.reload.suspended_at?
+      assert_equal "Synthetic restore handle", @vault.nodes.first.content
     end
   end
 
@@ -31,6 +34,46 @@ class Backup::GraphRestoreTest < ActiveSupport::TestCase
       assert_empty events
       assert @vault.reload.suspended_at?
     end
+  end
+
+  test "an empty newly enabled vault does not block file recovery or wake" do
+    @vault.nodes.first.destroy!
+    @snapshot.update!(graph_checkpoint_digest: nil)
+    with_fake_runtime do |events|
+      result = @restore.restore!
+      assert result[:awake]
+      assert_not result[:memory_mismatch]
+      assert_equal %i[remove volumes restore configure wake], events
+      assert_not @vault.reload.suspended_at?
+      assert_empty @vault.nodes
+    end
+  end
+
+  test "fleet recovery collects failures and still restores the next resident" do
+    peer = agents(:code_reviewer)
+    peer.update_columns(runtime: "external", uuid: SecureRandom.uuid)
+    attempted = []
+    builder = lambda do |resident|
+      fake = Object.new
+      fake.define_singleton_method(:restore!) do
+        attempted << resident.id
+        raise Backup::AgentResticRestore::RestoreError if resident.id == @failed_id
+        { restored: true }
+      end
+      fake.instance_variable_set(:@failed_id, @agent.id)
+      fake
+    end
+    LocalInstance.stub(:current, Struct.new(:namespace).new(nil)) do
+      Backup::AgentResticRestore.stub(:ensure_docker_available!, true) do
+        Backup::AgentResticRestore.stub(:new, builder) do
+          results = Backup::AgentResticRestore.restore_all!
+          assert_equal false, results.fetch(@agent.id)[:restored]
+          assert results.fetch(peer.id)[:restored]
+        end
+      end
+    end
+    assert_includes attempted, peer.id
+    assert_includes attempted, @agent.id
   end
 
   test "valid graph imports before wake and invalidates old receipts" do
@@ -50,6 +93,7 @@ class Backup::GraphRestoreTest < ActiveSupport::TestCase
     sandbox = Agents::Sandbox.new(@agent)
     assert_raises(Agents::Sandbox::SandboxError) { sandbox.spawn! }
     assert_raises(Agents::Sandbox::SandboxError) { sandbox.start! }
+    assert_raises(Agents::Sandbox::SandboxError) { sandbox.recreate! }
     assert_raises(Agents::Sandbox::SandboxError) { sandbox.with_runtime { flunk "Must not invoke resident" } }
   end
 

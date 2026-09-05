@@ -10,6 +10,9 @@
 #     schedule: at 5am every day
 
 production:
+  mnemodyne_readiness:
+    class: Mnemodyne::ProbeJob
+    schedule: every 5 minutes
   mnemodyne_erasure:
     class: Mnemodyne::EraseVaultsJob
     schedule: every hour at minute 25

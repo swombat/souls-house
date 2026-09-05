@@ -1,5 +1,10 @@
 # Mnemodyne — ready for Lume's review
 
+**Historical initial packet.** Lume's review found substantive gaps; see
+`260905-mnemodyne-lume-review.md` and the implemented response in
+`260905-mnemodyne-review-followup.md`. In particular, Daniel subsequently required
+automatic lifecycle reflexes, superseding this packet's opt-in boundary.
+
 September 5, 2026. Implemented and verified in `souls-house-2`, local `master`.
 **Not deployed, pushed, enabled for real residents or reviewed by Lume yet.**
 This is the completed hosted/external v1 feature, not a proposed pilot.

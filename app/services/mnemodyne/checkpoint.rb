@@ -13,7 +13,8 @@ class Mnemodyne::Checkpoint
         "version" => VERSION, "resident_uuid" => vault.agent.uuid,
         "exported_at" => Time.current.iso8601, "algorithm_version" => Mnemodyne::Recall::VERSION,
         "embedding_profile" => Mnemodyne::Embeddings.profile,
-        "settings" => { "auto_preview_enabled" => vault.auto_preview_enabled, "decay_rate" => vault.decay_rate },
+        "settings" => { "auto_preview_enabled" => vault.auto_preview_enabled, "decay_rate" => vault.decay_rate,
+          "charge_decay_rate" => vault.charge_decay_rate, "charge_decay_floor" => vault.charge_decay_floor },
         "nodes" => vault.nodes.order(:id).map { |node| node.attributes.slice(*NODE_FIELDS).as_json },
         "edges" => vault.edges.order(:id).map { |edge| edge.attributes.slice(*EDGE_FIELDS).as_json }
       }
@@ -35,6 +36,7 @@ class Mnemodyne::Checkpoint
     raise Invalid unless nodes.is_a?(Array) && edges.is_a?(Array) && settings.is_a?(Hash)
     raise Invalid if JSON.generate(payload).bytesize > MAX_BYTES
     vault.with_lock do
+      raise Invalid if vault.erasure_requested_at?
       if replace
         raise Invalid unless vault.suspended_at?
         Mnemodyne::Use.where(vault_id: vault.id).delete_all
@@ -56,7 +58,9 @@ class Mnemodyne::Checkpoint
       end
       automatic = settings.fetch("auto_preview_enabled")
       raise Invalid unless [ true, false ].include?(automatic)
-      vault.update!(auto_preview_enabled: automatic, decay_rate: settings.fetch("decay_rate"), recall_generation: vault.recall_generation + 1)
+      vault.update!(auto_preview_enabled: automatic, decay_rate: settings.fetch("decay_rate"),
+        charge_decay_rate: settings.fetch("charge_decay_rate", 0.001),
+        charge_decay_floor: settings.fetch("charge_decay_floor", 0.1), recall_generation: vault.recall_generation + 1)
     end
     { imported: true, nodes: nodes.length, edges: edges.length }
   rescue KeyError, TypeError, ActiveRecord::ActiveRecordError, ArgumentError

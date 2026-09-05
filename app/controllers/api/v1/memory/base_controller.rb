@@ -4,6 +4,10 @@ class Api::V1::Memory::BaseController < Api::V1::BaseController
   before_action :require_vault!
   before_action :validate_request_bounds!
 
+  rescue_from ActiveRecord::LockWaitTimeout do
+    render json: { error: "Memory busy; retry after backup" }, status: :conflict
+  end
+
   rescue_from ActiveRecord::RecordInvalid do |error|
     render json: { error: "Invalid attributes", fields: error.record.errors.attribute_names }, status: :unprocessable_entity
   end
@@ -48,6 +52,9 @@ class Api::V1::Memory::BaseController < Api::V1::BaseController
 
   def validate_request_bounds!
     raise ArgumentError if request.raw_post.to_s.bytesize > 65_536
+    if params[:type]
+      raise ArgumentError unless params[:type].is_a?(String) && params[:type].match?(/\A[a-z][a-z0-9_]{0,99}\z/)
+    end
     [ :id, :after, :node_id ].each do |key|
       next if params[key].nil?
       raise ArgumentError unless params[key].is_a?(String) && params[key].match?(/\A[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\z/i)

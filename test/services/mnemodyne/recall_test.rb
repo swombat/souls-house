@@ -34,7 +34,7 @@ class Mnemodyne::RecallTest < ActiveSupport::TestCase
     end
     unseen = @vault.nodes.create!(node_type: "memory", content: "Unseen")
     assert_raises(Mnemodyne::Commit::InvalidReceipt) { commit(preview, ids: [ unseen.id ]) }
-    travel 16.minutes do
+    travel 61.minutes do
       assert_raises(Mnemodyne::Commit::InvalidReceipt) { commit(preview) }
     end
   end
@@ -48,7 +48,7 @@ class Mnemodyne::RecallTest < ActiveSupport::TestCase
     assert_empty @vault.uses
   end
 
-  test "automatic disclosure and dormancy apply to seeds activations and intermediate nodes" do
+  test "automatic disclosure filters output while dormancy excludes traversal" do
     hidden = @vault.nodes.create!(node_type: "memory", content: "Hidden", metadata: { baseline_activation: 1 })
     dormant = @vault.nodes.create!(node_type: "memory", content: "Dormant", is_dormant: true, disclosure: "automatic")
     @vault.edges.create!(source: @memory, target: hidden, edge_type: "theme", weight: 1)
@@ -58,7 +58,26 @@ class Mnemodyne::RecallTest < ActiveSupport::TestCase
     assert_not_includes ids, hidden.id
     assert_not_includes ids, dormant.id
     @vault.update!(auto_preview_enabled: false)
-    assert_empty recall(automatic: true).call[:results]
+    assert_not_empty recall(automatic: true).call[:results], "Legacy toggle must not disable the lifecycle reflex"
+  end
+
+  test "a private need still pulls and reinforces automatic memories without being disclosed" do
+    @need.update!(disclosure: "never_automatic")
+    preview = recall(automatic: true).call
+    assert_not_includes preview[:results].map { |row| row[:id] }, @need.id
+    result = preview[:results].find { |row| row[:id] == @memory.id }
+    assert_operator result[:would_apply_reinforcement], :>, 0
+    commit(preview)
+    assert_operator @memory.reload.charge, :>, 0.5
+  end
+
+  test "charge reaches its floor without being raised and edges use their own rate" do
+    @memory.update!(charge: 0.1005)
+    @need.update!(charge: 0.05)
+    Mnemodyne::DecayJob.perform_now
+    assert_in_delta 0.1, @memory.reload.charge
+    assert_in_delta 0.05, @need.reload.charge
+    assert_in_delta 0.895, @vault.edges.first.weight
   end
 
   test "same-account foreign seeds and activations are rejected" do
@@ -82,11 +101,15 @@ class Mnemodyne::RecallTest < ActiveSupport::TestCase
       embedding_digest: Digest::SHA256.hexdigest(@memory.embedding_text))
     stale = @vault.nodes.create!(node_type: "memory", content: "Stale")
     stale.update_columns(embedding: [ 1.0, 0.0 ], embedding_profile: profile, embedding_digest: "old")
+    foreign = agents(:code_reviewer).create_memory_vault!.nodes.create!(node_type: "memory", content: "Foreign")
+    foreign.update_columns(embedding: [ 1.0, 0.0 ], embedding_profile: profile,
+      embedding_digest: Digest::SHA256.hexdigest(foreign.embedding_text))
     Mnemodyne::Embeddings.stub(:profile, profile) do
       Mnemodyne::Embeddings.stub(:embed, [ 1.0, 0.0 ]) do
         ids = recall(query: "synthetic query", seed_node_ids: []).call[:results].map { |row| row[:id] }
         assert_includes ids, @memory.id
         assert_not_includes ids, stale.id
+        assert_not_includes ids, foreign.id
       end
     end
     @memory.update!(content: "Changed")
@@ -103,7 +126,7 @@ class Mnemodyne::RecallTest < ActiveSupport::TestCase
   test "decay runs once per day and honors constitutional and dormant nodes" do
     @need.update!(integration_state: "constitutional")
     2.times { Mnemodyne::DecayJob.perform_now }
-    assert_in_delta 0.495, @memory.reload.charge
+    assert_in_delta 0.499, @memory.reload.charge
     assert_equal 0.5, @need.reload.charge
     assert_in_delta 0.895, @vault.edges.first.weight
   end

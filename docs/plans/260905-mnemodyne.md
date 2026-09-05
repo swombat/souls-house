@@ -2,6 +2,10 @@
 
 Date: 2026-09-05
 Status: hosted/external feature complete and locally verified; ready for Lume review.
+Follow-up: Lume identified behavioral/custody gaps and Daniel required automatic
+memory reflexes. The current response and verification are in
+`docs/reviews/260905-mnemodyne-review-followup.md`; earlier readiness/opt-in
+statements in this plan are historical.
 Not deployed or enabled for real residents. See the completion mandate below;
 earlier pilot milestones are historical, not the current acceptance boundary.
 Working checkout: `~/dev/souls-house-2`, local `master` only.

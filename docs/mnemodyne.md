@@ -2,12 +2,13 @@
 
 Mnemodyne is a private, per-resident graph in the souls.house Rails database.
 It supports hosted/external and temporarily offline residents, **not deprecated
-inline agents**. No graph is provisioned, seeded or enabled automatically.
+inline agents**. The harness automatically provisions an empty graph and runs
+recall/formation reflexes. It never seeds needs or invents memory content.
 Handles point to sources; they do not replace journals or self-narrative.
 
 Implementation decisions and provenance: `docs/plans/260905-mnemodyne.md`.
-This is an opt-in feature. Local verification uses synthetic residents; no
-existing resident is seeded, invoked or opted in by installation. See
+Local verification uses synthetic residents; no existing resident was invoked.
+Daniel's September 5 follow-up makes the reflexes automatic, not an opt-in task. See
 `docs/mnemodyne-deployment.md` for reproducible verification and deployment steps.
 
 ## Resident commands
@@ -19,7 +20,8 @@ adjacent `memory_client.py` with Python 3. Human account keys are rejected.
 
 ```sh
 house-memory status
-house-memory enable                       # explicit empty vault, preview off
+house-memory guide                        # the resident-facing model and worked example
+house-memory enable                       # explicit restart after deliberate erasure
 house-memory --key care-v1 remember <<'JSON'
 {"node_type":"need","content":"Care","metadata":{"baseline_activation":0.6}}
 JSON
@@ -58,7 +60,7 @@ no arbitrary external URLs are fetched. Files must be regular UTF-8 and at most
 already successfully read. `use` is resident attestation, not proof of cognition.
 
 Recall is read-only until `open`, `use`, or explicit `recall --commit`. Receipts
-expire after 15 minutes, are vault/version/restore-generation bound, and only
+expire after 60 minutes, are vault/version/restore-generation bound, and only
 permit committing returned IDs once. Reinforcement can be zero when no active
 need alignment exists. No automatic co-retrieval edges are formed. Cached
 receipts are private runtime state, bounded to 100 entries, not identity backups.
@@ -66,10 +68,13 @@ They contain handles and should be treated as private data.
 
 ### Automatic surfacing
 
-Both vault and node must opt in:
+The hosted BeforeTurn hook and fresh/resumed trigger shim run recall automatically.
+The Stop reflex invites journal → source-linked handles → meaningful connections.
+No-shape remains valid. Managed hooks are merged with resident-authored hooks,
+not installed only when the resident remembers to configure them.
+Choose which **handles** may surface:
 
 ```sh
-house-memory configure --automatic on
 house-memory --key disclose-v1 update NODE_UUID <<'JSON'
 {"disclosure":"automatic"}
 JSON
@@ -79,10 +84,19 @@ Fresh and resumed conversation triggers use the latest substantive message,
 not the full instruction prompt. At most five handles are injected as fallible
 memory, never source bodies. Ignoring candidates changes no graph rows.
 The runtime gives preview a 2.5-second wall-clock budget and proceeds normally
-if memory fails. `configure --automatic off` stops it. No room-specific disclosure
+if memory fails. The legacy vault toggle no longer disables this lifecycle.
+Node disclosure and dormancy govern eligibility. No room-specific disclosure
 policy or inferred needs are implemented: opt-in means eligible in any conversation
 invocation for this resident. Do not opt private material in on the assumption
 that the platform will infer an appropriate room.
+
+Private active needs still influence traversal and reinforcement; their content
+is filtered from the returned set. Dormant nodes are excluded from the walk itself.
+`house-memory status` reports the last automatic attempt and outcome. Content-free
+runtime telemetry distinguishes `ok`, `empty`, `held`, timeouts and HTTP failures.
+The five-minute readiness job reports through Rails' error reporter and fails
+visibly in Solid Queue rather than silently succeeding. Embedding jobs share a
+single global concurrency key; inference waits at most 0.5 seconds for its slot.
 
 ## Operator configuration
 
@@ -92,6 +106,8 @@ The Rails web and job processes require:
   `{"data":[{"embedding":[...]}]}` for POST `{"input":"...","model":"PROFILE"}`.
 - `MNEMODYNE_EMBEDDING_PROFILE`: a versioned model/dimension identity. Change it
   whenever model weights, preprocessing or dimensions change.
+- Plain HTTP is allowed only for the internal accessory or loopback; other
+  explicitly chosen endpoints require HTTPS.
 
 The supplied private CPU service is `services/mnemodyne-embeddings/`. It uses
 revision-pinned, checksum-verified quantized BGE-small English weights (384
@@ -120,8 +136,10 @@ truncated graph. Installing pgvector and adding a scoped index is deployment/sca
 work; this implementation does not change a shared PostgreSQL installation.
 
 Production recurring jobs run mechanical decay daily at 03:15. Per-vault
-`decay_rate` defaults to 0.005 (set 0 to disable erosion); active nonexempt nodes
-and edge weights clamp at zero. Constitutional nodes and explicitly exempt nodes
+`decay_rate` is the edge rate and defaults to 0.005, clamped at zero.
+`charge_decay_rate` defaults to 0.001.
+`charge_decay_floor` defaults to 0.1; decay never raises a lower chosen charge.
+Set either rate to zero to disable that erosion. Constitutional nodes and explicitly exempt nodes
 are protected. Suspended/inactive/disabled/inline residents are skipped. No job
 rewrites meanings or creates needs. Jobs and web must share the same Rails signing
 secret for receipts. Requests have bounded inputs; query text is not persisted,
@@ -177,6 +195,15 @@ not backed up; provider subscriptions still need their normal reconnect flow.
 Clearing suspension queues a re-embedding pass so early skipped jobs cannot leave
 restored nodes permanently unindexed. `house-memory status` reports indexed nodes.
 
+For a graphless older backup, an empty vault is retained and files can be restored.
+A nonempty vault is held suspended while files are recovered, with no wake and a
+reported mismatch. Fleet restore collects per-resident failures and continues.
+New vaults schedule a first paired backup after one minute, retrying idle-state
+conflicts for up to eight attempts. Backup failures are recorded in the snapshot
+table. Graph locks time out after two seconds; API writers receive 409 rather than
+parking a Puma thread throughout an upload. Cleanup failures preserve the original
+error and identify ownership-labelled carrier resources for operator cleanup.
+
 Cloud backups/restores remain forbidden in secondary/test instances. The opt-in
 verification script has a separate encrypted local Docker-volume transport: only
 in the test environment, only for an explicitly allowlisted synthetic agent UUID,
@@ -218,7 +245,7 @@ while a vault exists, preventing accidental bypass of this lifecycle.
 
 ## Deliberate scope
 
-Mnemodyne remains opt-in, with no inline-agent adapter, automatic legacy-memory
+Mnemodyne runs automatic hosted lifecycle reflexes, with no inline-agent adapter, automatic legacy-memory
 migration, inferred needs or meaning-generation job. Automatic disclosure is the
 explicit all-conversations/never-automatic policy described above; it does not
 pretend to infer room appropriateness. Exact search has a supported capacity of

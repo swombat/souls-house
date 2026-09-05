@@ -63,7 +63,7 @@ def main():
                 return self.reply(404, {"error": "Not found"})
             if not hmac.compare_digest(self.headers.get("Authorization", ""), f"Bearer {token}"):
                 return self.reply(401, {"error": "Unauthorized"})
-            if not gate.acquire(blocking=False):
+            if not gate.acquire(timeout=0.5):
                 return self.reply(503, {"error": "Busy"})
             try:
                 size = int(self.headers.get("Content-Length", "0"))

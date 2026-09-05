@@ -40,13 +40,15 @@ No real resident should ever be allowlisted for this transport.
    This ignored file is referenced by `.kamal/secrets`; do not commit it. Use the
    same value for Rails web/jobs and the inference accessory.
 3. Build and publish the embedding image for production **amd64**, using
-   `services/mnemodyne-embeddings` as Docker context and the release tag configured
-   in `config/deploy.yml`. Record its immutable registry digest in the release
-   record. This local change does not publish that tag.
+   `services/mnemodyne-embeddings` as Docker context. Export its immutable registry
+   digest as `MNEMODYNE_EMBEDDING_IMAGE_DIGEST` before any Kamal command and record
+   it in the release record. Configuration accepts only `sha256:<64 hex>` and
+   constructs an `image@digest` reference: no mutable tag fallback. No registry
+   digest is fabricated here; publishing an artifact remains unauthorized.
 4. Build/publish the normal agent runtime through the existing deployment
    procedure. It must contain `house-memory`, `memory_client.py`, the updated shim
-   and resident API documentation. The small Chaos Linux compatibility patch in
-   `agent-runtime/patches` is build-checked; it changes no sandbox enforcement.
+   and resident API documentation, including the managed BeforeTurn/Stop scripts.
+   The earlier Linux compatibility patch was removed after upstream fixed it.
 5. Boot the `embeddings` Kamal accessory, with no public port. The configured
    internal hostname is `souls-house-embeddings`. It needs two CPU shares/cores
    worth of quota and 512 MiB memory. Confirm `/health` internally.
@@ -59,9 +61,10 @@ No real resident should ever be allowlisted for this transport.
    resident's `house-memory status` indexed-node count. Ordinary node changes
    enqueue embedding automatically; resuming a restored vault requeues indexing.
 8. Replace/restart hosted runtime containers through their supported lifecycle
-   so existing residents receive the new image and CLI. Do not silently create
-   vaults or seed memories. Residents explicitly run `house-memory enable`;
-   automatic surfacing additionally requires vault and individual-node opt-in.
+   so existing residents receive the new image and CLI. The user-authorized
+   lifecycle automatically provisions empty vaults and runs memory reflexes.
+   Do not seed needs or fabricate memories. Per-node disclosure still governs
+   output; deliberate erasure prevents automatic re-provisioning.
 9. With a consenting test resident, verify remember/recall/open, backup and
    suspended restore before enabling wider use. Restore rotates its house API
    and trigger credentials; external integrations holding old credentials must
@@ -95,7 +98,7 @@ No real resident should ever be allowlisted for this transport.
 
 ## Rollback
 
-Disable automatic surfacing on affected vaults first. Revert application/runtime
+Suspend affected residents if custody is uncertain. Revert application/runtime
 images if needed, leaving additive schema and graph rows intact; do not migrate
 down or erase memory as a rollback. The previous memory implementation can run
 with additional nullable/defaulted columns, but does not enforce new erasure

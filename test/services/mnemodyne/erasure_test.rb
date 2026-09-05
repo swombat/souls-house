@@ -64,6 +64,17 @@ class Mnemodyne::ErasureTest < ActiveSupport::TestCase
     end
   end
 
+  test "embedding profile changes do not strand an acknowledged erasure" do
+    request
+    Mnemodyne::Embeddings.stub(:profile, "new-provider-profile") do
+      travel 8.days do
+        assert Mnemodyne::Erasure.perform(@vault)
+      end
+    end
+    assert_nil Mnemodyne::Provision.call(@agent.reload)
+    assert Mnemodyne::Provision.call(@agent.reload, deliberate: true)
+  end
+
   private
 
   def request(**options)

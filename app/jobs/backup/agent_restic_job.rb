@@ -37,6 +37,12 @@ module Backup
       raise "restic backup failed for #{agent.name}: #{stderr_tail.presence || 'unknown error'}" if force && !ok
 
       snapshot
+    rescue StandardError => error
+      if agent && !snapshot
+        AgentBackupSnapshot.create!(agent: agent, restic_snapshot_id: "unknown",
+          taken_at: Time.current, ok: false, stderr_tail: "Backup failed: #{error.class.name}")
+      end
+      raise
     end
 
     private

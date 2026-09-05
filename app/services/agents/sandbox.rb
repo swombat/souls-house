@@ -85,6 +85,7 @@ module Agents
 
     def recreate!
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
+      ensure_memory_not_suspended!
       if container_exists?
         migrate_repo_volume_from_container!
         migrate_work_volume_from_container!

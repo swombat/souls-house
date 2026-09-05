@@ -17,6 +17,8 @@ class Mnemodyne::Embeddings
     raise Unavailable unless configured?
     uri = URI(ENV.fetch("MNEMODYNE_EMBEDDING_URL"))
     raise Unavailable unless uri.is_a?(URI::HTTP) && uri.userinfo.nil?
+    private_hosts = %w[souls-house-embeddings localhost 127.0.0.1 ::1]
+    raise Unavailable unless uri.scheme == "https" || private_hosts.include?(uri.host)
     request = Net::HTTP::Post.new(uri, "Content-Type" => "application/json")
     request["Authorization"] = "Bearer #{ENV['MNEMODYNE_EMBEDDING_TOKEN']}" if ENV["MNEMODYNE_EMBEDDING_TOKEN"].present?
     request.body = { input: text, model: profile }.to_json
@@ -40,7 +42,7 @@ class Mnemodyne::Embeddings
     raise
   rescue StandardError
     # Do not expose provider responses, URLs, query text or network error details.
-    raise Unavailable
+    raise Unavailable, cause: nil
   end
 
   def self.valid_vector?(vector)

@@ -24,8 +24,9 @@ class Mnemodyne::Recall
 
   def call
     return empty if @vault.erasure_requested_at?
-    return empty if @automatic && !@vault.auto_preview_enabled?
-    scope = @automatic ? @vault.nodes.automatically_disclosable : @vault.nodes.active
+    # Private needs still pull. Disclosure governs returned handles, not the
+    # resident's private traversal; dormancy excludes nodes from both.
+    scope = @vault.nodes.active
     nodes = scope.limit(MAX_NODES + 1).to_a
     raise CapacityExceeded if nodes.length > MAX_NODES
     @nodes = nodes.index_by(&:id)
@@ -74,6 +75,7 @@ class Mnemodyne::Recall
       similarity = vector && current_embedding?(node, vector) ? Mnemodyne::Embeddings.cosine(vector, node.embedding) : 0.0
       { node: node, alignment: alignment, score: 0.4 * similarity + 0.3 * alignment + 0.3 * node.charge }
     end.sort_by { |row| -row[:score] }
+    scored.select! { |row| row[:node].disclosure == "automatic" } if @automatic
     # One sample per relevance band, preserving the standalone walk's diversity.
     selected = if scored.length <= @limit
       scored
@@ -84,7 +86,7 @@ class Mnemodyne::Recall
     max_alignment = selected.map { |row| row[:alignment] }.max.to_f
     deltas = selected.to_h { |row| [ row[:node].id, max_alignment.positive? ? 0.02 * intensity * row[:alignment] / max_alignment : 0.0 ] }
     recall_id = SecureRandom.uuid
-    expires_at = 15.minutes.from_now
+    expires_at = 60.minutes.from_now
     receipt = verifier.generate({ "vault_id" => @vault.id, "recall_id" => recall_id, "deltas" => deltas,
       "generation" => @vault.recall_generation, "version" => VERSION, "expires_at" => expires_at.iso8601 }, expires_at: expires_at, purpose: "mnemodyne-use")
     { recall_id: recall_id, receipt: receipt, expires_at: expires_at.iso8601, algorithm_version: VERSION,

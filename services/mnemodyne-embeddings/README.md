@@ -15,7 +15,9 @@ Dependencies are pinned in `requirements.txt`.
 - `GET /health`: readiness/profile/dimensions, no private data.
 - `POST /v1/embeddings`: bearer-authenticated, OpenAI-shaped single-text request.
 - Required secret: `MNEMODYNE_EMBEDDING_TOKEN`, at least 24 characters.
-- One inference at a time; busy requests get 503 rather than an unbounded queue.
+- One inference at a time; wait up to 0.5 seconds for the slot, then return 503
+  rather than accumulating an unbounded queue. Rails indexing jobs share one
+  platform-wide concurrency key; live previews can use the bounded wait.
 - Non-root, offline model loading; deploy without a public port.
 
 From an isolated checkout:

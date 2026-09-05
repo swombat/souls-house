@@ -12,17 +12,26 @@ begin
   stdout, _stderr, status = Open3.capture3("docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}")
   host = ENV["DOCKER_CONTEXT"] ? stdout.strip : ENV.fetch("DOCKER_HOST", stdout.strip)
   abort "Local runtime builds require a Unix-socket Docker endpoint" unless status.success? && host.start_with?("unix://")
+  pinned_ref = nil
+  if ARGV.first == "--chaos-ref"
+    ARGV.shift
+    pinned_ref = ARGV.shift
+    abort "--chaos-ref requires one full commit SHA" unless pinned_ref&.match?(/\A[0-9a-f]{40}\z/) && ARGV.empty?
+  end
   unless ARGV.empty?
-    abort "Usage: scripts/build-local-agent-runtime [--from existing-local-image]" unless ARGV.shift == "--from" && ARGV.length == 1
+    abort "Usage: scripts/build-local-agent-runtime [--from IMAGE | --chaos-ref FULL_SHA]" unless ARGV.shift == "--from" && ARGV.length == 1
     source = ARGV.shift
     image_id, _, status = Open3.capture3("docker", "image", "inspect", "--format", "{{.Id}}", source)
     abort "Source image is not present locally" unless status.success? && image_id.strip.match?(/\Asha256:[0-9a-f]{64}\z/)
     puts "Snapshotting local image #{source} to independent tag #{config.image}"
     exec "docker", "image", "tag", image_id.strip, config.image
   end
-  stdout, _stderr, status = Open3.capture3("git", "ls-remote", "https://github.com/seuros/chaos.git", "refs/heads/master")
-  ref = stdout.split.first
-  abort "Cannot resolve Chaos master" unless status.success? && ref&.match?(/\A[0-9a-f]{40}\z/)
+  ref = pinned_ref
+  unless ref
+    stdout, _stderr, status = Open3.capture3("git", "ls-remote", "https://github.com/seuros/chaos.git", "refs/heads/master")
+    ref = stdout.split.first
+    abort "Cannot resolve Chaos master" unless status.success? && ref&.match?(/\A[0-9a-f]{40}\z/)
+  end
   puts "Building only #{config.image} on the local Docker daemon (no latest/deployment tags)"
   exec "docker", "build", "--build-arg", "CHAOS_HEAD=#{ref}", "-t", config.image, File.join(config.root, "agent-runtime")
 rescue LocalInstance::Error => error

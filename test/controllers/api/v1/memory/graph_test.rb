@@ -60,6 +60,37 @@ class Api::V1::Memory::GraphTest < ActionDispatch::IntegrationTest
     assert_equal "Peer secret", @foreign.reload.content
   end
 
+  test "foreign edge show update and delete never reveal or mutate it" do
+    other = @foreign.vault.nodes.create!(node_type: "memory", content: "Another peer handle")
+    edge = @foreign.vault.edges.create!(source: @foreign, target: other, edge_type: "theme")
+    get "#{@base}/edges/#{edge.id}", headers: @headers
+    assert_response :not_found
+    patch "#{@base}/edges/#{edge.id}", headers: @headers, as: :json, params: { edge: { weight: 0.1 } }
+    assert_response :not_found
+    delete "#{@base}/edges/#{edge.id}", headers: @headers
+    assert_response :not_found
+    assert_equal 0.5, edge.reload.weight
+  end
+
+  test "suspended status reveals custody state but no graph counts" do
+    @vault.update!(suspended_at: Time.current, erasure_requested_at: Time.current)
+    get "#{@base}/vault", headers: @headers
+    assert_response :success
+    assert response.parsed_body["suspended"]
+    assert_nil response.parsed_body["nodes"]
+    assert_nil response.parsed_body["edges"]
+    assert response.parsed_body["erasure_requested_at"]
+  end
+
+  test "automatic recall records content free status and rejects unbounded type filters" do
+    post "#{@base}/recalls", headers: @headers, as: :json, params: { automatic: true }
+    assert_response :success
+    assert @vault.reload.last_automatic_recall_at
+    assert_equal "empty", @vault.last_automatic_recall_status
+    get "#{@base}/nodes", headers: @headers, params: { type: "x" * 101 }
+    assert_response :bad_request
+  end
+
   test "node creation and updates are idempotent and conflict on changed payload" do
     payload = { node: { node_type: "memory", content: "New", vault_id: @foreign.vault_id } }
     2.times do
@@ -154,7 +185,7 @@ class Api::V1::Memory::GraphTest < ActionDispatch::IntegrationTest
       assert_response :success
     end
     assert_equal 0, peer.reload.memory_vault.nodes.count
-    assert_not peer.memory_vault.auto_preview_enabled?
+    assert peer.memory_vault.auto_preview_enabled?
   end
 
   test "resident can export schedule and cancel erasure while writes are frozen" do

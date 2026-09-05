@@ -10,9 +10,14 @@ module Backup
       ensure_docker_available!
       Backup::LocalAgentRuntimeImage.ensure_current! if Rails.env.development?
 
+      results = {}
       Agent.externally_hosted.where.not(uuid: nil).find_each do |agent|
-        new(agent).restore!
+        results[agent.id] = new(agent).restore!
+      rescue StandardError => error
+        results[agent.id] = { restored: false, error: error.class.name }
+        Rails.logger.error("Resident restore failed: agent_id=#{agent.id} class=#{error.class.name}")
       end
+      results
     end
 
     def self.ensure_docker_available!
@@ -43,12 +48,8 @@ module Backup
       Backup::AgentRestic.verify_archive!(agent)
 
       graph = snapshot.graph_checkpoint_digest.present? ? Backup::GraphCheckpoint.read(agent, snapshot) : nil
-      if agent.memory_vault && !graph
-        raise RestoreError, "Backup has no paired graph checkpoint; refusing to wake with mismatched memory"
-      end
-      vault = if graph
-        agent.memory_vault || agent.create_memory_vault!
-      end
+      vault = agent.memory_vault || (agent.create_memory_vault! if graph)
+      mismatch = vault && !graph && (vault.nodes.exists? || vault.edges.exists?)
       was_suspended = vault&.suspended_at
       vault&.update!(suspended_at: Time.current)
       if graph
@@ -70,9 +71,12 @@ module Backup
       end
       configure_for_local_runtime!
       Agents::RotateCredentials.call(agent)
-      vault&.update!(suspended_at: was_suspended)
-      Agents::Sandbox.new(agent).spawn! if wake && agent.external? && !was_suspended
+      vault&.update!(suspended_at: was_suspended) unless mismatch
+      awake = wake && agent.external? && !was_suspended && !mismatch
+      Agents::Sandbox.new(agent).spawn! if awake
+      Rails.logger.warn("Resident files restored; unpaired memory remains suspended: agent_id=#{agent.id}") if mismatch
       puts "Restored Chaos agent #{agent.name}."
+      { restored: true, awake: !!awake, memory_mismatch: !!mismatch }
     end
 
     private

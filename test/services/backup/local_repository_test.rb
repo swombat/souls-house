@@ -34,4 +34,31 @@ class Backup::LocalRepositoryTest < ActiveSupport::TestCase
     assert_equal %w[inspect pause unpause], calls.map { |args| args[1] }
   end
 
+  test "failed unpause does not replace the original snapshot failure" do
+    @agent.update_columns(runtime: "external", uuid: SecureRandom.uuid, container_name: "synthetic")
+    @agent.create_memory_vault!
+    resources = Object.new
+    resources.define_singleton_method(:verify_existing!) { true }
+    capture = ->(*args) { [ "true false", "", Struct.new(:success?).new(args[1] != "unpause") ] }
+    Agents::Resources.stub(:new, resources) do
+      Open3.stub(:capture3, capture) do
+        error = assert_raises(RuntimeError) { Backup::AgentRestic.with_quiesced(@agent) { raise "Original synthetic failure" } }
+        assert_equal "Original synthetic failure", error.message
+      end
+    end
+  end
+
+  test "checkpoint failure is visible in the backup snapshot table" do
+    @agent.update_columns(runtime: "external")
+    job = Backup::AgentResticJob.new
+    job.stub(:init_restic_repo!, true) do
+      Backup::AgentRestic.stub(:with_quiesced, ->(*) { raise ArgumentError, "Synthetic busy resident" }) do
+        assert_raises(ArgumentError) { job.perform(@agent.id, force: true) }
+      end
+    end
+    snapshot = @agent.agent_backup_snapshots.order(:created_at).last
+    assert_not snapshot.ok?
+    assert_equal "Backup failed: ArgumentError", snapshot.stderr_tail
+  end
+
 end

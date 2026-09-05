@@ -3,15 +3,15 @@ require "webmock/minitest"
 
 class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
 
-  test "memory trigger uses only bounded latest message and requires opt in" do
+  test "memory trigger automatically provisions and uses only bounded latest message" do
     agent = agents(:research_assistant)
     agent.update_columns(runtime: "external")
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Synthetic recall")
     chat.messages.create!(role: "user", content: "Current query " * 250)
     request = ExternalAgentResponseRequest.new(agent: agent, chat: chat)
-    assert_empty request.send(:memory_trigger_payload)
-    vault = agent.create_memory_vault!(auto_preview_enabled: true)
     payload = request.send(:memory_trigger_payload)
+    vault = agent.reload.memory_vault
+    assert vault
     assert_equal 2_000, payload.dig(:memory, :query).length
     assert payload.dig(:memory, :query).start_with?("Current query")
     vault.update!(suspended_at: Time.current)

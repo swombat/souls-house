@@ -1271,7 +1271,8 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal "delta", second.dig("telemetry", "prompt", "mode")
     assert_equal "DELTA ONLY".bytesize, second.dig("telemetry", "prompt", "selected_prompt_bytes")
     assert_nil second.dig("telemetry", "prompt", "full_prompt_bytes")
-    assert_equal({}, second.dig("telemetry", "prompt", "components"))
+    assert_equal "not_attempted", second.dig("telemetry", "prompt", "graph_memory_status")
+    assert_equal 10, second.dig("telemetry", "prompt", "components", "request")
   end
 
   test "explicit safeguard roll is reported even when no sidecar mapping exists" do
@@ -1443,7 +1444,12 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
       def timeout(*a, **kw):
           raise mod.subprocess.TimeoutExpired("synthetic", 2.5)
       mod.subprocess.run = timeout
-      assert mod.graph_memory_notice({"enabled": True, "query": "Synthetic"}) == ""
+      notice = mod.graph_memory_notice({"enabled": True, "query": "Synthetic"})
+      assert notice == "" and notice.status == "timeout"
+      prompt, components = mod.build_prompt_with_components("Synthetic", memory_notice=notice)
+      telemetry = mod.prompt_telemetry(prompt, None, prompt, "full", components)
+      assert telemetry["graph_memory_status"] == "timeout"
+      assert "graph_memory_status" not in telemetry["components"]
       print(json.dumps({"ok": True}))
     PY
     assert JSON.parse(out)["ok"]

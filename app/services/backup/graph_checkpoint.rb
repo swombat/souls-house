@@ -5,7 +5,7 @@ module Backup
 
     class Error < StandardError; end
 
-    # A newly-created, stopped carrier container owns an anonymous volume. Docker
+    # A newly-created, stopped carrier uses a labelled, disposable volume. Docker
     # cp crosses the web-container/host boundary; a /tmp bind mount would not.
     def self.with_volume(agent)
       return yield([], nil) unless agent.memory_vault
@@ -13,9 +13,14 @@ module Backup
       Backup::AgentRestic.docker_environment(agent) # Enforce secondary-instance guard first.
       envelope = Mnemodyne::Checkpoint.export(agent.memory_vault)
       container = nil
+      volume = "#{Agents::Resources.new(agent).container}-checkpoint-#{SecureRandom.hex(6)}"
+      labels = [ *Agents::Resources.new(agent).labels, "--label", "house.souls.purpose=graph-checkpoint" ]
+      volume_created = false
       begin
-        container = capture!("docker", "create", "--label", "house.souls.purpose=graph-checkpoint",
-          "--volume", "/data/memory-graph", "busybox:1.37", "true").strip
+        capture!("docker", "volume", "create", *labels, volume)
+        volume_created = true
+        container = capture!("docker", "create", *labels,
+          "--volume", "#{volume}:/data/memory-graph", "busybox:1.37", "true").strip
         raise Error, "Invalid graph carrier identity" unless container.match?(/\A[0-9a-f]{64}\z/)
         Tempfile.create([ "graph-checkpoint-", ".json" ]) do |file|
           file.chmod(0o600)
@@ -25,9 +30,25 @@ module Backup
         end
         yield [ "--volumes-from", "#{container}:ro" ], envelope
       ensure
+        original_error = $!
+        cleanup_error = nil
         if container&.match?(/\A[0-9a-f]{64}\z/)
-          capture!("docker", "rm", "-v", container)
+          begin
+            capture!("docker", "rm", "-v", container)
+          rescue StandardError => error
+            cleanup_error = error
+            Rails.logger.error("Graph checkpoint carrier cleanup failed: container=#{container}")
+          end
         end
+        if volume_created
+          begin
+            capture!("docker", "volume", "rm", volume)
+          rescue StandardError => error
+            cleanup_error ||= error
+            Rails.logger.error("Graph checkpoint volume cleanup failed: volume=#{volume}")
+          end
+        end
+        raise cleanup_error if cleanup_error && !original_error
       end
     end
 
@@ -46,7 +67,7 @@ module Backup
       end
       envelope
     rescue JSON::ParserError, KeyError, TypeError
-      raise Error, "Invalid graph checkpoint"
+      raise Error, "Invalid graph checkpoint", cause: nil
     end
 
     def self.capture!(*command)

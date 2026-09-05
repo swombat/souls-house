@@ -38,8 +38,9 @@ class Backup::GraphCheckpointTest < ActiveSupport::TestCase
         end
       end
     end
-    assert_equal [ "docker", "rm", "-v", container ], commands.last
-    assert_equal %w[create cp rm], commands.map { |command| command[1] }
+    assert_equal [ "docker", "rm", "-v", container ], commands[-2]
+    assert_equal %w[volume create cp rm volume], commands.map { |command| command[1] }
+    assert_includes commands.first, "house.souls.purpose=graph-checkpoint"
   end
 
   test "read verifies stored digest owner and shape" do

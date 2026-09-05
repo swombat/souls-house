@@ -4,7 +4,7 @@ class Mnemodyne::Erasure
   GRACE_PERIOD = 7.days
 
   def self.fingerprint(envelope)
-    Digest::SHA256.hexdigest(JSON.generate(canonical(envelope.fetch("payload").except("exported_at"))))
+    Digest::SHA256.hexdigest(JSON.generate(canonical(envelope.fetch("payload").slice("resident_uuid", "nodes", "edges", "settings"))))
   end
 
   def self.export_receipt(vault, envelope)
@@ -43,7 +43,11 @@ class Mnemodyne::Erasure
     # being enabled concurrently with the final purge.
     vault.agent.with_lock do
       vault.with_lock do
-        return false unless vault.erase_after && vault.erase_after <= Time.current && !vault.suspended_at?
+        return false unless vault.erase_after && vault.erase_after <= Time.current
+        if vault.suspended_at?
+          Rails.logger.warn("Mnemodyne erasure held: vault suspended")
+          return false
+        end
         raise Invalid unless vault.erasure_fingerprint == fingerprint(Mnemodyne::Checkpoint.export(vault))
         raise Invalid if vault.nodes.where(integration_state: "constitutional").exists? && !vault.erase_constitutional?
         [ Mnemodyne::Use, Mnemodyne::Operation, Mnemodyne::Edge, Mnemodyne::Node ].each do |model|

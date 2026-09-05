@@ -28,9 +28,9 @@ for path in "$AGENT_HOME/identity" "$AGENT_HOME/.chaos" "$AGENT_REPO_PATH" "$AGE
     fi
 done
 
-# Install the default hosted-agent Stop hook and journaling scaffold. The hook
-# blocks once after each Chaos turn, asking the agent to append a daily journal
-# entry or explicitly answer "no shape". The hook script lives in identity so it
+# Install hosted BeforeTurn recall and Stop journal/handle-formation reflexes.
+# Stop blocks once after a turn, inviting authored memory or "no shape".
+# The hook scripts live in identity so they
 # is visible in the hosting filesystem browser. hooks.json is installed into the
 # active repo's .chaos directory, where Chaos discovers project hooks.
 mkdir -p "$AGENT_HOME/identity/automation" \
@@ -73,58 +73,31 @@ chown 1000:1000 "$CHAOS_CONFIG" || true
 # Platform-managed helper: refresh on every boot so runtime improvements reach
 # existing hosted agents. The journal files it invites are agent-owned; the hook
 # script itself is runtime infrastructure.
-cp /usr/local/share/helixkit-agent/stop_journal_reflex.py "$AGENT_HOME/identity/automation/stop_journal_reflex.py" || true
-chmod 0755 "$AGENT_HOME/identity/automation/stop_journal_reflex.py" || true
-write_hooks_json() {
-    target="$1"
-    cat > "$target" <<'HOOKS'
-{
-  "_helixkit_managed": "hosted-agent-stop-journal-reflex:v1",
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 /home/agent/identity/automation/stop_journal_reflex.py",
-            "timeout": 60,
-            "statusMessage": "Inviting hosted agent journal reflex"
-          }
-        ]
-      }
-    ]
-  }
-}
-HOOKS
-}
+cp /usr/local/share/helixkit-agent/stop_journal_reflex.py "$AGENT_HOME/identity/automation/stop_journal_reflex.py"
+chmod 0755 "$AGENT_HOME/identity/automation/stop_journal_reflex.py"
+cp /usr/local/share/helixkit-agent/memory_before_turn.py "$AGENT_HOME/identity/automation/memory_before_turn.py"
 install_hooks_json() {
     target="$1"
-    if [ ! -f "$target" ]; then
-        write_hooks_json "$target"
-    elif grep -q "hosted-agent-stop-journal-reflex:" "$target"; then
-        write_hooks_json "$target"
-    elif grep -q "/home/agent/identity/automation/stop_journal_reflex.py" "$target"; then
-        # Older generated hooks had no marker. Refresh the known generated shape.
-        write_hooks_json "$target"
-    fi
+    python3 /usr/local/share/helixkit-agent/install_memory_hooks.py "$target"
 }
-# Chaos reads hooks from both global and project config. Install the Stop hook
+# Chaos reads hooks from both global and project config. Install managed hooks
 # only into the active project (`-C`) so it fires once per turn. If an earlier
 # HelixKit image wrote the same managed hook into ~/.chaos/hooks.json, remove it.
 install_hooks_json "$AGENT_REPO_PATH/.chaos/hooks.json"
 if [ -f "$AGENT_HOME/.chaos/hooks.json" ] && grep -q "hosted-agent-stop-journal-reflex:" "$AGENT_HOME/.chaos/hooks.json"; then
-    rm -f "$AGENT_HOME/.chaos/hooks.json"
+    python3 /usr/local/share/helixkit-agent/install_memory_hooks.py "$AGENT_HOME/.chaos/hooks.json" --remove
 fi
 cat > "$AGENT_HOME/.chaos/helixkit-hooks.md" <<'HOOKS_NOTE'
 # HelixKit hosted-agent hooks
 
-The active hosted-agent Stop hook is installed at:
+The managed BeforeTurn recall and Stop memory-formation hooks are installed at:
 
 `/home/agent/repo/.chaos/hooks.json`
 
 Chaos may read both global (`~/.chaos`) and project (`-C .../.chaos`) hooks, so
 HelixKit does not install a second copy here. Keeping only one active hook avoids
-duplicate journal-reflex invitations after a turn.
+duplicate reflexes. Your other hooks are preserved. `house-memory guide`
+explains the memory practice; no-shape remains a valid Stop response.
 HOOKS_NOTE
 if [ ! -f "$AGENT_HOME/identity/memory/daily-journals/README.md" ]; then
     cat > "$AGENT_HOME/identity/memory/daily-journals/README.md" <<'README'

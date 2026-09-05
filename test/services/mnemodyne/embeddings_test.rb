@@ -3,9 +3,19 @@ require "webmock/minitest"
 
 class Mnemodyne::EmbeddingsTest < ActiveSupport::TestCase
 
-  test "configured HTTP provider validates shape vectors and failure responses" do
+  test "off box plaintext endpoint is rejected before any request" do
     previous = ENV.to_h.slice("MNEMODYNE_EMBEDDING_URL", "MNEMODYNE_EMBEDDING_PROFILE")
     ENV["MNEMODYNE_EMBEDDING_URL"] = "http://synthetic-embeddings.invalid/embed"
+    ENV["MNEMODYNE_EMBEDDING_PROFILE"] = "synthetic-v1"
+    assert_raises(Mnemodyne::Embeddings::Unavailable) { Mnemodyne::Embeddings.embed("Never sent") }
+    assert_not_requested :post, ENV["MNEMODYNE_EMBEDDING_URL"]
+  ensure
+    previous.each { |key, value| ENV[key] = value }
+  end
+
+  test "configured HTTP provider validates shape vectors and failure responses" do
+    previous = ENV.to_h.slice("MNEMODYNE_EMBEDDING_URL", "MNEMODYNE_EMBEDDING_PROFILE")
+    ENV["MNEMODYNE_EMBEDDING_URL"] = "https://synthetic-embeddings.invalid/embed"
     ENV["MNEMODYNE_EMBEDDING_PROFILE"] = "synthetic-v1"
     endpoint = stub_request(:post, ENV["MNEMODYNE_EMBEDDING_URL"])
       .with(body: { input: "Synthetic text", model: "synthetic-v1" }.to_json)

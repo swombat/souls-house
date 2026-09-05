@@ -51,8 +51,14 @@ module Backup
           yield
         ensure
           if paused_here
-            _, _, resumed = Open3.capture3("docker", "unpause", agent.container_name)
-            raise ArgumentError, "Resident remains paused after backup" unless resumed.success?
+            original_error = $!
+            begin
+              _, _, resumed = Open3.capture3("docker", "unpause", agent.container_name)
+              raise ArgumentError, "Resident remains paused after backup" unless resumed.success?
+            rescue StandardError
+              Rails.logger.error("Resident remains paused after backup")
+              raise unless original_error
+            end
           end
         end
       end

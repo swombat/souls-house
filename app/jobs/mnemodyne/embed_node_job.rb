@@ -1,5 +1,7 @@
 class Mnemodyne::EmbedNodeJob < ApplicationJob
 
+  limits_concurrency to: 1, key: "mnemodyne-embeddings"
+
   retry_on Mnemodyne::Embeddings::Unavailable, wait: :polynomially_longer, attempts: 3
 
   def perform(vault_id, node_id)

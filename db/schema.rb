@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_05_211000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_05_230000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -637,12 +637,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_211000) do
   create_table "mnemodyne_vaults", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.bigint "agent_id", null: false
     t.boolean "auto_preview_enabled", default: false, null: false
+    t.float "charge_decay_floor", default: 0.1, null: false
+    t.float "charge_decay_rate", default: 0.001, null: false
     t.datetime "created_at", null: false
     t.float "decay_rate", default: 0.005, null: false
     t.datetime "erase_after"
     t.boolean "erase_constitutional", default: false, null: false
     t.string "erasure_fingerprint"
     t.datetime "erasure_requested_at"
+    t.datetime "last_automatic_recall_at"
+    t.string "last_automatic_recall_status"
     t.date "last_decay_on"
     t.integer "recall_generation", default: 0, null: false
     t.datetime "suspended_at"

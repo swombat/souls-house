@@ -7,7 +7,7 @@ class Mnemodyne::DeploymentConfigurationTest < ActiveSupport::TestCase
     # Never evaluate .kamal/secrets or read actual deployment credentials.
     secrets = Hash.new("synthetic-secret-not-for-deployment")
     Kamal::Secrets.stub(:new, secrets) do
-      raw = YAML.load_file(Rails.root.join("config/deploy.yml")).symbolize_keys
+      raw = YAML.safe_load(ERB.new(File.read(Rails.root.join("config/deploy.yml"))).result_with_hash({})).symbolize_keys
       config = Kamal::Configuration.new(raw, version: "synthetic-review")
       accessory = config.accessories.find { |item| item.name == "embeddings" }
       assert accessory
@@ -20,7 +20,15 @@ class Mnemodyne::DeploymentConfigurationTest < ActiveSupport::TestCase
       assert_nil embedding["port"]
       assert_equal true, embedding.dig("options", "read-only")
       assert_equal "512m", embedding.dig("options", "memory")
+      assert_match(/@sha256:[0-9a-f]{64}\z/, embedding["image"])
     end
   end
+
+  setup do
+    @previous_digest = ENV["MNEMODYNE_EMBEDDING_IMAGE_DIGEST"]
+    ENV["MNEMODYNE_EMBEDDING_IMAGE_DIGEST"] = "sha256:#{"0" * 64}"
+  end
+
+  teardown { ENV["MNEMODYNE_EMBEDDING_IMAGE_DIGEST"] = @previous_digest }
 
 end
