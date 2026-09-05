@@ -180,7 +180,7 @@ GEM
     i18n (1.15.2)
       concurrent-ruby (~> 1.0)
     image_processing (2.0.3)
-    inertia_rails (3.9.0)
+    inertia_rails (3.22.0)
       railties (>= 6)
     io-console (0.9.2)
     irb (1.18.0)
@@ -497,7 +497,7 @@ DEPENDENCIES
   hashids
   honeybadger (~> 6.1)
   image_processing (~> 2.0.3)
-  inertia_rails (~> 3.9)
+  inertia_rails (~> 3.22)
   jbuilder
   js-routes (~> 2.4)
   kamal (~> 2.12.0)
