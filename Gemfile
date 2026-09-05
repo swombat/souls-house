@@ -1,7 +1,7 @@
 source "https://rubygems.org"
 
 # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
-gem "rails", "~> 8.1.0"
+gem "rails", "~> 8.1.3"
 # Use pg as the database for Active Record
 gem "pg", "~> 1.1"
 # Use the Puma web server [https://github.com/puma/puma]
@@ -17,7 +17,7 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 
 # Use the database-backed adapters for Rails.cache, Active Job, and Action Cable
 gem "solid_cache"
-gem "solid_queue", "~> 1.6.0"
+gem "solid_queue", "~> 1.7.0"
 gem "solid_cable"
 
 # Reduces boot times through caching; required in config/boot.rb
@@ -31,7 +31,7 @@ gem "thruster", require: false
 
 # Use Active Storage variants [https://guides.rubyonrails.org/active_storage_overview.html#transforming-images]
 gem "image_processing", "~> 2.0.3"
-gem "ruby-vips", "~> 2.2.0"
+gem "ruby-vips", "~> 2.3.0"
 
 # Use Amazon S3 for Active Storage in production
 gem "aws-sdk-s3", require: false
@@ -74,7 +74,7 @@ group :test do
   gem "selenium-webdriver"
 end
 
-gem "inertia_rails", "~> 3.9"
+gem "inertia_rails", "~> 3.22"
 
 gem "vite_rails", "~> 3.0"
 
@@ -95,7 +95,7 @@ gem "redcarpet"
 gem "honeybadger", "~> 6.1"
 
 # Soft delete support
-gem "discard", "~> 1.3"
+gem "discard", "~> 2.0"
 
 # X/Twitter API client
 gem "x"

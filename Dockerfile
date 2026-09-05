@@ -50,7 +50,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update -o Acquire::Retries=3; \
     apt-get install -y --no-install-recommends \
       build-essential git openssh-client pkg-config \
-      libvips libpq-dev libicu-dev libyaml-dev libssl-dev libreadline-dev zlib1g-dev \
+      libvips libpq-dev libicu-dev libyaml-dev libssl-dev libreadline-dev libffi-dev zlib1g-dev \
       passwd vim neovim \
       postgresql-client-16 ffmpeg poppler-utils docker-cli; \
     docker --version; \
