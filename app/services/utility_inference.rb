@@ -15,13 +15,13 @@ class UtilityInference
     key = account.ai_api_key(:openrouter)
     return if key.blank? || key.start_with?("<")
 
-    chat(key: key, model: model, system: system, user: user, max_tokens: 100)
+    chat(key: key, model: model, system: system, user: user)
   end
 
   def self.classify(model:, prompt:)
     chat(
       key: Account.system_ai_api_key(:openrouter),
-      model: model, user: prompt, max_tokens: 200
+      model: model, user: prompt
     )
   end
 
@@ -39,13 +39,15 @@ class UtilityInference
     scores
   end
 
-  def self.chat(key:, model:, user:, max_tokens:, system: nil)
+  def self.chat(key:, model:, user:, system: nil)
     validate_input!("#{system}#{user}")
     messages = []
     messages << { role: "system", content: system } if system.present?
     messages << { role: "user", content: user }
     response = client(key: key, openrouter: true).chat(
-      parameters: { model: model, messages: messages, max_tokens: max_tokens }
+      # OpenRouter's cap includes reasoning. These short utility calls need
+      # visible output, not a thinking budget; exclude:true would only hide it.
+      parameters: { model: model, messages: messages, max_tokens: 1_000, reasoning: { effort: "none" } }
     )
     content = response.is_a?(Hash) && response.dig("choices", 0, "message", "content")
     raise InvalidResponse, "Empty utility response" unless content.is_a?(String) && content.present?

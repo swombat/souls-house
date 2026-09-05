@@ -28,6 +28,35 @@ class Agent::RuntimeAvailabilityTest < ActiveSupport::TestCase
     end
   end
 
+  test "unchanged legacy runtimes allow owner edits without restoring availability" do
+    key = ApiKey.generate_for(@agent.account.owner, name: "legacy resident", agent: @agent)
+    %w[inline migrating].each_with_index do |runtime, index|
+      @agent.update_columns(runtime: runtime)
+      @agent.reload.update!(name: "Retired resident #{index}", paused: true, colour: "blue")
+      assert_equal runtime, @agent.reload.runtime
+      assert @agent.paused?
+      assert_not @agent.hosted?
+      assert_not Agent.eligible_for_conversation.exists?(@agent.id)
+      assert_nil ApiKey.authenticate(key.raw_token)
+      assert_raises(Agent::RuntimeAvailability::Unavailable) { @agent.require_conversation_runtime! }
+      @agent.runtime = runtime == "inline" ? "migrating" : "inline"
+      assert_not @agent.valid?
+      @agent.reload.update!(runtime: "deprecated")
+      assert_equal "deprecated", @agent.reload.runtime
+    end
+  end
+
+  test "new legacy and unchanged unknown runtimes remain invalid" do
+    %w[inline migrating].each do |runtime|
+      agent = Agent.new(runtime: runtime)
+      assert_not agent.valid?
+      assert agent.errors[:runtime].any?
+    end
+    @agent.update_columns(runtime: "unknown")
+    assert_not @agent.reload.valid?
+    assert @agent.errors[:runtime].any?
+  end
+
   test "paused and offline are not deprecated; provisioning cannot join conversations" do
     %w[external offline].each do |runtime|
       @agent.update_columns(runtime: runtime, paused: true)

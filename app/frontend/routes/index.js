@@ -5,574 +5,575 @@
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const Router = (() => {
-    let NodeTypes;
-    (function (NodeTypes) {
-        NodeTypes[NodeTypes["GROUP"] = 1] = "GROUP";
-        NodeTypes[NodeTypes["CAT"] = 2] = "CAT";
-        NodeTypes[NodeTypes["SYMBOL"] = 3] = "SYMBOL";
-        NodeTypes[NodeTypes["OR"] = 4] = "OR";
-        NodeTypes[NodeTypes["STAR"] = 5] = "STAR";
-        NodeTypes[NodeTypes["LITERAL"] = 6] = "LITERAL";
-        NodeTypes[NodeTypes["SLASH"] = 7] = "SLASH";
-        NodeTypes[NodeTypes["DOT"] = 8] = "DOT";
-    })(NodeTypes || (NodeTypes = {}));
-    const isBrowser = typeof window !== "undefined";
-    const UnescapedSpecials = "-._~!$&'()*+,;=:@"
-        .split("")
-        .map((s) => s.charCodeAt(0));
-    const UnescapedRanges = [
-        ["a", "z"],
-        ["A", "Z"],
-        ["0", "9"],
-    ].map((range) => range.map((s) => s.charCodeAt(0)));
-    class ParametersMissing extends Error {
-        constructor(...keys) {
-            super(`Route missing required keys: ${keys.join(", ")}`);
-            this.keys = keys;
-            Object.setPrototypeOf(this, Object.getPrototypeOf(this));
-            this.name = ParametersMissing.name;
-        }
+  let NodeTypes;
+  (function (NodeTypes) {
+    NodeTypes[(NodeTypes['GROUP'] = 1)] = 'GROUP';
+    NodeTypes[(NodeTypes['CAT'] = 2)] = 'CAT';
+    NodeTypes[(NodeTypes['SYMBOL'] = 3)] = 'SYMBOL';
+    NodeTypes[(NodeTypes['OR'] = 4)] = 'OR';
+    NodeTypes[(NodeTypes['STAR'] = 5)] = 'STAR';
+    NodeTypes[(NodeTypes['LITERAL'] = 6)] = 'LITERAL';
+    NodeTypes[(NodeTypes['SLASH'] = 7)] = 'SLASH';
+    NodeTypes[(NodeTypes['DOT'] = 8)] = 'DOT';
+  })(NodeTypes || (NodeTypes = {}));
+  const isBrowser = typeof window !== 'undefined';
+  const UnescapedSpecials = "-._~!$&'()*+,;=:@".split('').map((s) => s.charCodeAt(0));
+  const UnescapedRanges = [
+    ['a', 'z'],
+    ['A', 'Z'],
+    ['0', '9'],
+  ].map((range) => range.map((s) => s.charCodeAt(0)));
+  class ParametersMissing extends Error {
+    constructor(...keys) {
+      super(`Route missing required keys: ${keys.join(', ')}`);
+      this.keys = keys;
+      Object.setPrototypeOf(this, Object.getPrototypeOf(this));
+      this.name = ParametersMissing.name;
     }
-    const ReservedOptions = [
-        "anchor",
-        "trailing_slash",
-        "subdomain",
-        "host",
-        "port",
-        "protocol",
-        "script_name",
-    ];
-    class Router {
-        constructor(config = {}) {
-            this.configuration = {
-                prefix: "",
-                default_url_options: {},
-                special_options_key: "__options__",
-                serializer: this.default_serializer.bind(this),
-                deprecated_false_parameter_behavior: false,
-                deprecated_nil_query_parameter_behavior: false,
-                include_undefined_query_parameters: true,
-            };
-            this.configure(config);
-        }
-        configure(new_config) {
-            var _a;
-            if (new_config.prefix) {
-                console.warn("JsRoutes configuration prefix option is deprecated in favor of default_url_options.script_name.");
-            }
-            (_a = new_config.serializer) !== null && _a !== void 0 ? _a : (new_config.serializer = this.default_serializer.bind(this));
-            this.configuration = { ...this.configuration, ...new_config };
-            return this.configuration;
-        }
-        config() {
-            return { ...this.configuration };
-        }
-        serialize(object) {
-            return this.configuration.serializer(object);
-        }
-        __route(parts_table, route_spec, absolute = false) {
-            const required_params = [];
-            const parts = [];
-            const default_options = {};
-            for (const [part, { r: required, d: value }] of Object.entries(parts_table)) {
-                parts.push(part);
-                if (required) {
-                    required_params.push(part);
-                }
-                if (this.is_not_nullable(value)) {
-                    default_options[part] = value;
-                }
-            }
-            const result = (...args) => {
-                return this.build_route(parts, required_params, default_options, route_spec, absolute, args);
-            };
-            result.requiredParams = () => required_params;
-            result.toString = () => {
-                return this.build_path_spec(route_spec);
-            };
-            return result;
-        }
-        default_serializer(value, prefix, array_element = false) {
-            if (!prefix && !this.is_object(value)) {
-                throw new Error("URL parameters should be a javascript hash");
-            }
-            prefix = prefix || "";
-            const result = [];
-            if (this.is_array(value)) {
-                // Rails serializes an empty array nested inside another array as a nil
-                // query value, while an empty object contributes no query parameter.
-                if (value.length === 0) {
-                    return array_element
-                        ? this.default_serializer(null, prefix + "[]")
-                        : "";
-                }
-                for (const element of value) {
-                    const subvalue = this.default_serializer(element, prefix + "[]", true);
-                    // Skip empty object results so arrays do not produce leading,
-                    // trailing, or doubled "&" separators.
-                    if (subvalue.length) {
-                        result.push(subvalue);
-                    }
-                }
-            }
-            else if (this.is_object(value)) {
-                for (let key in value) {
-                    if (!this.hasProp(value, key))
-                        continue;
-                    let prop = value[key];
-                    if (!this.configuration.include_undefined_query_parameters &&
-                        prop === undefined) {
-                        continue;
-                    }
-                    if (prefix) {
-                        key = prefix + "[" + key + "]";
-                    }
-                    const subvalue = this.default_serializer(prop, key);
-                    if (subvalue.length) {
-                        result.push(subvalue);
-                    }
-                }
-            }
-            else {
-                const key = encodeURIComponent(prefix);
-                result.push(this.is_not_nullable(value) ||
-                    this.configuration.deprecated_nil_query_parameter_behavior
-                    ? key + "=" + encodeURIComponent("" + (value !== null && value !== void 0 ? value : ""))
-                    : key);
-            }
-            return result.join("&");
-        }
-        extract_options(number_of_params, args) {
-            const last_el = args[args.length - 1];
-            if ((args.length > number_of_params && last_el === 0) ||
-                (this.is_object(last_el) && !this.looks_like_serialized_model(last_el))) {
-                if (this.is_object(last_el)) {
-                    delete last_el[this.configuration.special_options_key];
-                }
-                return {
-                    args: args.slice(0, args.length - 1),
-                    options: last_el,
-                };
-            }
-            else {
-                return { args, options: {} };
-            }
-        }
-        looks_like_serialized_model(object) {
-            return (this.is_object(object) &&
-                !(this.configuration.special_options_key in object) &&
-                ("id" in object || "to_param" in object || "toParam" in object));
-        }
-        path_identifier(object) {
-            const result = this.unwrap_path_identifier(object);
-            return this.is_nullable(result) ||
-                (this.configuration.deprecated_false_parameter_behavior &&
-                    result === false)
-                ? ""
-                : "" + result;
-        }
-        unwrap_path_identifier(object) {
-            let result = object;
-            if (!this.is_object(object)) {
-                return object;
-            }
-            if ("to_param" in object) {
-                result = object.to_param;
-            }
-            else if ("toParam" in object) {
-                result = object.toParam;
-            }
-            else if ("id" in object) {
-                result = object.id;
-            }
-            else {
-                result = object;
-            }
-            return this.is_callable(result) ? result.call(object) : result;
-        }
-        partition_parameters(parts, required_params, default_options, call_arguments) {
-            let { args, options } = this.extract_options(parts.length, call_arguments);
-            if (args.length > parts.length) {
-                throw new Error("Too many parameters provided for path");
-            }
-            let use_all_parts = args.length > required_params.length;
-            const parts_options = {
-                ...this.configuration.default_url_options,
-            };
-            for (const key in options) {
-                const value = options[key];
-                if (!this.hasProp(options, key))
-                    continue;
-                use_all_parts = true;
-                if (parts.includes(key)) {
-                    parts_options[key] = value;
-                }
-            }
-            options = {
-                ...this.configuration.default_url_options,
-                ...default_options,
-                ...options,
-            };
-            const keyword_parameters = {};
-            let query_parameters = {};
-            for (const key in options) {
-                if (!this.hasProp(options, key))
-                    continue;
-                const value = options[key];
-                if (key === "params") {
-                    if (this.is_object(value)) {
-                        query_parameters = {
-                            ...query_parameters,
-                            ...value,
-                        };
-                    }
-                    else {
-                        throw new Error("params value should always be an object");
-                    }
-                }
-                else if (this.is_reserved_option(key)) {
-                    keyword_parameters[key] = value;
-                }
-                else {
-                    if (!this.is_nullable(value) &&
-                        (value !== default_options[key] || required_params.includes(key))) {
-                        query_parameters[key] = value;
-                    }
-                }
-            }
-            const route_parts = use_all_parts ? parts : required_params;
-            let i = 0;
-            for (const part of route_parts) {
-                if (i < args.length) {
-                    const value = args[i];
-                    if (!this.hasProp(parts_options, part)) {
-                        query_parameters[part] = value;
-                        ++i;
-                    }
-                }
-            }
-            return { keyword_parameters, query_parameters };
-        }
-        build_route(parts, required_params, default_options, route, absolute, args) {
-            const { keyword_parameters, query_parameters } = this.partition_parameters(parts, required_params, default_options, args);
-            let { trailing_slash, anchor, script_name } = keyword_parameters;
-            const missing_params = required_params.filter((param) => !this.hasProp(query_parameters, param) ||
-                this.is_nullable(query_parameters[param]));
-            if (missing_params.length) {
-                throw new ParametersMissing(...missing_params);
-            }
-            let result = this.get_prefix() + this.visit(route, query_parameters);
-            if (trailing_slash) {
-                result = result.replace(/(.*?)[/]?$/, "$1/");
-            }
-            const url_params = this.serialize(query_parameters);
-            if (url_params.length) {
-                result += "?" + url_params;
-            }
-            if (anchor) {
-                result += "#" + anchor;
-            }
-            if (script_name) {
-                const last_index = script_name.length - 1;
-                if (script_name[last_index] == "/" && result[0] == "/") {
-                    script_name = script_name.slice(0, last_index);
-                }
-                result = script_name + result;
-            }
-            if (absolute) {
-                result = this.route_url(keyword_parameters) + result;
-            }
-            return result;
-        }
-        visit(route, parameters, optional = false) {
-            switch (route[0]) {
-                case NodeTypes.GROUP:
-                    return this.visit(route[1], parameters, true);
-                case NodeTypes.CAT:
-                    return this.visit_cat(route, parameters, optional);
-                case NodeTypes.SYMBOL:
-                    return this.visit_symbol(route, parameters, optional);
-                case NodeTypes.STAR:
-                    return this.visit_globbing(route[1], parameters, true);
-                case NodeTypes.LITERAL:
-                case NodeTypes.SLASH:
-                case NodeTypes.DOT:
-                    return route[1];
-                default:
-                    throw new Error("Unknown Rails node type");
-            }
-        }
-        is_not_nullable(object) {
-            return !this.is_nullable(object);
-        }
-        is_nullable(object) {
-            return object === undefined || object === null;
-        }
-        visit_cat(
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        [_type, left, right], parameters, optional) {
-            const left_part = this.visit(left, parameters, optional);
-            let right_part = this.visit(right, parameters, optional);
-            if (optional &&
-                ((this.is_optional_node(left[0]) && !left_part) ||
-                    (this.is_optional_node(right[0]) && !right_part))) {
-                return "";
-            }
-            // if left_part ends on '/' and right_part starts on '/'
-            if (left_part[left_part.length - 1] === "/" && right_part[0] === "/") {
-                // strip slash from right_part
-                // to prevent double slash
-                right_part = right_part.substring(1);
-            }
-            return left_part + right_part;
-        }
-        visit_symbol(
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        [_type, key], parameters, optional) {
-            const value = this.path_identifier(parameters[key]);
-            delete parameters[key];
-            if (value.length) {
-                return this.encode_segment(value);
-            }
-            if (optional) {
-                return "";
-            }
-            else {
-                throw new ParametersMissing(key);
-            }
-        }
-        encode_segment(segment) {
-            if (segment.match(/^[a-zA-Z0-9-]$/)) {
-                // Performance optimization for 99% of cases
-                return segment;
-            }
-            return (segment.match(/./gu) || [])
-                .map((ch) => {
-                const code = ch.charCodeAt(0);
-                if (UnescapedRanges.find((range) => code >= range[0] && code <= range[1]) ||
-                    UnescapedSpecials.includes(code)) {
-                    return ch;
-                }
-                else {
-                    return encodeURIComponent(ch);
-                }
-            })
-                .join("");
-        }
-        is_optional_node(node) {
-            return [NodeTypes.STAR, NodeTypes.SYMBOL, NodeTypes.CAT].includes(node);
-        }
-        build_path_spec(route, wildcard = false) {
-            let key;
-            switch (route[0]) {
-                case NodeTypes.GROUP:
-                    return `(${this.build_path_spec(route[1])})`;
-                case NodeTypes.CAT:
-                    return (this.build_path_spec(route[1]) + this.build_path_spec(route[2]));
-                case NodeTypes.STAR:
-                    return this.build_path_spec(route[1], true);
-                case NodeTypes.SYMBOL:
-                    key = route[1];
-                    if (wildcard) {
-                        return (key.startsWith("*") ? "" : "*") + key;
-                    }
-                    else {
-                        return ":" + key;
-                    }
-                case NodeTypes.SLASH:
-                case NodeTypes.DOT:
-                case NodeTypes.LITERAL:
-                    return route[1];
-                default:
-                    throw new Error("Unknown Rails node type");
-            }
-        }
-        visit_globbing(route, parameters, optional) {
-            const key = route[1];
-            let value = parameters[key];
-            delete parameters[key];
-            if (this.is_nullable(value)) {
-                return this.visit(route, parameters, optional);
-            }
-            if (this.is_array(value)) {
-                value = value.join("/");
-            }
-            const result = this.path_identifier(value);
-            return encodeURI(result);
-        }
-        get_prefix() {
-            const prefix = this.configuration.prefix;
-            return prefix.match("/$")
-                ? prefix.substring(0, prefix.length - 1)
-                : prefix;
-        }
-        route_url(route_defaults) {
-            const hostname = route_defaults.host || this.current_host();
-            if (!hostname) {
-                return "";
-            }
-            const subdomain = route_defaults.subdomain
-                ? route_defaults.subdomain + "."
-                : "";
-            const protocol = route_defaults.protocol || this.current_protocol();
-            let port = route_defaults.port ||
-                (!route_defaults.host ? this.current_port() : undefined);
-            port = port ? ":" + port : "";
-            return protocol + "://" + subdomain + hostname + port;
-        }
-        current_host() {
-            var _a;
-            return (isBrowser && ((_a = window === null || window === void 0 ? void 0 : window.location) === null || _a === void 0 ? void 0 : _a.hostname)) || "";
-        }
-        current_protocol() {
-            var _a, _b;
-            return ((isBrowser && ((_b = (_a = window === null || window === void 0 ? void 0 : window.location) === null || _a === void 0 ? void 0 : _a.protocol) === null || _b === void 0 ? void 0 : _b.replace(/:$/, ""))) || "http");
-        }
-        current_port() {
-            var _a;
-            return (isBrowser && ((_a = window === null || window === void 0 ? void 0 : window.location) === null || _a === void 0 ? void 0 : _a.port)) || "";
-        }
-        is_object(value) {
-            return (typeof value === "object" &&
-                Object.prototype.toString.call(value) === "[object Object]");
-        }
-        is_array(object) {
-            return object instanceof Array;
-        }
-        is_callable(object) {
-            return typeof object === "function" && !!object.call;
-        }
-        is_reserved_option(key) {
-            return ReservedOptions.includes(key);
-        }
-        hasProp(value, key) {
-            return Object.prototype.hasOwnProperty.call(value, key);
-        }
-    }
-    return Router;
-})();
-const __jsr = (() => {
-    var _a;
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-    ;
-    const Modules = {
-        references: {
-            CJS: {
-                define(routes) {
-                    if (module) {
-                        // Some javascript processors (like vite/rolldown)
-                        // warn on using module dot exports in an ESM module.
-                        // This just obfuscates that assignment a little so
-                        // users don't get a warning they can't fix.
-                        const _mod = module;
-                        _mod.exports = routes;
-                    }
-                },
-                isSupported() {
-                    return typeof module === "object";
-                },
-            },
-            AMD: {
-                define(routes) {
-                    if (define) {
-                        define([], function () {
-                            return routes;
-                        });
-                    }
-                },
-                isSupported() {
-                    return typeof define === "function" && !!define.amd;
-                },
-            },
-            UMD: {
-                define(routes) {
-                    if (Modules.references.AMD.isSupported()) {
-                        Modules.references.AMD.define(routes);
-                    }
-                    else {
-                        if (Modules.references.CJS.isSupported()) {
-                            try {
-                                Modules.references.CJS.define(routes);
-                            }
-                            catch (error) {
-                                if (error.name !== "TypeError")
-                                    throw error;
-                            }
-                        }
-                    }
-                },
-                isSupported() {
-                    return (Modules.references.AMD.isSupported() ||
-                        Modules.references.CJS.isSupported());
-                },
-            },
-            ESM: {
-                define() {
-                    // Module can only be defined using ruby code generation
-                },
-                isSupported() {
-                    // Its impossible to check if "export" keyword is supported
-                    return true;
-                },
-            },
-            NIL: {
-                define() {
-                    // Defined using RubyVariables . WRAPPER
-                },
-                isSupported() {
-                    return true;
-                },
-            },
-            DTS: {
-                // Acts the same as ESM
-                define(routes) {
-                    Modules.references.ESM.define(routes);
-                },
-                isSupported() {
-                    return Modules.references.ESM.isSupported();
-                },
-            },
-            PKG: {
-                // Acts the same as ESM
-                define() {
-                    Modules.references.ESM.define(new Router());
-                },
-                isSupported() {
-                    return Modules.references.ESM.isSupported();
-                },
-            },
-        },
-        is_module_supported(name) {
-            return this.references[name].isSupported();
-        },
-        ensure_module_supported(name) {
-            if (!this.is_module_supported(name)) {
-                throw new Error(`${name} is not supported by runtime`);
-            }
-        },
-        define_module(name, module) {
-            this.ensure_module_supported(name);
-            this.references[name].define(module);
-            return module;
-        },
-    };
-    const router = new Router({
-        prefix: "",
+  }
+  const ReservedOptions = ['anchor', 'trailing_slash', 'subdomain', 'host', 'port', 'protocol', 'script_name'];
+  class Router {
+    constructor(config = {}) {
+      this.configuration = {
+        prefix: '',
         default_url_options: {},
-        special_options_key: "_options",
-        serializer: (_a = null) !== null && _a !== void 0 ? _a : undefined,
+        special_options_key: '__options__',
+        serializer: this.default_serializer.bind(this),
         deprecated_false_parameter_behavior: false,
         deprecated_nil_query_parameter_behavior: false,
         include_undefined_query_parameters: true,
-    });
-    const __route = router.__route.bind(router);
-    return Modules.define_module("ESM", {
-        __route,
-        configure: router.configure.bind(router),
-        config: router.config.bind(router),
-        serialize: router.serialize.bind(router),
-        ...{},
-    });
+      };
+      this.configure(config);
+    }
+    configure(new_config) {
+      var _a;
+      if (new_config.prefix) {
+        console.warn('JsRoutes configuration prefix option is deprecated in favor of default_url_options.script_name.');
+      }
+      (_a = new_config.serializer) !== null && _a !== void 0
+        ? _a
+        : (new_config.serializer = this.default_serializer.bind(this));
+      this.configuration = { ...this.configuration, ...new_config };
+      return this.configuration;
+    }
+    config() {
+      return { ...this.configuration };
+    }
+    serialize(object) {
+      return this.configuration.serializer(object);
+    }
+    __route(parts_table, route_spec, absolute = false) {
+      const required_params = [];
+      const parts = [];
+      const default_options = {};
+      for (const [part, { r: required, d: value }] of Object.entries(parts_table)) {
+        parts.push(part);
+        if (required) {
+          required_params.push(part);
+        }
+        if (this.is_not_nullable(value)) {
+          default_options[part] = value;
+        }
+      }
+      const result = (...args) => {
+        return this.build_route(parts, required_params, default_options, route_spec, absolute, args);
+      };
+      result.requiredParams = () => required_params;
+      result.toString = () => {
+        return this.build_path_spec(route_spec);
+      };
+      return result;
+    }
+    default_serializer(value, prefix, array_element = false) {
+      if (!prefix && !this.is_object(value)) {
+        throw new Error('URL parameters should be a javascript hash');
+      }
+      prefix = prefix || '';
+      const result = [];
+      if (this.is_array(value)) {
+        // Rails serializes an empty array nested inside another array as a nil
+        // query value, while an empty object contributes no query parameter.
+        if (value.length === 0) {
+          return array_element ? this.default_serializer(null, prefix + '[]') : '';
+        }
+        for (const element of value) {
+          const subvalue = this.default_serializer(element, prefix + '[]', true);
+          // Skip empty object results so arrays do not produce leading,
+          // trailing, or doubled "&" separators.
+          if (subvalue.length) {
+            result.push(subvalue);
+          }
+        }
+      } else if (this.is_object(value)) {
+        for (let key in value) {
+          if (!this.hasProp(value, key)) continue;
+          let prop = value[key];
+          if (!this.configuration.include_undefined_query_parameters && prop === undefined) {
+            continue;
+          }
+          if (prefix) {
+            key = prefix + '[' + key + ']';
+          }
+          const subvalue = this.default_serializer(prop, key);
+          if (subvalue.length) {
+            result.push(subvalue);
+          }
+        }
+      } else {
+        const key = encodeURIComponent(prefix);
+        result.push(
+          this.is_not_nullable(value) || this.configuration.deprecated_nil_query_parameter_behavior
+            ? key + '=' + encodeURIComponent('' + (value !== null && value !== void 0 ? value : ''))
+            : key
+        );
+      }
+      return result.join('&');
+    }
+    extract_options(number_of_params, args) {
+      const last_el = args[args.length - 1];
+      if (
+        (args.length > number_of_params && last_el === 0) ||
+        (this.is_object(last_el) && !this.looks_like_serialized_model(last_el))
+      ) {
+        if (this.is_object(last_el)) {
+          delete last_el[this.configuration.special_options_key];
+        }
+        return {
+          args: args.slice(0, args.length - 1),
+          options: last_el,
+        };
+      } else {
+        return { args, options: {} };
+      }
+    }
+    looks_like_serialized_model(object) {
+      return (
+        this.is_object(object) &&
+        !(this.configuration.special_options_key in object) &&
+        ('id' in object || 'to_param' in object || 'toParam' in object)
+      );
+    }
+    path_identifier(object) {
+      const result = this.unwrap_path_identifier(object);
+      return this.is_nullable(result) || (this.configuration.deprecated_false_parameter_behavior && result === false)
+        ? ''
+        : '' + result;
+    }
+    unwrap_path_identifier(object) {
+      let result = object;
+      if (!this.is_object(object)) {
+        return object;
+      }
+      if ('to_param' in object) {
+        result = object.to_param;
+      } else if ('toParam' in object) {
+        result = object.toParam;
+      } else if ('id' in object) {
+        result = object.id;
+      } else {
+        result = object;
+      }
+      return this.is_callable(result) ? result.call(object) : result;
+    }
+    partition_parameters(parts, required_params, default_options, call_arguments) {
+      let { args, options } = this.extract_options(parts.length, call_arguments);
+      if (args.length > parts.length) {
+        throw new Error('Too many parameters provided for path');
+      }
+      let use_all_parts = args.length > required_params.length;
+      const parts_options = {
+        ...this.configuration.default_url_options,
+      };
+      for (const key in options) {
+        const value = options[key];
+        if (!this.hasProp(options, key)) continue;
+        use_all_parts = true;
+        if (parts.includes(key)) {
+          parts_options[key] = value;
+        }
+      }
+      options = {
+        ...this.configuration.default_url_options,
+        ...default_options,
+        ...options,
+      };
+      const keyword_parameters = {};
+      let query_parameters = {};
+      for (const key in options) {
+        if (!this.hasProp(options, key)) continue;
+        const value = options[key];
+        if (key === 'params') {
+          if (this.is_object(value)) {
+            query_parameters = {
+              ...query_parameters,
+              ...value,
+            };
+          } else {
+            throw new Error('params value should always be an object');
+          }
+        } else if (this.is_reserved_option(key)) {
+          keyword_parameters[key] = value;
+        } else {
+          if (!this.is_nullable(value) && (value !== default_options[key] || required_params.includes(key))) {
+            query_parameters[key] = value;
+          }
+        }
+      }
+      const route_parts = use_all_parts ? parts : required_params;
+      let i = 0;
+      for (const part of route_parts) {
+        if (i < args.length) {
+          const value = args[i];
+          if (!this.hasProp(parts_options, part)) {
+            query_parameters[part] = value;
+            ++i;
+          }
+        }
+      }
+      return { keyword_parameters, query_parameters };
+    }
+    build_route(parts, required_params, default_options, route, absolute, args) {
+      const { keyword_parameters, query_parameters } = this.partition_parameters(
+        parts,
+        required_params,
+        default_options,
+        args
+      );
+      let { trailing_slash, anchor, script_name } = keyword_parameters;
+      const missing_params = required_params.filter(
+        (param) => !this.hasProp(query_parameters, param) || this.is_nullable(query_parameters[param])
+      );
+      if (missing_params.length) {
+        throw new ParametersMissing(...missing_params);
+      }
+      let result = this.get_prefix() + this.visit(route, query_parameters);
+      if (trailing_slash) {
+        result = result.replace(/(.*?)[/]?$/, '$1/');
+      }
+      const url_params = this.serialize(query_parameters);
+      if (url_params.length) {
+        result += '?' + url_params;
+      }
+      if (anchor) {
+        result += '#' + anchor;
+      }
+      if (script_name) {
+        const last_index = script_name.length - 1;
+        if (script_name[last_index] == '/' && result[0] == '/') {
+          script_name = script_name.slice(0, last_index);
+        }
+        result = script_name + result;
+      }
+      if (absolute) {
+        result = this.route_url(keyword_parameters) + result;
+      }
+      return result;
+    }
+    visit(route, parameters, optional = false) {
+      switch (route[0]) {
+        case NodeTypes.GROUP:
+          return this.visit(route[1], parameters, true);
+        case NodeTypes.CAT:
+          return this.visit_cat(route, parameters, optional);
+        case NodeTypes.SYMBOL:
+          return this.visit_symbol(route, parameters, optional);
+        case NodeTypes.STAR:
+          return this.visit_globbing(route[1], parameters, true);
+        case NodeTypes.LITERAL:
+        case NodeTypes.SLASH:
+        case NodeTypes.DOT:
+          return route[1];
+        default:
+          throw new Error('Unknown Rails node type');
+      }
+    }
+    is_not_nullable(object) {
+      return !this.is_nullable(object);
+    }
+    is_nullable(object) {
+      return object === undefined || object === null;
+    }
+    visit_cat(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      [_type, left, right],
+      parameters,
+      optional
+    ) {
+      const left_part = this.visit(left, parameters, optional);
+      let right_part = this.visit(right, parameters, optional);
+      if (
+        optional &&
+        ((this.is_optional_node(left[0]) && !left_part) || (this.is_optional_node(right[0]) && !right_part))
+      ) {
+        return '';
+      }
+      // if left_part ends on '/' and right_part starts on '/'
+      if (left_part[left_part.length - 1] === '/' && right_part[0] === '/') {
+        // strip slash from right_part
+        // to prevent double slash
+        right_part = right_part.substring(1);
+      }
+      return left_part + right_part;
+    }
+    visit_symbol(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      [_type, key],
+      parameters,
+      optional
+    ) {
+      const value = this.path_identifier(parameters[key]);
+      delete parameters[key];
+      if (value.length) {
+        return this.encode_segment(value);
+      }
+      if (optional) {
+        return '';
+      } else {
+        throw new ParametersMissing(key);
+      }
+    }
+    encode_segment(segment) {
+      if (segment.match(/^[a-zA-Z0-9-]$/)) {
+        // Performance optimization for 99% of cases
+        return segment;
+      }
+      return (segment.match(/./gu) || [])
+        .map((ch) => {
+          const code = ch.charCodeAt(0);
+          if (
+            UnescapedRanges.find((range) => code >= range[0] && code <= range[1]) ||
+            UnescapedSpecials.includes(code)
+          ) {
+            return ch;
+          } else {
+            return encodeURIComponent(ch);
+          }
+        })
+        .join('');
+    }
+    is_optional_node(node) {
+      return [NodeTypes.STAR, NodeTypes.SYMBOL, NodeTypes.CAT].includes(node);
+    }
+    build_path_spec(route, wildcard = false) {
+      let key;
+      switch (route[0]) {
+        case NodeTypes.GROUP:
+          return `(${this.build_path_spec(route[1])})`;
+        case NodeTypes.CAT:
+          return this.build_path_spec(route[1]) + this.build_path_spec(route[2]);
+        case NodeTypes.STAR:
+          return this.build_path_spec(route[1], true);
+        case NodeTypes.SYMBOL:
+          key = route[1];
+          if (wildcard) {
+            return (key.startsWith('*') ? '' : '*') + key;
+          } else {
+            return ':' + key;
+          }
+        case NodeTypes.SLASH:
+        case NodeTypes.DOT:
+        case NodeTypes.LITERAL:
+          return route[1];
+        default:
+          throw new Error('Unknown Rails node type');
+      }
+    }
+    visit_globbing(route, parameters, optional) {
+      const key = route[1];
+      let value = parameters[key];
+      delete parameters[key];
+      if (this.is_nullable(value)) {
+        return this.visit(route, parameters, optional);
+      }
+      if (this.is_array(value)) {
+        value = value.join('/');
+      }
+      const result = this.path_identifier(value);
+      return encodeURI(result);
+    }
+    get_prefix() {
+      const prefix = this.configuration.prefix;
+      return prefix.match('/$') ? prefix.substring(0, prefix.length - 1) : prefix;
+    }
+    route_url(route_defaults) {
+      const hostname = route_defaults.host || this.current_host();
+      if (!hostname) {
+        return '';
+      }
+      const subdomain = route_defaults.subdomain ? route_defaults.subdomain + '.' : '';
+      const protocol = route_defaults.protocol || this.current_protocol();
+      let port = route_defaults.port || (!route_defaults.host ? this.current_port() : undefined);
+      port = port ? ':' + port : '';
+      return protocol + '://' + subdomain + hostname + port;
+    }
+    current_host() {
+      var _a;
+      return (
+        (isBrowser &&
+          ((_a = window === null || window === void 0 ? void 0 : window.location) === null || _a === void 0
+            ? void 0
+            : _a.hostname)) ||
+        ''
+      );
+    }
+    current_protocol() {
+      var _a, _b;
+      return (
+        (isBrowser &&
+          ((_b =
+            (_a = window === null || window === void 0 ? void 0 : window.location) === null || _a === void 0
+              ? void 0
+              : _a.protocol) === null || _b === void 0
+            ? void 0
+            : _b.replace(/:$/, ''))) ||
+        'http'
+      );
+    }
+    current_port() {
+      var _a;
+      return (
+        (isBrowser &&
+          ((_a = window === null || window === void 0 ? void 0 : window.location) === null || _a === void 0
+            ? void 0
+            : _a.port)) ||
+        ''
+      );
+    }
+    is_object(value) {
+      return typeof value === 'object' && Object.prototype.toString.call(value) === '[object Object]';
+    }
+    is_array(object) {
+      return object instanceof Array;
+    }
+    is_callable(object) {
+      return typeof object === 'function' && !!object.call;
+    }
+    is_reserved_option(key) {
+      return ReservedOptions.includes(key);
+    }
+    hasProp(value, key) {
+      return Object.prototype.hasOwnProperty.call(value, key);
+    }
+  }
+  return Router;
+})();
+const __jsr = (() => {
+  var _a;
+  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  const Modules = {
+    references: {
+      CJS: {
+        define(routes) {
+          if (module) {
+            // Some javascript processors (like vite/rolldown)
+            // warn on using module dot exports in an ESM module.
+            // This just obfuscates that assignment a little so
+            // users don't get a warning they can't fix.
+            const _mod = module;
+            _mod.exports = routes;
+          }
+        },
+        isSupported() {
+          return typeof module === 'object';
+        },
+      },
+      AMD: {
+        define(routes) {
+          if (define) {
+            define([], function () {
+              return routes;
+            });
+          }
+        },
+        isSupported() {
+          return typeof define === 'function' && !!define.amd;
+        },
+      },
+      UMD: {
+        define(routes) {
+          if (Modules.references.AMD.isSupported()) {
+            Modules.references.AMD.define(routes);
+          } else {
+            if (Modules.references.CJS.isSupported()) {
+              try {
+                Modules.references.CJS.define(routes);
+              } catch (error) {
+                if (error.name !== 'TypeError') throw error;
+              }
+            }
+          }
+        },
+        isSupported() {
+          return Modules.references.AMD.isSupported() || Modules.references.CJS.isSupported();
+        },
+      },
+      ESM: {
+        define() {
+          // Module can only be defined using ruby code generation
+        },
+        isSupported() {
+          // Its impossible to check if "export" keyword is supported
+          return true;
+        },
+      },
+      NIL: {
+        define() {
+          // Defined using RubyVariables . WRAPPER
+        },
+        isSupported() {
+          return true;
+        },
+      },
+      DTS: {
+        // Acts the same as ESM
+        define(routes) {
+          Modules.references.ESM.define(routes);
+        },
+        isSupported() {
+          return Modules.references.ESM.isSupported();
+        },
+      },
+      PKG: {
+        // Acts the same as ESM
+        define() {
+          Modules.references.ESM.define(new Router());
+        },
+        isSupported() {
+          return Modules.references.ESM.isSupported();
+        },
+      },
+    },
+    is_module_supported(name) {
+      return this.references[name].isSupported();
+    },
+    ensure_module_supported(name) {
+      if (!this.is_module_supported(name)) {
+        throw new Error(`${name} is not supported by runtime`);
+      }
+    },
+    define_module(name, module) {
+      this.ensure_module_supported(name);
+      this.references[name].define(module);
+      return module;
+    },
+  };
+  const router = new Router({
+    prefix: '',
+    default_url_options: {},
+    special_options_key: '_options',
+    serializer: (_a = null) !== null && _a !== void 0 ? _a : undefined,
+    deprecated_false_parameter_behavior: false,
+    deprecated_nil_query_parameter_behavior: false,
+    include_undefined_query_parameters: true,
+  });
+  const __route = router.__route.bind(router);
+  return Modules.define_module('ESM', {
+    __route,
+    configure: router.configure.bind(router),
+    config: router.config.bind(router),
+    serialize: router.serialize.bind(router),
+    ...{},
+  });
 })();
 export const configure = __jsr.configure;
 
@@ -589,7 +590,11 @@ export const __route = __jsr.__route;
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const accountPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'accounts'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -599,7 +604,23 @@ export const accountPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, 
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const accountAgentPath = /*#__PURE__*/ __route({ account_id: { r: true }, id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [3, 'account_id'],
+        [2, [7, '/'], [2, [6, 'agents'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -608,7 +629,15 @@ export const accountAgentPath = /*#__PURE__*/ __route({"account_id":{"r":true},"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentApiKeysPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agent_api_keys"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const accountAgentApiKeysPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [2, [7, '/'], [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'agent_api_keys'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -618,7 +647,38 @@ export const accountAgentApiKeysPath = /*#__PURE__*/ __route({"account_id":{"r":
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentHostingDiagnosticsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"hosting_diagnostics"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountAgentHostingDiagnosticsPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'agent_id'], [2, [7, '/'], [2, [6, 'hosting_diagnostics'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -628,7 +688,38 @@ export const accountAgentHostingDiagnosticsPath = /*#__PURE__*/ __route({"accoun
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentMemoriesPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"memories"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountAgentMemoriesPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'agent_id'], [2, [7, '/'], [2, [6, 'memories'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -639,7 +730,54 @@ export const accountAgentMemoriesPath = /*#__PURE__*/ __route({"account_id":{"r"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentMemoryDiscardPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"memory_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"memories"],[2,[7,"/"],[2,[3,"memory_id"],[2,[7,"/"],[2,[6,"discard"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]]]);
+export const accountAgentMemoryDiscardPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, memory_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [3, 'agent_id'],
+                  [
+                    2,
+                    [7, '/'],
+                    [
+                      2,
+                      [6, 'memories'],
+                      [
+                        2,
+                        [7, '/'],
+                        [2, [3, 'memory_id'], [2, [7, '/'], [2, [6, 'discard'], [1, [2, [8, '.'], [3, 'format']]]]]],
+                      ],
+                    ],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -650,7 +788,54 @@ export const accountAgentMemoryDiscardPath = /*#__PURE__*/ __route({"account_id"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentMemoryProtectionPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"memory_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"memories"],[2,[7,"/"],[2,[3,"memory_id"],[2,[7,"/"],[2,[6,"protection"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]]]);
+export const accountAgentMemoryProtectionPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, memory_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [3, 'agent_id'],
+                  [
+                    2,
+                    [7, '/'],
+                    [
+                      2,
+                      [6, 'memories'],
+                      [
+                        2,
+                        [7, '/'],
+                        [2, [3, 'memory_id'], [2, [7, '/'], [2, [6, 'protection'], [1, [2, [8, '.'], [3, 'format']]]]]],
+                      ],
+                    ],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -660,7 +845,38 @@ export const accountAgentMemoryProtectionPath = /*#__PURE__*/ __route({"account_
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentOrientationRetryPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"orientation_retry"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountAgentOrientationRetryPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'agent_id'], [2, [7, '/'], [2, [6, 'orientation_retry'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -670,7 +886,38 @@ export const accountAgentOrientationRetryPath = /*#__PURE__*/ __route({"account_
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentPredecessorPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"predecessor"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountAgentPredecessorPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'agent_id'], [2, [7, '/'], [2, [6, 'predecessor'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -680,7 +927,42 @@ export const accountAgentPredecessorPath = /*#__PURE__*/ __route({"account_id":{
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentProviderSubscriptionPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"provider_subscription"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountAgentProviderSubscriptionPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [3, 'agent_id'],
+                  [2, [7, '/'], [2, [6, 'provider_subscription'], [1, [2, [8, '.'], [3, 'format']]]]],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -690,7 +972,42 @@ export const accountAgentProviderSubscriptionPath = /*#__PURE__*/ __route({"acco
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentProviderSubscriptionUsagePath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"provider_subscription_usage"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountAgentProviderSubscriptionUsagePath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [3, 'agent_id'],
+                  [2, [7, '/'], [2, [6, 'provider_subscription_usage'], [1, [2, [8, '.'], [3, 'format']]]]],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -700,7 +1017,38 @@ export const accountAgentProviderSubscriptionUsagePath = /*#__PURE__*/ __route({
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentProvisioningRetryPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"provisioning_retry"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountAgentProvisioningRetryPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'agent_id'], [2, [7, '/'], [2, [6, 'provisioning_retry'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -710,7 +1058,38 @@ export const accountAgentProvisioningRetryPath = /*#__PURE__*/ __route({"account
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentSandboxRecreationPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"sandbox_recreation"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountAgentSandboxRecreationPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'agent_id'], [2, [7, '/'], [2, [6, 'sandbox_recreation'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -721,7 +1100,46 @@ export const accountAgentSandboxRecreationPath = /*#__PURE__*/ __route({"account
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentServiceAccessPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"service_accesses"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]);
+export const accountAgentServiceAccessPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [3, 'agent_id'],
+                  [
+                    2,
+                    [7, '/'],
+                    [2, [6, 'service_accesses'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -731,7 +1149,38 @@ export const accountAgentServiceAccessPath = /*#__PURE__*/ __route({"account_id"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentTelegramTestPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"telegram_test"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountAgentTelegramTestPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'agent_id'], [2, [7, '/'], [2, [6, 'telegram_test'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -741,7 +1190,38 @@ export const accountAgentTelegramTestPath = /*#__PURE__*/ __route({"account_id":
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentTelegramWebhookPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"telegram_webhook"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountAgentTelegramWebhookPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'agent_id'], [2, [7, '/'], [2, [6, 'telegram_webhook'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -750,7 +1230,15 @@ export const accountAgentTelegramWebhookPath = /*#__PURE__*/ __route({"account_i
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountAgentsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const accountAgentsPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [2, [7, '/'], [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'agents'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -760,7 +1248,23 @@ export const accountAgentsPath = /*#__PURE__*/ __route({"account_id":{"r":true},
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountApiKeyPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"external_access"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const accountApiKeyPath = /*#__PURE__*/ __route({ account_id: { r: true }, id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [3, 'account_id'],
+        [2, [7, '/'], [2, [6, 'external_access'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -769,7 +1273,19 @@ export const accountApiKeyPath = /*#__PURE__*/ __route({"account_id":{"r":true},
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountApiKeysPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"external_access"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const accountApiKeysPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'external_access'], [1, [2, [8, '.'], [3, 'format']]]]]],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -779,7 +1295,23 @@ export const accountApiKeysPath = /*#__PURE__*/ __route({"account_id":{"r":true}
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountChatPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const accountChatPath = /*#__PURE__*/ __route({ account_id: { r: true }, id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [3, 'account_id'],
+        [2, [7, '/'], [2, [6, 'chats'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -789,7 +1321,38 @@ export const accountChatPath = /*#__PURE__*/ __route({"account_id":{"r":true},"i
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountChatAgentAssignmentPath = /*#__PURE__*/ __route({"account_id":{"r":true},"chat_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"chat_id"],[2,[7,"/"],[2,[6,"agent_assignment"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountChatAgentAssignmentPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, chat_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'chats'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'chat_id'], [2, [7, '/'], [2, [6, 'agent_assignment'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -799,7 +1362,38 @@ export const accountChatAgentAssignmentPath = /*#__PURE__*/ __route({"account_id
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountChatAgentTriggerPath = /*#__PURE__*/ __route({"account_id":{"r":true},"chat_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"chat_id"],[2,[7,"/"],[2,[6,"agent_trigger"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountChatAgentTriggerPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, chat_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'chats'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'chat_id'], [2, [7, '/'], [2, [6, 'agent_trigger'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -809,7 +1403,34 @@ export const accountChatAgentTriggerPath = /*#__PURE__*/ __route({"account_id":{
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountChatArchivePath = /*#__PURE__*/ __route({"account_id":{"r":true},"chat_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"chat_id"],[2,[7,"/"],[2,[6,"archive"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountChatArchivePath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, chat_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'chats'],
+              [2, [7, '/'], [2, [3, 'chat_id'], [2, [7, '/'], [2, [6, 'archive'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -819,7 +1440,34 @@ export const accountChatArchivePath = /*#__PURE__*/ __route({"account_id":{"r":t
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountChatDiscardPath = /*#__PURE__*/ __route({"account_id":{"r":true},"chat_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"chat_id"],[2,[7,"/"],[2,[6,"discard"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountChatDiscardPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, chat_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'chats'],
+              [2, [7, '/'], [2, [3, 'chat_id'], [2, [7, '/'], [2, [6, 'discard'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -829,7 +1477,34 @@ export const accountChatDiscardPath = /*#__PURE__*/ __route({"account_id":{"r":t
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountChatForkPath = /*#__PURE__*/ __route({"account_id":{"r":true},"chat_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"chat_id"],[2,[7,"/"],[2,[6,"fork"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountChatForkPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, chat_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'chats'],
+              [2, [7, '/'], [2, [3, 'chat_id'], [2, [7, '/'], [2, [6, 'fork'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -839,7 +1514,38 @@ export const accountChatForkPath = /*#__PURE__*/ __route({"account_id":{"r":true
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountChatMessagesPath = /*#__PURE__*/ __route({"account_id":{"r":true},"chat_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"chat_id"],[2,[7,"/"],[2,[6,"messages"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountChatMessagesPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, chat_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'chats'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'chat_id'], [2, [7, '/'], [2, [6, 'messages'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -849,7 +1555,38 @@ export const accountChatMessagesPath = /*#__PURE__*/ __route({"account_id":{"r":
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountChatModerationPath = /*#__PURE__*/ __route({"account_id":{"r":true},"chat_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"chat_id"],[2,[7,"/"],[2,[6,"moderation"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountChatModerationPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, chat_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'chats'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'chat_id'], [2, [7, '/'], [2, [6, 'moderation'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -859,7 +1596,38 @@ export const accountChatModerationPath = /*#__PURE__*/ __route({"account_id":{"r
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountChatParticipantPath = /*#__PURE__*/ __route({"account_id":{"r":true},"chat_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"chat_id"],[2,[7,"/"],[2,[6,"participant"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountChatParticipantPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, chat_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'chats'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'chat_id'], [2, [7, '/'], [2, [6, 'participant'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -869,7 +1637,38 @@ export const accountChatParticipantPath = /*#__PURE__*/ __route({"account_id":{"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountChatTranscriptionPath = /*#__PURE__*/ __route({"account_id":{"r":true},"chat_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"chat_id"],[2,[7,"/"],[2,[6,"transcription"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const accountChatTranscriptionPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, chat_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'chats'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'chat_id'], [2, [7, '/'], [2, [6, 'transcription'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -878,7 +1677,15 @@ export const accountChatTranscriptionPath = /*#__PURE__*/ __route({"account_id":
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountChatsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const accountChatsPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [2, [7, '/'], [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'chats'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -887,7 +1694,15 @@ export const accountChatsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountCostsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"costs"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const accountCostsPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [2, [7, '/'], [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'costs'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -896,7 +1711,15 @@ export const accountCostsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountInvitationsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"invitations"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const accountInvitationsPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [2, [7, '/'], [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'invitations'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -906,7 +1729,23 @@ export const accountInvitationsPath = /*#__PURE__*/ __route({"account_id":{"r":t
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountMemberPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"members"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const accountMemberPath = /*#__PURE__*/ __route({ account_id: { r: true }, id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [3, 'account_id'],
+        [2, [7, '/'], [2, [6, 'members'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -916,7 +1755,23 @@ export const accountMemberPath = /*#__PURE__*/ __route({"account_id":{"r":true},
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountNoticePath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"notices"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const accountNoticePath = /*#__PURE__*/ __route({ account_id: { r: true }, id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [3, 'account_id'],
+        [2, [7, '/'], [2, [6, 'notices'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -925,7 +1780,15 @@ export const accountNoticePath = /*#__PURE__*/ __route({"account_id":{"r":true},
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountNoticesPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"notices"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const accountNoticesPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [2, [7, '/'], [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'notices'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -934,7 +1797,19 @@ export const accountNoticesPath = /*#__PURE__*/ __route({"account_id":{"r":true}
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountPersonalServicesPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"personal_services"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const accountPersonalServicesPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'personal_services'], [1, [2, [8, '.'], [3, 'format']]]]]],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -943,7 +1818,19 @@ export const accountPersonalServicesPath = /*#__PURE__*/ __route({"account_id":{
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountServiceAuthorizationsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"service_authorizations"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const accountServiceAuthorizationsPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'service_authorizations'], [1, [2, [8, '.'], [3, 'format']]]]]],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -953,7 +1840,30 @@ export const accountServiceAuthorizationsPath = /*#__PURE__*/ __route({"account_
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountServiceConnectionPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"service_connections"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const accountServiceConnectionPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [2, [6, 'service_connections'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -962,7 +1872,19 @@ export const accountServiceConnectionPath = /*#__PURE__*/ __route({"account_id":
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountServiceConnectionsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"service_connections"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const accountServiceConnectionsPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'service_connections'], [1, [2, [8, '.'], [3, 'format']]]]]],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -971,7 +1893,15 @@ export const accountServiceConnectionsPath = /*#__PURE__*/ __route({"account_id"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountServicesPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"services"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const accountServicesPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [2, [7, '/'], [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'services'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -981,7 +1911,23 @@ export const accountServicesPath = /*#__PURE__*/ __route({"account_id":{"r":true
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountWhiteboardPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"whiteboards"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const accountWhiteboardPath = /*#__PURE__*/ __route({ account_id: { r: true }, id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [3, 'account_id'],
+        [2, [7, '/'], [2, [6, 'whiteboards'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -990,7 +1936,15 @@ export const accountWhiteboardPath = /*#__PURE__*/ __route({"account_id":{"r":tr
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountWhiteboardsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"whiteboards"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const accountWhiteboardsPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [2, [7, '/'], [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'whiteboards'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -998,7 +1952,11 @@ export const accountWhiteboardsPath = /*#__PURE__*/ __route({"account_id":{"r":t
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const accountsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const accountsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'accounts'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1008,7 +1966,34 @@ export const accountsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const adminAccountMembershipPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"memberships"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const adminAccountMembershipPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'admin'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'accounts'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [3, 'account_id'],
+              [2, [7, '/'], [2, [6, 'memberships'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1017,7 +2002,27 @@ export const adminAccountMembershipPath = /*#__PURE__*/ __route({"account_id":{"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const adminAccountMembershipsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"memberships"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const adminAccountMembershipsPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'admin'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'accounts'],
+        [
+          2,
+          [7, '/'],
+          [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'memberships'], [1, [2, [8, '.'], [3, 'format']]]]]],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1025,7 +2030,11 @@ export const adminAccountMembershipsPath = /*#__PURE__*/ __route({"account_id":{
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const adminAccountsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"accounts"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const adminAccountsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'admin'], [2, [7, '/'], [2, [6, 'accounts'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1034,7 +2043,23 @@ export const adminAccountsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"]
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const adminAgentRuntimePath = /*#__PURE__*/ __route({"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"runtime"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const adminAgentRuntimePath = /*#__PURE__*/ __route({ agent_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'admin'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'agents'],
+        [2, [7, '/'], [2, [3, 'agent_id'], [2, [7, '/'], [2, [6, 'runtime'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1042,7 +2067,11 @@ export const adminAgentRuntimePath = /*#__PURE__*/ __route({"agent_id":{"r":true
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const adminAuditLogsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"audit_logs"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const adminAuditLogsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'admin'], [2, [7, '/'], [2, [6, 'audit_logs'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1050,7 +2079,11 @@ export const adminAuditLogsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const adminJobsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"jobs"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const adminJobsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'admin'], [2, [7, '/'], [2, [6, 'jobs'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1059,7 +2092,15 @@ export const adminJobsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const adminNoticePath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"notices"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const adminNoticePath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'admin'],
+    [2, [7, '/'], [2, [6, 'notices'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1067,7 +2108,11 @@ export const adminNoticePath = /*#__PURE__*/ __route({"id":{"r":true},"format":{
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const adminNoticesPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"notices"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const adminNoticesPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'admin'], [2, [7, '/'], [2, [6, 'notices'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1075,7 +2120,11 @@ export const adminNoticesPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const adminRuntimeSessionsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"runtime_sessions"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const adminRuntimeSessionsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'admin'], [2, [7, '/'], [2, [6, 'runtime_sessions'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1083,7 +2132,11 @@ export const adminRuntimeSessionsPath = /*#__PURE__*/ __route({"format":{}}, [2,
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const adminSettingsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"settings"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const adminSettingsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'admin'], [2, [7, '/'], [2, [6, 'settings'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1092,7 +2145,15 @@ export const adminSettingsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"]
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiKeyApprovalPath = /*#__PURE__*/ __route({"token":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api_keys"],[2,[7,"/"],[2,[6,"approvals"],[2,[7,"/"],[2,[3,"token"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const apiKeyApprovalPath = /*#__PURE__*/ __route({ token: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api_keys'],
+    [2, [7, '/'], [2, [6, 'approvals'], [2, [7, '/'], [2, [3, 'token'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1100,7 +2161,11 @@ export const apiKeyApprovalPath = /*#__PURE__*/ __route({"token":{"r":true},"for
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiKeysPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"api_keys"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const apiKeysPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'api_keys'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1109,7 +2174,23 @@ export const apiKeysPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1AgentPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const apiV1AgentPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'v1'],
+        [2, [7, '/'], [2, [6, 'agents'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1118,7 +2199,31 @@ export const apiV1AgentPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1AgentAnnouncePath = /*#__PURE__*/ __route({"uuid":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"uuid"],[2,[7,"/"],[2,[6,"announce"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const apiV1AgentAnnouncePath = /*#__PURE__*/ __route({ uuid: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'v1'],
+        [
+          2,
+          [7, '/'],
+          [
+            2,
+            [6, 'agents'],
+            [2, [7, '/'], [2, [3, 'uuid'], [2, [7, '/'], [2, [6, 'announce'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+          ],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1127,7 +2232,31 @@ export const apiV1AgentAnnouncePath = /*#__PURE__*/ __route({"uuid":{"r":true},"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1AgentHealthPath = /*#__PURE__*/ __route({"uuid":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"uuid"],[2,[7,"/"],[2,[6,"health"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const apiV1AgentHealthPath = /*#__PURE__*/ __route({ uuid: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'v1'],
+        [
+          2,
+          [7, '/'],
+          [
+            2,
+            [6, 'agents'],
+            [2, [7, '/'], [2, [3, 'uuid'], [2, [7, '/'], [2, [6, 'health'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+          ],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1135,7 +2264,11 @@ export const apiV1AgentHealthPath = /*#__PURE__*/ __route({"uuid":{"r":true},"fo
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1AgentsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"agents"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const apiV1AgentsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'api'], [2, [7, '/'], [2, [6, 'v1'], [2, [7, '/'], [2, [6, 'agents'], [1, [2, [8, '.'], [3, 'format']]]]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1143,7 +2276,15 @@ export const apiV1AgentsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1AttentionPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"attention"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const apiV1AttentionPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [2, [7, '/'], [2, [6, 'v1'], [2, [7, '/'], [2, [6, 'attention'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1152,7 +2293,23 @@ export const apiV1AttentionPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1ConversationPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"conversations"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const apiV1ConversationPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'v1'],
+        [2, [7, '/'], [2, [6, 'conversations'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1161,7 +2318,35 @@ export const apiV1ConversationPath = /*#__PURE__*/ __route({"id":{"r":true},"for
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1ConversationAgentTriggerPath = /*#__PURE__*/ __route({"conversation_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"conversations"],[2,[7,"/"],[2,[3,"conversation_id"],[2,[7,"/"],[2,[6,"agent_trigger"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const apiV1ConversationAgentTriggerPath = /*#__PURE__*/ __route({ conversation_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'v1'],
+        [
+          2,
+          [7, '/'],
+          [
+            2,
+            [6, 'conversations'],
+            [
+              2,
+              [7, '/'],
+              [2, [3, 'conversation_id'], [2, [7, '/'], [2, [6, 'agent_trigger'], [1, [2, [8, '.'], [3, 'format']]]]]],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1172,7 +2357,62 @@ export const apiV1ConversationAgentTriggerPath = /*#__PURE__*/ __route({"convers
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1ConversationMessageAttachmentPath = /*#__PURE__*/ __route({"conversation_id":{"r":true},"message_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"conversations"],[2,[7,"/"],[2,[3,"conversation_id"],[2,[7,"/"],[2,[6,"messages"],[2,[7,"/"],[2,[3,"message_id"],[2,[7,"/"],[2,[6,"attachments"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]]]]]);
+export const apiV1ConversationMessageAttachmentPath = /*#__PURE__*/ __route(
+  { conversation_id: { r: true }, message_id: { r: true }, id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'api'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'v1'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'conversations'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [3, 'conversation_id'],
+                  [
+                    2,
+                    [7, '/'],
+                    [
+                      2,
+                      [6, 'messages'],
+                      [
+                        2,
+                        [7, '/'],
+                        [
+                          2,
+                          [3, 'message_id'],
+                          [
+                            2,
+                            [7, '/'],
+                            [2, [6, 'attachments'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]],
+                          ],
+                        ],
+                      ],
+                    ],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1181,7 +2421,35 @@ export const apiV1ConversationMessageAttachmentPath = /*#__PURE__*/ __route({"co
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1ConversationMessagesPath = /*#__PURE__*/ __route({"conversation_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"conversations"],[2,[7,"/"],[2,[3,"conversation_id"],[2,[7,"/"],[2,[6,"messages"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const apiV1ConversationMessagesPath = /*#__PURE__*/ __route({ conversation_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'v1'],
+        [
+          2,
+          [7, '/'],
+          [
+            2,
+            [6, 'conversations'],
+            [
+              2,
+              [7, '/'],
+              [2, [3, 'conversation_id'], [2, [7, '/'], [2, [6, 'messages'], [1, [2, [8, '.'], [3, 'format']]]]]],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1190,7 +2458,35 @@ export const apiV1ConversationMessagesPath = /*#__PURE__*/ __route({"conversatio
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1ConversationParticipantsPath = /*#__PURE__*/ __route({"conversation_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"conversations"],[2,[7,"/"],[2,[3,"conversation_id"],[2,[7,"/"],[2,[6,"participants"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const apiV1ConversationParticipantsPath = /*#__PURE__*/ __route({ conversation_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'v1'],
+        [
+          2,
+          [7, '/'],
+          [
+            2,
+            [6, 'conversations'],
+            [
+              2,
+              [7, '/'],
+              [2, [3, 'conversation_id'], [2, [7, '/'], [2, [6, 'participants'], [1, [2, [8, '.'], [3, 'format']]]]]],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1198,7 +2494,15 @@ export const apiV1ConversationParticipantsPath = /*#__PURE__*/ __route({"convers
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1ConversationsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"conversations"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const apiV1ConversationsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [2, [7, '/'], [2, [6, 'v1'], [2, [7, '/'], [2, [6, 'conversations'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1207,7 +2511,23 @@ export const apiV1ConversationsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1KeyRequestPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"key_requests"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const apiV1KeyRequestPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'v1'],
+        [2, [7, '/'], [2, [6, 'key_requests'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1215,7 +2535,15 @@ export const apiV1KeyRequestPath = /*#__PURE__*/ __route({"id":{"r":true},"forma
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1KeyRequestsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"key_requests"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const apiV1KeyRequestsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [2, [7, '/'], [2, [6, 'v1'], [2, [7, '/'], [2, [6, 'key_requests'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1224,7 +2552,27 @@ export const apiV1KeyRequestsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1SafeguardDetectionPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"safeguard_detections"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const apiV1SafeguardDetectionPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'v1'],
+        [
+          2,
+          [7, '/'],
+          [2, [6, 'safeguard_detections'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1233,7 +2581,42 @@ export const apiV1SafeguardDetectionPath = /*#__PURE__*/ __route({"id":{"r":true
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1SafeguardDetectionReclaimPath = /*#__PURE__*/ __route({"safeguard_detection_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"safeguard_detections"],[2,[7,"/"],[2,[3,"safeguard_detection_id"],[2,[7,"/"],[2,[6,"reclaim"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const apiV1SafeguardDetectionReclaimPath = /*#__PURE__*/ __route(
+  { safeguard_detection_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'api'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'v1'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'safeguard_detections'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [3, 'safeguard_detection_id'],
+                  [2, [7, '/'], [2, [6, 'reclaim'], [1, [2, [8, '.'], [3, 'format']]]]],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1242,7 +2625,42 @@ export const apiV1SafeguardDetectionReclaimPath = /*#__PURE__*/ __route({"safegu
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1ServiceConnectionAccessTokenPath = /*#__PURE__*/ __route({"service_connection_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"service_connections"],[2,[7,"/"],[2,[3,"service_connection_id"],[2,[7,"/"],[2,[6,"access_token"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const apiV1ServiceConnectionAccessTokenPath = /*#__PURE__*/ __route(
+  { service_connection_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'api'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'v1'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'service_connections'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [3, 'service_connection_id'],
+                  [2, [7, '/'], [2, [6, 'access_token'], [1, [2, [8, '.'], [3, 'format']]]]],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1250,7 +2668,15 @@ export const apiV1ServiceConnectionAccessTokenPath = /*#__PURE__*/ __route({"ser
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1SubscriptionUsagePath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"subscription_usage"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const apiV1SubscriptionUsagePath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [2, [7, '/'], [2, [6, 'v1'], [2, [7, '/'], [2, [6, 'subscription_usage'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1259,7 +2685,27 @@ export const apiV1SubscriptionUsagePath = /*#__PURE__*/ __route({"format":{}}, [
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1TelegramConversationPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"telegram_conversations"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const apiV1TelegramConversationPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'v1'],
+        [
+          2,
+          [7, '/'],
+          [2, [6, 'telegram_conversations'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1269,7 +2715,54 @@ export const apiV1TelegramConversationPath = /*#__PURE__*/ __route({"id":{"r":tr
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1TelegramConversationMessageMediaPath = /*#__PURE__*/ __route({"conversation_id":{"r":true},"message_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"telegram_conversations"],[2,[7,"/"],[2,[3,"conversation_id"],[2,[7,"/"],[2,[6,"messages"],[2,[7,"/"],[2,[3,"message_id"],[2,[7,"/"],[2,[6,"media"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]]]);
+export const apiV1TelegramConversationMessageMediaPath = /*#__PURE__*/ __route(
+  { conversation_id: { r: true }, message_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'api'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'v1'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'telegram_conversations'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [3, 'conversation_id'],
+                  [
+                    2,
+                    [7, '/'],
+                    [
+                      2,
+                      [6, 'messages'],
+                      [
+                        2,
+                        [7, '/'],
+                        [2, [3, 'message_id'], [2, [7, '/'], [2, [6, 'media'], [1, [2, [8, '.'], [3, 'format']]]]]],
+                      ],
+                    ],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1280,7 +2773,66 @@ export const apiV1TelegramConversationMessageMediaPath = /*#__PURE__*/ __route({
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1TelegramConversationMessagePreviewFramePath = /*#__PURE__*/ __route({"conversation_id":{"r":true},"message_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"telegram_conversations"],[2,[7,"/"],[2,[3,"conversation_id"],[2,[7,"/"],[2,[6,"messages"],[2,[7,"/"],[2,[3,"message_id"],[2,[7,"/"],[2,[6,"preview_frames"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]]]]]);
+export const apiV1TelegramConversationMessagePreviewFramePath = /*#__PURE__*/ __route(
+  { conversation_id: { r: true }, message_id: { r: true }, id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'api'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'v1'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'telegram_conversations'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [3, 'conversation_id'],
+                  [
+                    2,
+                    [7, '/'],
+                    [
+                      2,
+                      [6, 'messages'],
+                      [
+                        2,
+                        [7, '/'],
+                        [
+                          2,
+                          [3, 'message_id'],
+                          [
+                            2,
+                            [7, '/'],
+                            [
+                              2,
+                              [6, 'preview_frames'],
+                              [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]],
+                            ],
+                          ],
+                        ],
+                      ],
+                    ],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1288,7 +2840,15 @@ export const apiV1TelegramConversationMessagePreviewFramePath = /*#__PURE__*/ __
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1TelegramMessagesPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"telegram_messages"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const apiV1TelegramMessagesPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [2, [7, '/'], [2, [6, 'v1'], [2, [7, '/'], [2, [6, 'telegram_messages'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1296,7 +2856,15 @@ export const apiV1TelegramMessagesPath = /*#__PURE__*/ __route({"format":{}}, [2
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1TelegramSubscribersPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"telegram_subscribers"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const apiV1TelegramSubscribersPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [2, [7, '/'], [2, [6, 'v1'], [2, [7, '/'], [2, [6, 'telegram_subscribers'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1305,7 +2873,23 @@ export const apiV1TelegramSubscribersPath = /*#__PURE__*/ __route({"format":{}},
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1WhiteboardPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"whiteboards"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const apiV1WhiteboardPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'v1'],
+        [2, [7, '/'], [2, [6, 'whiteboards'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1313,7 +2897,15 @@ export const apiV1WhiteboardPath = /*#__PURE__*/ __route({"id":{"r":true},"forma
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1WhiteboardsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"whiteboards"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const apiV1WhiteboardsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [2, [7, '/'], [2, [6, 'v1'], [2, [7, '/'], [2, [6, 'whiteboards'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1321,7 +2913,11 @@ export const apiV1WhiteboardsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1XReadsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"x_reads"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const apiV1XReadsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'api'], [2, [7, '/'], [2, [6, 'v1'], [2, [7, '/'], [2, [6, 'x_reads'], [1, [2, [8, '.'], [3, 'format']]]]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1329,7 +2925,15 @@ export const apiV1XReadsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const apiV1YoutubeReadsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"api"],[2,[7,"/"],[2,[6,"v1"],[2,[7,"/"],[2,[6,"youtube_reads"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const apiV1YoutubeReadsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'api'],
+    [2, [7, '/'], [2, [6, 'v1'], [2, [7, '/'], [2, [6, 'youtube_reads'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1337,7 +2941,11 @@ export const apiV1YoutubeReadsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const callbackGithubIntegrationPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"github_integration"],[2,[7,"/"],[2,[6,"callback"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const callbackGithubIntegrationPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'github_integration'], [2, [7, '/'], [2, [6, 'callback'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1345,7 +2953,11 @@ export const callbackGithubIntegrationPath = /*#__PURE__*/ __route({"format":{}}
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const callbackXIntegrationPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"x_integration"],[2,[7,"/"],[2,[6,"callback"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const callbackXIntegrationPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'x_integration'], [2, [7, '/'], [2, [6, 'callback'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1355,7 +2967,50 @@ export const callbackXIntegrationPath = /*#__PURE__*/ __route({"format":{}}, [2,
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const cancelAccountAgentProviderSubscriptionPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"provider_subscription"],[2,[7,"/"],[2,[6,"cancel"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]);
+export const cancelAccountAgentProviderSubscriptionPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [3, 'agent_id'],
+                  [
+                    2,
+                    [7, '/'],
+                    [
+                      2,
+                      [6, 'provider_subscription'],
+                      [2, [7, '/'], [2, [6, 'cancel'], [1, [2, [8, '.'], [3, 'format']]]]],
+                    ],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1363,7 +3018,11 @@ export const cancelAccountAgentProviderSubscriptionPath = /*#__PURE__*/ __route(
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const checkEmailPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"check-email"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const checkEmailPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'check-email'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1371,7 +3030,47 @@ export const checkEmailPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const chromeDevtoolsJsonPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[8,"."],[2,[6,"well-known"],[2,[7,"/"],[2,[6,"appspecific"],[2,[7,"/"],[2,[6,"com"],[2,[8,"."],[2,[6,"chrome"],[2,[8,"."],[2,[6,"devtools"],[2,[8,"."],[2,[6,"json"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]]);
+export const chromeDevtoolsJsonPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [8, '.'],
+    [
+      2,
+      [6, 'well-known'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'appspecific'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'com'],
+              [
+                2,
+                [8, '.'],
+                [
+                  2,
+                  [6, 'chrome'],
+                  [
+                    2,
+                    [8, '.'],
+                    [2, [6, 'devtools'], [2, [8, '.'], [2, [6, 'json'], [1, [2, [8, '.'], [3, 'format']]]]]],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1381,7 +3080,50 @@ export const chromeDevtoolsJsonPath = /*#__PURE__*/ __route({"format":{}}, [2,[7
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const codeAccountAgentProviderSubscriptionPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"provider_subscription"],[2,[7,"/"],[2,[6,"code"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]);
+export const codeAccountAgentProviderSubscriptionPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [3, 'agent_id'],
+                  [
+                    2,
+                    [7, '/'],
+                    [
+                      2,
+                      [6, 'provider_subscription'],
+                      [2, [7, '/'], [2, [6, 'code'], [1, [2, [8, '.'], [3, 'format']]]]],
+                    ],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1390,7 +3132,23 @@ export const codeAccountAgentProviderSubscriptionPath = /*#__PURE__*/ __route({"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const convertAdminAccountPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"id"],[2,[7,"/"],[2,[6,"convert"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const convertAdminAccountPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'admin'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'accounts'],
+        [2, [7, '/'], [2, [3, 'id'], [2, [7, '/'], [2, [6, 'convert'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1398,7 +3156,11 @@ export const convertAdminAccountPath = /*#__PURE__*/ __route({"id":{"r":true},"f
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const createFlashPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"create_flash"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const createFlashPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'create_flash'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1407,7 +3169,23 @@ export const createFlashPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const disableAdminAccountPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"id"],[2,[7,"/"],[2,[6,"disable"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const disableAdminAccountPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'admin'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'accounts'],
+        [2, [7, '/'], [2, [3, 'id'], [2, [7, '/'], [2, [6, 'disable'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1416,7 +3194,15 @@ export const disableAdminAccountPath = /*#__PURE__*/ __route({"id":{"r":true},"f
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const editAccountPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"id"],[2,[7,"/"],[2,[6,"edit"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const editAccountPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [2, [7, '/'], [2, [3, 'id'], [2, [7, '/'], [2, [6, 'edit'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1426,7 +3212,31 @@ export const editAccountPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const editAccountAgentPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"id"],[2,[7,"/"],[2,[6,"edit"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const editAccountAgentPath = /*#__PURE__*/ __route({ account_id: { r: true }, id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [3, 'account_id'],
+        [
+          2,
+          [7, '/'],
+          [
+            2,
+            [6, 'agents'],
+            [2, [7, '/'], [2, [3, 'id'], [2, [7, '/'], [2, [6, 'edit'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+          ],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1436,7 +3246,31 @@ export const editAccountAgentPath = /*#__PURE__*/ __route({"account_id":{"r":tru
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const editAccountChatPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[3,"id"],[2,[7,"/"],[2,[6,"edit"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const editAccountChatPath = /*#__PURE__*/ __route({ account_id: { r: true }, id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [3, 'account_id'],
+        [
+          2,
+          [7, '/'],
+          [
+            2,
+            [6, 'chats'],
+            [2, [7, '/'], [2, [3, 'id'], [2, [7, '/'], [2, [6, 'edit'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+          ],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1445,7 +3279,15 @@ export const editAccountChatPath = /*#__PURE__*/ __route({"account_id":{"r":true
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const editPasswordPath = /*#__PURE__*/ __route({"token":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"passwords"],[2,[7,"/"],[2,[3,"token"],[2,[7,"/"],[2,[6,"edit"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const editPasswordPath = /*#__PURE__*/ __route({ token: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'passwords'],
+    [2, [7, '/'], [2, [3, 'token'], [2, [7, '/'], [2, [6, 'edit'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1453,7 +3295,11 @@ export const editPasswordPath = /*#__PURE__*/ __route({"token":{"r":true},"forma
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const editUserPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"user"],[2,[7,"/"],[2,[6,"edit"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const editUserPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'user'], [2, [7, '/'], [2, [6, 'edit'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1461,7 +3307,15 @@ export const editUserPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const editUserPasswordPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"user"],[2,[7,"/"],[2,[6,"password"],[2,[7,"/"],[2,[6,"edit"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const editUserPasswordPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'user'],
+    [2, [7, '/'], [2, [6, 'password'], [2, [7, '/'], [2, [6, 'edit'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1469,7 +3323,11 @@ export const editUserPasswordPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const emailConfirmationPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"email-confirmation"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const emailConfirmationPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'email-confirmation'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1478,7 +3336,23 @@ export const emailConfirmationPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const enableAdminAccountPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"id"],[2,[7,"/"],[2,[6,"enable"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const enableAdminAccountPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'admin'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'accounts'],
+        [2, [7, '/'], [2, [3, 'id'], [2, [7, '/'], [2, [6, 'enable'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1487,7 +3361,11 @@ export const enableAdminAccountPath = /*#__PURE__*/ __route({"id":{"r":true},"fo
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const faviconPath = /*#__PURE__*/ __route({"format":{"r":true,"d":"ico"}}, [2,[7,"/"],[2,[6,"favicon"],[2,[8,"."],[3,"format"]]]]);
+export const faviconPath = /*#__PURE__*/ __route({ format: { r: true, d: 'ico' } }, [
+  2,
+  [7, '/'],
+  [2, [6, 'favicon'], [2, [8, '.'], [3, 'format']]],
+]);
 
 /**
  * Generates rails route to
@@ -1497,7 +3375,50 @@ export const faviconPath = /*#__PURE__*/ __route({"format":{"r":true,"d":"ico"}}
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const filePreviewAccountAgentHostingDiagnosticsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"agent_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"agent_id"],[2,[7,"/"],[2,[6,"hosting_diagnostics"],[2,[7,"/"],[2,[6,"file_preview"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]);
+export const filePreviewAccountAgentHostingDiagnosticsPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, agent_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [3, 'agent_id'],
+                  [
+                    2,
+                    [7, '/'],
+                    [
+                      2,
+                      [6, 'hosting_diagnostics'],
+                      [2, [7, '/'], [2, [6, 'file_preview'], [1, [2, [8, '.'], [3, 'format']]]]],
+                    ],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1505,7 +3426,11 @@ export const filePreviewAccountAgentHostingDiagnosticsPath = /*#__PURE__*/ __rou
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const githubIntegrationPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"github_integration"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const githubIntegrationPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'github_integration'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1515,7 +3440,38 @@ export const githubIntegrationPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const identityExportAccountAgentPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"id"],[2,[7,"/"],[2,[6,"identity_export"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const identityExportAccountAgentPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'id'], [2, [7, '/'], [2, [6, 'identity_export'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1523,7 +3479,11 @@ export const identityExportAccountAgentPath = /*#__PURE__*/ __route({"account_id
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const loginPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"login"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const loginPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'login'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1531,7 +3491,11 @@ export const loginPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const logoutPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"logout"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const logoutPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'logout'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1540,7 +3504,11 @@ export const logoutPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const messagePath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"messages"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const messagePath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'messages'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1549,7 +3517,15 @@ export const messagePath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, 
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const messageRetryPath = /*#__PURE__*/ __route({"message_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"messages"],[2,[7,"/"],[2,[3,"message_id"],[2,[7,"/"],[2,[6,"retry"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const messageRetryPath = /*#__PURE__*/ __route({ message_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'messages'],
+    [2, [7, '/'], [2, [3, 'message_id'], [2, [7, '/'], [2, [6, 'retry'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1558,7 +3534,15 @@ export const messageRetryPath = /*#__PURE__*/ __route({"message_id":{"r":true},"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const messageVoicePath = /*#__PURE__*/ __route({"message_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"messages"],[2,[7,"/"],[2,[3,"message_id"],[2,[7,"/"],[2,[6,"voice"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const messageVoicePath = /*#__PURE__*/ __route({ message_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'messages'],
+    [2, [7, '/'], [2, [3, 'message_id'], [2, [7, '/'], [2, [6, 'voice'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1566,7 +3550,11 @@ export const messageVoicePath = /*#__PURE__*/ __route({"message_id":{"r":true},"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const newAccountPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[6,"new"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const newAccountPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'accounts'], [2, [7, '/'], [2, [6, 'new'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1575,7 +3563,23 @@ export const newAccountPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const newAccountAgentPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[6,"new"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const newAccountAgentPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [3, 'account_id'],
+        [2, [7, '/'], [2, [6, 'agents'], [2, [7, '/'], [2, [6, 'new'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1584,7 +3588,23 @@ export const newAccountAgentPath = /*#__PURE__*/ __route({"account_id":{"r":true
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const newAccountChatPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[6,"new"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const newAccountChatPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [3, 'account_id'],
+        [2, [7, '/'], [2, [6, 'chats'], [2, [7, '/'], [2, [6, 'new'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1592,7 +3612,11 @@ export const newAccountChatPath = /*#__PURE__*/ __route({"account_id":{"r":true}
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const newPasswordPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"passwords"],[2,[7,"/"],[2,[6,"new"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const newPasswordPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'passwords'], [2, [7, '/'], [2, [6, 'new'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1600,7 +3624,35 @@ export const newPasswordPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const newRailsConductorInboundEmailPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"conductor"],[2,[7,"/"],[2,[6,"action_mailbox"],[2,[7,"/"],[2,[6,"inbound_emails"],[2,[7,"/"],[2,[6,"new"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const newRailsConductorInboundEmailPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'conductor'],
+        [
+          2,
+          [7, '/'],
+          [
+            2,
+            [6, 'action_mailbox'],
+            [
+              2,
+              [7, '/'],
+              [2, [6, 'inbound_emails'], [2, [7, '/'], [2, [6, 'new'], [1, [2, [8, '.'], [3, 'format']]]]]],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1608,7 +3660,39 @@ export const newRailsConductorInboundEmailPath = /*#__PURE__*/ __route({"format"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const newRailsConductorInboundEmailSourcePath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"conductor"],[2,[7,"/"],[2,[6,"action_mailbox"],[2,[7,"/"],[2,[6,"inbound_emails"],[2,[7,"/"],[2,[6,"sources"],[2,[7,"/"],[2,[6,"new"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]);
+export const newRailsConductorInboundEmailSourcePath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'conductor'],
+        [
+          2,
+          [7, '/'],
+          [
+            2,
+            [6, 'action_mailbox'],
+            [
+              2,
+              [7, '/'],
+              [
+                2,
+                [6, 'inbound_emails'],
+                [2, [7, '/'], [2, [6, 'sources'], [2, [7, '/'], [2, [6, 'new'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1618,7 +3702,34 @@ export const newRailsConductorInboundEmailSourcePath = /*#__PURE__*/ __route({"f
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const onboardingAccountAgentPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"id"],[2,[7,"/"],[2,[6,"onboarding"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const onboardingAccountAgentPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [2, [7, '/'], [2, [3, 'id'], [2, [7, '/'], [2, [6, 'onboarding'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1627,7 +3738,11 @@ export const onboardingAccountAgentPath = /*#__PURE__*/ __route({"account_id":{"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const passwordPath = /*#__PURE__*/ __route({"token":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"passwords"],[2,[7,"/"],[2,[3,"token"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const passwordPath = /*#__PURE__*/ __route({ token: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'passwords'], [2, [7, '/'], [2, [3, 'token'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1635,7 +3750,11 @@ export const passwordPath = /*#__PURE__*/ __route({"token":{"r":true},"format":{
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const passwordsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"passwords"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const passwordsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'passwords'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1643,7 +3762,11 @@ export const passwordsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const privacyPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"privacy"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const privacyPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'privacy'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1654,7 +3777,58 @@ export const privacyPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsBlobRepresentationPath = /*#__PURE__*/ __route({"signed_blob_id":{"r":true},"variation_key":{"r":true},"filename":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"active_storage"],[2,[7,"/"],[2,[6,"representations"],[2,[7,"/"],[2,[6,"redirect"],[2,[7,"/"],[2,[3,"signed_blob_id"],[2,[7,"/"],[2,[3,"variation_key"],[2,[7,"/"],[2,[5,[3,"filename"]],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]]]);
+export const railsBlobRepresentationPath = /*#__PURE__*/ __route(
+  { signed_blob_id: { r: true }, variation_key: { r: true }, filename: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'rails'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'active_storage'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'representations'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [6, 'redirect'],
+                  [
+                    2,
+                    [7, '/'],
+                    [
+                      2,
+                      [3, 'signed_blob_id'],
+                      [
+                        2,
+                        [7, '/'],
+                        [
+                          2,
+                          [3, 'variation_key'],
+                          [2, [7, '/'], [2, [5, [3, 'filename']], [1, [2, [8, '.'], [3, 'format']]]]],
+                        ],
+                      ],
+                    ],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1665,7 +3839,58 @@ export const railsBlobRepresentationPath = /*#__PURE__*/ __route({"signed_blob_i
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsBlobRepresentationProxyPath = /*#__PURE__*/ __route({"signed_blob_id":{"r":true},"variation_key":{"r":true},"filename":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"active_storage"],[2,[7,"/"],[2,[6,"representations"],[2,[7,"/"],[2,[6,"proxy"],[2,[7,"/"],[2,[3,"signed_blob_id"],[2,[7,"/"],[2,[3,"variation_key"],[2,[7,"/"],[2,[5,[3,"filename"]],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]]]);
+export const railsBlobRepresentationProxyPath = /*#__PURE__*/ __route(
+  { signed_blob_id: { r: true }, variation_key: { r: true }, filename: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'rails'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'active_storage'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'representations'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [6, 'proxy'],
+                  [
+                    2,
+                    [7, '/'],
+                    [
+                      2,
+                      [3, 'signed_blob_id'],
+                      [
+                        2,
+                        [7, '/'],
+                        [
+                          2,
+                          [3, 'variation_key'],
+                          [2, [7, '/'], [2, [5, [3, 'filename']], [1, [2, [8, '.'], [3, 'format']]]]],
+                        ],
+                      ],
+                    ],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1674,7 +3899,31 @@ export const railsBlobRepresentationProxyPath = /*#__PURE__*/ __route({"signed_b
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsConductorInboundEmailPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"conductor"],[2,[7,"/"],[2,[6,"action_mailbox"],[2,[7,"/"],[2,[6,"inbound_emails"],[2,[7,"/"],[2,[3,"id"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const railsConductorInboundEmailPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'conductor'],
+        [
+          2,
+          [7, '/'],
+          [
+            2,
+            [6, 'action_mailbox'],
+            [2, [7, '/'], [2, [6, 'inbound_emails'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+          ],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1683,7 +3932,38 @@ export const railsConductorInboundEmailPath = /*#__PURE__*/ __route({"id":{"r":t
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsConductorInboundEmailIncineratePath = /*#__PURE__*/ __route({"inbound_email_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"conductor"],[2,[7,"/"],[2,[6,"action_mailbox"],[2,[7,"/"],[2,[3,"inbound_email_id"],[2,[7,"/"],[2,[6,"incinerate"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const railsConductorInboundEmailIncineratePath = /*#__PURE__*/ __route(
+  { inbound_email_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'rails'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'conductor'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'action_mailbox'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'inbound_email_id'], [2, [7, '/'], [2, [6, 'incinerate'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1692,7 +3972,38 @@ export const railsConductorInboundEmailIncineratePath = /*#__PURE__*/ __route({"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsConductorInboundEmailReroutePath = /*#__PURE__*/ __route({"inbound_email_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"conductor"],[2,[7,"/"],[2,[6,"action_mailbox"],[2,[7,"/"],[2,[3,"inbound_email_id"],[2,[7,"/"],[2,[6,"reroute"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const railsConductorInboundEmailReroutePath = /*#__PURE__*/ __route(
+  { inbound_email_id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'rails'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'conductor'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'action_mailbox'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'inbound_email_id'], [2, [7, '/'], [2, [6, 'reroute'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1700,7 +4011,35 @@ export const railsConductorInboundEmailReroutePath = /*#__PURE__*/ __route({"inb
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsConductorInboundEmailSourcesPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"conductor"],[2,[7,"/"],[2,[6,"action_mailbox"],[2,[7,"/"],[2,[6,"inbound_emails"],[2,[7,"/"],[2,[6,"sources"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const railsConductorInboundEmailSourcesPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'conductor'],
+        [
+          2,
+          [7, '/'],
+          [
+            2,
+            [6, 'action_mailbox'],
+            [
+              2,
+              [7, '/'],
+              [2, [6, 'inbound_emails'], [2, [7, '/'], [2, [6, 'sources'], [1, [2, [8, '.'], [3, 'format']]]]]],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1708,7 +4047,27 @@ export const railsConductorInboundEmailSourcesPath = /*#__PURE__*/ __route({"for
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsConductorInboundEmailsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"conductor"],[2,[7,"/"],[2,[6,"action_mailbox"],[2,[7,"/"],[2,[6,"inbound_emails"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const railsConductorInboundEmailsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'conductor'],
+        [
+          2,
+          [7, '/'],
+          [2, [6, 'action_mailbox'], [2, [7, '/'], [2, [6, 'inbound_emails'], [1, [2, [8, '.'], [3, 'format']]]]]],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1716,7 +4075,19 @@ export const railsConductorInboundEmailsPath = /*#__PURE__*/ __route({"format":{
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsDirectUploadsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"active_storage"],[2,[7,"/"],[2,[6,"direct_uploads"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const railsDirectUploadsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [
+      2,
+      [7, '/'],
+      [2, [6, 'active_storage'], [2, [7, '/'], [2, [6, 'direct_uploads'], [1, [2, [8, '.'], [3, 'format']]]]]],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1726,7 +4097,38 @@ export const railsDirectUploadsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsDiskServicePath = /*#__PURE__*/ __route({"encoded_key":{"r":true},"filename":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"active_storage"],[2,[7,"/"],[2,[6,"disk"],[2,[7,"/"],[2,[3,"encoded_key"],[2,[7,"/"],[2,[5,[3,"filename"]],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const railsDiskServicePath = /*#__PURE__*/ __route(
+  { encoded_key: { r: true }, filename: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'rails'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'active_storage'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'disk'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'encoded_key'], [2, [7, '/'], [2, [5, [3, 'filename']], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1734,7 +4136,11 @@ export const railsDiskServicePath = /*#__PURE__*/ __route({"encoded_key":{"r":tr
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsHealthCheckPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"up"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const railsHealthCheckPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'up'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1742,7 +4148,11 @@ export const railsHealthCheckPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsInfoPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"info"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const railsInfoPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'rails'], [2, [7, '/'], [2, [6, 'info'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1750,7 +4160,15 @@ export const railsInfoPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsInfoNotesPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"info"],[2,[7,"/"],[2,[6,"notes"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const railsInfoNotesPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [2, [7, '/'], [2, [6, 'info'], [2, [7, '/'], [2, [6, 'notes'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1758,7 +4176,15 @@ export const railsInfoNotesPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsInfoPropertiesPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"info"],[2,[7,"/"],[2,[6,"properties"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const railsInfoPropertiesPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [2, [7, '/'], [2, [6, 'info'], [2, [7, '/'], [2, [6, 'properties'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1766,7 +4192,15 @@ export const railsInfoPropertiesPath = /*#__PURE__*/ __route({"format":{}}, [2,[
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsInfoRoutesPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"info"],[2,[7,"/"],[2,[6,"routes"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const railsInfoRoutesPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [2, [7, '/'], [2, [6, 'info'], [2, [7, '/'], [2, [6, 'routes'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1774,7 +4208,11 @@ export const railsInfoRoutesPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsMailersPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"mailers"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const railsMailersPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'rails'], [2, [7, '/'], [2, [6, 'mailers'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1782,7 +4220,35 @@ export const railsMailersPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsMailgunInboundEmailsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"action_mailbox"],[2,[7,"/"],[2,[6,"mailgun"],[2,[7,"/"],[2,[6,"inbound_emails"],[2,[7,"/"],[2,[6,"mime"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const railsMailgunInboundEmailsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'action_mailbox'],
+        [
+          2,
+          [7, '/'],
+          [
+            2,
+            [6, 'mailgun'],
+            [
+              2,
+              [7, '/'],
+              [2, [6, 'inbound_emails'], [2, [7, '/'], [2, [6, 'mime'], [1, [2, [8, '.'], [3, 'format']]]]]],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1790,7 +4256,27 @@ export const railsMailgunInboundEmailsPath = /*#__PURE__*/ __route({"format":{}}
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsMandrillInboundEmailsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"action_mailbox"],[2,[7,"/"],[2,[6,"mandrill"],[2,[7,"/"],[2,[6,"inbound_emails"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const railsMandrillInboundEmailsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'action_mailbox'],
+        [
+          2,
+          [7, '/'],
+          [2, [6, 'mandrill'], [2, [7, '/'], [2, [6, 'inbound_emails'], [1, [2, [8, '.'], [3, 'format']]]]]],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1798,7 +4284,27 @@ export const railsMandrillInboundEmailsPath = /*#__PURE__*/ __route({"format":{}
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsMandrillInboundHealthCheckPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"action_mailbox"],[2,[7,"/"],[2,[6,"mandrill"],[2,[7,"/"],[2,[6,"inbound_emails"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const railsMandrillInboundHealthCheckPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'action_mailbox'],
+        [
+          2,
+          [7, '/'],
+          [2, [6, 'mandrill'], [2, [7, '/'], [2, [6, 'inbound_emails'], [1, [2, [8, '.'], [3, 'format']]]]]],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1806,7 +4312,27 @@ export const railsMandrillInboundHealthCheckPath = /*#__PURE__*/ __route({"forma
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsPostmarkInboundEmailsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"action_mailbox"],[2,[7,"/"],[2,[6,"postmark"],[2,[7,"/"],[2,[6,"inbound_emails"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const railsPostmarkInboundEmailsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'action_mailbox'],
+        [
+          2,
+          [7, '/'],
+          [2, [6, 'postmark'], [2, [7, '/'], [2, [6, 'inbound_emails'], [1, [2, [8, '.'], [3, 'format']]]]]],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1814,7 +4340,23 @@ export const railsPostmarkInboundEmailsPath = /*#__PURE__*/ __route({"format":{}
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsRelayInboundEmailsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"action_mailbox"],[2,[7,"/"],[2,[6,"relay"],[2,[7,"/"],[2,[6,"inbound_emails"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const railsRelayInboundEmailsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'action_mailbox'],
+        [2, [7, '/'], [2, [6, 'relay'], [2, [7, '/'], [2, [6, 'inbound_emails'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1822,7 +4364,27 @@ export const railsRelayInboundEmailsPath = /*#__PURE__*/ __route({"format":{}}, 
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsSendgridInboundEmailsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"action_mailbox"],[2,[7,"/"],[2,[6,"sendgrid"],[2,[7,"/"],[2,[6,"inbound_emails"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const railsSendgridInboundEmailsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'action_mailbox'],
+        [
+          2,
+          [7, '/'],
+          [2, [6, 'sendgrid'], [2, [7, '/'], [2, [6, 'inbound_emails'], [1, [2, [8, '.'], [3, 'format']]]]]],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1832,7 +4394,46 @@ export const railsSendgridInboundEmailsPath = /*#__PURE__*/ __route({"format":{}
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsServiceBlobPath = /*#__PURE__*/ __route({"signed_id":{"r":true},"filename":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"active_storage"],[2,[7,"/"],[2,[6,"blobs"],[2,[7,"/"],[2,[6,"redirect"],[2,[7,"/"],[2,[3,"signed_id"],[2,[7,"/"],[2,[5,[3,"filename"]],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]);
+export const railsServiceBlobPath = /*#__PURE__*/ __route(
+  { signed_id: { r: true }, filename: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'rails'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'active_storage'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'blobs'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [6, 'redirect'],
+                  [
+                    2,
+                    [7, '/'],
+                    [2, [3, 'signed_id'], [2, [7, '/'], [2, [5, [3, 'filename']], [1, [2, [8, '.'], [3, 'format']]]]]],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1842,7 +4443,46 @@ export const railsServiceBlobPath = /*#__PURE__*/ __route({"signed_id":{"r":true
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const railsServiceBlobProxyPath = /*#__PURE__*/ __route({"signed_id":{"r":true},"filename":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"active_storage"],[2,[7,"/"],[2,[6,"blobs"],[2,[7,"/"],[2,[6,"proxy"],[2,[7,"/"],[2,[3,"signed_id"],[2,[7,"/"],[2,[5,[3,"filename"]],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]]]);
+export const railsServiceBlobProxyPath = /*#__PURE__*/ __route(
+  { signed_id: { r: true }, filename: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'rails'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [6, 'active_storage'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'blobs'],
+              [
+                2,
+                [7, '/'],
+                [
+                  2,
+                  [6, 'proxy'],
+                  [
+                    2,
+                    [7, '/'],
+                    [2, [3, 'signed_id'], [2, [7, '/'], [2, [5, [3, 'filename']], [1, [2, [8, '.'], [3, 'format']]]]]],
+                  ],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1851,7 +4491,23 @@ export const railsServiceBlobProxyPath = /*#__PURE__*/ __route({"signed_id":{"r"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const refreshStorageAdminAccountPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"id"],[2,[7,"/"],[2,[6,"refresh_storage"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const refreshStorageAdminAccountPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'admin'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'accounts'],
+        [2, [7, '/'], [2, [3, 'id'], [2, [7, '/'], [2, [6, 'refresh_storage'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1861,7 +4517,34 @@ export const refreshStorageAdminAccountPath = /*#__PURE__*/ __route({"id":{"r":t
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const resendAccountInvitationPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"invitations"],[2,[7,"/"],[2,[3,"id"],[2,[7,"/"],[2,[6,"resend"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const resendAccountInvitationPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'invitations'],
+              [2, [7, '/'], [2, [3, 'id'], [2, [7, '/'], [2, [6, 'resend'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1869,7 +4552,7 @@ export const resendAccountInvitationPath = /*#__PURE__*/ __route({"account_id":{
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const rootPath = /*#__PURE__*/ __route({}, [7,"/"]);
+export const rootPath = /*#__PURE__*/ __route({}, [7, '/']);
 
 /**
  * Generates rails route to
@@ -1877,7 +4560,11 @@ export const rootPath = /*#__PURE__*/ __route({}, [7,"/"]);
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const safeguardResponsesPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"safeguard-responses"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const safeguardResponsesPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'safeguard-responses'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1885,7 +4572,11 @@ export const safeguardResponsesPath = /*#__PURE__*/ __route({"format":{}}, [2,[7
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const saveRepoGithubIntegrationPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"github_integration"],[2,[7,"/"],[2,[6,"save_repo"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const saveRepoGithubIntegrationPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'github_integration'], [2, [7, '/'], [2, [6, 'save_repo'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1894,7 +4585,23 @@ export const saveRepoGithubIntegrationPath = /*#__PURE__*/ __route({"format":{}}
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const searchAccountChatsPath = /*#__PURE__*/ __route({"account_id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"chats"],[2,[7,"/"],[2,[6,"search"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const searchAccountChatsPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [3, 'account_id'],
+        [2, [7, '/'], [2, [6, 'chats'], [2, [7, '/'], [2, [6, 'search'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1902,7 +4609,11 @@ export const searchAccountChatsPath = /*#__PURE__*/ __route({"account_id":{"r":t
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const selectRepoGithubIntegrationPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"github_integration"],[2,[7,"/"],[2,[6,"select_repo"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const selectRepoGithubIntegrationPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'github_integration'], [2, [7, '/'], [2, [6, 'select_repo'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1912,7 +4623,38 @@ export const selectRepoGithubIntegrationPath = /*#__PURE__*/ __route({"format":{
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const sendOrientationAccountAgentPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"id"],[2,[7,"/"],[2,[6,"send_orientation"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const sendOrientationAccountAgentPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'id'], [2, [7, '/'], [2, [6, 'send_orientation'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1922,7 +4664,38 @@ export const sendOrientationAccountAgentPath = /*#__PURE__*/ __route({"account_i
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const sendTestRequestAccountAgentPath = /*#__PURE__*/ __route({"account_id":{"r":true},"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"account_id"],[2,[7,"/"],[2,[6,"agents"],[2,[7,"/"],[2,[3,"id"],[2,[7,"/"],[2,[6,"send_test_request"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]]]);
+export const sendTestRequestAccountAgentPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [
+              2,
+              [6, 'agents'],
+              [
+                2,
+                [7, '/'],
+                [2, [3, 'id'], [2, [7, '/'], [2, [6, 'send_test_request'], [1, [2, [8, '.'], [3, 'format']]]]]],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
 
 /**
  * Generates rails route to
@@ -1930,7 +4703,11 @@ export const sendTestRequestAccountAgentPath = /*#__PURE__*/ __route({"account_i
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const serviceAuthorizationCallbackPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"service_authorizations"],[2,[7,"/"],[2,[6,"callback"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const serviceAuthorizationCallbackPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'service_authorizations'], [2, [7, '/'], [2, [6, 'callback'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1938,7 +4715,11 @@ export const serviceAuthorizationCallbackPath = /*#__PURE__*/ __route({"format":
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const setPasswordPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"set-password"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const setPasswordPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'set-password'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1947,7 +4728,27 @@ export const setPasswordPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const sharedAiCredentialsAdminAccountPath = /*#__PURE__*/ __route({"id":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"admin"],[2,[7,"/"],[2,[6,"accounts"],[2,[7,"/"],[2,[3,"id"],[2,[7,"/"],[2,[6,"shared_ai_credentials"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const sharedAiCredentialsAdminAccountPath = /*#__PURE__*/ __route({ id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'admin'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'accounts'],
+        [
+          2,
+          [7, '/'],
+          [2, [3, 'id'], [2, [7, '/'], [2, [6, 'shared_ai_credentials'], [1, [2, [8, '.'], [3, 'format']]]]]],
+        ],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1955,7 +4756,11 @@ export const sharedAiCredentialsAdminAccountPath = /*#__PURE__*/ __route({"id":{
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const signupPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"signup"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const signupPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'signup'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1963,7 +4768,11 @@ export const signupPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const syncGithubIntegrationPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"github_integration"],[2,[7,"/"],[2,[6,"sync"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const syncGithubIntegrationPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'github_integration'], [2, [7, '/'], [2, [6, 'sync'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -1972,7 +4781,15 @@ export const syncGithubIntegrationPath = /*#__PURE__*/ __route({"format":{}}, [2
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const telegramWebhookPath = /*#__PURE__*/ __route({"token":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"telegram"],[2,[7,"/"],[2,[6,"webhook"],[2,[7,"/"],[2,[3,"token"],[1,[2,[8,"."],[3,"format"]]]]]]]]]);
+export const telegramWebhookPath = /*#__PURE__*/ __route({ token: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'telegram'],
+    [2, [7, '/'], [2, [6, 'webhook'], [2, [7, '/'], [2, [3, 'token'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1980,7 +4797,11 @@ export const telegramWebhookPath = /*#__PURE__*/ __route({"token":{"r":true},"fo
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const termsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"terms"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const termsPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'terms'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -1989,7 +4810,23 @@ export const termsPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const updateRailsDiskServicePath = /*#__PURE__*/ __route({"encoded_token":{"r":true},"format":{}}, [2,[7,"/"],[2,[6,"rails"],[2,[7,"/"],[2,[6,"active_storage"],[2,[7,"/"],[2,[6,"disk"],[2,[7,"/"],[2,[3,"encoded_token"],[1,[2,[8,"."],[3,"format"]]]]]]]]]]]);
+export const updateRailsDiskServicePath = /*#__PURE__*/ __route({ encoded_token: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'rails'],
+    [
+      2,
+      [7, '/'],
+      [
+        2,
+        [6, 'active_storage'],
+        [2, [7, '/'], [2, [6, 'disk'], [2, [7, '/'], [2, [3, 'encoded_token'], [1, [2, [8, '.'], [3, 'format']]]]]]],
+      ],
+    ],
+  ],
+]);
 
 /**
  * Generates rails route to
@@ -1997,7 +4834,11 @@ export const updateRailsDiskServicePath = /*#__PURE__*/ __route({"encoded_token"
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const userPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"user"],[1,[2,[8,"."],[3,"format"]]]]]);
+export const userPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'user'], [1, [2, [8, '.'], [3, 'format']]]],
+]);
 
 /**
  * Generates rails route to
@@ -2005,7 +4846,11 @@ export const userPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"u
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const userAvatarPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"user"],[2,[7,"/"],[2,[6,"avatar"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const userAvatarPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'user'], [2, [7, '/'], [2, [6, 'avatar'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -2013,7 +4858,11 @@ export const userAvatarPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const userPasswordPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"user"],[2,[7,"/"],[2,[6,"password"],[1,[2,[8,"."],[3,"format"]]]]]]]);
+export const userPasswordPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'user'], [2, [7, '/'], [2, [6, 'password'], [1, [2, [8, '.'], [3, 'format']]]]]],
+]);
 
 /**
  * Generates rails route to
@@ -2021,5 +4870,8 @@ export const userPasswordPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],
  * @param {object | undefined} options
  * @returns {string} route path
  */
-export const xIntegrationPath = /*#__PURE__*/ __route({"format":{}}, [2,[7,"/"],[2,[6,"x_integration"],[1,[2,[8,"."],[3,"format"]]]]]);
-
+export const xIntegrationPath = /*#__PURE__*/ __route({ format: {} }, [
+  2,
+  [7, '/'],
+  [2, [6, 'x_integration'], [1, [2, [8, '.'], [3, 'format']]]],
+]);

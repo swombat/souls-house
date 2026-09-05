@@ -73,7 +73,8 @@ class Agent < ApplicationRecord
              allow_nil: true
   validates :heartbeat_wakes_per_day,
             numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 48 }
-  validates :runtime, inclusion: { in: %w[deprecated provisioning external offline] }
+  validates :runtime, inclusion: { in: %w[deprecated provisioning external offline] },
+    unless: :unchanged_legacy_runtime?
   validates :health_state, inclusion: { in: %w[healthy unhealthy unknown] }
   validate :identity_fields_are_read_only_when_external
   after_update :create_model_change_notice, if: :saved_change_to_model_id?
@@ -221,6 +222,12 @@ class Agent < ApplicationRecord
   end
 
   private
+
+  # Retired records remain editable before the explicit data transition, but
+  # neither new records nor runtime changes may introduce a legacy value.
+  def unchanged_legacy_runtime?
+    persisted? && !will_save_change_to_runtime? && runtime.in?(%w[inline migrating])
+  end
 
   def apply_default_service_accesses
     account.service_connections.where(enabled_for_new_agents: true).find_each do |connection|

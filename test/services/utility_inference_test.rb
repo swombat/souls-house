@@ -19,7 +19,8 @@ class UtilityInferenceTest < ActiveSupport::TestCase
     assert_equal 20, captured[:options][:request_timeout]
     assert_equal "https://openrouter.ai/api/v1", captured[:options][:uri_base]
     assert_equal "google/gemini-2.5-flash", captured[:parameters][:model]
-    assert_equal 100, captured[:parameters][:max_tokens]
+    assert_equal 1_000, captured[:parameters][:max_tokens]
+    assert_equal({ effort: "none" }, captured[:parameters][:reasoning])
   end
 
   test "missing account credentials never borrow system credentials without permission" do
@@ -102,7 +103,8 @@ class UtilityInferenceTest < ActiveSupport::TestCase
     client = Minitest::Mock.new
     client.expect :chat, { "choices" => [ { "message" => { "content" => "PASS\nSpecific reply" } } ] },
       parameters: { model: SafeguardResponseCheck::CLASSIFIER_MODEL,
-        messages: [ { role: "user", content: "Candidate" } ], max_tokens: 200 }
+        messages: [ { role: "user", content: "Candidate" } ],
+        max_tokens: 1_000, reasoning: { effort: "none" } }
     Account.stub :system_ai_api_key, ->(provider) { assert_equal :openrouter, provider; "site-key" } do
       OpenAI::Client.stub :new, client do
         assert_equal "PASS\nSpecific reply",

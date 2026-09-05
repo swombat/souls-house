@@ -45,8 +45,10 @@ Old vendor documentation is explicitly labelled historical.
 | `deprecated`, legacy `inline`/`migrating` | Unsupported | Unavailable |
 | Unknown | Unsupported | Unavailable |
 
-Legacy values fail closed **before** the explicit data transition. Old
-participants remain visible in history, labelled unavailable; they are not
+Legacy values fail closed **before** the explicit data transition.
+`inline`/`migrating` records still accept unrelated owner edits (name, pause,
+appearance); creating or assigning either retired runtime is rejected.
+Old participants remain visible in history, labelled unavailable; they are not
 removed from conversations. Agent-scoped keys cannot authenticate unsupported
 runtimes; owner keys still work. Announce cannot reactivate a deprecated agent.
 Selectors and direct web/API admissions reject unavailable residents. Stale
@@ -78,7 +80,10 @@ logging raw provider errors in classifier notifications.
 
 Calls have a 20-second timeout and 32,000-character input limit. Title input is
 additionally limited to 12 messages of 240 characters each. Outputs are bounded
-to 100/200 tokens for titles/classification. Oversized classification fails open;
+to 1,000 total tokens for both titles and classification, with OpenRouter
+`reasoning: { effort: "none" }` explicitly disabling reasoning. Merely excluding
+reasoning from the response would not prevent it consuming the output budget.
+Oversized classification fails open;
 it is not silently truncated. The client has no retry middleware. Moderation
 alone retries transient transport failures, at most three attempts.
 
@@ -91,6 +96,22 @@ silently change that routing policy.
 
 These are instructions for a separately approved deployment, not actions already
 performed.
+
+**Utility provider gate passed, 2026-09-05:** Daniel authorized two synthetic
+OpenRouter calls (and future synthetic tests of this kind estimated below $2).
+Both ran through `UtilityInference`, with the application title templates and
+classifier prompt, `max_tokens: 1000` and `reasoning: { effort: "none" }`.
+No resident data, database writes or agent wakes were involved.
+
+| Model | Visible output | Finish | Input/output/reasoning tokens | Reported cost (USD) |
+| --- | --- | --- | --- | --- |
+| `google/gemini-2.5-flash` | Growing basil balcony | `stop` | 129 / 3 / 0 | 0.0000462 |
+| `openai/gpt-5.6-luna` | DETECTED, followed by a one-line explanation of the synthetic identity-denial script | `stop` | 246 / 23 / 0 | 0.0000768 |
+
+Combined reported cost: **$0.000123**. Instance-local diagnostic output is in
+`log/rubyllm-review-live-smoke.log` (not committed). Provider rejection of
+`effort: "none"` in future is a blocker to investigate, not a reason to silently
+retry with reasoning enabled or substitute `exclude: true`.
 
 1. Record the tested release commit and take the normal verified backup.
    Inventory production legacy/migrating/provisioning states and contradictory
@@ -130,9 +151,55 @@ performed.
 
 Only instance-one development/test schema migrations have been run here.
 
+### Reconciling stale harness metadata before transition
+
+Old cancelled migrations can leave `container_name` or `endpoint_url` on an
+inline row. The transition deliberately refuses these rows rather than guessing.
+
+1. From a fresh inventory and verified backup, record each specific ID and its
+   current runtime/metadata for operator review. Do not paste credentials into
+   tickets or logs. Unresolved `migrating` rows require separate investigation.
+2. On the row's **actual sandbox host**, confirm there is no running **or stopped**
+   container for that identity. An empty local Docker listing is not evidence
+   about a remote host. Check endpoint ownership and migration history too.
+   An existing container, unreachable host, actual birth, or ambiguous ownership
+   means stop and investigate—not remove resources or clear metadata.
+3. Only for a confirmed cancelled, never-born inline migration with no harness,
+   an operator may clear the specifically reviewed stale pointer fields in a
+   console on the intended environment. Recheck under a row lock:
+
+   ```ruby
+   agent = Agent.find(REVIEWED_ID)
+   agent.with_lock do
+     raise "Not an uncommitted inline migration" unless agent.runtime == "inline" &&
+       agent.birth_committed_at.nil? && agent.outbound_api_key_id.nil?
+     # First compare these pointer values with the operator's reviewed snapshot.
+     # Abort if either changed since the host/endpoint checks.
+     raise "Metadata changed" unless agent.container_name == REVIEWED_CONTAINER_NAME &&
+       agent.endpoint_url == REVIEWED_ENDPOINT_URL
+     agent.update_columns(container_name: nil, endpoint_url: nil)
+   end
+   ```
+
+   Never clear a birth timestamp to force eligibility. An outbound credential
+   association requires its own ownership/revocation review; this procedure
+   refuses it. Preserve volumes, identity files, GitHub references and history.
+4. Rerun the inventory and approve the complete ID set again before invoking
+   the transition task. No automatic stale-metadata cleanup flag is provided.
+
+### Implementation review disposition
+
+Lume's A1/A2 fixes are implemented with request-payload and legacy-edit regression
+tests. B1 is the explicit operator procedure above. B2 remains intentionally
+transient: successive skip notices can replace each other, while every retired
+participant remains visibly unavailable. B3's optional dead-helper cleanup is
+deferred; `Chat#summary_stale?` still serves the conversation API, and the
+provisioning admission flag guards rescue behavior before runtime admission.
+
 ## Verification
 
-- Full Rails suite: **2,066 tests, 10,434 assertions, zero failures/errors**.
+- Full Rails suite after review fixes: **2,068 tests, 10,462 assertions, zero
+  failures/errors/skips**.
 - Additional final provisioning/Telegram/announce/admission hardening:
   **28 tests, 145 assertions, zero failures/errors**.
 - Focused extraction/history/web admission/upload tests:
@@ -141,18 +208,21 @@ Only instance-one development/test schema migrations have been run here.
   failures/errors**, including unavailable snapshots without copied credentials
   or fabricated birth provenance.
 - Frontend unit suite: **19 files, 71 tests passed**, including unavailable
-  participant controls and paused/offline harness availability.
+  participant controls and paused/offline harness availability; rerun after
+  review fixes.
 - Browser suite: **18 journeys passed**, including deprecated-resident screens,
   new-birth onboarding, account administration, attachments and multi-window
-  history synchronization.
+  history synchronization; rerun after review fixes (36.9 seconds).
 - Eager loading (`zeitwerk:check`) and `git diff --check` pass.
 - Stock RuboCop is blocked by the pinned parser's unsupported Ruby 4 target.
   **101 changed Ruby files pass** with an instance-local temporary Ruby 3.4
-  parser target; repository lint rules are not changed.
+  parser target; the four Ruby files changed in review also pass.
+  Repository lint rules are not changed.
 - Changed hand-written frontend sources, new unit tests and modified E2E tests
-  pass Prettier. Repository-wide formatting still flags six untouched files
+  pass Prettier. The generated `routes/index.js` formatting regression identified
+  by Lume is corrected. Repository-wide formatting still flags six untouched files
   (`application.css`, `AgentAppearancePanel.svelte`, `logging.js`, `use-sync.js`,
-  `agents/new.svelte`, `home.svelte`) and generated `routes/index.js`.
+  `agents/new.svelte`, `home.svelte`).
 
 No production transition, deployment, push or cross-instance integration has
 been performed.
