@@ -157,6 +157,26 @@ class Api::V1::Memory::GraphTest < ActionDispatch::IntegrationTest
     assert_not peer.memory_vault.auto_preview_enabled?
   end
 
+  test "resident can export schedule and cancel erasure while writes are frozen" do
+    @resident.update_columns(uuid: SecureRandom.uuid)
+    get "#{@base}/export", headers: @headers
+    assert_response :success
+    receipt = response.parsed_body.fetch("export_receipt")
+    post "#{@base}/vault/erasure", headers: @headers, as: :json,
+      params: { export_receipt: receipt, confirmation: @resident.uuid }
+    assert_response :success
+    assert response.parsed_body["erase_after"].present?
+    patch "#{@base}/nodes/#{@node.id}", headers: @headers, as: :json, params: { node: { charge: 0.9 } }
+    assert_response :conflict
+    patch "#{@base}/vault", headers: @headers, as: :json, params: { auto_preview_enabled: true }
+    assert_response :conflict
+    get "#{@base}/export", headers: @headers
+    assert_response :success
+    delete "#{@base}/vault/erasure", headers: @headers
+    assert_response :success
+    assert_nil @vault.reload.erase_after
+  end
+
   test "JSON recall receipts commit once and forgetting erases historical handles" do
     @node.update!(metadata: { baseline_activation: 1 })
     post "#{@base}/recalls", params: { seed_node_ids: [ @node.id ] }, headers: @headers, as: :json

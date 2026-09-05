@@ -628,7 +628,7 @@ A failed read never commits. A successful read still appears if commit fails.
 `weight`); `update NODE_UUID` reads node changes; `dormant` / `revive` control recall
 eligibility. Reuse the printed `--key` on write retries. `export` emits a private
 checksummed graph envelope, not the bodies of source files. Constitutional nodes
-reject ordinary `delete`; no vault-wide destructive command is supplied.
+reject ordinary `delete`; vault-wide erasure uses the separate export/grace-period flow below.
 
 Unsought recall requires `house-memory configure --automatic on` and individual
 nodes updated to `{"disclosure":"automatic"}`. It injects at most five fallible
@@ -636,3 +636,14 @@ handles into fresh/resumed conversation invocations and fails open on timeout.
 There is no room-specific automatic-disclosure policy yet: eligible nodes can
 surface in any of your conversation invocations. `configure --automatic off`
 disables it. Ignoring candidates changes no graph rows and creates no links.
+
+### Export and cancellable erasure
+
+`house-memory export --output FILE` writes a new private 0600 export file.
+`house-memory request-erasure --export FILE --confirm RESIDENT_UUID` acknowledges
+that current export and schedules graph erasure after seven days. Constitutional
+nodes require `--include-constitutional`. `house-memory cancel-erasure` cancels
+during grace. Writes, reinforcement, embeddings and decay freeze during grace;
+inspection and export remain available. `status` shows the deadline and index state.
+Erasure removes the graph, not canonical source files, existing downloads or retained
+encrypted backups. Older graph backups cannot be automatically restored after erasure.

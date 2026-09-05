@@ -11,8 +11,13 @@ class Mnemodyne::Vault < Mnemodyne::Record
   validate :owner_cannot_change, on: :update
 
   validates :agent_id, uniqueness: true
+  after_update_commit :reembed_after_resume, if: -> { saved_change_to_suspended_at? && !suspended_at? }
 
   private
+
+  def reembed_after_resume
+    Mnemodyne::ReembedVaultJob.perform_later(id) if Mnemodyne::Embeddings.configured? && !erasure_requested_at?
+  end
 
   def owner_cannot_change
     errors.add(:agent_id, "cannot change") if will_save_change_to_agent_id?

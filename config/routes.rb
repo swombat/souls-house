@@ -157,6 +157,8 @@ Rails.application.routes.draw do
         resource :export, only: :show
         resources :recalls, only: :create
         post "recalls/commit", to: "recalls#commit"
+        post "vault/erasure", to: "vaults#request_erasure"
+        delete "vault/erasure", to: "vaults#cancel_erasure"
         resource :vault, only: [ :show, :create, :update ]
         resources :nodes, only: [ :index, :show, :create, :update, :destroy ]
         resources :edges, only: [ :index, :show, :create, :update, :destroy ]

@@ -33,7 +33,7 @@ module Backup
 
     def self.read(agent, snapshot)
       output = capture!("docker", "run", "--rm", *Backup::AgentRestic.docker_environment(agent),
-        "restic/restic:latest", "dump", snapshot.restic_snapshot_id, "/data/memory-graph/checkpoint.json")
+        Backup::AgentRestic::IMAGE, "dump", snapshot.restic_snapshot_id, "/data/memory-graph/checkpoint.json")
       raise Error, "Graph checkpoint too large" if output.bytesize > Mnemodyne::Checkpoint::MAX_BYTES
       envelope = JSON.parse(output)
       raise Error, "Invalid graph checkpoint" unless envelope.is_a?(Hash) && envelope["payload"].is_a?(Hash)

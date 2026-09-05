@@ -5,7 +5,7 @@ class Mnemodyne::EmbedNodeJob < ApplicationJob
   def perform(vault_id, node_id)
     vault = Mnemodyne::Vault.find_by(id: vault_id)
     return unless vault
-    return if vault.suspended_at? || vault.agent.account.disabled? || !vault.agent.externally_hosted?
+    return if vault.erasure_requested_at? || vault.suspended_at? || vault.agent.account.disabled? || !vault.agent.externally_hosted?
     node = vault.nodes.find_by(id: node_id)
     return unless node && Mnemodyne::Embeddings.configured?
     text = node.embedding_text
@@ -13,7 +13,7 @@ class Mnemodyne::EmbedNodeJob < ApplicationJob
     profile = Mnemodyne::Embeddings.profile
     vector = Mnemodyne::Embeddings.embed(text)
     vault.with_lock do
-      return if vault.suspended_at? || vault.agent.reload.account.disabled?
+      return if vault.erasure_requested_at? || vault.suspended_at? || vault.agent.reload.account.disabled?
       node = vault.nodes.find_by(id: node_id)
       return unless node
       node.with_lock do

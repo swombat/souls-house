@@ -1,9 +1,10 @@
 class Mnemodyne::DecayJob < ApplicationJob
 
   def perform
-    Mnemodyne::Vault.where(suspended_at: nil).find_each do |vault|
+    Mnemodyne::Vault.where(suspended_at: nil, erasure_requested_at: nil).find_each do |vault|
       next unless vault.agent.externally_hosted? && vault.agent.active? && !vault.agent.account.disabled?
       vault.with_lock do
+        next if vault.erasure_requested_at? || vault.suspended_at?
         next if vault.last_decay_on == Date.current
         rate = vault.decay_rate
         vault.nodes.active.find_each do |node|

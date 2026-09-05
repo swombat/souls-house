@@ -12,9 +12,11 @@ module Backup
       init_restic_repo!(agent)
       backup_started_at = Time.current
       checkpoint = nil
-      snapshot_id, size, duration_ms, ok, stderr_tail = Backup::GraphCheckpoint.with_volume(agent) do |mounts, envelope|
-        checkpoint = envelope
-        run_restic_backup(agent, graph_mounts: mounts)
+      snapshot_id, size, duration_ms, ok, stderr_tail = Backup::AgentRestic.with_quiesced(agent) do
+        Backup::GraphCheckpoint.with_volume(agent) do |mounts, envelope|
+          checkpoint = envelope
+          run_restic_backup(agent, graph_mounts: mounts)
+        end
       end
       if checkpoint && agent.agent_runtime_interactions.where("started_at >= ?", backup_started_at).exists?
         ok = false
@@ -40,7 +42,7 @@ module Backup
     private
 
     def init_restic_repo!(agent)
-      cmd = restic_env(agent) + [ "restic/restic:latest", "init" ]
+      cmd = restic_env(agent) + [ Backup::AgentRestic::IMAGE, "init" ]
       _out, err, status = Open3.capture3(*docker_run_cmd(agent, *cmd))
       return true if status.success? || err.include?("already initialized")
 
@@ -50,7 +52,7 @@ module Backup
     def run_restic_backup(agent, graph_mounts: [])
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       cmd = restic_env(agent) + [
-        "restic/restic:latest", "backup", "/data",
+        Backup::AgentRestic::IMAGE, "backup", "/data",
         "--tag", "agent_id=#{agent.uuid}",
         "--tag", "agent_slug=#{agent.name.to_s.parameterize}",
         "--tag", "helixkit_volume_set=v1",
@@ -64,7 +66,7 @@ module Backup
 
     def prune!(agent)
       cmd = restic_env(agent) + [
-        "restic/restic:latest", "forget",
+        Backup::AgentRestic::IMAGE, "forget",
         "--keep-daily", agent.backup_keep_daily.to_s,
         "--keep-weekly", agent.backup_keep_weekly.to_s,
         "--keep-monthly", agent.backup_keep_monthly.to_s,

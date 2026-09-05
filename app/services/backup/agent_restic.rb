@@ -1,9 +1,12 @@
 module Backup
   module AgentRestic
 
+    IMAGE = "restic/restic:0.18.1"
+
     module_function
 
     def docker_environment(agent)
+      return LocalRepository.new(agent).environment if LocalRepository.enabled?
       if LocalInstance.current.namespace
         raise ArgumentError, "Remote agent backups/restores are disabled for isolated local instances"
       end
@@ -15,6 +18,44 @@ module Backup
         "-e", "RESTIC_PASSWORD=#{agent.restic_password}",
         "-e", "RESTIC_REPOSITORY=#{repository_url(agent)}"
       ]
+    end
+
+    def verify_archive!(agent)
+      _, _, status = Open3.capture3("docker", "run", "--rm", *docker_environment(agent),
+        IMAGE, "check", "--read-data")
+      raise ArgumentError, "Backup archive integrity verification failed" unless status.success?
+    end
+
+    def with_quiesced(agent)
+      vault = agent.memory_vault
+      return yield unless vault
+      Agents::Resources.new(agent).verify_existing!
+      vault.with_lock do
+        raise ArgumentError, "Erasure is pending" if vault.erasure_requested_at?
+        raise ArgumentError, "Backup requires an idle resident" if agent.agent_runtime_interactions.active.exists?
+        output, _, status = Open3.capture3("docker", "inspect", "--format", "{{.State.Running}} {{.State.Paused}}", agent.container_name)
+        paused_here = false
+        begin
+          if status.success? && output.strip == "true false"
+            _, _, paused = Open3.capture3("docker", "pause", agent.container_name)
+            raise ArgumentError, "Could not quiesce resident filesystem" unless paused.success?
+            paused_here = true
+          elsif status.success? && !%w[false].include?(output.split.first) && output.strip != "true true"
+            raise ArgumentError, "Cannot establish resident filesystem state"
+          elsif !status.success?
+            # Offline residents can have volumes but no container. Distinguish
+            # absence from daemon errors through the ownership verifier above.
+            raise ArgumentError, "Missing hosted runtime" if agent.external?
+          end
+          raise ArgumentError, "Resident became active before checkpoint" if agent.agent_runtime_interactions.active.exists?
+          yield
+        ensure
+          if paused_here
+            _, _, resumed = Open3.capture3("docker", "unpause", agent.container_name)
+            raise ArgumentError, "Resident remains paused after backup" unless resumed.success?
+          end
+        end
+      end
     end
 
     def repository_url(agent)

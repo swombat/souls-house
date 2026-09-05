@@ -10,7 +10,7 @@ class Mnemodyne::Write
 
     digest = Digest::SHA256.hexdigest(JSON.generate(canonical([ operation, payload ])))
     vault.with_lock do
-      raise Conflict if vault.suspended_at?
+      raise Conflict if vault.erasure_requested_at? || vault.suspended_at?
       previous = vault.operations.find_by(key: key)
       if previous
         raise Conflict unless previous.request_digest == digest

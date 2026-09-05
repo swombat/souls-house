@@ -53,6 +53,11 @@ RUN test -n "${CHAOS_HEAD}" \
     && git apply /tmp/chaos-antigravity-daily-cloudcode-egress.patch
 
 WORKDIR /build/chaos
+COPY patches/chaos-linux-sandbox-log-denials.patch /tmp/chaos-linux-sandbox-log-denials.patch
+# Upstream 131b7275 declares this CLI field only on macOS, but destructures it
+# unconditionally. Align the binding; do not change sandbox enforcement.
+RUN git apply --check /tmp/chaos-linux-sandbox-log-denials.patch \
+    && git apply /tmp/chaos-linux-sandbox-log-denials.patch
 RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
     && cp target/release/chaos /usr/local/bin/chaos \
     && /usr/local/bin/chaos --version

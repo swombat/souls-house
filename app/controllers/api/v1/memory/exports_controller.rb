@@ -5,7 +5,8 @@ class Api::V1::Memory::ExportsController < Api::V1::Memory::BaseController
   end
 
   def show
-    render json: Mnemodyne::Checkpoint.export(@vault)
+    envelope = Mnemodyne::Checkpoint.export(@vault)
+    render json: envelope.merge("export_receipt" => Mnemodyne::Erasure.export_receipt(@vault, envelope))
   end
 
 end

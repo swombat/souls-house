@@ -11,7 +11,7 @@ class Mnemodyne::Commit
     selected = selected_node_ids.uniq
     raise InvalidReceipt unless (selected - data.fetch("deltas").keys).empty?
     vault.with_lock do
-      raise InvalidReceipt if vault.suspended_at?
+      raise InvalidReceipt if vault.erasure_requested_at? || vault.suspended_at?
       raise InvalidReceipt unless data["generation"] == vault.recall_generation
       selected.map do |id|
         node = vault.nodes.find(id)

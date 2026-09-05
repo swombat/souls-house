@@ -1,4 +1,5 @@
 require "net/http"
+require "timeout"
 
 class Mnemodyne::Embeddings
 
@@ -17,15 +18,18 @@ class Mnemodyne::Embeddings
     uri = URI(ENV.fetch("MNEMODYNE_EMBEDDING_URL"))
     raise Unavailable unless uri.is_a?(URI::HTTP) && uri.userinfo.nil?
     request = Net::HTTP::Post.new(uri, "Content-Type" => "application/json")
+    request["Authorization"] = "Bearer #{ENV['MNEMODYNE_EMBEDDING_TOKEN']}" if ENV["MNEMODYNE_EMBEDDING_TOKEN"].present?
     request.body = { input: text, model: profile }.to_json
     body = +""
-    Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https",
-      open_timeout: 0.5, read_timeout: 1, write_timeout: 1) do |http|
-      http.request(request) do |response|
-        raise Unavailable unless response.is_a?(Net::HTTPSuccess)
-        response.read_body do |chunk|
-          raise Unavailable if body.bytesize + chunk.bytesize > 200_000
-          body << chunk
+    Timeout.timeout(2, Unavailable) do
+      Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https",
+        open_timeout: 0.5, read_timeout: 1, write_timeout: 1) do |http|
+        http.request(request) do |response|
+          raise Unavailable unless response.is_a?(Net::HTTPSuccess)
+          response.read_body do |chunk|
+            raise Unavailable if body.bytesize + chunk.bytesize > 200_000
+            body << chunk
+          end
         end
       end
     end

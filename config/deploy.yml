@@ -22,9 +22,12 @@ env:
     SOULSHOUSE_AGENT_INTERNAL_URL: http://souls-house-web:3000 # Agent callbacks hit Rails over Docker DNS.
     SOULSHOUSE_SANDBOX_HOST: 95.217.118.47 # Stored on promoted agents for operator diagnostics.
     SOULSHOUSE_AGENT_BACKUPS_ENABLED: true # Back up all hosted-agent persistent volumes during the nightly full backup.
+    MNEMODYNE_EMBEDDING_URL: http://souls-house-embeddings:8080/v1/embeddings
+    MNEMODYNE_EMBEDDING_PROFILE: bge-small-en-v1.5-q-52398278842e-fastembed-0.7.4-v1
   secret:
     - RAILS_MASTER_KEY # Rails master key (provide in .kamal/secrets)
     - DATABASE_URL # Database connection string (provided per env in secrets)
+    - MNEMODYNE_EMBEDDING_TOKEN # Same private token on web/jobs and embedding accessory.
 
 servers:
   web:
@@ -62,6 +65,19 @@ builder:
     image: dtenner/souls-house:production-build-cache
 
 accessories:
+  embeddings:
+    # Build/publish this artifact after review; see docs/mnemodyne-deployment.md.
+    image: dtenner/souls-house-mnemodyne-embeddings:v1
+    host: 95.217.118.47
+    env:
+      secret:
+        - MNEMODYNE_EMBEDDING_TOKEN
+    options:
+      memory: 512m
+      cpus: 2
+      read-only: true
+      tmpfs: /tmp
+    # No public port. Kamal's private network supplies souls-house-embeddings.
   postgres:
     image: postgres:16.2 # Use the correct version for your app
     host: 95.217.118.47

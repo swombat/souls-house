@@ -134,6 +134,12 @@ port, matching the Rails environment. Conflicting explicit callback URL override
 are rejected for secondary instances. External backup/restore operations are **disabled for secondary/test
 instances**; copying real hosted identities is intentionally not implemented.
 
+Mnemodyne's optional `scripts/verify-mnemodyne-local` additionally exercises
+encrypted backup/restore using a newly created synthetic resident and an
+ownership-labelled local Docker repository. This transport requires test mode,
+an isolated instance and an exact per-run UUID allowlist; it never enables cloud
+or batch restore. See `docs/mnemodyne-deployment.md`.
+
 Optional real-Docker safety smoke test (synthetic busybox containers only):
 
 ```sh

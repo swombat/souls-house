@@ -212,8 +212,14 @@ def main():
     parser = argparse.ArgumentParser(description="This resident's private Mnemodyne graph")
     parser.add_argument("--key", help="stable idempotency key for a write; reuse on retry")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("status", "enable", "remember", "connect", "export"):
+    for name in ("status", "enable", "remember", "connect", "cancel-erasure"):
         commands.add_parser(name)
+    export = commands.add_parser("export")
+    export.add_argument("--output", help="create a new private export file (0600)")
+    erasure = commands.add_parser("request-erasure")
+    erasure.add_argument("--export", dest="export_file", required=True, help="previously saved export file")
+    erasure.add_argument("--confirm", required=True, help="this resident's UUID from status")
+    erasure.add_argument("--include-constitutional", action="store_true")
     configure = commands.add_parser("configure")
     configure.add_argument("--automatic", choices=("on", "off"), required=True)
     for name in ("inspect", "update", "delete", "dormant", "revive"):
@@ -271,6 +277,23 @@ def main():
             result = client.request("GET", "edges" + ("?node_id=" + checked_uuid(args.node) if args.node else ""))
         elif command == "export":
             result = client.request("GET", "export")
+            if args.output:
+                fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, "w") as file:
+                    json.dump(result, file, ensure_ascii=False)
+                print("Private export saved.")
+                return 0
+        elif command == "request-erasure":
+            with open(args.export_file, "rb") as file:
+                body = file.read(50_000_001)
+            if len(body) > 50_000_000:
+                raise MemoryError("Export exceeds size limit")
+            envelope = json.loads(body)
+            result = client.request("POST", "vault/erasure", {
+                "export_receipt": envelope["export_receipt"], "confirmation": args.confirm,
+                "include_constitutional": args.include_constitutional})
+        elif command == "cancel-erasure":
+            result = client.request("DELETE", "vault/erasure")
         elif command == "recall":
             result = client.recall(query=args.query, seeds=[checked_uuid(node) for node in args.seed])
             if args.commit:

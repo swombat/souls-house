@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_05_195000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_05_211000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -281,6 +281,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_195000) do
     t.datetime "last_announced_at"
     t.datetime "last_health_check_at"
     t.datetime "last_refinement_at"
+    t.datetime "memory_erased_at"
     t.text "memory_reflection_prompt"
     t.datetime "migration_started_at"
     t.string "model_id", default: "openrouter/auto", null: false
@@ -638,6 +639,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_195000) do
     t.boolean "auto_preview_enabled", default: false, null: false
     t.datetime "created_at", null: false
     t.float "decay_rate", default: 0.005, null: false
+    t.datetime "erase_after"
+    t.boolean "erase_constitutional", default: false, null: false
+    t.string "erasure_fingerprint"
+    t.datetime "erasure_requested_at"
     t.date "last_decay_on"
     t.integer "recall_generation", default: 0, null: false
     t.datetime "suspended_at"

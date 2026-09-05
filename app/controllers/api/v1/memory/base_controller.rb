@@ -10,7 +10,7 @@ class Api::V1::Memory::BaseController < Api::V1::BaseController
   rescue_from ActiveRecord::RecordNotUnique, Mnemodyne::Write::Conflict do
     render json: { error: "Conflicting write" }, status: :conflict
   end
-  rescue_from Mnemodyne::Write::InvalidKey, ActionController::ParameterMissing, ArgumentError, KeyError do
+  rescue_from Mnemodyne::Erasure::Invalid, Mnemodyne::Write::InvalidKey, ActionController::ParameterMissing, ArgumentError, KeyError do
     render json: { error: "Invalid request" }, status: :bad_request
   end
 

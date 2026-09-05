@@ -5,6 +5,8 @@ class Backup::GraphRestoreTest < ActiveSupport::TestCase
   setup do
     @agent = agents(:research_assistant)
     @agent.update_columns(runtime: "external", uuid: SecureRandom.uuid)
+    @key = ApiKey.generate_for(users(:user_1), name: "Synthetic restore owner", agent: @agent)
+    @agent.update!(outbound_api_key: @key, outbound_api_token: @key.raw_token, trigger_bearer_token: "old-trigger")
     @vault = @agent.create_memory_vault!
     @vault.nodes.create!(node_type: "memory", content: "Synthetic restore handle")
     @envelope = Mnemodyne::Checkpoint.export(@vault)
@@ -26,7 +28,7 @@ class Backup::GraphRestoreTest < ActiveSupport::TestCase
       Mnemodyne::Checkpoint.stub(:import, ->(*) { raise Mnemodyne::Checkpoint::Invalid }) do
         assert_raises(Mnemodyne::Checkpoint::Invalid) { @restore.restore! }
       end
-      assert_equal %i[remove volumes restore], events
+      assert_empty events
       assert @vault.reload.suspended_at?
     end
   end
@@ -38,6 +40,8 @@ class Backup::GraphRestoreTest < ActiveSupport::TestCase
       assert_not @vault.reload.suspended_at?
       assert_equal 1, @vault.recall_generation
       assert_equal "Synthetic restore handle", @vault.nodes.first.content
+      assert_nil ApiKey.authenticate(@key.raw_token)
+      assert_not_equal "old-trigger", @agent.reload.trigger_bearer_token
     end
   end
 
@@ -47,6 +51,24 @@ class Backup::GraphRestoreTest < ActiveSupport::TestCase
     assert_raises(Agents::Sandbox::SandboxError) { sandbox.spawn! }
     assert_raises(Agents::Sandbox::SandboxError) { sandbox.start! }
     assert_raises(Agents::Sandbox::SandboxError) { sandbox.with_runtime { flunk "Must not invoke resident" } }
+  end
+
+  test "deliberate erasure blocks an older graph snapshot before archive access" do
+    @agent.update!(memory_erased_at: Time.current)
+    with_fake_runtime do |events|
+      assert_raises(Backup::AgentResticRestore::RestoreError) { @restore.restore! }
+      assert_empty events
+    end
+  end
+
+  test "rotation failure leaves the restored graph suspended and prevents wake" do
+    with_fake_runtime do |events|
+      Agents::RotateCredentials.stub(:call, ->(*) { raise Agents::RotateCredentials::Error }) do
+        assert_raises(Agents::RotateCredentials::Error) { @restore.restore! }
+      end
+      assert_equal %i[remove volumes restore configure], events
+      assert @vault.reload.suspended_at?
+    end
   end
 
   private
@@ -64,9 +86,11 @@ class Backup::GraphRestoreTest < ActiveSupport::TestCase
     @restore.define_singleton_method(:restore_snapshot!) { |_| events << :restore }
     @restore.define_singleton_method(:configure_for_local_runtime!) { events << :configure }
     LocalInstance.stub(:current, Struct.new(:namespace).new(nil)) do
-      Agents::Resources.stub(:new, resources) do
-        Agents::Sandbox.stub(:new, sandbox) do
-          Backup::GraphCheckpoint.stub(:read, @envelope) { yield events }
+      Backup::AgentRestic.stub(:verify_archive!, true) do
+        Agents::Resources.stub(:new, resources) do
+          Agents::Sandbox.stub(:new, sandbox) do
+            Backup::GraphCheckpoint.stub(:read, @envelope) { yield events }
+          end
         end
       end
     end

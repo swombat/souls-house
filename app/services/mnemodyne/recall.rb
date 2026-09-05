@@ -23,6 +23,7 @@ class Mnemodyne::Recall
   end
 
   def call
+    return empty if @vault.erasure_requested_at?
     return empty if @automatic && !@vault.auto_preview_enabled?
     scope = @automatic ? @vault.nodes.automatically_disclosable : @vault.nodes.active
     nodes = scope.limit(MAX_NODES + 1).to_a

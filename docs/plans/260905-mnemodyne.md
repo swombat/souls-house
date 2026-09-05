@@ -1,8 +1,9 @@
 # Mnemodyne inside souls.house
 
 Date: 2026-09-05
-Status: local hosted/external pilot implemented; final verification below.
-Not deployed or enabled for real residents. Provider and custody-policy gates remain.
+Status: hosted/external feature complete and locally verified; ready for Lume review.
+Not deployed or enabled for real residents. See the completion mandate below;
+earlier pilot milestones are historical, not the current acceptance boundary.
 Working checkout: `~/dev/souls-house-2`, local `master` only.
 
 ## Recovered decisions and provenance
@@ -307,3 +308,52 @@ the independently growing runtime manual in its size bound.
   intermittent synchronization failure is recorded, not claimed fixed.
 - Local implementation commit only; production readiness still depends on the
   provider, custody decisions and rollout gates described above.
+
+
+## Completion mandate — September 5, 21:01 CEST
+
+Daniel explicitly rejected the pilot boundary and requested the complete feature,
+fully testable locally and ready for Lume to review and deploy, **without deploying**.
+Work remains only in instance 2. No subagents were authorized.
+
+Acceptance criteria: current-export acknowledged, cancellable graph erasure with
+constitutional protection; credential rotation and anti-resurrection restore;
+actual encrypted local restic capture/restore using the production paths; a pinned
+private embedding image with real offline semantic inference; actual HTTP/image CLI
+and preview verification; full regressions, deployment configuration, operator
+instructions, and a review packet. No real residents or real cloud credentials.
+
+Implemented continuation: seven-day grace, signed export acknowledgements, frozen
+graph mutation during grace, hourly scoped erasure, anti-resurrection marker;
+rotation of resident API/trigger credentials without changing restic encryption;
+archive integrity and rollback-only graph validation before destructive restore;
+vault write lock plus runtime pause during checkpoint capture; explicit test-only
+local transport with UUID allowlist and checkout labels. Resume queues re-embedding.
+Private ONNX service uses FastEmbed 0.7.4, pinned dependencies, a pinned/checksummed
+quantized BGE-small model, offline inference and bearer authentication. Its actual
+local inference distinguishes a puppy/ball query from an unrelated bread memory.
+
+The ordinary full runtime build exposed upstream Chaos 131b7275's Linux compilation
+error: a macOS-only `log_denials` field was destructured unconditionally. A minimal
+platform-guard compatibility patch is included; it does not change sandbox rules.
+Full rebuild and local end-to-end verification passed. Debugging used a separately
+tagged overlay of instance 2's existing image, not another instance; final
+acceptance used the ordinary fully rebuilt runtime, not that overlay.
+
+### Completion verification — September 5, 21:43 CEST
+
+- Final full Rails suite: **2,585 tests / 12,351 assertions, no failures/errors/skips**.
+- Full browser suite: **17/17 passed**, with no retry required this turn.
+- Final actual image/API/inference/restic lifecycle: **1 test / 34 assertions,
+  no failures/errors/skips**, including provider authentication/profile rejection.
+- Ordinary complete runtime image built successfully, then rebuilt from the final
+  source context using cached compilation. Private embedding image also rebuilt.
+- Changed Ruby files: **32 clean** with the temporary Ruby 3.4 parser target;
+  stock RuboCop's Ruby 4.0 parser incompatibility persists. Python compiles.
+- Frontend formatting still reports the same eight pre-existing files; the
+  pre-existing routes declaration blank line remains untouched and unstaged.
+- No push, deployment, real resident invocation, cloud backup, production secret
+  preparation or modification to another checkout.
+
+Evidence and review map: `docs/reviews/260905-mnemodyne-ready-for-lume.md`.
+Release/run/rollback instructions: `docs/mnemodyne-deployment.md`.

@@ -10,6 +10,10 @@
 #     schedule: at 5am every day
 
 production:
+  mnemodyne_erasure:
+    class: Mnemodyne::EraseVaultsJob
+    schedule: every hour at minute 25
+
   mnemodyne_decay:
     class: Mnemodyne::DecayJob
     schedule: every day at 3:15am

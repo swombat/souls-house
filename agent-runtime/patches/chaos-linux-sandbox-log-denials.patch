@@ -1,0 +1,20 @@
+diff --git a/bin/chaos/src/debug_sandbox.rs b/bin/chaos/src/debug_sandbox.rs
+--- a/bin/chaos/src/debug_sandbox.rs
++++ b/bin/chaos/src/debug_sandbox.rs
+@@ -22,6 +22,7 @@ pub async fn run_command_under_sandbox(
+ ) -> anyhow::Result<()> {
+     let SandboxCommand {
+         full_auto,
++        #[cfg(target_os = "macos")]
+         log_denials,
+         config_overrides,
+         command,
+@@ -55,8 +56,6 @@ pub async fn run_command_under_sandbox(
+ 
+     #[cfg(target_os = "macos")]
+     let mut denial_logger = log_denials.then(DenialLogger::new).flatten();
+-    #[cfg(not(target_os = "macos"))]
+-    let _ = log_denials;
+ 
+     let managed_network_requirements_enabled = config.managed_network_requirements_enabled();
+ 
