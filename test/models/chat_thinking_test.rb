@@ -2,6 +2,31 @@ require "test_helper"
 
 class ChatThinkingTest < ActiveSupport::TestCase
 
+  test "Astra and Gemini 3.8 are top picks and available in their provider groups" do
+    {
+      "openai/gpt-6-astra" => [ "GPT-6 Astra", "OpenAI", "gpt-6-astra" ],
+      "google/gemini-3.8-flash" => [ "Gemini 3.8 Flash", "Google", "gemini-3.8-flash" ]
+    }.each do |id, (label, group, provider_id)|
+      entries = Chat::MODELS.select { |model| model[:model_id] == id }
+      assert_equal [ "Top Models", group ], entries.pluck(:group)
+      assert entries.all? { |model| model[:label] == label && model[:provider_model_id] == provider_id }
+      assert Chat.supports_thinking?(id)
+      assert_equal provider_id, Chat.provider_model_id(id)
+    end
+    assert Chat.model_config("openai/gpt-5.6-sol")
+    assert Chat.model_config("google/gemini-3.7-flash")
+    assert Chat.supports_audio_input?("google/gemini-3.8-flash")
+  end
+
+  test "new models expose their reasoning profiles" do
+    astra = Chat.reasoning_effort_config("openai/gpt-6-astra")
+    assert_equal "medium", astra[:default]
+    assert_equal %w[low medium high xhigh max ultra], astra[:options].pluck(:value)
+    gemini = Chat.reasoning_effort_config("google/gemini-3.8-flash")
+    assert_equal "Thinking level", gemini[:label]
+    assert_equal %w[minimal low medium high], gemini[:options].pluck(:value)
+  end
+
   test "supports_thinking? returns true for capable models" do
     assert Chat.supports_thinking?("anthropic/claude-opus-4.5")
     assert Chat.supports_thinking?("anthropic/claude-sonnet-4.5")
@@ -233,10 +258,10 @@ class ChatThinkingTest < ActiveSupport::TestCase
       .map { |model| model[:model_id] }
 
     assert_equal [
-      "openai/gpt-5.6-sol",
+      "openai/gpt-6-astra",
       "anthropic/claude-fable-5",
       "deepseek/deepseek-v4-pro-0813",
-      "google/gemini-3.7-flash",
+      "google/gemini-3.8-flash",
       "x-ai/grok-4.6",
       "mistralai/mistral-large-2512",
       "meta-llama/llama-4-maverick",

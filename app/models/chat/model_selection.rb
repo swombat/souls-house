@@ -8,10 +8,10 @@ module Chat::ModelSelection
   MODELS = [
     # Top Models - Flagship from each major provider
     {
-      model_id: "openai/gpt-5.6-sol",
-      label: "GPT-5.6 Sol",
+      model_id: "openai/gpt-6-astra",
+      label: "GPT-6 Astra",
       group: "Top Models",
-      provider_model_id: "gpt-5.6-sol",
+      provider_model_id: "gpt-6-astra",
       thinking: { supported: true }
     },
     {
@@ -27,10 +27,10 @@ module Chat::ModelSelection
       thinking: { supported: true }
     },
     {
-      model_id: "google/gemini-3.7-flash",
-      label: "Gemini 3.7 Flash",
+      model_id: "google/gemini-3.8-flash",
+      label: "Gemini 3.8 Flash",
       group: "Top Models",
-      provider_model_id: "gemini-3.7-flash",
+      provider_model_id: "gemini-3.8-flash",
       thinking: { supported: true },
       audio_input: true
     },
@@ -49,6 +49,7 @@ module Chat::ModelSelection
     { model_id: "z-ai/glm-5.2", label: "GLM 5.2", group: "Top Models", thinking: { supported: true } },
 
     # OpenAI
+    { model_id: "openai/gpt-6-astra", label: "GPT-6 Astra", group: "OpenAI", provider_model_id: "gpt-6-astra", thinking: { supported: true } },
     { model_id: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol", group: "OpenAI", provider_model_id: "gpt-5.6-sol", thinking: { supported: true } },
     { model_id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", group: "OpenAI", provider_model_id: "gpt-5.6-terra", thinking: { supported: true } },
     { model_id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", group: "OpenAI", provider_model_id: "gpt-5.6-luna", thinking: { supported: true } },
@@ -304,6 +305,14 @@ module Chat::ModelSelection
     },
 
     # Google
+    {
+      model_id: "google/gemini-3.8-flash",
+      label: "Gemini 3.8 Flash",
+      group: "Google",
+      provider_model_id: "gemini-3.8-flash",
+      thinking: { supported: true },
+      audio_input: true
+    },
     {
       model_id: "google/gemini-3.7-flash",
       label: "Gemini 3.7 Flash",
@@ -727,7 +736,7 @@ module Chat::ModelSelection
       case model_id
       when "openai/gpt-5.6-sol"
         REASONING_PROFILES[:openai_ultra].merge(default: "low")
-      when "openai/gpt-5.6-terra"
+      when "openai/gpt-6-astra", "openai/gpt-5.6-terra"
         REASONING_PROFILES[:openai_ultra]
       when "openai/gpt-5.6-luna"
         REASONING_PROFILES[:openai_max]
@@ -739,7 +748,7 @@ module Chat::ModelSelection
         REASONING_PROFILES[:anthropic_fable]
       when %r{\Aanthropic/claude-(?:sonnet-[45]|opus-[45])}
         REASONING_PROFILES[:anthropic]
-      when %r{\Agoogle/gemini-(?:3\.[5-7]-flash|3\.1-flash|3-flash)}
+      when %r{\Agoogle/gemini-(?:3\.[5-8]-flash|3\.1-flash|3-flash)}
         REASONING_PROFILES[:gemini_full]
       when %r{\Agoogle/gemini-(?:3\.1-pro|3-pro)}
         REASONING_PROFILES[:gemini_pro]

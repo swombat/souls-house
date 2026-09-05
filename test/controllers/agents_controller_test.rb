@@ -52,6 +52,9 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal @account.to_param, inertia_shared_props.dig("account", "id")
+    top_models = inertia_shared_props.fetch("grouped_models").fetch("Top Models")
+    assert_includes top_models.pluck("model_id"), "openai/gpt-6-astra"
+    assert_includes top_models.pluck("model_id"), "google/gemini-3.8-flash"
   end
 
   test "should create born-hosted agent" do

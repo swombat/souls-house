@@ -3,6 +3,29 @@ require "test_helper"
 module Agents
   class SandboxModelTest < ActiveSupport::TestCase
 
+    test "Astra and Gemini 3.8 route through API and OAuth with direct provider IDs" do
+      {
+        "openai/gpt-6-astra" => [ "openai", "gpt-6-astra" ],
+        "google/gemini-3.8-flash" => [ "gemini", "gemini-3.8-flash" ]
+      }.each do |model_id, (provider, direct_id)|
+        agent = agents(:research_assistant)
+        agent.model_id = model_id
+        agent.provider_auth_modes = {}
+        ResolvesProvider.stub(:api_key_available?, true) do
+          assert_equal provider, Agents::Sandbox.chaos_provider_for(agent)
+          assert_equal direct_id, Agents::Sandbox.chaos_model_for(agent)
+        end
+        ResolvesProvider.stub(:api_key_available?, false) do
+          assert_equal "openrouter", Agents::Sandbox.chaos_provider_for(agent)
+          assert_equal model_id, Agents::Sandbox.chaos_model_for(agent)
+          assert_equal provider, Agents::Sandbox.subscription_provider_for(agent)
+          agent.provider_auth_modes = { provider => "oauth_account" }
+          assert_equal provider, Agents::Sandbox.chaos_provider_for(agent)
+          assert_equal direct_id, Agents::Sandbox.chaos_model_for(agent)
+        end
+      end
+    end
+
     test "uses provider model id for chaos runtime when configured" do
       agent = agents(:research_assistant)
       agent.model_id = "anthropic/claude-opus-4.7"

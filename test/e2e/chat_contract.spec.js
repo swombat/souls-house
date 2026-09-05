@@ -289,6 +289,21 @@ test.describe('browser contracts', () => {
     );
   });
 
+  test('new flagship models are selectable with their reasoning controls', async ({ page }) => {
+    await login(page, setup.primary_user, setup.password);
+    await page.goto(setup.agents[0].edit_url);
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    const modelPicker = page.getByRole('button', { name: /^(openrouter\/auto|GPT-6 Astra|Gemini 3\.8 Flash)$/ });
+    await modelPicker.click();
+    await page.getByRole('option', { name: 'GPT-6 Astra', exact: true }).first().click();
+    await expect(modelPicker).toHaveText('GPT-6 Astra');
+    await expect(page.getByRole('heading', { name: 'Reasoning effort', exact: true })).toBeVisible();
+    await modelPicker.click();
+    await page.getByRole('option', { name: 'Gemini 3.8 Flash', exact: true }).first().click();
+    await expect(modelPicker).toHaveText('Gemini 3.8 Flash');
+    await expect(page.getByRole('heading', { name: 'Thinking level', exact: true })).toBeVisible();
+  });
+
   test('agent settings can be edited and saved', async ({ page, request }) => {
     await login(page, setup.primary_user, setup.password);
     await page.goto(setup.agents[0].edit_url);
