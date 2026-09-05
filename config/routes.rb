@@ -153,6 +153,14 @@ Rails.application.routes.draw do
   # JSON API for external clients (Claude Code, etc.)
   namespace :api do
     namespace :v1 do
+      namespace :memory do
+        resource :export, only: :show
+        resources :recalls, only: :create
+        post "recalls/commit", to: "recalls#commit"
+        resource :vault, only: [ :show, :create, :update ]
+        resources :nodes, only: [ :index, :show, :create, :update, :destroy ]
+        resources :edges, only: [ :index, :show, :create, :update, :destroy ]
+      end
       resources :key_requests, only: [ :create, :show ]
       post "agents/:uuid/announce", to: "agents#announce", as: :agent_announce
       get "agents/:uuid/health", to: "agents#health", as: :agent_health

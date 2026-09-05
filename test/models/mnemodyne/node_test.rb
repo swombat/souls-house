@@ -19,7 +19,7 @@ class Mnemodyne::NodeTest < ActiveSupport::TestCase
     assert_equal "never_automatic", node.disclosure
     assert_not node.is_dormant?
     assert_equal [ "identity://memory/journal.md#entry" ], node.source_uris
-    assert_equal "local-v1", node.embedding_profile
+    assert_nil node.embedding_profile
     assert_equal 0.0, node.baseline_activation
   end
 

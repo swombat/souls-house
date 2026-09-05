@@ -35,12 +35,26 @@ module Backup
       snapshot = agent.agent_backup_snapshots.where(ok: true).order(taken_at: :desc).first
       raise RestoreError, "No successful agent backup is recorded for #{agent.name}" unless snapshot
 
+      graph = snapshot.graph_checkpoint_digest.present? ? Backup::GraphCheckpoint.read(agent, snapshot) : nil
+      if agent.memory_vault && !graph
+        raise RestoreError, "Backup has no paired graph checkpoint; refusing to wake with mismatched memory"
+      end
+      vault = if graph
+        agent.memory_vault || agent.create_memory_vault!
+      end
+      was_suspended = vault&.suspended_at
+      vault&.update!(suspended_at: Time.current)
+
       puts "Restoring Chaos agent #{agent.name} (#{agent.uuid}) from #{snapshot.restic_snapshot_id}..."
       remove_container!
       recreate_volumes!
       restore_snapshot!(snapshot.restic_snapshot_id)
+      if graph
+        Mnemodyne::Checkpoint.import(vault, graph, replace: true)
+        vault.update!(suspended_at: was_suspended)
+      end
       configure_for_local_runtime!
-      Agents::Sandbox.new(agent).spawn! if agent.external?
+      Agents::Sandbox.new(agent).spawn! if agent.external? && !was_suspended
       puts "Restored Chaos agent #{agent.name}."
     end
 

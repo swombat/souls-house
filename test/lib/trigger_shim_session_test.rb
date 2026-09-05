@@ -1426,6 +1426,47 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_not_equal result.dig("first", "chaos_session_id"), second["chaos_session_id"]
   end
 
+  test "graph preview subprocess is bounded and fails open" do
+    out = run_shim_python(<<~PY)
+      from types import SimpleNamespace
+      calls = []
+      def run(command, **kw):
+          calls.append((command, kw))
+          return SimpleNamespace(returncode=0, stdout="CANDIDATE")
+      mod.subprocess.run = run
+      assert mod.graph_memory_notice(None) == ""
+      assert mod.graph_memory_notice({"enabled": False}) == ""
+      assert calls == []
+      assert mod.graph_memory_notice({"enabled": True, "query": "Synthetic"}) == "CANDIDATE"
+      assert calls[0][1]["timeout"] == 2.5
+      assert calls[0][0][-1] == "--preview"
+      def timeout(*a, **kw):
+          raise mod.subprocess.TimeoutExpired("synthetic", 2.5)
+      mod.subprocess.run = timeout
+      assert mod.graph_memory_notice({"enabled": True, "query": "Synthetic"}) == ""
+      print(json.dumps({"ok": True}))
+    PY
+    assert JSON.parse(out)["ok"]
+  end
+
+  test "graph candidates reach fresh and resumed prompts without becoming transcript" do
+    out = run_shim_python(<<~PY, fake_chaos: :echo_resumed_pid)
+      captured = []
+      original = mod.run_chaos
+      def run(model, timeout, prompt, **kw):
+          captured.append(prompt)
+          return original(model, timeout, prompt, **kw)
+      mod.run_chaos = run
+      first = mod.persistent_trigger("graph-session", "LIVE FIRST", None, "claude", 30, memory_notice="GRAPH FIRST")
+      second = mod.persistent_trigger("graph-session", "LIVE FULL", "LIVE DELTA", "claude", 30, memory_notice="GRAPH SECOND")
+      assert "GRAPH FIRST" in captured[0]
+      assert "LIVE DELTA" in captured[1] and "GRAPH SECOND" in captured[1]
+      assert "GRAPH FIRST" not in captured[1]
+      print(json.dumps({"ok": True}))
+    PY
+    assert JSON.parse(out)["ok"]
+  end
+
   private
 
   # Runs a Python snippet with trigger_shim.py loaded as `mod`, an isolated

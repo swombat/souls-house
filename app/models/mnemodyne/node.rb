@@ -22,10 +22,17 @@ class Mnemodyne::Node < Mnemodyne::Record
   validate :metadata_is_valid
   validate :source_uris_are_bounded_pointers
 
+  before_save :invalidate_embedding, if: -> { will_save_change_to_content? || will_save_change_to_description? }
+  after_commit :enqueue_embedding, on: [ :create, :update ], if: -> { previous_changes.key?("content") || previous_changes.key?("description") }
+
   before_destroy :prevent_constitutional_destruction
 
   scope :active, -> { where(is_dormant: false) }
   scope :automatically_disclosable, -> { active.where(disclosure: "automatic") }
+
+  def embedding_text
+    [ content, description.presence ].compact.join(" — ")
+  end
 
   def baseline_activation
     metadata.fetch("baseline_activation", 0.0)
@@ -36,6 +43,16 @@ class Mnemodyne::Node < Mnemodyne::Record
   end
 
   private
+
+  def invalidate_embedding
+    self.embedding = nil
+    self.embedding_digest = nil
+    self.embedding_profile = nil
+  end
+
+  def enqueue_embedding
+    Mnemodyne::EmbedNodeJob.perform_later(vault_id, id) if Mnemodyne::Embeddings.configured?
+  end
 
   def prevent_constitutional_destruction
     throw(:abort) if integration_state == "constitutional"

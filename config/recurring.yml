@@ -10,6 +10,10 @@
 #     schedule: at 5am every day
 
 production:
+  mnemodyne_decay:
+    class: Mnemodyne::DecayJob
+    schedule: every day at 3:15am
+
   agent_storage_usage:
     class: CollectAgentStorageUsageJob
     schedule: every hour at minute 45

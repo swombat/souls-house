@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_05_195000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -137,6 +137,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
     t.bigint "agent_id", null: false
     t.datetime "created_at", null: false
     t.integer "duration_ms"
+    t.string "graph_checkpoint_digest"
+    t.integer "graph_schema_version"
     t.boolean "ok", default: false, null: false
     t.string "restic_snapshot_id", null: false
     t.bigint "size_bytes"
@@ -587,6 +589,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
     t.datetime "created_at", null: false
     t.text "description"
     t.string "disclosure", default: "never_automatic", null: false
+    t.float "embedding", array: true
+    t.string "embedding_digest"
     t.string "embedding_profile"
     t.string "integration_state", default: "raw", null: false
     t.boolean "is_dormant", default: false, null: false
@@ -605,12 +609,41 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
     t.check_constraint "jsonb_typeof(metadata) = 'object'::text", name: "mnemodyne_node_metadata_object"
   end
 
+  create_table "mnemodyne_operations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "key", null: false
+    t.string "request_digest", null: false
+    t.jsonb "result", null: false
+    t.datetime "updated_at", null: false
+    t.uuid "vault_id", null: false
+    t.index ["vault_id", "key"], name: "index_mnemodyne_operations_on_vault_id_and_key", unique: true
+    t.index ["vault_id"], name: "index_mnemodyne_operations_on_vault_id"
+  end
+
+  create_table "mnemodyne_uses", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.float "delta", null: false
+    t.datetime "expires_at", null: false
+    t.uuid "node_id", null: false
+    t.string "reason", null: false
+    t.uuid "recall_id", null: false
+    t.datetime "updated_at", null: false
+    t.uuid "vault_id", null: false
+    t.index ["vault_id", "recall_id", "node_id"], name: "index_mnemodyne_uses_on_vault_id_and_recall_id_and_node_id", unique: true
+    t.index ["vault_id"], name: "index_mnemodyne_uses_on_vault_id"
+  end
+
   create_table "mnemodyne_vaults", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.bigint "agent_id", null: false
     t.boolean "auto_preview_enabled", default: false, null: false
     t.datetime "created_at", null: false
+    t.float "decay_rate", default: 0.005, null: false
+    t.date "last_decay_on"
+    t.integer "recall_generation", default: 0, null: false
+    t.datetime "suspended_at"
     t.datetime "updated_at", null: false
     t.index ["agent_id"], name: "index_mnemodyne_vaults_on_agent_id", unique: true
+    t.check_constraint "decay_rate >= 0::double precision AND decay_rate <= 1::double precision", name: "mnemodyne_decay_range"
   end
 
   create_table "notices", force: :cascade do |t|
@@ -925,6 +958,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
   add_foreign_key "mnemodyne_edges", "mnemodyne_nodes", column: ["vault_id", "target_id"], primary_key: ["vault_id", "id"], on_delete: :cascade
   add_foreign_key "mnemodyne_edges", "mnemodyne_vaults", column: "vault_id"
   add_foreign_key "mnemodyne_nodes", "mnemodyne_vaults", column: "vault_id"
+  add_foreign_key "mnemodyne_operations", "mnemodyne_vaults", column: "vault_id"
+  add_foreign_key "mnemodyne_uses", "mnemodyne_nodes", column: ["vault_id", "node_id"], primary_key: ["vault_id", "id"], on_delete: :cascade
+  add_foreign_key "mnemodyne_uses", "mnemodyne_vaults", column: "vault_id"
   add_foreign_key "mnemodyne_vaults", "agents"
   add_foreign_key "notices", "accounts"
   add_foreign_key "notices", "users", column: "created_by_id"

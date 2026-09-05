@@ -79,6 +79,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import logging
@@ -266,6 +267,7 @@ def trigger():
         }), 409
 
     try:
+        memory_notice = graph_memory_notice(payload.get("memory"))
         if persistent_session:
             return persistent_trigger(
                 session_id, prompt, request_delta, model, timeout_secs,
@@ -273,11 +275,13 @@ def trigger():
                 session_lock=session_lock, roll_session=roll_session,
                 runtime_session_generation=runtime_session_generation,
                 subscription_snapshot=subscription_snapshot,
+                **({"memory_notice": memory_notice} if memory_notice else {}),
             )
         return legacy_trigger(
             session_id, prompt, model, timeout_secs,
             provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
             subscription_snapshot=subscription_snapshot,
+            **({"memory_notice": memory_notice} if memory_notice else {}),
         )
     finally:
         session_lock.release()
@@ -285,7 +289,7 @@ def trigger():
 
 def legacy_trigger(
     session_id, prompt, model, timeout_secs, provider=None,
-    reasoning_effort=None, auth_mode="api_key", subscription_snapshot=None,
+    reasoning_effort=None, auth_mode="api_key", subscription_snapshot=None, memory_notice=None,
 ):
     """Run a fresh, unmapped Chaos process while still capturing JSON telemetry."""
     provider = provider or AGENT_PROVIDER
@@ -293,6 +297,7 @@ def legacy_trigger(
     full_prompt, prompt_components = build_prompt_with_components(
         prompt,
         runtime_notice=subscription_notice,
+        memory_notice=memory_notice,
     )
     prompt_info = prompt_telemetry(
         full_prompt=full_prompt,
@@ -367,7 +372,7 @@ def legacy_trigger(
 def persistent_trigger(
     session_id, prompt, request_delta, model, timeout_secs,
     provider=None, reasoning_effort=None, auth_mode="api_key", session_lock=None,
-    roll_session=False, runtime_session_generation=0, subscription_snapshot=None,
+    roll_session=False, runtime_session_generation=0, subscription_snapshot=None, memory_notice=None,
 ):
     """Resume the session mapped to session_id, or start (and record) a fresh one.
 
@@ -425,7 +430,7 @@ def persistent_trigger(
         subscription_notice_at = _utcnow_iso() if subscription_notice else None
 
         if record:
-            resume_prompt = append_runtime_notice(request_delta or prompt, subscription_notice)
+            resume_prompt = append_runtime_notice(append_runtime_notice(request_delta or prompt, subscription_notice), memory_notice)
             prompt_info = prompt_telemetry(
                 full_prompt=None,
                 delta_prompt=resume_prompt,
@@ -532,6 +537,7 @@ def persistent_trigger(
         full_prompt, prompt_components = build_prompt_with_components(
             prompt,
             runtime_notice=subscription_notice,
+            memory_notice=memory_notice,
         )
         prompt_info = prompt_telemetry(
             full_prompt=full_prompt,
@@ -1353,17 +1359,34 @@ def build_prompt(request_text: str) -> str:
     return prompt
 
 
-def build_prompt_with_components(request_text, runtime_notice=None):
+def graph_memory_notice(envelope):
+    if not isinstance(envelope, dict) or envelope.get("enabled") is not True:
+        return ""
+    try:
+        # A process timeout is a real wall-clock budget, including slow/dripping
+        # network reads. Kill/reap the utility on timeout; never leave a thread.
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).with_name("memory_client.py")), "--preview"],
+            input=json.dumps(envelope), capture_output=True, text=True, timeout=2.5,
+        )
+        output = result.stdout.strip()
+        return output if result.returncode == 0 and len(output.encode()) <= 12_000 else ""
+    except Exception:
+        return ""
+
+
+def build_prompt_with_components(request_text, runtime_notice=None, memory_notice=None):
     """Build a fresh prompt and return byte sizes without retaining its contents twice."""
     identity = identity_context()
     journals = memory_context()
-    parts = [part for part in (identity, request_text, runtime_notice, journals) if part]
+    parts = [part for part in (identity, request_text, runtime_notice, memory_notice, journals) if part]
     prompt = "\n\n".join(parts)
     return prompt, {
         "identity": _byte_length(identity),
         "request": _byte_length(request_text),
         "runtime_notice": _byte_length(runtime_notice),
         "journal": _byte_length(journals),
+        **({"graph_memory": _byte_length(memory_notice)} if memory_notice else {}),
     }
 
 

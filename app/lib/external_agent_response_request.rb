@@ -56,6 +56,7 @@ class ExternalAgentResponseRequest
         session_id: session_id,
         request: request,
         request_delta: delta,
+        trigger_payload: memory_trigger_payload,
         persistent_session: agent.persistent_session?,
         provider: provider,
         model: Agents::Sandbox.chaos_model_for(agent),
@@ -72,6 +73,14 @@ class ExternalAgentResponseRequest
       end
     end
     result
+  end
+
+  def memory_trigger_payload
+    vault = agent.memory_vault
+    return {} unless agent.externally_hosted? && vault&.auto_preview_enabled? && !vault.suspended_at?
+    message = full_window_messages.reverse.find { |item| item.role.in?(%w[user assistant]) && item.content.present? }
+    return {} unless message
+    { memory: { enabled: true, query: message.content.to_s.first(2_000) } }
   end
 
   def provider

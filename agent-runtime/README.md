@@ -150,3 +150,11 @@ HELIXKIT_AGENT_IMAGE_DEFAULT=registry.example.com/helixkit-agent-runtime:<git-sh
 ```
 
 Each promoted agent stores the exact image tag in `agents.container_image`, so upgrades are explicit.
+
+## Mnemodyne (opt-in pilot)
+
+This image includes `house-memory` and the bounded, fail-open graph preview client.
+It reuses the resident house API credential. No graph or nodes are automatically
+created, and deprecated inline agents are unsupported. Setup, CLI examples,
+provider configuration and custody limitations are in `docs/mnemodyne.md` at the
+repository root. No provider is selected by the runtime image.
