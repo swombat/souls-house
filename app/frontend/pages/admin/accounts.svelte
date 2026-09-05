@@ -55,10 +55,10 @@
   }
 </script>
 
-<div class="flex h-[calc(100vh-4rem)]">
+<div class="flex h-[calc(100vh-4rem)] flex-col md:flex-row">
   <AdminAccountList accounts={filtered} selectedAccount={selected_account} bind:search onSelect={selectAccount} />
 
-  <main class="flex-1 overflow-y-auto bg-background">
+  <main class="min-w-0 flex-1 overflow-y-auto bg-background">
     {#if selected_account}
       <AdminAccountDetails account={selected_account} {formatDate} />
     {:else}

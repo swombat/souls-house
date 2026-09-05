@@ -11,6 +11,7 @@
   import InfoCard from '$lib/components/InfoCard.svelte';
   import Avatar from '$lib/components/Avatar.svelte';
   import { Trash } from 'phosphor-svelte';
+  import AdminAccountUsage from './AdminAccountUsage.svelte';
 
   let { account, formatDate } = $props();
   let teamName = $state(account.name || '');
@@ -100,6 +101,10 @@
       {account.disabled ? 'Enable Account' : 'Disable Account'}
     </Button>
   </div>
+
+  {#if account.usage}
+    <AdminAccountUsage {account} />
+  {/if}
 
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
     <InfoCard title="Account Information" icon="Info">

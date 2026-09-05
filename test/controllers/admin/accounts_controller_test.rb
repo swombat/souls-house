@@ -99,6 +99,28 @@ class Admin::AccountsControllerTest < ActionDispatch::IntegrationTest
 
   # === Selected Account Tests ===
 
+  test "selected account includes usage and storage refresh is admin only" do
+    post login_path, params: { email_address: @site_admin_user.email_address, password: "password123" }
+    account = accounts(:personal_account)
+    agent = agents(:research_assistant)
+    agent.update_columns(runtime: "offline")
+    get admin_accounts_path, params: { account_id: account.to_param }
+    assert_response :success
+    assert inertia_shared_props["selected_account"]["usage"].key?("activity")
+
+    assert_enqueued_with(job: AgentStorageUsageJob, args: [ agent.id ]) do
+      post refresh_storage_admin_account_path(account)
+    end
+    assert_redirected_to admin_accounts_path(account_id: account)
+
+    delete logout_path
+    post login_path, params: { email_address: @regular_user.email_address, password: "password123" }
+    assert_no_enqueued_jobs(only: AgentStorageUsageJob) do
+      post refresh_storage_admin_account_path(account)
+    end
+    assert_redirected_to root_path
+  end
+
   test "should not include selected_account when no account_id param" do
     post login_path, params: { email_address: @site_admin_user.email_address, password: "password123" }
 

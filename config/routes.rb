@@ -150,6 +150,7 @@ Rails.application.routes.draw do
         patch :enable
         patch :convert
         patch :shared_ai_credentials
+        post :refresh_storage
       end
       resources :memberships, only: [ :create, :destroy ], controller: "account_memberships"
     end

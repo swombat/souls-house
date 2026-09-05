@@ -2,7 +2,7 @@
   let { accounts = [], selectedAccount = null, search = $bindable(''), onSelect } = $props();
 </script>
 
-<aside class="w-96 border-r border-border bg-card flex flex-col">
+<aside class="max-h-56 w-full shrink-0 border-r border-border bg-card flex flex-col md:max-h-none md:w-64 xl:w-80">
   <header class="p-4 border-b border-border bg-muted/30">
     <h2 class="text-lg font-semibold mb-3">Accounts</h2>
     <input

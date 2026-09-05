@@ -4,7 +4,7 @@ class Admin::AccountsController < ApplicationController
   skip_before_action :set_current_account
 
   before_action :require_site_admin
-  before_action :set_account, only: %i[disable enable convert shared_ai_credentials]
+  before_action :set_account, only: %i[disable enable convert shared_ai_credentials refresh_storage]
 
   def index
     @accounts = Account.includes(:owner, memberships: :user)
@@ -57,6 +57,14 @@ class Admin::AccountsController < ApplicationController
     redirect_to admin_accounts_path(account_id: @account), notice: "Shared AI credential fallback updated"
   end
 
+  def refresh_storage
+    @account.agents.where.not(runtime: "inline").find_each do |agent|
+      AgentStorageUsageJob.perform_later(agent.id)
+    end
+    audit(:admin_refresh_account_storage, @account, account_id: @account.id)
+    redirect_to admin_accounts_path(account_id: @account), notice: "Storage measurement queued. Refresh the overview shortly."
+  end
+
   private
 
   def accounts_json
@@ -72,6 +80,7 @@ class Admin::AccountsController < ApplicationController
       methods: [ :users_count, :members_count, :active, :disabled ]
     ).merge(
       "use_system_ai_credentials" => account.use_system_ai_credentials?,
+      "usage" => Admin::AccountUsageReport.new(account).call,
       "memberships" => account.memberships.map { |membership| membership_json(membership) }
     )
   end
