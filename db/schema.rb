@@ -564,6 +564,55 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
     t.index ["request_id"], name: "index_metered_action_events_on_request_id", unique: true
   end
 
+  create_table "mnemodyne_edges", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "edge_type", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.uuid "source_id", null: false
+    t.uuid "target_id", null: false
+    t.datetime "updated_at", null: false
+    t.uuid "vault_id", null: false
+    t.float "weight", default: 0.5, null: false
+    t.index ["vault_id", "source_id", "target_id", "edge_type"], name: "index_mnemodyne_edges_unique_per_vault", unique: true
+    t.index ["vault_id", "target_id"], name: "index_mnemodyne_edges_on_vault_id_and_target_id"
+    t.index ["vault_id"], name: "index_mnemodyne_edges_on_vault_id"
+    t.check_constraint "jsonb_typeof(metadata) = 'object'::text", name: "mnemodyne_edge_metadata_object"
+    t.check_constraint "source_id <> target_id", name: "mnemodyne_edge_no_self_loop"
+    t.check_constraint "weight >= 0::double precision AND weight <= 1::double precision", name: "mnemodyne_edge_weight_range"
+  end
+
+  create_table "mnemodyne_nodes", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.float "charge", default: 0.5, null: false
+    t.text "content", null: false
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.string "disclosure", default: "never_automatic", null: false
+    t.string "embedding_profile"
+    t.string "integration_state", default: "raw", null: false
+    t.boolean "is_dormant", default: false, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.string "node_type", null: false
+    t.text "source_uris", default: [], null: false, array: true
+    t.datetime "updated_at", null: false
+    t.uuid "vault_id", null: false
+    t.index "vault_id, node_type, lower(content)", name: "index_mnemodyne_hubs_unique_per_vault", unique: true, where: "((node_type)::text = ANY ((ARRAY['need'::character varying, 'person'::character varying])::text[]))"
+    t.index ["vault_id", "id"], name: "index_mnemodyne_nodes_on_vault_id_and_id", unique: true
+    t.index ["vault_id", "node_type"], name: "index_mnemodyne_nodes_on_vault_id_and_node_type"
+    t.index ["vault_id"], name: "index_mnemodyne_nodes_on_vault_id"
+    t.check_constraint "charge >= 0::double precision AND charge <= 1::double precision", name: "mnemodyne_node_charge_range"
+    t.check_constraint "disclosure::text = ANY (ARRAY['automatic'::character varying, 'never_automatic'::character varying]::text[])", name: "mnemodyne_node_disclosure"
+    t.check_constraint "integration_state::text = ANY (ARRAY['raw'::character varying, 'active'::character varying, 'integrated'::character varying, 'constitutional'::character varying]::text[])", name: "mnemodyne_node_integration_state"
+    t.check_constraint "jsonb_typeof(metadata) = 'object'::text", name: "mnemodyne_node_metadata_object"
+  end
+
+  create_table "mnemodyne_vaults", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.boolean "auto_preview_enabled", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_mnemodyne_vaults_on_agent_id", unique: true
+  end
+
   create_table "notices", force: :cascade do |t|
     t.bigint "account_id"
     t.text "body"
@@ -872,6 +921,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
   add_foreign_key "messages", "users"
   add_foreign_key "metered_action_events", "accounts"
   add_foreign_key "metered_action_events", "agents"
+  add_foreign_key "mnemodyne_edges", "mnemodyne_nodes", column: ["vault_id", "source_id"], primary_key: ["vault_id", "id"], on_delete: :cascade
+  add_foreign_key "mnemodyne_edges", "mnemodyne_nodes", column: ["vault_id", "target_id"], primary_key: ["vault_id", "id"], on_delete: :cascade
+  add_foreign_key "mnemodyne_edges", "mnemodyne_vaults", column: "vault_id"
+  add_foreign_key "mnemodyne_nodes", "mnemodyne_vaults", column: "vault_id"
+  add_foreign_key "mnemodyne_vaults", "agents"
   add_foreign_key "notices", "accounts"
   add_foreign_key "notices", "users", column: "created_by_id"
   add_foreign_key "oura_integrations", "users"
