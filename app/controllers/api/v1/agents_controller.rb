@@ -17,6 +17,10 @@ module Api
       end
 
       def announce
+        unless @agent.hosted?
+          return render json: { error: "Agent is deprecated", code: "agent_deprecated" }, status: :conflict
+        end
+
         @agent.update!(
           endpoint_url: params.require(:endpoint_url),
           last_announced_at: Time.current,
@@ -63,7 +67,10 @@ module Api
           model: agent.model_label,
           colour: agent.colour,
           icon: agent.icon,
-          active: agent.active?
+          active: agent.active?,
+          runtime: agent.runtime,
+          deprecated: agent.deprecated?,
+          unavailability_reason: agent.unavailability_reason
         }
       end
 

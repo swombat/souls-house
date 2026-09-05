@@ -32,12 +32,9 @@ module Api
           return render json: { errors: message.errors.full_messages }, status: :unprocessable_entity
         end
 
-        ai_response_triggered = !current_api_agent && !chat.manual_responses?
-        AiResponseJob.perform_later(chat) if ai_response_triggered
-
         render json: {
           message: message.as_json,
-          ai_response_triggered: ai_response_triggered
+          ai_response_triggered: false
         }, status: :created
       end
 

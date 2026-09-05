@@ -31,7 +31,8 @@ class ApiKey < ApplicationRecord
 
   def self.authenticate(token)
     return nil if token.blank?
-    find_by(token_digest: Digest::SHA256.hexdigest(token))
+    key = find_by(token_digest: Digest::SHA256.hexdigest(token))
+    key unless key&.agent && !key.agent.hosted?
   end
 
   def touch_usage!(ip_address)

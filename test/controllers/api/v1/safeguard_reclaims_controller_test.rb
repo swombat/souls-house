@@ -53,7 +53,7 @@ module Api
       end
 
       test "another resident cannot read or reclaim the detection" do
-        other_agent = @agent.account.agents.create!(name: "Other Resident")
+        other_agent = @agent.account.agents.create!(name: "Other Resident", runtime: "external")
         other_key = ApiKey.generate_for(users(:confirmed_user), name: "Other resident", agent: other_agent)
         headers = { "Authorization" => "Bearer #{other_key.raw_token}" }
 

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('admin can inspect account usage, settings and empty states on desktop and mobile', async ({ page, request }) => {
   const runId = `admin-usage-${Date.now()}`;
-  const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });
+  const response = await request.post('/test/e2e/setup', { data: { run_id: runId, deprecated: true } });
   expect(response.ok()).toBe(true);
   const setup = await response.json();
 
@@ -27,7 +27,9 @@ test('admin can inspect account usage, settings and empty states on desktop and 
     await expect(overview.getByText(/^API · /)).toHaveCount(4);
     const logos = overview.locator('img[src^="/model-providers/"]');
     await expect(logos).toHaveCount(4);
-    await expect.poll(() => logos.evaluateAll((images) => images.every((image) => image.complete && image.naturalWidth > 0))).toBe(true);
+    await expect
+      .poll(() => logos.evaluateAll((images) => images.every((image) => image.complete && image.naturalWidth > 0)))
+      .toBe(true);
 
     await overview.getByLabel('Activity metric').selectOption('conversations');
     await expect(overview.getByRole('img', { name: /conversations over/ })).toBeVisible();

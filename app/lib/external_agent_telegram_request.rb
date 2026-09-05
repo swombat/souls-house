@@ -9,6 +9,7 @@ class ExternalAgentTelegramRequest
   end
 
   def call
+    agent.reload.require_conversation_runtime!
     return { status: 204, skipped: true } if telegram_messages.empty?
     return { status: 503, error: "external runtime unreachable" } if agent.offline?
 
@@ -46,6 +47,8 @@ class ExternalAgentTelegramRequest
     acknowledge_safeguard_roll!(result)
     surface_runtime_failure!(result) if auth_mode == "oauth_account"
     result
+  rescue Agent::RuntimeAvailability::Unavailable => e
+    { status: 409, error: e.code, skipped: true }
   rescue StandardError => e
     Rails.logger.warn "[ExternalAgentTelegramRequest] #{agent.id} trigger failed: #{e.class}: #{e.message}"
     { status: 0, error: e.message }

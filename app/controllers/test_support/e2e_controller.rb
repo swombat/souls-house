@@ -27,6 +27,7 @@ module TestSupport
         create_agent!(account, "E2E Paused Fork", "zinc", paused: true),
         create_agent!(account, "E2E Inactive Fork", "gray", active: false)
       ]
+      agents.each { |agent| agent.update_columns(runtime: "deprecated") } if params[:deprecated]
 
       render json: {
         run_id: run_id,
@@ -133,22 +134,6 @@ module TestSupport
       }
     end
 
-    def perform_promote
-      agent = Agent.find(params.fetch(:agent_id))
-      PromoteAgentJob.perform_now(agent.id)
-      agent.reload
-
-      render json: {
-        id: agent.to_param,
-        runtime: agent.runtime,
-        health_state: agent.health_state,
-        endpoint_url: agent.endpoint_url,
-        sandbox_last_error: agent.sandbox_last_error
-      }
-    rescue StandardError => e
-      render json: { error: "#{e.class}: #{e.message}" }, status: :unprocessable_content
-    end
-
     def state
       run_id = params.fetch(:run_id)
       account = params[:account_id].present? ? Account.find(params[:account_id]) : Account.find_by!(name: "E2E #{run_id} Team")
@@ -239,13 +224,13 @@ module TestSupport
     def create_agent!(account, name, colour, active: true, paused: false)
       account.agents.create!(
         name: name,
+        runtime: "external",
         system_prompt: "You are #{name}, a deterministic E2E test agent.",
         model_id: "openrouter/auto",
         colour: colour,
         icon: "Robot",
         active: active,
-        paused: paused,
-        enabled_tools: []
+        paused: paused
       )
     end
 

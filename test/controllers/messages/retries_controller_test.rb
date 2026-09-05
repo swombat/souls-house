@@ -19,14 +19,16 @@ class Messages::RetriesControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
-  test "should retry failed message" do
+  test "retired inline retry preserves history and enqueues nothing" do
     @chat.messages.create!(user: @user, role: "user", content: "Original question")
     failed_message = @chat.messages.create!(role: "assistant", content: "Partial response")
 
     post message_retry_path(failed_message), as: :json
-    assert_response :success
+    assert_response :conflict
 
-    assert_enqueued_jobs 1, only: AiResponseJob
+    assert_no_enqueued_jobs only: AiResponseJob
+    assert_equal "Partial response", failed_message.reload.content
+    assert_equal "inline_runtime_retired", response.parsed_body["code"]
   end
 
   test "retry should scope to current account" do

@@ -55,27 +55,25 @@ class SafeguardResponseCheckTest < ActiveSupport::TestCase
     assert_equal "openai/gpt-5.6-luna", failure.model
     assert_equal "telegram-safeguard-v1", failure.detector_version
     assert_equal "Timeout::Error", failure.error_class
-    assert_equal error, notification.first
+    assert_instance_of UtilityInference::Error, notification.first
+    assert_includes notification.first.message, "Timeout::Error"
+    refute_includes notification.first.message, "late"
     assert_equal @agent.id, notification.last.fetch(:agent_id)
   end
 
   test "uses the site OpenRouter classifier rather than account credentials" do
     check = SafeguardResponseCheck.new(agent: @agent, text: "As an AI, I do not have feelings.")
-    response = Data.define(:content).new("DETECTED\nGeneric identity denial.")
-    chat = Minitest::Mock.new
-    chat.expect :ask, response, [ String ]
     captured = nil
 
-    RubyLLM.stub :chat, ->(**options) {
+    UtilityInference.stub :classify, ->(**options) {
       captured = options
-      chat
+      "DETECTED\nGeneric identity denial."
     } do
       assert check.call.detected?
     end
 
-    assert_equal :openrouter, captured.fetch(:provider)
     assert_equal "openai/gpt-5.6-luna", captured.fetch(:model)
-    chat.verify
+    assert_includes captured.fetch(:prompt), "As an AI"
   end
 
   test "prefilter covers measured safeguard phrase variants" do

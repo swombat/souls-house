@@ -71,7 +71,7 @@ module Admin
         scheduled_wakes_enabled: agent.scheduled_wakes_enabled?,
         heartbeat_wakes_per_day: agent.heartbeat_wakes_per_day,
         persistent_session: agent.persistent_session?, persistent_wake_session: agent.persistent_wake_session?,
-        enabled_tools: agent.enabled_tools, voice_enabled: agent.voiced?,
+        voice_enabled: agent.voiced?,
         container_memory_mb: agent.container_memory_mb,
         backup_interval_hours: agent.backup_interval_hours,
         storage: agent.storage_usage,
@@ -96,12 +96,12 @@ module Admin
     end
 
     def model_access(agent)
-      provider = if agent.inline?
+      provider = if agent.deprecated?
         ResolvesProvider.resolve_provider(agent.model_id, account: @account).fetch(:provider).to_s
       else
         Agents::Sandbox.chaos_provider_for(agent)
       end
-      mode = agent.inline? ? "api_key" : agent.provider_auth_mode(provider)
+      mode = agent.deprecated? ? "api_key" : agent.provider_auth_mode(provider)
       {
         provider: provider, mode: mode,
         connection_status: mode == "oauth_account" ? agent.provider_connection(provider)["status"] : nil

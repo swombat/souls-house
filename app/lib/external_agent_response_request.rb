@@ -12,7 +12,10 @@ class ExternalAgentResponseRequest
   end
 
   def call
+    agent.reload.require_conversation_runtime!
     Agents::Sandbox.new(agent).with_runtime { perform }
+  rescue Agent::RuntimeAvailability::Unavailable
+    raise
   rescue StandardError => e
     Rails.logger.warn "[ExternalAgentResponseRequest] #{agent.id} trigger failed: #{e.class}: #{e.message}"
     ActionCable.server.broadcast(

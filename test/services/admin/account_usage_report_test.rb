@@ -133,7 +133,7 @@ class Admin::AccountUsageReportTest < ActiveSupport::TestCase
       runtime: "external", model_id: "anthropic/claude-opus-4",
       provider_auth_modes: { "openai" => "oauth_account" }
     )
-    RubyLLM.config.stub(:anthropic_api_key, nil) do
+    Account.stub(:system_ai_api_key, nil) do
       assert_equal({ provider: "openrouter", mode: "api_key", connection_status: nil }, resident_report[:model_access])
     end
   end

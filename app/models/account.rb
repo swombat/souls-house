@@ -14,28 +14,23 @@ class Account < ApplicationRecord
   AI_PROVIDERS = {
     openrouter: {
       env: "OPENROUTER_API_KEY",
-      credentials: %i[ai openrouter api_token],
-      ruby_llm: :openrouter_api_key
+      credentials: %i[ai openrouter api_token]
     },
     anthropic: {
       env: "ANTHROPIC_API_KEY",
-      credentials: %i[ai claude api_token],
-      ruby_llm: :anthropic_api_key
+      credentials: %i[ai claude api_token]
     },
     openai: {
       env: "OPENAI_API_KEY",
-      credentials: %i[ai open_ai api_token],
-      ruby_llm: :openai_api_key
+      credentials: %i[ai open_ai api_token]
     },
     gemini: {
       env: "GEMINI_API_KEY",
-      credentials: %i[ai gemini api_token],
-      ruby_llm: :gemini_api_key
+      credentials: %i[ai gemini api_token]
     },
     xai: {
       env: "XAI_API_KEY",
-      credentials: %i[ai xai api_token],
-      ruby_llm: :xai_api_key
+      credentials: %i[ai xai api_token]
     },
     zai: { env: "ZAI_API_KEY", credentials: %i[ai zai api_token] },
     moonshot: { env: "MOONSHOT_API_KEY", credentials: %i[ai moonshot api_token] },
@@ -203,15 +198,19 @@ class Account < ApplicationRecord
 
   def ai_api_key(provider)
     provider = provider.to_sym
-    config = AI_PROVIDERS.fetch(provider)
+    AI_PROVIDERS.fetch(provider)
     configured_key = public_send("#{provider}_api_key").presence
     return configured_key if configured_key
     return unless use_system_ai_credentials?
 
-    ruby_llm_key = RubyLLM.config.public_send(config[:ruby_llm]) if config[:ruby_llm]
-    ruby_llm_key.presence ||
-      Rails.application.credentials.dig(*config.fetch(:credentials)).presence ||
+    self.class.system_ai_api_key(provider)
+  end
+
+  def self.system_ai_api_key(provider)
+    config = AI_PROVIDERS.fetch(provider.to_sym)
+    key = Rails.application.credentials.dig(*config.fetch(:credentials)).presence ||
       ENV[config.fetch(:env)].presence
+    key if key.present? && !key.start_with?("<")
   end
 
   def ai_provider_keys
@@ -227,16 +226,6 @@ class Account < ApplicationRecord
 
   def saved_ai_credentials_change?
     (saved_changes.keys.map(&:to_sym) & AI_CREDENTIAL_ATTRIBUTES).any?
-  end
-
-  def ruby_llm_context
-    RubyLLM.context do |config|
-      config.openrouter_api_key = ai_api_key(:openrouter)
-      config.anthropic_api_key = ai_api_key(:anthropic)
-      config.openai_api_key = ai_api_key(:openai)
-      config.gemini_api_key = ai_api_key(:gemini)
-      config.xai_api_key = ai_api_key(:xai)
-    end
   end
 
   alias_method :active, :active?

@@ -1,4 +1,5 @@
 research_assistant:
+  runtime: external
   account_id: 1
   name: Research Assistant
   system_prompt: You are a helpful research assistant that finds and synthesizes information.
@@ -7,6 +8,7 @@ research_assistant:
   active: true
 
 code_reviewer:
+  runtime: external
   account_id: 1
   name: Code Reviewer
   system_prompt: You review code for best practices and potential issues.
@@ -15,6 +17,7 @@ code_reviewer:
   active: true
 
 inactive_agent:
+  runtime: external
   account_id: 1
   name: Inactive Agent
   system_prompt: This agent is inactive.
@@ -23,6 +26,7 @@ inactive_agent:
   active: false
 
 other_account_agent:
+  runtime: external
   account_id: 2
   name: Team Agent
   system_prompt: Agent for the team account.
@@ -42,6 +46,7 @@ with_save_memory_tool:
 
 # Agent without any tools enabled
 without_tools:
+  runtime: external
   account_id: 1
   name: No Tools Agent
   system_prompt: You are an agent without any tools.

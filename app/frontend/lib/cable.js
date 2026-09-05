@@ -78,7 +78,12 @@ export function subscribeToModel(model, id, props) {
 }
 
 export function streamingEventName(data) {
-  if (data.action === 'streaming_update' || data.action === 'thinking_update' || data.action === 'error') {
+  if (
+    data.action === 'streaming_update' ||
+    data.action === 'thinking_update' ||
+    data.action === 'error' ||
+    data.action === 'agent_skipped'
+  ) {
     return 'streaming-update';
   }
 

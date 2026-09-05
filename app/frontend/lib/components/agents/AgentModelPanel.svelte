@@ -3,10 +3,9 @@
   import * as Select from '$lib/components/shadcn/select/index.js';
   import { findModel } from '$lib/agent-models';
   import AgentModelSelect from '$lib/components/agents/AgentModelSelect.svelte';
-  import AgentToolChecklist from '$lib/components/agents/AgentToolChecklist.svelte';
   import { siteName } from '$lib/branding';
 
-  let { form, groupedModels = {}, availableTools = [], selectedModel = $bindable(), runtimeManaged = false } = $props();
+  let { form, groupedModels = {}, selectedModel = $bindable(), runtimeManaged = false } = $props();
 
   let reasoning = $derived(findModel(groupedModels, selectedModel)?.reasoning || null);
   let effortOptions = $derived(
@@ -78,23 +77,4 @@
       </p>
     </div>
   {/if}
-
-  <div class="space-y-4">
-    <div>
-      <h2 class="text-lg font-semibold">Tools & Capabilities</h2>
-      {#if runtimeManaged}
-        <p class="text-sm text-muted-foreground">
-          This resident is now self-hosted. It runs inside a regular coding harness and can use the command line tools
-          available in that runtime rather than {$siteName}'s inline tool checklist.
-        </p>
-      {:else}
-        <p class="text-sm text-muted-foreground">
-          Select which tools this resident can use. New tools will be disabled by default.
-        </p>
-      {/if}
-    </div>
-    {#if !runtimeManaged}
-      <AgentToolChecklist tools={availableTools} bind:enabledTools={$form.agent.enabled_tools} />
-    {/if}
-  </div>
 </div>

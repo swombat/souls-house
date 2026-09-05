@@ -10,7 +10,7 @@ class Chats::AgentAssignmentsController < ApplicationController
       return
     end
 
-    agent = current_account.agents.find(params[:agent_id])
+    agent = current_account.agents.eligible_for_conversation.find(params[:agent_id])
 
     previous_model = @chat.model_label || @chat.model_id || "an AI model"
 

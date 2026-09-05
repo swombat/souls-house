@@ -148,75 +148,8 @@ class AgentInitiationTest < ActiveSupport::TestCase
     assert_not_includes conversations, chat
   end
 
-  test "build_initiation_prompt includes system prompt" do
-    @agent.update!(system_prompt: "You are a helpful assistant.")
-
-    prompt = @agent.build_initiation_prompt(
-      conversations: [],
-      recent_initiations: [],
-      human_activity: []
-    )
-
-    assert_includes prompt, "You are a helpful assistant."
-  end
-
-  test "build_initiation_prompt includes current time" do
-    prompt = @agent.build_initiation_prompt(
-      conversations: [],
-      recent_initiations: [],
-      human_activity: []
-    )
-
-    assert_includes prompt, "# Current Time"
-    assert_match(/\d{4}-\d{2}-\d{2}/, prompt)
-  end
-
-  test "build_initiation_prompt includes conversation list" do
-    chat = create_manual_chat_with_agent(@agent, title: "Test Conversation")
-    chat.messages.create!(role: "user", user: @user, content: "Hello!")
-
-    prompt = @agent.build_initiation_prompt(
-      conversations: [ chat ],
-      recent_initiations: [],
-      human_activity: []
-    )
-
-    assert_includes prompt, "Test Conversation"
-    assert_includes prompt, chat.obfuscated_id
-  end
-
-  test "build_initiation_prompt shows empty state when no conversations" do
-    prompt = @agent.build_initiation_prompt(
-      conversations: [],
-      recent_initiations: [],
-      human_activity: []
-    )
-
-    assert_includes prompt, "No conversations available."
-  end
-
-  test "build_initiation_prompt includes JSON response format" do
-    prompt = @agent.build_initiation_prompt(
-      conversations: [],
-      recent_initiations: [],
-      human_activity: []
-    )
-
-    assert_includes prompt, '{"action": "continue"'
-    assert_includes prompt, '{"action": "initiate"'
-    assert_includes prompt, '"agent_only": true'
-    assert_includes prompt, '{"action": "nothing"'
-  end
-
-  test "build_initiation_prompt mentions agent-only conversations" do
-    prompt = @agent.build_initiation_prompt(
-      conversations: [],
-      recent_initiations: [],
-      human_activity: []
-    )
-
-    assert_includes prompt, "Agent-Only Conversations"
-    assert_includes prompt, "private conversations with other agents"
+  test "does not build inline decision prompts" do
+    assert_not @agent.respond_to?(:build_initiation_prompt)
   end
 
   test "INITIATION_CAP constant is defined" do
@@ -319,39 +252,6 @@ class AgentInitiationTest < ActiveSupport::TestCase
     # Other agent should still see the chat
     assert_includes other_agent.continuable_conversations, chat
     assert_not_includes @agent.continuable_conversations, chat
-  end
-
-  test "build_initiation_prompt includes github commits context when available" do
-    GithubIntegration.create!(
-      account: @account,
-      enabled: true,
-      repository_full_name: "owner/repo",
-      recent_commits: [
-        { "sha" => "abc12345", "date" => 30.minutes.ago.iso8601, "message" => "Deploy feature X", "author" => "Dev" }
-      ]
-    )
-
-    prompt = @agent.build_initiation_prompt(
-      conversations: [],
-      recent_initiations: [],
-      human_activity: []
-    )
-
-    assert_includes prompt, "# Recent Code Activity"
-    assert_includes prompt, "# Recent Commits to owner/repo"
-    assert_includes prompt, "Deploy feature X"
-    assert_includes prompt, "JUST DEPLOYED"
-  end
-
-  test "build_initiation_prompt shows no activity when no github integration" do
-    prompt = @agent.build_initiation_prompt(
-      conversations: [],
-      recent_initiations: [],
-      human_activity: []
-    )
-
-    assert_includes prompt, "# Recent Code Activity"
-    assert_includes prompt, "No recent code activity."
   end
 
 end

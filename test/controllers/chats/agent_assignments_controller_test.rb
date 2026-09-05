@@ -9,7 +9,7 @@ class Chats::AgentAssignmentsControllerTest < ActionDispatch::IntegrationTest
       model_id: "openrouter/auto",
       title: "Test Conversation"
     )
-    @agent = @account.agents.create!(name: "Test Agent", system_prompt: "You are a test agent")
+    @agent = @account.agents.create!(name: "Test Agent", system_prompt: "You are a test agent", runtime: "external")
 
     post login_path, params: {
       email_address: @user.email_address,

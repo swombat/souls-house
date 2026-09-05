@@ -118,17 +118,33 @@ test.describe('browser contracts', () => {
     await expect(page.getByRole('img', { name: 'agent-generated-image.png' }).last()).toBeVisible();
   });
 
-  test('hosted agent promotion page explains local sandbox testing', async ({ page }) => {
+  test('existing harness residents have no promotion or inline tool controls', async ({ page }) => {
     await login(page, setup.primary_user, setup.password);
     const agentId = setup.agents[0].id;
 
-    await page.goto(`/accounts/${setup.account_id}/agents/${agentId}/promote`);
+    const response = await page.goto(`/accounts/${setup.account_id}/agents/${agentId}/promote`);
+    expect(response.status()).toBe(404);
+    await page.goto(setup.agents[0].edit_url);
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await expect(page.getByText('Tools & Capabilities')).toBeHidden();
+    await expect(page.getByRole('button', { name: /Promote to sandbox/ })).toBeHidden();
+  });
 
-    await expect(page.getByRole('heading', { name: /Promote E2E Researcher/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Promote to sandbox/ })).toBeVisible();
-    await expect(page.getByText(/without a GitHub repo, master key, DNS, or SSH deploy step/)).toBeVisible();
-    await expect(page.getByText(/published to/)).toBeVisible();
-    await expect(page.getByText(/127.0.0.1/)).toBeVisible();
+  test('deprecated residents remain visible but are unavailable and cannot be promoted', async ({ page, request }) => {
+    const response = await request.post('/test/e2e/setup', {
+      data: { run_id: setup.run_id, deprecated: true },
+    });
+    expect(response.ok()).toBe(true);
+    setup = await response.json();
+    await login(page, setup.primary_user, setup.password);
+    await page.goto(`/accounts/${setup.account_id}/agents`);
+    await expect(page.getByText('Deprecated · Unavailable', { exact: true })).toHaveCount(4);
+    await page.goto(setup.agents[0].edit_url);
+    await page.getByRole('button', { name: 'Hosting', exact: true }).click();
+    await expect(page.getByText(/has no supported harness and cannot respond/)).toBeVisible();
+    await expect(page.getByRole('button', { name: /Promote/ })).toBeHidden();
+    await page.goto(`/accounts/${setup.account_id}/chats`);
+    await expect(page).toHaveURL(/\/agents\/new$/);
   });
 
   test('agent navigation is direct and whiteboards only appear for configured accounts', async ({ page }) => {
@@ -162,27 +178,20 @@ test.describe('browser contracts', () => {
     await expect(page.getByRole('heading', { name: 'Whiteboards' })).toBeVisible();
   });
 
-  test('user can promote a hosted agent into a local Docker sandbox', async ({ page, request }) => {
+  test('user can commit a new resident without an inline promotion step', async ({ page }) => {
     await login(page, setup.primary_user, setup.password);
-    const agentId = setup.agents[0].id;
-
-    await page.goto(`/accounts/${setup.account_id}/agents/${agentId}/promote`);
-    await expect(page.getByRole('heading', { name: /Promote E2E Researcher/ })).toBeVisible();
-    await expect(page.getByText(/Docker daemon:/)).toBeVisible();
-    await expect(page.getByText(/Runtime image present:/)).toBeVisible();
-
-    await page.getByRole('button', { name: /Promote to sandbox/ }).click();
-    await expect(page.getByText(/Current runtime:\s*migrating/)).toBeVisible();
-
-    const promoteResponse = await request.post('/test/e2e/perform_promote', {
-      data: { agent_id: agentId },
-    });
-    expect(promoteResponse.ok()).toBe(true);
-
-    await page.reload();
-    await expect(page.getByText(/Current runtime:\s*external/)).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByText(/Health:\s*healthy/)).toBeVisible();
-    await expect(page.getByText(/Container exists:\s*yes/)).toBeVisible();
+    await page.goto(`/accounts/${setup.account_id}/agents/new`);
+    await page.getByRole('button', { name: 'Begin', exact: true }).click();
+    await page.getByLabel('Display name', { exact: true }).fill('E2E New Resident');
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByLabel('Initial soul seed', { exact: true }).fill('A synthetic beginning for the browser test.');
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: 'Create resident and commit this seed' }).click();
+    await expect(page).toHaveURL(/\/agents\/[^/]+\/onboarding$/);
+    await expect(page.getByRole('heading', { name: 'Preparing E2E New Resident' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Promote/ })).toBeHidden();
   });
 
   test('chat messages sync between two logged-in browser windows', async ({ browser, page }) => {

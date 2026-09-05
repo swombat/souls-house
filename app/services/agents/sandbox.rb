@@ -29,6 +29,7 @@ module Agents
     end
 
     def spawn!
+      raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
       raise SandboxError, "agent uuid missing" if agent.uuid.blank?
       raise SandboxError, "container_name missing" if agent.container_name.blank?
       raise SandboxError, "container_image missing" if agent.container_image.blank?
@@ -70,15 +71,18 @@ module Agents
     end
 
     def with_runtime
-      return yield unless Agents::Config.cold_start?
+      raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
+      cold_start = Agents::Config.cold_start?
+      return yield unless cold_start
 
       spawn!
       yield
     ensure
-      stop_if_idle! if Agents::Config.cold_start?
+      stop_if_idle! if cold_start
     end
 
     def recreate!
+      raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
       if container_exists?
         migrate_repo_volume_from_container!
         migrate_work_volume_from_container!

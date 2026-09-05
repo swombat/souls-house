@@ -5,32 +5,23 @@ class Message < ApplicationRecord
   include JsonAttributes
   include SyncAuthorizable
   include Message::Attachable
-  include Message::HallucinationFixable
   include Message::Moderatable
   include Message::Replayable
   include Message::Streamable
 
-  acts_as_message model: :ai_model, model_class: "AiModel", model_foreign_key: :ai_model_id
+  belongs_to :ai_model, optional: true
+  belongs_to :parent_tool_call, class_name: "ToolCall", foreign_key: :tool_call_id, optional: true
+  has_many :tool_calls, dependent: :destroy
+  has_many :tool_results, through: :tool_calls, source: :result
 
-  # RubyLLM 1.10+ uses thinking_text column and returns a RubyLLM::Thinking object.
-  # We override to maintain backwards compatibility with our string-based API.
-  # Virtual attribute enables mass assignment (e.g., create!(thinking: "..."))
+  # Preserve the historical string-based API and mass assignment.
   attribute :thinking, :string
-
-  # RubyLLM does not classify Word documents as a supported attachment type.
-  # Convert them to inline text while preserving any other supported files.
-  def to_llm
-    super.tap do |llm_message|
-      llm_message.content = content_with_documents_for_llm if word_documents_attached?
-    end
-  end
 
   def thinking
     thinking_text
   end
 
   def thinking=(value)
-    # Handle both string values (our code) and RubyLLM::Thinking objects
     text_value = value.respond_to?(:text) ? value.text : value
     self.thinking_text = text_value
   end
@@ -62,7 +53,6 @@ class Message < ApplicationRecord
   end
 
   after_create :reopen_all_agents_for_initiation, if: :human_message_in_group_chat?
-  after_create_commit :queue_agent_summaries, if: -> { role.in?(%w[user assistant]) && content.present? }
   after_save_commit :refresh_chat_context_tokens, if: -> { role == "assistant" && saved_change_to_input_tokens? }
 
   json_attributes :role, :content, :thinking, :thinking_preview, :user_name, :user_avatar_url,
@@ -71,7 +61,6 @@ class Message < ApplicationRecord
                   :author_name, :author_type, :author_colour, :input_tokens, :output_tokens,
                   :editable, :deletable,
                   :moderation_flagged, :moderation_severity, :moderation_scores,
-                  :fixable,
                   :audio_source, :audio_url,
                   :voice_available, :voice_audio_url,
                   :reasoning_skip_reason, :reasoning_skip_reason_label do |hash, options|
@@ -202,13 +191,6 @@ class Message < ApplicationRecord
 
   def reopen_all_agents_for_initiation
     chat.chat_agents.closed_for_initiation.update_all(closed_for_initiation_at: nil)
-  end
-
-  def queue_agent_summaries
-    chat.chat_agents.includes(:agent).each do |chat_agent|
-      next unless chat_agent.summary_stale?
-      GenerateAgentSummaryJob.perform_later(chat, chat_agent.agent)
-    end
   end
 
   def refresh_chat_context_tokens

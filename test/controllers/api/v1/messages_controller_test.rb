@@ -12,10 +12,10 @@ module Api
         @chat = @account.chats.create!(model_id: "openrouter/auto", title: "Test Chat")
       end
 
-      test "creates message and triggers AI" do
+      test "creates message without triggering retired inline inference" do
         @chat.messages.create!(content: "Hello", role: "user", user: @user)
 
-        assert_enqueued_with(job: AiResponseJob) do
+        assert_no_enqueued_jobs(only: AiResponseJob) do
           post api_v1_conversation_messages_url(@chat),
                params: { content: "New message" },
                headers: { "Authorization" => "Bearer #{@token}" }
@@ -25,7 +25,7 @@ module Api
         json = JSON.parse(response.body)
         assert json["message"]["id"].present?
         assert_equal "New message", json["message"]["content"]
-        assert json["ai_response_triggered"]
+        assert_not json["ai_response_triggered"]
       end
 
       test "agent-scoped key posts assistant message as agent" do

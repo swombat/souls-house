@@ -154,7 +154,7 @@ class ChatFileUploadTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test "message provides file paths for LLM integration" do
+  test "message provides attachment download paths for harnesses" do
     file = fixture_file_upload("test_image.png", "image/png")
 
     post account_chat_messages_path(@account, @chat), params: {
@@ -162,9 +162,9 @@ class ChatFileUploadTest < ActionDispatch::IntegrationTest
       files: [ file ]
     }
 
-    # Verify the message has file paths available for LLM
+    # Harnesses fetch attachments through the scoped API.
     message = Message.last
-    file_paths = message.file_paths_for_llm
+    file_paths = message.attachments_for_api.map { |file| file[:download_path] }
     assert_equal 1, file_paths.length
     assert file_paths.first.is_a?(String)
     assert file_paths.first.length > 0
@@ -182,7 +182,7 @@ class ChatFileUploadTest < ActionDispatch::IntegrationTest
     assert_not message.attachments.attached?
     assert_equal 0, message.attachments.count
     assert_equal [], message.files_json
-    assert_equal [], message.file_paths_for_llm
+    assert_equal [], message.attachments_for_api
   end
 
   test "large number of files can be handled" do
@@ -202,7 +202,7 @@ class ChatFileUploadTest < ActionDispatch::IntegrationTest
     assert_equal 5, message.attachments.count
     # All files properly attached
     assert_equal 5, message.attachments.count
-    assert_equal 5, message.file_paths_for_llm.length
+    assert_equal 5, message.attachments_for_api.length
   end
 
 end

@@ -14,10 +14,14 @@
   const maxActivity = $derived(Math.max(1, ...usage.activity.map((day) => day[metric])));
   const periodTotal = $derived(usage.activity.reduce((total, day) => total + day[metric], 0));
   const measuredAgents = $derived(
-    usage.agents.filter((agent) => agent.runtime !== 'inline' && agent.storage.bytes != null)
+    usage.agents.filter(
+      (agent) => ['external', 'offline', 'provisioning'].includes(agent.runtime) && agent.storage.bytes != null
+    )
   );
   const storageBytes = $derived(measuredAgents.reduce((total, agent) => total + agent.storage.bytes, 0));
-  const hostedAgents = $derived(usage.agents.filter((agent) => agent.runtime !== 'inline'));
+  const hostedAgents = $derived(
+    usage.agents.filter((agent) => ['external', 'offline', 'provisioning'].includes(agent.runtime))
+  );
   const uncertainReadings = $derived(
     measuredAgents.filter((agent) => agent.storage.status !== 'measured' || stale(agent.storage)).length
   );
@@ -169,7 +173,7 @@
     <CardContent class="space-y-4">
       {#each usage.agents as agent (agent.id)}
         {@const ResidentIcon = agentIconFor(agent.icon)}
-        {@const deprecated = agent.runtime === 'inline'}
+        {@const deprecated = ['deprecated', 'inline', 'migrating'].includes(agent.runtime)}
         {@const access = agent.model_access}
         <article class={`rounded-lg border p-4 ${deprecated ? 'bg-muted/50 opacity-60 grayscale' : ''}`}>
           <div class="flex flex-wrap items-start justify-between gap-3">
@@ -246,9 +250,9 @@
             <div>
               <dt class="text-muted-foreground">Persistent disk</dt>
               <dd class="font-medium">
-                {agent.runtime === 'inline' ? 'No hosted volumes' : bytes(agent.storage.bytes)}
+                {deprecated ? 'No hosted volumes' : bytes(agent.storage.bytes)}
               </dd>
-              {#if agent.runtime !== 'inline'}
+              {#if !deprecated}
                 <dd class="text-xs text-muted-foreground">
                   {agent.storage.status || 'Awaiting first measurement'}{stale(agent.storage) ? ' · stale' : ''}
                 </dd>
@@ -281,12 +285,8 @@
                   <dd>{agent.container_memory_mb} MiB RAM · backup interval {agent.backup_interval_hours}h</dd>
                 </div>
                 <div>
-                  <dt class="text-muted-foreground">Voice / tools</dt>
-                  <dd>
-                    Voice {agent.voice_enabled ? 'on' : 'off'} · {agent.enabled_tools.length
-                      ? agent.enabled_tools.join(', ')
-                      : 'No configured inline tools'}
-                  </dd>
+                  <dt class="text-muted-foreground">Voice</dt>
+                  <dd>{agent.voice_enabled ? 'On' : 'Off'}</dd>
                 </div>
                 <div>
                   <dt class="text-muted-foreground">Health last checked</dt>

@@ -14,7 +14,7 @@ class Agents::ProvisioningRetriesController < ApplicationController
       sandbox_last_error_at: nil,
       health_state: "unknown"
     )
-    PromoteAgentJob.perform_later(@agent.id)
+    ProvisionAgentJob.perform_later(@agent.id)
     redirect_to onboarding_account_agent_path(current_account, @agent), notice: "Provisioning retry started"
   end
 

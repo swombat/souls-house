@@ -1,210 +1,40 @@
 require "test_helper"
-require "webmock/minitest"
+
 class AllAgentsResponseJobTest < ActiveJob::TestCase
 
   setup do
-    @user = users(:user_1)
-    @account = accounts(:personal_account)
-    @agent1 = agents(:research_assistant)
-    @agent2 = agents(:code_reviewer)
-    # Build the chat first, set agent_ids, then save to satisfy validation
-    @chat = @account.chats.new(
-      model_id: "openrouter/auto",
-      title: "Test Group Chat",
-      manual_responses: true
-    )
-    @chat.agent_ids = [ @agent1.id, @agent2.id ]
-    @chat.save!
-    @user_message = @chat.messages.create!(
-      content: "Hello, agents!",
-      role: "user",
-      user: @user
-    )
+    @first = agents(:research_assistant)
+    @second = agents(:code_reviewer)
+    @chat = @first.account.chats.create!(title: "All harnesses", manual_responses: true, agents: [ @first, @second ])
   end
 
-  test "job is enqueued properly" do
-    agent_ids = [ @agent1.id, @agent2.id ]
-    assert_enqueued_with(job: AllAgentsResponseJob, args: [ @chat, agent_ids ]) do
-      AllAgentsResponseJob.perform_later(@chat, agent_ids)
-    end
-  end
-
-  test "processes first agent and queues remaining" do
-    agent_ids = [ @agent1.id, @agent2.id ]
-    @agent1.update!(model_id: "openai/gpt-5-nano", system_prompt: "Reply with one short sentence as the first test agent.")
-    recorded_at = Time.zone.parse("2026-05-03 11:52 UTC")
-    @user_message.update!(created_at: recorded_at)
-
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-all-agents-test",
-          object: "chat.completion",
-          created: recorded_at.to_i,
-          model: "gpt-5-nano",
-          choices: [
-            {
-              index: 0,
-              message: { role: "assistant", content: "First agent response." },
-              finish_reason: "stop"
-            }
-          ],
-          usage: { prompt_tokens: 24, completion_tokens: 5, total_tokens: 29 }
-        }.to_json
-      )
-
-    travel_to recorded_at do
-      VCR.turned_off do
-        assert_enqueued_with(job: AllAgentsResponseJob, args: [ @chat, [ @agent2.id ] ]) do
-          AllAgentsResponseJob.perform_now(@chat, agent_ids)
-        end
+  test "dispatches first resident and queues the remaining chain" do
+    calls = []
+    ManualAgentResponseJob.stub(:perform_now, ->(*args) { calls << args }) do
+      assert_enqueued_with(job: AllAgentsResponseJob, args: [ @chat, [ @second.id ] ]) do
+        AllAgentsResponseJob.perform_now(@chat, [ @first.id, @second.id ])
       end
     end
-
-    ai_message = @chat.messages.where(role: "assistant", agent: @agent1).last
-    assert_not_nil ai_message, "First agent's message should be created"
-    assert_predicate ai_message.content, :present?
+    assert_equal [ [ @chat, @first ] ], calls
   end
 
-  test "does nothing when agent_ids is empty" do
-    assert_no_enqueued_jobs do
-      AllAgentsResponseJob.perform_now(@chat, [])
-    end
-
-    # No new messages should be created (only the original user message)
-    assert_equal 1, @chat.messages.count
-  end
-
-  test "builds context messages for the selected agent" do
-    context = @chat.build_context_for_agent(@agent1, thinking_enabled: false, provider: :openrouter)
-
-    assert_equal 3, context.length, "Should include stable system prompt, context envelope, and user message"
-    assert_equal "system", context.first[:role]
-    assert_equal "user", context.second[:role]
-    assert_includes context.second[:content], "<helixkit_context>"
-    assert_equal "user", context.third[:role]
-    assert_includes context.third[:content], "Hello, agents!"
-  end
-
-  test "sequential processing creates context for subsequent agents" do
-    @chat.messages.create!(
-      role: "assistant",
-      agent: @agent1,
-      content: "Response from agent 1"
-    )
-
-    second_agent_context = @chat.build_context_for_agent(@agent2, thinking_enabled: false, provider: :openrouter)
-
-    # Second agent should see system + envelope + user message + first agent's response
-    assert_equal 4, second_agent_context.length, "Second agent should see all prior messages"
-    assert_equal "system", second_agent_context[0][:role]
-    assert_equal "user", second_agent_context[1][:role]
-    assert_includes second_agent_context[1][:content], "<helixkit_context>"
-    assert_equal "user", second_agent_context[2][:role]
-    assert_includes second_agent_context[2][:content], "Hello, agents!"
-    # The final message is from agent1, formatted as a user message with [AgentName] prefix
-    assert_equal "user", second_agent_context[3][:role]
-    assert_includes second_agent_context[3][:content], "Research Assistant"
-  end
-
-  test "queues remaining agents when an anthropic thinking agent is skipped for missing API key" do
-    anthropic_agent = @account.agents.create!(
-      name: "Claude",
-      model_id: "anthropic/claude-opus-4.5",
-      system_prompt: "You are Claude.",
-      thinking_enabled: true,
-      thinking_budget: 5000
-    )
-
-    @chat.agent_ids = [ anthropic_agent.id, @agent2.id ]
-    @chat.save!
-
-    original_anthropic_key = RubyLLM.config.anthropic_api_key
-    RubyLLM.config.anthropic_api_key = "<missing>"
-
-    begin
-      assert_enqueued_with(job: AllAgentsResponseJob, args: [ @chat, [ @agent2.id ] ]) do
-        AllAgentsResponseJob.perform_now(@chat, [ anthropic_agent.id, @agent2.id ])
-      end
-    ensure
-      RubyLLM.config.anthropic_api_key = original_anthropic_key
-    end
-
-    skipped_message = @chat.messages.where(role: "assistant", agent: anthropic_agent).last
-    assert_not_nil skipped_message
-    assert_equal "anthropic_key_unavailable", skipped_message.reasoning_skip_reason
-  end
-
-  test "gpt 5.6 sol disables default reasoning when tools are present" do
-    @agent1.update!(
-      model_id: "openai/gpt-5.6-sol",
-      thinking_enabled: false,
-      enabled_tools: [ "CloseConversationTool" ]
-    )
-
-    request = stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .with do |req|
-        body = JSON.parse(req.body)
-        body["model"] == "gpt-5.6-sol" &&
-          body["reasoning_effort"] == "none" &&
-          body["tools"].present?
-      end
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-sol-default-reasoning-test",
-          object: "chat.completion",
-          created: 1_784_220_000,
-          model: "gpt-5.6-sol",
-          choices: [
-            {
-              index: 0,
-              message: { role: "assistant", content: "Sol group response" },
-              finish_reason: "stop"
-            }
-          ],
-          usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 }
-        }.to_json
-      )
-
-    VCR.turned_off do
-      AllAgentsResponseJob.perform_now(@chat, [ @agent1.id ])
-    end
-
-    assert_requested request
-    response = @chat.messages.where(role: "assistant", agent: @agent1).last
-    assert_equal "Sol group response", response.content
-    assert_nil response.reasoning_skip_reason
-    assert_equal 2, response.prompt_layout_version
-    assert_operator response.stable_prompt_bytes, :>, 0
-    assert_operator response.transcript_prompt_bytes, :>, 0
-    assert_operator response.envelope_prompt_bytes, :>, 0
-    assert_match(/\A[0-9a-f]{64}\z/, response.stable_prompt_sha256)
-  end
-
-  test "external first agent receives trigger and remaining agents are queued" do
-    @agent1.update!(
-      runtime: "external",
-      uuid: SecureRandom.uuid_v7,
-      endpoint_url: "https://agent.example.com",
-      trigger_bearer_token: "tr_valid",
-      health_state: "healthy",
-      consecutive_health_failures: 0
-    )
-    trigger = stub_request(:post, "https://agent.example.com/trigger")
-      .with(headers: { "Authorization" => "Bearer tr_valid" })
-      .to_return(status: 200, body: { status: "accepted" }.to_json)
-
-    assert_enqueued_with(job: AllAgentsResponseJob, args: [ @chat, [ @agent2.id ] ]) do
-      assert_no_difference "Message.count" do
-        AllAgentsResponseJob.perform_now(@chat, [ @agent1.id, @agent2.id ])
+  test "removed participants do not stall the remaining chain" do
+    @chat.chat_agents.find_by!(agent: @first).destroy!
+    ManualAgentResponseJob.stub(:perform_now, ->(*) { flunk "removed participant" }) do
+      assert_enqueued_with(job: AllAgentsResponseJob, args: [ @chat, [ @second.id ] ]) do
+        AllAgentsResponseJob.perform_now(@chat, [ @first.id, @second.id ])
       end
     end
+  end
 
-    assert_requested trigger
+  test "empty and archived chains do not dispatch" do
+    ManualAgentResponseJob.stub(:perform_now, ->(*) { flunk "must not dispatch" }) do
+      assert_no_enqueued_jobs do
+        AllAgentsResponseJob.perform_now(@chat, [])
+        @chat.archive!
+        AllAgentsResponseJob.perform_now(@chat, [ @first.id ])
+      end
+    end
   end
 
 end

@@ -3,7 +3,7 @@
 # Shared logic for routing LLM calls to direct provider APIs when API keys are available.
 # Falls back to OpenRouter for providers without configured keys (e.g., DeepSeek).
 #
-# Used by SelectsLlmProvider (jobs), Chat#to_llm (AiResponseJob), and Prompt (utility calls).
+# Used to select the model/provider sent to the external harness.
 module ResolvesProvider
 
   module_function
@@ -33,12 +33,7 @@ module ResolvesProvider
     key = account&.ai_api_key(provider)
     return key.present? && !key.start_with?("<") if account
 
-    key = case provider
-    when :anthropic then RubyLLM.config.anthropic_api_key
-    when :openai then RubyLLM.config.openai_api_key
-    when :gemini then RubyLLM.config.gemini_api_key
-    when :xai then RubyLLM.config.xai_api_key
-    end
+    key = Account.system_ai_api_key(provider)
     key.present? && !key.start_with?("<")
   end
 

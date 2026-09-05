@@ -18,22 +18,9 @@ production:
     command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
     schedule: every hour at minute 12
 
-  memory_reflection:
-    class: MemoryReflectionJob
-    queue: default
-    schedule: every day at 3am
-
   full_backup:
     class: FullBackupJob
     schedule: every day at 4am
-
-  conversation_initiation:
-    class: ConversationInitiationJob
-    schedule: every hour at minute 0
-
-  conversation_initiation_half_hour:
-    class: ConversationInitiationJob
-    schedule: every hour at minute 30
 
   external_agent_wake:
     class: ExternalAgentWakeJob
@@ -63,12 +50,6 @@ production:
     args: [ "monthly" ]
     schedule: "0 3 1 * *"
 
-  memory_refinement:
-    class: MemoryRefinementJob
-    queue: default
-    args: [ 1, 2, 3 ]
-    schedule: every monday at 5am
-
   sync_oura_data:
     class: SyncOuraDataJob
     queue: default
@@ -82,11 +63,6 @@ production:
     class: AgentHealthCheckJob
     queue: default
     schedule: every 5 minutes
-
-  agent_migration_sweeper:
-    class: AgentMigrationSweeperJob
-    queue: default
-    schedule: every hour at minute 20
 
   safeguard_weekly_digest:
     class: SafeguardWeeklyDigestJob

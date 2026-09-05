@@ -15,6 +15,7 @@ module Chat::Initiable
 
   class_methods do
     def initiate_by_agent!(agent, topic:, message:, reason: nil, invite_agent_ids: [])
+      agent.require_conversation_runtime!
       invited_agents = resolve_invited_agents(agent.account, invite_agent_ids)
 
       transaction do
@@ -41,7 +42,7 @@ module Chat::Initiable
     def resolve_invited_agents(account, obfuscated_ids)
       return [] if obfuscated_ids.blank?
       real_ids = obfuscated_ids.filter_map { |obfuscated_id| Agent.decode_id(obfuscated_id) }
-      account.agents.active.where(id: real_ids).to_a
+      account.agents.eligible_for_conversation.where(id: real_ids).to_a
     end
   end
 

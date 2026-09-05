@@ -14,7 +14,7 @@ module Api
       end
 
       test "creates a simple 1-1 conversation" do
-        assert_enqueued_with(job: AiResponseJob) do
+        assert_no_enqueued_jobs(only: AiResponseJob) do
           post api_v1_conversations_url,
                params: { title: "Test Chat", message: "Hello!" },
                headers: { "Authorization" => "Bearer #{@token}" }

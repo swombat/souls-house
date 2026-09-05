@@ -60,7 +60,7 @@
   });
 
   function triggerAgent(agent) {
-    if (triggeringAgent || triggeringAll || waitingForResponse) return;
+    if (agent.unavailability_reason || triggeringAgent || triggeringAll || waitingForResponse) return;
     triggeringAgent = agent.id;
     beginWaiting();
 
@@ -100,6 +100,7 @@
   const isTriggering = $derived(triggeringAgent !== null || triggeringAll || waitingForResponse);
   const activeAgentIds = $derived(new Set(activeRuntimeAgentIds));
   const anyAgentActive = $derived(activeRuntimeAgentIds.length > 0);
+  const anyAgentAvailable = $derived(agents.some((agent) => !agent.unavailability_reason));
 
   onDestroy(() => {
     if (timeoutId) clearTimeout(timeoutId);
@@ -116,11 +117,15 @@
           variant="outline"
           size="sm"
           onclick={() => triggerAgent(agent)}
-          disabled={disabled || isTriggering || activeAgentIds.has(agent.id)}
+          disabled={disabled || isTriggering || activeAgentIds.has(agent.id) || Boolean(agent.unavailability_reason)}
           class="gap-2 {agent.colour
             ? `border-${agent.colour}-300 dark:border-${agent.colour}-700 hover:bg-${agent.colour}-50 dark:hover:bg-${agent.colour}-950`
             : ''}"
-          title={activeAgentIds.has(agent.id) ? `${agent.name} is already running` : agent.name}>
+          title={agent.unavailability_reason
+            ? `${agent.name} · ${agent.deprecated ? 'Deprecated · ' : ''}Unavailable`
+            : activeAgentIds.has(agent.id)
+              ? `${agent.name} is already running`
+              : agent.name}>
           {#if triggeringAgent === agent.id || activeAgentIds.has(agent.id)}
             <Spinner size={14} class="animate-spin" />
           {:else}
@@ -137,7 +142,7 @@
           variant="default"
           size="sm"
           onclick={triggerAllAgents}
-          disabled={disabled || isTriggering || anyAgentActive}
+          disabled={disabled || isTriggering || anyAgentActive || !anyAgentAvailable}
           class="gap-2 ml-2"
           title="Ask All Residents">
           {#if triggeringAll}

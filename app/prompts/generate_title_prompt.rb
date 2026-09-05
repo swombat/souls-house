@@ -1,17 +1,17 @@
 # frozen_string_literal: true
 
-class GenerateTitlePrompt < Prompt
+class GenerateTitlePrompt
 
   MAX_MESSAGES = 12
   MAX_MESSAGE_LENGTH = 240
 
-  def initialize(chat:, model: Prompt::LIGHT_MODEL)
-    super(model: model, template: "generate_title", account: chat.account)
+  def initialize(chat:, model: UtilityInference::TITLE_MODEL)
+    @model = model
     @chat = chat
   end
 
   def generate_title
-    response = execute_to_string
+    response = UtilityInference.title(account: chat.account, model: @model, **render)
     extract_title(response)&.squish
   end
 
@@ -19,10 +19,11 @@ class GenerateTitlePrompt < Prompt
 
   attr_reader :chat
 
-  def render(**args)
-    conversation_lines = build_conversation_lines
-
-    super(**{ messages: conversation_lines }.merge(args))
+  def render
+    %i[system user].index_with do |role|
+      template = Rails.root.join("app", "prompts", "generate_title", "#{role}.prompt.erb")
+      ERB.new(template.read).result_with_hash(messages: build_conversation_lines, model: @model)
+    end
   end
 
   def build_conversation_lines

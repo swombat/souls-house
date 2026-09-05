@@ -20,8 +20,6 @@ class AccountTest < ActiveSupport::TestCase
   test "shared AI credentials are only used when fallback is enabled" do
     account = accounts(:team_account)
     account.update!(anthropic_api_key: nil, use_system_ai_credentials: true)
-    original_key = RubyLLM.config.anthropic_api_key
-    RubyLLM.config.anthropic_api_key = nil
 
     Rails.application.credentials.stub(:dig, "shared-key") do
       assert_equal "shared-key", account.ai_api_key(:anthropic)
@@ -29,8 +27,6 @@ class AccountTest < ActiveSupport::TestCase
       account.update!(use_system_ai_credentials: false)
       assert_nil account.ai_api_key(:anthropic)
     end
-  ensure
-    RubyLLM.config.anthropic_api_key = original_key
   end
 
   test "provider key export includes Moonshot and omits placeholders" do

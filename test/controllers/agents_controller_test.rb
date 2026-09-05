@@ -6,6 +6,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     @user = users(:user_1)
     @account = accounts(:personal_account)
     @agent = agents(:research_assistant)
+    @agent.update_columns(runtime: "deprecated")
 
     # Enable agents feature
     Setting.instance.update!(allow_agents: true)
@@ -59,7 +60,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
 
   test "should create born-hosted agent" do
     assert_difference [ "Agent.count", "ApiKey.count" ], 1 do
-      assert_enqueued_with(job: PromoteAgentJob) do
+      assert_enqueued_with(job: ProvisionAgentJob) do
         post account_agents_path(@account), params: {
           agent: {
             name: "Created Test Agent",
@@ -80,6 +81,9 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_predicate agent.trigger_bearer_token, :present?
     assert_equal agent, agent.outbound_api_key.agent
     assert_redirected_to onboarding_account_agent_path(@account, agent)
+    follow_redirect!
+    assert_response :success
+    assert_equal agent.to_param, inertia_shared_props.fetch("agent").fetch("id")
   end
 
   test "should fail to create agent with missing name" do
@@ -190,7 +194,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "edit omits provider subscription setup for deprecated inline agents" do
-    @agent.update!(model_id: "openai/gpt-5", runtime: "inline")
+    @agent.update!(model_id: "openai/gpt-5", runtime: "deprecated")
 
     get edit_account_agent_path(@account, @agent), params: { tab: "hosting" }
 
@@ -362,19 +366,17 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :redirect
   end
 
-  test "should update enabled_tools" do
-    available_tools = Agent.available_tools.map(&:name)
-    skip "No tools available for testing" if available_tools.empty?
-
+  test "ignores retired enabled_tools input and preserves historical settings" do
+    original_tools = @agent.enabled_tools
     patch account_agent_path(@account, @agent), params: {
       agent: {
-        enabled_tools: [ available_tools.first ]
+        enabled_tools: [ "DeletedTool" ]
       }
     }
 
     assert_redirected_to account_agents_path(@account)
     @agent.reload
-    assert_includes @agent.enabled_tools, available_tools.first
+    assert_equal original_tools, @agent.enabled_tools
   end
 
   test "external agent update allows display name and model changes but ignores self-managed identity params" do
@@ -482,8 +484,8 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_not @agent.reload.scheduled_wakes_enabled?
   end
 
-  test "HelixKit-hosted agent can disable scheduled wakes" do
-    assert @agent.inline?
+  test "deprecated agent can retain disabled scheduling intent" do
+    assert @agent.deprecated?
 
     patch account_agent_path(@account, @agent), params: {
       agent: { scheduled_wakes_enabled: false }

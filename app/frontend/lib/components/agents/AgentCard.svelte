@@ -7,7 +7,7 @@
   import { editAccountAgentPath } from '@/routes';
   import AgentSubscriptionUsageSummary from '$lib/components/agents/AgentSubscriptionUsageSummary.svelte';
 
-  let { agent, accountId, toolNameLookup = {}, onupgrade, ondelete } = $props();
+  let { agent, accountId, onupgrade, ondelete } = $props();
   let IconComponent = $derived(agentIconFor(agent.icon));
 </script>
 
@@ -26,10 +26,15 @@
         <div>
           <CardTitle class="text-lg">{agent.name}</CardTitle>
           <div class="flex flex-wrap gap-1 mt-1">
+            {#if agent.deprecated}
+              <Badge variant="secondary" title="The inline runtime has been retired. History is preserved.">
+                Deprecated · Unavailable
+              </Badge>
+            {/if}
             {#if !agent.active}
               <Badge variant="secondary">Inactive</Badge>
             {/if}
-            {#if agent.paused}
+            {#if agent.paused && !agent.deprecated}
               <Badge variant="outline" title="Excluded from cron sweeps. Manual triggers still work.">Paused</Badge>
             {/if}
           </div>
@@ -69,17 +74,6 @@
         subscription={agent.provider_subscription} />
     {/if}
 
-    {#if agent.enabled_tools?.length > 0}
-      <div class="flex flex-wrap gap-1 mb-4">
-        {#each agent.enabled_tools.slice(0, 3) as tool}
-          <Badge variant="outline" class="text-xs">{toolNameLookup[tool] || tool}</Badge>
-        {/each}
-        {#if agent.enabled_tools.length > 3}
-          <Badge variant="outline" class="text-xs">+{agent.enabled_tools.length - 3} more</Badge>
-        {/if}
-      </div>
-    {/if}
-
     <div class="flex gap-2 pt-2 border-t">
       <a href={editAccountAgentPath(accountId, agent.id)} class="flex-1">
         <Button variant="outline" size="sm" class="w-full">
@@ -91,7 +85,7 @@
         variant="outline"
         size="sm"
         onclick={() => onupgrade?.(agent)}
-        title="Upgrade this resident's model and preserve the current state as a predecessor for cross-version conversation">
+        title="Change this resident's model and preserve a historical, unavailable predecessor record">
         <Copy class="size-4" />
       </Button>
       <Button

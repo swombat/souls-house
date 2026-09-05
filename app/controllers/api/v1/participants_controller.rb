@@ -14,7 +14,7 @@ module Api
           return render json: { error: "Conversation is archived or deleted" }, status: :unprocessable_entity
         end
 
-        agent = current_api_account.agents.active.find_by(id: Agent.decode_id(params[:agent_id]))
+        agent = current_api_account.agents.eligible_for_conversation.find_by(id: Agent.decode_id(params[:agent_id]))
         unless agent
           return render json: { error: "Agent not found or inactive" }, status: :not_found
         end

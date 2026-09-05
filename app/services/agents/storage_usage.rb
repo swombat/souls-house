@@ -11,7 +11,7 @@ module Agents
     end
 
     def call
-      return { status: "not_applicable" } if @agent.inline?
+      return { status: "not_applicable" } unless @agent.hosted?
       return { status: "unavailable", checked_at: Time.current.iso8601 } if @agent.uuid.blank?
 
       # Use the same Docker daemon as sandbox provisioning, never a guessed host.

@@ -7,11 +7,11 @@ class Chat < ApplicationRecord
   include JsonAttributes
   include Chat::AgentOnly
   include Chat::Archivable
-  include Chat::Contextualizable
   include Chat::Forkable
   include Chat::Initiable
 
-  acts_as_chat model: :ai_model, model_class: "AiModel", model_foreign_key: :ai_model_id
+  belongs_to :ai_model, optional: true
+  has_many :messages, -> { order(created_at: :asc) }, dependent: :destroy
   include Chat::ModelSelection
   include Chat::Summarizable
 
@@ -66,10 +66,10 @@ class Chat < ApplicationRecord
 
   broadcasts_to :account
 
-  # Custom validation since model_id is resolved in before_save
+  # Historical model references and string-only selections are both supported.
   validate :model_must_be_present
 
-  # Set defaults for model storage (OpenRouter format in DB, direct routing in to_llm)
+  # Preserve model labels on historical and harness conversations.
   after_initialize :configure_defaults
 
   after_create_commit -> { GenerateTitleJob.perform_later(self) }, unless: :title?
@@ -91,8 +91,6 @@ class Chat < ApplicationRecord
           skip_content_validation: message_content.blank? && files.present? && files.any? # Skip content validation if we have files but no content
         })
         message.attachments.attach(files) if files.present? && files.any?
-
-        AiResponseJob.perform_later(chat) unless chat.manual_responses?
       end
       chat
     end
@@ -162,7 +160,7 @@ class Chat < ApplicationRecord
   def messages_page(before_id: nil, limit: 30)
     scope = messages.includes(:user, :agent).with_attached_attachments.with_attached_audio_recording
     scope = scope.where("messages.id < ?", Message.decode_id(before_id)) if before_id.present?
-    # Use reorder to replace any existing ordering (from acts_as_chat),
+    # Use reorder to replace the association ordering,
     # get the most recent messages by ordering by ID DESC, limit, then reverse for display
     scope.reorder(id: :desc).limit(limit).reverse
   end
@@ -218,33 +216,6 @@ class Chat < ApplicationRecord
     participants
   end
 
-  # Override RubyLLM's to_llm to route through direct provider APIs when available.
-  # The AiModel record stays in OpenRouter format (for DB storage), but actual API
-  # calls go to the direct provider for lower latency and cost.
-  def to_llm
-    original_model_id = model_id_string_value
-    provider_config = ResolvesProvider.resolve_provider(original_model_id, account: account)
-
-    @chat = (context || account.ruby_llm_context).chat(
-      model: provider_config[:model_id],
-      provider: provider_config[:provider],
-      assume_model_exists: true
-    )
-
-    messages_association.each do |msg|
-      @chat.add_message(msg.to_llm)
-    end
-
-    setup_persistence_callbacks
-  end
-
-  # Tools for RubyLLM legacy chats. WebTool (SearXNG-backed web search) was
-  # retired 2026-08-31 with the souls.house rebrand: Chaos/external agents
-  # reach the web directly and never used this path.
-  def available_tools
-    []
-  end
-
   # Group chat functionality
   def group_chat?
     manual_responses?
@@ -252,6 +223,7 @@ class Chat < ApplicationRecord
 
   def trigger_agent_response!(agent)
     raise ArgumentError, "Agent not in this conversation" unless agents.include?(agent)
+    agent.require_conversation_runtime!
     raise ArgumentError, "This chat does not support manual responses" unless manual_responses?
     raise ArgumentError, "This conversation is archived or deleted" unless respondable?
     raise ArgumentError, "#{agent.name} is already responding" if agent_response_active?(agent)
@@ -266,7 +238,10 @@ class Chat < ApplicationRecord
 
     # Get agent IDs in a consistent order
     ordered_agents = agents.order(:id).to_a
-    active_agent = ordered_agents.find { |agent| agent_response_active?(agent) }
+    unless ordered_agents.any?(&:eligible_for_conversation?)
+      raise Agent::RuntimeAvailability::Unavailable.new("No available agents in this conversation", code: "no_available_agents")
+    end
+    active_agent = ordered_agents.find { |agent| agent.eligible_for_conversation? && agent_response_active?(agent) }
     raise ArgumentError, "#{active_agent.name} is already responding" if active_agent
 
     agent_ids = ordered_agents.map(&:id)
@@ -281,7 +256,7 @@ class Chat < ApplicationRecord
     mentioned_ids = agents.select { |agent|
       content.match?(/@#{Regexp.escape(agent.name)}\b/i)
     }.reject { |agent|
-      agent_response_active?(agent)
+      !agent.eligible_for_conversation? || agent_response_active?(agent)
     }.sort_by { |agent|
       content.index(/@#{Regexp.escape(agent.name)}\b/i)
     }.map(&:id)
@@ -306,19 +281,13 @@ class Chat < ApplicationRecord
   private
 
   def configure_defaults
-    # DB storage uses OpenRouter format (model IDs like "anthropic/claude-opus-4.6").
-    # Actual API routing to direct providers happens in to_llm.
-    self.provider = :openrouter
-    self.assume_model_exists = true
-
-    # Set default model if none specified (check all possible sources)
-    unless @model_string.present? || ai_model_id.present? || model_id_string.present?
+    unless ai_model_id.present? || model_id_string.present?
       self.model_id = "openrouter/auto"
     end
   end
 
   def model_must_be_present
-    if @model_string.blank? && ai_model.blank? && model_id_string.blank?
+    if ai_model.blank? && model_id_string.blank?
       errors.add(:model_id, "can't be blank")
     end
   end

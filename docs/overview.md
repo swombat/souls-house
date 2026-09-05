@@ -21,7 +21,7 @@ This directory contains detailed documentation for the Helix Kit Rails applicati
 ### Feature Documentation
 
 - **[Authentication](./authentication.md)** - User authentication system details
-- **[RubyLLM Documentation](./ruby-llm/ruby-llm-overview.md)** - Comprehensive RubyLLM AI framework documentation
+- **[Runtime retirement and utility inference](./plans/260905-01b-rubyllm-removal-implementation-checkpoint.md)** - Harness-only agents, ruby-openai utilities, and deployment gates
   - [Agentic Workflows](./ruby-llm/agentic-workflows.md) - Building advanced AI agent systems
   - [Model Registry](./ruby-llm/model-registry.md) - Model discovery and management across 500+ AI models
   - [Polymorphic Tools](./polymorphic-tools.md) - Domain-based tool consolidation pattern for scaling to 50+ capabilities

@@ -63,22 +63,20 @@ class ChatTest < ActiveSupport::TestCase
     assert Chat.included_modules.include?(Discard::Model)
   end
 
-  test "acts as chat" do
+  test "does not expose an inline inference runtime" do
     chat = Chat.create!(account: @account)
-    # RubyLLM methods should be available
-    assert chat.respond_to?(:ask)
-    # Note: generate_title is not a direct method, it's handled by the job
-    assert chat.respond_to?(:to_llm)
+    assert_not chat.respond_to?(:ask)
+    assert_not chat.respond_to?(:to_llm)
   end
 
-  test "builds direct-provider chat for models missing from RubyLLM registry" do
+  test "persists future model labels without a provider registry" do
     chat = Chat.create!(
       account: @account,
       model_id: "openai/gpt-5.6-sol",
       title: "Future model"
     )
 
-    assert_nothing_raised { chat.to_llm }
+    assert_equal "openai/gpt-5.6-sol", chat.reload.model_id
   end
 
   test "broadcasts to account" do
@@ -88,7 +86,7 @@ class ChatTest < ActiveSupport::TestCase
   test "create_with_message! creates chat and message" do
     assert_difference "Chat.count" do
       assert_difference "Message.count" do
-        assert_enqueued_with(job: AiResponseJob) do
+        assert_no_enqueued_jobs(only: AiResponseJob) do
           @chat = Chat.create_with_message!(
             { model_id: "gpt-4o", account: @account },
             message_content: "Hello AI",
@@ -127,7 +125,7 @@ class ChatTest < ActiveSupport::TestCase
 
     assert_difference "Chat.count" do
       assert_difference "Message.count" do
-        assert_enqueued_with(job: AiResponseJob) do
+        assert_no_enqueued_jobs(only: AiResponseJob) do
           @chat = Chat.create_with_message!(
             { model_id: "gpt-4o", account: @account },
             message_content: "Here's an image",
@@ -157,7 +155,7 @@ class ChatTest < ActiveSupport::TestCase
 
     assert_difference "Chat.count" do
       assert_difference "Message.count" do
-        assert_enqueued_with(job: AiResponseJob) do
+        assert_no_enqueued_jobs(only: AiResponseJob) do
           @chat = Chat.create_with_message!(
             { model_id: "gpt-4o", account: @account },
             message_content: nil,
@@ -259,14 +257,14 @@ class ChatTest < ActiveSupport::TestCase
     assert_equal false, chat.web_access
   end
 
-  test "available_tools returns empty array when web fetch disabled" do
+  test "does not expose inline tools when web fetch disabled" do
     chat = Chat.create!(account: @account, web_access: false)
-    assert_empty chat.available_tools
+    assert_not chat.respond_to?(:available_tools)
   end
 
-  test "available_tools stays empty when legacy web access is enabled" do
+  test "legacy web access does not restore inline tools" do
     chat = Chat.create!(account: @account, web_access: true)
-    assert_empty chat.available_tools
+    assert_not chat.respond_to?(:available_tools)
   end
 
   test "web_access can be set on create" do
@@ -599,7 +597,7 @@ end
   end
 
   test "trigger_mentioned_agents! does nothing for blank content" do
-    agent = @account.agents.create!(name: "Claude", system_prompt: "Test")
+    agent = @account.agents.create!(name: "Claude", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent.id ]
     chat.save!
@@ -611,7 +609,7 @@ end
   end
 
   test "trigger_mentioned_agents! enqueues job for @mentioned agent" do
-    agent = @account.agents.create!(name: "Grok", system_prompt: "Test")
+    agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent.id ]
     chat.save!
@@ -622,7 +620,7 @@ end
   end
 
   test "trigger_mentioned_agents! does not trigger without @ prefix" do
-    agent = @account.agents.create!(name: "Grok", system_prompt: "Test")
+    agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent.id ]
     chat.save!
@@ -633,7 +631,7 @@ end
   end
 
   test "trigger_mentioned_agents! uses word boundaries after @" do
-    agent = @account.agents.create!(name: "Grok", system_prompt: "Test")
+    agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent.id ]
     chat.save!
@@ -644,9 +642,9 @@ end
   end
 
   test "trigger_mentioned_agents! detects multiple @mentioned agents and excludes unmentioned" do
-    agent1 = @account.agents.create!(name: "Grok", system_prompt: "Test")
-    agent2 = @account.agents.create!(name: "Claude", system_prompt: "Test")
-    agent3 = @account.agents.create!(name: "Wing", system_prompt: "Test")
+    agent1 = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
+    agent2 = @account.agents.create!(name: "Claude", system_prompt: "Test", runtime: "external")
+    agent3 = @account.agents.create!(name: "Wing", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent1.id, agent2.id, agent3.id ]
     chat.save!
@@ -663,7 +661,7 @@ end
   end
 
   test "trigger_mentioned_agents! only matches agents in this chat" do
-    agent_in_chat = @account.agents.create!(name: "Grok", system_prompt: "Test")
+    agent_in_chat = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     @account.agents.create!(name: "Claude", system_prompt: "Test")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent_in_chat.id ]
@@ -675,7 +673,7 @@ end
   end
 
   test "trigger_mentioned_agents! handles names with special regex characters" do
-    agent = @account.agents.create!(name: "C++Bot", system_prompt: "Test")
+    agent = @account.agents.create!(name: "C++Bot", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent.id ]
     chat.save!
@@ -686,7 +684,7 @@ end
   end
 
   test "trigger_mentioned_agents! works with multi-word agent names" do
-    agent = @account.agents.create!(name: "GPT Test Agent", system_prompt: "Test")
+    agent = @account.agents.create!(name: "GPT Test Agent", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent.id ]
     chat.save!
@@ -694,169 +692,6 @@ end
     assert_enqueued_with(job: AllAgentsResponseJob, args: [ chat, [ agent.id ] ]) do
       chat.trigger_mentioned_agents!("Hey @GPT Test Agent, can you please respond?")
     end
-  end
-
-  # Audio input support tests
-
-  test "supports_audio_input? returns true for Gemini models" do
-    assert Chat.supports_audio_input?("google/gemini-3-pro-preview")
-    assert Chat.supports_audio_input?("google/gemini-3-flash-preview")
-    assert Chat.supports_audio_input?("google/gemini-2.5-pro")
-    assert Chat.supports_audio_input?("google/gemini-2.5-flash")
-  end
-
-  test "supports_audio_input? returns false for non-Gemini models" do
-    assert_not Chat.supports_audio_input?("openai/gpt-4o")
-    assert_not Chat.supports_audio_input?("anthropic/claude-opus-4.6")
-    assert_not Chat.supports_audio_input?("x-ai/grok-4")
-    assert_not Chat.supports_audio_input?("unknown/model")
-  end
-
-  test "audio annotation only added when audio_tools_enabled" do
-    agent = @account.agents.create!(name: "TestBot", system_prompt: "Test", model_id: "google/gemini-2.5-pro")
-    chat = @account.chats.new(model_id: "google/gemini-2.5-pro", manual_responses: true)
-    chat.agent_ids = [ agent.id ]
-    chat.save!
-
-    message = chat.messages.create!(
-      role: "user",
-      user: @user,
-      content: "Hello there",
-      audio_source: true
-    )
-    message.audio_recording.attach(
-      io: StringIO.new("fake audio"),
-      filename: "recording.webm",
-      content_type: "audio/webm"
-    )
-
-    context = chat.build_context_for_agent(agent)
-
-    # Find the user message in context
-    user_msg = context.find { |m| m[:role] == "user" && m[:content].to_s.include?("Hello there") }
-    assert user_msg, "Should find the user message in context"
-    assert_includes user_msg[:content].to_s, "[voice message, audio_id:"
-  end
-
-  test "audio annotation omitted when audio_tools_enabled is false" do
-    agent = @account.agents.create!(name: "TestBot", system_prompt: "Test", model_id: "openai/gpt-4o")
-    chat = @account.chats.new(model_id: "openai/gpt-4o", manual_responses: true)
-    chat.agent_ids = [ agent.id ]
-    chat.save!
-
-    message = chat.messages.create!(
-      role: "user",
-      user: @user,
-      content: "Hello there",
-      audio_source: true
-    )
-    message.audio_recording.attach(
-      io: StringIO.new("fake audio"),
-      filename: "recording.webm",
-      content_type: "audio/webm"
-    )
-
-    context = chat.build_context_for_agent(agent)
-
-    # Find the user message in context
-    user_msg = context.find { |m| m[:role] == "user" && m[:content].to_s.include?("Hello there") }
-    assert user_msg, "Should find the user message in context"
-    assert_not_includes user_msg[:content].to_s, "[voice message, audio_id:"
-  end
-
-  test "Anthropic context caches the stable system prefix before the context envelope" do
-    agent = @account.agents.create!(
-      name: "Cached Claude",
-      system_prompt: "Stable identity",
-      model_id: "anthropic/claude-opus-4.6"
-    )
-    chat = @account.chats.new(title: "Cache test", manual_responses: true, model_id: agent.model_id)
-    chat.agent_ids = [ agent.id ]
-    chat.save!
-
-    context = chat.build_context_for_agent(agent, provider: :anthropic)
-
-    assert_instance_of RubyLLM::Content::Raw, context.first[:content]
-    assert_includes context.first[:content].value.first[:text], "Stable identity"
-    assert_includes context.first[:content].value.first[:text], "Each activation includes a `<helixkit_context>` block"
-    assert_not_includes context.first[:content].value.first[:text], "Current time:"
-    assert_equal({ type: "ephemeral", ttl: "1h" }, context.first[:content].value.first[:cache_control])
-    assert_includes context.second[:content], "Current time:"
-    assert_includes context.second[:content], "Cache test"
-  end
-
-  # Cross-conversation context tests
-
-  test "format_cross_conversation_context returns nil when no other conversations" do
-    agent = @account.agents.create!(name: "Solo Agent", system_prompt: "Test", model_id: "openrouter/auto")
-    chat = @account.chats.new(title: "Only Chat", manual_responses: true, model_id: "openrouter/auto")
-    chat.agent_ids = [ agent.id ]
-    chat.save!
-
-    context = chat.build_context_for_agent(agent)
-    system_content = context.first[:content]
-    assert_not_includes system_content, "Your Other Active Conversations"
-  end
-
-  test "format_cross_conversation_context formats summaries with obfuscated IDs" do
-    agent = @account.agents.create!(name: "Cross Conv Agent", system_prompt: "Test", model_id: "openrouter/auto")
-
-    chat1 = @account.chats.new(title: "Current Chat", manual_responses: true, model_id: "openrouter/auto")
-    chat1.agent_ids = [ agent.id ]
-    chat1.save!
-
-    chat2 = @account.chats.new(title: "Other Chat", manual_responses: true, model_id: "openrouter/auto")
-    chat2.agent_ids = [ agent.id ]
-    chat2.save!
-
-    ca2 = ChatAgent.find_by(chat: chat2, agent: agent)
-    ca2.update_columns(agent_summary: "Discussing API design patterns", agent_summary_generated_at: 1.minute.ago)
-
-    context = chat1.build_context_for_agent(agent)
-    envelope_content = context.last[:content]
-
-    assert_includes envelope_content, "Your Other Active Conversations"
-    assert_includes envelope_content, "Other Chat"
-    assert_includes envelope_content, "Discussing API design patterns"
-    assert_includes envelope_content, chat2.obfuscated_id
-  end
-
-  test "format_borrowed_context returns nil when no borrowed context" do
-    agent = @account.agents.create!(name: "No Borrow Agent", system_prompt: "Test", model_id: "openrouter/auto")
-    chat = @account.chats.new(title: "Test", manual_responses: true, model_id: "openrouter/auto")
-    chat.agent_ids = [ agent.id ]
-    chat.save!
-
-    context = chat.build_context_for_agent(agent)
-    system_content = context.first[:content]
-    assert_not_includes system_content, "Borrowed Context"
-  end
-
-  test "format_borrowed_context formats messages without consuming them" do
-    agent = @account.agents.create!(name: "Borrow Agent", system_prompt: "Test", model_id: "openrouter/auto")
-    chat = @account.chats.new(title: "Current", manual_responses: true, model_id: "openrouter/auto")
-    chat.agent_ids = [ agent.id ]
-    chat.save!
-
-    ca = ChatAgent.find_by(chat: chat, agent: agent)
-    ca.update!(borrowed_context_json: {
-      "source_conversation_id" => "abcdef",
-      "messages" => [
-        { "author" => "Alice", "content" => "Can you review the PR?" },
-        { "author" => "Bot", "content" => "I will review it now." }
-      ]
-    })
-
-    context = chat.build_context_for_agent(agent)
-    envelope_content = context.last[:content]
-
-    assert_includes envelope_content, "Borrowed Context from Conversation abcdef"
-    assert_includes envelope_content, "[Alice]: Can you review the PR?"
-    assert_includes envelope_content, "[Bot]: I will review it now."
-    assert_includes envelope_content, "will not appear in future activations"
-
-    # Verify context is NOT consumed (still present)
-    assert ca.reload.borrowed_context_json.present?
   end
 
 end

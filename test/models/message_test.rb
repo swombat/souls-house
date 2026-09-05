@@ -1,5 +1,6 @@
 require "test_helper"
 require "zip"
+require "zip"
 
 class MessageTest < ActiveSupport::TestCase
 
@@ -134,11 +135,11 @@ class MessageTest < ActiveSupport::TestCase
       role: "user",
       content: "Test message"
     )
-    # RubyLLM methods should be available - updated method name
-    assert message.respond_to?(:to_llm)
+    assert_equal @chat, message.chat
+    assert_not message.respond_to?(:to_llm)
   end
 
-  test "converts docx attachments to text for the LLM" do
+  test "preserves docx attachments for download without provider conversion" do
     message = @chat.messages.create!(
       user: @user,
       role: "user",
@@ -147,22 +148,15 @@ class MessageTest < ActiveSupport::TestCase
     message.attachments.attach(
       io: StringIO.new(docx_file("A heading", "Document body text")),
       filename: "draft.docx",
-      content_type: Message::Attachable::DOCX_CONTENT_TYPE
+      content_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
-    llm_message = message.to_llm
-
-    assert_kind_of String, llm_message.content
-    assert_includes llm_message.content, "Please review this document"
-    assert_includes llm_message.content, "<file name='draft.docx'>"
-    assert_includes llm_message.content, "A heading"
-    assert_includes llm_message.content, "Document body text"
-    assert_nothing_raised do
-      RubyLLM::Providers::OpenAI::Media.format_content(llm_message.content)
-    end
+    assert_equal "Please review this document", message.reload.content
+    assert_equal "draft.docx", message.attachments_for_api.first[:filename]
+    assert message.attachments.first.download.start_with?("PK")
   end
 
-  test "excludes legacy word attachments from binary LLM attachments" do
+  test "preserves legacy word bytes without provider conversion" do
     message = @chat.messages.create!(
       user: @user,
       role: "user",
@@ -174,8 +168,8 @@ class MessageTest < ActiveSupport::TestCase
       content_type: "application/msword"
     )
 
-    assert_empty message.file_paths_for_llm
-    assert_includes message.to_llm.content, "could not be converted to text"
+    assert_equal "legacy word bytes", message.attachments.first.download
+    assert_equal "draft.doc", message.attachments_for_api.first[:filename]
   end
 
   test "broadcasts to chat" do
@@ -392,14 +386,14 @@ class MessageTest < ActiveSupport::TestCase
     assert_equal [], message.files_json
   end
 
-  test "file_paths_for_llm returns empty array when no files attached" do
+  test "API attachments are empty when no files attached" do
     message = @chat.messages.create!(
       user: @user,
       role: "user",
       content: "Test message"
     )
 
-    assert_equal [], message.file_paths_for_llm
+    assert_equal [], message.attachments_for_api
   end
 
   test "validates file size limit" do
@@ -629,416 +623,12 @@ class MessageTest < ActiveSupport::TestCase
     assert_equal({ "hate" => 0.85, "violence" => 0.1 }, json["moderation_scores"])
   end
 
-  # Hallucinated tool call detection tests
-
-  test "has_json_prefix? detects JSON-prefixed assistant messages" do
-    msg = Message.new(role: "assistant", content: '{"success": true}Hello')
-    assert msg.has_json_prefix?
-  end
-
-  test "has_json_prefix? detects JSON with leading whitespace" do
-    msg = Message.new(role: "assistant", content: '  {"success": true}Hello')
-    assert msg.has_json_prefix?
-  end
-
-  test "has_json_prefix? returns false for user messages" do
-    msg = Message.new(role: "user", content: '{"data": 1}Text')
-    assert_not msg.has_json_prefix?
-  end
-
-  test "has_json_prefix? returns false for normal text" do
-    msg = Message.new(role: "assistant", content: "Hello world")
-    assert_not msg.has_json_prefix?
-  end
-
-  test "has_json_prefix? returns false for nil content" do
-    msg = Message.new(role: "assistant", content: nil)
-    assert_not msg.has_json_prefix?
-  end
-
-  test "has_json_prefix? returns false for empty content" do
-    msg = Message.new(role: "assistant", content: "")
-    assert_not msg.has_json_prefix?
-  end
-
-  test "fixable returns false when no agent present" do
-    msg = Message.new(role: "assistant", content: '{"x": 1}Text', agent: nil)
-    assert_not msg.fixable
-  end
-
-  test "fixable returns false for user messages" do
-    agent = agents(:with_save_memory_tool)
-    msg = Message.new(role: "user", content: '{"x": 1}Text', agent: agent)
-    assert_not msg.fixable
-  end
-
-  test "fixable returns true for JSON-prefixed assistant message with agent" do
-    agent = agents(:with_save_memory_tool)
-    msg = Message.new(role: "assistant", content: '{"x": 1}Text', agent: agent)
-    assert msg.fixable
-  end
-
-  test "as_json includes fixable attribute" do
-    agent = agents(:with_save_memory_tool)
-    message = @chat.messages.create!(
-      role: "assistant",
-      content: '{"memory_type": "journal", "content": "test"}Real text',
-      agent: agent
-    )
-
-    json = message.as_json
-    assert json["fixable"]
-  end
-
-  # fix_hallucinated_tool_calls! tests
-
-  test "fix_hallucinated_tool_calls! raises for non-assistant message" do
-    msg = @chat.messages.create!(
-      role: "user",
-      user: @user,
-      content: '{"test": 1}Hello'
-    )
-
-    assert_raises RuntimeError do
-      msg.fix_hallucinated_tool_calls!
-    end
-  end
-
-  test "fix_hallucinated_tool_calls! raises when no JSON prefix" do
-    msg = @chat.messages.create!(
-      role: "assistant",
-      content: "Normal text"
-    )
-
-    assert_raises RuntimeError do
-      msg.fix_hallucinated_tool_calls!
-    end
-  end
-
-  test "fix_hallucinated_tool_calls! raises when no agent present" do
-    msg = @chat.messages.create!(
-      role: "assistant",
-      content: '{"test": 1}Hello',
-      agent: nil
-    )
-
-    assert_raises RuntimeError do
-      msg.fix_hallucinated_tool_calls!
-    end
-  end
-
-  test "fix_hallucinated_tool_calls! strips JSON and executes tool" do
-    agent = agents(:with_save_memory_tool)
-    chat = Chat.create!(account: @account)
-
-    # Add the agent to the chat so it has a chat association
-    chat.agents << agent
-
-    msg = chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: '{"memory_type": "journal", "content": "Test memory"}You saw through me.'
-    )
-
-    assert_difference -> { agent.memories.count }, 1 do
-      assert_difference -> { chat.messages.count }, 1 do  # Tool result message
-        msg.fix_hallucinated_tool_calls!
-      end
-    end
-
-    msg.reload
-    assert_equal "You saw through me.", msg.content
-    assert agent.memories.exists?(memory_type: "journal", content: "Test memory")
-  end
-
-  test "fix_hallucinated_tool_calls! handles JSON with nested braces" do
-    agent = agents(:with_save_memory_tool)
-    chat = Chat.create!(account: @account)
-    chat.agents << agent
-
-    msg = chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: '{"memory_type": "journal", "content": "User said {something}"}Real text'
-    )
-
-    msg.fix_hallucinated_tool_calls!
-
-    assert_equal "Real text", msg.reload.content
-    assert agent.memories.exists?(content: "User said {something}")
-  end
-
-  test "fix_hallucinated_tool_calls! handles multiple JSON blocks" do
-    agent = agents(:with_save_memory_tool)
-    chat = Chat.create!(account: @account)
-    chat.agents << agent
-
-    msg = chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: '{"memory_type": "journal", "content": "First"}{"memory_type": "core", "content": "Second"}Final'
-    )
-
-    assert_difference -> { agent.memories.count }, 2 do
-      msg.fix_hallucinated_tool_calls!
-    end
-
-    assert_equal "Final", msg.reload.content
-    assert agent.memories.exists?(memory_type: "journal", content: "First")
-    assert agent.memories.exists?(memory_type: "core", content: "Second")
-  end
-
-  test "fix_hallucinated_tool_calls! records error for unknown tool structure" do
-    agent = agents(:with_save_memory_tool)
-    chat = Chat.create!(account: @account)
-    chat.agents << agent
-
-    msg = chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: '{"unknown_field": "value"}Real text'
-    )
-
-    msg.fix_hallucinated_tool_calls!
-
-    assert_equal "Real text", msg.reload.content
-    error_msg = chat.messages.where("content LIKE ?", "Tool call failed:%").first
-    assert error_msg, "Should have created an error message"
-    assert_includes error_msg.content, "Could not identify tool"
-  end
-
-  test "fix_hallucinated_tool_calls! records error when tool not enabled" do
-    agent = agents(:without_tools)  # Agent with no enabled tools
-    chat = Chat.create!(account: @account)
-    chat.agents << agent
-
-    msg = chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: '{"memory_type": "journal", "content": "Test"}Real text'
-    )
-
-    msg.fix_hallucinated_tool_calls!
-
-    assert_equal "Real text", msg.reload.content
-    error_msg = chat.messages.where("content LIKE ?", "Tool call failed:%").first
-    assert error_msg, "Should have created an error message"
-    assert_includes error_msg.content, "Could not identify tool"
-  end
-
-  test "fix_hallucinated_tool_calls! creates tool result message before original" do
-    agent = agents(:with_save_memory_tool)
-    chat = Chat.create!(account: @account)
-    chat.agents << agent
-
-    # Create a message at a specific time
-    original_time = 10.seconds.ago
-    msg = chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: '{"memory_type": "journal", "content": "Test"}Real text',
-      created_at: original_time
-    )
-
-    msg.fix_hallucinated_tool_calls!
-
-    # Find the tool result message
-    tool_msg = chat.messages.where.not(id: msg.id).first
-    assert tool_msg.created_at < msg.reload.created_at, "Tool result message should be timestamped before the original"
-    assert_equal [ "SaveMemoryTool" ], tool_msg.tools_used
-  end
-
-  test "fix_hallucinated_tool_calls! touches the chat" do
-    agent = agents(:with_save_memory_tool)
-    chat = Chat.create!(account: @account)
-    chat.agents << agent
-
-    msg = chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: '{"memory_type": "journal", "content": "Test"}Real text'
-    )
-
-    chat_updated_at = chat.reload.updated_at
-
-    # Small sleep to ensure time difference
-    sleep 0.01
-    msg.fix_hallucinated_tool_calls!
-
-    assert chat.reload.updated_at > chat_updated_at, "Chat should have been touched"
-  end
-
-  # Timestamp hallucination tests
-
-  test "has_timestamp_prefix? detects timestamp at start" do
-    msg = Message.new(role: "assistant", content: "[2026-01-25 18:48] Hello world")
-    assert msg.has_timestamp_prefix?
-  end
-
-  test "has_timestamp_prefix? returns false for text without timestamp" do
-    msg = Message.new(role: "assistant", content: "Hello world")
-    assert_not msg.has_timestamp_prefix?
-  end
-
-  test "has_timestamp_prefix? returns false for user messages" do
-    msg = Message.new(role: "user", content: "[2026-01-25 18:48] Hello")
-    assert_not msg.has_timestamp_prefix?
-  end
-
-  test "has_json_prefix? detects JSON after timestamp" do
-    msg = Message.new(role: "assistant", content: '[2026-01-25 18:48] {"success": true}Hello')
-    assert msg.has_json_prefix?
-  end
-
-  test "strip_leading_timestamp removes timestamp from start" do
-    text = "[2026-01-25 18:48] Hello world"
-    assert_equal "Hello world", Message.strip_leading_timestamp(text)
-  end
-
-  test "strip_leading_timestamp leaves text without timestamp unchanged" do
-    text = "Hello world"
-    assert_equal "Hello world", Message.strip_leading_timestamp(text)
-  end
-
-  test "strip_leading_timestamp handles nil" do
-    assert_nil Message.strip_leading_timestamp(nil)
-  end
-
-  test "fixable returns true for timestamp-only message with agent" do
-    agent = agents(:with_save_memory_tool)
-    msg = Message.new(role: "assistant", content: "[2026-01-25 18:48] Hello", agent: agent)
-    assert msg.fixable
-  end
-
-  test "fix_hallucinated_tool_calls! strips timestamp and JSON together" do
-    agent = agents(:with_save_memory_tool)
-    chat = Chat.create!(account: @account)
-    chat.agents << agent
-
-    msg = chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: '[2026-01-25 18:48] {"memory_type": "journal", "content": "Test"}Real text'
-    )
-
-    msg.fix_hallucinated_tool_calls!
-
-    assert_equal "Real text", msg.reload.content
-    assert agent.memories.exists?(content: "Test")
-  end
-
-  # Tool result echo tests
-
-  test "fix_hallucinated_tool_calls! silently strips tool result echoes with known type" do
-    agent = agents(:with_save_memory_tool)
-    chat = Chat.create!(account: @account)
-    chat.agents << agent
-
-    msg = chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: '{"type": "github_commits", "commits": []}Real text'
-    )
-
-    assert_no_difference -> { chat.messages.count } do
-      msg.fix_hallucinated_tool_calls!
-    end
-
-    assert_equal "Real text", msg.reload.content
-  end
-
-  test "fix_hallucinated_tool_calls! silently strips SaveMemoryTool success echo" do
-    agent = agents(:with_save_memory_tool)
-    chat = Chat.create!(account: @account)
-    chat.agents << agent
-
-    msg = chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: '{"success": true, "memory_type": "journal", "content": "Stored"}Real text'
-    )
-
-    # Should NOT create any new messages (no error, no tool result)
-    assert_no_difference -> { chat.messages.count } do
-      msg.fix_hallucinated_tool_calls!
-    end
-
-    assert_equal "Real text", msg.reload.content
-    # Should NOT create a new memory (it's a result echo, not a tool call)
-    assert_not agent.memories.exists?(content: "Stored")
-  end
-
-  test "fix_hallucinated_tool_calls! strips multiple result echoes without errors" do
-    agent = agents(:with_save_memory_tool)
-    chat = Chat.create!(account: @account)
-    chat.agents << agent
-
-    msg = chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: '{"type": "board_list", "boards": []}{"type": "search_results", "results": []}Real text'
-    )
-
-    assert_no_difference -> { chat.messages.count } do
-      msg.fix_hallucinated_tool_calls!
-    end
-
-    assert_equal "Real text", msg.reload.content
-  end
-
-  test "fix_hallucinated_tool_calls! strips result echo but recovers real tool call" do
-    agent = agents(:with_save_memory_tool)
-    chat = Chat.create!(account: @account)
-    chat.agents << agent
-
-    msg = chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: '{"type": "board_list", "boards": []}{"memory_type": "journal", "content": "Real call"}Final'
-    )
-
-    assert_difference -> { agent.memories.count }, 1 do
-      msg.fix_hallucinated_tool_calls!
-    end
-
-    assert_equal "Final", msg.reload.content
-    assert agent.memories.exists?(memory_type: "journal", content: "Real call")
-  end
-
-  test "fix_hallucinated_tool_calls! recognizes all known tool result types" do
-    Message::TOOL_RESULT_TYPES.each do |type|
-      agent = agents(:with_save_memory_tool)
-      chat = Chat.create!(account: @account)
-      chat.agents << agent
-
-      msg = chat.messages.create!(
-        role: "assistant",
-        agent: agent,
-        content: "{\"type\": \"#{type}\"}Text"
-      )
-
-      assert_no_difference -> { chat.messages.count }, "Type '#{type}' should be silently stripped" do
-        msg.fix_hallucinated_tool_calls!
-      end
-
-      assert_equal "Text", msg.reload.content
-    end
-  end
-
-  test "fix_hallucinated_tool_calls! strips timestamp-only message" do
-    agent = agents(:with_save_memory_tool)
-    chat = Chat.create!(account: @account)
-    chat.agents << agent
-
-    msg = chat.messages.create!(
-      role: "assistant",
-      agent: agent,
-      content: "[2026-01-25 18:48] Hello world"
-    )
-
-    msg.fix_hallucinated_tool_calls!
-
-    assert_equal "Hello world", msg.reload.content
+  test "historical tool-shaped text is preserved and cannot be executed as a repair" do
+    content = '[2026-01-25 18:48] {"memory_type":"journal","content":"Old"}Original'
+    message = @chat.messages.create!(role: "assistant", content: content, agent: agents(:with_save_memory_tool))
+    assert_equal content, message.reload.content
+    assert_not message.respond_to?(:fix_hallucinated_tool_calls!)
+    assert_not message.as_json.key?("fixable")
   end
 
   # Auto-reopen conversation for agents tests
@@ -1128,7 +718,7 @@ class MessageTest < ActiveSupport::TestCase
     assert_nil message.audio_url
   end
 
-  test "audio_path_for_llm returns local path for disk storage" do
+  test "recorded audio retains its downloadable bytes" do
     message = @chat.messages.create!(
       user: @user,
       role: "user",
@@ -1141,19 +731,17 @@ class MessageTest < ActiveSupport::TestCase
       content_type: "audio/webm"
     )
 
-    path = message.audio_path_for_llm
-    assert path.present?
-    assert path.is_a?(String)
+    assert_equal "fake audio data", message.audio_recording.download
   end
 
-  test "audio_path_for_llm returns nil when no audio_recording" do
+  test "recorded audio is absent when no audio_recording" do
     message = @chat.messages.create!(
       user: @user,
       role: "user",
       content: "Text message"
     )
 
-    assert_nil message.audio_path_for_llm
+    assert_not message.audio_recording.attached?
   end
 
   test "as_json includes audio_source and audio_url" do

@@ -107,7 +107,7 @@ class Agents::HostingDiagnosticsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "sandbox recreation refuses inline agent" do
-    @agent.update!(runtime: "inline")
+    @agent.update!(runtime: "deprecated")
 
     assert_no_enqueued_jobs only: HostedAgentRuntimeReconcileJob do
       post account_agent_sandbox_recreation_path(@account, @agent)

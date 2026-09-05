@@ -15,7 +15,7 @@ class Chats::ParticipantsControllerTest < ActionDispatch::IntegrationTest
 
   test "create adds agent to group chat and creates system message" do
     agent1 = @account.agents.create!(name: "Agent One", system_prompt: "You are agent one")
-    agent2 = @account.agents.create!(name: "Agent Two", system_prompt: "You are agent two")
+    agent2 = @account.agents.create!(name: "Agent Two", system_prompt: "You are agent two", runtime: "external")
 
     group_chat = create_group_chat(@account, agent_ids: [ agent1.id ])
     assert group_chat.group_chat?
@@ -46,7 +46,7 @@ class Chats::ParticipantsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "create rejected for duplicate agent" do
-    agent = @account.agents.create!(name: "Agent One", system_prompt: "You are agent one")
+    agent = @account.agents.create!(name: "Agent One", system_prompt: "You are agent one", runtime: "external")
 
     group_chat = create_group_chat(@account, agent_ids: [ agent.id ])
 
@@ -60,7 +60,7 @@ class Chats::ParticipantsControllerTest < ActionDispatch::IntegrationTest
 
   test "create adds agent to chat agents association" do
     agent1 = @account.agents.create!(name: "Agent One", system_prompt: "You are agent one")
-    agent2 = @account.agents.create!(name: "Agent Two", system_prompt: "You are agent two")
+    agent2 = @account.agents.create!(name: "Agent Two", system_prompt: "You are agent two", runtime: "external")
 
     group_chat = create_group_chat(@account, agent_ids: [ agent1.id ])
     assert_equal 1, group_chat.agents.count

@@ -18,17 +18,15 @@ module Agents
 
       agent.assign_attributes(
         active: true,
-        enabled_tools: [],
         runtime: "provisioning",
         birth_committed_at: now,
         provisioning_started_at: now
       )
 
       Agents::HostedProvisioning.new(agent: agent, user: creator).prepare!(
-        runtime: "provisioning",
         started_at: now
       )
-      PromoteAgentJob.perform_later(agent.id)
+      ProvisionAgentJob.perform_later(agent.id)
       agent
     end
 

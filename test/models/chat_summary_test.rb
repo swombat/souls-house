@@ -22,15 +22,15 @@ class ChatSummaryTest < ActiveSupport::TestCase
     assert @chat.summary_stale?
   end
 
-  test "generate_summary! returns existing summary if not stale" do
+  test "historical summary stays readable" do
     @chat.update!(summary: "Existing summary", summary_generated_at: 30.minutes.ago)
-    assert_equal "Existing summary", @chat.generate_summary!
+    assert_equal "Existing summary", @chat.reload.summary
   end
 
-  test "generate_summary! returns nil if not enough messages" do
+  test "adding messages no longer generates summaries inline" do
     @chat.messages.create!(content: "Hello", role: "user", user: @user)
-    # Only one message, needs at least 2
-    assert_nil @chat.generate_summary!
+    assert_nil @chat.reload.summary
+    assert_not @chat.respond_to?(:generate_summary!)
   end
 
   test "transcript_for_api returns formatted messages" do

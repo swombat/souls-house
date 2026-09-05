@@ -185,7 +185,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert attached_file.byte_size > 0
   end
 
-  test "should provide file paths for LLM integration" do
+  test "should provide attachment download paths for harnesses" do
     file = fixture_file_upload("test_image.png", "image/png")
 
     assert_difference "Message.count" do
@@ -196,7 +196,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     end
 
     message = Message.last
-    file_paths = message.file_paths_for_llm
+    file_paths = message.attachments_for_api.map { |file| file[:download_path] }
 
     assert_equal 1, file_paths.length
     assert file_paths.first.is_a?(String)
@@ -506,7 +506,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
   # Auto-trigger mentioned agents tests
 
   test "should auto-trigger mentioned agents in group chat" do
-    agent = @account.agents.create!(name: "Grok", system_prompt: "Test")
+    agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     group_chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     group_chat.agent_ids = [ agent.id ]
     group_chat.save!

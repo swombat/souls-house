@@ -5,7 +5,7 @@ class Chats::AgentTriggersControllerTest < ActionDispatch::IntegrationTest
   setup do
     @user = users(:user_1)
     @account = accounts(:personal_account)
-    @agent = @account.agents.create!(name: "Test Agent", system_prompt: "You are a test agent")
+    @agent = @account.agents.create!(name: "Test Agent", system_prompt: "You are a test agent", runtime: "external")
     @chat = create_group_chat(@account, agent_ids: [ @agent.id ])
 
     post login_path, params: {

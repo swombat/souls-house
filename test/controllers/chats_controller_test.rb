@@ -100,7 +100,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
 
     agent_json = inertia_shared_props.fetch("agents").sole
     assert_equal(
-      [ "active", "colour", "health_state", "icon", "id", "model_id", "model_label", "name", "paused", "runtime" ],
+      [ "active", "colour", "deprecated", "health_state", "icon", "id", "model_id", "model_label", "name", "paused", "runtime", "unavailability_reason" ],
       agent_json.keys.sort
     )
     assert_equal agent.to_param, agent_json.fetch("id")

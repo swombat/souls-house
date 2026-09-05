@@ -1,19 +1,14 @@
 <script>
   import { router } from '@inertiajs/svelte';
   import { useSync } from '$lib/use-sync';
-  import {
-    newAccountAgentPath,
-    accountAgentPath,
-    accountAgentInitiationPath,
-    accountAgentPredecessorPath,
-  } from '@/routes';
+  import { newAccountAgentPath, accountAgentPath, accountAgentPredecessorPath } from '@/routes';
   import { findModelLabel as modelLabelFor } from '$lib/agent-models';
   import AgentEmptyState from '$lib/components/agents/AgentEmptyState.svelte';
   import AgentGrid from '$lib/components/agents/AgentGrid.svelte';
   import AgentIndexHeader from '$lib/components/agents/AgentIndexHeader.svelte';
   import AgentUpgradeDialog from '$lib/components/agents/AgentUpgradeDialog.svelte';
 
-  let { agents = [], grouped_models = {}, available_tools = [], account } = $props();
+  let { agents = [], grouped_models = {}, account } = $props();
 
   // Subscribe to both:
   // - Account:${id}:agents - individual agent updates (via collection subscription)
@@ -34,7 +29,6 @@
   let upgradeProcessing = $state(false);
 
   // Build lookup map for tool display names
-  const toolNameLookup = $derived(Object.fromEntries(available_tools.map((t) => [t.class_name, t.name])));
 
   function deleteAgent(agent) {
     if (!confirm(`Delete agent "${agent.name}"? This cannot be undone.`)) return;
@@ -72,14 +66,12 @@
 </svelte:head>
 
 <div class="p-8 max-w-6xl mx-auto">
-  <AgentIndexHeader
-    onInitiate={() => router.post(accountAgentInitiationPath(account.id))}
-    onCreate={() => router.visit(newAccountAgentPath(account.id))} />
+  <AgentIndexHeader onCreate={() => router.visit(newAccountAgentPath(account.id))} />
 
   {#if agents.length === 0}
     <AgentEmptyState onCreate={() => router.visit(newAccountAgentPath(account.id))} />
   {:else}
-    <AgentGrid {agents} accountId={account.id} {toolNameLookup} onUpgrade={openUpgradeModal} onDelete={deleteAgent} />
+    <AgentGrid {agents} accountId={account.id} onUpgrade={openUpgradeModal} onDelete={deleteAgent} />
   {/if}
 </div>
 

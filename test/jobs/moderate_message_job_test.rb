@@ -16,8 +16,8 @@ class ModerateMessageJobTest < ActiveJob::TestCase
     @message.update_columns(moderated_at: nil, moderation_scores: nil)
   end
 
-  test "moderates through RubyLLM and updates message scores" do
-    VCR.use_cassette("jobs/moderate_message_job/moderates_message") do
+  test "moderates through utility inference and updates message scores" do
+    UtilityInference.stub :moderate, { "hate" => 0.01 } do
       ModerateMessageJob.perform_now(@message)
     end
 

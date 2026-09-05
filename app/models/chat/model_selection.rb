@@ -764,8 +764,11 @@ module Chat::ModelSelection
     end
   end
 
-  # Override RubyLLM's model_id getter to return the string value
-  # (RubyLLM's version returns ai_model&.model_id which is nil before save)
+  def model_id=(value)
+    self.model_id_string = value
+    self.ai_model = nil
+  end
+
   def model_id
     model_id_string_value
   end
@@ -781,9 +784,9 @@ module Chat::ModelSelection
     model&.dig(:label)
   end
 
-  # Get the model_id string from either the pending value, association, or legacy column
+  # Existing records can still reference the historical model catalogue.
   def model_id_string_value
-    @model_string || ai_model&.model_id || model_id_string
+    ai_model&.model_id || model_id_string
   end
 
 end

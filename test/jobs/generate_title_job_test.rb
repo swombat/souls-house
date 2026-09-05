@@ -10,7 +10,13 @@ class GenerateTitleJobTest < ActiveSupport::TestCase
   test "generates concise title for chat" do
     chat = build_chat_with_conversation(model_id: "openai/gpt-5-mini")
 
-    VCR.use_cassette("generate_title_job/creates_title") do
+    UtilityInference.stub :title, ->(account:, model:, system:, user:) {
+      assert_equal @account, account
+      assert_equal "google/gemini-2.5-flash", model
+      assert_includes system, "3 to 5 words"
+      assert_includes user, "Q4 marketing campaign"
+      "Q4 marketing campaign"
+    } do
       GenerateTitleJob.perform_now(chat)
     end
 
@@ -46,6 +52,28 @@ class GenerateTitleJobTest < ActiveSupport::TestCase
     assert_no_enqueued_jobs(only: GenerateTitleJob) do
       @account.chats.create!(model_id: "openai/gpt-5-mini", title: "Preset")
     end
+  end
+
+  test "title prompt bounds transcript input" do
+    chat = @account.chats.create!(title: "Prompt input test")
+    14.times { |index| chat.messages.create!(role: "assistant", content: "#{index} #{"x" * 500}") }
+    captured = nil
+    UtilityInference.stub :title, ->(**options) { captured = options; "Bounded title" } do
+      assert_equal "Bounded title", GenerateTitlePrompt.new(chat: chat).generate_title
+    end
+    lines = captured.fetch(:user).lines.grep(/^- Assistant:/)
+    assert_equal 12, lines.size
+    assert lines.all? { |line| line.strip.length <= 253 }
+    refute_includes captured.fetch(:user), "Assistant: 12 "
+  end
+
+  test "missing utility credentials leaves title unset" do
+    @account.update!(use_system_ai_credentials: false, openrouter_api_key: nil)
+    chat = build_chat_with_conversation(model_id: "openai/gpt-5-mini")
+    OpenAI::Client.stub :new, ->(*) { flunk "No inference expected" } do
+      GenerateTitleJob.perform_now(chat)
+    end
+    assert_nil chat.reload.title
   end
 
   private

@@ -16,7 +16,6 @@ class AgentsController < ApplicationController
         agent.as_json.merge(provider_subscription: Agents::ProviderSubscriptionPresentation.call(agent))
       },
       grouped_models: grouped_models,
-      available_tools: tools_for_frontend,
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,
       account: current_account.as_json
@@ -64,7 +63,6 @@ class AgentsController < ApplicationController
       telegram_subscriber_count: @agent.telegram_subscriptions.active.count,
       memories: memories_for_display,
       grouped_models: grouped_models,
-      available_tools: tools_for_frontend,
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,
       active_tab: params[:tab],
@@ -110,14 +108,12 @@ class AgentsController < ApplicationController
 
   def agent_params
     permitted = params.require(:agent).permit(
-      :name, :system_prompt, :reflection_prompt, :memory_reflection_prompt,
-      :summary_prompt, :refinement_prompt, :refinement_threshold,
+      :name, :system_prompt,
       :model_id, :active, :paused, :colour, :icon,
       :thinking_enabled, :thinking_budget, :reasoning_effort,
       :telegram_bot_token, :telegram_bot_username,
       :voice_id, :persistent_session, :persistent_wake_session, :scheduled_wakes_enabled,
-      :heartbeat_wakes_per_day,
-      enabled_tools: []
+      :heartbeat_wakes_per_day
     )
 
     permitted.delete(:telegram_bot_token) if permitted[:telegram_bot_token].blank?
@@ -165,16 +161,6 @@ class AgentsController < ApplicationController
           reasoning:
         }
       end
-    end
-  end
-
-  def tools_for_frontend
-    Agent.available_tools.map do |tool|
-      {
-        class_name: tool.name,
-        name: tool.name.underscore.humanize.sub(/ tool$/i, ""),
-        description: tool.try(:description)
-      }
     end
   end
 

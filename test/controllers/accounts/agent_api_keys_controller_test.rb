@@ -79,7 +79,7 @@ class Accounts::AgentApiKeysControllerTest < ActionDispatch::IntegrationTest
 
   test "show excludes inline agents from subscription setup" do
     agent = agents(:other_account_agent)
-    agent.update!(model_id: "openai/gpt-5", runtime: "inline")
+    agent.update!(model_id: "openai/gpt-5", runtime: "deprecated")
 
     get account_agent_api_keys_path(@account)
 

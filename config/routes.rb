@@ -7,7 +7,6 @@ Rails.application.routes.draw do
         post :append_messages, to: "/test_support/e2e#append_messages"
         post :assistant_message, to: "/test_support/e2e#assistant_message"
         post :invitation_url, to: "/test_support/e2e#invitation_url"
-        post :perform_promote, to: "/test_support/e2e#perform_promote"
         post :state, to: "/test_support/e2e#state"
         post :cleanup, to: "/test_support/e2e#cleanup"
       end
@@ -62,7 +61,6 @@ Rails.application.routes.draw do
       end
     end
 
-    resource :agent_initiation, only: :create, module: :accounts
     resource :agent_api_keys, only: [ :show, :update ], module: :accounts
     resource :costs, only: :show, module: :accounts
     resources :notices, only: [ :index, :create, :destroy ], module: :accounts
@@ -92,15 +90,9 @@ Rails.application.routes.draw do
     resources :agents, except: :show do
       member do
         get :onboarding, to: "agents/onboarding#show"
-        get :promote, to: "agents/promote#show"
-        post "promote/github_access", to: "agents/promote#github_access", as: :github_access_promote
-        post "promote/begin", to: "agents/promote#begin", as: :begin_promote
-        get "promote/regenerate_credentials", to: "agents/promote#regenerate_credentials"
-        post "promote/regenerate_credentials", to: "agents/promote#regenerate_credentials", as: :regenerate_credentials_promote
-        post "promote/cancel", to: "agents/promote#cancel", as: :cancel_promote
-        get "promote/identity_export", to: "agents/promote#identity_export", as: :identity_export
-        post "promote/send_test_request", to: "agents/promote#send_test_request", as: :send_test_request
-        post "promote/send_orientation", to: "agents/promote#send_orientation", as: :send_orientation
+        get "identity_export", to: "agents/runtime_checks#identity_export", as: :identity_export
+        post "send_test_request", to: "agents/runtime_checks#send_test_request", as: :send_test_request
+        post "send_orientation", to: "agents/runtime_checks#send_orientation", as: :send_orientation
       end
 
       scope module: :agents do
@@ -110,7 +102,6 @@ Rails.application.routes.draw do
           get :file_preview
         end
         resource :sandbox_recreation, only: :create
-        resource :refinement, only: :create
         resource :telegram_test, only: :create
         resource :telegram_webhook, only: :create
         resource :predecessor, only: :create
@@ -134,7 +125,6 @@ Rails.application.routes.draw do
   resources :messages, only: [ :update, :destroy ] do
     scope module: :messages do
       resource :retry, only: :create
-      resource :hallucination_fix, only: :create
       resource :voice, only: :create
     end
   end

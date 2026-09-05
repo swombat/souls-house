@@ -5,7 +5,7 @@
   import AgentModelPanel from '$lib/components/agents/AgentModelPanel.svelte';
   import { siteName } from '$lib/branding';
 
-  let { form, groupedModels = {}, availableTools = [], selectedModel = $bindable(), runtimeManaged = false } = $props();
+  let { form, groupedModels = {}, selectedModel = $bindable(), runtimeManaged = false } = $props();
 </script>
 
 <div class="space-y-8">
@@ -14,7 +14,7 @@
     <p class="text-sm text-muted-foreground">Configure how this resident runs and when it wakes.</p>
   </div>
 
-  <AgentModelPanel {form} {groupedModels} {availableTools} {runtimeManaged} bind:selectedModel />
+  <AgentModelPanel {form} {groupedModels} {runtimeManaged} bind:selectedModel />
 
   {#if runtimeManaged}
     <div class="border rounded-lg p-4 text-sm text-muted-foreground">

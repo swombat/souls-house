@@ -1,9 +1,8 @@
 <script>
-  import { Button } from '$lib/components/shadcn/button/index.js';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import MessageBubble from '$lib/components/chat/MessageBubble.svelte';
   import AgentRuntimeActivityCard from '$lib/components/chat/AgentRuntimeActivityCard.svelte';
-  import { ArrowClockwise, Spinner } from 'phosphor-svelte';
+  import { Spinner } from 'phosphor-svelte';
   import { fade } from 'svelte/transition';
   import { formatTime, formatDate } from '$lib/utils';
   import { shouldShowTimestampForMessages, timestampLabelForMessages } from '$lib/chat-message-state';
@@ -22,8 +21,6 @@
     lastMessageIsHiddenThinking = false,
     shouldShowSendingPlaceholder = false,
     isTimedOut = false,
-    lastUserMessageNeedsResend = false,
-    waitingForResponse = false,
     streamingThinking = {},
     shikiTheme = 'catppuccin-latte',
     showAgentPrompt = false,
@@ -33,9 +30,6 @@
     timestampLabel = () => '',
     startEditingMessage = () => {},
     deleteMessage = () => {},
-    retryMessage = () => {},
-    fixHallucinatedToolCalls = () => {},
-    resendLastMessage = () => {},
     openImageLightbox = () => {},
     requestVoice = () => {},
   } = $props();
@@ -110,17 +104,10 @@
           isLastVisible={index === timelineItems.length - 1}
           isGroupChat={chat?.manual_responses}
           {showMessageTelemetry}
-          showResend={index === timelineItems.length - 1 &&
-            lastUserMessageNeedsResend &&
-            !waitingForResponse &&
-            !chat?.manual_responses}
           streamingThinking={streamingThinking[message.id] || ''}
           {shikiTheme}
           onedit={startEditingMessage}
           ondelete={deleteMessage}
-          onretry={retryMessage}
-          onfix={fixHallucinatedToolCalls}
-          onresend={resendLastMessage}
           onimagelightbox={openImageLightbox}
           onvoice={requestVoice} />
       {:else if item.type === 'runtime_interaction'}
@@ -155,10 +142,6 @@
                 <div class="text-red-600 text-sm mb-2">
                   It appears there might have been an error while sending the message.
                 </div>
-                <Button variant="outline" size="sm" onclick={resendLastMessage}>
-                  <ArrowClockwise size={14} class="mr-2" />
-                  Try again
-                </Button>
               {:else}
                 <div class="flex items-center gap-2 text-muted-foreground">
                   <Spinner size={16} class="animate-spin" />

@@ -21,7 +21,10 @@ class Chats::AgentTriggersController < ApplicationController
   rescue ArgumentError => e
     respond_to do |format|
       format.html { redirect_back_or_to account_chat_path(current_account, @chat), alert: e.message }
-      format.json { render json: { error: e.message }, status: :unprocessable_entity }
+      format.json do
+        render json: { error: e.message, code: e.respond_to?(:code) ? e.code : nil },
+          status: e.is_a?(Agent::RuntimeAvailability::Unavailable) ? :conflict : :unprocessable_entity
+      end
     end
   end
 

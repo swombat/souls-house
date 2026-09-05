@@ -22,10 +22,9 @@
     <Dialog.Header>
       <Dialog.Title>Upgrade {agent?.name ?? 'Resident'}</Dialog.Title>
       <Dialog.Description>
-        {agent?.name ?? 'This agent'} keeps its identity, conversations, and telegram bot — only the model changes. A predecessor
-        will be preserved at the current model, carrying the same memories but no telegram and not in any conversations.
-        The two of them can then talk, and the predecessor's memories will eventually be absorbed or archived based on what
-        they decide.
+        {agent?.name ?? 'This agent'} keeps its identity, conversations, and telegram bot — only the model changes. A historical
+        predecessor record preserves the current model and copied memories. It has no harness, is marked deprecated/unavailable,
+        and cannot participate in conversations. No runtime or credentials are cloned.
       </Dialog.Description>
     </Dialog.Header>
 

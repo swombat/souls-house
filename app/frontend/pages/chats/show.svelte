@@ -15,10 +15,8 @@
   import ConversationCostDrawer from '$lib/components/chat/ConversationCostDrawer.svelte';
   import {
     accountChatMessagesPath,
-    messageRetryPath,
     accountChatAgentAssignmentPath,
     messagePath,
-    messageHallucinationFixPath,
     accountChatParticipantPath,
   } from '@/routes';
   import * as logging from '$lib/logging';
@@ -28,7 +26,6 @@
     isChatResponseTimedOut,
     lastMessageIsHiddenThinking as messageStateLastMessageIsHiddenThinking,
     lastMessageIsUserWithoutResponse as messageStateLastMessageIsUserWithoutResponse,
-    lastUserMessageNeedsResend as messageStateLastUserMessageNeedsResend,
     lastUserMessageTime as messageStateLastUserMessageTime,
     shouldShowSendingPlaceholder as messageStateShouldShowSendingPlaceholder,
     shouldShowTimestampForMessages,
@@ -385,11 +382,6 @@
     return isChatResponseTimedOut({ chat, messages: allMessages, waitingForResponse, messageSentAt, currentTime });
   });
 
-  // Check if last message needs resend option
-  const lastUserMessageNeedsResend = $derived.by(() => {
-    return messageStateLastUserMessageNeedsResend(allMessages, currentTime);
-  });
-
   // Create dynamic sync for real-time updates
   const updateSync = createDynamicSync();
   let syncSignature = null;
@@ -484,7 +476,7 @@
           logging.debug('No message found in streaming update:', data.id);
           logging.debug('Messages:', recentMessages);
         }
-      } else if (data.action === 'error') {
+      } else if (data.action === 'error' || data.action === 'agent_skipped') {
         // Handle transient errors
         errorMessage = data.message;
         setTimeout(() => (errorMessage = null), 5000);
@@ -506,57 +498,6 @@
       }
     }
   );
-
-  const retryForm = useForm({});
-
-  function retryMessage(messageId) {
-    $retryForm.post(messageRetryPath(messageId), {
-      onSuccess: () => {
-        scheduleStreamingRefresh();
-      },
-    });
-  }
-
-  function resendLastMessage() {
-    // Find the last user message and retry the AI response
-    logging.debug('resendLastMessage called, messages:', allMessages?.length);
-    if (allMessages && allMessages.length > 0) {
-      // Find the actual last user message (may not be the very last message if AI started responding)
-      const lastUserMessage = [...allMessages].reverse().find((m) => m.role === 'user');
-      logging.debug('lastUserMessage:', lastUserMessage);
-      if (lastUserMessage) {
-        // Retry the AI response for this message
-        const retryPath = messageRetryPath(lastUserMessage.id);
-        logging.debug('Posting to retry path:', retryPath);
-        waitingForResponse = true;
-        messageSentAt = Date.now();
-
-        $retryForm.post(retryPath, {
-          onSuccess: () => {
-            logging.debug('Retry triggered successfully');
-            scheduleStreamingRefresh();
-          },
-          onError: (errors) => {
-            logging.error('Retry failed:', errors);
-            waitingForResponse = false;
-            messageSentAt = null;
-          },
-        });
-      } else {
-        logging.error('No user message found to retry');
-      }
-    } else {
-      logging.error('No messages available for retry');
-    }
-  }
-
-  async function fixHallucinatedToolCalls(messageId) {
-    await fetch(messageHallucinationFixPath(messageId), {
-      method: 'POST',
-      headers: { 'X-CSRF-Token': csrfToken() },
-    });
-    router.reload({ only: ['messages'], preserveScroll: true });
-  }
 
   function assignToAgent(agentId) {
     if (!chat || !agentId) return;
@@ -698,8 +639,6 @@
       {lastMessageIsHiddenThinking}
       {shouldShowSendingPlaceholder}
       {isTimedOut}
-      {lastUserMessageNeedsResend}
-      {waitingForResponse}
       {streamingThinking}
       {shikiTheme}
       {showAgentPrompt}
@@ -709,9 +648,6 @@
       {timestampLabel}
       {startEditingMessage}
       {deleteMessage}
-      {retryMessage}
-      {fixHallucinatedToolCalls}
-      {resendLastMessage}
       {openImageLightbox}
       {requestVoice} />
 

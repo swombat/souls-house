@@ -8,7 +8,8 @@ module Agents
       @user = user
     end
 
-    def prepare!(runtime:, started_at:)
+    def prepare!(started_at:)
+      raise ConfigurationError, "Agent is not awaiting provisioning" unless agent.provisioning?
       configuration = runtime_configuration
       old_api_key = agent.outbound_api_key
 
@@ -38,9 +39,8 @@ module Agents
           sandbox_host: configuration.fetch(:sandbox_host),
           container_image: configuration.fetch(:container_image),
           endpoint_url: configuration.fetch(:publish_ports) ? agent.endpoint_url : nil,
-          runtime: runtime,
-          migration_started_at: runtime == "migrating" ? started_at : nil,
-          provisioning_started_at: runtime == "provisioning" ? started_at : agent.provisioning_started_at,
+          runtime: "provisioning",
+          provisioning_started_at: started_at,
           health_state: "unknown",
           consecutive_health_failures: 0,
           sandbox_last_error: nil,

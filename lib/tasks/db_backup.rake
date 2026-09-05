@@ -87,20 +87,19 @@ module DbBackupHelpers
 
     test_agents.each do |config|
       existing_agent = nexus_account.agents.find_by(name: config[:name])
-      if existing_agent && !existing_agent.inline?
+      if existing_agent&.deprecated?
+        puts "  Preserved deprecated #{config[:name]} and its history; create a separately named resident explicitly."
+        next
+      end
+      if existing_agent
         if existing_agent.model_id != config[:model_id]
           previous_model = existing_agent.model_id
           existing_agent.update!(model_id: config[:model_id])
           puts "  Updated #{config[:name]} from #{previous_model} to #{config[:model_id]}"
         end
-        PromoteAgentJob.perform_later(existing_agent.id) if existing_agent.migrating? || existing_agent.provisioning?
+        ProvisionAgentJob.perform_later(existing_agent.id) if existing_agent.provisioning?
         puts "  Kept #{config[:name]} on its existing Chaos runtime (#{existing_agent.model_id})"
         next
-      end
-
-      if existing_agent
-        puts "  Replacing legacy inline #{config[:name]} with a Chaos-backed resident"
-        existing_agent.destroy!
       end
 
       agent = Agents::HostedBirth.new(

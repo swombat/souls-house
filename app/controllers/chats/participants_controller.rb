@@ -10,7 +10,7 @@ class Chats::ParticipantsController < ApplicationController
       return
     end
 
-    agent = current_account.agents.find(params[:agent_id])
+    agent = current_account.agents.eligible_for_conversation.find(params[:agent_id])
 
     if @chat.agents.include?(agent)
       redirect_back_or_to account_chat_path(current_account, @chat),

@@ -8,12 +8,9 @@
     onboardingAccountAgentPath,
     accountAgentTelegramTestPath,
     accountAgentTelegramWebhookPath,
-    accountAgentRefinementPath,
     accountAgentMemoriesPath,
     accountAgentMemoryDiscardPath,
     accountAgentMemoryProtectionPath,
-    beginPromoteAccountAgentPath,
-    cancelPromoteAccountAgentPath,
     sendOrientationAccountAgentPath,
     sendTestRequestAccountAgentPath,
   } from '@/routes';
@@ -35,7 +32,6 @@
     telegram_subscriber_count: telegramSubscriberCount = 0,
     memories = [],
     grouped_models = {},
-    available_tools = [],
     colour_options = [],
     icon_options = [],
     active_tab: activeTabProp = null,
@@ -60,14 +56,12 @@
   let selectedModel = $state(agent.model_id);
   let sendingTestNotification = $state(false);
   let registeringWebhook = $state(false);
-  let triggeringRefinement = $state(false);
   let activeTab = $state(
     activeTabProp === 'identity' ? 'appearance' : activeTabProp === 'model' ? 'settings' : activeTabProp || 'appearance'
   );
   let runtimeManaged = $derived(
     Boolean(agent.birth_committed_at) || agent.runtime === 'external' || agent.runtime === 'offline'
   );
-  let promoting = $state(false);
   let sendingTestRequest = $state(false);
   let sendingOrientation = $state(false);
   let recreatingSandbox = $state(false);
@@ -76,9 +70,7 @@
   let sandboxStatus = $state({
     docker_available: null,
     image_present: agent.container_image ? null : false,
-    container_exists:
-      agent.container_name &&
-      (agent.runtime === 'external' || agent.runtime === 'migrating' || agent.runtime === 'provisioning'),
+    container_exists: agent.container_name && ['external', 'offline', 'provisioning'].includes(agent.runtime),
     identity_volume_exists: agent.uuid ? null : false,
     chaos_volume_exists: agent.uuid ? null : false,
     repo_volume_exists: agent.uuid ? null : false,
@@ -125,8 +117,6 @@
     { id: 'costs', label: 'Costs', icon: CurrencyDollar },
   ];
 
-  let beginPromotePath = $derived(beginPromoteAccountAgentPath(account.id, agent.id));
-  let cancelPromotePath = $derived(cancelPromoteAccountAgentPath(account.id, agent.id));
   let testRequestPath = $derived(sendTestRequestAccountAgentPath(account.id, agent.id));
   let orientationPath = $derived(sendOrientationAccountAgentPath(account.id, agent.id));
 
@@ -142,7 +132,6 @@
       model_id: agent.model_id,
       active: agent.active,
       paused: agent.paused || false,
-      enabled_tools: agent.enabled_tools || [],
       colour: agent.colour || null,
       icon: agent.icon || null,
       thinking_enabled: agent.thinking_enabled || false,
@@ -176,20 +165,6 @@
 
   function undiscardMemory(memoryId) {
     router.delete(accountAgentMemoryDiscardPath(account.id, agent.id, memoryId), { preserveScroll: true });
-  }
-
-  function triggerRefinement(mode = 'full') {
-    triggeringRefinement = true;
-    router.post(
-      accountAgentRefinementPath(account.id, agent.id),
-      { mode },
-      {
-        preserveScroll: true,
-        onFinish() {
-          triggeringRefinement = false;
-        },
-      }
-    );
   }
 
   function toggleConstitutional(memoryId, isCurrentlyProtected) {
@@ -360,24 +335,6 @@
       });
   }
 
-  function beginPromotion() {
-    promoting = true;
-    router.post(
-      beginPromotePath,
-      {},
-      {
-        preserveScroll: true,
-        onFinish: () => {
-          promoting = false;
-        },
-      }
-    );
-  }
-
-  function cancelPromotion() {
-    router.post(cancelPromotePath, {}, { preserveScroll: true });
-  }
-
   function sendTestRequest() {
     sendingTestRequest = true;
     testResult = null;
@@ -454,12 +411,7 @@
             colourOptions={colour_options}
             iconOptions={icon_options} />
         {:else if activeTab === 'settings'}
-          <AgentSettingsPanel
-            {form}
-            groupedModels={grouped_models}
-            availableTools={available_tools}
-            {runtimeManaged}
-            bind:selectedModel />
+          <AgentSettingsPanel {form} groupedModels={grouped_models} {runtimeManaged} bind:selectedModel />
         {:else if activeTab === 'integrations'}
           <AgentIntegrationsPanel
             {form}
@@ -475,9 +427,7 @@
           <AgentMemoryPanel
             {agent}
             {memories}
-            {triggeringRefinement}
             locked={runtimeManaged}
-            onrefine={triggerRefinement}
             oncreate={createMemory}
             ondelete={deleteMemory}
             onundiscard={undiscardMemory}
@@ -488,7 +438,8 @@
               <div class="space-y-1">
                 <h2 class="text-xl font-semibold">Hosting</h2>
                 <p class="text-sm text-muted-foreground">
-                  Current runtime: <span class="font-medium text-foreground">{agent.runtime || 'inline'}</span>
+                  Current runtime: <span class="font-medium text-foreground"
+                    >{agent.deprecated ? 'Deprecated' : agent.runtime}</span>
                 </p>
               </div>
 
@@ -518,24 +469,12 @@
                 </div>
               {/if}
 
-              {#if agent.runtime === 'inline'}
+              {#if agent.deprecated}
                 <div class="space-y-3">
                   <p class="text-sm text-muted-foreground">
-                    Run this resident in a {$siteName}-managed Docker sandbox. {$siteName} will create the identity volume,
-                    start the runtime, and send requests to the resident's external runtime.
-                    {#if localDevEndpointMode}
-                      In local development, the shim port is published to <span class="font-mono">127.0.0.1</span>
-                      automatically so this can be tested on your Mac.
-                    {/if}
+                    Deprecated — this agent has no supported harness and cannot respond. Its history and identity
+                    records remain available.
                   </p>
-                  <Button type="button" onclick={beginPromotion} disabled={promoting}>
-                    {promoting ? 'Promoting...' : 'Promote to external runtime'}
-                  </Button>
-                </div>
-              {:else if agent.runtime === 'migrating'}
-                <div class="flex flex-wrap gap-3">
-                  <Button type="button" disabled>Promotion in progress...</Button>
-                  <Button type="button" variant="outline" onclick={cancelPromotion}>Cancel</Button>
                 </div>
               {:else if agent.runtime === 'provisioning'}
                 <div class="space-y-3">

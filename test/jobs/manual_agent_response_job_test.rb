@@ -1,140 +1,18 @@
 require "test_helper"
 require "webmock/minitest"
+
 class ManualAgentResponseJobTest < ActiveJob::TestCase
 
   setup do
-    @user = users(:user_1)
-    @account = accounts(:personal_account)
     @agent = agents(:research_assistant)
-    # Build the chat first, set agent_ids, then save to satisfy validation
-    @chat = @account.chats.new(
-      model_id: "openrouter/auto",
-      title: "Test Group Chat",
-      manual_responses: true
-    )
-    @chat.agent_ids = [ @agent.id ]
-    @chat.save!
-    @user_message = @chat.messages.create!(
-      content: "Hello, agents!",
-      role: "user",
-      user: @user
-    )
-  end
-
-  test "job is enqueued properly" do
-    assert_enqueued_with(job: ManualAgentResponseJob, args: [ @chat, @agent ]) do
-      ManualAgentResponseJob.perform_later(@chat, @agent)
-    end
-  end
-
-  test "creates message attributed to agent through RubyLLM" do
-    @agent.update!(model_id: "openai/gpt-5-nano")
-    @agent.update!(system_prompt: "Reply with one short sentence as a research assistant.")
-    recorded_at = Time.zone.parse("2026-05-03 11:51 UTC")
-    @user_message.update!(created_at: recorded_at)
-
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-manual-agent-test",
-          object: "chat.completion",
-          created: recorded_at.to_i,
-          model: "gpt-5-nano",
-          choices: [
-            {
-              index: 0,
-              message: { role: "assistant", content: "A concise research response." },
-              finish_reason: "stop"
-            }
-          ],
-          usage: { prompt_tokens: 20, completion_tokens: 6, total_tokens: 26 }
-        }.to_json
-      )
-
-    travel_to recorded_at do
-      VCR.turned_off do
-        ManualAgentResponseJob.perform_now(@chat, @agent)
-      end
-    end
-
-    ai_message = @chat.messages.where(role: "assistant").last
-    assert_not_nil ai_message, "AI message should be created"
-    assert_equal @agent, ai_message.agent
-    assert_predicate ai_message.content, :present?
-    assert_not ai_message.streaming?
-  end
-
-  test "builds context for agent response" do
-    context = @chat.build_context_for_agent(@agent, thinking_enabled: false, provider: :openrouter)
-
-    assert_equal 3, context.length, "Should include stable system prompt, context envelope, and user message"
-    assert_equal "system", context.first[:role]
-    assert_equal "user", context.second[:role]
-    assert_includes context.second[:content], "<helixkit_context>"
-    assert_equal "user", context.third[:role]
-    assert_includes context.third[:content], "Hello, agents!"
-  end
-
-  test "gpt 5.6 sol keeps tools by disabling reasoning effort on chat completions" do
+    @chat = @agent.account.chats.create!(title: "Harness chat", manual_responses: true, agents: [ @agent ])
     @agent.update!(
-      model_id: "openai/gpt-5.6-sol",
-      thinking_enabled: true,
-      thinking_budget: 5000,
-      enabled_tools: [ "CloseConversationTool" ]
+      runtime: "external", uuid: SecureRandom.uuid_v7, endpoint_url: "https://agent.example.com",
+      trigger_bearer_token: "tr_valid", health_state: "healthy", consecutive_health_failures: 0
     )
-
-    request = stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .with do |req|
-        body = JSON.parse(req.body)
-        body["model"] == "gpt-5.6-sol" &&
-          body["reasoning_effort"] == "none" &&
-          body["tools"].present?
-      end
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-sol-tool-test",
-          object: "chat.completion",
-          created: 1_784_220_000,
-          model: "gpt-5.6-sol",
-          choices: [
-            {
-              index: 0,
-              message: { role: "assistant", content: "Sol tool response" },
-              finish_reason: "stop"
-            }
-          ],
-          usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 }
-        }.to_json
-      )
-
-    VCR.turned_off do
-      ManualAgentResponseJob.perform_now(@chat, @agent)
-    end
-
-    assert_requested request
-    response = @chat.messages.where(role: "assistant", agent: @agent).last
-    assert_equal "Sol tool response", response.content
-    assert_equal "provider_unsupported", response.reasoning_skip_reason
-    assert_equal 2, response.prompt_layout_version
-    assert_operator response.stable_prompt_bytes, :>, 0
-    assert_operator response.transcript_prompt_bytes, :>, 0
-    assert_operator response.envelope_prompt_bytes, :>, 0
-    assert_match(/\A[0-9a-f]{64}\z/, response.stable_prompt_sha256)
   end
 
-  test "external agent receives trigger request instead of local llm response" do
-    @agent.update!(
-      runtime: "external",
-      uuid: SecureRandom.uuid_v7,
-      endpoint_url: "https://agent.example.com",
-      trigger_bearer_token: "tr_valid",
-      health_state: "healthy",
-      consecutive_health_failures: 0
-    )
+  test "external agent receives a trigger instead of local inference" do
     trigger = stub_request(:post, "https://agent.example.com/trigger")
       .with(headers: { "Authorization" => "Bearer tr_valid" })
       .to_return(status: 200, body: { status: "accepted" }.to_json)
@@ -142,27 +20,27 @@ class ManualAgentResponseJobTest < ActiveJob::TestCase
     assert_no_difference "Message.count" do
       ManualAgentResponseJob.perform_now(@chat, @agent)
     end
-
     assert_requested trigger
   end
 
-  test "offline external agent records unreachable message" do
-    @agent.update!(
-      runtime: "offline",
-      uuid: SecureRandom.uuid_v7,
-      endpoint_url: "https://agent.example.com",
-      trigger_bearer_token: "tr_valid",
-      health_state: "unhealthy",
-      consecutive_health_failures: 6
-    )
-
+  test "offline external agent retains unreachable feedback" do
+    @agent.update!(runtime: "offline", health_state: "unhealthy", consecutive_health_failures: 6)
     assert_difference "Message.count", 1 do
       ManualAgentResponseJob.perform_now(@chat, @agent)
     end
+    assert_equal @agent, @chat.messages.last.agent
+    assert_includes @chat.messages.last.content, "currently unreachable"
+  end
 
-    message = @chat.messages.order(:created_at).last
-    assert_equal @agent, message.agent
-    assert_includes message.content, "currently unreachable"
+  test "archived conversations and removed participants never dispatch" do
+    ExternalAgentResponseRequest.stub(:new, ->(**) { flunk "must not dispatch" }) do
+      @chat.archive!
+      ManualAgentResponseJob.perform_now(@chat, @agent)
+      @chat.unarchive!
+      @chat.chat_agents.delete_all
+      ManualAgentResponseJob.perform_now(@chat, @agent)
+      assert_empty @chat.agent_runtime_interactions
+    end
   end
 
 end

@@ -6,6 +6,7 @@ class Agents::Memories::DiscardsControllerTest < ActionDispatch::IntegrationTest
     @user = users(:user_1)
     @account = accounts(:personal_account)
     @agent = agents(:research_assistant)
+    @agent.update_columns(runtime: "deprecated")
     @memory = @agent.memories.create!(content: "Test memory", memory_type: :journal)
 
     Setting.instance.update!(allow_agents: true)

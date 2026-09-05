@@ -1,5 +1,9 @@
 # RubyLLM Documentation
 
+> Historical reference only. souls.house no longer depends on RubyLLM or runs
+> inline agents. See the [retirement runbook](../plans/260905-01b-rubyllm-removal-implementation-checkpoint.md)
+> for the current harness-only architecture and utility inference.
+
 RubyLLM is a unified Ruby API for interacting with multiple AI providers and models, designed to simplify AI integration in Ruby applications. This documentation provides comprehensive guidance for using RubyLLM effectively in your projects.
 
 ## What is RubyLLM?

@@ -26,6 +26,15 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
     )
   end
 
+  test "a stale Telegram request cannot dispatch a deprecated resident" do
+    @agent.update_columns(runtime: "deprecated")
+    assert_no_difference "AgentRuntimeInteraction.count" do
+      result = ExternalAgentTelegramRequest.new(agent: @agent, subscription: @subscription, telegram_message: @message).call
+      assert_equal({ status: 409, error: "agent_deprecated", skipped: true }, result)
+    end
+    assert_not_requested :post, "https://agent.example.com/trigger"
+  end
+
   test "sends Telegram metadata and grounded transcript to the external trigger" do
     stub = stub_request(:post, "https://agent.example.com/trigger")
       .with do |request|

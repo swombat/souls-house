@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_05_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -263,6 +263,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_140000) do
     t.integer "container_memory_mb", default: 8192, null: false
     t.string "container_name"
     t.datetime "created_at", null: false
+    t.datetime "deprecated_at"
+    t.string "deprecation_reason"
     t.jsonb "enabled_tools", default: [], null: false
     t.string "endpoint_url"
     t.string "github_deploy_key_id"
@@ -299,7 +301,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_140000) do
     t.float "refinement_threshold"
     t.text "reflection_prompt"
     t.string "restic_password"
-    t.string "runtime", default: "inline", null: false
+    t.string "runtime", default: "deprecated", null: false
     t.datetime "runtime_ready_at"
     t.string "sandbox_host"
     t.text "sandbox_last_error"

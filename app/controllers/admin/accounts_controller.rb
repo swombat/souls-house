@@ -58,7 +58,7 @@ class Admin::AccountsController < ApplicationController
   end
 
   def refresh_storage
-    @account.agents.where.not(runtime: "inline").find_each do |agent|
+    @account.agents.hosted.find_each do |agent|
       AgentStorageUsageJob.perform_later(agent.id)
     end
     audit(:admin_refresh_account_storage, @account, account_id: @account.id)

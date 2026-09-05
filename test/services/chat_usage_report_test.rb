@@ -4,6 +4,7 @@ class ChatUsageReportTest < ActiveSupport::TestCase
 
   setup do
     @agent = agents(:research_assistant)
+    @agent.update_columns(runtime: "deprecated")
     @chat = @agent.account.chats.create!(
       model_id: "openai/gpt-5.4",
       title: "Usage report",

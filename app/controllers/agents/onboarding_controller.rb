@@ -11,4 +11,11 @@ class Agents::OnboardingController < ApplicationController
     }
   end
 
+  private
+
+  # Onboarding is a member route; nested resource controllers use :agent_id.
+  def set_agent
+    @agent = current_account.agents.find(params[:id])
+  end
+
 end

@@ -35,23 +35,18 @@ class AgentTest < ActiveSupport::TestCase
     assert agent2.persisted?
   end
 
-  test "validates enabled_tools against available tools" do
+  test "preserves historical tool names without constantizing or validating retired wrappers" do
     agent = @account.agents.build(name: "Test", enabled_tools: [ "NonExistentTool" ])
-    assert_not agent.valid?
-    assert_includes agent.errors[:enabled_tools].first, "NonExistentTool"
+    assert agent.valid?
+    assert_equal [ "NonExistentTool" ], agent.enabled_tools
   end
 
-  test "discovers available tools" do
-    tools = Agent.available_tools
-    assert tools.is_a?(Array)
+  test "does not discover inline tools" do
+    assert_not Agent.respond_to?(:available_tools)
   end
 
-  test "returns enabled tool classes" do
-    available_tool_names = Agent.available_tools.map(&:name)
-    if available_tool_names.include?("WebTool")
-      agent = @account.agents.create!(name: "Test", enabled_tools: [ "WebTool" ])
-      assert_includes agent.tools.map(&:name), "WebTool"
-    end
+  test "does not resolve enabled tool classes" do
+    assert_not Agent.new.respond_to?(:tools)
   end
 
   test "defaults to active" do
@@ -85,7 +80,7 @@ class AgentTest < ActiveSupport::TestCase
     agent = agents(:research_assistant)
 
     assert_equal(
-      [ "active", "colour", "health_state", "icon", "id", "model_id", "model_label", "name", "paused", "runtime" ],
+      [ "active", "colour", "deprecated", "health_state", "icon", "id", "model_id", "model_label", "name", "paused", "runtime", "unavailability_reason" ],
       agent.as_json(as: :list).keys.sort
     )
   end
@@ -202,6 +197,7 @@ class AgentTest < ActiveSupport::TestCase
 
   test "inline model changes create no notice or orientation" do
     agent = agents(:research_assistant)
+    agent.update_columns(runtime: "deprecated")
 
     assert_no_difference "Notice.count" do
       assert_no_enqueued_jobs only: ModelChangeOrientationJob do
@@ -245,7 +241,7 @@ class AgentTest < ActiveSupport::TestCase
 
   test "born-hosted agents reject soul changes while allowing display metadata changes" do
     agent = agents(:research_assistant)
-    agent.update!(system_prompt: "Committed beginning")
+    agent.update_columns(runtime: "deprecated", system_prompt: "Committed beginning")
     agent.update!(runtime: "provisioning", birth_committed_at: Time.current)
 
     assert_not agent.update(system_prompt: "Replacement beginning")
@@ -665,6 +661,11 @@ class AgentTest < ActiveSupport::TestCase
     predecessor = successor.upgrade_with_predecessor!(to_model: "anthropic/claude-opus-4.7")
 
     assert predecessor.persisted?
+    assert predecessor.deprecated?
+    assert_not predecessor.eligible_for_conversation?
+    assert_nil predecessor.birth_committed_at
+    assert_nil predecessor.outbound_api_key_id
+    assert_nil predecessor.trigger_bearer_token
     assert_not_equal successor.id, predecessor.id
     assert_equal successor.account_id, predecessor.account_id
     assert_equal "anthropic/claude-opus-4.6", predecessor.model_id

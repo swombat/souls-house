@@ -57,9 +57,8 @@ class ChatSimpleTest < ActiveSupport::TestCase
     chat = Chat.create!(account: @account)
     message = chat.messages.create!(role: "user", content: "Test", user: @user)
 
-    # RubyLLM methods should be available
-    assert chat.respond_to?(:ask)
-    assert message.respond_to?(:to_llm)
+    assert_equal chat, message.chat
+    assert_equal [ message ], chat.messages.to_a
   end
 
 end

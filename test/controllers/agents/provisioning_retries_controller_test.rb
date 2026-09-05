@@ -25,7 +25,7 @@ class Agents::ProvisioningRetriesControllerTest < ActionDispatch::IntegrationTes
 
   test "retry preserves the committed agent and queues provisioning again" do
     assert_no_difference [ "Agent.count", "ApiKey.count" ] do
-      assert_enqueued_with(job: PromoteAgentJob, args: [ @agent.id ]) do
+      assert_enqueued_with(job: ProvisionAgentJob, args: [ @agent.id ]) do
         post account_agent_provisioning_retry_path(@account, @agent)
       end
     end

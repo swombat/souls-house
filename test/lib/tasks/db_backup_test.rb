@@ -46,34 +46,34 @@ class DbBackupTest < ActiveJob::TestCase
     end
   end
 
-  test "creates Chaos-backed test agents and replaces legacy inline agents" do
+  test "creates missing Chaos test agents without replacing deprecated residents" do
     account = accounts(:team_account)
     legacy_agent = account.agents.create!(
       name: "Claude Test Agent",
       system_prompt: "Legacy inline test agent",
       model_id: "anthropic/claude-sonnet-4.5",
-      runtime: "inline"
+      runtime: "deprecated"
     )
 
     Account.stub(:decode_id, account.id) do
       assert_difference "Agent.count", 3 do
-        assert_difference "ApiKey.count", 4 do
-          assert_enqueued_jobs 4, only: PromoteAgentJob do
+        assert_difference "ApiKey.count", 3 do
+          assert_enqueued_jobs 3, only: ProvisionAgentJob do
             capture_io { DbBackupHelpers.create_test_agents! }
           end
         end
       end
     end
 
-    assert_not Agent.exists?(legacy_agent.id)
+    assert_equal "deprecated", legacy_agent.reload.runtime
+    assert_equal "Legacy inline test agent", legacy_agent.system_prompt
 
     agents = account.agents.where(name: [
-      "Claude Test Agent",
       "GPT Test Agent",
       "Grok Test Agent",
       "Gemini Test Agent"
     ])
-    assert_equal 4, agents.count
+    assert_equal 3, agents.count
     assert agents.all?(&:born_hosted?)
     assert agents.all?(&:provisioning?)
     assert agents.all? { |agent| agent.enabled_tools.empty? }
@@ -81,7 +81,6 @@ class DbBackupTest < ActiveJob::TestCase
     assert agents.all? { |agent| agent.trigger_bearer_token.present? }
     assert_equal(
       {
-        "Claude Test Agent" => "anthropic/claude-haiku-4.5",
         "GPT Test Agent" => "openai/gpt-5.6-luna",
         "Grok Test Agent" => "x-ai/grok-build-0.1",
         "Gemini Test Agent" => "google/gemini-3.7-flash"

@@ -69,6 +69,25 @@ class PromoteAgentJobTest < ActiveJob::TestCase
     assert_predicate @agent.outbound_api_token, :present?
   end
 
+  test "failure after spawning remains retryable without reseeding the committed identity" do
+    volume = FakeVolume.new(empty: false)
+    sandbox = FakeSandbox.new(@agent)
+    original_birth = @agent.birth_committed_at
+    Agents::Volume.stub(:new, volume) do
+      Agents::Sandbox.stub(:new, sandbox) do
+        Agents::Config.stub(:backups_enabled?, false) do
+          OrientNewAgentJob.stub(:perform_later, ->(*) { raise "queue unavailable" }) do
+            assert_raises(RuntimeError) { ProvisionAgentJob.perform_now(@agent.id) }
+          end
+        end
+      end
+    end
+    assert_equal "provisioning", @agent.reload.runtime
+    assert_equal original_birth, @agent.birth_committed_at
+    assert_equal "unhealthy", @agent.health_state
+    assert_not volume.seeded
+  end
+
   class FakeVolume
 
     attr_reader :seeded

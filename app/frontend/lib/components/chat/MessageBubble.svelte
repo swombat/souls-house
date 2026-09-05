@@ -2,16 +2,7 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Badge } from '$lib/components/shadcn/badge/index.js';
   import * as Card from '$lib/components/shadcn/card/index.js';
-  import {
-    ArrowClockwise,
-    Spinner,
-    Globe,
-    PencilSimple,
-    SpeakerSimpleHigh,
-    Trash,
-    Wrench,
-    LightbulbFilament,
-  } from 'phosphor-svelte';
+  import { Spinner, Globe, PencilSimple, SpeakerSimpleHigh, Trash, LightbulbFilament } from 'phosphor-svelte';
   import FileAttachment from '$lib/components/chat/FileAttachment.svelte';
   import ThinkingBlock from '$lib/components/chat/ThinkingBlock.svelte';
   import ModerationIndicator from '$lib/components/chat/ModerationIndicator.svelte';
@@ -26,15 +17,11 @@
     message,
     isLastVisible = false,
     isGroupChat = false,
-    showResend = false,
     showMessageTelemetry = false,
     streamingThinking = '',
     shikiTheme = 'catppuccin-latte',
     onedit,
     ondelete,
-    onretry,
-    onfix,
-    onresend,
     onimagelightbox,
     onvoice,
   } = $props();
@@ -118,9 +105,6 @@
           {#if message.moderation_scores}
             <ModerationIndicator scores={message.moderation_scores} />
           {/if}
-          {#if showResend}
-            <button onclick={onresend} class="ml-2 text-blue-600 hover:text-blue-700 underline"> Resend </button>
-          {/if}
         </div>
         {#if message.audio_source && message.audio_url}
           <div class="mt-1 flex justify-end">
@@ -136,10 +120,6 @@
           <Card.Content class="p-4">
             {#if message.status === 'failed'}
               <div class="text-red-600 mb-2 text-sm">Failed to generate response</div>
-              <Button variant="outline" size="sm" onclick={() => onretry(message.id)} class="mb-3">
-                <ArrowClockwise size={14} class="mr-2" />
-                Retry
-              </Button>
             {:else if message.status === 'pending'}
               <div class="text-muted-foreground text-sm">Thinking...</div>
             {:else if message.streaming && (!message.content || message.content.trim() === '')}
@@ -222,15 +202,6 @@
               <span class="ml-2 text-blue-600">...</span>
             {:else if message.streaming}
               <span class="ml-2 text-green-600 animate-pulse">...</span>
-            {/if}
-            {#if message.fixable}
-              <button
-                onclick={() => onfix(message.id)}
-                class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-amber-500 transition-colors md:opacity-0 md:group-hover:opacity-100"
-                title="Fix hallucinated tool call">
-                <Wrench size={14} />
-                Fix
-              </button>
             {/if}
           </div>
           {#if showMessageTelemetry && message.ruby_llm_telemetry}

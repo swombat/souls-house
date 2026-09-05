@@ -37,8 +37,6 @@ class MessagesController < ApplicationController
       audit("create_message", @message, **message_params.to_h)
       if @chat.manual_responses?
         @chat.trigger_mentioned_agents!(@message.content)
-      else
-        AiResponseJob.perform_later(@chat)
       end
 
       respond_to do |format|

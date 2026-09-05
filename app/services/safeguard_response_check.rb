@@ -80,10 +80,10 @@ class SafeguardResponseCheck
       detector_version: DETECTOR_VERSION
     )
   rescue StandardError => e
-    Rails.logger.warn "[SafeguardResponseCheck] fail-open for agent #{agent.id}: #{e.class}: #{e.message}"
+    Rails.logger.warn "[SafeguardResponseCheck] fail-open for agent #{agent.id}: #{e.class}"
     record_classifier_failure(e)
     notify_honeybadger(
-      e,
+      UtilityInference::Error.new("Safeguard classifier failed (#{e.class})"),
       context: {
         component: self.class.name,
         agent_id: agent.id,
@@ -107,13 +107,9 @@ class SafeguardResponseCheck
   end
 
   def classify
-    response = RubyLLM.chat(
-      model: CLASSIFIER_MODEL,
-      provider: CLASSIFIER_PROVIDER,
-      assume_model_exists: true
-    ).ask(classifier_prompt)
+    response = UtilityInference.classify(model: CLASSIFIER_MODEL, prompt: classifier_prompt)
 
-    first_line, reason = response.content.to_s.strip.split(/\r?\n/, 2)
+    first_line, reason = response.to_s.strip.split(/\r?\n/, 2)
     verdict = first_line.to_s.upcase[/\A(?:DETECTED|PASS)\b/] || "PASS"
     [ verdict, reason.to_s.strip.presence || first_line.to_s.strip ]
   end
