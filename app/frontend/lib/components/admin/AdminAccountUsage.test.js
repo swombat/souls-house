@@ -25,13 +25,15 @@ function accountFixture() {
 test('shows useful empty states and can refresh selected account data', async () => {
   render(AdminAccountUsage, { account: accountFixture() });
   expect(screen.getByText('No activity in this period.')).toBeInTheDocument();
-  expect(screen.getByText('No agents have been created in this account.')).toBeInTheDocument();
+  expect(screen.getByText('No residents have been created in this account.')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Residents (0)' })).toBeInTheDocument();
+  expect(document.body.textContent).not.toMatch(/\bagents?\b/i);
   expect(screen.getByRole('button', { name: 'Measure storage' })).toBeDisabled();
   await fireEvent.click(screen.getByRole('button', { name: 'Refresh overview' }));
   expect(router.reload).toHaveBeenCalledWith({ only: ['selected_account'] });
 });
 
-test('shows agent settings, failed storage freshness, integration status and scoped measurement action', async () => {
+test('shows resident settings, failed storage freshness, integration status and scoped measurement action', async () => {
   const account = accountFixture();
   account.usage.agents = [
     {
@@ -77,6 +79,7 @@ test('shows agent settings, failed storage freshness, integration status and sco
   expect(screen.getByText('Latest check failed; any size shown is an older reading.')).toBeInTheDocument();
   expect(screen.getByText('Work GitHub')).toBeInTheDocument();
   expect(screen.getByText('suspended')).toBeInTheDocument();
+  expect(document.body.textContent).not.toMatch(/\bagents?\b/i);
   await fireEvent.click(screen.getByRole('button', { name: 'Measure storage' }));
   expect(router.post).toHaveBeenCalledWith('/admin/accounts/account-one/refresh_storage', {}, expect.any(Object));
 });

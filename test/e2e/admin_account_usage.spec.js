@@ -15,7 +15,7 @@ test('admin can inspect account usage, settings and empty states on desktop and 
     await page.goto(`/admin/accounts?account_id=${setup.account_id}`);
 
     const overview = page.getByRole('region', { name: 'Account usage overview' });
-    await expect(overview.getByRole('heading', { name: 'Agents (4)', exact: true })).toBeVisible();
+    await expect(overview.getByRole('heading', { name: 'Residents (4)', exact: true })).toBeVisible();
     await expect(overview.getByRole('heading', { name: 'E2E Researcher', exact: true })).toBeVisible();
     await expect(overview.getByRole('heading', { name: 'Integrations & AI access' })).toBeVisible();
     await expect(overview.getByRole('heading', { name: 'Last 10 runtime sessions' })).toBeVisible();
@@ -30,10 +30,10 @@ test('admin can inspect account usage, settings and empty states on desktop and 
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await overview.getByRole('button', { name: 'Refresh overview' }).click();
-    await expect(overview.getByRole('heading', { name: 'Agents (4)', exact: true })).toBeVisible();
+    await expect(overview.getByRole('heading', { name: 'Residents (4)', exact: true })).toBeVisible();
 
     await page.goto(`/admin/accounts?account_id=${setup.empty_account_id}`);
-    await expect(overview.getByText('No agents have been created in this account.')).toBeVisible();
+    await expect(overview.getByText('No residents have been created in this account.')).toBeVisible();
     await expect(overview.getByText('No activity in this period.')).toBeVisible();
   } finally {
     await request.post('/test/e2e/cleanup', { data: { run_id: runId } });

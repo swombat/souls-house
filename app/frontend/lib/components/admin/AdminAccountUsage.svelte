@@ -71,7 +71,7 @@
   </div>
 
   <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
-    {#each [['Agents', usage.summary.agents, `${usage.summary.active_agents} enabled and unpaused`], ['Conversations', usage.summary.conversations, 'All account chats, including archived/deleted'], ['Runtime sessions', usage.summary.sessions, `${usage.summary.runs.toLocaleString()} trigger attempts (including busy retries)`], ['Measured storage', measuredAgents.length ? bytes(storageBytes) : 'Not measured', `${measuredAgents.length}/${hostedAgents.length} hosted agents have readings${uncertainReadings ? ` · ${uncertainReadings} stale, partial or unavailable` : ''}`]] as [label, value, detail]}
+    {#each [['Residents', usage.summary.agents, `${usage.summary.active_agents} enabled and unpaused`], ['Conversations', usage.summary.conversations, 'All account chats, including archived/deleted'], ['Runtime sessions', usage.summary.sessions, `${usage.summary.runs.toLocaleString()} trigger attempts (including busy retries)`], ['Measured storage', measuredAgents.length ? bytes(storageBytes) : 'Not measured', `${measuredAgents.length}/${hostedAgents.length} hosted residents have readings${uncertainReadings ? ` · ${uncertainReadings} stale, partial or unavailable` : ''}`]] as [label, value, detail]}
       <div class="rounded-lg border bg-card p-4">
         <div class="text-sm text-muted-foreground">{label}</div>
         <div class="my-1 text-2xl font-semibold tabular-nums">{value}</div>
@@ -146,15 +146,15 @@
   <Card>
     <CardHeader>
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <CardTitle>Agents ({usage.agents.length})</CardTitle>
+        <CardTitle>Residents ({usage.agents.length})</CardTitle>
         <Button variant="outline" size="sm" disabled={refreshing || !hostedAgents.length} onclick={refreshStorage}>
           {refreshing ? 'Queuing…' : 'Measure storage'}
         </Button>
       </div>
       <CardDescription>
         Disk readings cover persistent identity, Chaos, repository, work and state volumes—not shared images, container
-        layers, database records or remote backups. Collected hourly without waking agents. Refresh after requesting a
-        measurement.
+        layers, database records or remote backups. Collected hourly without waking residents. Refresh after requesting
+        a measurement.
       </CardDescription>
     </CardHeader>
     <CardContent class="space-y-4">
@@ -191,7 +191,7 @@
                 {agent.scheduled_wakes_enabled ? `${agent.heartbeat_wakes_per_day} wakes/day` : 'Scheduled wakes off'}
               </dd>
               <dd class="text-xs text-muted-foreground">
-                {!agent.active || agent.paused ? 'Agent is inactive or paused' : 'Configured schedule'}
+                {!agent.active || agent.paused ? 'Resident is inactive or paused' : 'Configured schedule'}
               </dd>
             </div>
             <div>
@@ -277,7 +277,7 @@
             </div>
           </details>
         </article>
-      {:else}<p class="text-sm text-muted-foreground">No agents have been created in this account.</p>{/each}
+      {:else}<p class="text-sm text-muted-foreground">No residents have been created in this account.</p>{/each}
     </CardContent>
   </Card>
 
@@ -295,14 +295,14 @@
         <Badge variant="outline">Shared AI fallback {account.use_system_ai_credentials ? 'enabled' : 'disabled'}</Badge>
       </div>
       <p class="text-xs text-muted-foreground">
-        Agent subscription authentication and Telegram bots are shown under each agent above.
+        Resident subscription authentication and Telegram bots are shown under each resident above.
       </p>
       <div class="overflow-x-auto">
         <Table>
           <TableHeader
             ><TableRow
               ><TableHead>Connection</TableHead><TableHead>Status</TableHead><TableHead>Scope</TableHead><TableHead
-                >Agent access enabled</TableHead
+                >Resident access enabled</TableHead
               ></TableRow
             ></TableHeader>
           <TableBody>
@@ -318,7 +318,7 @@
                 <TableCell
                   >{integration.scope.replaceAll('_', ' ')}{#if integration.enabled_for_new_agents}<div
                       class="text-xs text-muted-foreground">
-                      Default for new agents
+                      Default for new residents
                     </div>{/if}</TableCell>
                 <TableCell>{integration.agents.join(', ') || 'None / account-level'}</TableCell>
               </TableRow>
@@ -336,14 +336,14 @@
   <Card>
     <CardHeader
       ><CardTitle>Last 10 runtime sessions</CardTitle><CardDescription
-        >Most recently active logical sessions, grouped per agent. A session can contain many trigger attempts. Open one
-        to inspect its recent runtime detail.</CardDescription
+        >Most recently active logical sessions, grouped per resident. A session can contain many trigger attempts. Open
+        one to inspect its recent runtime detail.</CardDescription
       ></CardHeader>
     <CardContent class="overflow-x-auto">
       <Table>
         <TableHeader
           ><TableRow
-            ><TableHead>Agent / session</TableHead><TableHead>First observed</TableHead><TableHead
+            ><TableHead>Resident / session</TableHead><TableHead>First observed</TableHead><TableHead
               >Last active</TableHead
             ><TableHead>Attempts</TableHead></TableRow
           ></TableHeader>
@@ -360,7 +360,7 @@
               ><TableCell>{session.runs}</TableCell></TableRow>
           {:else}<TableRow
               ><TableCell colspan={4} class="text-muted-foreground"
-                >No runtime sessions recorded. Inline agents can have conversations without hosted runtime telemetry.</TableCell
+                >No runtime sessions recorded. Inline residents can have conversations without hosted runtime telemetry.</TableCell
               ></TableRow
             >{/each}
         </TableBody>
@@ -377,9 +377,8 @@
       <Table>
         <TableHeader
           ><TableRow
-            ><TableHead>Conversation</TableHead><TableHead>Agents</TableHead><TableHead>Messages</TableHead><TableHead
-              >Updated</TableHead
-            ></TableRow
+            ><TableHead>Conversation</TableHead><TableHead>Residents</TableHead><TableHead>Messages</TableHead
+            ><TableHead>Updated</TableHead></TableRow
           ></TableHeader>
         <TableBody>
           {#each usage.recent_conversations as chat}
@@ -389,7 +388,7 @@
                 <div class="text-xs text-muted-foreground">
                   {chat.id}{chat.discarded ? ' · Deleted' : chat.archived ? ' · Archived' : ''}
                 </div></TableCell
-              ><TableCell>{chat.agents.join(', ') || 'No agents'}</TableCell><TableCell>{chat.messages}</TableCell
+              ><TableCell>{chat.agents.join(', ') || 'No residents'}</TableCell><TableCell>{chat.messages}</TableCell
               ><TableCell>{dateTime(chat.updated_at)}</TableCell></TableRow>
           {:else}<TableRow
               ><TableCell colspan={4} class="text-muted-foreground">No conversations yet.</TableCell></TableRow
