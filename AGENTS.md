@@ -28,7 +28,9 @@ Independent clones named `souls-house-1` through `souls-house-9` are supported.
 Read `docs/multi-instance-development.md` before setting one up. Use the pinned
 Ruby/Bun versions, `bin/instance setup`, and the normal `bin/rails test` / browser
 runners; do not bypass ownership guards or copy the primary database. This does
-not change the branch policy above.
+not change the branch policy above. Prefer one coding agent per instance. If a
+test lock is held, wait or use another clone; never delete the lock file to bypass
+a running process.
 
 ## Environment & Safety
 The shared development database is long-lived—never run `rails db:drop`, `db:reset`, or mass `destroy_all`. Leave the existing `bin/dev` process running instead of killing its PID in `tmp/pids`. Manage secrets with `config/credentials.yml.enc` and consult `docs/` before altering infrastructure or dependencies.

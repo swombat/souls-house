@@ -9,6 +9,8 @@
 #
 
 require_relative "../config/local_instance"
+require_relative "../config/instance_toolchain"
+LocalInstance::Toolchain.bun!(LocalInstance::ROOT)
 LocalInstance.current.configure!
 
 ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)

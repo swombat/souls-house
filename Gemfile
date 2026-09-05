@@ -37,6 +37,9 @@ gem "ruby-vips", "~> 2.2.0"
 gem "aws-sdk-s3", require: false
 
 group :development, :test do
+  # POSIX foreground-terminal ownership for the local instance supervisor.
+  gem "fiddle", "~> 1.1", require: false
+
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
 

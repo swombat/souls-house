@@ -1,7 +1,8 @@
 # Multiple local souls.house instances
 
 Use **independent clones**, each with one stable instance number, for parallel
-work. No production resources or primary development data are copied.
+work, normally with one coding agent per instance. No production resources or
+primary development data are copied.
 
 ## Start a second stream
 
@@ -40,6 +41,12 @@ and `_cable` databases, and `souls_house_test_N` with Rails' `-WORKER` suffixes.
 Local database URL overrides are rejected before Rails connects. Production
 configuration is not instance-resolved.
 
+After first integrating this upgrade, already-running Rails processes need a
+restart to load the new boot configuration; hot-reloading application files alone
+is insufficient. Use the normal `bin/rails restart` for Puma (its `tmp_restart`
+plugin is enabled), leaving the existing `bin/dev` supervisor running. Restart
+other long-lived Ruby processes through their normal supervisor when convenient.
+
 ## Tests and process ownership
 
 ```sh
@@ -54,6 +61,17 @@ parallel Minitest workers within that runner are supported. Development can stay
 running while tests run. For other test entrypoints, use
 `bin/instance exec test -- <command>` (and `SOULSHOUSE_TEST_LOCKED=1` if wrapping
 `bin/rails test` itself). Raw `bundle exec rake test` bypasses the runner lock.
+
+If a lock is held, wait for its owner or use another clone. **Never delete the
+lock file**: the running process still locks the old inode, allowing another
+runner to corrupt the same test state. An idle lock file is harmless; the OS
+releases its lock when the supervisor exits.
+
+Ruby-only commands do not require Bun. Setup, development stacks, Vite and browser
+runners check the pinned Bun version before frontend work. Interactive commands
+retain terminal input, Ctrl-C and suspend/resume: the supervisor lends its child
+process group the foreground terminal, then restores it on exit. The small Fiddle
+dependency supplies POSIX terminal calls unavailable in Ruby itself (macOS/Linux).
 
 Occupied ports fail rather than being reused or killed. Test readiness verifies
 both checkout identity and a per-launch token. Cleanup signals only owned child
@@ -104,6 +122,11 @@ development resources. Local application Docker operations require a Unix-socket
 Docker endpoint, validate stored container names, and check ownership labels
 before addressing isolated resources. Unknown/unlabelled resources are rejected,
 not adopted. Production and primary development preserve existing names.
+**Primary development is a compatibility exception**: its stored container names
+and unlabelled legacy resources remain trusted, rather than receiving secondary
+ownership enforcement. The local Unix-socket Docker requirement still applies to
+primary development. These guards are accident prevention, not a security sandbox
+against code with access to the same user account and Docker daemon.
 
 Diagnostics, filesystem/journal inspection, storage measurement and cleanup use
 these same ownership checks. Local runtime callbacks use that instance's development or test-backend
@@ -167,3 +190,15 @@ mise exec -- node scripts/verify-instance-browser.mjs http://127.0.0.1:3210 http
 ```
 
 Stop those test backends before running other tests in the same checkouts.
+
+### Review follow-up
+
+- Full integrated Rails suite: **2,494 tests, 11,946 assertions, zero failures/errors**.
+- Seven new process tests cover terminal input/restoration, Ctrl-C, suspend/resume,
+  headless descendant shutdown, lock retention and command-specific Bun checks.
+  CLI fixtures use temporary checkouts and homes, including under parallel Rails tests.
+- Browser-runner admin desktop/mobile smoke passed. All three development URLs
+  returned HTTP 200 after the primary's supported Puma restart; its supervisor
+  and primary data were left intact.
+- Changed Ruby files pass the same temporary-parser RuboCop check described above.
+  Docker caching and claim-management convenience commands remain deferred.

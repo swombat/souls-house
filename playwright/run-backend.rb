@@ -2,11 +2,13 @@
 # frozen_string_literal: true
 
 require_relative "../config/local_instance"
+require_relative "../config/instance_toolchain"
 require "net/http"
 require "securerandom"
 
 # Invoked under bin/instance's shared test lock, with RAILS_ENV=test.
 config = LocalInstance.current
+LocalInstance::Toolchain.bun!(config.root)
 abort "Test backend requires RAILS_ENV=test" unless config.environment == "test"
 config.configure!
 mode = ARGV.shift || "e2e"
@@ -36,8 +38,8 @@ begin
       if response.code == "200" && response["x-souls-house-instance"] == config.fingerprint && response["x-souls-house-server"] == server_token
         # Check the child again: an existing server must not impersonate startup.
         if Process.waitpid(child, Process::WNOHANG)
-      child = nil
-      raise "Rails child exited; see #{log}"
+          child = nil
+          raise "Rails child exited; see #{log}"
         end
         ready = true
         break

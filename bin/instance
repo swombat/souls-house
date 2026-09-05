@@ -3,25 +3,20 @@
 
 require_relative "../config/local_instance"
 require "socket"
-require "open3"
+require_relative "../config/instance_command"
+require_relative "../config/instance_toolchain"
 
 begin
   config = LocalInstance.current
   abort "bin/instance is for development/test only" unless config.local?
   command = ARGV.shift || "show"
-  if %w[setup exec].include?(command)
-    expected_ruby = File.read(File.join(config.root, ".ruby-version")).strip
-    expected_bun = JSON.parse(File.read(File.join(config.root, "package.json"))).fetch("packageManager").delete_prefix("bun@")
-    bun_version, _, bun_status = Open3.capture3("bun", "--version")
-    unless RUBY_VERSION == expected_ruby && bun_status.success? && bun_version.strip == expected_bun
-      abort "Use Ruby #{expected_ruby} and Bun #{expected_bun}. With mise: review mise.toml, run mise trust && mise install, then mise exec -- bin/instance #{command}."
-    end
-  end
   case command
   when "show"
     puts JSON.pretty_generate(config.to_h)
     warn "External credentials, bots, webhooks and remote repositories are NOT cloned or isolated."
   when "setup"
+    LocalInstance::Toolchain.ruby!(config.root)
+    LocalInstance::Toolchain.bun!(config.root)
     abort "Setup requires development mode" unless config.environment == "development"
     config.configure!
     abort "Primary setup is deliberately excluded; use existing bin/setup intentionally." if config.number.zero?
@@ -54,6 +49,8 @@ begin
   when "exec"
     role = ARGV.shift
     abort "Usage: bin/instance exec dev|test|command -- command [args]" unless %w[dev test command].include?(role) && ARGV.shift == "--" && !ARGV.empty?
+    LocalInstance::Toolchain.ruby!(config.root)
+    LocalInstance::Toolchain.bun!(config.root) if role == "dev"
     ENV["RAILS_ENV"] = "test" if role == "test"
     config = LocalInstance.current
     config.configure!
@@ -62,7 +59,7 @@ begin
     # Keep the supervisor alive: descendants need not understand inherited locks.
     FileUtils.mkdir_p("tmp/pids")
     File.open("tmp/pids/instance-#{role}.lock", "w") do |lock|
-      abort "An instance #{role} command is already running in this checkout" unless lock.flock(File::LOCK_EX | File::LOCK_NB)
+      abort "An instance #{role} command is already running in this checkout. Wait or use another clone; never delete the lock file" unless lock.flock(File::LOCK_EX | File::LOCK_NB)
       ports = role == "dev" ? [ config.web_port, config.port(:vite) ] : role == "test" ? [ config.port(:backend), config.port(:component) ] : []
       ports.each do |port|
         begin
@@ -71,12 +68,7 @@ begin
           abort "Port #{port} is occupied; refusing to reuse or stop its owner"
         end
       end
-      child = Process.spawn(*ARGV, pgroup: true)
-      %w[INT TERM].each do |signal|
-        Signal.trap(signal) { Process.kill(signal, -child) rescue Errno::ESRCH }
-      end
-      Process.wait(child)
-      exit($?.exitstatus || 1)
+      exit LocalInstance::Command.run(ARGV)
     end
   else
     abort "Usage: bin/instance show|setup|exec"
