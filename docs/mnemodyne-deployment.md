@@ -4,8 +4,8 @@
 `MNEMODYNE_EMBEDDING_IMAGE_DIGEST` in the operator environment: use the approved
 production image's registry manifest digest, not a local image ID.**
 
-**September 6, 2026: Lume approved `e3aa3e7` for the operator release sequence;
-Daniel subsequently authorized deployment.** Actual release progress and artifact
+**September 6, 2026: reviewed, authorized, deployed and verified for all nine
+hosted residents.** Actual release evidence and artifact
 digest: `docs/reviews/260906-mnemodyne-release.md`. Sign-off and non-blocking follow-ups:
 `docs/reviews/260906-mnemodyne-launch-readiness.md`.
 

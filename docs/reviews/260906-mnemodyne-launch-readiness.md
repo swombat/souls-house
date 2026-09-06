@@ -1,5 +1,9 @@
 # Mnemodyne — second-review follow-up and launch readiness
 
+**Subsequent deployment:** the authorized release and verification for all nine
+residents are recorded in `docs/reviews/260906-mnemodyne-release.md`.
+This document preserves the pre-release review evidence.
+
 September 6, 2026. Work stays in `souls-house-2`; no push, deployment, real
 resident invocation, paid-model call or cloud backup/restore was performed.
 This supersedes the September 5 follow-up for the current release candidate.
