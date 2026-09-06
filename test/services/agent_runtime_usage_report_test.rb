@@ -330,6 +330,30 @@ class AgentRuntimeUsageReportTest < ActiveSupport::TestCase
     assert_match(/UTC report window/, error.message)
   end
 
+  test "output is opt in and stays scoped to the agent window and filters" do
+    create_interaction!(session_id: "selected", trigger_kind: "wake", stdout: "x" * 4_000, stderr: "warning")
+    create_interaction!(session_id: "filtered", trigger_kind: "conversation", stdout: "excluded trigger")
+    create_interaction!(session_id: "old", started_at: @from - 1.second, stdout: "excluded time")
+    agents(:other_account_agent).agent_runtime_interactions.create!(
+      trigger_kind: "wake", started_at: @from, stdout: "excluded agent"
+    )
+
+    options = { agent: @agent, from: @from, to: @to, filters: { trigger_kind: "wake" } }
+    safe_report = AgentRuntimeUsageReport.new(**options).call
+    assert_not safe_report.dig(:sessions, 0, :interactions, 0).key?(:stdout)
+
+    report = AgentRuntimeUsageReport.new(**options, include_output: true).call
+    assert_equal 1, report[:sessions].size
+    output = report.dig(:sessions, 0, :interactions, 0)
+    assert_equal "x" * 4_000, output[:stdout]
+    assert_equal "warning", output[:stderr]
+    assert_equal 4_000, output[:stdout_chars]
+    assert_equal true, output[:stdout_may_be_truncated]
+    assert_equal false, output[:stderr_may_be_truncated]
+    assert_not output.key?(:request_text)
+    assert_not output.key?(:full_invocation_text)
+  end
+
   private
 
   def create_interaction!(**attributes)

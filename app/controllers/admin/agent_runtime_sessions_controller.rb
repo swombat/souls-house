@@ -28,7 +28,8 @@ class Admin::AgentRuntimeSessionsController < ApplicationController
       agent: agent,
       from: from,
       to: to,
-      filters: report_filter_params
+      filters: report_filter_params,
+      include_output: true
     ).call
 
     render inertia: "admin/agent-runtime-sessions", props: {
