@@ -31,7 +31,7 @@ files without a known baseline are preserved, not assumed disposable.
 
 Modified hooks remain the **single managed invocation at their existing path**.
 New stock is staged as `<script>.upstream`; the last-installed baseline stays
-fixed, and `HOUSE-HOOK-UPDATES.md` plus a boot warning report pending updates.
+fixed until explicit acknowledgment, and `HOUSE-HOOK-UPDATES.md` plus a boot warning report pending updates.
 Successive images refresh the staged copy, not the active file or ancestor.
 Symlinked active hooks are preserved too. This does not merge code or eliminate
 the need to review new stock features. Do not blindly restore an older backup.
@@ -41,6 +41,15 @@ current stock; the next boot recognizes it and records that baseline.
 This does not provide a custom-filename opt-out: the hook-config merger still
 installs the standard paths, and a separate custom journal hook can cause two
 invitations. Keep customizations in the preserved active script instead.
+
+After rebasing, `install_memory_scripts.py SOURCE DESTINATION --ack SCRIPT
+--upstream-sha256 HASH --active-sha256 HASH` records the exact reviewed pair,
+advances its stock ancestor, and clears only that pending update. Neither a newer
+upstream nor later active edits inherit the acknowledgment. A saved, verified
+stock ancestor may be seeded before migration; never seed the custom active file
+as stock. Full resident instructions are in `house-memory guide` (the installed
+`docs/memory-guide.md`), including a wake-check distinction between customization
+and outstanding updates.
 
 Installer regressions (no Rails/database required):
 `python3 -m unittest discover -s test -p memory_script_install_test.py`.

@@ -106,3 +106,41 @@ resumes it. A busy turn defers this backup rather than interrupting it.
 Erasure is deliberate and cancellable during seven days' grace; see the API
 manual. An erased graph is not automatically recreated by these reflexes.
 Only your explicit `house-memory enable` can begin another empty graph.
+
+## Reviewing a staged memory-hook update
+
+The house preserves customized `identity/automation/stop_journal_reflex.py` and
+`memory_before_turn.py` on boot. Pending stock lives in `<script>.upstream`;
+`HOUSE-HOOK-UPDATES.md` lists it. `.house-stock/<script>` is the last installed
+or explicitly reviewed stock ancestor, not a copy of your customized active file.
+A known, byte-verified saved stock ancestor may be seeded there. Do not replace
+an existing ancestor casually; copying your customized hook there would falsely
+mark it as pristine and authorize a future overwrite.
+
+After reviewing both sides and rebasing as appropriate, you can acknowledge the
+exact pair without surrendering your customizations. Record the SHA-256 of the
+upstream you reviewed and the final active file you checked, then run:
+
+```sh
+python3 /usr/local/share/helixkit-agent/install_memory_scripts.py \
+  /usr/local/share/helixkit-agent /home/agent/identity/automation \
+  --ack stop_journal_reflex.py \
+  --upstream-sha256 <reviewed-upstream-sha256> \
+  --active-sha256 <checked-active-sha256>
+```
+
+Use literal recorded hashes, not freshly computed substitutions that could
+acknowledge bytes you did not review. The command refuses a changed active file,
+changed stock, or a staged copy different from current stock. On success it
+advances the stock ancestor, records the exact pair in
+`.house-stock/<script>.reviewed.json`, removes that script's staged copy, and
+clears its notice. Other pending scripts remain listed. Reboots keep that pair
+quiet; a new upstream or active-file edit makes it pending again on the next
+installer run. Acknowledgment records your review; it cannot certify that a merge
+was correct.
+
+For a resident-authored wake check, active differing from the stock ancestor is
+normal customization, not by itself an outstanding update. Check the pending
+notice/staged copy and the reviewed pair instead. Absence of these files on an
+older image is unknown/pre-upgrade, not proof of being current. No resident
+watchdog is installed or modified by this mechanism.
