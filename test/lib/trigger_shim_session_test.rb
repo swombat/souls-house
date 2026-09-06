@@ -28,6 +28,9 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes dockerfile, "chaos-antigravity-daily-cloudcode-egress.patch"
     assert_includes dockerfile, "git apply --check /tmp/chaos-antigravity-daily-cloudcode-egress.patch"
     assert_includes dockerfile, "antigravity-daily-cloudcode-egress"
+    assert_includes dockerfile, "git apply --check /tmp/chaos-clamp-cached-catalog.patch"
+    assert_includes dockerfile, "git apply /tmp/chaos-clamp-cached-catalog.patch"
+    assert_includes dockerfile, "clamp-cached-catalog"
     assert_includes antigravity_egress_patch, '"daily-cloudcode-pa.googleapis.com"'
     assert_includes antigravity_egress_patch, '"www.googleapis.com"'
     assert_includes antigravity_egress_patch, '"lh3.googleusercontent.com"'
@@ -1271,7 +1274,8 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal "delta", second.dig("telemetry", "prompt", "mode")
     assert_equal "DELTA ONLY".bytesize, second.dig("telemetry", "prompt", "selected_prompt_bytes")
     assert_nil second.dig("telemetry", "prompt", "full_prompt_bytes")
-    assert_equal({}, second.dig("telemetry", "prompt", "components"))
+    assert_equal "not_attempted", second.dig("telemetry", "prompt", "graph_memory_status")
+    assert_equal 10, second.dig("telemetry", "prompt", "components", "request")
   end
 
   test "explicit safeguard roll is reported even when no sidecar mapping exists" do
@@ -1424,6 +1428,53 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal false, second.dig("telemetry", "session", "resume_attempted")
     assert_includes second["full_invocation_text"], "SOUL FIRST"
     assert_not_equal result.dig("first", "chaos_session_id"), second["chaos_session_id"]
+  end
+
+  test "graph preview subprocess is bounded and fails open" do
+    out = run_shim_python(<<~PY)
+      from types import SimpleNamespace
+      calls = []
+      def run(command, **kw):
+          calls.append((command, kw))
+          return SimpleNamespace(returncode=0, stdout="CANDIDATE")
+      mod.subprocess.run = run
+      assert mod.graph_memory_notice(None) == ""
+      assert mod.graph_memory_notice({"enabled": False}) == ""
+      assert calls == []
+      assert mod.graph_memory_notice({"enabled": True, "query": "Synthetic"}) == "<mnemodyne-preview-attempted/>\\nCANDIDATE"
+      assert calls[0][1]["timeout"] == 2.5
+      assert calls[0][0][-1] == "--preview"
+      def timeout(*a, **kw):
+          raise mod.subprocess.TimeoutExpired("synthetic", 2.5)
+      mod.subprocess.run = timeout
+      notice = mod.graph_memory_notice({"enabled": True, "query": "Synthetic"})
+      assert notice.strip() == "<mnemodyne-preview-attempted/>" and notice.status == "timeout"
+      prompt, components = mod.build_prompt_with_components("Synthetic", memory_notice=notice)
+      telemetry = mod.prompt_telemetry(prompt, None, prompt, "full", components)
+      assert telemetry["graph_memory_status"] == "timeout"
+      assert "graph_memory_status" not in telemetry["components"]
+      assert "<mnemodyne-preview-attempted/>" in prompt
+      print(json.dumps({"ok": True}))
+    PY
+    assert JSON.parse(out)["ok"]
+  end
+
+  test "graph candidates reach fresh and resumed prompts without becoming transcript" do
+    out = run_shim_python(<<~PY, fake_chaos: :echo_resumed_pid)
+      captured = []
+      original = mod.run_chaos
+      def run(model, timeout, prompt, **kw):
+          captured.append(prompt)
+          return original(model, timeout, prompt, **kw)
+      mod.run_chaos = run
+      first = mod.persistent_trigger("graph-session", "LIVE FIRST", None, "claude", 30, memory_notice="GRAPH FIRST")
+      second = mod.persistent_trigger("graph-session", "LIVE FULL", "LIVE DELTA", "claude", 30, memory_notice="GRAPH SECOND")
+      assert "GRAPH FIRST" in captured[0]
+      assert "LIVE DELTA" in captured[1] and "GRAPH SECOND" in captured[1]
+      assert "GRAPH FIRST" not in captured[1]
+      print(json.dumps({"ok": True}))
+    PY
+    assert JSON.parse(out)["ok"]
   end
 
   private

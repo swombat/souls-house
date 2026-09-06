@@ -298,8 +298,12 @@ namespace :db_backup do
       abort "Aborted." unless response.downcase == "y"
     end
 
-    Backup::AgentResticRestore.restore_all!
-    puts "Hosted Chaos agents restored."
+    results = Backup::AgentResticRestore.restore_all!
+    restored = results.count { |_id, result| result[:restored] }
+    awake = results.count { |_id, result| result[:awake] }
+    problems = results.select { |_id, result| !result[:restored] || result[:memory_mismatch] }
+    puts "Hosted recovery: #{restored}/#{results.size} filesets restored; #{awake} residents woken."
+    abort "Recovery needs operator attention for agent IDs: #{problems.keys.join(', ')}" if problems.any?
   end
 
   desc "Create Chaos-backed test agents in the Nexus account"

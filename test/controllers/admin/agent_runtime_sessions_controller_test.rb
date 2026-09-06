@@ -65,7 +65,7 @@ class Admin::AgentRuntimeSessionsControllerTest < ActionDispatch::IntegrationTes
     assert_not props.fetch("sessions").first.key?("request_text")
   end
 
-  test "renders a safe UTC session report for site administrators" do
+  test "renders output without prompts in the admin UTC session report for site administrators" do
     interaction = @agent.agent_runtime_interactions.create!(
       trigger_kind: "conversation",
       session_id: "session-safe",
@@ -82,6 +82,7 @@ class Admin::AgentRuntimeSessionsControllerTest < ActionDispatch::IntegrationTes
       usage_complete: true,
       request_text: "private prompt",
       stdout: "private output",
+      stderr: "diagnostic warning",
       full_invocation_text: "private identity and transcript"
     )
     login_as(@site_admin)
@@ -100,7 +101,10 @@ class Admin::AgentRuntimeSessionsControllerTest < ActionDispatch::IntegrationTes
     assert_equal 500, rendered_interaction.dig("tokens", "cache_read_input_tokens")
     assert_equal "complete", rendered_interaction["telemetry_state"]
     assert_not rendered_interaction.key?("request_text")
-    assert_not rendered_interaction.key?("stdout")
+    assert_equal "private output", rendered_interaction["stdout"]
+    assert_equal "diagnostic warning", rendered_interaction["stderr"]
+    assert_equal 14, rendered_interaction["stdout_chars"]
+    assert_equal false, rendered_interaction["stdout_may_be_truncated"]
     assert_not rendered_interaction.key?("full_invocation_text")
     assert_not rendered_interaction.key?("response_body")
   end

@@ -157,6 +157,16 @@ Rails.application.routes.draw do
     namespace :v1 do
       post "runtime_runs/:run_id/events", to: "runtime_events#create"
       patch "agent/activity_preferences", to: "agents#activity_preferences"
+      namespace :memory do
+        resource :export, only: :show
+        resources :recalls, only: :create
+        post "recalls/commit", to: "recalls#commit"
+        post "vault/erasure", to: "vaults#request_erasure"
+        delete "vault/erasure", to: "vaults#cancel_erasure"
+        resource :vault, only: [ :show, :create, :update ]
+        resources :nodes, only: [ :index, :show, :create, :update, :destroy ]
+        resources :edges, only: [ :index, :show, :create, :update, :destroy ]
+      end
       resources :key_requests, only: [ :create, :show ]
       post "agents/:uuid/announce", to: "agents#announce", as: :agent_announce
       get "agents/:uuid/health", to: "agents#health", as: :agent_health

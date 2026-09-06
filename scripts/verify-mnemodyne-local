@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -eu
+cd "$(dirname "$0")/.."
+export MNEMODYNE_LOCAL_SMOKE=1
+exec bin/rails test test/integration/mnemodyne_local_smoke_test.rb

@@ -81,6 +81,7 @@ class TriggerShimPromptTest < ActiveSupport::TestCase
       identity = Pathname.new(dir)
       (identity / "memory" / "daily-journals").mkpath
       (identity / "soul.md").write("SOUL FIRST\n")
+      baseline_length = build_prompt_with_python(identity).length
       large = "# Daily Journal: 2026-05-28\n\n" + ("old\n" * 4_000) + "TAIL-MARKER\n"
       (identity / "memory" / "daily-journals" / "2026-05-28.md").write(large)
 
@@ -89,7 +90,7 @@ class TriggerShimPromptTest < ActiveSupport::TestCase
       assert_includes prompt, "# Daily Journal: 2026-05-28"
       assert_includes prompt, "TAIL-MARKER"
       assert_includes prompt, "older content truncated"
-      assert_operator prompt.length, :<, large.length
+      assert_operator prompt.length - baseline_length, :<, large.length
     end
   end
 

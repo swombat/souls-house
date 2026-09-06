@@ -10,10 +10,17 @@ class AgentsController < ApplicationController
     end
 
     @agents = current_account.agents.by_name
+    node_counts = Mnemodyne::Node.joins(:vault)
+      .where(mnemodyne_vaults: { agent_id: @agents.select(:id) })
+      .group("mnemodyne_vaults.agent_id").count
 
     render inertia: "agents/index", props: {
       agents: @agents.map { |agent|
-        agent.as_json.merge(provider_subscription: Agents::ProviderSubscriptionPresentation.call(agent))
+        AgentJournalStatsJob.request_refresh(agent)
+        agent.as_json(as: :resident_card).merge(
+          mnemodyne_node_count: agent.deprecated? ? nil : node_counts.fetch(agent.id, 0),
+          provider_subscription: Agents::ProviderSubscriptionPresentation.call(agent)
+        )
       },
       grouped_models: grouped_models,
       colour_options: Agent::VALID_COLOURS,

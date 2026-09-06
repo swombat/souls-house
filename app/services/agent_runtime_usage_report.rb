@@ -18,7 +18,8 @@ class AgentRuntimeUsageReport
 
   attr_reader :agent, :from, :to, :filters
 
-  def initialize(agent:, from:, to:, filters: {})
+  def initialize(agent:, from:, to:, filters: {}, include_output: false)
+    @include_output = include_output
     @agent = agent
     @from = from.utc
     @to = to.utc
@@ -192,7 +193,14 @@ class AgentRuntimeUsageReport
       telemetry_state_reason: telemetry_state_reason(interaction, state),
       tokens: TOKEN_FIELDS.to_h { |field| [ field, local_usage_value(interaction, field) ] },
       estimated_cost: interaction.estimated_cost
-    }
+    }.tap do |row|
+      if @include_output
+        row.merge!(interaction.as_session_json.slice(
+          :stdout, :stderr, :stdout_chars, :stderr_chars,
+          :output_capture_limit_chars, :stdout_may_be_truncated, :stderr_may_be_truncated
+        ))
+      end
+    end
   end
 
   def logical_session_id(interaction)

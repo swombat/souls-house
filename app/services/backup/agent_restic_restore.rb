@@ -10,9 +10,14 @@ module Backup
       ensure_docker_available!
       Backup::LocalAgentRuntimeImage.ensure_current! if Rails.env.development?
 
+      results = {}
       Agent.externally_hosted.where.not(uuid: nil).find_each do |agent|
-        new(agent).restore!
+        results[agent.id] = new(agent).restore!
+      rescue StandardError => error
+        results[agent.id] = { restored: false, error: error.class.name }
+        Rails.logger.error("Resident restore failed: agent_id=#{agent.id} class=#{error.class.name}")
       end
+      results
     end
 
     def self.ensure_docker_available!
@@ -27,21 +32,51 @@ module Backup
       @agent = agent
     end
 
-    def restore!
-      if LocalInstance.current.namespace
+    def restore!(wake: true)
+      if LocalInstance.current.namespace && !Backup::LocalRepository.enabled?
         raise RestoreError, "Restoring shared agent data into secondary/test instances is not supported"
       end
       Agents::Resources.new(agent).verify_existing!
+      Backup::LocalRepository.new(agent) if Backup::LocalRepository.enabled?
       snapshot = agent.agent_backup_snapshots.where(ok: true).order(taken_at: :desc).first
       raise RestoreError, "No successful agent backup is recorded for #{agent.name}" unless snapshot
+      if agent.memory_erased_at && snapshot.taken_at <= agent.memory_erased_at && snapshot.graph_checkpoint_digest.present?
+        raise RestoreError, "This backup predates deliberate memory erasure; automatic resurrection is forbidden"
+      end
+      raise RestoreError, "Memory erasure is pending" if agent.memory_vault&.erasure_requested_at?
+      Agents::RotateCredentials.owner(agent) # Fail before destructive work.
+      Backup::AgentRestic.verify_archive!(agent)
+
+      graph = snapshot.graph_checkpoint_digest.present? ? Backup::GraphCheckpoint.read(agent, snapshot) : nil
+      vault = agent.memory_vault || (agent.create_memory_vault! if graph)
+      mismatch = vault && !graph && (vault.nodes.exists? || vault.edges.exists?)
+      was_suspended = vault&.suspended_at
+      vault&.update!(suspended_at: Time.current)
+      if graph
+        # Validate the complete graph in a rollback-only savepoint before any
+        # container or identity volume is removed.
+        Mnemodyne::Vault.transaction(requires_new: true) do
+          Mnemodyne::Checkpoint.import(vault, graph, replace: true)
+          raise ActiveRecord::Rollback
+        end
+        vault.reload
+      end
 
       puts "Restoring Chaos agent #{agent.name} (#{agent.uuid}) from #{snapshot.restic_snapshot_id}..."
       remove_container!
       recreate_volumes!
       restore_snapshot!(snapshot.restic_snapshot_id)
+      if graph
+        Mnemodyne::Checkpoint.import(vault, graph, replace: true)
+      end
       configure_for_local_runtime!
-      Agents::Sandbox.new(agent).spawn! if agent.external?
+      Agents::RotateCredentials.call(agent)
+      vault&.update!(suspended_at: was_suspended) unless mismatch
+      awake = wake && agent.external? && !was_suspended && !mismatch
+      Agents::Sandbox.new(agent).spawn! if awake
+      Rails.logger.warn("Resident files restored; unpaired memory remains suspended: agent_id=#{agent.id}") if mismatch
       puts "Restored Chaos agent #{agent.name}."
+      { restored: true, awake: !!awake, memory_mismatch: !!mismatch }
     end
 
     private
@@ -64,7 +99,7 @@ module Backup
           raise RestoreError, docker_error("remove Docker volume #{volume}", removal)
         end
 
-        creation = docker_capture("volume", "create", volume)
+        creation = docker_capture("volume", "create", *Agents::Resources.new(agent).labels, volume)
         raise RestoreError, docker_error("create Docker volume #{volume}", creation) unless creation[:ok]
       end
     end
@@ -74,7 +109,7 @@ module Backup
         "docker", "run", "--rm",
         *Backup::AgentRestic.restore_mounts(agent),
         *Backup::AgentRestic.docker_environment(agent),
-        "restic/restic:latest",
+        Backup::AgentRestic::IMAGE,
         "restore", snapshot_id,
         "--target", "/restore"
       ]

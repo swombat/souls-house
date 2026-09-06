@@ -30,6 +30,7 @@ module Agents
 
     def spawn!
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
+      ensure_memory_not_suspended!
       raise SandboxError, "agent uuid missing" if agent.uuid.blank?
       raise SandboxError, "container_name missing" if agent.container_name.blank?
       raise SandboxError, "container_image missing" if agent.container_image.blank?
@@ -72,6 +73,7 @@ module Agents
 
     def with_runtime
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
+      ensure_memory_not_suspended!
       cold_start = Agents::Config.cold_start?
       return yield unless cold_start
 
@@ -83,6 +85,7 @@ module Agents
 
     def recreate!
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
+      ensure_memory_not_suspended!
       if container_exists?
         migrate_repo_volume_from_container!
         migrate_work_volume_from_container!
@@ -173,6 +176,7 @@ module Agents
     end
 
     def start!
+      ensure_memory_not_suspended!
       update_restart_policy!
       docker_system("start", agent.container_name, out: File::NULL, err: File::NULL) || raise(SandboxError, "failed to start #{agent.container_name}")
     end
@@ -216,6 +220,11 @@ module Agents
 
     private
 
+    def ensure_memory_not_suspended!
+      if agent.memory_vault&.suspended_at?
+        raise SandboxError, "Resident memory is suspended; verify the checkpoint before resuming"
+      end
+    end
 
     def verify_resources!
       Agents::Resources.new(agent).verify_existing!

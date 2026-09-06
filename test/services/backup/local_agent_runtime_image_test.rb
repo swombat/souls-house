@@ -2,6 +2,12 @@ require "test_helper"
 
 class Backup::LocalAgentRuntimeImageTest < ActiveSupport::TestCase
 
+  test "default provenance comes from the reviewed file without resolving a remote branch" do
+    service = Backup::LocalAgentRuntimeImage.new(capture3: ->(*) { flunk "No network resolution" })
+    assert_equal File.read(Rails.root.join("agent-runtime/chaos-ref")).strip,
+      service.send(:pinned_chaos_ref)
+  end
+
   test "keeps a local image matching the latest recorded production version" do
     builds = []
     service = build_service(

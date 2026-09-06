@@ -79,6 +79,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import logging
@@ -280,6 +281,7 @@ def trigger():
             log.warning("invalid activity configuration; running without reports")
     _activity_context.reporter = reporter
     try:
+        memory_notice = graph_memory_notice(payload.get("memory"))
         if persistent_session:
             response = persistent_trigger(
                 session_id, prompt, request_delta, model, timeout_secs,
@@ -287,12 +289,14 @@ def trigger():
                 session_lock=session_lock, roll_session=roll_session,
                 runtime_session_generation=runtime_session_generation,
                 subscription_snapshot=subscription_snapshot,
+                **({"memory_notice": memory_notice} if memory_notice or isinstance(memory_notice, GraphMemoryNotice) else {}),
             )
         else:
             response = legacy_trigger(
                 session_id, prompt, model, timeout_secs,
                 provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
                 subscription_snapshot=subscription_snapshot,
+                **({"memory_notice": memory_notice} if memory_notice or isinstance(memory_notice, GraphMemoryNotice) else {}),
             )
         if reporter:
             reporter.finish(response)
@@ -306,7 +310,7 @@ def trigger():
 
 def legacy_trigger(
     session_id, prompt, model, timeout_secs, provider=None,
-    reasoning_effort=None, auth_mode="api_key", subscription_snapshot=None,
+    reasoning_effort=None, auth_mode="api_key", subscription_snapshot=None, memory_notice=None,
 ):
     """Run a fresh, unmapped Chaos process while still capturing JSON telemetry."""
     provider = provider or AGENT_PROVIDER
@@ -314,6 +318,7 @@ def legacy_trigger(
     full_prompt, prompt_components = build_prompt_with_components(
         prompt,
         runtime_notice=subscription_notice,
+        memory_notice=memory_notice,
     )
     prompt_info = prompt_telemetry(
         full_prompt=full_prompt,
@@ -388,7 +393,7 @@ def legacy_trigger(
 def persistent_trigger(
     session_id, prompt, request_delta, model, timeout_secs,
     provider=None, reasoning_effort=None, auth_mode="api_key", session_lock=None,
-    roll_session=False, runtime_session_generation=0, subscription_snapshot=None,
+    roll_session=False, runtime_session_generation=0, subscription_snapshot=None, memory_notice=None,
 ):
     """Resume the session mapped to session_id, or start (and record) a fresh one.
 
@@ -446,7 +451,7 @@ def persistent_trigger(
         subscription_notice_at = _utcnow_iso() if subscription_notice else None
 
         if record:
-            resume_prompt = append_runtime_notice(request_delta or prompt, subscription_notice)
+            resume_prompt = append_runtime_notice(append_runtime_notice(request_delta or prompt, subscription_notice), memory_notice)
             prompt_info = prompt_telemetry(
                 full_prompt=None,
                 delta_prompt=resume_prompt,
@@ -456,9 +461,9 @@ def persistent_trigger(
                     {
                         "request": _byte_length(request_delta or prompt),
                         "runtime_notice": _byte_length(subscription_notice),
+                        "graph_memory": _byte_length(memory_notice),
+                        "graph_memory_status": getattr(memory_notice, "status", "ok" if memory_notice else "not_attempted"),
                     }
-                    if subscription_notice
-                    else None
                 ),
             )
             try:
@@ -553,6 +558,7 @@ def persistent_trigger(
         full_prompt, prompt_components = build_prompt_with_components(
             prompt,
             runtime_notice=subscription_notice,
+            memory_notice=memory_notice,
         )
         prompt_info = prompt_telemetry(
             full_prompt=full_prompt,
@@ -1377,27 +1383,59 @@ def build_prompt(request_text: str) -> str:
     return prompt
 
 
-def build_prompt_with_components(request_text, runtime_notice=None):
+class GraphMemoryNotice(str):
+    def __new__(cls, text, status):
+        instance = super().__new__(cls, "<mnemodyne-preview-attempted/>\n" + text)
+        instance.status = status
+        return instance
+
+def graph_memory_notice(envelope):
+    if not isinstance(envelope, dict) or envelope.get("enabled") is not True:
+        return ""
+    try:
+        # A process timeout is a real wall-clock budget, including slow/dripping
+        # network reads. Kill/reap the utility on timeout; never leave a thread.
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).with_name("memory_client.py")), "--preview"],
+            input=json.dumps(envelope), capture_output=True, text=True, timeout=2.5,
+        )
+        output = result.stdout.strip()
+        # Only forward a fixed vocabulary, never utility stderr or payloads.
+        match = re.search(r"mnemodyne_preview=(ok|empty|held|timeout|unavailable|http_[0-9]{3})\b", getattr(result, "stderr", "") or "")
+        status = match.group(1) if match else ("empty" if result.returncode == 0 else "unavailable")
+        if result.returncode != 0 or len(output.encode()) > 12_000:
+            status, output = "unavailable", ""
+        print(f"mnemodyne_preview={status}", file=sys.stderr)
+        return GraphMemoryNotice(output, status)
+    except Exception as error:
+        print("mnemodyne_preview=timeout" if isinstance(error, subprocess.TimeoutExpired) else "mnemodyne_preview=unavailable", file=sys.stderr)
+        return GraphMemoryNotice("", "timeout" if isinstance(error, subprocess.TimeoutExpired) else "unavailable")
+
+
+def build_prompt_with_components(request_text, runtime_notice=None, memory_notice=None):
     """Build a fresh prompt and return byte sizes without retaining its contents twice."""
     identity = identity_context()
     journals = memory_context()
-    parts = [part for part in (identity, request_text, runtime_notice, journals) if part]
+    parts = [part for part in (identity, request_text, runtime_notice, memory_notice, journals) if part]
     prompt = "\n\n".join(parts)
     return prompt, {
         "identity": _byte_length(identity),
         "request": _byte_length(request_text),
         "runtime_notice": _byte_length(runtime_notice),
         "journal": _byte_length(journals),
+        **({"graph_memory": _byte_length(memory_notice)} if memory_notice else {}),
+        "graph_memory_status": getattr(memory_notice, "status", "ok" if memory_notice else "not_attempted"),
     }
 
 
 def prompt_telemetry(full_prompt, delta_prompt, selected_prompt, mode, components):
     return {
+        "graph_memory_status": (components or {}).get("graph_memory_status", "not_attempted"),
         "mode": mode,
         "full_prompt_bytes": _byte_length(full_prompt),
         "delta_prompt_bytes": _byte_length(delta_prompt),
         "selected_prompt_bytes": _byte_length(selected_prompt),
-        "components": components or {},
+        "components": {key: value for key, value in (components or {}).items() if key != "graph_memory_status"},
     }
 
 

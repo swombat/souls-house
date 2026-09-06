@@ -1,0 +1,20 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../config/local_instance"
+require "open3"
+
+begin
+  config = LocalInstance.current
+  abort "Local builds require an isolated development instance" unless config.environment == "development" && config.namespace
+  config.configure!
+  stdout, _, status = Open3.capture3("docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}")
+  host = ENV["DOCKER_CONTEXT"] ? stdout.strip : ENV.fetch("DOCKER_HOST", stdout.strip)
+  abort "Local builds require a Unix-socket Docker endpoint" unless status.success? && host.start_with?("unix://")
+  abort "Usage: scripts/build-local-mnemodyne-embeddings" unless ARGV.empty?
+  image = "souls-house-mnemodyne-embeddings:local-#{config.number}"
+  puts "Building only #{image}; no deployment tags or remote daemon"
+  exec "docker", "build", "-t", image, File.join(config.root, "services/mnemodyne-embeddings")
+rescue LocalInstance::Error => error
+  abort error.message
+end

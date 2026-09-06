@@ -5,13 +5,10 @@
 # identity and state arrive through Docker volumes and environment variables.
 #
 # Local build:
-#   CHAOS_HEAD="$(git ls-remote https://github.com/seuros/chaos.git refs/heads/master | awk 'NR == 1 { print $1 }')"
-#   docker build --build-arg "CHAOS_HEAD=${CHAOS_HEAD}" -t helixkit-agent-runtime:local agent-runtime
+#   mise exec -- scripts/build-local-agent-runtime
 
-# Build the latest Chaos master. Build callers resolve master immediately before
-# invoking Docker and pass its commit as CHAOS_HEAD. The commit is deliberately
-# not pinned in this repository: it is a cache key, a stable snapshot for this
-# individual build, and provenance for the resulting image.
+# Build callers use agent-runtime/chaos-ref unless explicitly overridden with
+# a full commit SHA. This is a cache key and provenance for the resulting image.
 #
 # Upstream changes must continue to preserve the original SQLx migration
 # checksum used by persisted Chaos journals. Patch/application or runtime tests
@@ -43,6 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /build
 COPY patches/chaos-antigravity-empty-managed-config.patch /tmp/chaos-antigravity-empty-managed-config.patch
 COPY patches/chaos-antigravity-daily-cloudcode-egress.patch /tmp/chaos-antigravity-daily-cloudcode-egress.patch
+COPY patches/chaos-clamp-cached-catalog.patch /tmp/chaos-clamp-cached-catalog.patch
 RUN test -n "${CHAOS_HEAD}" \
     && git -c http.version=HTTP/1.1 clone --filter=blob:none ${CHAOS_REPO} chaos \
     && cd chaos \
@@ -50,7 +48,9 @@ RUN test -n "${CHAOS_HEAD}" \
     && git apply --check /tmp/chaos-antigravity-empty-managed-config.patch \
     && git apply /tmp/chaos-antigravity-empty-managed-config.patch \
     && git apply --check /tmp/chaos-antigravity-daily-cloudcode-egress.patch \
-    && git apply /tmp/chaos-antigravity-daily-cloudcode-egress.patch
+    && git apply /tmp/chaos-antigravity-daily-cloudcode-egress.patch \
+    && git apply --check /tmp/chaos-clamp-cached-catalog.patch \
+    && git apply /tmp/chaos-clamp-cached-catalog.patch
 
 WORKDIR /build/chaos
 RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
@@ -67,7 +67,7 @@ FROM node:22-trixie-slim AS runtime
 
 ARG CHAOS_HEAD
 LABEL house.souls.chaos-ref="${CHAOS_HEAD}"
-LABEL house.souls.chaos-patches="antigravity-empty-managed-config,antigravity-daily-cloudcode-egress"
+LABEL house.souls.chaos-patches="antigravity-empty-managed-config,antigravity-daily-cloudcode-egress,clamp-cached-catalog"
 
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 
@@ -167,6 +167,8 @@ COPY --from=builder /usr/local/bin/chaos_journald /usr/local/bin/chaos_journald
 RUN mkdir -p /usr/local/share/helixkit-agent
 COPY --chown=agent:agent trigger_shim.py /home/agent/trigger_shim.py
 COPY --chown=agent:agent runtime_activity.py /home/agent/runtime_activity.py
+COPY --chown=agent:agent memory_client.py /home/agent/memory_client.py
+COPY --chmod=0755 house-memory /usr/local/bin/house-memory
 COPY docs/runtime-instructions.md /usr/local/share/helixkit-agent/runtime-instructions.md
 COPY docs/soulshouse-api.md /usr/local/share/helixkit-agent/soulshouse-api.md
 # Permanent legacy stub. Residents' own memories and notes cite the old manual
@@ -174,6 +176,8 @@ COPY docs/soulshouse-api.md /usr/local/share/helixkit-agent/soulshouse-api.md
 COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md
 COPY licenses/CodexBar-LICENSE /usr/local/share/licenses/CodexBar/LICENSE
 COPY stop_journal_reflex.py /usr/local/share/helixkit-agent/stop_journal_reflex.py
+COPY memory_before_turn.py install_memory_hooks.py /usr/local/share/helixkit-agent/
+COPY docs/memory-guide.md /usr/local/share/helixkit-agent/memory-guide.md
 COPY soulshouse-post-message /usr/local/bin/soulshouse-post-message
 COPY soulshouse-send-telegram /usr/local/bin/soulshouse-send-telegram
 COPY soulshouse-append-journal /usr/local/bin/soulshouse-append-journal

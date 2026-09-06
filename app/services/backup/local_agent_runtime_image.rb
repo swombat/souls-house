@@ -22,7 +22,7 @@ module Backup
       @image = image
       @runtime_dir = runtime_dir
       @production_version = production_version || method(:latest_recorded_chaos_version)
-      @desired_chaos_ref = desired_chaos_ref || method(:latest_chaos_ref)
+      @desired_chaos_ref = desired_chaos_ref || method(:pinned_chaos_ref)
       @capture3 = capture3
       @system = system
     end
@@ -36,7 +36,7 @@ module Backup
 
       if current_version.present? && current_ref != expected_ref
         reason = if current_ref.present?
-          "its Chaos ref #{current_ref} does not match latest master #{expected_ref}"
+          "its Chaos ref #{current_ref} does not match reviewed commit #{expected_ref}"
         else
           "it has no Chaos ref provenance"
         end
@@ -103,14 +103,11 @@ module Backup
       status.success? ? stdout.strip.presence : nil
     end
 
-    def latest_chaos_ref
-      stdout, stderr, status = capture3.call(
-        "git", "ls-remote", "https://github.com/seuros/chaos.git", "refs/heads/master"
-      )
-      ref = stdout.split.first
-      return ref if status.success? && ref&.match?(/\A[0-9a-f]{40}\z/)
+    def pinned_chaos_ref
+      ref = File.read(File.join(runtime_dir, "chaos-ref")).strip
+      return ref if ref.match?(/\A[0-9a-f]{40}\z/)
 
-      raise BuildError, "Could not resolve latest Chaos master: #{stderr.to_s.strip.presence || 'unknown error'}"
+      raise BuildError, "Invalid reviewed Chaos commit in agent-runtime/chaos-ref"
     end
 
     def version_at_least?(candidate, expected)

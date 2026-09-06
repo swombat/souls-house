@@ -7,3 +7,10 @@ Rails.application.config.filter_parameters += [
   :passw, :email, :secret, :token, :_key, :crypt, :salt, :certificate, :otp, /\Acode\z/i, :ssn, :cvv, :cvc,
   :activity, :events
 ]
+
+# SQL bind logging uses ActiveRecord::Base's application-wide inspection filter,
+# not the graph model's filter. Exact names protect private graph fields (and the
+# same fields elsewhere) without matching unrelated columns by substring.
+Rails.application.config.filter_parameters += [
+  /\A(?:content|description|source_uris|metadata|result|embedding|query|receipt)\z/
+]

@@ -52,17 +52,24 @@
       {agent.model_label || agent.model_id}
     </div>
 
-    {#if agent.memory_token_summary}
-      {@const mts = agent.memory_token_summary}
+    {#if !agent.deprecated}
       <div class="text-xs text-muted-foreground mb-4 flex flex-wrap gap-x-3 gap-y-0.5">
-        <span><span class="font-medium">Core:</span> {mts.core.toLocaleString()}t</span>
-        <span><span class="font-medium">Journal:</span> {mts.active_journal.toLocaleString()}t</span>
-        {#if mts.inactive_journal > 0}
-          <span class="opacity-50">
-            <span class="font-medium">Inactive:</span>
-            {mts.inactive_journal.toLocaleString()}t
-          </span>
-        {/if}
+        <span title="All nodes in this resident's private graph, including dormant nodes. Contents stay private.">
+          <span class="font-medium">Mnemodyne nodes:</span>
+          {(agent.mnemodyne_node_count ?? 0).toLocaleString()}
+        </span>
+        <span
+          title={agent.journal_entry_stats?.measured_at
+            ? `Entry headings in dated daily journals. Last counted ${new Date(agent.journal_entry_stats.measured_at).toLocaleString()}. Refreshes in the background.`
+            : 'Entry headings in dated daily journals. Counted in the background without waking the resident.'}>
+          <span class="font-medium">Journal entries:</span>
+          {agent.journal_entry_stats?.count?.toLocaleString() ?? '—'}
+          {#if agent.journal_entry_stats?.status === 'unavailable'}
+            <span class="opacity-60">
+              {agent.journal_entry_stats?.count != null ? '(stale)' : '(unavailable)'}
+            </span>
+          {/if}
+        </span>
       </div>
     {/if}
 

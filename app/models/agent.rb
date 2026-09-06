@@ -13,6 +13,7 @@ class Agent < ApplicationRecord
   include Agent::RuntimeAvailability
 
   belongs_to :account
+  has_one :memory_vault, class_name: "Mnemodyne::Vault", dependent: :restrict_with_error, inverse_of: :agent
   belongs_to :outbound_api_key, class_name: "ApiKey", optional: true
   has_many :chat_agents, dependent: :destroy
   has_many :agent_backup_snapshots, dependent: :destroy
@@ -121,6 +122,7 @@ class Agent < ApplicationRecord
   end
 
   def self.json_attrs_for(options = nil)
+    return json_attrs - [ :memory_token_summary, :memories_count ] if options&.dig(:as) == :resident_card
     return json_attrs unless options&.dig(:as) == :list
 
     LIST_JSON_ATTRIBUTES
