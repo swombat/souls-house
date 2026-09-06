@@ -91,7 +91,25 @@ The new real-lock test also caught its cleanup using a cached, already-destroyed
 vault association; reloading the synthetic owner fixed that cleanup. All were
 resolved before the final whole-suite and real-image acceptance above.
 
-**Handoff:** ready for Lume's final review and the documented operator release
-sequence. Deployment-platform artifact publication/digest recording, production
+**Handoff:** Lume approved `e3aa3e7` for the documented operator release
+sequence on September 6, 2026 (final pass recorded at 08:05 CEST in
+`docs/reviews/260905-mnemodyne-lume-review.md`). All seven second-pass findings
+and relevant rebase drift were verified; no blocking findings remain.
+Deployment-platform artifact publication/digest recording, production
 secrets, migration execution and release authorization remain operator steps.
 Nothing in this local evidence claims those steps already happened.
+
+## Non-blocking final-review follow-ups
+
+- Explain `<mnemodyne-preview-attempted/>` in the resident guide, or render the
+  empty-preview marker more naturally. It currently remains a literal prompt
+  line; the approved runtime is unchanged by this documentation-only handoff.
+- Avoid indefinite 13-minute first-checkpoint rescheduling for permanently
+  suspended vaults. Consider stopping while suspended and rescheduling on resume,
+  with regression coverage so a first checkpoint cannot be lost.
+- **Addressed in the runbook:** put the digest environment requirement before
+  any Kamal instructions, including diagnostic commands.
+
+These are explicitly non-blocking in Lume's final review. Her sign-off is not
+deployment authorization. This follow-up changes documentation only; the tested
+runtime and embedding artifact identities above remain unchanged.

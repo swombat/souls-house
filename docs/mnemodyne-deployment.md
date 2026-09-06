@@ -1,7 +1,12 @@
 # Mnemodyne release and local verification
 
-**September 5, 2026: local implementation only. No deployment authorized or
-performed. Lume reviews the code and evidence before an operator releases it.**
+**Every Kamal command, including `kamal app logs`, requires
+`MNEMODYNE_EMBEDDING_IMAGE_DIGEST` in the operator environment: use the approved
+production image's registry manifest digest, not a local image ID.**
+
+**September 6, 2026: Lume approved `e3aa3e7` for the operator release sequence.
+No deployment authorized or performed.** Sign-off and non-blocking follow-ups:
+`docs/reviews/260906-mnemodyne-launch-readiness.md`.
 
 ## Reproduce locally
 
