@@ -28,6 +28,9 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes dockerfile, "chaos-antigravity-daily-cloudcode-egress.patch"
     assert_includes dockerfile, "git apply --check /tmp/chaos-antigravity-daily-cloudcode-egress.patch"
     assert_includes dockerfile, "antigravity-daily-cloudcode-egress"
+    assert_includes dockerfile, "git apply --check /tmp/chaos-clamp-cached-catalog.patch"
+    assert_includes dockerfile, "git apply /tmp/chaos-clamp-cached-catalog.patch"
+    assert_includes dockerfile, "clamp-cached-catalog"
     assert_includes antigravity_egress_patch, '"daily-cloudcode-pa.googleapis.com"'
     assert_includes antigravity_egress_patch, '"www.googleapis.com"'
     assert_includes antigravity_egress_patch, '"lh3.googleusercontent.com"'

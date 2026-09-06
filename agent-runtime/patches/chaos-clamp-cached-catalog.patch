@@ -1,0 +1,167 @@
+diff --git a/sys/kern/kern/src/models_manager/manager.rs b/sys/kern/kern/src/models_manager/manager.rs
+--- a/sys/kern/kern/src/models_manager/manager.rs
++++ b/sys/kern/kern/src/models_manager/manager.rs
+@@ -178,6 +178,7 @@
+ pub struct ModelsManager {
+     remote_models: RwLock<Vec<ModelInfo>>,
+     catalog_mode: CatalogMode,
++    native_catalog_refresh: bool,
+     collaboration_modes_config: CollaborationModesConfig,
+     auth_manager: Arc<AuthManager>,
+     etag: RwLock<Option<String>>,
+@@ -253,6 +254,7 @@
+         Self {
+             remote_models: RwLock::new(remote_models),
+             catalog_mode,
++            native_catalog_refresh: true,
+             collaboration_modes_config,
+             auth_manager,
+             etag: RwLock::new(None),
+@@ -262,6 +264,13 @@
+         }
+     }
+ 
++    /// Bridge-backed inference authenticates in its CLI, not in the native API
++    /// adapter. Keep cached metadata usable without requiring a second login.
++    pub(crate) fn with_native_catalog_refresh(mut self, enabled: bool) -> Self {
++        self.native_catalog_refresh = enabled;
++        self
++    }
++
+     /// Configured provider id this manager is bound to.
+     pub fn provider_id(&self) -> &str {
+         &self.provider_id
+@@ -283,14 +292,17 @@
+         if self.catalog_mode == CatalogMode::Custom {
+             return None;
+         }
+-        Some(Self::new_with_provider_binding(
+-            self.cache_manager.home().to_path_buf(),
+-            self.auth_manager.for_provider(provider_id),
+-            None,
+-            self.collaboration_modes_config,
+-            provider_id.to_string(),
+-            provider,
+-        ))
++        Some(
++            Self::new_with_provider_binding(
++                self.cache_manager.home().to_path_buf(),
++                self.auth_manager.for_provider(provider_id),
++                None,
++                self.collaboration_modes_config,
++                provider_id.to_string(),
++                provider,
++            )
++            .with_native_catalog_refresh(self.native_catalog_refresh),
++        )
+     }
+ 
+     /// Whether this manager has the exact configured provider/account binding.
+@@ -645,6 +657,12 @@
+         if matches!(self.catalog_mode, CatalogMode::Custom) {
+             return Ok(());
+         }
++
++        let refresh_strategy = if self.native_catalog_refresh {
++            refresh_strategy
++        } else {
++            RefreshStrategy::Offline
++        };
+ 
+         let mut workflow = ModelDiscoveryWorkflow::new();
+         workflow.begin(refresh_strategy);
+diff --git a/sys/kern/kern/src/models_manager/manager_tests.rs b/sys/kern/kern/src/models_manager/manager_tests.rs
+--- a/sys/kern/kern/src/models_manager/manager_tests.rs
++++ b/sys/kern/kern/src/models_manager/manager_tests.rs
+@@ -120,6 +120,64 @@
+ }
+ 
+ #[tokio::test]
++async fn bridge_catalog_refresh_uses_cache_without_native_credentials() {
++    for (name, url) in [
++        ("Anthropic", "https://api.anthropic.com"),
++        (
++            "Gemini",
++            "https://generativelanguage.googleapis.com/v1beta/openai",
++        ),
++    ] {
++        let chaos_home = tempdir().expect("temp dir");
++        let auth = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("unused"));
++        let provider = ModelProviderInfo {
++            name: name.into(),
++            env_key: Some("CHAOS_TEST_ABSENT_BRIDGE_CATALOG_KEY".into()),
++            ..provider_for(url.into())
++        };
++        let manager =
++            manager_over_own_cache(chaos_home.path().to_path_buf(), auth, provider.clone())
++                .await
++                .with_native_catalog_refresh(false);
++
++        // Both first-run (empty cache) and repeated refreshes must avoid the
++        // native credential lookup, including Anthropic's metadata lookup.
++        manager
++            .refresh_models(RefreshStrategy::Online)
++            .await
++            .unwrap();
++        assert!(
++            manager
++                .list_models(RefreshStrategy::OnlineIfUncached)
++                .await
++                .is_empty()
++        );
++        let model = remote_model("bridge-model", "Bridge model", 1);
++        manager.apply_live_catalog(vec![model.clone()], None).await;
++        let config = ConfigBuilder::default()
++            .chaos_home(chaos_home.path().to_path_buf())
++            .build()
++            .await
++            .expect("test config");
++        assert_eq!(
++            manager.get_model_info("bridge-model", &config).await.slug,
++            model.slug
++        );
++        let rebound = manager.rebound_to("bridge-account", provider).unwrap();
++        assert!(!rebound.native_catalog_refresh);
++
++        // API-key-backed runs still report missing native credentials.
++        let manager = manager.with_native_catalog_refresh(true);
++        assert!(
++            manager
++                .refresh_models(RefreshStrategy::Online)
++                .await
++                .is_err()
++        );
++    }
++}
++
++#[tokio::test]
+ async fn get_model_info_tracks_fallback_usage() {
+     let chaos_home = tempdir().expect("temp dir");
+     let config = ConfigBuilder::default()
+diff --git a/sys/kern/kern/src/process_table.rs b/sys/kern/kern/src/process_table.rs
+--- a/sys/kern/kern/src/process_table.rs
++++ b/sys/kern/kern/src/process_table.rs
+@@ -165,13 +165,16 @@
+         let chaos_home = config.chaos_home.clone();
+         // Use the active model provider for discovery, not hardcoded OpenAI.
+         let models_provider = config.model_provider.clone();
+-        let models_manager = Arc::new(ModelsManager::new_with_provider(
+-            chaos_home.clone(),
+-            auth_manager.for_provider(&config.model_provider_id),
+-            config.model_catalog.clone(),
+-            collaboration_modes_config,
+-            models_provider,
+-        ));
++        let models_manager = Arc::new(
++            ModelsManager::new_with_provider(
++                chaos_home.clone(),
++                auth_manager.for_provider(&config.model_provider_id),
++                config.model_catalog.clone(),
++                collaboration_modes_config,
++                models_provider,
++            )
++            .with_native_catalog_refresh(!config.clamp),
++        );
+         Self::assemble(models_manager, auth_manager, session_source, chaos_home)
+     }
+ 
