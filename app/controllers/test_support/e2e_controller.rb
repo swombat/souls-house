@@ -86,7 +86,7 @@ module TestSupport
         [
           { "seq" => 1, "type" => "attempt.started", "data" => { "narration_capability" => "unsupported" } },
           { "seq" => 2, "type" => "turn.started", "data" => {} },
-          { "seq" => 3, "type" => "tool.started", "data" => { "category" => "command", "operation_id" => "synthetic-command", "command_preview" => "git status --short" } }
+          { "seq" => 3, "type" => "tool.started", "data" => { "category" => "command", "operation_id" => "synthetic-command", "command_preview" => "grep -n runtime app/services/agent_dispatch.rb" } }
         ]
       end
       RuntimeActivityIngestion.new(run, {

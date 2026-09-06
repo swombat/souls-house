@@ -65,7 +65,7 @@ test.describe('browser contracts', () => {
     const card = page.getByTestId('runtime-activity-card').filter({ hasText: 'E2E Researcher' });
     await expect(card).toBeVisible();
     await expect(card.locator('details')).toHaveAttribute('open', '');
-    await expect(card.getByText('git status --short…')).toBeVisible();
+    await expect(card.getByText('grep -n runtime app/services/agent_dispatch.rb…')).toBeVisible();
     await request.post('/test/e2e/runtime_activity', {
       data: { chat_id: fixture.chat_id, runtime_run_id: run.runtime_run_id, complete: true },
     });
@@ -75,13 +75,13 @@ test.describe('browser contracts', () => {
     await card.locator('summary').click();
     await expect(card.locator('details')).toHaveAttribute('open', '');
     await expect(card.getByText('Runtime started', { exact: true })).toBeVisible();
-    await expect(card.getByText('git status --short', { exact: true })).toBeVisible();
+    await expect(card.getByText('grep -n runtime app/services/agent_dispatch.rb', { exact: true })).toBeVisible();
     await page.reload();
     await expect(card).toBeVisible();
     await expect(card.locator('details')).not.toHaveAttribute('open', '');
     await card.locator('summary').click();
     await expect(card.getByText('Runtime started', { exact: true })).toBeVisible();
-    await expect(card.getByText('git status --short', { exact: true })).toBeVisible();
+    await expect(card.getByText('grep -n runtime app/services/agent_dispatch.rb', { exact: true })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await card.scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath('activity-mobile-expanded.png') });

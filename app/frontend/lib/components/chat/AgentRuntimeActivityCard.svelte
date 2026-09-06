@@ -75,7 +75,7 @@
       {#if operations.length && isActive}
         <ul class="space-y-1">
           {#each operations as operation}
-            <li>{operation.label}…</li>
+            <li class="break-words">{operation.label}…</li>
           {/each}
         </ul>
       {/if}
@@ -100,7 +100,7 @@
           {#if event.type === 'commentary.completed' && event.data?.text}
             <li class="whitespace-pre-wrap">{event.data.text}</li>
           {:else if eventLabel(event)}
-            <li>{eventLabel(event)}</li>
+            <li class="break-words">{eventLabel(event)}</li>
           {/if}
         {/each}
       </ol>

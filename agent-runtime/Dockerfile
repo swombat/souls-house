@@ -168,6 +168,7 @@ RUN mkdir -p /usr/local/share/helixkit-agent
 COPY --chown=agent:agent trigger_shim.py /home/agent/trigger_shim.py
 COPY --chown=agent:agent runtime_activity.py /home/agent/runtime_activity.py
 COPY --chown=agent:agent command_preview_policy.json /home/agent/command_preview_policy.json
+COPY --chown=agent:agent command_preview.py /home/agent/command_preview.py
 COPY --chown=agent:agent memory_client.py /home/agent/memory_client.py
 COPY --chmod=0755 house-memory /usr/local/bin/house-memory
 COPY docs/runtime-instructions.md /usr/local/share/helixkit-agent/runtime-instructions.md

@@ -6,7 +6,6 @@ import logging
 import os
 from pathlib import Path
 import random
-import shlex
 import signal
 import subprocess
 import threading
@@ -15,37 +14,17 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import importlib.util
 
 
-# A finite vocabulary, not a blacklist of credential shapes. No arbitrary
-# paths, URLs, search strings, environment values or script bodies leave here.
-COMMAND_PREVIEW_POLICY = json.loads(Path(__file__).with_name("command_preview_policy.json").read_text())
-HIDDEN_ARGUMENTS = "[arguments hidden]"
+_preview_spec = importlib.util.spec_from_file_location("command_preview", Path(__file__).with_name("command_preview.py"))
+_preview_module = importlib.util.module_from_spec(_preview_spec)
+_preview_spec.loader.exec_module(_preview_module)
 
 
-def command_preview(command):
-    if not isinstance(command, str) or len(command.encode()) > 16384:
-        return "Command " + HIDDEN_ARGUMENTS
-    try:
-        words = shlex.split(command)
-        # Chaos may report the shell wrapper rather than its inner command.
-        for _ in range(2):
-            if len(words) == 3 and words[0] in ("bash", "/bin/bash", "sh", "/bin/sh", "zsh", "/bin/zsh") and words[1] in ("-c", "-lc"):
-                words = shlex.split(words[2])
-            else:
-                break
-    except ValueError:
-        return "Command " + HIDDEN_ARGUMENTS
-    matches = [prefix for prefix in COMMAND_PREVIEW_POLICY if words[:len(prefix.split())] == prefix.split()]
-    if not matches:
-        return "Command " + HIDDEN_ARGUMENTS
-    prefix = max(matches, key=lambda value: len(value.split()))
-    visible = prefix.split()
-    for word in words[len(visible):]:
-        if word not in COMMAND_PREVIEW_POLICY[prefix] or len(" ".join(visible + [word])) > 200:
-            return " ".join(visible) + " " + HIDDEN_ARGUMENTS
-        visible.append(word)
-    return " ".join(visible)
+def command_preview(command, extra_secrets=()):
+    secrets = [value for key, value in os.environ.items() if _preview_module.SENSITIVE.search(key)]
+    return _preview_module.preview(command, secrets + list(extra_secrets))
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -145,7 +124,7 @@ class Reporter:
                     "outcome": ("failed" if item.get("status") in ("failed", "declined") else "completed") if kind == "item.completed" else None,
                 }
                 if category == "command":
-                    operation["command_preview"] = command_preview(item.get("command"))
+                    operation["command_preview"] = command_preview(item.get("command"), [self.token])
                 with self.lock:
                     self.operations.pop(operation["operation_id"], None)
                     if kind != "item.completed" and len(self.operations) < 64:

@@ -124,12 +124,12 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
     operation = { "operation_id" => "cmd", "category" => "command", "command_preview" => "git status --short" }
     ingest(2, "tool.started", operation)
     assert_equal "git status --short", @run.as_chat_activity_json[:snapshot]["operations"]["cmd"]["label"]
-    ingest(3, "heartbeat", { "operations" => [ operation.merge("command_preview" => "curl [arguments hidden]") ] })
-    assert_equal "curl [arguments hidden]", @run.as_chat_activity_json[:snapshot]["operations"]["cmd"]["label"]
+    ingest(3, "heartbeat", { "operations" => [ operation.merge("command_preview" => "cat app/models/agent.rb") ] })
+    assert_equal "cat app/models/agent.rb", @run.as_chat_activity_json[:snapshot]["operations"]["cmd"]["label"]
     ingest(4, "tool.finished", operation.merge("outcome" => "completed"))
     assert_equal "git status --short", @run.agent_runtime_attempts.first.agent_runtime_events.last.data["label"]
     ingest(5, "tool.started", operation.merge("command_preview" => "curl --token SECRET"))
-    assert_equal "Run a command", @run.as_chat_activity_json[:snapshot]["operations"]["cmd"]["label"]
+    assert_equal "curl --token [REDACTED]", @run.as_chat_activity_json[:snapshot]["operations"]["cmd"]["label"]
     assert_not_includes @run.as_chat_activity_json.to_json, "SECRET"
     assert_not_includes @run.agent_runtime_attempts.first.agent_runtime_events.pluck(:data).to_json, "SECRET"
   end

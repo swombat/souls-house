@@ -81,39 +81,54 @@ class ReporterTest(unittest.TestCase):
         for kind in ("reasoning", "agent_message", "mcp_tool_call", "command_execution"):
             self.reporter.project({"type": "item.completed", "item": {
                 "id": "a", "type": kind, "text": "CANARY", "arguments": {"secret": "CANARY"},
-                "command": "CANARY", "aggregated_output": "CANARY", "result": "CANARY",
+                "command": "curl --token CANARY", "aggregated_output": "CANARY", "result": "CANARY",
             }})
         self.reporter.finish(({"status": "ok"}, 200))
         self.assertNotIn("CANARY", json.dumps(self.packets))
         self.assertIn("tool.finished", [event["type"] for event in self.events()])
 
-    def test_command_previews_use_only_approved_vocabulary(self):
+    def test_command_previews_preserve_useful_arguments(self):
         cases = {
             "git status --short": "git status --short",
             "/bin/bash -lc 'git diff --stat'": "git diff --stat",
-            "bundle exec rails test test/models/agent_test.rb": "bundle exec rails test [arguments hidden]",
-            "curl -sS -H 'Authorization: Bearer CANARY' https://user:CANARY@example.test/?token=CANARY": "curl -sS [arguments hidden]",
-            "git -c http.extraHeader='Authorization: CANARY' status": "git [arguments hidden]",
-            "TOKEN=CANARY git status": "Command [arguments hidden]",
-            "env TOKEN=CANARY git status": "env [arguments hidden]",
-            "python3 -c 'print(\"CANARY\")'": "python3 [arguments hidden]",
-            "cat /private/CANARY": "cat [arguments hidden]",
-            "rg CANARY app": "rg [arguments hidden]",
-            "git status --short && echo CANARY": "git status --short [arguments hidden]",
-            "echo $(cat /private/CANARY)": "Command [arguments hidden]",
-            "curl --data @CANARY": "curl [arguments hidden]",
-            "curl <<EOF\nCANARY\nEOF": "curl [arguments hidden]",
-            "git status 'unterminated CANARY": "Command [arguments hidden]",
-            "git status --short\u001bCANARY": "git status [arguments hidden]",
-            "git status --short\u202eCANARY": "git status [arguments hidden]",
-            "/private/CANARY": "Command [arguments hidden]",
+            "bundle exec rails test test/models/agent_test.rb": "bundle exec rails test test/models/agent_test.rb",
+            "ls -la /home/agent": "ls -la /home/agent",
+            "cat app/models/agent.rb": "cat app/models/agent.rb",
+            "cat /home/agent/workspace/souls-house/app/services/agent_dispatch.rb": "cat /home/agent/workspace/souls-house/app/services/agent_dispatch.rb",
+            'grep -n "runtime" app/services/agent_dispatch.rb': "grep -n runtime app/services/agent_dispatch.rb",
+            "rg 'two words' app": 'rg "two words" app',
+            "cd /home/agent && ls -la": "cd /home/agent && ls -la",
+            "cat README.md\nls -la": "cat README.md ; ls -la",
+            "/usr/bin/git status": "/usr/bin/git status",
+            "house-memory status": "house-memory status",
         }
         for command, expected in cases.items():
             with self.subTest(command=command):
                 self.assertEqual(expected, module.command_preview(command))
         for invalid in (None, {}, ["CANARY"], "git status " + "CANARY" * 4000):
-            self.assertEqual("Command [arguments hidden]", module.command_preview(invalid))
-        self.assertLessEqual(len(module.command_preview("git status " + "--short " * 100)), 240)
+            self.assertEqual("Command [payload hidden]", module.command_preview(invalid))
+        self.assertLessEqual(len(module.command_preview("git status " + "--short " * 300).encode()), 1024)
+
+    def test_credentials_and_opaque_payloads_are_redacted(self):
+        commands = [
+            "curl -sS -H 'Authorization: Bearer CANARY' https://user:CANARY@example.test/?token=CANARY",
+            "git -c http.extraHeader='Authorization: CANARY' status",
+            "TOKEN=CANARY git status", "env TOKEN=CANARY git status",
+            "python3 -c 'print(\"CANARY\")'", "ruby -eCANARY",
+            "node --eval=CANARY",
+            "echo $(cat /private/CANARY)", "curl --data @CANARY",
+            "curl <<EOF\nCANARY\nEOF", "git status 'unterminated CANARY",
+            "git status --short\u001bCANARY", "git status --short\u202eCANARY",
+            "curl --token=CANARY", "curl -uuser:CANARY",
+            "curl --json '{\"password\":\"CANARY\"}'",
+            "echo Bearer CANARY", "sed -e 'CANARY' file", "awk 'CANARY' file",
+            "bin/rails runner 'CANARY'", "echo password=CANARY",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertNotIn("CANARY", module.command_preview(command))
+        self.assertEqual("echo [REDACTED]", module._preview_module.preview("echo arbitrary-known-value", ["arbitrary-known-value"]))
+        self.assertEqual("echo [REDACTED]", module.command_preview("echo sk-abcdefghijklmnopqrstuv"))
 
     def test_command_preview_is_safe_in_events_and_heartbeat_before_transport(self):
         self.reporter.begin_attempt()
@@ -129,9 +144,9 @@ class ReporterTest(unittest.TestCase):
         self.reporter.finish(({"status": "ok"}, 200))
         self.assertNotIn("CANARY", json.dumps(self.packets))
         details = [event["data"] for event in self.events() if event["type"] in ("tool.started", "tool.finished")]
-        self.assertEqual(["curl [arguments hidden]"] * 2, [data["command_preview"] for data in details])
+        self.assertEqual(["curl -H [REDACTED]"] * 2, [data["command_preview"] for data in details])
         heartbeat = next(event for event in self.events() if event["type"] == "heartbeat")
-        self.assertEqual("curl [arguments hidden]", heartbeat["data"]["operations"][0]["command_preview"])
+        self.assertEqual("curl -H [REDACTED]", heartbeat["data"]["operations"][0]["command_preview"])
 
     def test_explicit_commentary_and_consent_are_both_required(self):
         self.reporter.begin_attempt()
