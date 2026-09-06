@@ -4,6 +4,11 @@ require "tmpdir"
 
 class MnemodyneHooksTest < ActiveSupport::TestCase
 
+  test "memory script installer preserves resident edits across image upgrades" do
+    output, error, result = Open3.capture3("python3", Rails.root.join("test/memory_script_install_test.py").to_s)
+    assert result.success?, "#{output}\n#{error}"
+  end
+
   test "invalid resident hook bytes are preserved privately and boot can continue" do
     [ "{ private broken json", "[]", '{"hooks":{"Stop":false}}', '{"hooks":{"Stop":[{"hooks":[null]}]}}' ].each do |original|
       Dir.mktmpdir do |dir|

@@ -178,7 +178,7 @@ COPY docs/soulshouse-api.md /usr/local/share/helixkit-agent/soulshouse-api.md
 COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md
 COPY licenses/CodexBar-LICENSE /usr/local/share/licenses/CodexBar/LICENSE
 COPY stop_journal_reflex.py /usr/local/share/helixkit-agent/stop_journal_reflex.py
-COPY memory_before_turn.py install_memory_hooks.py /usr/local/share/helixkit-agent/
+COPY memory_before_turn.py install_memory_hooks.py install_memory_scripts.py /usr/local/share/helixkit-agent/
 COPY docs/memory-guide.md /usr/local/share/helixkit-agent/memory-guide.md
 COPY soulshouse-post-message /usr/local/bin/soulshouse-post-message
 COPY soulshouse-send-telegram /usr/local/bin/soulshouse-send-telegram

@@ -70,12 +70,9 @@ OPENROUTER_PROVIDER
 fi
 chown 1000:1000 "$CHAOS_CONFIG" || true
 
-# Platform-managed helper: refresh on every boot so runtime improvements reach
-# existing hosted agents. The journal files it invites are agent-owned; the hook
-# script itself is runtime infrastructure.
-cp /usr/local/share/helixkit-agent/stop_journal_reflex.py "$AGENT_HOME/identity/automation/stop_journal_reflex.py"
-chmod 0755 "$AGENT_HOME/identity/automation/stop_journal_reflex.py"
-cp /usr/local/share/helixkit-agent/memory_before_turn.py "$AGENT_HOME/identity/automation/memory_before_turn.py"
+# Refresh pristine hooks, but preserve resident edits and stage new stock for review.
+python3 /usr/local/share/helixkit-agent/install_memory_scripts.py \
+    /usr/local/share/helixkit-agent "$AGENT_HOME/identity/automation"
 install_hooks_json() {
     target="$1"
     python3 /usr/local/share/helixkit-agent/install_memory_hooks.py "$target"
@@ -98,6 +95,12 @@ Chaos may read both global (`~/.chaos`) and project (`-C .../.chaos`) hooks, so
 HelixKit does not install a second copy here. Keeping only one active hook avoids
 duplicate reflexes. Your other hooks are preserved. `house-memory guide`
 explains the memory practice; no-shape remains a valid Stop response.
+
+Resident-modified hook scripts stay active across boots. Pending stock updates
+are listed in `identity/automation/HOUSE-HOOK-UPDATES.md`, with `.upstream`
+copies alongside the active scripts and last-installed stock in `.house-stock/`.
+Review both sides before rebasing; preserving your edits does not automatically
+incorporate new house features.
 HOOKS_NOTE
 if [ ! -f "$AGENT_HOME/identity/memory/daily-journals/README.md" ]; then
     cat > "$AGENT_HOME/identity/memory/daily-journals/README.md" <<'README'
