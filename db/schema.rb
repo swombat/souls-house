@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_06_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -161,7 +161,39 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
     t.index ["discarded_at"], name: "index_agent_memories_on_discarded_at"
   end
 
+  create_table "agent_runtime_attempts", force: :cascade do |t|
+    t.bigint "agent_runtime_interaction_id", null: false
+    t.string "attempt_id", null: false
+    t.datetime "created_at", null: false
+    t.integer "detail_bytes", default: 0, null: false
+    t.integer "detail_count", default: 0, null: false
+    t.integer "dropped_count", default: 0, null: false
+    t.datetime "last_broadcast_at"
+    t.datetime "last_report_at"
+    t.integer "last_seq", default: 0, null: false
+    t.integer "number", null: false
+    t.integer "revision", default: 0, null: false
+    t.jsonb "snapshot", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_runtime_interaction_id", "number"], name: "idx_runtime_attempt_number", unique: true
+    t.index ["attempt_id"], name: "index_agent_runtime_attempts_on_attempt_id", unique: true
+  end
+
+  create_table "agent_runtime_events", force: :cascade do |t|
+    t.bigint "agent_runtime_attempt_id", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "data", default: {}, null: false
+    t.string "event_type", null: false
+    t.string "payload_digest", null: false
+    t.integer "seq", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_runtime_attempt_id", "seq"], name: "idx_runtime_event_sequence", unique: true
+    t.index ["agent_runtime_attempt_id"], name: "index_agent_runtime_events_on_agent_runtime_attempt_id"
+  end
+
   create_table "agent_runtime_interactions", force: :cascade do |t|
+    t.string "activity_token_digest"
+    t.datetime "activity_token_expires_at"
     t.bigint "agent_id", null: false
     t.bigint "cache_creation_input_tokens"
     t.bigint "cache_read_input_tokens"
@@ -175,10 +207,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
     t.string "conversation_obfuscated_id"
     t.datetime "created_at", null: false
     t.bigint "delta_prompt_bytes"
+    t.datetime "dispatch_claimed_at"
     t.integer "duration_ms"
     t.string "endpoint_url"
     t.string "error_class"
     t.text "error_message"
+    t.datetime "execution_deadline_at"
+    t.string "execution_state"
     t.datetime "finished_at"
     t.boolean "fresh_fallback"
     t.text "full_invocation_text"
@@ -186,6 +221,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
     t.bigint "input_tokens"
     t.bigint "last_included_message_id"
     t.string "model"
+    t.boolean "narration_shared", default: false, null: false
     t.bigint "output_tokens"
     t.boolean "persistent_session_requested"
     t.string "prior_chaos_session_id"
@@ -199,6 +235,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
     t.string "requested_by"
     t.jsonb "response_body", default: {}, null: false
     t.boolean "resume_attempted"
+    t.string "run_id"
     t.integer "runtime_returncode"
     t.string "runtime_status"
     t.bigint "selected_prompt_bytes"
@@ -228,6 +265,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
     t.index ["agent_id"], name: "index_agent_runtime_interactions_on_agent_id"
     t.index ["chat_id", "created_at"], name: "index_agent_runtime_interactions_on_chat_id_and_created_at"
     t.index ["chat_id"], name: "index_agent_runtime_interactions_on_chat_id"
+    t.index ["run_id"], name: "index_agent_runtime_interactions_on_run_id", unique: true
     t.index ["session_id"], name: "index_agent_runtime_interactions_on_session_id"
     t.index ["started_at"], name: "index_agent_runtime_interactions_on_started_at"
   end
@@ -307,6 +345,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
     t.text "sandbox_last_error"
     t.datetime "sandbox_last_error_at"
     t.boolean "scheduled_wakes_enabled", default: true, null: false
+    t.boolean "share_working_narration", default: false, null: false
     t.jsonb "storage_usage", default: {}, null: false
     t.text "summary_prompt"
     t.text "system_prompt"
@@ -522,6 +561,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
     t.string "reasoning_skip_reason"
     t.jsonb "replay_payload"
     t.string "role", null: false
+    t.bigint "runtime_interaction_id"
     t.integer "stable_prompt_bytes"
     t.string "stable_prompt_sha256"
     t.boolean "streaming", default: false, null: false
@@ -538,6 +578,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
     t.index ["chat_id", "created_at"], name: "index_messages_on_chat_id_and_created_at"
     t.index ["chat_id"], name: "index_messages_on_chat_id"
     t.index ["reasoning_skip_reason"], name: "index_messages_on_reasoning_skip_reason", where: "(reasoning_skip_reason IS NOT NULL)"
+    t.index ["runtime_interaction_id"], name: "index_messages_on_runtime_interaction_id"
     t.index ["streaming"], name: "index_messages_on_streaming"
     t.index ["tool_call_id"], name: "index_messages_on_tool_call_id"
     t.index ["tools_used"], name: "index_messages_on_tools_used", using: :gin
@@ -843,6 +884,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "agent_backup_snapshots", "agents"
   add_foreign_key "agent_memories", "agents"
+  add_foreign_key "agent_runtime_attempts", "agent_runtime_interactions"
+  add_foreign_key "agent_runtime_events", "agent_runtime_attempts"
   add_foreign_key "agent_runtime_interactions", "agents"
   add_foreign_key "agent_runtime_interactions", "chats"
   add_foreign_key "agent_service_accesses", "agents"
@@ -866,6 +909,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_170000) do
   add_foreign_key "memberships", "accounts"
   add_foreign_key "memberships", "users"
   add_foreign_key "memberships", "users", column: "invited_by_id"
+  add_foreign_key "messages", "agent_runtime_interactions", column: "runtime_interaction_id"
   add_foreign_key "messages", "agents"
   add_foreign_key "messages", "ai_models"
   add_foreign_key "messages", "chats"

@@ -435,6 +435,7 @@ module Agents
         "-e", "TRIGGER_BEARER_TOKEN=#{agent.trigger_bearer_token}",
         "-e", "SOULSHOUSE_BEARER_TOKEN=#{agent.outbound_api_token}",
         "-e", "SOULSHOUSE_APP_URL=#{Agents::Config.internal_url}",
+        "-e", "SOULSHOUSE_ACTIVITY_ORIGIN=#{ENV.fetch('SOULSHOUSE_ACTIVITY_ORIGIN', Agents::Config.internal_url)}",
         # legacy alias: residents' notes and habits may reference the old name; keep indefinitely
         "-e", "HELIXKIT_BEARER_TOKEN=#{agent.outbound_api_token}",
         "-e", "HELIXKIT_APP_URL=#{Agents::Config.internal_url}"

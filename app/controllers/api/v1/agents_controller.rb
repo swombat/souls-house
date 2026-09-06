@@ -11,6 +11,14 @@ module Api
         render json: { agents: agents.map { |a| agent_json(a) } }
       end
 
+      def activity_preferences
+        return head :forbidden unless current_api_agent
+        value = params[:share_working_narration]
+        return head :unprocessable_entity unless value.in?([ true, false ])
+        current_api_agent.update!(share_working_narration: value)
+        render json: { share_working_narration: value }
+      end
+
       def show
         agent = current_api_account.agents.find(params[:id])
         render json: { agent: agent_json(agent) }

@@ -20,6 +20,7 @@ env:
     SOULSHOUSE_AGENTS_NETWORK: kamal # Agent containers join Kamal's private Docker network.
     SOULSHOUSE_AGENT_IMAGE_DEFAULT: helixkit-agent-runtime:latest
     SOULSHOUSE_AGENT_INTERNAL_URL: http://souls-house-web:3000 # Agent callbacks hit Rails over Docker DNS.
+    SOULSHOUSE_ACTIVITY_ORIGIN: https://souls.house # Purpose-limited lifecycle callbacks use TLS.
     SOULSHOUSE_SANDBOX_HOST: 95.217.118.47 # Stored on promoted agents for operator diagnostics.
     SOULSHOUSE_AGENT_BACKUPS_ENABLED: true # Back up all hosted-agent persistent volumes during the nightly full backup.
   secret:

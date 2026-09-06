@@ -84,6 +84,22 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "activity reads require chat access and never expose raw diagnostics" do
+    @chat.agent_runtime_interactions.create!(
+      agent: agents(:research_assistant), trigger_kind: "conversation",
+      started_at: Time.current, stdout: "PRIVATE-CANARY", stderr: "PRIVATE-CANARY"
+    )
+    path = "/accounts/#{@account.to_param}/chats/#{@chat.to_param}/activity"
+    get path, as: :json
+    assert_response :success
+    assert_equal 1, response.parsed_body["runtime_interactions"].length
+    assert_not_includes response.body, "PRIVATE-CANARY"
+    delete logout_path
+    get path, as: :json
+    assert_response :redirect
+    assert_not_includes response.body, "PRIVATE-CANARY"
+  end
+
   test "group chat agent props use the safe list projection" do
     agent = agents(:research_assistant)
     agent.update!(

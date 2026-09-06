@@ -64,6 +64,38 @@ module TestSupport
       render json: { message_id: message.to_param }
     end
 
+    # Synthetic lifecycle fixture only; never invokes a runtime or provider.
+    def runtime_activity
+      chat = Chat.find(params.fetch(:chat_id))
+      agent = chat.agents.first!
+      run = if params[:runtime_run_id]
+        chat.agent_runtime_interactions.find_by!(run_id: params[:runtime_run_id])
+      else
+        AgentRuntimeInteraction.reserve!(agent: agent, chat: chat).tap do |interaction|
+          interaction.claim_dispatch!
+          interaction.activity_configuration!
+        end
+      end
+      attempt = run.agent_runtime_attempts.first
+      attempt_id = attempt&.attempt_id || SecureRandom.uuid
+      seq = attempt&.last_seq || 0
+      events = if params[:complete]
+        chat.messages.create!(agent: agent, role: "assistant", content: "Synthetic work is complete.", runtime_interaction: run)
+        [ { "seq" => seq + 1, "type" => "supervisor.finished", "data" => { "outcome" => "completed" } } ]
+      else
+        [
+          { "seq" => 1, "type" => "attempt.started", "data" => { "narration_capability" => "unsupported" } },
+          { "seq" => 2, "type" => "turn.started", "data" => {} },
+          { "seq" => 3, "type" => "tool.started", "data" => { "category" => "command", "operation_id" => "synthetic-command" } }
+        ]
+      end
+      RuntimeActivityIngestion.new(run, {
+        "schema_version" => 1, "run_id" => run.run_id, "attempt_id" => attempt_id,
+        "attempt_number" => 1, "events" => events
+      }).call
+      render json: { runtime_run_id: run.run_id }
+    end
+
     # Build a deterministic conversation without involving an LLM. This gives
     # browser tests enough history to cross the 30-message pagination boundary
     # while keeping the fixture cheap and repeatable.

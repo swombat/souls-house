@@ -6,6 +6,7 @@ Rails.application.routes.draw do
         post :conversation_fixture, to: "/test_support/e2e#conversation_fixture"
         post :append_messages, to: "/test_support/e2e#append_messages"
         post :assistant_message, to: "/test_support/e2e#assistant_message"
+        post :runtime_activity, to: "/test_support/e2e#runtime_activity"
         post :invitation_url, to: "/test_support/e2e#invitation_url"
         post :state, to: "/test_support/e2e#state"
         post :cleanup, to: "/test_support/e2e#cleanup"
@@ -71,6 +72,7 @@ Rails.application.routes.draw do
     resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts
 
     resources :chats do
+      get :activity, on: :member
       collection do
         get :search
       end
@@ -153,6 +155,8 @@ Rails.application.routes.draw do
   # JSON API for external clients (Claude Code, etc.)
   namespace :api do
     namespace :v1 do
+      post "runtime_runs/:run_id/events", to: "runtime_events#create"
+      patch "agent/activity_preferences", to: "agents#activity_preferences"
       resources :key_requests, only: [ :create, :show ]
       post "agents/:uuid/announce", to: "agents#announce", as: :agent_announce
       get "agents/:uuid/health", to: "agents#health", as: :agent_health

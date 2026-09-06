@@ -73,10 +73,14 @@ def main() -> int:
         return 66
 
     url = f"{app_url.rstrip('/')}/api/v1/conversations/{chat_id}/messages"
+    run_id = os.environ.get("SOULSHOUSE_RUNTIME_RUN_ID") if os.environ.get("SOULSHOUSE_RUNTIME_CHAT_ID") == chat_id else None
     if attachments:
-        body, content_type = multipart_body(content, attachments)
+        body, content_type = multipart_body(content, attachments, run_id=run_id)
     else:
-        body = json.dumps({"content": content}).encode("utf-8")
+        payload = {"content": content}
+        if run_id:
+            payload["runtime_run_id"] = run_id
+        body = json.dumps(payload).encode("utf-8")
         content_type = "application/json"
 
     request = urllib.request.Request(
@@ -118,7 +122,7 @@ def normalize_newlines(content: str) -> str:
     return content.replace("\\r\\n", "\n").replace("\\n", "\n")
 
 
-def multipart_body(content: str, attachments: list[Path]) -> tuple[bytes, str]:
+def multipart_body(content: str, attachments: list[Path], run_id=None) -> tuple[bytes, str]:
     boundary = f"soulshouse-{uuid.uuid4().hex}"
     chunks = []
 
@@ -130,6 +134,11 @@ def multipart_body(content: str, attachments: list[Path]) -> tuple[bytes, str]:
     add(b'Content-Disposition: form-data; name="content"')
     add(b"")
     add(content.encode("utf-8"))
+    if run_id:
+        add(f"--{boundary}".encode())
+        add(b'Content-Disposition: form-data; name="runtime_run_id"')
+        add(b"")
+        add(run_id.encode("utf-8"))
 
     for path in attachments:
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"

@@ -88,6 +88,29 @@ class HelixkitPostMessageTest < ActiveSupport::TestCase
     assert_equal({ "content" => "Text only" }, JSON.parse(request[:body]))
   end
 
+  test "correlates JSON and multipart replies only to the triggering conversation" do
+    [ [ "chat-123", false ], [ "chat-123", true ], [ "other-chat", false ] ].each do |chat_id, attachment|
+      request = capture_request do |url|
+        args = [ "python3", SCRIPT.to_s, chat_id ]
+        args += [ "--attach", file_fixture("test.txt").to_s ] if attachment
+        _stdout, stderr, status = Open3.capture3(
+          {
+            "SOULSHOUSE_APP_URL" => url, "SOULSHOUSE_BEARER_TOKEN" => "hx_test",
+            "SOULSHOUSE_RUNTIME_RUN_ID" => "run-123", "SOULSHOUSE_RUNTIME_CHAT_ID" => "chat-123"
+          },
+          *args, stdin_data: "Reply"
+        )
+        assert status.success?, stderr
+      end
+      if chat_id == "chat-123"
+        assert_includes request[:body], "runtime_run_id"
+        assert_includes request[:body], "run-123"
+      else
+        assert_not_includes request[:body], "runtime_run_id"
+      end
+    end
+  end
+
   private
 
   def capture_request

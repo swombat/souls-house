@@ -16,7 +16,9 @@ class Chats::AgentTriggersControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "create triggers specific agent when agent_id provided" do
-    assert_enqueued_with(job: ManualAgentResponseJob, args: [ @chat, @agent ]) do
+    assert_enqueued_with(job: ManualAgentResponseJob, args: ->(args) {
+      args == [ @chat, @agent, { runtime_interaction_id: @chat.agent_runtime_interactions.order(:id).last.id } ]
+    }) do
       post account_chat_agent_trigger_path(@account, @chat),
         params: { agent_id: @agent.to_param },
         as: :json
@@ -55,7 +57,9 @@ class Chats::AgentTriggersControllerTest < ActionDispatch::IntegrationTest
       started_at: AgentRuntimeInteraction::ACTIVE_WINDOW.ago - 1.minute
     )
 
-    assert_enqueued_with(job: ManualAgentResponseJob, args: [ @chat, @agent ]) do
+    assert_enqueued_with(job: ManualAgentResponseJob, args: ->(args) {
+      args == [ @chat, @agent, { runtime_interaction_id: @chat.agent_runtime_interactions.order(:id).last.id } ]
+    }) do
       post account_chat_agent_trigger_path(@account, @chat),
         params: { agent_id: @agent.to_param },
         as: :json

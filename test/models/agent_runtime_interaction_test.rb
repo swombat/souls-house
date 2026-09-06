@@ -142,7 +142,7 @@ class AgentRuntimeInteractionTest < ActiveSupport::TestCase
     end
   end
 
-  test "chat timeline activity is visible only when no assistant message was posted" do
+  test "chat timeline activity remains visible after a reply and excludes diagnostics" do
     agent = agents(:research_assistant)
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Runtime log")
 
@@ -165,7 +165,9 @@ class AgentRuntimeInteractionTest < ActiveSupport::TestCase
 
     chat.messages.create!(role: "assistant", agent: agent, content: "Actually posting.")
 
-    assert_not interaction.visible_in_chat_timeline?
+    assert interaction.visible_in_chat_timeline?
+    assert_not interaction.as_chat_activity_json.key?(:stdout)
+    assert_not interaction.as_chat_activity_json.key?(:stderr)
   end
 
   test "record_result! maps chaos session and usage fields from the response body" do

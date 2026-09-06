@@ -171,6 +171,8 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
       )
 
     assert_difference "AgentRuntimeInteraction.count", 1 do
+      chat.agents << agent
+      chat.update!(manual_responses: true)
       ExternalAgentResponseRequest.new(agent: agent, chat: chat).call
     end
 
@@ -215,6 +217,8 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
       )
 
     assert_difference "chat.messages.count", 1 do
+      chat.agents << agent
+      chat.update!(manual_responses: true)
       ExternalAgentResponseRequest.new(agent: agent, chat: chat).call
     end
 
@@ -265,6 +269,8 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     )
 
     assert_difference "chat.messages.count", 1 do
+      chat.agents << agent unless chat.agents.exists?(agent.id)
+      chat.update!(manual_responses: true)
       ExternalAgentResponseRequest.new(agent:, chat:).call
     end
 
@@ -430,6 +436,8 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
         }.to_json
       )
 
+    chat.agents << agent
+    chat.update!(manual_responses: true)
     ExternalAgentResponseRequest.new(agent: agent, chat: chat).call
 
     assert_requested stub

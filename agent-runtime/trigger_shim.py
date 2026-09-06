@@ -192,6 +192,7 @@ app = Flask(__name__) if Flask else None
 # against the same logical conversation/session while allowing the resident to
 # handle independent conversations and channels at the same time.
 _session_locks = {}
+_activity_context = threading.local()
 _session_locks_guard = threading.Lock()
 _auth_lock = threading.Lock()
 _auth_process = None
@@ -265,21 +266,41 @@ def trigger():
             "session_id": session_id,
         }), 409
 
+    reporter = None
+    if payload.get("activity"):
+        try:
+            from runtime_activity import Reporter
+            reporter = Reporter(
+                payload["activity"],
+                os.environ.get("SOULSHOUSE_ACTIVITY_ORIGIN") or os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL"),
+                provider, auth_mode,
+            )
+            reporter.conversation_id = conversation_id
+        except (ValueError, KeyError, TypeError):
+            log.warning("invalid activity configuration; running without reports")
+    _activity_context.reporter = reporter
     try:
         if persistent_session:
-            return persistent_trigger(
+            response = persistent_trigger(
                 session_id, prompt, request_delta, model, timeout_secs,
                 provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
                 session_lock=session_lock, roll_session=roll_session,
                 runtime_session_generation=runtime_session_generation,
                 subscription_snapshot=subscription_snapshot,
             )
-        return legacy_trigger(
-            session_id, prompt, model, timeout_secs,
-            provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
-            subscription_snapshot=subscription_snapshot,
-        )
+        else:
+            response = legacy_trigger(
+                session_id, prompt, model, timeout_secs,
+                provider=provider, reasoning_effort=reasoning_effort, auth_mode=auth_mode,
+                subscription_snapshot=subscription_snapshot,
+            )
+        if reporter:
+            reporter.finish(response)
+        return response
     finally:
+        if reporter:
+            reporter.disabled = True
+        _activity_context.reporter = None
         session_lock.release()
 
 
@@ -674,6 +695,9 @@ def run_chaos(
         api_key_env = PROVIDER_API_KEY_ENV.get(selected_provider)
         if api_key_env:
             env.pop(api_key_env, None)
+    reporter = getattr(_activity_context, "reporter", None)
+    if reporter:
+        return reporter.run(args, prompt_text, env, timeout_secs)
     return subprocess.run(
         args,
         input=prompt_text,

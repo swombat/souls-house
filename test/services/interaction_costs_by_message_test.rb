@@ -18,6 +18,17 @@ class InteractionCostsByMessageTest < ActiveSupport::TestCase
     assert_equal true, costs.dig(message.id, :applies_to_billing)
   end
 
+  test "explicit multi-reply runs charge only the first reply even across pages" do
+    first = create_message!(at: @started_at + 10.seconds)
+    second = create_message!(at: @started_at + 15.seconds)
+    unlinked = create_message!(at: @started_at + 17.seconds)
+    run = create_interaction!(finished_at: @started_at + 20.seconds)
+    first.update!(runtime_interaction: run)
+    second.update!(runtime_interaction: run)
+    assert_equal({ first.id => run }, InteractionCostsByMessage.new(chat: @chat, messages: [ first, second, unlinked ]).linked_interactions)
+    assert_empty InteractionCostsByMessage.new(chat: @chat, messages: [ second, unlinked ]).call
+  end
+
   test "marks a linked subscription interaction estimate as non-billable" do
     message = create_message!(at: @started_at + 10.seconds)
     create_interaction!(

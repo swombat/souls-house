@@ -4,19 +4,25 @@ class ExternalAgentResponseRequest
   TRANSCRIPT_BYTE_BUDGET = 80_000
   TRANSCRIPT_SEPARATOR = "\n\n"
 
-  def initialize(agent:, chat:, requested_by: "HelixKit", initiation_reason: nil)
+  def initialize(agent:, chat:, requested_by: "HelixKit", initiation_reason: nil, interaction: nil)
     @agent = agent
     @chat = chat
     @requested_by = requested_by
     @initiation_reason = initiation_reason
+    @interaction = interaction
   end
 
   def call
     agent.reload.require_conversation_runtime!
+    if AgentRuntimeInteraction.live_activity_enabled? || @interaction
+      @interaction ||= AgentRuntimeInteraction.reserve!(agent: agent, chat: chat)
+      return { status: 409, body: { "status" => "already_running" } } unless @interaction.claim_dispatch!
+    end
     Agents::Sandbox.new(agent).with_runtime { perform }
   rescue Agent::RuntimeAvailability::Unavailable
     raise
   rescue StandardError => e
+    @interaction&.record_error!(e)
     Rails.logger.warn "[ExternalAgentResponseRequest] #{agent.id} trigger failed: #{e.class}: #{e.message}"
     ActionCable.server.broadcast(
       "Chat:#{chat.to_param}",
@@ -38,7 +44,7 @@ class ExternalAgentResponseRequest
     delta = request_delta_text
     auth_mode = agent.provider_auth_mode(provider)
 
-    result = AgentRuntimeInteraction.record_trigger!(
+    attributes = {
       agent: agent,
       chat: chat,
       trigger_kind: "conversation",
@@ -49,7 +55,8 @@ class ExternalAgentResponseRequest
       request_text: request,
       last_included_message_id: computed_last_included_message_id,
       provider_auth_mode: auth_mode
-    ) do
+    }
+    invoke = -> {
       ChaosTriggerClient.new(endpoint_url, agent.trigger_bearer_token).request_response(
         conversation_id: chat.to_param,
         requested_by: requested_by,
@@ -60,8 +67,18 @@ class ExternalAgentResponseRequest
         provider: provider,
         model: Agents::Sandbox.chaos_model_for(agent),
         reasoning_effort: agent.reasoning_effort,
-        auth_mode: auth_mode
+        auth_mode: auth_mode,
+        activity: @interaction&.activity_configuration!
       )
+    }
+    result = if @interaction
+      @interaction.update!(attributes.except(:agent, :chat, :conversation_id))
+      response = invoke.call
+      @interaction.with_lock { @interaction.record_result!(response) }
+      response[:execution_unconfirmed] = true unless @interaction.finished_at?
+      response
+    else
+      AgentRuntimeInteraction.record_trigger!(**attributes, &invoke)
     end
     if auth_mode == "oauth_account"
       case result.dig(:body, "error_kind")
@@ -110,6 +127,7 @@ class ExternalAgentResponseRequest
   end
 
   def notify_unreachable
+    @interaction&.finish_execution!("failed")
     chat.messages.create!(
       role: "assistant",
       agent: agent,

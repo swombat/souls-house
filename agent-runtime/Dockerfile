@@ -166,6 +166,7 @@ COPY --from=builder /usr/local/bin/chaos /usr/local/bin/chaos
 COPY --from=builder /usr/local/bin/chaos_journald /usr/local/bin/chaos_journald
 RUN mkdir -p /usr/local/share/helixkit-agent
 COPY --chown=agent:agent trigger_shim.py /home/agent/trigger_shim.py
+COPY --chown=agent:agent runtime_activity.py /home/agent/runtime_activity.py
 COPY docs/runtime-instructions.md /usr/local/share/helixkit-agent/runtime-instructions.md
 COPY docs/soulshouse-api.md /usr/local/share/helixkit-agent/soulshouse-api.md
 # Permanent legacy stub. Residents' own memories and notes cite the old manual

@@ -53,10 +53,15 @@ export function subscribeToModel(model, id, props) {
     {
       connected() {
         logging.debug(`Sync connected: ${model}:${id}`);
+        if (model === 'Chat') window.dispatchEvent(new CustomEvent('runtime-activity-refresh'));
       },
 
       received(data) {
         logging.debug(`Sync received: ${model}:${id}`, data);
+        if (data.action === 'runtime_activity_changed') {
+          window.dispatchEvent(new CustomEvent('runtime-activity-refresh'));
+          return;
+        }
 
         // Handle streaming updates specially - don't reload, just update in place
         if (handleStreamingUpdate(data)) {

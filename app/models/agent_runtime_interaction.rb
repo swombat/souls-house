@@ -1,5 +1,7 @@
 class AgentRuntimeInteraction < ApplicationRecord
 
+  include LiveActivity
+
   SUPPORTED_TELEMETRY_SCHEMA_VERSION = 1
   LOCAL_USAGE_SCOPES = %w[invocation trigger].freeze
   RUNTIME_OUTPUT_CAPTURE_LIMIT = 4_000
@@ -15,7 +17,7 @@ class AgentRuntimeInteraction < ApplicationRecord
 
   scope :recent, -> { order(created_at: :desc) }
   scope :timeline_order, -> { order(Arel.sql("COALESCE(finished_at, started_at, created_at) ASC"), :id) }
-  scope :active, -> { where(finished_at: nil).where("started_at >= ?", ACTIVE_WINDOW.ago) }
+  scope :active, -> { where(finished_at: nil).where("run_id IS NOT NULL OR started_at >= ?", ACTIVE_WINDOW.ago) }
 
   def self.record_trigger!(agent:, chat:, trigger_kind:, conversation_id:, requested_by:, session_id:, endpoint_url:, request_text:, last_included_message_id: nil, provider_auth_mode: "api_key")
     interaction = create!(
@@ -40,8 +42,15 @@ class AgentRuntimeInteraction < ApplicationRecord
     raise
   end
 
-  def record_result!(result)
+  def record_result!(result = nil, from_callback: false, **fields)
+    result ||= fields
+    return if from_callback && transport_status.present? && runtime_status.in?(%w[ok error timeout already_running])
     body = (result[:body] || {}).deep_dup
+    if live_activity? && !from_callback && !body["status"].in?(%w[ok error timeout already_running])
+      # A proxy error (or malformed response) cannot establish process exit.
+      update!(transport_status: result[:status], response_body: body)
+      return
+    end
     full_invocation_text = body.delete("full_invocation_text")
     telemetry = body["telemetry"].presence || {}
     runtime = telemetry["runtime"].presence || {}
@@ -67,11 +76,11 @@ class AgentRuntimeInteraction < ApplicationRecord
     provider_request_count = usage["provider_request_count"] if detailed_usage
 
     update!(
-      transport_status: result[:status],
+      transport_status: from_callback ? transport_status : result[:status],
       runtime_status: body["status"],
       runtime_returncode: body["returncode"],
-      stdout: body["stdout"],
-      stderr: body["stderr"],
+      stdout: from_callback ? stdout : body["stdout"],
+      stderr: from_callback ? stderr : body["stderr"],
       full_invocation_text: full_invocation_text,
       chaos_session_id: session["chaos_process_id"] || body["chaos_session_id"],
       session_resumed: body.key?("session_resumed") ? body["session_resumed"] : derived_session_flag(session, "resumed"),
@@ -111,9 +120,28 @@ class AgentRuntimeInteraction < ApplicationRecord
       finished_at: Time.current,
       duration_ms: elapsed_ms
     )
+    if live_activity?
+      state = if result[:execution_outcome]
+        result[:execution_outcome]
+      elsif result[:status] == 409 && body["status"] == "already_running"
+        "busy"
+      elsif body["status"] == "timeout"
+        "timed_out"
+      elsif body["returncode"].to_i.nonzero? || result[:status].to_i >= 400
+        "failed"
+      else
+        "completed"
+      end
+      finish_execution!(state)
+    end
   end
 
   def record_error!(error)
+    if live_activity?
+      # A transport exception does not tell us whether accepted work stopped.
+      update!(error_class: error.class.name, error_message: error.message)
+      return
+    end
     update!(
       error_class: error.class.name,
       error_message: error.message,
@@ -244,7 +272,7 @@ class AgentRuntimeInteraction < ApplicationRecord
   end
 
   def as_chat_activity_json
-    {
+    safe = {
       id: to_param,
       agent_id: agent.to_param,
       agent_name: agent.name,
@@ -258,15 +286,12 @@ class AgentRuntimeInteraction < ApplicationRecord
       transport_status: transport_status,
       runtime_status: runtime_status,
       runtime_returncode: runtime_returncode,
-      stdout: stdout,
-      stderr: stderr,
-      error_class: error_class,
-      error_message: error_message,
       started_at: started_at&.iso8601,
       finished_at: finished_at&.iso8601,
       duration_ms: duration_ms,
-      created_at: (finished_at || started_at || created_at)&.iso8601
+      created_at: created_at&.iso8601
     }
+    live_activity? ? safe.merge(live_activity_json) : safe
   end
 
   def as_cost_json
@@ -334,10 +359,12 @@ class AgentRuntimeInteraction < ApplicationRecord
   end
 
   def visible_in_chat_timeline?
-    !posted_assistant_message?
+    true
   end
 
   def active?
+    return !execution_state.in?(TERMINAL_STATES) if live_activity?
+
     finished_at.blank? && started_at.present? && started_at >= ACTIVE_WINDOW.ago
   end
 
@@ -385,6 +412,8 @@ class AgentRuntimeInteraction < ApplicationRecord
   end
 
   def broadcast_agent_runtime_interactions_refresh
+    return if live_activity? && previous_changes.keys.intersect?(%w[id finished_at execution_state]) == false
+
     ActionCable.server.broadcast(
       "Agent:#{agent.obfuscated_id}",
       { action: "refresh", prop: "runtime_interactions" }
@@ -423,9 +452,14 @@ class AgentRuntimeInteraction < ApplicationRecord
   def obvious_wake_response_chat
     return unless trigger_kind == "wake" && agent && started_at && finished_at
 
+    explicit = linked_messages.limit(2).to_a
+    return explicit.first.chat if explicit.one?
+    return if explicit.any?
+
     messages = Message.joins(:chat)
       .where(chats: { account_id: agent.account_id })
       .where(role: "assistant", agent: agent)
+      .where(runtime_interaction_id: nil)
       .where(created_at: started_at..(finished_at + 30.seconds))
       .limit(2)
       .to_a

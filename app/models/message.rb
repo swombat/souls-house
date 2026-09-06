@@ -29,6 +29,7 @@ class Message < ApplicationRecord
   belongs_to :chat, touch: true
   belongs_to :user, optional: true
   belongs_to :agent, optional: true
+  belongs_to :runtime_interaction, class_name: "AgentRuntimeInteraction", optional: true
   has_one :account, through: :chat
 
   attr_accessor :skip_content_validation

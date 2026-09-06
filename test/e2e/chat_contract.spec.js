@@ -50,6 +50,45 @@ async function startGroupChat(page, accountId, firstMessage) {
 test.describe('browser contracts', () => {
   let setup;
 
+  test('live activity survives replies, minimises at completion and expands after reload', async ({
+    page,
+    request,
+  }, testInfo) => {
+    await login(page, setup.primary_user, setup.password);
+    const fixtureResponse = await request.post('/test/e2e/conversation_fixture', {
+      data: { account_id: setup.account_id, count: 1 },
+    });
+    const fixture = await fixtureResponse.json();
+    await page.goto(`/accounts/${setup.account_id}/chats/${fixture.chat_id}`);
+    const started = await request.post('/test/e2e/runtime_activity', { data: { chat_id: fixture.chat_id } });
+    const run = await started.json();
+    const card = page.getByTestId('runtime-activity-card').filter({ hasText: 'E2E Researcher' });
+    await expect(card).toBeVisible();
+    await expect(card.locator('details')).toHaveAttribute('open', '');
+    await expect(card.getByText('Run a command…')).toBeVisible();
+    await request.post('/test/e2e/runtime_activity', {
+      data: { chat_id: fixture.chat_id, runtime_run_id: run.runtime_run_id, complete: true },
+    });
+    await expect(page.getByText('Synthetic work is complete.')).toBeVisible();
+    await expect(card).toBeVisible();
+    await expect(card.locator('details')).not.toHaveAttribute('open', '');
+    await card.locator('summary').click();
+    await expect(card.locator('details')).toHaveAttribute('open', '');
+    await expect(card.getByText('Runtime started', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(card).toBeVisible();
+    await expect(card.locator('details')).not.toHaveAttribute('open', '');
+    await card.locator('summary').click();
+    await expect(card.getByText('Runtime started', { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await card.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath('activity-mobile-expanded.png') });
+    await card.locator('summary').focus();
+    await page.keyboard.press('Enter');
+    await expect(card.locator('details')).not.toHaveAttribute('open', '');
+    await page.screenshot({ path: testInfo.outputPath('activity-mobile-minimised.png') });
+  });
+
   test.beforeEach(async ({ request }) => {
     setup = await setupRun(request);
   });

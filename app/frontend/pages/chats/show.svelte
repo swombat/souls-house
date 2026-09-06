@@ -46,6 +46,7 @@
   import { applyStreamingEnd, applyStreamingUpdate } from '$lib/chat-streaming-state';
   import { buildChatSubscriptions, chatSyncSignature } from '$lib/chat-sync-subscriptions';
   import { mode } from 'mode-watcher';
+  import { mergeRuntimeActivity } from '$lib/runtime-activity';
 
   const shikiTheme = $derived(mode.current === 'dark' ? 'catppuccin-mocha' : 'catppuccin-latte');
 
@@ -66,7 +67,7 @@
     chat,
     chats = [],
     messages: recentMessages = [],
-    runtime_interactions: runtimeInteractions = [],
+    runtime_interactions: initialRuntimeInteractions = [],
     cost_breakdown: costBreakdown = {},
     has_more_messages: serverHasMore = false,
     oldest_message_id: serverOldestId = null,
@@ -357,6 +358,63 @@
   const activeRuntimeAgentIds = $derived(
     (runtimeInteractions || []).filter((interaction) => interaction.active).map((interaction) => interaction.agent_id)
   );
+  let activityUpdates = $state({ chatId: null, rows: [] });
+  const runtimeInteractions = $derived(
+    mergeRuntimeActivity(initialRuntimeInteractions, activityUpdates.chatId === chat.id ? activityUpdates.rows : [])
+  );
+
+  onMount(() => {
+    let disposed = false;
+    let inFlight = false;
+    let refreshAgain = false;
+    async function refreshActivity() {
+      if (inFlight) {
+        refreshAgain = true;
+        return;
+      }
+      const chatId = chat.id;
+      inFlight = true;
+      try {
+        const response = await fetch(`/accounts/${account.id}/chats/${chatId}/activity`, {
+          headers: { Accept: 'application/json' },
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!disposed && chat.id === chatId) {
+          activityUpdates = {
+            chatId,
+            rows: mergeRuntimeActivity(
+              activityUpdates.chatId === chatId ? activityUpdates.rows : [],
+              data.runtime_interactions || []
+            ),
+          };
+        }
+      } catch {
+        // The persisted card remains; failure to fetch does not mean execution failed.
+      } finally {
+        inFlight = false;
+        if (refreshAgain && !disposed) {
+          refreshAgain = false;
+          refreshActivity();
+        }
+      }
+    }
+    const onVisible = () => {
+      if (!document.hidden) refreshActivity();
+    };
+    window.addEventListener('runtime-activity-refresh', refreshActivity);
+    document.addEventListener('visibilitychange', onVisible);
+    const interval = setInterval(() => {
+      if (!document.hidden && runtimeInteractions.some((row) => row.active)) refreshActivity();
+    }, 5000);
+    refreshActivity();
+    return () => {
+      disposed = true;
+      clearInterval(interval);
+      window.removeEventListener('runtime-activity-refresh', refreshActivity);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  });
   const latestAssistantMessageId = $derived.by(() => {
     const assistantMessage = [...(allMessages || [])].reverse().find((message) => message.role === 'assistant');
     return assistantMessage?.id ?? null;

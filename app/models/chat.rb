@@ -228,7 +228,11 @@ class Chat < ApplicationRecord
     raise ArgumentError, "This conversation is archived or deleted" unless respondable?
     raise ArgumentError, "#{agent.name} is already responding" if agent_response_active?(agent)
 
-    ManualAgentResponseJob.perform_later(self, agent)
+    if AgentRuntimeInteraction.live_activity_enabled?
+      AgentRuntimeInteraction.reserve!(agent: agent, chat: self, enqueue: true)
+    else
+      ManualAgentResponseJob.perform_later(self, agent)
+    end
   end
 
   def trigger_all_agents_response!
@@ -265,6 +269,7 @@ class Chat < ApplicationRecord
   end
 
   def agent_response_active?(agent)
+    agent_runtime_interactions.where(agent: agent, finished_at: nil).each(&:reconcile_activity!)
     agent_runtime_interactions
       .where(agent: agent, trigger_kind: "conversation", finished_at: nil)
       .active

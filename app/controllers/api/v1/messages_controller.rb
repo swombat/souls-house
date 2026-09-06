@@ -23,6 +23,15 @@ module Api
           )
         end
         message.attachments.attach(params[:files]) if params[:files].present?
+        if params[:runtime_run_id].present?
+          return head :forbidden unless current_api_agent
+          interaction = chat.agent_runtime_interactions.find_by!(
+            run_id: params[:runtime_run_id], agent: current_api_agent
+          )
+          return head :unprocessable_entity unless interaction.dispatch_claimed_at &&
+            interaction.activity_token_expires_at&.future?
+          message.runtime_interaction = interaction
+        end
 
         if message.content.blank? && !message.attachments.attached?
           return render json: { errors: [ "Content or at least one file is required" ] }, status: :unprocessable_entity

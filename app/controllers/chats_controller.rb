@@ -62,6 +62,10 @@ class ChatsController < ApplicationController
     render inertia: "chats/show", props: props
   end
 
+  def activity
+    render json: { runtime_interactions: runtime_interactions_for_timeline }
+  end
+
   def create
     unless available_agents_scope.exists?
       redirect_to agent_creation_path, alert: "Create an agent before starting a conversation"
@@ -206,12 +210,11 @@ class ChatsController < ApplicationController
   end
 
   def runtime_interactions_for_timeline
-    @chat.agent_runtime_interactions
-      .includes(:agent)
-      .recent
-      .limit(20)
-      .select(&:visible_in_chat_timeline?)
-      .sort_by { |interaction| interaction.finished_at || interaction.started_at || interaction.created_at }
+    scope = @chat.agent_runtime_interactions.includes(:agent)
+    active = scope.where(finished_at: nil).to_a
+    active.each(&:reconcile_activity!)
+    (active + scope.recent.limit(20).to_a).uniq
+      .sort_by { |interaction| [ interaction.created_at, interaction.id ] }
       .map(&:as_chat_activity_json)
   end
 
