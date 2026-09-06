@@ -5,13 +5,10 @@
 # identity and state arrive through Docker volumes and environment variables.
 #
 # Local build:
-#   CHAOS_HEAD="$(git ls-remote https://github.com/seuros/chaos.git refs/heads/master | awk 'NR == 1 { print $1 }')"
-#   docker build --build-arg "CHAOS_HEAD=${CHAOS_HEAD}" -t helixkit-agent-runtime:local agent-runtime
+#   mise exec -- scripts/build-local-agent-runtime
 
-# Build the latest Chaos master. Build callers resolve master immediately before
-# invoking Docker and pass its commit as CHAOS_HEAD. The commit is deliberately
-# not pinned in this repository: it is a cache key, a stable snapshot for this
-# individual build, and provenance for the resulting image.
+# Build callers use agent-runtime/chaos-ref unless explicitly overridden with
+# a full commit SHA. This is a cache key and provenance for the resulting image.
 #
 # Upstream changes must continue to preserve the original SQLx migration
 # checksum used by persisted Chaos journals. Patch/application or runtime tests

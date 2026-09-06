@@ -67,7 +67,7 @@ builder:
 accessories:
   embeddings:
     # Build/publish this artifact after review; see docs/mnemodyne-deployment.md.
-    image: dtenner/souls-house-mnemodyne-embeddings@<%= ENV.fetch("MNEMODYNE_EMBEDDING_IMAGE_DIGEST").tap { |digest| raise "An immutable embedding image digest is required" unless digest.match?(/\Asha256:[0-9a-f]{64}\z/) } %>
+    image: dtenner/souls-house-mnemodyne-embeddings@<%= ENV.fetch("MNEMODYNE_EMBEDDING_IMAGE_DIGEST", "").tap { |digest| raise "Set MNEMODYNE_EMBEDDING_IMAGE_DIGEST to the approved immutable embedding image digest (sha256:...)" unless digest.match?(/\Asha256:[0-9a-f]{64}\z/) } %>
     host: 95.217.118.47
     env:
       secret:

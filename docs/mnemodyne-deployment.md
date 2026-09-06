@@ -18,6 +18,9 @@ mise exec -- bun run test
 ```
 
 Run test commands sequentially: they share the normal instance test lock.
+Both runtime builders default to the reviewed commit in `agent-runtime/chaos-ref`;
+local overrides require `--chaos-ref FULL_SHA`, release overrides
+`HELIXKIT_CHAOS_REF=FULL_SHA`. No moving-branch resolution happens during a build.
 The real smoke test uses its own ephemeral Rails HTTP server and a newly created
 synthetic resident. It exercises real CPU inference, image CLI/API authentication,
 nonmutating recall, selected-use reinforcement, fresh/resumed prompt assembly,

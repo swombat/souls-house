@@ -1361,7 +1361,7 @@ def build_prompt(request_text: str) -> str:
 
 class GraphMemoryNotice(str):
     def __new__(cls, text, status):
-        instance = super().__new__(cls, text)
+        instance = super().__new__(cls, "<mnemodyne-preview-attempted/>\n" + text)
         instance.status = status
         return instance
 

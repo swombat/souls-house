@@ -21,9 +21,24 @@ class Api::V1::Memory::GraphTest < ActionDispatch::IntegrationTest
     human = ApiKey.generate_for(users(:user_1), name: "Human")
     get "#{@base}/nodes", headers: { "Authorization" => "Bearer #{human.raw_token}" }
     assert_response :forbidden
-    @resident.update_columns(runtime: "inline")
-    get "#{@base}/nodes", headers: @headers
-    assert_response :forbidden
+    # RubyLLM retirement now rejects these credentials at authentication, before
+    # the memory controller's own resident authorization.
+    %w[inline migrating deprecated].each do |runtime|
+      @resident.update_columns(runtime: runtime)
+      get "#{@base}/nodes", headers: @headers
+      assert_response :unauthorized
+    end
+  end
+
+  test "telemetry failure cannot mask unavailable embeddings inside rescue_from" do
+    Mnemodyne::Vault.stub(:transaction, ->(**, &) { raise ActiveRecord::LockWaitTimeout }) do
+      Mnemodyne::Embeddings.stub(:embed, ->(*) { raise Mnemodyne::Embeddings::Unavailable }) do
+        post "#{@base}/recalls", headers: @headers, as: :json,
+          params: { automatic: true, query: "Synthetic query" }
+      end
+    end
+    assert_response :service_unavailable
+    assert_equal "Recall temporarily unavailable", response.parsed_body["error"]
   end
 
   test "rejects disabled accounts inactive residents and suspended vaults" do

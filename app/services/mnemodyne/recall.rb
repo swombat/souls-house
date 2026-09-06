@@ -30,8 +30,8 @@ class Mnemodyne::Recall
     nodes = scope.limit(MAX_NODES + 1).to_a
     raise CapacityExceeded if nodes.length > MAX_NODES
     @nodes = nodes.index_by(&:id)
-    # Foreign IDs fail rather than silently affecting a local recall. Own hidden
-    # nodes are excluded from automatic activations and every traversal path.
+    # Foreign IDs fail rather than silently affecting a local recall. Dormant
+    # nodes are excluded; private active nodes still contribute to traversal.
     (@seed_ids + @activations.keys).uniq.each { |id| @vault.nodes.find(id) }
     @activations.select! { |id, _| @nodes.key?(id) }
     nodes.each { |node| @activations[node.id] = [ @activations.fetch(node.id, 0), node.baseline_activation ].max }

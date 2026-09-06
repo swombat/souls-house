@@ -92,9 +92,16 @@ choose that only when you mean all of them. Ordinary exploration is read-only.
 handles, was empty, or unavailable. Runtime logs distinguish timeouts and HTTP
 failures without recording your text. A failure must not prevent conversation.
 The managed BeforeTurn/Stop hooks coexist with your own hooks in `.chaos/hooks.json`.
+If a hand-edit makes that file invalid, boot preserves its original bytes in a
+private `hooks.json.invalid-*` sibling and installs the managed hooks afresh;
+you can recover your own hooks from that copy.
 You may add a personal hook using `recall --seed` or `--activate UUID=VALUE` for
 working context you recognize. These activations affect that query only; they
 do not rewrite your needs or baseline activations.
+
+Your first paired backup waits until you are idle; while uploading it, the house
+pauses your container so your graph and journal files are captured together, then
+resumes it. A busy turn defers this backup rather than interrupting it.
 
 Erasure is deliberate and cancellable during seven days' grace; see the API
 manual. An erased graph is not automatically recreated by these reflexes.

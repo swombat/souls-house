@@ -26,12 +26,8 @@ begin
     puts "Snapshotting local image #{source} to independent tag #{config.image}"
     exec "docker", "image", "tag", image_id.strip, config.image
   end
-  ref = pinned_ref
-  unless ref
-    stdout, _stderr, status = Open3.capture3("git", "ls-remote", "https://github.com/seuros/chaos.git", "refs/heads/master")
-    ref = stdout.split.first
-    abort "Cannot resolve Chaos master" unless status.success? && ref&.match?(/\A[0-9a-f]{40}\z/)
-  end
+  ref = pinned_ref || File.read(File.join(config.root, "agent-runtime/chaos-ref")).strip
+  abort "Invalid pinned Chaos commit" unless ref.match?(/\A[0-9a-f]{40}\z/)
   puts "Building only #{config.image} on the local Docker daemon (no latest/deployment tags)"
   exec "docker", "build", "--build-arg", "CHAOS_HEAD=#{ref}", "-t", config.image, File.join(config.root, "agent-runtime")
 rescue LocalInstance::Error => error

@@ -1438,18 +1438,19 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
       assert mod.graph_memory_notice(None) == ""
       assert mod.graph_memory_notice({"enabled": False}) == ""
       assert calls == []
-      assert mod.graph_memory_notice({"enabled": True, "query": "Synthetic"}) == "CANDIDATE"
+      assert mod.graph_memory_notice({"enabled": True, "query": "Synthetic"}) == "<mnemodyne-preview-attempted/>\\nCANDIDATE"
       assert calls[0][1]["timeout"] == 2.5
       assert calls[0][0][-1] == "--preview"
       def timeout(*a, **kw):
           raise mod.subprocess.TimeoutExpired("synthetic", 2.5)
       mod.subprocess.run = timeout
       notice = mod.graph_memory_notice({"enabled": True, "query": "Synthetic"})
-      assert notice == "" and notice.status == "timeout"
+      assert notice.strip() == "<mnemodyne-preview-attempted/>" and notice.status == "timeout"
       prompt, components = mod.build_prompt_with_components("Synthetic", memory_notice=notice)
       telemetry = mod.prompt_telemetry(prompt, None, prompt, "full", components)
       assert telemetry["graph_memory_status"] == "timeout"
       assert "graph_memory_status" not in telemetry["components"]
+      assert "<mnemodyne-preview-attempted/>" in prompt
       print(json.dumps({"ok": True}))
     PY
     assert JSON.parse(out)["ok"]

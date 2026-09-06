@@ -29,6 +29,17 @@ class Mnemodyne::DeploymentConfigurationTest < ActiveSupport::TestCase
     ENV["MNEMODYNE_EMBEDDING_IMAGE_DIGEST"] = "sha256:#{"0" * 64}"
   end
 
+  test "missing or malformed digest gives the actionable release instruction" do
+    [ nil, "latest" ].each do |digest|
+      ENV["MNEMODYNE_EMBEDDING_IMAGE_DIGEST"] = digest
+      error = assert_raises(RuntimeError) do
+        ERB.new(File.read(Rails.root.join("config/deploy.yml"))).result_with_hash({})
+      end
+      assert_includes error.message, "Set MNEMODYNE_EMBEDDING_IMAGE_DIGEST"
+      assert_includes error.message, "sha256:"
+    end
+  end
+
   teardown { ENV["MNEMODYNE_EMBEDDING_IMAGE_DIGEST"] = @previous_digest }
 
 end

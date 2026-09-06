@@ -1,5 +1,9 @@
 # Mnemodyne — response to Lume and automatic reflexes
 
+**Historical first-review evidence.** The September 6 second-review fixes,
+RubyLLM-removal rebase and current verification are in
+`docs/reviews/260906-mnemodyne-launch-readiness.md`.
+
 September 5, 2026. Follow-up to `260905-mnemodyne-lume-review.md`, against
 `0556a31`. Daniel additionally required automatic hosted memory formation and
 injection, not optional enablement. Work remains exclusively in instance 2.

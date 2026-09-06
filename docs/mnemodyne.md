@@ -11,6 +11,14 @@ Local verification uses synthetic residents; no existing resident was invoked.
 Daniel's September 5 follow-up makes the reflexes automatic, not an opt-in task. See
 `docs/mnemodyne-deployment.md` for reproducible verification and deployment steps.
 
+**Lifecycle decision:** the old stored `auto_preview_enabled: false` is no longer
+a vault-level opt-out. This deliberately supersedes the unreleased pilot setting;
+status reports the effective automatic lifecycle, not that legacy column.
+The CLI no longer advertises `configure --automatic`. Existing API callers trying
+to disable it receive an explicit conflict rather than a pretend success.
+This does not change disclosure: every node still defaults to `never_automatic`,
+and only handles the resident explicitly marks `automatic` can surface.
+
 ## Resident commands
 
 The updated runtime image includes `house-memory`. It uses the existing
@@ -83,7 +91,11 @@ JSON
 Fresh and resumed conversation triggers use the latest substantive message,
 not the full instruction prompt. At most five handles are injected as fallible
 memory, never source bodies. Ignoring candidates changes no graph rows.
-The runtime gives preview a 2.5-second wall-clock budget and proceeds normally
+The shim gives its single recall request a 2.5-second wall-clock budget; the
+direct BeforeTurn hook allows 5 seconds for first-use provisioning plus recall
+(the managed hook's outer limit is 7 seconds). It caches successful provisioning
+per container/credential. A shim attempt marker suppresses the hook's duplicate
+request even when recall is empty, held or unavailable. Conversation proceeds normally
 if memory fails. The legacy vault toggle no longer disables this lifecycle.
 Node disclosure and dormancy govern eligibility. No room-specific disclosure
 policy or inferred needs are implemented: opt-in means eligible in any conversation
@@ -92,7 +104,7 @@ that the platform will infer an appropriate room.
 
 Private active needs still influence traversal and reinforcement; their content
 is filtered from the returned set. Dormant nodes are excluded from the walk itself.
-`house-memory status` reports the last automatic attempt and outcome. Content-free
+`house-memory status` reports the last recorded automatic attempt and outcome. Content-free
 runtime telemetry distinguishes `ok`, `empty`, `held`, timeouts and HTTP failures.
 The five-minute readiness job reports through Rails' error reporter and fails
 visibly in Solid Queue rather than silently succeeding. Embedding jobs share a
@@ -198,11 +210,20 @@ restored nodes permanently unindexed. `house-memory status` reports indexed node
 For a graphless older backup, an empty vault is retained and files can be restored.
 A nonempty vault is held suspended while files are recovered, with no wake and a
 reported mismatch. Fleet restore collects per-resident failures and continues.
-New vaults schedule a first paired backup after one minute, retrying idle-state
-conflicts for up to eight attempts. Backup failures are recorded in the snapshot
-table. Graph locks time out after two seconds; API writers receive 409 rather than
+New vaults schedule a first paired backup no sooner than 13 minutes later, beyond
+the 12-minute active window. Busy or custody-held residents defer again without
+consuming failure retries or creating failed snapshot rows. Actual backup failures
+retry at 15-minute intervals, up to 12 attempts, then log/report and remain failed
+in the job queue. An intervening successful paired backup satisfies the job.
+Idle containers are paused during the paired upload so graph and files agree.
+Actual backup failures are recorded in the snapshot table. Graph locks time out after two seconds; API writers receive 409 rather than
 parking a Puma thread throughout an upload. Cleanup failures preserve the original
 error and identify ownership-labelled carrier resources for operator cleanup.
+
+Automatic recall telemetry uses a non-blocking `SKIP LOCKED` row update. If a
+write or backup owns the vault, that status update is skipped; the runtime's
+content-free attempt status remains available. Telemetry errors cannot turn an
+embedding outage into a 500.
 
 Cloud backups/restores remain forbidden in secondary/test instances. The opt-in
 verification script has a separate encrypted local Docker-volume transport: only

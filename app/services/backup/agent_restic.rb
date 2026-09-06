@@ -3,6 +3,8 @@ module Backup
 
     IMAGE = "restic/restic:0.18.1"
 
+    class ResidentBusy < ArgumentError; end
+
     module_function
 
     def docker_environment(agent)
@@ -32,7 +34,7 @@ module Backup
       Agents::Resources.new(agent).verify_existing!
       vault.with_lock do
         raise ArgumentError, "Erasure is pending" if vault.erasure_requested_at?
-        raise ArgumentError, "Backup requires an idle resident" if agent.agent_runtime_interactions.active.exists?
+        raise ResidentBusy, "Backup requires an idle resident" if agent.agent_runtime_interactions.active.exists?
         output, _, status = Open3.capture3("docker", "inspect", "--format", "{{.State.Running}} {{.State.Paused}}", agent.container_name)
         paused_here = false
         begin
@@ -47,7 +49,7 @@ module Backup
             # absence from daemon errors through the ownership verifier above.
             raise ArgumentError, "Missing hosted runtime" if agent.external?
           end
-          raise ArgumentError, "Resident became active before checkpoint" if agent.agent_runtime_interactions.active.exists?
+          raise ResidentBusy, "Resident became active before checkpoint" if agent.agent_runtime_interactions.active.exists?
           yield
         ensure
           if paused_here

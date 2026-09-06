@@ -194,12 +194,19 @@ def preview_notice(envelope):
         print("mnemodyne_preview=empty", file=sys.stderr)
         return ""
     try:
-        # Automatic lifecycle setup never resurrects a deliberately erased vault.
         client = Client(timeout=2)
-        status = client.request("POST", "vault", {"automatic_lifecycle": True})
-        if not status.get("enabled") or status.get("suspended") or status.get("erase_after"):
-            print("mnemodyne_preview=held", file=sys.stderr)
-            return ""
+        # Shim requests are provisioned by Rails. Direct harness turns provision
+        # once per container/credential, never recreating an erased vault.
+        if envelope.get("provision") is True:
+            import hashlib
+            identity = hashlib.sha256((client.url + client.token).encode()).hexdigest()
+            marker = Path(tempfile.gettempdir()) / f"mnemodyne-provisioned-{identity}"
+            if not marker.exists():
+                status = client.request("POST", "vault", {"automatic_lifecycle": True})
+                if not status.get("enabled"):
+                    print("mnemodyne_preview=held", file=sys.stderr)
+                    return ""
+                marker.touch(mode=0o600)
         result = client.recall(query=query, automatic=True)
         rows = result.get("results", [])[:5]
         if not rows:
@@ -240,8 +247,6 @@ def main():
     erasure.add_argument("--export", dest="export_file", required=True, help="previously saved export file")
     erasure.add_argument("--confirm", required=True, help="this resident's UUID from status")
     erasure.add_argument("--include-constitutional", action="store_true")
-    configure = commands.add_parser("configure")
-    configure.add_argument("--automatic", choices=("on", "off"), required=True)
     for name in ("inspect", "update", "delete", "dormant", "revive"):
         commands.add_parser(name).add_argument("node_id")
     listing = commands.add_parser("nodes")
@@ -277,8 +282,6 @@ def main():
             result = client.request("GET", "vault")
         elif command == "enable":
             result = client.request("POST", "vault")
-        elif command == "configure":
-            result = client.request("PATCH", "vault", {"auto_preview_enabled": args.automatic == "on"})
         elif command in ("remember", "connect", "update"):
             text = sys.stdin.read(65_537)
             if len(text.encode()) > 65_536:

@@ -5,7 +5,7 @@ class Api::V1::Memory::BaseController < Api::V1::BaseController
   before_action :validate_request_bounds!
 
   rescue_from ActiveRecord::LockWaitTimeout do
-    render json: { error: "Memory busy; retry after backup" }, status: :conflict
+    render json: { error: "Memory busy; retry shortly" }, status: :conflict
   end
 
   rescue_from ActiveRecord::RecordInvalid do |error|

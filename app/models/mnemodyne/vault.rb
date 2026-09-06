@@ -18,7 +18,9 @@ class Mnemodyne::Vault < Mnemodyne::Record
   private
 
   def schedule_first_checkpoint
-    Mnemodyne::FirstCheckpointJob.set(wait: 1.minute).perform_later(agent_id) if Agents::Config.backups_enabled?
+    if Agents::Config.backups_enabled?
+      Mnemodyne::FirstCheckpointJob.set(wait_until: Mnemodyne::FirstCheckpointJob.next_attempt_at(agent)).perform_later(agent_id)
+    end
   end
 
   def reembed_after_resume

@@ -78,7 +78,6 @@ if ENV["MNEMODYNE_LOCAL_SMOKE"] == "1"
       assert_operator @vault.nodes.find(dog["id"]).reload.charge, :>, dog["charge"]
       cli("use", recall["recall_id"], dog["id"])
       assert_equal 1, @vault.uses.count
-      cli("configure", "--automatic", "on")
       notice = docker!("exec", "--user", "1000", "-i", @resources.container, "python3", "/home/agent/memory_client.py", "--preview",
         input: { enabled: true, query: "A puppy chasing a ball outside" }.to_json)
       assert_includes notice, "fallible memory"
@@ -100,6 +99,10 @@ if ENV["MNEMODYNE_LOCAL_SMOKE"] == "1"
       PY
       assert_includes docker!("exec", "--user", "1000", @resources.container, "python3", "-c", shim), "image paths passed"
 
+      # A malformed resident-authored hooks file must survive recovery without
+      # bricking the real entrypoint or silently losing the original bytes.
+      docker!("exec", @resources.container, "python3", "-c",
+        "from pathlib import Path; p=Path('/home/agent/repo/.chaos/hooks.json'); p.parent.mkdir(parents=True, exist_ok=True); p.write_text('{ synthetic invalid hooks')")
       snapshot = Backup::AgentResticJob.perform_now(@agent.id, force: true)
       assert snapshot.ok?
       assert snapshot.graph_checkpoint_digest.present?
@@ -128,6 +131,9 @@ if ENV["MNEMODYNE_LOCAL_SMOKE"] == "1"
       hooks = JSON.parse(docker!("exec", @resources.container, "cat", "/home/agent/repo/.chaos/hooks.json"))
       assert_equal 1, hooks.fetch("hooks").fetch("BeforeTurn").length
       assert_equal 1, hooks.fetch("hooks").fetch("Stop").length
+      preserved = docker!("exec", @resources.container, "python3", "-c",
+        "from pathlib import Path; p=list(Path('/home/agent/repo/.chaos').glob('hooks.json.invalid-*')); assert len(p)==1; assert p[0].stat().st_mode & 0o777 == 0o600; print(p[0].read_text())")
+      assert_equal "{ synthetic invalid hooks", preserved.strip
       @vault.nodes.reset
       @vault.nodes.each { |node| Mnemodyne::EmbedNodeJob.perform_now(@vault.id, node.id) }
       before_turn = docker!("exec", "--user", "1000", "-i", @resources.container, "python3",

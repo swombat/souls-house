@@ -26,10 +26,15 @@ class Api::V1::Memory::RecallsController < Api::V1::Memory::BaseController
   def record_automatic_status(status)
     return unless @vault && params[:automatic] == true
     # Content-free telemetry is not reinforcement and is excluded from exports.
-    @vault.with_lock do
-      @vault.update_columns(last_automatic_recall_at: Time.current, last_automatic_recall_status: status)
+    # UPDATE itself takes a row lock. Skip busy rows rather than making a
+    # preview (including its error handler) wait for custody or graph writes.
+    Mnemodyne::Vault.transaction(requires_new: true) do
+      row = Mnemodyne::Vault.where(id: @vault.id).lock("FOR UPDATE SKIP LOCKED").first
+      row&.update_columns(last_automatic_recall_at: Time.current, last_automatic_recall_status: status)
     end
     Rails.logger.info("Mnemodyne automatic recall: #{status}")
+  rescue ActiveRecord::ActiveRecordError
+    Rails.logger.warn("Mnemodyne automatic recall telemetry unavailable")
   end
 
 end

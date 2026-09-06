@@ -9,7 +9,26 @@ import tempfile
 
 def install(path, remove=False):
     path = Path(path)
-    data = json.loads(path.read_text()) if path.exists() else {}
+    try:
+        data = json.loads(path.read_text()) if path.exists() else {}
+        if not isinstance(data, dict) or not isinstance(data.get("hooks", {}), dict):
+            raise ValueError("Invalid hooks structure")
+        for groups in data.get("hooks", {}).values():
+            if not isinstance(groups, list):
+                raise ValueError("Invalid hook groups")
+            for group in groups:
+                if not isinstance(group, dict) or not isinstance(group.get("hooks", []), list):
+                    raise ValueError("Invalid hook group")
+                if any(not isinstance(hook, dict) or not isinstance(hook.get("command", ""), str)
+                       for hook in group.get("hooks", [])):
+                    raise ValueError("Invalid hook command")
+    except (ValueError, UnicodeError):
+        # Preserve the exact resident-authored bytes without printing them.
+        fd, backup = tempfile.mkstemp(prefix=path.name + ".invalid-", dir=path.parent)
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(path.read_bytes())
+        print(f"Invalid memory hook configuration preserved at {backup}; rebuilding managed hooks", file=sys.stderr)
+        data = {}
     hooks = data.setdefault("hooks", {})
     scripts = {"Stop": "stop_journal_reflex.py", "BeforeTurn": "memory_before_turn.py"}
     for event, script in scripts.items():
@@ -24,7 +43,7 @@ def install(path, remove=False):
         if not remove:
             kept.append({"hooks": [{"type": "command",
                 "command": f"python3 /home/agent/identity/automation/{script}",
-                "timeout": 5 if event == "BeforeTurn" else 60,
+                "timeout": 7 if event == "BeforeTurn" else 60,
                 "statusMessage": "Resident memory reflex"}]})
         hooks[event] = kept
     if not remove:

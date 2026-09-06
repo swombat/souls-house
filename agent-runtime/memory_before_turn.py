@@ -22,14 +22,14 @@ def main():
         text = input_text(messages[-1] if messages else event.get("input") or event.get("prompt") or event.get("last_user_message") or "")
         # The trigger shim already supplies the fresh/resumed conversation preview.
         # The hook closes the loop for direct resident harness turns too.
-        if "Recalled memory candidates — not current chat transcript" in text:
+        if "<mnemodyne-preview-attempted/>" in text or "Recalled memory candidates — not current chat transcript" in text:
             return
         if not text.strip() or event.get("stop_hook_active"):
             return
         result = subprocess.run(
             [sys.executable, "/home/agent/memory_client.py", "--preview"],
-            input=json.dumps({"enabled": True, "query": text[-2000:]}),
-            text=True, capture_output=True, timeout=2.5)
+            input=json.dumps({"enabled": True, "query": text[-2000:], "provision": True}),
+            text=True, capture_output=True, timeout=5)
         # Client stderr contains only its status line; don't forward arbitrary errors.
         import re
         status = re.search(r"mnemodyne_preview=(ok|empty|held|timeout|unavailable|http_[0-9]{3})\b", result.stderr)

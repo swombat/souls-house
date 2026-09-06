@@ -9,6 +9,9 @@ module Backup
       agent = Agent.find(agent_id)
       return unless agent.externally_hosted?
 
+      if agent.memory_vault && agent.agent_runtime_interactions.active.exists?
+        raise Backup::AgentRestic::ResidentBusy, "Backup requires an idle resident"
+      end
       init_restic_repo!(agent)
       backup_started_at = Time.current
       checkpoint = nil
@@ -37,6 +40,8 @@ module Backup
       raise "restic backup failed for #{agent.name}: #{stderr_tail.presence || 'unknown error'}" if force && !ok
 
       snapshot
+    rescue Backup::AgentRestic::ResidentBusy
+      raise
     rescue StandardError => error
       if agent && !snapshot
         AgentBackupSnapshot.create!(agent: agent, restic_snapshot_id: "unknown",

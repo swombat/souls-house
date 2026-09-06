@@ -3,6 +3,37 @@ require "tmpdir"
 
 class HouseMemoryTest < ActiveSupport::TestCase
 
+  test "shim preview makes only one call and direct hook provisions once per credential" do
+    result = run_python(<<~PY)
+      import tempfile
+      from unittest.mock import patch
+      calls = []
+      class Fake:
+          url, token = "http://synthetic", "synthetic-token"
+          def __init__(self, **kw): pass
+          def request(self, *args):
+              calls.append("provision")
+              return {"enabled": True}
+          def recall(self, **kw):
+              calls.append("recall")
+              return {"results": []}
+      mod.Client = Fake
+      with tempfile.TemporaryDirectory() as directory, patch.object(mod.tempfile, "gettempdir", return_value=directory):
+          mod.preview_notice({"enabled": True, "query": "Shim"})
+          assert calls == ["recall"]
+          calls.clear()
+          for _ in range(2):
+              mod.preview_notice({"enabled": True, "query": "Direct", "provision": True})
+          assert calls == ["provision", "recall", "recall"]
+          Fake.token = "rotated-token"
+          calls.clear()
+          mod.preview_notice({"enabled": True, "query": "Direct", "provision": True})
+          assert calls == ["provision", "recall"]
+      print("ok")
+    PY
+    assert_equal "ok", result.strip
+  end
+
   test "source resolver rejects traversal encoded traversal and escaping symlinks" do
     result = run_python(<<~PY)
       root = Path(os.environ["AGENT_IDENTITY_PATH"])
