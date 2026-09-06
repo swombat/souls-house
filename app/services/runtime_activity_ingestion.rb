@@ -116,7 +116,8 @@ class RuntimeActivityIngestion
       category = data["category"]
       raise Invalid unless LABELS.key?(category) && data["outcome"].in?([ nil, "completed", "failed" ])
       { "operation_id" => text(data["operation_id"], 200), "category" => category,
-        "label" => LABELS.fetch(category), "outcome" => data["outcome"] }
+        "label" => (RuntimeCommandPreview.validated(data["command_preview"]) if category == "command") || LABELS.fetch(category),
+        "outcome" => data["outcome"] }
     when "commentary.completed"
       content = text(data["text"])
       shared_narration? ? { "text" => content } : {}

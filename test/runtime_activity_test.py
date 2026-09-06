@@ -87,6 +87,52 @@ class ReporterTest(unittest.TestCase):
         self.assertNotIn("CANARY", json.dumps(self.packets))
         self.assertIn("tool.finished", [event["type"] for event in self.events()])
 
+    def test_command_previews_use_only_approved_vocabulary(self):
+        cases = {
+            "git status --short": "git status --short",
+            "/bin/bash -lc 'git diff --stat'": "git diff --stat",
+            "bundle exec rails test test/models/agent_test.rb": "bundle exec rails test [arguments hidden]",
+            "curl -sS -H 'Authorization: Bearer CANARY' https://user:CANARY@example.test/?token=CANARY": "curl -sS [arguments hidden]",
+            "git -c http.extraHeader='Authorization: CANARY' status": "git [arguments hidden]",
+            "TOKEN=CANARY git status": "Command [arguments hidden]",
+            "env TOKEN=CANARY git status": "env [arguments hidden]",
+            "python3 -c 'print(\"CANARY\")'": "python3 [arguments hidden]",
+            "cat /private/CANARY": "cat [arguments hidden]",
+            "rg CANARY app": "rg [arguments hidden]",
+            "git status --short && echo CANARY": "git status --short [arguments hidden]",
+            "echo $(cat /private/CANARY)": "Command [arguments hidden]",
+            "curl --data @CANARY": "curl [arguments hidden]",
+            "curl <<EOF\nCANARY\nEOF": "curl [arguments hidden]",
+            "git status 'unterminated CANARY": "Command [arguments hidden]",
+            "git status --short\u001bCANARY": "git status [arguments hidden]",
+            "git status --short\u202eCANARY": "git status [arguments hidden]",
+            "/private/CANARY": "Command [arguments hidden]",
+        }
+        for command, expected in cases.items():
+            with self.subTest(command=command):
+                self.assertEqual(expected, module.command_preview(command))
+        for invalid in (None, {}, ["CANARY"], "git status " + "CANARY" * 4000):
+            self.assertEqual("Command [arguments hidden]", module.command_preview(invalid))
+        self.assertLessEqual(len(module.command_preview("git status " + "--short " * 100)), 240)
+
+    def test_command_preview_is_safe_in_events_and_heartbeat_before_transport(self):
+        self.reporter.begin_attempt()
+        self.reporter.project({"type": "item.started", "item": {
+            "id": "safe-id", "type": "command_execution",
+            "command": "curl -H 'Authorization: Bearer CANARY'", "aggregated_output": "CANARY",
+        }})
+        self.reporter.emit("heartbeat")
+        self.reporter.project({"type": "item.completed", "item": {
+            "id": "safe-id", "type": "command_execution",
+            "command": "curl -H 'Authorization: Bearer CANARY'", "status": "completed",
+        }})
+        self.reporter.finish(({"status": "ok"}, 200))
+        self.assertNotIn("CANARY", json.dumps(self.packets))
+        details = [event["data"] for event in self.events() if event["type"] in ("tool.started", "tool.finished")]
+        self.assertEqual(["curl [arguments hidden]"] * 2, [data["command_preview"] for data in details])
+        heartbeat = next(event for event in self.events() if event["type"] == "heartbeat")
+        self.assertEqual("curl [arguments hidden]", heartbeat["data"]["operations"][0]["command_preview"])
+
     def test_explicit_commentary_and_consent_are_both_required(self):
         self.reporter.begin_attempt()
         for phase in (None, "final_answer", "commentary"):
