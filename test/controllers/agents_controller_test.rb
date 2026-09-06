@@ -24,6 +24,24 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "index replaces token totals with private aggregate counts and queues journal refresh" do
+    @agent.update_columns(runtime: "external", journal_entry_stats: { "count" => 7, "status" => "measured" })
+    vault = Mnemodyne::Vault.create!(agent: @agent)
+    vault.nodes.create!(node_type: "memory", content: "Do not disclose this", is_dormant: true)
+    other_vault = Mnemodyne::Vault.create!(agent: agents(:other_account_agent))
+    other_vault.nodes.create!(node_type: "memory", content: "Another private memory")
+
+    assert_enqueued_with(job: AgentJournalStatsJob, args: [ @agent.id ]) do
+      get account_agents_path(@account)
+    end
+    row = inertia_shared_props.fetch("agents").find { |item| item.fetch("id") == @agent.to_param }
+    assert_equal 1, row.fetch("mnemodyne_node_count")
+    assert_equal 7, row.dig("journal_entry_stats", "count")
+    assert_not row.key?("memory_token_summary")
+    assert_not_includes response.body, "Do not disclose this"
+    assert_not_includes response.body, "Another private memory"
+  end
+
   test "index creation link redirects to the creation wizard" do
     get account_agents_path(@account, create: true)
 

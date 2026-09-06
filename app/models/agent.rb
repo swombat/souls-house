@@ -122,6 +122,7 @@ class Agent < ApplicationRecord
   end
 
   def self.json_attrs_for(options = nil)
+    return json_attrs - [ :memory_token_summary, :memories_count ] if options&.dig(:as) == :resident_card
     return json_attrs unless options&.dig(:as) == :list
 
     LIST_JSON_ATTRIBUTES

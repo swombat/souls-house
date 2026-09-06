@@ -118,6 +118,22 @@ test.describe('browser contracts', () => {
     await expect(page.getByRole('img', { name: 'agent-generated-image.png' }).last()).toBeVisible();
   });
 
+  test('resident cards show memory counts instead of token budgets on desktop and mobile', async ({
+    page,
+  }, testInfo) => {
+    await login(page, setup.primary_user, setup.password);
+    await page.goto(`/accounts/${setup.account_id}/agents`);
+    await expect(page.getByText('Mnemodyne nodes:', { exact: true })).toHaveCount(4);
+    await expect(page.getByText('Journal entries:', { exact: true })).toHaveCount(4);
+    await expect(page.getByText('Core:', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Inactive:', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Mnemodyne nodes:', { exact: true }).first().locator('..')).toContainText('0');
+    await page.screenshot({ path: testInfo.outputPath('resident-memory-counts-desktop.png'), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('resident-memory-counts-mobile.png'), fullPage: true });
+  });
+
   test('existing harness residents have no promotion or inline tool controls', async ({ page }) => {
     await login(page, setup.primary_user, setup.password);
     const agentId = setup.agents[0].id;

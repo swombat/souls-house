@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_05_230000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_06_091000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -278,6 +278,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_05_230000) do
     t.integer "heartbeat_wakes_per_day", default: 2, null: false
     t.string "icon"
     t.datetime "identity_seeded_at"
+    t.jsonb "journal_entry_stats", default: {}, null: false
+    t.datetime "journal_stats_requested_at"
     t.datetime "last_announced_at"
     t.datetime "last_health_check_at"
     t.datetime "last_refinement_at"
