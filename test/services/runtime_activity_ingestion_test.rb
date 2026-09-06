@@ -21,7 +21,7 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
   end
 
   test "pre-send errors fail immediately while post-send errors remain uncertain" do
-    [ Errno::ECONNREFUSED, Errno::EHOSTUNREACH, SocketError, Net::OpenTimeout ].each do |klass|
+    [ Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH, SocketError, Net::OpenTimeout ].each do |klass|
       @run.update!(execution_state: "preparing", finished_at: nil)
       @run.record_error!(klass.new("synthetic"))
       assert_equal "failed", @run.reload.execution_state

@@ -8,7 +8,7 @@ Changes stay in `souls-house-1`; no deployment or production queries performed.
 ## Resolved
 
 1. **Pre-send failures:** missing callback credentials (pre-invocation failure),
-   connection refused, unreachable host, DNS failure and connect timeout now
+   connection refused, unreachable host/network, DNS failure and connect timeout now
    finish the run as failed immediately, expire the unused reporting credential,
    and release admission. Read timeout, EOF and connection reset remain
    uncertain. Error handling locks/reloads the run before deciding.

@@ -7,7 +7,7 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     agent = agents(:research_assistant)
     agent.update!(runtime: "external", uuid: SecureRandom.uuid, endpoint_url: "https://agent.example.com",
       trigger_bearer_token: "synthetic", health_state: "healthy", consecutive_health_failures: 0)
-    [ :startup, :connect ].each do |stage|
+    [ :startup, :connect, :network_unreachable ].each do |stage|
       chat = agent.account.chats.create!(title: "Failure probe", manual_responses: true, agents: [ agent ])
       sandbox = Object.new
       sandbox.define_singleton_method(:with_runtime) do |&block|
@@ -15,6 +15,7 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
         block.call
       end
       stub_request(:post, "https://agent.example.com/trigger").to_raise(Errno::ECONNREFUSED) if stage == :connect
+      stub_request(:post, "https://agent.example.com/trigger").to_raise(Errno::ENETUNREACH) if stage == :network_unreachable
       Agents::Sandbox.stub(:new, sandbox) do
         assert_equal 0, ExternalAgentResponseRequest.new(agent: agent, chat: chat).call[:status]
       end
