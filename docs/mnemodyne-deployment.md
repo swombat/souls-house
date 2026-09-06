@@ -4,8 +4,9 @@
 `MNEMODYNE_EMBEDDING_IMAGE_DIGEST` in the operator environment: use the approved
 production image's registry manifest digest, not a local image ID.**
 
-**September 6, 2026: Lume approved `e3aa3e7` for the operator release sequence.
-No deployment authorized or performed.** Sign-off and non-blocking follow-ups:
+**September 6, 2026: Lume approved `e3aa3e7` for the operator release sequence;
+Daniel subsequently authorized deployment.** Actual release progress and artifact
+digest: `docs/reviews/260906-mnemodyne-release.md`. Sign-off and non-blocking follow-ups:
 `docs/reviews/260906-mnemodyne-launch-readiness.md`.
 
 ## Reproduce locally
@@ -38,7 +39,7 @@ The local repository transport requires all three: isolated **test** environment
 ownership labels are still checked. Batch/cloud restore remains forbidden.
 No real resident should ever be allowlisted for this transport.
 
-## Operator release sequence — not executed
+## Operator release sequence
 
 1. Review the additive migrations, custody defaults and backup changes. Preserve
    the normal database and resident-volume backups before release. Graph memory
@@ -52,7 +53,7 @@ No real resident should ever be allowlisted for this transport.
    digest as `MNEMODYNE_EMBEDDING_IMAGE_DIGEST` before any Kamal command and record
    it in the release record. Configuration accepts only `sha256:<64 hex>` and
    constructs an `image@digest` reference: no mutable tag fallback. No registry
-   digest is fabricated here; publishing an artifact remains unauthorized.
+   digest is fabricated here; use the published manifest in the release record.
 4. Build/publish the normal agent runtime through the existing deployment
    procedure. It must contain `house-memory`, `memory_client.py`, the updated shim
    and resident API documentation, including the managed BeforeTurn/Stop scripts.
