@@ -82,6 +82,7 @@ COPY db db
 COPY public public
 COPY Rakefile config.ru ./
 COPY config/ config/
+COPY agent-runtime/command_preview_policy.json agent-runtime/command_preview_policy.json
 COPY bin/ bin/
 COPY *.config.js .
 COPY vite.config.ts .
@@ -115,6 +116,7 @@ COPY --from=build --chown=rails:rails /usr/local/bundle /usr/local/bundle
 COPY --from=build --chown=rails:rails /rails/app     /rails/app
 COPY --from=build --chown=rails:rails /rails/bin     /rails/bin
 COPY --from=build --chown=rails:rails /rails/config  /rails/config
+COPY --from=build --chown=rails:rails /rails/agent-runtime /rails/agent-runtime
 COPY --from=build --chown=rails:rails /rails/db      /rails/db
 COPY --from=build --chown=rails:rails /rails/lib     /rails/lib
 COPY --from=build --chown=rails:rails /rails/public  /rails/public

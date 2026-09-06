@@ -2,6 +2,12 @@ require "test_helper"
 
 class RuntimeCommandPreviewTest < ActiveSupport::TestCase
 
+  test "production image packages the shared policy in build and final stages" do
+    dockerfile = Rails.root.join("Dockerfile").read
+    assert_includes dockerfile, "COPY agent-runtime/command_preview_policy.json agent-runtime/command_preview_policy.json"
+    assert_includes dockerfile, "COPY --from=build --chown=rails:rails /rails/agent-runtime /rails/agent-runtime"
+  end
+
   test "only finite vocabulary previews are accepted" do
     [ "git status --short", "curl [arguments hidden]", "Command [arguments hidden]",
       "bundle exec rails test [arguments hidden]", "git diff --stat" ].each do |preview|
