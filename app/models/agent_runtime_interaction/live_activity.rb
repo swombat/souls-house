@@ -53,6 +53,12 @@ module AgentRuntimeInteraction::LiveActivity
   end
 
   def activity_configuration!
+    with_lock { prepare_activity_configuration! }
+  end
+
+  def prepare_activity_configuration!
+    raise ArgumentError, "Runtime preparation expired" unless execution_state == "preparing" && execution_deadline_at&.future?
+
     token = SecureRandom.hex(32)
     # A persistent trigger can make one resumed and one fresh invocation.
     deadline = (2 * ChaosTriggerClient::DEFAULT_RUNTIME_TIMEOUT_SECS + 60).seconds.from_now
@@ -78,6 +84,8 @@ module AgentRuntimeInteraction::LiveActivity
   end
 
   def reconcile_activity!
+    return unless live_activity? && !execution_state.in?(TERMINAL_STATES) && execution_deadline_at&.past?
+
     with_lock do
       return unless live_activity? && !execution_state.in?(TERMINAL_STATES)
 
@@ -134,6 +142,8 @@ module AgentRuntimeInteraction::LiveActivity
   end
 
   private
+
+  private :prepare_activity_configuration!
 
   def enqueue_live_dispatch
     ManualAgentResponseJob.perform_later(chat, agent, runtime_interaction_id: id)

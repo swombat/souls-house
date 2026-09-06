@@ -21,12 +21,14 @@ class ReporterTest(unittest.TestCase):
         self.packets = []
         self.status = 200
         self.share = True
+        self.reject_type = None
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
                 owner.packets.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-                self.send_response(owner.status)
+                rejected = any(event["type"] == owner.reject_type for event in owner.packets[-1]["events"])
+                self.send_response(422 if rejected else owner.status)
                 self.end_headers()
                 self.wfile.write(json.dumps({"share_narration": owner.share}).encode())
 
@@ -148,6 +150,52 @@ print(json.dumps({"type":"turn.completed","usage":{"input_tokens":1}}),flush=Tru
     def test_foreign_callback_path_is_rejected(self):
         with self.assertRaises(ValueError):
             module.Reporter({**self.config, "path": "/steal"}, self.origin, "openai", "api_key")
+
+    def test_rejected_detail_is_isolated_without_losing_control_events(self):
+        self.reject_type = "warning"
+        with self.reporter.lock:
+            self.reporter.begin_attempt()
+            self.reporter.emit("warning")
+            self.reporter.emit("turn.started")
+        self.reporter.finish(({"status": "ok"}, 200))
+        accepted = [packet for packet in self.packets if all(
+            event["type"] != "warning" for event in packet["events"])]
+        types = [event["type"] for packet in accepted for event in packet["events"]]
+        self.assertIn("attempt.started", types)
+        self.assertIn("supervisor.finished", types)
+        self.assertEqual(1, self.reporter.dropped)
+
+    def test_rejected_registration_stops_instead_of_sending_invalid_followups(self):
+        self.reject_type = "attempt.started"
+        with self.reporter.lock:
+            self.reporter.begin_attempt()
+            self.reporter.emit("turn.started")
+        self.reporter.finish(({"status": "ok"}, 200))
+        self.assertTrue(self.reporter.disabled)
+        self.assertFalse(any(
+            packet["events"][0]["type"] == "turn.started" for packet in self.packets))
+
+    def test_revocation_clears_narration_from_isolated_retry_batches(self):
+        self.reject_type = "warning"
+        self.share = False
+        with self.reporter.lock:
+            self.reporter.begin_attempt()
+            self.reporter.emit("warning")
+            self.reporter.emit("commentary.completed", {"text": "Previously consented"})
+        self.reporter.finish(({"status": "ok"}, 200))
+        accepted = [packet for packet in self.packets if all(
+            event["type"] != "warning" for event in packet["events"])]
+        self.assertFalse(any(event["type"] == "commentary.completed"
+                             for packet in accepted for event in packet["events"]))
+
+    def test_rejected_heartbeat_does_not_generate_an_endless_repair_loop(self):
+        self.reject_type = "heartbeat"
+        with self.reporter.lock:
+            self.reporter.begin_attempt()
+            self.reporter.emit("heartbeat")
+        self.reporter.finish(({"status": "ok"}, 200))
+        self.assertEqual(1, self.reporter.dropped)
+        self.assertLess(len(self.packets), 8)
 
 
 if __name__ == "__main__":

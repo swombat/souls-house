@@ -2,6 +2,7 @@
 import collections
 import datetime
 import json
+import logging
 import os
 import random
 import signal
@@ -48,7 +49,7 @@ class Reporter:
         self.number = 0
         self.seq = 0
         self.queue = collections.deque()
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.wake = threading.Event()
         self.closed = False
         self.disabled = False
@@ -86,13 +87,14 @@ class Reporter:
         self.wake.set()
 
     def begin_attempt(self):
-        if self.attempt_id:
-            self.emit("fallback")
-        self.attempt_id = str(uuid.uuid4())
-        self.number += 1
-        self.seq = 0
-        self.operations = {}
-        self.emit("attempt.started", {"narration_capability": self.capability})
+        with self.lock:
+            if self.attempt_id:
+                self.emit("fallback")
+            self.attempt_id = str(uuid.uuid4())
+            self.number += 1
+            self.seq = 0
+            self.operations = {}
+            self.emit("attempt.started", {"narration_capability": self.capability})
 
     def project(self, event):
         kind = event.get("type")
@@ -132,6 +134,7 @@ class Reporter:
 
     def run(self, args, prompt, env, timeout):
         self.begin_attempt()
+        reader_attempt_id = self.attempt_id
         env = env.copy()
         env["SOULSHOUSE_RUNTIME_RUN_ID"] = self.run_id
         env["SOULSHOUSE_RUNTIME_CHAT_ID"] = getattr(self, "conversation_id", "") or ""
@@ -155,13 +158,16 @@ class Reporter:
                 if len(line) > 1024 * 1024:
                     while line and not line.endswith(b"\n"):
                         line = proc.stdout.readline(1024 * 1024)
-                    self.dropped += 1
+                    with self.lock:
+                        self.dropped += 1
                     continue
                 try:
                     event = json.loads(line)
                     if not isinstance(event, dict):
                         continue
-                    self.project(event)
+                    with self.lock:
+                        if self.attempt_id == reader_attempt_id:
+                            self.project(event)
                     if event.get("type") == "process.started":
                         process_started = line
                         continue
@@ -230,6 +236,8 @@ class Reporter:
         outcome = "timed_out" if status == 504 else ("failed" if status >= 400 else "completed")
         if not self.attempt_id:
             self.begin_attempt()
+        with self.lock:
+            self.operations = {}
         self.emit("supervisor.finished", {
             "outcome": outcome, "telemetry": self._safe_telemetry(body.get("telemetry")),
             "runtime_status": body.get("status"), "returncode": body.get("returncode"),
@@ -266,8 +274,11 @@ class Reporter:
         opener = urllib.request.build_opener(NoRedirect)
         backoff = 0.5
         pending = None
+        retry_batches = collections.deque()
         while not self.disabled:
             with self.lock:
+                if pending is None and retry_batches:
+                    pending = retry_batches.popleft()
                 if pending is None and self.queue:
                     first = json.loads(self.queue[0][0])
                     entries = []
@@ -301,13 +312,34 @@ class Reporter:
                     with self.lock:
                         self.queue = collections.deque(item for item in self.queue
                             if item[1] not in ("commentary.completed", "plan.updated"))
+                        retry_batches = collections.deque(batch for batch in retry_batches
+                            if batch[1][0][1] not in ("commentary.completed", "plan.updated"))
                 with self.lock:
                     acknowledged = {id(entry) for entry in pending[1]}
                     self.queue = collections.deque(entry for entry in self.queue if id(entry) not in acknowledged)
                 pending = None
                 backoff = 0.5
             except urllib.error.HTTPError as error:
+                if error.code == 422:
+                    if len(pending[1]) > 1:
+                        # Isolate bad detail without losing registration or a
+                        # valid terminal outcome in the same atomic batch.
+                        retry_batches.extend((entry[0], [entry]) for entry in pending[1])
+                    elif pending[1][0][1] in ("attempt.started", "fallback", "supervisor.finished"):
+                        logging.getLogger(__name__).warning("Activity control event rejected; reporting stopped")
+                        self.disabled = True
+                        return
+                    else:
+                        with self.lock:
+                            rejected = {id(entry) for entry in pending[1]}
+                            self.queue = collections.deque(entry for entry in self.queue if id(entry) not in rejected)
+                            self.dropped += 1
+                        if pending[1][0][1] != "heartbeat":
+                            self.emit("heartbeat")
+                    pending = None
+                    continue
                 if error.code != 429 and error.code < 500:
+                    logging.getLogger(__name__).warning("Activity reporting stopped (HTTP %s)", error.code)
                     self.disabled = True
                     return
                 retry_after = error.headers.get("Retry-After", "")

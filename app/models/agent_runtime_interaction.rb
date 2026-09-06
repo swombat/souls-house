@@ -138,8 +138,17 @@ class AgentRuntimeInteraction < ApplicationRecord
 
   def record_error!(error)
     if live_activity?
-      # A transport exception does not tell us whether accepted work stopped.
-      update!(error_class: error.class.name, error_message: error.message)
+      with_lock do
+        update!(error_class: error.class.name, error_message: error.message)
+        # Connect failures precede any request bytes; read/reset failures don't.
+        before_send = activity_token_digest.nil? || [
+          "Errno::ECONNREFUSED", "Errno::EHOSTUNREACH", "SocketError", "Net::OpenTimeout"
+        ].include?(error.class.name)
+        if before_send
+          update!(execution_deadline_at: Time.current, activity_token_expires_at: Time.current)
+          finish_execution!("failed")
+        end
+      end
       return
     end
     update!(

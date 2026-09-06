@@ -211,7 +211,7 @@ class ChatsController < ApplicationController
 
   def runtime_interactions_for_timeline
     scope = @chat.agent_runtime_interactions.includes(:agent)
-    active = scope.where(finished_at: nil).to_a
+    active = scope.where(finished_at: nil).where.not(run_id: nil).to_a
     active.each(&:reconcile_activity!)
     (active + scope.recent.limit(20).to_a).uniq
       .sort_by { |interaction| [ interaction.created_at, interaction.id ] }

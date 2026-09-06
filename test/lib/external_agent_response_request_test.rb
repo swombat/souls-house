@@ -3,6 +3,28 @@ require "webmock/minitest"
 
 class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
 
+  test "startup and connection failures release their reservation during the request" do
+    agent = agents(:research_assistant)
+    agent.update!(runtime: "external", uuid: SecureRandom.uuid, endpoint_url: "https://agent.example.com",
+      trigger_bearer_token: "synthetic", health_state: "healthy", consecutive_health_failures: 0)
+    [ :startup, :connect ].each do |stage|
+      chat = agent.account.chats.create!(title: "Failure probe", manual_responses: true, agents: [ agent ])
+      sandbox = Object.new
+      sandbox.define_singleton_method(:with_runtime) do |&block|
+        raise "Synthetic Docker startup failure" if stage == :startup
+        block.call
+      end
+      stub_request(:post, "https://agent.example.com/trigger").to_raise(Errno::ECONNREFUSED) if stage == :connect
+      Agents::Sandbox.stub(:new, sandbox) do
+        assert_equal 0, ExternalAgentResponseRequest.new(agent: agent, chat: chat).call[:status]
+      end
+      run = chat.agent_runtime_interactions.last
+      assert_equal "failed", run.execution_state
+      assert run.finished_at?
+      assert_not chat.agent_response_active?(agent)
+    end
+  end
+
   test "trigger request points external agent at the API skill file" do
     agent = agents(:research_assistant)
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "External prompt")

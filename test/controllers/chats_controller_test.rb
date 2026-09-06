@@ -100,6 +100,23 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "PRIVATE-CANARY"
   end
 
+  test "old unfinished legacy runs do not bypass the bounded history slice" do
+    agent = agents(:research_assistant)
+    old = @chat.agent_runtime_interactions.create!(
+      agent: agent, trigger_kind: "conversation", started_at: 2.days.ago, created_at: 2.days.ago
+    )
+    20.times do
+      @chat.agent_runtime_interactions.create!(
+        agent: agent, trigger_kind: "conversation", started_at: 1.hour.ago, finished_at: Time.current
+      )
+    end
+    get "/accounts/#{@account.to_param}/chats/#{@chat.to_param}/activity", as: :json
+    assert_response :success
+    rows = response.parsed_body["runtime_interactions"]
+    assert_equal 20, rows.size
+    assert_not_includes rows.pluck("id"), old.to_param
+  end
+
   test "group chat agent props use the safe list projection" do
     agent = agents(:research_assistant)
     agent.update!(

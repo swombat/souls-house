@@ -42,6 +42,10 @@ Old JSON still deserializes; standalone Chaos transmits nothing.
 
 ## Failure behavior worth reviewing
 
+The follow-up [01f review resolution](260906-01f-chaos-lifecycle-visibility-review-resolution.md)
+distinguishes pre-send failures, improves 422 recovery, and records the
+remaining deployment checks.
+
 - No HTTP response, a proxy error, or malformed response is not process-exit
   evidence. The run stays reserved until a supervisor report or finite release.
   Ambiguous execution stops an ask-all chain without starting later residents.

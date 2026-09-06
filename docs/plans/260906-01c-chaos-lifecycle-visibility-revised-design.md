@@ -175,7 +175,11 @@ Initial caps: 50 events/64 KiB per batch, 4 KiB per text field, 100 plan steps,
 64 sender active-operation summaries (256 reducer maximum); omitted counts when exceeded. Sender queue
 1 MiB, one HTTP request in flight, changes flushed within 500ms, 10s heartbeat.
 Timeout HTTP at 5s; bounded exponential backoff/jitter for network/429/5xx.
-Stop on authentication/schema failure with a sanitized local warning.
+Stop on authentication/routing failure with a sanitized local warning.
+On 422, split rejected batches to isolate invalid detail, omit/count that
+detail, and continue. Rejected individual registration/fallback/terminal
+control events still stop reporting: dropping those would corrupt lifecycle
+meaning. Consent revocation clears narration from isolated retry batches too.
 Drop oldest detail under pressure, retaining control events/terminal outcome
 and recovering current operations on the next heartbeat,
 and visible dropped counts. Bounded 2s final flush. This is not durable replay.

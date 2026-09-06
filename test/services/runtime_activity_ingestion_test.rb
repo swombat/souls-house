@@ -20,6 +20,35 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
     assert @chat.agent_response_active?(@agent)
   end
 
+  test "pre-send errors fail immediately while post-send errors remain uncertain" do
+    [ Errno::ECONNREFUSED, Errno::EHOSTUNREACH, SocketError, Net::OpenTimeout ].each do |klass|
+      @run.update!(execution_state: "preparing", finished_at: nil)
+      @run.record_error!(klass.new("synthetic"))
+      assert_equal "failed", @run.reload.execution_state
+      assert @run.finished_at?
+    end
+    [ Net::ReadTimeout, EOFError, Errno::ECONNRESET ].each do |klass|
+      @run.update!(execution_state: "preparing", finished_at: nil)
+      @run.record_error!(klass.new("synthetic"))
+      assert_equal "preparing", @run.reload.execution_state
+      assert_nil @run.finished_at
+    end
+    @run.update!(activity_token_digest: nil)
+    @run.record_error!(RuntimeError.new("Docker startup failed"))
+    assert_equal "failed", @run.reload.execution_state
+    assert_not @chat.agent_response_active?(@agent)
+  end
+
+  test "ordinary activity reads do not acquire a write lock" do
+    @run.stub(:with_lock, ->(*) { flunk "unnecessary write lock" }) { @run.reconcile_activity! }
+  end
+
+  test "slow preparation cannot send a trigger after its budget expires" do
+    @run.update!(activity_token_digest: nil, execution_deadline_at: 1.second.ago)
+    assert_raises(ArgumentError) { @run.activity_configuration! }
+    assert_nil @run.reload.activity_token_digest
+  end
+
   test "heartbeat repairs missing tool finish detail without inventing history" do
     ingest(1, "attempt.started", { "narration_capability" => "unknown" })
     ingest(2, "tool.started", { "operation_id" => "a", "category" => "tool" })
