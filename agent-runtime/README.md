@@ -22,6 +22,29 @@ SOULSHOUSE_AGENT_BACKUPS_ENABLED=false
 
 ## Runtime contract
 
+### Resident-modified memory hooks
+
+Boot updates `identity/automation/stop_journal_reflex.py` and
+`memory_before_turn.py` only when absent, identical to current stock, or identical
+to the last installed stock in `identity/automation/.house-stock/`. Differing
+files without a known baseline are preserved, not assumed disposable.
+
+Modified hooks remain the **single managed invocation at their existing path**.
+New stock is staged as `<script>.upstream`; the last-installed baseline stays
+fixed, and `HOUSE-HOOK-UPDATES.md` plus a boot warning report pending updates.
+Successive images refresh the staged copy, not the active file or ancestor.
+Symlinked active hooks are preserved too. This does not merge code or eliminate
+the need to review new stock features. Do not blindly restore an older backup.
+To resume automatic updates, deliberately replace the active hook with reviewed
+current stock; the next boot recognizes it and records that baseline.
+
+This does not provide a custom-filename opt-out: the hook-config merger still
+installs the standard paths, and a separate custom journal hook can cause two
+invitations. Keep customizations in the preserved active script instead.
+
+Installer regressions (no Rails/database required):
+`python3 -m unittest discover -s test -p memory_script_install_test.py`.
+
 ### Live conversation activity
 
 House-launched conversation triggers now include an `activity` configuration.

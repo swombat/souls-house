@@ -140,7 +140,8 @@ The agent-owned identity layer and the HelixKit-managed runtime layer must stay 
 | Layer | Examples | Update policy |
 |---|---|---|
 | Agent-owned identity/life | `soul.md`, `self-narrative.md`, daily journals, agent-authored files | Never overwrite automatically. |
-| Platform-managed runtime | `trigger_shim.py`, `stop_journal_reflex.py`, `helixkit-post-message`, `helixkit-append-journal`, future Mnemodyne clients | Updated by rebuilding/restarting the runtime image. |
+| Platform-managed runtime | `trigger_shim.py`, `helixkit-post-message`, `helixkit-append-journal`, future Mnemodyne clients | Updated by rebuilding/restarting the runtime image. |
+| Resident-customizable memory hooks | `stop_journal_reflex.py`, `memory_before_turn.py` | Update pristine copies against a recorded stock baseline; preserve edits and stage new stock alongside with a pending-update notice. Unknown baseline means preserve. |
 | Generated scaffold | `runtime-instructions.md`, README files | Versioned. If absent or still known-generated, update; if agent-edited, preserve and write a `.new` copy for review. |
 
 ### Acceptance criteria
