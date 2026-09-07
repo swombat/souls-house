@@ -172,7 +172,7 @@ GEM
       activesupport (>= 6.1)
     hashdiff (1.2.1)
     hashids (1.0.6)
-    honeybadger (6.1.0)
+    honeybadger (6.9.1)
       logger
       ostruct
     i18n (1.15.2)
@@ -263,7 +263,7 @@ GEM
       racc (~> 1.4)
     nokogiri (1.19.4-x86_64-linux-musl)
       racc (~> 1.4)
-    ostruct (0.6.2)
+    ostruct (0.6.3)
     pagy (43.6.2)
       json
       uri
@@ -482,7 +482,7 @@ DEPENDENCIES
   discard (~> 2.0)
   fiddle (~> 1.1)
   hashids
-  honeybadger (~> 6.1)
+  honeybadger (~> 6.9)
   image_processing (~> 2.0.3)
   inertia_rails (~> 3.22)
   jbuilder
