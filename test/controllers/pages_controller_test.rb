@@ -34,6 +34,30 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "privacy", inertia_component
   end
 
+  test "should get self hosting guide without authentication" do
+    get self_host_path
+
+    assert_response :success
+    assert_equal "self-host", inertia_component
+  end
+
+  test "should get self hosting guide with authentication" do
+    user = users(:user_1)
+    post login_path, params: { email_address: user.email_address, password: "password123" }
+
+    get self_host_path
+
+    assert_response :success
+    assert_equal "self-host", inertia_component
+  end
+
+  test "should get technical self hosting guide without authentication" do
+    get self_host_technical_path
+
+    assert_response :success
+    assert_equal "self-host-technical", inertia_component
+  end
+
   test "should get terms of service without authentication" do
     get terms_path
 

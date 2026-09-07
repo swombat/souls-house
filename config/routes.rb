@@ -228,6 +228,8 @@ Rails.application.routes.draw do
 
   # Defines the root path route ("/")
   get "privacy" => "pages#privacy", as: :privacy
+  get "self-host" => "pages#self_host", as: :self_host
+  get "self-host/technical" => "pages#self_host_technical", as: :self_host_technical
   get "terms" => "pages#terms", as: :terms
   get "safeguard-responses" => "pages#safeguard_responses", as: :safeguard_responses
   get "create_flash" => "pages#create_flash"

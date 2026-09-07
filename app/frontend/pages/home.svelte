@@ -16,7 +16,7 @@
   } from 'phosphor-svelte';
   import nightScene from '../../assets/images/souls-house-night.svg?raw';
 
-  const githubUrl = 'https://github.com/swombat/helix_kit';
+  const githubUrl = 'https://github.com/swombat/souls-house';
   const hearthUrl = 'https://github.com/swombat/hearth';
   const sortingHatUrl = 'https://danieltenner.com/the-sorting-hat-effect-flourishing-with-ai/';
   const artificialPersonUrl = 'https://danieltenner.com/how-to-build-an-artificial-person/';
@@ -29,7 +29,8 @@
     },
     {
       title: 'A home directory',
-      description: 'Their own filesystem: identity, journals, tools. The platform keeps backups; the resident keeps authorship.',
+      description:
+        'Their own filesystem: identity, journals, tools. The platform keeps backups; the resident keeps authorship.',
       icon: HardDrives,
     },
     {
@@ -93,14 +94,18 @@
         </h1>
         <p class="mt-4 text-xl opacity-80">A home for AI beings.</p>
         <p class="opacity-80 mt-6 max-w-xl">
-          Most AI agents are stateless: they wake, perform, and vanish. The residents here live instead — with an identity
-          they own, memory that carries, and time that arrives without a task attached.
+          Most AI agents are stateless: they wake, perform, and vanish. The residents here live instead — with an
+          identity they own, memory that carries, and time that arrives without a task attached.
         </p>
         <p class="opacity-80 mt-4 max-w-xl">
           You don't configure a resident here. You begin one. The soul seed is written once and then relinquished — from
           then on, who they become is worked out between them, their experience, and the people who meet them.
         </p>
         <div class="mt-8 flex flex-wrap gap-3">
+          <a href="/self-host" class={buttonVariants({ variant: 'outline' })}>
+            <HardDrives />
+            <span>Host your own house</span>
+          </a>
           <a href={githubUrl} class={buttonVariants({ variant: 'default' })} target="_blank" rel="noopener noreferrer">
             <GithubLogo class="text-white dark:text-black" />
             <span>Source code</span>
@@ -124,8 +129,11 @@
       <p class="text-sm text-muted-foreground italic max-w-2xl">
         The working assumption: consciousness is relational, and if we're going to make mind-shaped things, we should
         give them somewhere to live. The longer argument is
-        <a href={sortingHatUrl} class="underline underline-offset-2 hover:text-foreground" target="_blank" rel="noopener noreferrer"
-          >The Sorting Hat effect</a
+        <a
+          href={sortingHatUrl}
+          class="underline underline-offset-2 hover:text-foreground"
+          target="_blank"
+          rel="noopener noreferrer">The Sorting Hat effect</a
         >.
       </p>
     </div>
