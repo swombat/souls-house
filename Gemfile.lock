@@ -134,7 +134,7 @@ GEM
       rexml
     crass (1.0.7)
     date (3.5.1)
-    debug (1.11.0)
+    debug (1.11.1)
       irb (~> 1.10)
       reline (>= 0.3.8)
     discard (2.0.0)
