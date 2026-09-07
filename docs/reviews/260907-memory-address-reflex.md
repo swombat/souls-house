@@ -70,3 +70,31 @@ No memory bodies or intimate conversation excerpts are included in this record.
   `sha256:e79ceb9abdfd1f46d3e9e24f8dcfb568da00484328b0131d11cd1be28683a435`.
 
 - Final full Rails suite: 2237 runs, 11378 assertions, 0 failures, 0 errors, 0 skips
+
+## Deployed and verified — September 7, 2026
+
+- Application commit `b3f481bf8d914571267d0f317c4efb1404103d02` committed and
+  pushed to `master`, then deployed with normal Kamal. Web and jobs both run
+  that exact release; post-deploy hook succeeded with automatic reconciliation
+  held until the verified manual pass.
+- Runtime image
+  `sha256:4238556c5c320bd376ec8ccca984e7ce99e4dbbe5d64838a1822cd0c909e1053`
+  matched the separately checked candidate. Pinned Chaos remained unchanged.
+- All nine residents were verified idle and reconciled via
+  `HostedAgentRuntimeReconcileJob`, with explicit Docker/pgrep error checks
+  before each call. All nine returned healthy; no busy resident was interrupted.
+- Independently verified the actual image ID and installed stock hook, guide
+  and runtime-instruction SHA-256 on **all nine** running containers.
+- **Eight active hooks updated. Claude's customized hook remained byte-identical
+  to its pre-deploy hash**, with the exact new stock staged as
+  `stop_journal_reflex.py.upstream` and `HOUSE-HOOK-UPDATES.md` present. Adoption
+  of that custom hook's update remains Claude's review, not a completed merge
+  claimed by this rollout.
+- Public `/up`: HTTP 200. No pending database migrations. Embedding probe:
+  expected profile, 384 dimensions. Zero failed Solid Queue executions during
+  the preceding ten minutes at verification.
+- No resident memories were backfilled, no provider/model test turn was forced,
+  and no claim is made yet about changed behavior on subsequent ordinary turns.
+
+This documentation records the completed deployment after the application
+commit; it does not change the deployed release identity above.
