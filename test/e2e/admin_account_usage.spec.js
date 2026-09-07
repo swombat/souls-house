@@ -36,10 +36,23 @@ test('admin can inspect account usage, settings and empty states on desktop and 
     await overview.locator('summary').filter({ hasText: 'Settings, integrations' }).first().click();
     await expect(overview.getByText('Telegram: Not connected').first()).toBeVisible();
 
+    const conversation = await request.post('/test/e2e/conversation_fixture', {
+      data: { account_id: setup.account_id, count: 1, diagnostics: true },
+    });
+    expect(conversation.ok()).toBe(true);
+    await overview.getByRole('button', { name: 'Refresh overview' }).click();
+    await expect(overview.getByText('2 messages · 1 resident replies')).toBeVisible();
+    await expect(overview.getByText('1 failed (historical)')).toBeVisible();
+    await expect(overview.getByText('completed', { exact: true })).toBeVisible();
+    await expect(overview.getByText('Message tokens: 120 in / 30 out')).toBeVisible();
+    await page.screenshot({ path: 'test-results/admin-conversation-diagnostics-desktop.png', fullPage: true });
+
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await overview.getByRole('button', { name: 'Refresh overview' }).click();
     await expect(overview.getByRole('heading', { name: 'Residents (4)', exact: true })).toBeVisible();
+
+    await page.screenshot({ path: 'test-results/admin-conversation-diagnostics-mobile.png', fullPage: true });
 
     await page.goto(`/admin/accounts?account_id=${setup.empty_account_id}`);
     await expect(overview.getByText('No residents have been created in this account.')).toBeVisible();

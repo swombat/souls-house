@@ -122,6 +122,16 @@ module TestSupport
         )
       end
 
+      if params[:diagnostics]
+        chat.messages.create!(role: "assistant", agent: agents.first, content: "Synthetic reply", input_tokens: 120, output_tokens: 30)
+        [ [ "api_key", 500, 1, 2.hours.ago ], [ "oauth_account", 200, 0, 1.hour.ago ] ].each do |mode, status, code, time|
+          AgentRuntimeInteraction.create!(agent: agents.first, chat: chat, trigger_kind: "conversation",
+            session_id: "diagnostic-#{chat.id}", started_at: time, finished_at: time + 1.minute,
+            provider_auth_mode: mode, transport_status: status, runtime_returncode: code,
+            runtime_status: code.zero? ? "ok" : "error")
+        end
+      end
+
       render json: {
         chat_id: chat.to_param,
         message_count: messages.length,

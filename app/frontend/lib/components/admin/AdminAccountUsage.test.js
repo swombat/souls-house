@@ -138,3 +138,62 @@ test('switches chart metrics without navigation and links sessions to admin runt
   expect(link.getAttribute('href')).toContain('/admin/agents/agent-one/runtime?');
   expect(link.getAttribute('href')).toContain('session_id=session%2Fone');
 });
+
+test('shows historical failures separately from the latest OAuth attempt and links its dated session', () => {
+  const account = accountFixture();
+  account.usage.recent_conversations = [
+    {
+      id: 'chat-one',
+      title: 'Diagnostic conversation',
+      agents: ['Janis'],
+      messages: 4,
+      resident_replies: 1,
+      context_tokens: 120,
+      message_tokens: { input: 120, output: 30 },
+      runtime_tokens: { input: null, output: 0 },
+      response_attempts: 2,
+      failed_attempts: 1,
+      latest_responses: [
+        {
+          agent_id: 'janis',
+          agent_name: 'Janis',
+          session_id: 'janis/session',
+          status: 'completed',
+          auth_mode: 'oauth_account',
+          transport_status: 200,
+          returncode: 0,
+          started_at: '2026-09-01T12:00:00Z',
+          finished_at: '2026-09-01T12:01:00Z',
+        },
+      ],
+    },
+  ];
+  render(AdminAccountUsage, { account });
+  expect(screen.getByText('4 messages · 1 resident replies')).toBeInTheDocument();
+  expect(screen.getByText('1 failed (historical)')).toBeInTheDocument();
+  expect(screen.getByText('completed')).toBeInTheDocument();
+  expect(screen.getByText('Runtime tokens: — in / 0 out')).toBeInTheDocument();
+  const url = new URL(screen.getByRole('link', { name: 'Janis' }).href);
+  expect(url.searchParams.get('session_id')).toBe('janis/session');
+  expect(url.searchParams.get('from')).toBe('2026-09-01T11:59:00.000Z');
+  expect(url.searchParams.get('to')).toBe('2026-09-01T12:02:00.000Z');
+});
+
+test('does not call a conversation without recorded attempts successful', () => {
+  const account = accountFixture();
+  account.usage.recent_conversations = [
+    {
+      id: 'empty',
+      title: 'Not attempted',
+      agents: [],
+      messages: 1,
+      resident_replies: 0,
+      response_attempts: 0,
+      failed_attempts: 0,
+      latest_responses: [],
+    },
+  ];
+  render(AdminAccountUsage, { account });
+  expect(screen.getByText('No recorded conversation attempts.')).toBeInTheDocument();
+  expect(screen.queryByText('completed')).not.toBeInTheDocument();
+});

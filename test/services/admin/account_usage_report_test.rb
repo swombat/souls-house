@@ -147,6 +147,71 @@ class Admin::AccountUsageReportTest < ActiveSupport::TestCase
     assert_equal({ provider: "anthropic", mode: "api_key", connection_status: nil }, resident_report[:model_access])
   end
 
+  test "conversation diagnostics separate replies, token sources and historical failures from latest auth" do
+    chat = @account.chats.create!(title: "Diagnostics", agent_ids: [ @agent.id ])
+    chat.messages.create!(role: "user", content: "private user text")
+    chat.messages.create!(role: "assistant", agent: @agent, content: "private reply", input_tokens: 120, output_tokens: 30)
+    chat.messages.create!(role: "tool", agent: @agent, content: "private tool output")
+    chat.messages.create!(role: "assistant", content: "Nonresident reply")
+    record(@agent, "old", @now - 1.hour, chat: chat, trigger_kind: "conversation",
+      finished_at: @now - 59.minutes, transport_status: 500, runtime_status: "error", runtime_returncode: 1,
+      error_message: "secret credential error")
+    record(@agent, "latest", @now, chat: chat, trigger_kind: "conversation",
+      finished_at: @now, transport_status: 200, runtime_status: "ok", runtime_returncode: 0,
+      provider_auth_mode: "oauth_account", input_tokens: 400, output_tokens: 50)
+    record(@agent, "wake", @now, chat: chat, transport_status: 500)
+    record(agents(:other_account_agent), "foreign", @now, chat: chat, trigger_kind: "conversation", transport_status: 500)
+
+    row = Admin::AccountUsageReport.new(@account, now: @now).call[:recent_conversations].first
+    assert_equal 4, row[:messages]
+    assert_equal 1, row[:resident_replies]
+    assert_equal({ input: 120, output: 30 }, row[:message_tokens])
+    assert_equal({ input: 400, output: 50 }, row[:runtime_tokens])
+    assert_equal 2, row[:response_attempts]
+    assert_equal 1, row[:failed_attempts]
+    latest = row[:latest_responses].sole
+    assert_equal "completed", latest[:status]
+    assert_equal "oauth_account", latest[:auth_mode]
+    assert_equal "latest", latest[:session_id]
+    assert_equal @now, latest[:started_at]
+    %w[private secret foreign].each { |value| assert_not_includes row.to_json, value }
+  end
+
+  test "conversation diagnostics retain each resident latest attempt and distinguish missing tokens from zero" do
+    chat = @account.chats.create!(title: "Two residents")
+    record(@agent, "first", @now, chat: chat, trigger_kind: "conversation", input_tokens: 0, output_tokens: 0)
+    record(agents(:code_reviewer), "second", @now, chat: chat, trigger_kind: "conversation",
+      finished_at: @now, transport_status: 500)
+    row = Admin::AccountUsageReport.new(@account, now: @now).call[:recent_conversations].sole
+    assert_equal 2, row[:latest_responses].size
+    assert_equal 1, row[:failed_attempts]
+    assert_equal({ input: 0, output: 0 }, row[:runtime_tokens])
+    assert_nil row[:message_tokens][:input]
+  end
+
+  test "conversation diagnostics distinguish busy stale unknown and live lifecycle outcomes" do
+    states = [
+      [ "busy", { transport_status: 409, runtime_status: "already_running", finished_at: @now } ],
+      [ "unfinished", { started_at: @now - 1.hour } ],
+      [ "running", {} ],
+      [ "unknown", { finished_at: @now } ],
+      [ "failed", { finished_at: @now, runtime_status: "error" } ],
+      [ "failed", { run_id: SecureRandom.uuid, execution_state: "timed_out" } ],
+      [ "outcome_unknown", { run_id: SecureRandom.uuid, execution_state: "outcome_unknown" } ],
+      [ "cancelled", { run_id: SecureRandom.uuid, execution_state: "cancelled" } ],
+      [ "running", { run_id: SecureRandom.uuid, execution_state: "executing", execution_deadline_at: @now + 1.minute } ]
+    ]
+    states.each do |expected, attributes|
+      chat = @account.chats.create!(title: expected)
+      record(@agent, nil, attributes.delete(:started_at) || @now, chat: chat, trigger_kind: "conversation", **attributes)
+      row = Admin::AccountUsageReport.new(@account, now: @now).call[:recent_conversations].find { |c| c[:id] == chat.to_param }
+      assert_equal expected, row[:latest_responses].sole[:status]
+      assert_equal(expected == "failed" ? 1 : 0, row[:failed_attempts])
+      assert_nil row[:runtime_tokens][:input]
+      assert_equal 0, row[:resident_replies]
+    end
+  end
+
   private
 
   def resident_report

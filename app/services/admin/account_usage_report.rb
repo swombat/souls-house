@@ -144,14 +144,67 @@ module Admin
 
     def recent_conversations
       chats = @account.chats.order(updated_at: :desc, id: :desc).includes(:agents).limit(10).to_a
-      counts = Message.where(chat_id: chats.map(&:id)).group(:chat_id).count
+      chat_ids = chats.map(&:id)
+      message_stats = Message.where(chat_id: chat_ids).group(:chat_id).pluck(
+        :chat_id, Arel.sql("COUNT(*)"),
+        Arel.sql("COUNT(*) FILTER (WHERE role = 'assistant' AND agent_id IS NOT NULL AND tool_call_id IS NULL AND NULLIF(BTRIM(content), '') IS NOT NULL)"),
+        Arel.sql("SUM(input_tokens)"), Arel.sql("SUM(output_tokens)")
+      ).index_by(&:first)
+      response_runs = interactions.where(chat_id: chat_ids, trigger_kind: "conversation")
+      run_stats = response_runs.group(:chat_id).pluck(
+        :chat_id, Arel.sql("COUNT(*)"),
+        Arel.sql("COUNT(*) FILTER (WHERE #{conversation_run_state_sql} = 'failed')"),
+        Arel.sql("SUM(input_tokens)"), Arel.sql("SUM(output_tokens)")
+      ).index_by(&:first)
+      latest_runs = response_runs.select(
+        "DISTINCT ON (chat_id, agent_id) id, session_id, chat_id, agent_id, started_at, finished_at, provider_auth_mode, " \
+        "transport_status, runtime_returncode, #{conversation_run_state_sql} AS response_state"
+      ).order(:chat_id, :agent_id, started_at: :desc, id: :desc).group_by(&:chat_id)
+      by_id = agents.index_by(&:id)
       chats.map do |chat|
+        _, messages, replies, message_input, message_output = message_stats[chat.id]
+        _, attempts, failures, run_input, run_output = run_stats[chat.id]
         {
           id: chat.to_param, title: chat.title_or_default, updated_at: chat.updated_at,
-          messages: counts.fetch(chat.id, 0), agents: chat.agents.map(&:name),
+          messages: messages || 0, resident_replies: replies || 0, agents: chat.agents.map(&:name),
+          context_tokens: chat.context_tokens,
+          message_tokens: { input: message_input, output: message_output },
+          response_attempts: attempts || 0, failed_attempts: failures || 0,
+          runtime_tokens: { input: run_input, output: run_output },
+          latest_responses: latest_runs.fetch(chat.id, []).map do |run|
+            resident = by_id.fetch(run.agent_id)
+            {
+              agent_id: resident.to_param, agent_name: resident.name,
+              session_id: run.session_id.presence || "interaction-#{run.id}",
+              status: run.response_state, started_at: run.started_at, finished_at: run.finished_at,
+              auth_mode: run.provider_auth_mode, transport_status: run.transport_status,
+              returncode: run.runtime_returncode
+            }
+          end,
           archived: chat.archived_at.present?, discarded: chat.discarded_at.present?
         }
       end
+    end
+
+    def conversation_run_state_sql
+      # Busy rejections are not provider failures; abandoned requests are not still running.
+      sanitized_now = AgentRuntimeInteraction.sanitize_sql_array([ "?", @now - AgentRuntimeInteraction::ACTIVE_WINDOW ])
+      current_time = AgentRuntimeInteraction.sanitize_sql_array([ "?", @now ])
+      <<~SQL.squish
+        CASE
+          WHEN run_id IS NOT NULL AND execution_state IN ('failed', 'timed_out') THEN 'failed'
+          WHEN run_id IS NOT NULL AND execution_state IN ('completed', 'cancelled', 'busy', 'outcome_unknown') THEN execution_state
+          WHEN run_id IS NOT NULL AND execution_deadline_at > #{current_time} THEN 'running'
+          WHEN run_id IS NOT NULL THEN 'unfinished'
+          WHEN transport_status = 409 AND runtime_status = 'already_running' THEN 'busy'
+          WHEN error_class IS NOT NULL OR NULLIF(error_message, '') IS NOT NULL
+            OR transport_status >= 400 OR runtime_returncode != 0 OR runtime_status IN ('error', 'timeout') THEN 'failed'
+          WHEN finished_at IS NULL AND started_at >= #{sanitized_now} THEN 'running'
+          WHEN finished_at IS NULL THEN 'unfinished'
+          WHEN runtime_status = 'ok' OR (transport_status BETWEEN 200 AND 299 AND runtime_returncode = 0) THEN 'completed'
+          ELSE 'unknown'
+        END
+      SQL
     end
 
     def integrations
