@@ -890,7 +890,9 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_not_includes entrypoint, "identity/runtime-instructions.md"
     assert_not_includes entrypoint, "identity/helixkit-api.md"
     assert_not_includes entrypoint, "runtime-instructions.md.new"
-    assert_includes entrypoint, "identity/automation/stop_journal_reflex.py"
+    assert_includes entrypoint, "install_memory_scripts.py"
+    assert_includes entrypoint, '"$AGENT_HOME/identity/automation"'
+    assert_includes entrypoint, 'install_hooks_json "$AGENT_REPO_PATH/.chaos/hooks.json"'
   end
 
   test "parse_events keeps old cumulative usage explicitly legacy" do

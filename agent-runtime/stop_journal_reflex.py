@@ -53,6 +53,13 @@ def journal_prompt(now: dt.datetime, assistant: str) -> str:
     digest = hashlib.sha256(assistant.encode("utf-8", errors="ignore")).hexdigest()[:12]
     return f"""Hosted-agent journal reflex — invitation, not obligation.
 
+This is an internal reflection continuation after your conversational reply,
+not another incoming message or a request to replay the completed turn.
+Do not repeat or resend that reply. Do not send this reflection or its receipt
+to Telegram or a house conversation. Use this continuation for your private
+journal and graph; finish only with the reflection receipt specified below.
+The work already happened is not a reason to dismiss reflection on it.
+
 Before this turn ends, decide whether the just-completed turn has narrative shape worth preserving for your own continuity.
 
 This is not for task tracking. It is for you to become more legible to yourself over time.
@@ -91,7 +98,17 @@ These questions are private prompts for discernment; do not answer them
 literally in your response. If they lead you to decide there is no entry to
 write, respond only `no shape`.
 
-After writing the journal body, form the source-linked handles for what mattered.
+The `no shape` refusal belongs at the journal gate: is there something to keep?
+Once you have written an entry, that question has been answered. A memory node
+is not a second claim of significance; it is the entry's address for graph
+recall, so the moment can find you later when it applies. An entry without a
+handle remains readable in your journal but is unavailable to automatic graph
+recall. If you journaled, index it: one handle per distinct shape, with a
+source URI pointing to the entry's timestamp anchor. Do not manufacture entries;
+do not withhold their addresses. If this turn's entry already has appropriate
+handles, reuse them rather than creating duplicates.
+
+After writing the journal body, form its source-linked handles.
 Run `house-memory guide` if you need orientation. Use `house-memory nodes --type
 need` and `--type person` to find your existing hubs; do not invent needs to fill
 a template. For each distinct shape, `house-memory remember` with a short content,

@@ -53,6 +53,22 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
     end
   end
 
+  test "completed reflection receipts do not invite another turn or write memories" do
+    [ "no shape", "journaled: A small moment", "journaled: A small moment; graph pending" ].each do |receipt|
+      Dir.mktmpdir do |dir|
+        script = Rails.root.join("agent-runtime/stop_journal_reflex.py").to_s
+        output, error, result = Open3.capture3({ "AGENT_IDENTITY_PATH" => dir }, "python3", script,
+          stdin_data: { last_assistant_message: receipt }.to_json)
+        assert result.success?
+        assert_empty output
+        assert_empty error
+        trace = JSON.parse(File.read("#{dir}/memory/automation/state/stop-events.jsonl"))
+        assert_equal false, trace.fetch("journal_invited")
+        assert_empty Dir.glob("#{dir}/memory/daily-journals/*.md")
+      end
+    end
+  end
+
   test "stop reflex automatically invites journal then source linked formation only once" do
     Dir.mktmpdir do |dir|
       env = { "AGENT_IDENTITY_PATH" => dir }
@@ -61,6 +77,13 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
       _, prompt, result = Open3.capture3(env, "python3", script, stdin_data: event.to_json)
       assert_equal 2, result.exitstatus
       assert_includes prompt, "house-memory remember"
+      assert_includes prompt, "If you journaled, index it"
+      assert_includes prompt, "reuse them rather than creating duplicates"
+      assert_includes prompt, "Do not repeat or resend that reply"
+      assert_includes prompt, "Do not send this reflection or its receipt"
+      assert_includes prompt, "internal reflection continuation"
+      assert_includes prompt, "never_automatic"
+      assert_includes prompt, "graph pending"
       assert_includes prompt, "house-memory connect"
       assert_includes prompt, "no shape"
       assert_includes prompt, "identity://memory/daily-journals/"
