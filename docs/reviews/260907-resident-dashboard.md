@@ -25,3 +25,7 @@
 - Ruby syntax, targeted frontend formatting, and `git diff --check` pass.
 - Fresh full backup completed: `souls_house_production_2026-09-07_19-27-12.sql.gz` (resident snapshots plus database).
 - Runtime is unchanged; deployment suppresses the unnecessary fleet-reconciliation job. No schema migration or prompt/hook change.
+
+### Production verification — 8 September 2026
+
+Application commit `8abb12c` deployed successfully to web and jobs. `/up` returns 200; the old residents index returns 301 to `/accounts/PNvAYr/residents`, whose unauthenticated response correctly requires login. Production aggregation returns all 14 date buckets, both outbound message channels, repository-specific grants and measured disk totals for all four current residents in that account. Resident-card payloads exclude system prompts. All 10 external residents report healthy; no pending migrations. The hosted runtime image remains byte-identical (`4238556c…`); no resident rollout or prompt/hook changes were performed.
