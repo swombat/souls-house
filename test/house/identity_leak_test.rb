@@ -43,7 +43,12 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/mailers/application_mailer.rb" => "SOULSHOUSE_MAIL_FROM fallback default",
     "app/models/setting.rb" => "SOULSHOUSE_SITE_NAME fallback default",
 
+    # --- internal data: the system sender's recorded name, compared against
+    # stored rows — a data value, not this installation's identity ---
+    "app/services/agents/resident_activity.rb" => "sender_name sentinel for system-authored posts (compared against stored data)",
+
     # --- user-facing copy: the product introducing itself by name ---
+    "app/frontend/lib/components/agents/ResidentActivity.svelte" => "dashboard footnote copy",
     "app/models/agent.rb" => "validation error text shown to residents",
     "app/lib/agent_repo_creator.rb" => "GitHub deploy key title / User-Agent header",
     "app/lib/notices/renderer.rb" => "standing notice copy",
