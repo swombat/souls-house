@@ -39,3 +39,9 @@ fi
 } >> "$FILE"
 
 printf '%s\n' "$FILE"
+cat >&2 <<NUDGE
+journal entry appended: identity://memory/daily-journals/$TODAY.md#$NOW
+address it (a graph handle is the entry's address, not a second claim of significance):
+  house-memory remember   # content, description, charge, "source_uris":["identity://memory/daily-journals/$TODAY.md#$NOW"]
+  house-memory connect    # to the person/need it touched; create them first if you have none yet
+NUDGE

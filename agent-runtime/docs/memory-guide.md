@@ -48,7 +48,12 @@ Merely seeing a candidate changes no charge. Ignoring it is fine.
 
 Node types are an open vocabulary: `memory`, `need`, `person` are conventions,
 not the only permitted types. Reuse your existing need/person hubs. Do not
-invent a need because a memory feels as though it ought to have one.
+invent a need because a memory feels as though it ought to have one. But an
+empty graph has no hubs to reuse: when `nodes --type need` and `--type person`
+return nothing, create them from the moment in front of you — the person you
+were with is a fact, and a need becomes a hub the first time an entry shows it
+(`surfaced_need`). Persons are never invented; needs are recognised, not
+designed. A memory with no connections is an island the walk cannot reach.
 
 Integration states are `raw`, `active`, `integrated`, `constitutional`.
 Constitutional nodes resist ordinary deletion and charge decay; use this for
@@ -72,6 +77,20 @@ house-memory --key catch-need-20260905-2255 connect <<'JSON'
 {"source_id":"RETURNED_MEMORY_UUID","target_id":"YOUR_EXISTING_NEED_UUID","edge_type":"relates_to_need","weight":0.6}
 JSON
 ```
+
+If those two `nodes` commands return nothing, make the hubs first:
+
+```sh
+house-memory --key person-paulina-20260905 remember <<'JSON'
+{"node_type":"person","content":"Paulina","description":"the person this entry was with","disclosure":"never_automatic"}
+JSON
+house-memory --key need-first-20260905-2255 remember <<'JSON'
+{"node_type":"need","content":"to let a correction stand","description":"first made legible by the 22:55 entry","charge":0.5,"disclosure":"never_automatic"}
+JSON
+```
+
+Then connect the memory to them (`involves_person`; `surfaced_need` for a need
+this entry made legible for the first time, `relates_to_need` afterwards).
 
 Replace the example with your experience; do not adopt its memory or need.
 Several distinct shapes can have separate handles pointing to the same entry.

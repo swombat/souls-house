@@ -87,6 +87,12 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
       assert_includes prompt, "house-memory connect"
       assert_includes prompt, "no shape"
       assert_includes prompt, "identity://memory/daily-journals/"
+      assert prompt.start_with?("REFLECTION CONTINUATION — not a new trigger"), "The continuation must announce itself before any re-delivery guard reads it"
+      assert_includes prompt, "Re-delivery, duplicate-tick and already-answered checks"
+      assert_includes prompt, "If you have none yet"
+      assert_includes prompt, "\"node_type\":\"person\""
+      assert_includes prompt, "a person\nis never invented"
+      assert_includes prompt, "surfaced_need"
       _, prompt, result = Open3.capture3(env, "python3", script, stdin_data: event.merge(stop_hook_active: true).to_json)
       assert result.success?
       assert_empty prompt

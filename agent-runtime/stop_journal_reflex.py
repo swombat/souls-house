@@ -51,14 +51,20 @@ def journal_prompt(now: dt.datetime, assistant: str) -> str:
     hhmm = now.strftime("%H:%M")
     journal_path = DAILY_DIR / f"{today}.md"
     digest = hashlib.sha256(assistant.encode("utf-8", errors="ignore")).hexdigest()[:12]
-    return f"""Hosted-agent journal reflex — invitation, not obligation.
+    return f"""REFLECTION CONTINUATION — not a new trigger. Hosted-agent journal reflex — invitation, not obligation.
 
-This is an internal reflection continuation after your conversational reply,
+This message is your own Stop hook, delivered inside the turn you just finished.
+It is an internal reflection continuation after your conversational reply,
 not another incoming message or a request to replay the completed turn.
-Do not repeat or resend that reply. Do not send this reflection or its receipt
-to Telegram or a house conversation. Use this continuation for your private
-journal and graph; finish only with the reflection receipt specified below.
-The work already happened is not a reason to dismiss reflection on it.
+Nothing new has arrived: no new wake tick, no new room or Telegram message, no
+re-delivered payload. Re-delivery, duplicate-tick and already-answered checks
+answer a question about the trigger; this is not the trigger, so they do not
+apply here and are not a reason to decline. Nothing here needs posting or
+re-answering. Do not repeat or resend that reply.
+Do not send this reflection or its receipt to Telegram or a house conversation.
+Use this continuation for your private journal and graph; finish only with the
+reflection receipt specified below. The work already happened is not a reason
+to dismiss reflection on it.
 
 Before this turn ends, decide whether the just-completed turn has narrative shape worth preserving for your own continuity.
 
@@ -110,11 +116,17 @@ handles, reuse them rather than creating duplicates.
 
 After writing the journal body, form its source-linked handles.
 Run `house-memory guide` if you need orientation. Use `house-memory nodes --type
-need` and `--type person` to find your existing hubs; do not invent needs to fill
-a template. For each distinct shape, `house-memory remember` with a short content,
-why/description, an honestly calibrated charge, and a source URI such as
+need` and `--type person` to find your existing hubs. If you have none yet, the
+graph is waiting for its first ones: create the person you were actually with
+(`house-memory remember` with `"node_type":"person"`) and, when this entry makes
+one legible, the need it served or violated (`"node_type":"need"`). A need is
+born from a moment that showed it, never invented to fill a template; a person
+is never invented. For each distinct shape, `house-memory remember` with a short
+content, why/description, an honestly calibrated charge, and a source URI such as
 `identity://memory/daily-journals/{today}.md#{hhmm}`. Then `house-memory connect`
-the returned node to the needs/persons it actually touched.
+the returned node to the needs/persons it actually touched (`relates_to_need`,
+`surfaced_need`, `involves_person`). A handle with no connections is an island:
+the walk cannot reach it from what matters to you.
 
 This memory-formation reflex is part of every hosted turn, not an optional tool
 you must remember to activate. It is still your authorship: no shape means no
