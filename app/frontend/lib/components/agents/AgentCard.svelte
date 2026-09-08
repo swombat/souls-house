@@ -2,10 +2,38 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/shadcn/card';
   import { Badge } from '$lib/components/shadcn/badge';
-  import { PencilSimple, Trash, Copy } from 'phosphor-svelte';
+  import {
+    PencilSimple,
+    Trash,
+    Copy,
+    Graph,
+    Notebook,
+    HardDrive,
+    TelegramLogo,
+    GithubLogo,
+    DropboxLogo,
+    GoogleLogo,
+    Circle,
+    Plugs,
+  } from 'phosphor-svelte';
   import { agentIconFor } from '$lib/agent-icons';
   import { editAccountAgentPath } from '@/routes';
   import AgentSubscriptionUsageSummary from '$lib/components/agents/AgentSubscriptionUsageSummary.svelte';
+
+  import ResidentActivity from './ResidentActivity.svelte';
+  const integrationIcons = {
+    telegram: TelegramLogo,
+    github: GithubLogo,
+    dropbox: DropboxLogo,
+    google_workspace: GoogleLogo,
+    oura: Circle,
+  };
+  function diskSize(bytes) {
+    if (bytes == null) return '—';
+    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(0)} KiB`;
+    if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
+    return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
+  }
 
   let { agent, accountId, onupgrade, ondelete } = $props();
   let IconComponent = $derived(agentIconFor(agent.icon));
@@ -25,6 +53,7 @@
         </div>
         <div>
           <CardTitle class="text-lg">{agent.name}</CardTitle>
+          <p class="text-xs font-light text-muted-foreground mt-0.5">{agent.model_label || agent.model_id}</p>
           <div class="flex flex-wrap gap-1 mt-1">
             {#if agent.deprecated}
               <Badge variant="secondary" title="The inline runtime has been retired. History is preserved.">
@@ -43,32 +72,35 @@
     </div>
   </CardHeader>
   <CardContent>
-    <p class="text-sm text-muted-foreground line-clamp-2 mb-4 min-h-[2.5rem]">
-      {agent.system_prompt || 'No system prompt defined'}
-    </p>
-
-    <div class="text-xs text-muted-foreground mb-2">
-      <span class="font-medium">Model:</span>
-      {agent.model_label || agent.model_id}
-    </div>
-
     {#if !agent.deprecated}
       <div class="text-xs text-muted-foreground mb-4 flex flex-wrap gap-x-3 gap-y-0.5">
-        <span title="All nodes in this resident's private graph, including dormant nodes. Contents stay private.">
-          <span class="font-medium">Mnemodyne nodes:</span>
+        <span
+          class="inline-flex items-center gap-1"
+          title="All nodes in this resident's private graph, including dormant nodes. Contents stay private.">
+          <Graph class="size-4" aria-label="Mnemodyne nodes" />
           {(agent.mnemodyne_node_count ?? 0).toLocaleString()}
         </span>
         <span
+          class="inline-flex items-center gap-1"
           title={agent.journal_entry_stats?.measured_at
             ? `Entry headings in dated daily journals. Last counted ${new Date(agent.journal_entry_stats.measured_at).toLocaleString()}. Refreshes in the background.`
             : 'Entry headings in dated daily journals. Counted in the background without waking the resident.'}>
-          <span class="font-medium">Journal entries:</span>
+          <Notebook class="size-4" aria-label="Journal entries" />
           {agent.journal_entry_stats?.count?.toLocaleString() ?? '—'}
           {#if agent.journal_entry_stats?.status === 'unavailable'}
             <span class="opacity-60">
               {agent.journal_entry_stats?.count != null ? '(stale)' : '(unavailable)'}
             </span>
           {/if}
+        </span>
+        <span
+          class="inline-flex items-center gap-1"
+          title={`Persistent disk usage across identity, Chaos, repo, work and state volumes. ${agent.journal_entry_stats?.measured_at ? `Measured ${new Date(agent.journal_entry_stats.measured_at).toLocaleString()}.` : 'Awaiting background measurement.'}`}>
+          <HardDrive class="size-4" aria-label="Persistent disk used" />
+          {diskSize(agent.journal_entry_stats?.storage_bytes)}
+          {#if agent.journal_entry_stats?.status === 'unavailable' && agent.journal_entry_stats?.storage_bytes != null}<span
+              class="opacity-60">(stale)</span
+            >{/if}
         </span>
       </div>
     {/if}
@@ -81,6 +113,23 @@
         subscription={agent.provider_subscription} />
     {/if}
 
+    <ResidentActivity days={agent.activity || []} />
+
+    {#if agent.integrations?.length}
+      <div class="flex flex-wrap gap-2 mb-3" aria-label="Resident integrations">
+        {#each agent.integrations as integration}
+          {@const IntegrationIcon = integrationIcons[integration.provider] || Plugs}
+          <span
+            class={integration.enabled ? 'text-primary' : 'text-muted-foreground/35'}
+            title={`${integration.label} · ${integration.status}`}>
+            <IntegrationIcon
+              class="size-5"
+              weight={integration.enabled ? 'fill' : 'regular'}
+              aria-label={`${integration.label}: ${integration.status}`} />
+          </span>
+        {/each}
+      </div>
+    {/if}
     <div class="flex gap-2 pt-2 border-t">
       <a href={editAccountAgentPath(accountId, agent.id)} class="flex-1">
         <Button variant="outline" size="sm" class="w-full">

@@ -37,15 +37,24 @@ export function displayUsageWindows(usage, provider, modelId = '') {
 
 export function predictedWeeklyUsage(windows, now = Date.now()) {
   const weekly = windows.find((window) => window.displayLabel === 'Weekly');
-  const resetAt = Date.parse(weekly?.resets_at);
-  if (!weekly || !Number.isFinite(resetAt) || resetAt <= now) return null;
+  return predictedUsage(weekly, now);
+}
 
-  const remaining = clampPercent(weekly.remaining_percent);
-  const used = 100 - remaining;
-  const elapsed = WEEK_MS - (resetAt - now);
+export function usedPercent(window) {
+  const value = window?.remaining_percent;
+  if (value == null || !Number.isFinite(Number(value))) return null;
+  return 100 - clampPercent(value);
+}
+
+export function predictedUsage(window, now = Date.now()) {
+  const duration =
+    window?.displayLabel === 'Weekly' ? WEEK_MS : window?.displayLabel === '5-hour' ? 5 * 60 * 60 * 1000 : null;
+  const resetAt = Date.parse(window?.resets_at);
+  const used = usedPercent(window);
+  if (!duration || used === null || !Number.isFinite(resetAt) || resetAt <= now) return null;
+  const elapsed = duration - (resetAt - now);
   if (elapsed <= 0) return used === 0 ? 0 : null;
-
-  return Math.round((used * WEEK_MS) / elapsed);
+  return Math.round((used * duration) / elapsed);
 }
 
 export function weeklyRemainingPercent(usage, provider, modelId = '') {
@@ -55,7 +64,7 @@ export function weeklyRemainingPercent(usage, provider, modelId = '') {
 
 export function predictionTone(prediction) {
   if (prediction > 100) return 'danger';
-  if (prediction >= 75) return 'warning';
+  if (prediction > 75) return 'warning';
   return 'muted';
 }
 
@@ -71,15 +80,9 @@ export function resetDescription(value, now = Date.now(), locale) {
 
   const totalMinutes = Math.ceil((resetAt - now) / 60_000);
   if (totalMinutes <= 0) return 'reset pending';
-  if (totalMinutes < 24 * 60) {
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    return `resets in ${hours ? `${hours}h` : ''}${minutes ? `${minutes}m` : ''}`;
-  }
-
-  const date = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(resetAt);
-  const time = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(resetAt);
-  return `resets ${date}, ${time}`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `resets in ${hours}h ${minutes}m`;
 }
 
 function findWindow(windows, text, displayLabel) {

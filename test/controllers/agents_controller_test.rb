@@ -19,6 +19,14 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
+  test "resident URLs are canonical and old links retain their query" do
+    assert_equal "/accounts/#{@account.to_param}/residents", account_agents_path(@account)
+    get "/accounts/#{@account.to_param}/agents", params: { create: true }
+    assert_redirected_to "#{account_agents_url(@account)}?create=true"
+    get "/accounts/#{@account.to_param}/agents/#{@agent.to_param}/edit", params: { tab: "integrations" }
+    assert_redirected_to "#{edit_account_agent_url(@account, @agent)}?tab=integrations"
+  end
+
   test "should get index" do
     get account_agents_path(@account)
     assert_response :success
@@ -38,6 +46,9 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, row.fetch("mnemodyne_node_count")
     assert_equal 7, row.dig("journal_entry_stats", "count")
     assert_not row.key?("memory_token_summary")
+    assert_not row.key?("system_prompt")
+    assert_equal 14, row.fetch("activity").length
+    assert_equal true, row.fetch("active")
     assert_not_includes response.body, "Do not disclose this"
     assert_not_includes response.body, "Another private memory"
   end

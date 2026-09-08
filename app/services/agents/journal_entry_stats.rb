@@ -9,7 +9,7 @@ module Agents
     # Count conventional second-level entry headings, ignoring fenced examples.
     # Only the aggregate leaves the resident's filesystem. No symlink traversal.
     SCRIPT = <<~'PYTHON'
-      import json, pathlib, re
+      import json, pathlib, re, subprocess
       root = pathlib.Path("/home/agent/identity/memory/daily-journals")
       if any(path.is_symlink() for path in (root, root.parent, root.parent.parent)):
           raise RuntimeError("invalid journal directory")
@@ -34,7 +34,20 @@ module Agents
                       continue
                   if fence is None and re.match(r"^##[ \t]+\S", line):
                       count += 1
-      print(json.dumps({"count": count}))
+      # Allocated bytes, including hidden files; du does not follow symlinks.
+      # Explicit volume roots exclude the image layer and temporary filesystems.
+      storage_bytes = None
+      try:
+          roots = ["/home/agent/" + name for name in ("identity", ".chaos", "repo", "work", "state")]
+          if any(pathlib.Path(path).is_symlink() for path in roots):
+              raise ValueError("invalid volume root")
+          measurement = subprocess.run(["du", "-s", "-B1", "--", *roots], capture_output=True, text=True, timeout=10, check=True)
+          sizes = [int(line.split()[0]) for line in measurement.stdout.splitlines()]
+          if len(sizes) == len(roots) and all(size >= 0 for size in sizes):
+              storage_bytes = sum(sizes)
+      except (OSError, ValueError, subprocess.SubprocessError):
+          pass
+      print(json.dumps({"count": count, "storage_bytes": storage_bytes}))
     PYTHON
 
     def initialize(agent)
@@ -49,10 +62,13 @@ module Agents
       result = capture
       raise MeasurementError unless result[:ok]
 
-      count = JSON.parse(result[:stdout]).fetch("count")
+      measurement = JSON.parse(result[:stdout])
+      count = measurement.fetch("count")
       raise MeasurementError unless count.is_a?(Integer) && count >= 0
 
-      { status: "measured", count: count, measured_at: Time.current.iso8601 }
+      bytes = measurement["storage_bytes"]
+      bytes = nil unless bytes.is_a?(Integer) && bytes >= 0
+      { status: "measured", count: count, storage_bytes: bytes, measured_at: Time.current.iso8601 }
     rescue MeasurementError, Agents::Resources::OwnershipError, Timeout::Error,
            SystemCallError, JSON::ParserError, KeyError
       @agent.journal_entry_stats.merge("status" => "unavailable")

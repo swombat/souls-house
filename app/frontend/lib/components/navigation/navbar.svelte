@@ -6,7 +6,7 @@
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
   import { Button, buttonVariants } from '$lib/components/shadcn/button/index.js';
   import { cn } from '$lib/utils.js';
-  import { loginPath, signupPath, logoutPath, searchAccountChatsPath } from '@/routes';
+  import { loginPath, signupPath, logoutPath, searchAccountChatsPath, accountAgentsPath } from '@/routes';
   import { setMode, resetMode } from 'mode-watcher';
   import MobileNavMenu from '$lib/components/navigation/MobileNavMenu.svelte';
   import SiteAdminMenu from '$lib/components/navigation/SiteAdminMenu.svelte';
@@ -32,7 +32,7 @@
       show: !!currentUser && siteSettings?.allow_chats,
     },
     {
-      href: currentAccount?.id ? `/accounts/${currentAccount.id}/agents` : '#',
+      href: currentAccount?.id ? accountAgentsPath(currentAccount.id) : '#',
       label: 'Residents',
       show: !!currentUser && siteSettings?.allow_agents && !!currentAccount?.id,
     },

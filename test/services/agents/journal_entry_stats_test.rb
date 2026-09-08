@@ -12,8 +12,9 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
 
   test "only a valid aggregate is stored and a failed refresh preserves the count" do
     Agents::Resources.stub(:new, @resources) do
-      @service.stub(:capture, { ok: true, stdout: '{"count":42}' }) do
+      @service.stub(:capture, { ok: true, stdout: '{"count":42,"storage_bytes":1024}' }) do
         assert_equal 42, @service.call[:count]
+        assert_equal 1024, @service.call[:storage_bytes]
       end
       @agent.journal_entry_stats = { "count" => 21, "measured_at" => 1.day.ago.iso8601 }
       [ { ok: false }, { ok: true, stdout: '{"count":-1}' },
@@ -48,7 +49,7 @@ class Agents::JournalEntryStatsTest < ActiveSupport::TestCase
       script = Agents::JournalEntryStats::SCRIPT.sub(Agents::DailyJournalStatus::JOURNAL_DIR, directory)
       stdout, stderr, status = Open3.capture3("python3", "-c", script)
       assert status.success?, stderr
-      assert_equal({ "count" => 3 }, JSON.parse(stdout))
+      assert_equal 3, JSON.parse(stdout)["count"]
       assert_not_includes stdout, "private prose"
     end
   end

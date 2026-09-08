@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   displayUsageWindows,
   predictedWeeklyUsage,
+  predictedUsage,
+  usedPercent,
   predictionTone,
   resetDescription,
   usageLine,
@@ -23,8 +25,8 @@ describe('subscription usage display', () => {
     );
 
     expect(windows.map((window) => window.displayLabel)).toEqual(['5-hour', 'Weekly']);
-    expect(usageLine(windows[0], now, 'en-GB')).toBe('5-hour: 100% left, resets in 4h33m');
-    expect(usageLine(windows[1], now, 'en-GB')).toBe('Weekly: 95.3% left, resets 5 Sept, 21:44');
+    expect(usageLine(windows[0], now, 'en-GB')).toBe('5-hour: 100% left, resets in 4h 33m');
+    expect(usageLine(windows[1], now, 'en-GB')).toBe('Weekly: 95.3% left, resets in 139h 44m');
   });
 
   it('treats the Grok subscription window as weekly', () => {
@@ -35,7 +37,7 @@ describe('subscription usage display', () => {
       'xai'
     );
 
-    expect(usageLine(windows[0], now, 'en-GB')).toBe('Weekly: 99% left, resets 7 Sept, 0:32');
+    expect(usageLine(windows[0], now, 'en-GB')).toBe('Weekly: 99% left, resets in 166h 32m');
   });
 
   it('hides Codex Spark limits unless that model is selected', () => {
@@ -72,11 +74,27 @@ describe('subscription usage display', () => {
 
     expect(predictedWeeklyUsage(windows, now)).toBe(80);
     expect(predictionTone(74)).toBe('muted');
-    expect(predictionTone(75)).toBe('warning');
+    expect(predictionTone(75)).toBe('muted');
     expect(predictionTone(101)).toBe('danger');
   });
 
   it('formats short reset intervals compactly', () => {
-    expect(resetDescription('2026-08-31T00:17:00Z', now, 'en-GB')).toBe('resets in 17m');
+    expect(resetDescription('2026-08-31T00:17:00Z', now, 'en-GB')).toBe('resets in 0h 17m');
   });
+});
+
+it('forecasts each window and does not turn missing data into usage', () => {
+  const window = {
+    displayLabel: '5-hour',
+    remaining_percent: 60,
+    resets_at: new Date(now + 2.5 * 3600000).toISOString(),
+  };
+  expect(predictedUsage(window, now)).toBe(80);
+  expect(usedPercent(window)).toBe(40);
+  expect(usedPercent({})).toBeNull();
+  expect(predictedUsage({ ...window, remaining_percent: null }, now)).toBeNull();
+  expect(predictedUsage({ ...window, resets_at: new Date(now).toISOString() }, now)).toBeNull();
+  expect(predictionTone(76)).toBe('warning');
+  expect(predictionTone(100)).toBe('warning');
+  expect(resetDescription(new Date(now + 48 * 3600000).toISOString(), now)).toBe('resets in 48h 0m');
 });

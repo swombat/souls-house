@@ -28,6 +28,23 @@ module TestSupport
         create_agent!(account, "E2E Inactive Fork", "gray", active: false)
       ]
       agents.each { |agent| agent.update_columns(runtime: "deprecated") } if params[:deprecated]
+      if params[:resident_dashboard]
+        resident = agents.first
+        resident.update_columns(model_id: "anthropic/claude-opus-4.6", health_state: "healthy",
+          provider_auth_modes: { "anthropic" => "oauth_account" }, provider_connections: { "anthropic" => { "status" => "connected" } },
+          journal_entry_stats: { count: 27, storage_bytes: 1073741824, status: "measured", measured_at: Time.current.iso8601 },
+          journal_stats_requested_at: Time.current)
+        connection = account.service_connections.create!(provider: "github", connected_by_user: primary_user,
+          management_scope: "personal", credential_kind: "token", credential_metadata: { "repository" => "example/dashboard" })
+        resident.agent_service_accesses.create!(service_connection: connection, enabled: true)
+        conversation = account.chats.create!(model_id: "openrouter/auto", title: "Dashboard activity")
+        subscription = resident.telegram_subscriptions.create!(user: primary_user, telegram_chat_id: 123)
+        14.times do |offset|
+          conversation.messages.create!(agent: resident, role: "assistant", content: "Recorded post #{offset}", created_at: offset.days.ago)
+          subscription.telegram_messages.create!(role: "assistant", text: "Recorded Telegram post #{offset}", sent_at: offset.days.ago, telegram_message_id: offset + 1) if offset.even?
+          AgentRuntimeInteraction.create!(agent: resident, trigger_kind: %w[wake memory_aggregation_daily conversation][offset % 3], started_at: offset.days.ago)
+        end
+      end
 
       render json: {
         run_id: run_id,

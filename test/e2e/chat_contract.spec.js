@@ -163,12 +163,12 @@ test.describe('browser contracts', () => {
     page,
   }, testInfo) => {
     await login(page, setup.primary_user, setup.password);
-    await page.goto(`/accounts/${setup.account_id}/agents`);
-    await expect(page.getByText('Mnemodyne nodes:', { exact: true })).toHaveCount(4);
-    await expect(page.getByText('Journal entries:', { exact: true })).toHaveCount(4);
+    await page.goto(`/accounts/${setup.account_id}/residents`);
+    await expect(page.getByLabel('Mnemodyne nodes', { exact: true })).toHaveCount(4);
+    await expect(page.getByLabel('Journal entries', { exact: true })).toHaveCount(4);
     await expect(page.getByText('Core:', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Inactive:', { exact: true })).toHaveCount(0);
-    await expect(page.getByText('Mnemodyne nodes:', { exact: true }).first().locator('..')).toContainText('0');
+    await expect(page.getByLabel('Mnemodyne nodes', { exact: true }).first().locator('..')).toContainText('0');
     await page.screenshot({ path: testInfo.outputPath('resident-memory-counts-desktop.png'), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -179,7 +179,7 @@ test.describe('browser contracts', () => {
     await login(page, setup.primary_user, setup.password);
     const agentId = setup.agents[0].id;
 
-    const response = await page.goto(`/accounts/${setup.account_id}/agents/${agentId}/promote`);
+    const response = await page.goto(`/accounts/${setup.account_id}/residents/${agentId}/promote`);
     expect(response.status()).toBe(404);
     await page.goto(setup.agents[0].edit_url);
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -194,14 +194,14 @@ test.describe('browser contracts', () => {
     expect(response.ok()).toBe(true);
     setup = await response.json();
     await login(page, setup.primary_user, setup.password);
-    await page.goto(`/accounts/${setup.account_id}/agents`);
+    await page.goto(`/accounts/${setup.account_id}/residents`);
     await expect(page.getByText('Deprecated · Unavailable', { exact: true })).toHaveCount(4);
     await page.goto(setup.agents[0].edit_url);
     await page.getByRole('button', { name: 'Hosting', exact: true }).click();
     await expect(page.getByText(/has no supported harness and cannot respond/)).toBeVisible();
     await expect(page.getByRole('button', { name: /Promote/ })).toBeHidden();
     await page.goto(`/accounts/${setup.account_id}/chats`);
-    await expect(page).toHaveURL(/\/agents\/new$/);
+    await expect(page).toHaveURL(/\/residents\/new$/);
   });
 
   test('agent navigation is direct and whiteboards only appear for configured accounts', async ({ page }) => {
@@ -222,9 +222,9 @@ test.describe('browser contracts', () => {
     await expect(page.locator('nav').getByRole('link', { name: 'Documentation', exact: true })).toBeHidden();
     await expect(page.locator('nav').getByRole('link', { name: 'About', exact: true })).toBeHidden();
     const agentsLink = page.locator('nav').getByRole('link', { name: 'Residents', exact: true });
-    await expect(agentsLink).toHaveAttribute('href', new RegExp(`/accounts/${switchedAccountId}/agents$`));
+    await expect(agentsLink).toHaveAttribute('href', new RegExp(`/accounts/${switchedAccountId}/residents$`));
     await agentsLink.click();
-    await expect(page).toHaveURL(`/accounts/${switchedAccountId}/agents`);
+    await expect(page).toHaveURL(`/accounts/${switchedAccountId}/residents`);
     await expect(page.getByRole('heading', { name: 'Residents' })).toBeVisible();
 
     await accountMenu.click();
@@ -237,7 +237,7 @@ test.describe('browser contracts', () => {
 
   test('user can commit a new resident without an inline promotion step', async ({ page }) => {
     await login(page, setup.primary_user, setup.password);
-    await page.goto(`/accounts/${setup.account_id}/agents/new`);
+    await page.goto(`/accounts/${setup.account_id}/residents/new`);
     await page.getByRole('button', { name: 'Begin', exact: true }).click();
     await page.getByLabel('Display name', { exact: true }).fill('E2E New Resident');
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -246,7 +246,7 @@ test.describe('browser contracts', () => {
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Create resident and commit this seed' }).click();
-    await expect(page).toHaveURL(/\/agents\/[^/]+\/onboarding$/);
+    await expect(page).toHaveURL(/\/residents\/[^/]+\/onboarding$/);
     await expect(page.getByRole('heading', { name: 'Preparing E2E New Resident' })).toBeVisible();
     await expect(page.getByRole('button', { name: /Promote/ })).toBeHidden();
   });
@@ -395,7 +395,7 @@ test.describe('browser contracts', () => {
     await page.locator('label[for="paused"]').click();
     await page.getByRole('button', { name: 'Update Resident' }).click();
 
-    await expect(page).toHaveURL(/\/accounts\/[^/]+\/agents$/);
+    await expect(page).toHaveURL(/\/accounts\/[^/]+\/residents$/);
     await expect(page.getByText(/Resident updated/).first()).toBeVisible();
 
     const state = await getRunState(request, setup.run_id);

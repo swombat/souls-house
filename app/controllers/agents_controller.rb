@@ -10,6 +10,8 @@ class AgentsController < ApplicationController
     end
 
     @agents = current_account.agents.by_name
+    activity = Agents::ResidentActivity.new(@agents).call
+    integrations = Agents::ResidentIntegrations.new(current_account, @agents)
     node_counts = Mnemodyne::Node.joins(:vault)
       .where(mnemodyne_vaults: { agent_id: @agents.select(:id) })
       .group("mnemodyne_vaults.agent_id").count
@@ -18,6 +20,8 @@ class AgentsController < ApplicationController
       agents: @agents.map { |agent|
         AgentJournalStatsJob.request_refresh(agent)
         agent.as_json(as: :resident_card).merge(
+          activity: activity.fetch(agent.id),
+          integrations: integrations.for(agent),
           mnemodyne_node_count: agent.deprecated? ? nil : node_counts.fetch(agent.id, 0),
           provider_subscription: Agents::ProviderSubscriptionPresentation.call(agent)
         )

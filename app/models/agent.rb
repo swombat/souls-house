@@ -114,6 +114,11 @@ class Agent < ApplicationRecord
     # that would otherwise override the configured `except` list.
     hash.except!(*SENSITIVE_JSON_ATTRIBUTES.map(&:to_s))
 
+    if options&.dig(:as) == :resident_card
+      hash.slice!("id", "name", "model_id", "model_label", "active?", "paused?", "colour", "icon",
+        "deprecated?", "runtime", "journal_entry_stats")
+    end
+
     if options&.dig(:as) == :list
       hash.slice!("id", *LIST_JSON_ATTRIBUTES.map(&:to_s))
     end

@@ -89,7 +89,9 @@ Rails.application.routes.draw do
       resources :messages, only: [ :index, :create ]
     end
 
-    resources :agents, except: :show do
+    get "agents", as: nil, to: redirect { |params, request| "/accounts/#{params[:account_id]}/residents#{request.query_string.present? ? "?#{request.query_string}" : ""}" }
+    get "agents/*legacy_path", as: nil, to: redirect { |params, request| "/accounts/#{params[:account_id]}/residents/#{params[:legacy_path]}#{request.query_string.present? ? "?#{request.query_string}" : ""}" }
+    resources :agents, path: "residents", except: :show do
       member do
         get :onboarding, to: "agents/onboarding#show"
         get "identity_export", to: "agents/runtime_checks#identity_export", as: :identity_export
