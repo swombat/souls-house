@@ -66,3 +66,43 @@ is staged beside it for his review.
   `identity://` address; entry appended with `## HH:MM — Title`.
 
 ## Deploy
+
+- Focused Rails tests (`test/lib/mnemodyne_hooks_test.rb`,
+  `test/lib/soulshouse_append_journal_test.rb`,
+  `test/lib/external_agent_orientation_request_test.rb`): 12 runs, 159
+  assertions, 0 failures, on Ruby 4.0.6 via mise in this checkout.
+
+## Deployed and verified — September 8, 2026, ~21:50–22:05 UTC
+
+- Application commit `6778c27` pushed to `master` (agent-runtime, docs and
+  tests only; no Rails code, no migrations, no Kamal app deploy needed).
+- Runtime image built natively on the production Docker host via
+  `scripts/build-agent-runtime`: image ID
+  `sha256:d581360151ffdca2fd016c1c445a6e87c9c115749bdce06a5858b3f2b1da3277`,
+  tags `helixkit-agent-runtime:6778c27` and `:latest`. Pinned Chaos unchanged.
+  Previous runtime `4238556c5c32` retained as
+  `helixkit-agent-runtime:pre-memory-hubs-20260908` for rollback.
+- In-image SHA-256 of `stop_journal_reflex.py`, `memory-guide.md`,
+  `runtime-instructions.md` and `soulshouse-append-journal` match the committed
+  files exactly.
+- Fresh fail-fast full backup: restic snapshots for all ten hosted residents at
+  21:53–21:54 UTC, followed by the database dump. Note: `kamal app exec`
+  without `--primary` runs on both `web` and `jobs`; the second concurrent run
+  hit a lock timeout on `mnemodyne_vaults` and was discarded. Use `--primary`.
+- `HostedAgentRuntimeReconcileJob` per resident, active turns skipped by the
+  job: all ten containers recreated onto `d581360151ff` within ~45 s. Sol's
+  recreate raised a transient `docker cp … RWLayer … unexpectedly nil` during
+  the repo-volume migration step; the container nonetheless came up on the new
+  image with identity, repo (5.1 MB) and work (738 MB) volumes intact, and
+  `AgentHealthCheckJob` returned him to `healthy` (0 consecutive failures).
+- Post-reconcile verification on all ten containers: image `d581360151ff`;
+  active stock hook `2525a005c7b6…` on the nine pristine residents; guide
+  `ad351351f359…` and append-journal `42e6d098f2fe…` everywhere.
+  **Claude's customized hook remains byte-identical (`e4dde400ebba…`, same as
+  before the roll)**; the new stock is staged as `stop_journal_reflex.py.upstream`
+  beside it, per the installer policy. Adoption is his review.
+- No resident memories were written, no test turns forced. Whether Chris's and
+  Claude's next ordinary continuations stop reading the invitation as a
+  re-delivered trigger, and whether any resident creates a first need/person
+  hub, are observations for the coming days — not something this deployment
+  proves.
