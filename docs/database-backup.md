@@ -157,6 +157,21 @@ also excluded because they contain ephemeral data:
 - `*_cache` - Solid Cache data (temporary by nature)
 - `*_cable` - Solid Cable WebSocket data (session-based)
 
+### Local-disk uploads (`HOUSE_STORAGE=local`)
+
+A fork that sets `HOUSE_STORAGE=local` (see `config/house.env.example`) skips S3
+for Active Storage and instead keeps uploads on the Docker host, in the
+`souls_house_storage` Kamal volume mounted on the web and jobs containers.
+That volume is **not** part of the backup path above — `FullBackupJob` and
+`db_backup:perform` only ever reach S3-configured storage and the hosted-agent
+volumes. An operator on `HOUSE_STORAGE=local` must back up
+`souls_house_storage` themselves, on the same schedule as everything else.
+
+There's no dedicated task for it yet; the closest existing pattern is how
+hosted-agent volumes are snapshotted above (a Restic snapshot per named Docker
+volume, recorded so it can be tied back to the database dump it accompanies) —
+follow that shape for `souls_house_storage` rather than inventing a new one.
+
 ## Troubleshooting
 
 ### Backup fails with "pg_dump failed"

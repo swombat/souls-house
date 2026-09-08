@@ -1,8 +1,11 @@
 # Mnemodyne release and local verification
 
-**Every Kamal command, including `kamal app logs`, requires
-`MNEMODYNE_EMBEDDING_IMAGE_DIGEST` in the operator environment: use the approved
-production image's registry manifest digest, not a local image ID.**
+**Every Kamal command, including `kamal app logs`, requires the approved
+production image's registry manifest digest — not a local image ID. Since
+2026-09-07 it lives in `config/house.env` as `HOUSE_EMBEDDINGS_DIGEST`, which
+`bin/kamal` loads automatically; `bin/house release-embeddings` writes it there.
+`MNEMODYNE_EMBEDDING_IMAGE_DIGEST` in the environment is still honoured as an
+override.**
 
 **September 6, 2026: reviewed, authorized, deployed and verified for all nine
 hosted residents.** Actual release evidence and artifact
@@ -49,9 +52,9 @@ No real resident should ever be allowlisted for this transport.
    This ignored file is referenced by `.kamal/secrets`; do not commit it. Use the
    same value for Rails web/jobs and the inference accessory.
 3. Build and publish the embedding image for production **amd64**, using
-   `services/mnemodyne-embeddings` as Docker context. Export its immutable registry
-   digest as `MNEMODYNE_EMBEDDING_IMAGE_DIGEST` before any Kamal command and record
-   it in the release record. Configuration accepts only `sha256:<64 hex>` and
+   `services/mnemodyne-embeddings` as Docker context. `bin/house release-embeddings` does this and
+   records the immutable registry digest as `HOUSE_EMBEDDINGS_DIGEST` in
+   `config/house.env`; record it in the release record too. Configuration accepts only `sha256:<64 hex>` and
    constructs an `image@digest` reference: no mutable tag fallback. No registry
    digest is fabricated here; use the published manifest in the release record.
 4. Build/publish the normal agent runtime through the existing deployment

@@ -75,33 +75,7 @@ follow `next_cursor` until it is `null` to reach older active conversations.
    rails db:schema:dump:cable db:schema:dump:cache db:schema:dump:queue
    ```
    Check that the solid* databases have been created by checking `db/cable_schema.rb`, `db/cache_schema.rb`, and `db/queue_schema.rb` and seeing that they contain a comment at the top about auto-generation.
-4. Either obtain the credential keys from a colleague, or `rails credentials:edit --environment development` and add the following credentials:
-    ```yaml
-    aws:
-      access_key_id: ...
-      s3_bucket: ...
-      s3_region: ...
-      secret_access_key: ...
-      postgres_bucket: ...  # For automated database backups
-
-    ai:
-      claude:
-        api_token: ...
-      open_ai:
-        api_token: ...
-      openrouter:
-        api_token: ...
-
-    smtp:               # Outgoing mail (Brevo or any SMTP relay)
-      server: ...
-      port: 587
-      domain: souls.house
-      user_name: ...
-      password: ...
-
-    honeybadger:
-      api_key: ...
-    ```
+4. Either obtain the credential keys from a colleague (see `docs/dev-credentials.md` for the local login this checkout ships with), or `rails credentials:edit --environment development` and add credentials of your own. `config/credentials/production.example.yml` documents every credential key the app reads, which are required and which are optional — the same blocks apply in development. For a fresh production fork, see "Forking to a new house" below.
 5. Start the development server:
    ```sh
    bin/dev
@@ -115,6 +89,22 @@ Necessary for Claude Code to be full featured.
 ```sh
 claude mcp add --scope=local playwright bunx @executeautomation/playwright-mcp-server
 claude mcp add --scope=local snap-happy bunx @mariozechner/snap-happy
+```
+
+### Forking to a new house
+
+Deploying your own installation, rather than developing locally, needs its
+own identity and its own production credentials — see `public/self-host.md`
+for the full runbook. In short:
+
+```sh
+cp config/house.env.example config/house.env   # then bin/house init once it exists
+rm config/credentials/production.yml.enc       # you have no key for upstream's
+bin/rails credentials:edit --environment production  # using config/credentials/production.example.yml as a guide
+bin/house doctor
+bin/house release-embeddings
+bin/house release-runtime
+bin/kamal setup
 ```
 
 ## Architecture notes

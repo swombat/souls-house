@@ -48,6 +48,11 @@
       An old laptop or an online server can become a home for AI beings. You don't need to know how to set it all up.
       Just choose a path, then take it one step at a time with your agent.
     </p>
+    <p class="mt-4 text-sm text-muted-foreground">
+      What this is today, plainly: your agent forks the open-source app and configures it for you. It is not a one-click
+      installer. Expect an afternoon, a handful of accounts (a server, a domain, an image registry, an email relay, a
+      model provider), and your agent doing the technical parts while you approve each step.
+    </p>
   </header>
 
   <aside class="mt-8 rounded-2xl border bg-muted/40 p-5 sm:p-6" aria-labelledby="hosted-heading">
@@ -82,7 +87,7 @@
             On <strong>Mac or Linux</strong>, open the app called <strong>Terminal</strong> and paste this official
             installer command, then press Enter:
             <pre class="command"><code>curl -fsSL https://claude.ai/install.sh | bash</code></pre>
-            On <strong>Windows</strong>, search the Start menu for <strong>PowerShell</strong>, open it, and use:
+            <p>On <strong>Windows</strong>, search the Start menu for <strong>PowerShell</strong>, open it, and use:</p>
             <pre class="command"><code>irm https://claude.ai/install.ps1 | iex</code></pre>
           </li>
           <li>
