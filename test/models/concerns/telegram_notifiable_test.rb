@@ -148,6 +148,26 @@ class TelegramNotifiableTest < ActiveSupport::TestCase
     end
   end
 
+  test "set_telegram_webhook! raises a clear error when public_url is not configured" do
+    agent = create_telegram_agent
+
+    Rails.configuration.x.stub :public_url, nil do
+      error = assert_raises(ArgumentError) { agent.set_telegram_webhook! }
+      assert_match(/SOULSHOUSE_PUBLIC_URL/, error.message)
+    end
+  end
+
+  test "set_telegram_webhook! registers the webhook when public_url is configured" do
+    agent = create_telegram_agent
+    stub_request(:post, "https://api.telegram.org/bot123:ABC/setWebhook")
+      .with(body: hash_including("url" => "https://example.test/telegram/webhook/#{agent.telegram_webhook_token}"))
+      .to_return(status: 200, body: { ok: true }.to_json)
+
+    Rails.configuration.x.stub :public_url, "https://example.test" do
+      assert_nothing_raised { agent.set_telegram_webhook! }
+    end
+  end
+
   private
 
   def create_telegram_agent(name: "Telegram Agent")

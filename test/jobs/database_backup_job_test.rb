@@ -19,6 +19,17 @@ class DatabaseBackupJobTest < ActiveJob::TestCase
     end
   end
 
+  test "aws_credentials raises ArgumentError when the aws block is entirely absent" do
+    empty_credentials = OpenStruct.new(aws: nil)
+
+    Rails.application.stub(:credentials, empty_credentials) do
+      error = assert_raises(ArgumentError) do
+        DatabaseBackupJob.new.send(:aws_credentials)
+      end
+      assert_match(/aws credentials not configured/, error.message)
+    end
+  end
+
   test "parses DATABASE_URL correctly" do
     job = DatabaseBackupJob.new
 

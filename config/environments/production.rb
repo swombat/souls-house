@@ -21,8 +21,13 @@ Rails.application.configure do
   # Enable serving of images, stylesheets, and JavaScripts from an asset server.
   # config.asset_host = "http://assets.example.com"
 
-  # Store uploaded files on Amazon S3 (see config/storage.yml for options).
-  config.active_storage.service = :amazon
+  # Store uploaded files on Amazon S3 by default, or on local disk when the
+  # house is configured for it (see config/storage.yml for options).
+  config.active_storage.service = case ENV.fetch("SOULSHOUSE_STORAGE", "s3")
+  when "s3" then :amazon
+  when "local" then :local
+  else raise "Unknown SOULSHOUSE_STORAGE #{ENV['SOULSHOUSE_STORAGE'].inspect}; expected \"s3\" or \"local\""
+  end
 
   # Assume all access to the app is happening through a SSL-terminating reverse proxy.
   config.assume_ssl = true
@@ -58,12 +63,12 @@ Rails.application.configure do
   # config.action_mailer.raise_delivery_errors = false
 
   # Set host to be used by links generated in mailer templates.
-  config.action_mailer.default_url_options = { host: "souls.house" }
+  config.action_mailer.default_url_options = { host: ENV.fetch("SOULSHOUSE_DOMAIN", "souls.house") }
 
   # Outgoing mail via Brevo (SMTP credentials under credentials.smtp).
   if Rails.application.credentials.dig(:smtp).present?
     config.action_mailer.delivery_method = :smtp
-    config.action_mailer.default_options = { from: "souls.house <hello@#{Rails.application.credentials.dig(:smtp, :domain) || "souls.house"}>" }
+    config.action_mailer.default_options = { from: ENV["SOULSHOUSE_MAIL_FROM"].presence || "souls.house <hello@#{Rails.application.credentials.dig(:smtp, :domain) || "souls.house"}>" }
     config.action_mailer.smtp_settings = {
       address: Rails.application.credentials.dig(:smtp, :server),
       port: Rails.application.credentials.dig(:smtp, :port) || 587,

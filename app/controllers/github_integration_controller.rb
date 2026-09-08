@@ -107,7 +107,7 @@ class GithubIntegrationController < ApplicationController
   end
 
   def github_redirect_uri
-    base = Rails.application.credentials.dig(:app, :url) || request.base_url
+    base = Rails.configuration.x.public_url || request.base_url
     "#{base}/github_integration/callback"
   end
 

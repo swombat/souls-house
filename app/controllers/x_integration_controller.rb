@@ -72,7 +72,7 @@ class XIntegrationController < ApplicationController
   end
 
   def x_redirect_uri
-    base = Rails.application.credentials.dig(:app, :url) || request.base_url
+    base = Rails.configuration.x.public_url || request.base_url
     "#{base}/x_integration/callback"
   end
 

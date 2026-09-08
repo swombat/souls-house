@@ -252,7 +252,7 @@ module Api
 
       def safeguard_explanation_url
         URI.join(
-          Rails.application.credentials.dig(:app, :url).presence || request.base_url,
+          Rails.configuration.x.public_url.presence || request.base_url,
           SafeguardNoticeRenderer::EXPLANATION_PATH
         ).to_s
       end

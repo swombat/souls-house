@@ -1,37 +1,47 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env ruby
+# frozen_string_literal: true
 
-# Build the hosted-agent runtime image on the Docker host that will run the
-# promoted agents. This deliberately leaves the image on that host rather than
-# relying on Docker Hub: promoted sandboxes are sibling containers on the same
-# machine as HelixKit.
+# Build on the host that will run residents, without publishing their runtime.
+# Use the same literal env parser and export precedence as bin/house.
+require_relative "../config/house"
+House.load_env!
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE="${HELIXKIT_AGENT_RUNTIME_IMAGE:-helixkit-agent-runtime}"
-COMPAT_IMAGE="${HELIXKIT_AGENT_RUNTIME_COMPAT_IMAGE:-dtenner/helix-kit-agent-runtime}"
-SHA_TAG="${1:-$(git -C "${ROOT}" rev-parse --short HEAD)}"
-DOCKER_HOST="${HELIXKIT_AGENT_RUNTIME_DOCKER_HOST:-ssh://misc}"
-CHAOS_REPO="${HELIXKIT_CHAOS_REPO:-https://github.com/seuros/chaos.git}"
-CHAOS_HEAD="${HELIXKIT_CHAOS_REF:-$(cat "${ROOT}/agent-runtime/chaos-ref")}"
+value = ->(key) { ENV[key] unless ENV[key].to_s.strip.empty? }
+root = House::ROOT
+image = value.call("HOUSE_AGENT_IMAGE") || "helixkit-agent-runtime:latest"
+abort "HOUSE_AGENT_IMAGE must be a tag, not an immutable digest" if image.include?("@")
 
-if [[ ! "${CHAOS_HEAD}" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "HELIXKIT_CHAOS_REF must be a full Chaos commit SHA" >&2
-  exit 1
-fi
+# Only the final path component can contain a tag; registry ports aren't tags.
+repository = image.split("/").last.include?(":") ? image.sub(/:[^\/:]+\z/, "") : image
+image = "#{image}:latest" unless image.split("/").last.include?(":")
+if (legacy_image = value.call("HELIXKIT_AGENT_RUNTIME_IMAGE"))
+  repository = legacy_image
+  image = "#{repository}:latest"
+end
 
-echo "Building hosted-agent runtime on Docker host: ${DOCKER_HOST}"
-echo "Chaos pinned commit: ${CHAOS_HEAD}"
-echo "Tags:"
-echo "  ${IMAGE}:${SHA_TAG}"
-echo "  ${IMAGE}:latest"
-echo "  ${COMPAT_IMAGE}:${SHA_TAG}"
-echo "  ${COMPAT_IMAGE}:latest"
+registry_user = value.call("HOUSE_REGISTRY_USER")
+compat_image = value.call("HELIXKIT_AGENT_RUNTIME_COMPAT_IMAGE") ||
+  [ registry_user, "helix-kit-agent-runtime" ].compact.join("/")
+sha_tag = ARGV.first
+unless sha_tag
+  IO.popen([ "git", "-C", root, "rev-parse", "--short", "HEAD" ]) { |io| sha_tag = io.read.strip }
+  abort "Could not determine the runtime image tag" unless $?.success?
+end
 
-docker --host "${DOCKER_HOST}" build \
-  --build-arg "CHAOS_REPO=${CHAOS_REPO}" \
-  --build-arg "CHAOS_HEAD=${CHAOS_HEAD}" \
-  -t "${IMAGE}:${SHA_TAG}" \
-  -t "${IMAGE}:latest" \
-  -t "${COMPAT_IMAGE}:${SHA_TAG}" \
-  -t "${COMPAT_IMAGE}:latest" \
-  "${ROOT}/agent-runtime"
+docker_host = value.call("HELIXKIT_AGENT_RUNTIME_DOCKER_HOST") || value.call("HOUSE_AGENT_RUNTIME_DOCKER_HOST")
+if !docker_host && %w[HOUSE_SSH_USER HOUSE_HOST HOUSE_SSH_PORT].all? { |key| value.call(key) }
+  docker_host = "ssh://#{ENV['HOUSE_SSH_USER']}@#{ENV['HOUSE_HOST']}:#{ENV['HOUSE_SSH_PORT']}"
+end
+abort "No Docker host configured: set HOUSE_AGENT_RUNTIME_DOCKER_HOST or HOUSE_SSH_USER/HOUSE_HOST/HOUSE_SSH_PORT." unless docker_host
+
+chaos_repo = value.call("HELIXKIT_CHAOS_REPO") || "https://github.com/seuros/chaos.git"
+chaos_head = value.call("HELIXKIT_CHAOS_REF") || File.read(File.join(root, "agent-runtime/chaos-ref")).strip
+abort "HELIXKIT_CHAOS_REF must be a full Chaos commit SHA" unless chaos_head.match?(/\A[0-9a-f]{40}\z/)
+
+tags = [ image, "#{repository}:#{sha_tag}", "#{repository}:latest", "#{compat_image}:#{sha_tag}", "#{compat_image}:latest" ].uniq
+puts "Building hosted-agent runtime on Docker host: #{docker_host}"
+puts "Chaos pinned commit: #{chaos_head}"
+puts "Tags:", *tags.map { |tag| "  #{tag}" }
+exec("docker", "--host", docker_host, "build",
+     "--build-arg", "CHAOS_REPO=#{chaos_repo}", "--build-arg", "CHAOS_HEAD=#{chaos_head}",
+     *tags.flat_map { |tag| [ "-t", tag ] }, File.join(root, "agent-runtime"))

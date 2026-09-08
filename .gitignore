@@ -56,6 +56,9 @@ node_modules
 /config/credentials/*.key
 /config/credentials/deployment/*.key
 
+# This installation's identity — see config/house.env.example.
+/config/house.env
+
 /db/backups/*
 /db/backups
 # Python runtime/test cache

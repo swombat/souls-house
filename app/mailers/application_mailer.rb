@@ -1,6 +1,6 @@
 class ApplicationMailer < ActionMailer::Base
 
-  default from: "souls.house <hello@souls.house>"
+  default from: ENV.fetch("SOULSHOUSE_MAIL_FROM", "souls.house <hello@souls.house>")
   layout "mailer"
 
 end

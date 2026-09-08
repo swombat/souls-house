@@ -67,6 +67,34 @@ class TelegramNotificationJobTest < ActiveSupport::TestCase
     assert_not @subscription.reload.blocked?
   end
 
+  test "omits the Open Conversation link when public_url is not configured" do
+    captured = nil
+    spy = ->(_uri, body, _headers) { captured = JSON.parse(body); @fake_ok }
+
+    Rails.configuration.x.stub :public_url, nil do
+      Net::HTTP.stub :post, spy do
+        TelegramNotificationJob.perform_now(@subscription, @message, @chat)
+      end
+    end
+
+    assert_not_nil captured
+    assert_not captured.key?("reply_markup")
+  end
+
+  test "includes the Open Conversation link when public_url is configured" do
+    captured = nil
+    spy = ->(_uri, body, _headers) { captured = JSON.parse(body); @fake_ok }
+
+    Rails.configuration.x.stub :public_url, "https://example.test" do
+      Net::HTTP.stub :post, spy do
+        TelegramNotificationJob.perform_now(@subscription, @message, @chat)
+      end
+    end
+
+    expected_url = "https://example.test/accounts/#{@chat.account_id}/chats/#{@chat.to_param}"
+    assert_equal expected_url, captured.dig("reply_markup", "inline_keyboard", 0, 0, "url")
+  end
+
   test "skips when agent not configured" do
     agent = @account.agents.create!(name: "Unconfigured Agent")
     sub = agent.telegram_subscriptions.create!(user: @user, telegram_chat_id: 999)

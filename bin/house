@@ -1,0 +1,16 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/house — operational commands for turning this checkout into a running
+# installation. See config/house.env.example and
+# docs/2026-09-07-forkable-house-plan-from-lume.md.
+#
+# The commands themselves live in lib/house/ (plain Ruby, no Rails/Bundler —
+# this runs before either is loaded); this file just wires ARGV to them.
+
+require_relative "../config/house"
+House.load_env!
+
+require_relative "../lib/house/cli"
+
+House::Cli.run(ARGV) if __FILE__ == $PROGRAM_NAME

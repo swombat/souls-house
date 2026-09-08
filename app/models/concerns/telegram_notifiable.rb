@@ -119,7 +119,12 @@ module TelegramNotifiable
   def set_telegram_webhook!
     return unless telegram_configured?
 
-    webhook_url = "#{Rails.application.credentials.dig(:app, :url)}/telegram/webhook/#{telegram_webhook_token}"
+    public_url = Rails.configuration.x.public_url
+    if public_url.blank?
+      raise ArgumentError, "Rails.configuration.x.public_url is blank; set SOULSHOUSE_PUBLIC_URL in config/house.env (see config/initializers/house.rb) before registering a Telegram webhook"
+    end
+
+    webhook_url = "#{public_url}/telegram/webhook/#{telegram_webhook_token}"
     result = telegram_api_request("setWebhook", {
       url: webhook_url,
       allowed_updates: [ "message", "callback_query" ],

@@ -78,6 +78,9 @@ class DatabaseBackupJob < ApplicationJob
 
   def aws_credentials
     creds = Rails.application.credentials.aws
+    if creds.blank?
+      raise ArgumentError, "aws credentials not configured; set aws.access_key_id, aws.secret_access_key, aws.s3_region and aws.postgres_bucket (see config/credentials/production.example.yml)"
+    end
     {
       access_key_id: creds[:access_key_id],
       secret_access_key: creds[:secret_access_key],

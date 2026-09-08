@@ -1,16 +1,75 @@
 # config/deploy.yml
+#
+# This file is an ERB template over this checkout's identity, not a plain
+# Kamal config: every value that names *this installation* (domain, host,
+# ssh, registry, docker gid, storage backend, mail sender, embeddings
+# digest) comes from HOUSE_* environment variables, normally supplied by
+# config/house.env (gitignored; config/house.env.example is the committed
+# starting point). `bin/kamal` loads that file automatically.
+#
+# See docs/2026-09-07-forkable-house-plan-from-lume.md and
+# public/self-host.md.
 
+<%
+  house_missing = %w[HOUSE_DOMAIN HOUSE_HOST].reject { |key| ENV[key] && !ENV[key].strip.empty? }
+  unless house_missing.empty?
+    raise "No house configured (missing #{house_missing.join(", ")}). Copy " \
+      "config/house.env.example to config/house.env and fill it in — bin/kamal " \
+      "loads it automatically. See docs/2026-09-07-forkable-house-plan-from-lume.md " \
+      "and public/self-host.md."
+  end
+
+  house = lambda do |key|
+    value = ENV[key]
+    if value.nil? || value.strip.empty?
+      raise "House value #{key} is required but not set. Copy " \
+        "config/house.env.example to config/house.env and fill it in — see " \
+        "docs/2026-09-07-forkable-house-plan-from-lume.md and public/self-host.md."
+    end
+    value
+  end
+
+  house_optional = lambda { |key| ENV[key].to_s.strip.empty? ? nil : ENV[key].strip }
+
+  house_domain = house.call("HOUSE_DOMAIN")
+  house_host = house.call("HOUSE_HOST")
+  house_ssh_user = house.call("HOUSE_SSH_USER")
+  house_ssh_port = house.call("HOUSE_SSH_PORT")
+  house_image = house.call("HOUSE_IMAGE")
+  house_registry_user = house.call("HOUSE_REGISTRY_USER")
+  house_embeddings_image = house.call("HOUSE_EMBEDDINGS_IMAGE")
+  house_agent_image = house.call("HOUSE_AGENT_IMAGE")
+  house_storage = house.call("HOUSE_STORAGE")
+  house_site_name = house.call("HOUSE_SITE_NAME")
+
+  house_docker_gid = house_optional.call("HOUSE_DOCKER_GID")
+  house_builder_remote = house_optional.call("HOUSE_BUILDER_REMOTE")
+  house_mail_from = house_optional.call("HOUSE_MAIL_FROM")
+  transition_aliases = house_optional.call("HOUSE_TRANSITION_ALIASES").to_s.split(",").map(&:strip).reject(&:empty?)
+
+  # Canonical HOUSE_EMBEDDINGS_DIGEST; MNEMODYNE_EMBEDDING_IMAGE_DIGEST is kept
+  # as a compatibility override (it predates the HOUSE_* vocabulary).
+  embedding_digest = ENV["MNEMODYNE_EMBEDDING_IMAGE_DIGEST"].to_s.strip
+  embedding_digest = ENV["HOUSE_EMBEDDINGS_DIGEST"].to_s.strip if embedding_digest.empty?
+  unless embedding_digest.match?(/\Asha256:[0-9a-f]{64}\z/)
+    raise "Set HOUSE_EMBEDDINGS_DIGEST to the approved immutable embedding image digest " \
+      "(sha256:...). (Set MNEMODYNE_EMBEDDING_IMAGE_DIGEST to override for compatibility.)"
+  end
+
+  web_volumes = [ "/var/run/docker.sock:/var/run/docker.sock" ]
+  web_volumes << "souls_house_storage:/rails/storage" if house_storage == "local"
+%>
 service: souls-house
-image: dtenner/souls-house
+image: <%= house_image %>
 
 registry:
-  username: dtenner
+  username: <%= house_registry_user %>
   password:
   - KAMAL_REGISTRY_PASSWORD
 
 ssh:
-  user: swombat
-  port: 12222 # This is the SSH port for your server
+  user: <%= house_ssh_user %>
+  port: <%= house_ssh_port %> # This is the SSH port for your server
 
 env:
   clear:
@@ -18,11 +77,18 @@ env:
     RAILS_LOG_TO_STDOUT: true # Log to STDOUT for Docker logging
     RAILS_ENV: production
     SOULSHOUSE_AGENTS_NETWORK: kamal # Agent containers join Kamal's private Docker network.
-    SOULSHOUSE_AGENT_IMAGE_DEFAULT: helixkit-agent-runtime:latest
+    SOULSHOUSE_AGENT_IMAGE_DEFAULT: <%= house_agent_image %>
     SOULSHOUSE_AGENT_INTERNAL_URL: http://souls-house-web:3000 # Agent callbacks hit Rails over Docker DNS.
-    SOULSHOUSE_ACTIVITY_ORIGIN: https://souls.house # Purpose-limited lifecycle callbacks use TLS.
-    SOULSHOUSE_SANDBOX_HOST: 95.217.118.47 # Stored on promoted agents for operator diagnostics.
+    SOULSHOUSE_ACTIVITY_ORIGIN: https://<%= house_domain %> # Purpose-limited lifecycle callbacks use TLS.
+    SOULSHOUSE_PUBLIC_URL: https://<%= house_domain %>
+    SOULSHOUSE_DOMAIN: <%= house_domain %> # Mailer confirmation, invitation, and password-reset links.
+    SOULSHOUSE_SANDBOX_HOST: <%= house_host %> # Stored on promoted agents for operator diagnostics.
     SOULSHOUSE_AGENT_BACKUPS_ENABLED: true # Back up all hosted-agent persistent volumes during the nightly full backup.
+    SOULSHOUSE_SITE_NAME: <%= house_site_name %>
+    SOULSHOUSE_STORAGE: <%= house_storage %>
+<% if house_mail_from %>
+    SOULSHOUSE_MAIL_FROM: <%= house_mail_from %>
+<% end %>
     MNEMODYNE_EMBEDDING_URL: http://souls-house-embeddings:8080/v1/embeddings
     MNEMODYNE_EMBEDDING_PROFILE: bge-small-en-v1.5-q-52398278842e-fastembed-0.7.4-v1
   secret:
@@ -33,43 +99,57 @@ env:
 servers:
   web:
     hosts:
-      - 95.217.118.47
+      - <%= house_host %>
     options:
-      volume: /var/run/docker.sock:/var/run/docker.sock
-      group-add: 988 # Host docker group; lets the non-root rails user use the mounted socket.
+      volume:
+<% web_volumes.each do |volume| %>
+        - <%= volume %>
+<% end %>
+<% if house_docker_gid %>
+      group-add: <%= house_docker_gid %> # Host docker group; lets the non-root rails user use the mounted socket.
+<% end %>
       network-alias:
         - souls-house-web
-        - helix-kit-web # transition alias: pre-rename agent containers have the old callback URL baked in; remove in Step 2.5
+<% transition_aliases.each do |alias_name| %>
+        - <%= alias_name %> # transition alias (HOUSE_TRANSITION_ALIASES); remove once nothing depends on the old callback URL
+<% end %>
   jobs:
     hosts:
-      - 95.217.118.47
+      - <%= house_host %>
     cmd: "./bin/rails solid_queue:start"
     options:
-      volume: /var/run/docker.sock:/var/run/docker.sock
-      group-add: 988 # Host docker group; needed for PromoteAgentJob to spawn agent containers.
+      volume:
+<% web_volumes.each do |volume| %>
+        - <%= volume %>
+<% end %>
+<% if house_docker_gid %>
+      group-add: <%= house_docker_gid %> # Host docker group; needed for PromoteAgentJob to spawn agent containers.
+<% end %>
 
 proxy:
   ssl: true
   hosts:
-    - souls.house
+    - <%= house_domain %>
   app_port: 3000
   response_timeout: 120
 
 builder:
   arch: amd64
-  remote: ssh://swombat@95.217.118.47:12222
+<% if house_builder_remote %>
+  remote: <%= house_builder_remote %>
+<% end %>
   args:
     RAILS_ENV: production
   cache:
     type: registry
     options: mode=max
-    image: dtenner/souls-house:production-build-cache
+    image: <%= house_image %>:production-build-cache
 
 accessories:
   embeddings:
     # Build/publish this artifact after review; see docs/mnemodyne-deployment.md.
-    image: dtenner/souls-house-mnemodyne-embeddings@<%= ENV.fetch("MNEMODYNE_EMBEDDING_IMAGE_DIGEST", "").tap { |digest| raise "Set MNEMODYNE_EMBEDDING_IMAGE_DIGEST to the approved immutable embedding image digest (sha256:...)" unless digest.match?(/\Asha256:[0-9a-f]{64}\z/) } %>
-    host: 95.217.118.47
+    image: <%= house_embeddings_image %>@<%= embedding_digest %>
+    host: <%= house_host %>
     env:
       secret:
         - MNEMODYNE_EMBEDDING_TOKEN
@@ -81,7 +161,7 @@ accessories:
     # No public port. Kamal's private network supplies souls-house-embeddings.
   postgres:
     image: postgres:16.2 # Use the correct version for your app
-    host: 95.217.118.47
+    host: <%= house_host %>
     env:
       clear:
         # initdb-only vars — the existing data volume (renamed cluster) ignores them; kept in sync for clarity
