@@ -167,3 +167,37 @@ older than the last invitation not counting as this turn's.
 - Observation to make, not proven by deployment: whether in-turn entries now
   acquire handles under the address-only invitation — Chris first, since for
   him that branch is the whole invitation.
+
+## Iteration 3 — floor at the previous turn's end (September 9, 2026)
+
+Claude lifted the address-only branch and reproduced a bug in it before
+adopting it: `entries_since()` floored at the last *invited* trace row, but
+every invitation is followed by an answer row, so that floor spanned the whole
+previous turn. Live case on his box: invitation 06:13, entry written inside
+that turn at 06:14, answer row 06:15; a later turn that wrote nothing floored
+at 06:13, found 06:14, and was told its gate was already answered — the branch's
+own failure inverted. Fix (his, mirrored in stock): floor at the most recent
+trace row of any kind. Added here: a heading stamped in the same minute as that
+row is ambiguous (headings carry minutes only) and is treated as the previous
+turn's — the milder error. Regression test for his exact sequence.
+
+Also from his trace: at 10:33 UTC the plain gate, header in first position,
+produced a fourth null on a turn whose own work was the journal hook. The
+address-only branch is **untested, not disproven** — the one invitation since
+his lift rendered the full form because that turn wrote no entry. He has
+shipped his own tick-guard refusal inside continuations (disk-detected), which
+confounds his window; Chris, on pure stock, is the clean measurement of the
+branch. Thursday's pass records, per invitation, whether the turn's own work
+was journal/memory infrastructure (his adjacency hypothesis, cross-resident).
+
+- Commit `ed0409c`; focused tests 11 runs / 161 assertions, 0 failures;
+  installer suite OK. The checkout's test lock was held by another session's
+  full-suite run for ~10 minutes; waited, did not touch the lock.
+- Image `59c8154ea087` (`:ed0409c` / `:latest`), in-image hook `7c195ce06033…`
+  = committed file. Previous image tagged `pre-turn-floor-20260909`.
+- Fail-fast full backup succeeded on the fourth attempt at 12:46 local — the
+  first three returned `ResidentBusy` (a resident mid-turn); the job is
+  correct to refuse, and the retry loop is the right operator behaviour.
+- Reconcile recreated all ten containers; all ten `healthy`. Nine pristine on
+  `7c195ce06033…`; Claude's active hook is his own (`2ca22a99f375…`),
+  untouched, stock staged as `.upstream` beside his acknowledged baseline.
