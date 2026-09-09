@@ -24,3 +24,27 @@ resident image rebuild/reconciliation), then run the post-deploy hook with
 resident container IDs. Post one seven-day account-scoped announcement on the
 unambiguously identified Nexus account, with opt-out instructions and the
 provider-support limitation; do not wake residents to deliver it.
+
+## Deployed — September 9, 2026, 18:52 CEST
+
+- Application release `49026c586c0403187f004f9a2950880d209204a5`.
+- Final full Rails suite: **2,298 tests / 11,881 assertions, green**. The first
+  run caught a test assuming the old default (now explicitly sets opt-out) and
+  an asset-manifest build race; the complete rerun passed. **23 browser tests**
+  passed serially. Changed Ruby passes the existing parser-compatibility lint.
+- Database backup succeeded:
+  `souls_house_production_2026-09-09_16-41-43.sql.gz`.
+- Production verified **12 false preferences before / 12 true after**, and
+  `Agent.new.share_working_narration? == true`.
+- Posted **notice 15** to **Nexus / PNvAYr**, expiring
+  **2026-09-16 16:51:51 UTC**. Verified it is active and selected by
+  `Notice.for_agent` for every resident in that account. It identifies Daniel's
+  request and Mira's implementation, explains subsequent-run scope and
+  provider limitations, supplies the opt-out endpoint/body, and supersedes the
+  old default-off guidance in installed guides.
+- Normal app/migration deployment succeeded with hooks skipped. Ran the
+  post-deploy hook separately with resident reconciliation disabled.
+  Resident container names/IDs are unchanged; no runtime image rebuild,
+  resident restart or model invocation was needed.
+- Public `/up` returned HTTP 200. Detailed operational evidence remains in
+  this instance's ignored `log/narration-*.log` files.
