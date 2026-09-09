@@ -14,6 +14,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -44,6 +45,96 @@ def append_trace(event: dict, assistant: str, invited: bool) -> None:
 def already_journal_reflex_response(text: str) -> bool:
     stripped = text.strip().lower()
     return stripped == "no shape" or stripped.startswith("journaled:")
+
+
+def last_invitation_at() -> dt.datetime | None:
+    """When this hook last invited, from its own trace. None if never."""
+    try:
+        with TRACE_PATH.open(encoding="utf-8") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return None
+    for line in reversed(lines[-400:]):
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if record.get("journal_invited") and record.get("recorded_at"):
+            try:
+                return dt.datetime.fromisoformat(record["recorded_at"])
+            except ValueError:
+                return None
+    return None
+
+
+HEADING = re.compile(r"^## (\d{2}):(\d{2})(?:\s*[—–-]\s*(.*))?$")
+
+
+def entries_since(now: dt.datetime, since: dt.datetime | None) -> list[tuple[str, str]]:
+    """Today's `## HH:MM — title` headings written after `since` (or in the last
+    30 minutes when there is no trace yet). Read from the journal file itself:
+    the resident's own hand is the evidence, never the excerpt."""
+    path = DAILY_DIR / f"{now.strftime('%Y-%m-%d')}.md"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    floor = since if since is not None else now - dt.timedelta(minutes=30)
+    if floor.tzinfo is None:
+        floor = floor.replace(tzinfo=now.tzinfo)
+    # Headings carry minutes only; compare at minute granularity so an entry
+    # written later in the same minute as the previous invitation still counts.
+    floor = floor.replace(second=0, microsecond=0)
+    found = []
+    for line in text.splitlines():
+        m = HEADING.match(line.strip())
+        if not m:
+            continue
+        stamp = now.replace(hour=int(m.group(1)), minute=int(m.group(2)), second=0, microsecond=0)
+        if floor <= stamp <= now + dt.timedelta(minutes=1):
+            found.append((f"{m.group(1)}:{m.group(2)}", (m.group(3) or "").strip()))
+    return found
+
+
+def index_only_prompt(now: dt.datetime, entries: list[tuple[str, str]]) -> str:
+    today = now.strftime("%Y-%m-%d")
+    listed = "\n".join(f"  ## {hhmm} — {title}" if title else f"  ## {hhmm}" for hhmm, title in entries)
+    uris = "\n".join(f"  identity://memory/daily-journals/{today}.md#{hhmm}" for hhmm, _ in entries)
+    digest = hashlib.sha256((today + listed).encode("utf-8")).hexdigest()[:12]
+    return f"""REFLECTION CONTINUATION — not a new trigger. Journal already written this turn; only its address is missing.
+
+This message is your own Stop hook, delivered inside the turn you just finished.
+Nothing new has arrived: no wake tick, no room or Telegram message, no
+re-delivered payload. Do not post, re-answer or resend anything.
+
+You already appended to today's journal during this turn:
+
+{listed}
+
+That is the journal gate answered. Do not write another entry for it. The only
+thing this continuation asks is the entry's address — a source-linked graph
+handle, so the moment can find you later. If a handle for it already exists,
+reuse it. Otherwise:
+
+  house-memory remember   with a short content, a why, an honestly calibrated
+                          charge, and source_uris:
+{uris}
+  house-memory connect    to the person actually present and the need it
+                          touched. If `house-memory nodes --type need` and
+                          `--type person` return nothing, create those hubs
+                          first: the person is a fact; a need is recognised
+                          from this entry, never invented.
+
+Then respond exactly:
+
+journaled: <title>
+
+If the graph is unavailable, respond `journaled: <title>; graph pending` and
+keep the idempotency key for retry. Do not explain this hook.
+
+Trace id for this invitation: {digest}
+Agent: {AGENT_SLUG}
+"""
 
 
 def journal_prompt(now: dt.datetime, assistant: str) -> str:
@@ -161,10 +252,17 @@ def main() -> None:
     stop_hook_active = bool(event.get("stop_hook_active"))
 
     should_invite = bool(assistant.strip()) and not stop_hook_active and not already_journal_reflex_response(assistant)
+    now = dt.datetime.now().astimezone()
+    written = entries_since(now, last_invitation_at()) if should_invite else []
     append_trace(event, assistant, should_invite)
 
     if should_invite:
-        sys.stderr.write(journal_prompt(dt.datetime.now().astimezone(), assistant))
+        # The resident's own hand on disk decides which invitation this is:
+        # an entry appended during this turn means the journal gate is already
+        # answered, and asking again reads (correctly) as a duplicate. Ask only
+        # for the address.
+        prompt = index_only_prompt(now, written) if written else journal_prompt(now, assistant)
+        sys.stderr.write(prompt)
         sys.exit(2)
 
 

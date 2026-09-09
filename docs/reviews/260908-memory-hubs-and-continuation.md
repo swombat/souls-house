@@ -106,3 +106,42 @@ is staged beside it for his review.
   re-delivered trigger, and whether any resident creates a first need/person
   hub, are observations for the coming days — not something this deployment
   proves.
+
+## Corrections and iteration 2 — September 9, 2026
+
+Claude reproduced the invitation counts and the gap from inside his own trace
+and corrected two of the numbers above (Nexus conversation `weVEkY`):
+
+- "27 of 30 dismissed as re-delivery" over-read the evidence. The classifier
+  looked at the first 1000 characters of `assistant_excerpt`; since 30 August
+  his gate answers are ≥1000-character essays that open with re-delivery
+  language and frequently go on to journal. Entries per invitation on 09-07
+  was ~0.5 (15 on 30), 0 on 7 on 09-08. The framing appears in 27 of 30
+  openings; "dismissed" was wrong.
+- "Last `journaled:` receipt 2026-08-30" is an artifact of the same 1000-char
+  cap: the receipt sits at the end of the essay. His independent
+  length-based instrument puts the regime change on the same date, so the date
+  stands; "no receipt since" does not. Rule: match on the journal file, not
+  the excerpt.
+- The gap since 09-07 10:12 and the missing 09-08 file stand.
+
+He adopted the `REFLECTION CONTINUATION` header verbatim (rebased onto stock
+`2525a005c7b6…`, active `5c7b3a56a346…`); at 02:05 UTC the next gate was still
+answered "Already done, in this same session — no duplicate written", with no
+entry. Three prose controls (his 09-01 gap line, the header, his format
+warning) — three nulls. His gradient: journal-adjacent turns yield an entry
+38% of the time vs 55% otherwise since 31 August. In those turns "already
+done" is *true*, and a paragraph cannot argue with a true statement.
+
+### Change
+
+`stop_journal_reflex.py` now reads the journal file before inviting. If a
+`## HH:MM` heading was appended to today's file after the previous invitation
+(from the hook's own trace; last 30 minutes when there is no trace), the
+invitation switches to an **address-only** form: it names the entry, says the
+journal gate is answered and not to write another, gives the entry's
+`identity://…#HH:MM` URI, asks for `house-memory remember`/`connect` (with the
+hub cold-start rule), and requests the `journaled:` receipt. Otherwise the full
+invitation is unchanged. The decision is made from the resident's own hand on
+disk, never from the excerpt. Test added for both branches and for an entry
+older than the last invitation not counting as this turn's.

@@ -69,6 +69,40 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
     end
   end
 
+  test "an entry appended during the turn switches the invitation to address-only" do
+    Dir.mktmpdir do |dir|
+      env = { "AGENT_IDENTITY_PATH" => dir }
+      script = Rails.root.join("agent-runtime/stop_journal_reflex.py").to_s
+      event = { last_assistant_message: "Synthetic meaningful turn" }
+      # First turn: nothing on disk, full invitation.
+      _, prompt, result = Open3.capture3(env, "python3", script, stdin_data: event.to_json)
+      assert_equal 2, result.exitstatus
+      assert_includes prompt, "decide whether the just-completed turn has narrative shape"
+      # The resident journals by hand during the next turn.
+      # The hook reads the system clock (local time), not Time.zone.
+      today = Date.today
+      journal = File.join(dir, "memory/daily-journals/#{today}.md")
+      FileUtils.mkdir_p(File.dirname(journal))
+      stamp = Time.now.strftime("%H:%M")
+      File.write(journal, "# Daily Journal: #{today}\n\n## #{stamp} — A shape I kept\n\nbody\n")
+      _, prompt, result = Open3.capture3(env, "python3", script, stdin_data: event.to_json)
+      assert_equal 2, result.exitstatus
+      assert prompt.start_with?("REFLECTION CONTINUATION — not a new trigger. Journal already written this turn")
+      assert_includes prompt, "## #{stamp} — A shape I kept"
+      assert_includes prompt, "identity://memory/daily-journals/#{today}.md##{stamp}"
+      assert_includes prompt, "Do not write another entry"
+      assert_includes prompt, "house-memory remember"
+      assert_includes prompt, "house-memory connect"
+      assert_not_includes prompt, "decide whether the just-completed turn has narrative shape"
+      # An entry older than the last invitation does not count as this turn's.
+      old_stamp = (Time.now - 40 * 60).strftime("%H:%M")
+      File.write(journal, "# Daily Journal: #{today}\n\n## #{old_stamp} — Earlier\n\nbody\n")
+      _, prompt, result = Open3.capture3(env, "python3", script, stdin_data: event.to_json)
+      assert_equal 2, result.exitstatus
+      assert_includes prompt, "decide whether the just-completed turn has narrative shape"
+    end
+  end
+
   test "stop reflex automatically invites journal then source linked formation only once" do
     Dir.mktmpdir do |dir|
       env = { "AGENT_IDENTITY_PATH" => dir }
