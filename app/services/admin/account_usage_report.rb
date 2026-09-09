@@ -33,6 +33,7 @@ module Admin
             last_activity_at: last_activity[agent.id]
           )
         end,
+        resident_cards: Agents::ResidentDirectory.new(@account).call,
         activity: activity,
         recent_sessions: recent_sessions,
         recent_conversations: recent_conversations,

@@ -8,7 +8,7 @@
     resetDescription,
   } from '$lib/subscription-usage';
 
-  let { accountId, agentId, modelId, subscription } = $props();
+  let { accountId, agentId, modelId, subscription, usageUrl } = $props();
 
   let usage = $state(null);
   let loading = $state(true);
@@ -40,7 +40,7 @@
     error = false;
 
     try {
-      const response = await fetch(accountAgentProviderSubscriptionUsagePath(accountId, agentId), {
+      const response = await fetch(usageUrl || accountAgentProviderSubscriptionUsagePath(accountId, agentId), {
         headers: { Accept: 'application/json' },
       });
       if (!response.ok) throw new Error('Usage unavailable');

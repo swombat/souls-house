@@ -80,3 +80,10 @@ test('a disabled resident stays visible and editable with a disabled bin', () =>
   expect(screen.getByRole('link', { name: 'Edit' })).toBeVisible();
   expect(screen.getByText('Test resident').closest('.grayscale')).not.toBeNull();
 });
+
+test('shows configured effort and labels an unspecified provider default honestly', () => {
+  render(AgentCard, { agent: { ...agent, reasoning_effort: 'default' }, accountId: 'test', showActions: false });
+  expect(screen.getByText('/ provider default')).toHaveClass('opacity-50');
+  expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  expect(screen.queryByRole('link')).not.toBeInTheDocument();
+});

@@ -137,6 +137,7 @@ Rails.application.routes.draw do
     resources :runtime_sessions, only: :index, controller: "agent_runtime_sessions"
     resources :agents, only: [] do
       resource :runtime, only: :show, controller: "agent_runtime_sessions"
+      resource :provider_subscription_usage, only: :show, controller: "agent_provider_subscription_usages"
     end
     resources :accounts, only: [ :index ] do
       member do

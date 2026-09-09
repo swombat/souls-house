@@ -333,6 +333,13 @@ class Admin::AccountsControllerTest < ActionDispatch::IntegrationTest
     selected_account = inertia_shared_props["selected_account"]
     assert selected_account.present?
 
+    cards = selected_account.dig("usage", "resident_cards")
+    assert_equal team_account.agents.count, cards.size
+    card = cards.find { |resident| resident["id"] == agents(:other_account_agent).to_param }
+    assert_equal agents(:other_account_agent).reasoning_effort, card["reasoning_effort"]
+    assert_equal 14, card["activity"].size
+    refute card.key?("system_prompt")
+
     memberships = selected_account["memberships"]
     assert memberships.is_a?(Array)
     assert memberships.size >= 1

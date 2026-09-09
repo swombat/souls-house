@@ -36,7 +36,7 @@
     return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
   }
 
-  let { agent, accountId, onupgrade, ondisable } = $props();
+  let { agent, accountId, onupgrade, ondisable, showActions = true, admin = false } = $props();
   let heartbeatEnabled = $derived(agent.scheduled_wakes_enabled && agent.active && !agent.paused && !agent.deprecated);
   let IconComponent = $derived(agentIconFor(agent.icon));
 </script>
@@ -56,7 +56,11 @@
         </div>
         <div>
           <CardTitle class="text-lg">{agent.name}</CardTitle>
-          <p class="text-xs font-light text-muted-foreground mt-0.5">{agent.model_label || agent.model_id}</p>
+          <p class="text-xs font-light text-muted-foreground mt-0.5">
+            {agent.model_label || agent.model_id}{#if agent.reasoning_effort}<span class="opacity-50">
+                / {agent.reasoning_effort === 'default' ? 'provider default' : agent.reasoning_effort}</span
+              >{/if}
+          </p>
           <div class="flex flex-wrap gap-1 mt-1">
             {#if agent.deprecated}
               <Badge variant="secondary" title="The inline runtime has been retired. History is preserved.">
@@ -124,6 +128,7 @@
     {#if agent.provider_subscription?.auth_mode === 'oauth_account'}
       <AgentSubscriptionUsageSummary
         {accountId}
+        usageUrl={admin ? `/admin/agents/${agent.id}/provider_subscription_usage` : undefined}
         agentId={agent.id}
         modelId={agent.model_id}
         subscription={agent.provider_subscription} />
@@ -146,30 +151,32 @@
         {/each}
       </div>
     {/if}
-    <div class="flex gap-2 pt-2 border-t">
-      <a href={editAccountAgentPath(accountId, agent.id)} class="flex-1">
-        <Button variant="outline" size="sm" class="w-full">
-          <PencilSimple class="mr-1 size-4" />
-          Edit
+    {#if showActions}
+      <div class="flex gap-2 pt-2 border-t">
+        <a href={editAccountAgentPath(accountId, agent.id)} class="flex-1">
+          <Button variant="outline" size="sm" class="w-full">
+            <PencilSimple class="mr-1 size-4" />
+            Edit
+          </Button>
+        </a>
+        <Button
+          variant="outline"
+          size="sm"
+          onclick={() => onupgrade?.(agent)}
+          title="Change this resident's model and preserve a historical, unavailable predecessor record">
+          <Copy class="size-4" />
         </Button>
-      </a>
-      <Button
-        variant="outline"
-        size="sm"
-        onclick={() => onupgrade?.(agent)}
-        title="Change this resident's model and preserve a historical, unavailable predecessor record">
-        <Copy class="size-4" />
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        onclick={() => ondisable?.(agent)}
-        disabled={!agent.active}
-        aria-label={`Disable ${agent.name}`}
-        title="Disable resident — preserve their history and files"
-        class="text-destructive hover:text-destructive">
-        <Trash class="size-4" />
-      </Button>
-    </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onclick={() => ondisable?.(agent)}
+          disabled={!agent.active}
+          aria-label={`Disable ${agent.name}`}
+          title="Disable resident — preserve their history and files"
+          class="text-destructive hover:text-destructive">
+          <Trash class="size-4" />
+        </Button>
+      </div>
+    {/if}
   </CardContent>
 </Card>

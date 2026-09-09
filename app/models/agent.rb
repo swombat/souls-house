@@ -122,7 +122,7 @@ class Agent < ApplicationRecord
 
     if options&.dig(:as) == :resident_card
       hash.slice!("id", "name", "model_id", "model_label", "active?", "paused?", "colour", "icon",
-        "deprecated?", "runtime", "journal_entry_stats", "scheduled_wakes_enabled?", "heartbeat_wakes_per_day")
+        "deprecated?", "runtime", "reasoning_effort", "journal_entry_stats", "scheduled_wakes_enabled?", "heartbeat_wakes_per_day")
     end
 
     if options&.dig(:as) == :list

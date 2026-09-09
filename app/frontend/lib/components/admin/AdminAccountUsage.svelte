@@ -4,8 +4,7 @@
   import { Button } from '$lib/components/shadcn/button';
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/shadcn/card';
   import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '$lib/components/shadcn/table';
-  import { agentIconFor } from '$lib/agent-icons';
-  import ModelProviderLogo from '$lib/components/ModelProviderLogo.svelte';
+  import AgentGrid from '$lib/components/agents/AgentGrid.svelte';
 
   let { account } = $props();
   let metric = $state('sessions');
@@ -62,13 +61,6 @@
       to: new Date(new Date(session.last_at).getTime() + 1000).toISOString(),
     });
     return `/admin/agents/${session.agent_id}/runtime?${query}`;
-  }
-
-  function providerLabel(provider) {
-    return (
-      { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Google', xai: 'xAI', openrouter: 'OpenRouter' }[provider] ||
-      provider
-    );
   }
 </script>
 
@@ -171,157 +163,12 @@
       </CardDescription>
     </CardHeader>
     <CardContent class="space-y-4">
-      {#each usage.agents as agent (agent.id)}
-        {@const ResidentIcon = agentIconFor(agent.icon)}
-        {@const deprecated = ['deprecated', 'inline', 'migrating'].includes(agent.runtime)}
-        {@const access = agent.model_access}
-        <article class={`rounded-lg border p-4 ${deprecated ? 'bg-muted/50 opacity-60 grayscale' : ''}`}>
-          <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="flex items-start gap-3">
-              <div
-                aria-label={`${agent.name} icon`}
-                class={`rounded-lg p-2 ${agent.colour ? `bg-${agent.colour}-100 dark:bg-${agent.colour}-900` : 'bg-primary/10'}`}>
-                <ResidentIcon
-                  weight="duotone"
-                  class={`size-6 ${agent.colour ? `text-${agent.colour}-700 dark:text-${agent.colour}-300` : 'text-primary'}`} />
-              </div>
-              <div>
-                <h3 class="font-semibold">{agent.name}</h3>
-                <div class="mt-1 flex flex-wrap gap-2">
-                  {#if deprecated}
-                    <Badge variant="outline">Deprecated · inline</Badge>
-                  {/if}
-                  <Badge variant={agent.active && !agent.paused ? 'secondary' : 'outline'}
-                    >{!agent.active ? 'Inactive' : agent.paused ? 'Paused' : 'Active'}</Badge>
-                  {#if !deprecated && agent.runtime !== 'external'}
-                    <Badge variant="outline">{agent.runtime}</Badge>
-                  {/if}
-                  {#if !deprecated}<Badge variant={agent.health_state === 'unhealthy' ? 'destructive' : 'outline'}
-                      >{agent.health_state}</Badge
-                    >{/if}
-                </div>
-              </div>
-            </div>
-            {#if !deprecated}
-              <a class="text-sm text-primary underline underline-offset-4" href={`/admin/agents/${agent.id}/runtime`}
-                >Inspect runtime →</a>
-            {/if}
-          </div>
-          <dl class="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 text-sm">
-            <div>
-              <dt class="text-muted-foreground">Model / reasoning</dt>
-              <dd class="flex items-center gap-2 break-words font-medium">
-                <ModelProviderLogo modelId={agent.model_id} />
-                <span>{agent.model}</span>
-              </dd>
-              <dd class="my-1 flex flex-wrap items-center gap-1.5">
-                {#if access?.mode}
-                  <Badge variant={access.mode === 'oauth_account' ? 'secondary' : 'outline'}>
-                    {access.mode === 'oauth_account' ? 'OAuth' : 'API'} · {providerLabel(access.provider)}
-                  </Badge>
-                  {#if access.mode === 'oauth_account'}
-                    <span class="text-xs text-muted-foreground"
-                      >{access.connection_status || 'Connection not confirmed'}</span>
-                  {/if}
-                {:else}
-                  <span class="text-xs text-muted-foreground">Authentication unknown</span>
-                {/if}
-              </dd>
-              <dd>
-                {agent.reasoning_effort} reasoning{agent.thinking_enabled
-                  ? ` · ${agent.thinking_budget.toLocaleString()} thinking budget`
-                  : ''}
-              </dd>
-            </div>
-            <div>
-              <dt class="text-muted-foreground">Heartbeat</dt>
-              <dd>
-                {agent.scheduled_wakes_enabled ? `${agent.heartbeat_wakes_per_day} wakes/day` : 'Scheduled wakes off'}
-              </dd>
-              <dd class="text-xs text-muted-foreground">
-                {!agent.active || agent.paused ? 'Resident is inactive or paused' : 'Configured schedule'}
-              </dd>
-            </div>
-            <div>
-              <dt class="text-muted-foreground">Usage · all time</dt>
-              <dd>{agent.conversations} conversations · {agent.sessions} sessions</dd>
-              <dd>{agent.runs} trigger attempts</dd>
-            </div>
-            <div>
-              <dt class="text-muted-foreground">Persistent disk</dt>
-              <dd class="font-medium">
-                {deprecated ? 'No hosted volumes' : bytes(agent.storage.bytes)}
-              </dd>
-              {#if !deprecated}
-                <dd class="text-xs text-muted-foreground">
-                  {agent.storage.status || 'Awaiting first measurement'}{stale(agent.storage) ? ' · stale' : ''}
-                </dd>
-                {#if agent.storage.measured_at}<dd class="text-xs text-muted-foreground">
-                    Measured {dateTime(agent.storage.measured_at)}
-                  </dd>{/if}
-                {#if agent.storage.status === 'unavailable'}<dd class="text-xs text-destructive">
-                    Latest check failed; any size shown is an older reading.
-                  </dd>{/if}
-              {/if}
-            </div>
-          </dl>
-          <p class="mt-3 text-xs text-muted-foreground">
-            Created {dateTime(agent.created_at)} · Last runtime attempt {dateTime(agent.last_activity_at)}
-          </p>
-          <details class="mt-3 text-sm">
-            <summary class="cursor-pointer font-medium">Settings, integrations & storage breakdown</summary>
-            <div class="mt-3 grid gap-4 md:grid-cols-2">
-              <dl class="space-y-2">
-                <div>
-                  <dt class="text-muted-foreground">Persistent sessions</dt>
-                  <dd>
-                    Chat: {agent.persistent_session ? 'on' : 'off'} · Wake: {agent.persistent_wake_session
-                      ? 'on'
-                      : 'off'}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-muted-foreground">Container memory / backups</dt>
-                  <dd>{agent.container_memory_mb} MiB RAM · backup interval {agent.backup_interval_hours}h</dd>
-                </div>
-                <div>
-                  <dt class="text-muted-foreground">Voice</dt>
-                  <dd>{agent.voice_enabled ? 'On' : 'Off'}</dd>
-                </div>
-                <div>
-                  <dt class="text-muted-foreground">Health last checked</dt>
-                  <dd>{dateTime(agent.last_health_check_at)}</dd>
-                </div>
-                {#each Object.entries(agent.storage.volumes || {}) as [name, size]}<div
-                    class="flex justify-between gap-4">
-                    <dt class="capitalize">{name}</dt>
-                    <dd>{bytes(size)}</dd>
-                  </div>{/each}
-                {#if agent.storage.missing_volumes?.length}<p class="text-muted-foreground">
-                    Unmeasured volumes: {agent.storage.missing_volumes.join(', ')}
-                  </p>{/if}
-              </dl>
-              <div class="space-y-2">
-                <p>Telegram: {agent.telegram.configured ? `@${agent.telegram.username}` : 'Not connected'}</p>
-                {#each agent.provider_auth.filter((auth) => auth.mode === 'oauth_account') as auth}
-                  <p>{auth.provider} subscription: {auth.status || 'not connected'}</p>
-                {/each}
-                {#each agent.services as service}
-                  <div class="rounded border p-2">
-                    <div class="font-medium">
-                      {service.label} <span class="text-muted-foreground">({service.provider})</span>
-                    </div>
-                    <p class="text-xs">
-                      {service.enabled ? 'Access enabled' : 'Access disabled'} · {service.status} · {service.provisioning_status ||
-                        'not provisioned'}
-                    </p>
-                  </div>
-                {:else}<p class="text-muted-foreground">No service connections assigned.</p>{/each}
-              </div>
-            </div>
-          </details>
-        </article>
-      {:else}<p class="text-sm text-muted-foreground">No residents have been created in this account.</p>{/each}
+      {#key account.id}
+        <AgentGrid agents={usage.resident_cards || []} accountId={account.id} showActions={false} admin />
+      {/key}
+      {#if !usage.agents.length}<p class="text-sm text-muted-foreground">
+          No residents have been created in this account.
+        </p>{/if}
     </CardContent>
   </Card>
 

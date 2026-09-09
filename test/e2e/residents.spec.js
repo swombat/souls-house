@@ -28,6 +28,7 @@ test('resident cards show compact charts, quotas and permissions at desktop and 
     await page.goto(`/accounts/${setup.account_id}/agents`);
     await expect(page).toHaveURL(/\/residents$/);
     await expect(page.getByText('E2E Researcher', { exact: true })).toBeVisible();
+    await page.getByRole('checkbox', { name: 'Show disabled' }).check();
     await expect(page.getByText('120% predicted')).toHaveClass(/text-red-600/);
     await expect(page.getByText('80% predicted')).toHaveClass(/text-amber-700/);
     await expect(page.getByRole('meter')).toHaveCount(2);
@@ -65,12 +66,14 @@ test('the bin disables a resident without removing them, with re-enable availabl
     await page.goto(`/accounts/${setup.account_id}/residents`);
     await expect(page.getByRole('button', { name: 'New Resident', exact: true })).toBeVisible();
     const headings = page.locator('h3');
-    await expect(headings).toHaveText(['E2E Critic', 'E2E Paused Fork', 'E2E Researcher', 'E2E Inactive Fork']);
+    await expect(headings).toHaveText(['E2E Critic', 'E2E Paused Fork', 'E2E Researcher']);
     page.once('dialog', (dialog) => {
       expect(dialog.message()).toContain('preserved');
       dialog.accept();
     });
     await page.getByRole('button', { name: 'Disable E2E Critic', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Disable E2E Critic', exact: true })).toHaveCount(0);
+    await page.getByRole('checkbox', { name: 'Show disabled' }).check();
     await expect(page.getByRole('button', { name: 'Disable E2E Critic', exact: true })).toBeDisabled();
     await expect(headings).toHaveText(['E2E Paused Fork', 'E2E Researcher', 'E2E Critic', 'E2E Inactive Fork']);
     await page.screenshot({ path: 'test-results/disabled-residents.png', fullPage: true });
@@ -80,7 +83,7 @@ test('the bin disables a resident without removing them, with re-enable availabl
     await page.locator('label[for="active"]').click();
     await page.getByRole('button', { name: 'Update Resident', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Disable E2E Critic', exact: true })).toBeEnabled();
-    await expect(headings).toHaveText(['E2E Critic', 'E2E Paused Fork', 'E2E Researcher', 'E2E Inactive Fork']);
+    await expect(headings).toHaveText(['E2E Critic', 'E2E Paused Fork', 'E2E Researcher']);
   } finally {
     await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
   }

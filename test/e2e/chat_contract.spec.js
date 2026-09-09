@@ -164,6 +164,8 @@ test.describe('browser contracts', () => {
   }, testInfo) => {
     await login(page, setup.primary_user, setup.password);
     await page.goto(`/accounts/${setup.account_id}/residents`);
+    await expect(page.getByLabel('Mnemodyne nodes', { exact: true })).toHaveCount(3);
+    await page.getByRole('checkbox', { name: 'Show disabled' }).check();
     await expect(page.getByLabel('Mnemodyne nodes', { exact: true })).toHaveCount(4);
     await expect(page.getByLabel('Journal entries', { exact: true })).toHaveCount(4);
     await expect(page.getByText('Core:', { exact: true })).toHaveCount(0);
@@ -187,7 +189,7 @@ test.describe('browser contracts', () => {
     await expect(page.getByRole('button', { name: /Promote to sandbox/ })).toBeHidden();
   });
 
-  test('deprecated residents remain visible but are unavailable and cannot be promoted', async ({ page, request }) => {
+  test('deprecated residents can be revealed but are unavailable and cannot be promoted', async ({ page, request }) => {
     const response = await request.post('/test/e2e/setup', {
       data: { run_id: setup.run_id, deprecated: true },
     });
@@ -195,6 +197,8 @@ test.describe('browser contracts', () => {
     setup = await response.json();
     await login(page, setup.primary_user, setup.password);
     await page.goto(`/accounts/${setup.account_id}/residents`);
+    await expect(page.getByText('Deprecated · Unavailable', { exact: true })).toHaveCount(0);
+    await page.getByRole('checkbox', { name: 'Show disabled' }).check();
     await expect(page.getByText('Deprecated · Unavailable', { exact: true })).toHaveCount(4);
     await page.goto(setup.agents[0].edit_url);
     await page.getByRole('button', { name: 'Hosting', exact: true }).click();

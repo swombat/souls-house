@@ -16,25 +16,21 @@ test('admin can inspect account usage, settings and empty states on desktop and 
 
     const overview = page.getByRole('region', { name: 'Account usage overview' });
     await expect(overview.getByRole('heading', { name: 'Residents (4)', exact: true })).toBeVisible();
+    await expect(overview.getByRole('heading', { name: 'E2E Researcher', exact: true })).toHaveCount(0);
+    await expect(overview.getByRole('checkbox', { name: 'Show disabled' })).not.toBeChecked();
+    await overview.getByRole('checkbox', { name: 'Show disabled' }).check();
     await expect(overview.getByRole('heading', { name: 'E2E Researcher', exact: true })).toBeVisible();
     await expect(overview.getByRole('heading', { name: 'Integrations & AI access' })).toBeVisible();
     await expect(overview.getByRole('heading', { name: 'Last 10 runtime sessions' })).toBeVisible();
     await expect(overview.getByText('No conversations yet.')).toBeVisible();
     await expect(overview.getByRole('button', { name: 'Measure storage' })).toBeDisabled();
-    await expect(overview.getByText('Deprecated · inline', { exact: true })).toHaveCount(4);
-    await expect(overview.locator('article.grayscale')).toHaveCount(4);
-    await expect(overview.getByText('external', { exact: true })).toHaveCount(0);
-    await expect(overview.getByText(/^API · /)).toHaveCount(4);
-    const logos = overview.locator('img[src^="/model-providers/"]');
-    await expect(logos).toHaveCount(4);
-    await expect
-      .poll(() => logos.evaluateAll((images) => images.every((image) => image.complete && image.naturalWidth > 0)))
-      .toBe(true);
-
+    await expect(overview.getByText('Deprecated · Unavailable', { exact: true })).toHaveCount(4);
+    await expect(overview.getByRole('separator')).toHaveCount(1);
+    await expect(overview.getByRole('link', { name: 'Edit', exact: true })).toHaveCount(0);
+    await expect(overview.getByRole('button', { name: /^Disable E2E/ })).toHaveCount(0);
+    await expect(overview.getByText('/ medium', { exact: true })).toHaveCount(4);
     await overview.getByLabel('Activity metric').selectOption('conversations');
     await expect(overview.getByRole('img', { name: /conversations over/ })).toBeVisible();
-    await overview.locator('summary').filter({ hasText: 'Settings, integrations' }).first().click();
-    await expect(overview.getByText('Telegram: Not connected').first()).toBeVisible();
 
     const conversation = await request.post('/test/e2e/conversation_fixture', {
       data: { account_id: setup.account_id, count: 1, diagnostics: true },

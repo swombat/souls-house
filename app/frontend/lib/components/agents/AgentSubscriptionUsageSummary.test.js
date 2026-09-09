@@ -41,3 +41,17 @@ test('does not fetch or imply zero usage for disconnected subscriptions', async 
   expect(fetch).not.toHaveBeenCalled();
   expect(screen.queryByRole('meter')).not.toBeInTheDocument();
 });
+
+test('uses an explicit admin usage endpoint instead of account membership routes', async () => {
+  const fetchUsage = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: 'available', windows: [] }) });
+  vi.stubGlobal('fetch', fetchUsage);
+  render(Summary, {
+    accountId: 'a',
+    agentId: 'b',
+    modelId: '',
+    subscription,
+    usageUrl: '/admin/agents/b/provider_subscription_usage',
+  });
+  expect(await screen.findByText('Usage unavailable')).toBeVisible();
+  expect(fetchUsage).toHaveBeenCalledWith('/admin/agents/b/provider_subscription_usage', expect.any(Object));
+});
