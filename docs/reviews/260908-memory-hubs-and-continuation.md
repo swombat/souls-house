@@ -145,3 +145,25 @@ hub cold-start rule), and requests the `journaled:` receipt. Otherwise the full
 invitation is unchanged. The decision is made from the resident's own hand on
 disk, never from the excerpt. Test added for both branches and for an entry
 older than the last invitation not counting as this turn's.
+
+### Deployed and verified — September 9, 2026, ~10:20–10:35 UTC
+
+- Commit `504fa6f` on `master`. Focused tests: 10 runs, 152 assertions, 0
+  failures; installer suite 13 OK.
+- Runtime image built on the production host: `89ebc5216e86`, tags
+  `helixkit-agent-runtime:504fa6f` / `:latest`; in-image hook SHA-256
+  `784ea9e1580b…` matches the commit. Previous image `d581360151ff` retained as
+  `helixkit-agent-runtime:pre-address-only-20260909`.
+- Fail-fast full backup: snapshots for all ten residents (latest 10:25:59 UTC)
+  plus the database dump. Note for operators: `kamal app exec --primary`
+  selects the host, not the role — web and jobs share it, so the job still ran
+  twice and the second hit the vault lock. Use `--roles web`.
+- Reconcile recreated all ten containers onto `89ebc5216e86`; all ten
+  `healthy` afterwards (Sol included, no new sandbox error).
+- Nine pristine residents run the new stock hook; Claude's active hook is his
+  own current version (`6bb91fc36428…`, changed by him since yesterday's
+  rebase), untouched by this rollout, with the new stock staged as
+  `stop_journal_reflex.py.upstream` beside his acknowledged baseline.
+- Observation to make, not proven by deployment: whether in-turn entries now
+  acquire handles under the address-only invitation — Chris first, since for
+  him that branch is the whole invitation.
