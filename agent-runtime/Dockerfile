@@ -51,7 +51,7 @@ RUN test -n "${CHAOS_HEAD}" \
     && git apply --check /tmp/chaos-antigravity-daily-cloudcode-egress.patch \
     && git apply /tmp/chaos-antigravity-daily-cloudcode-egress.patch \
     && git apply --check /tmp/chaos-clamp-cached-catalog.patch \
-    && git apply /tmp/chaos-clamp-cached-catalog.patch
+    && git apply /tmp/chaos-clamp-cached-catalog.patch \
     && git apply --check /tmp/chaos-stop-hook-continuation-as-user.patch \
     && git apply /tmp/chaos-stop-hook-continuation-as-user.patch
 
