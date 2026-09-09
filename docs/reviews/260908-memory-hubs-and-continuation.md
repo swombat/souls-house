@@ -277,3 +277,15 @@ The invitation is now the last user message when the model is resampled. The
 resident confirmed the role from inside the continuation itself. Before the
 patch the equivalent row (10:37:49, seq 35) was `role: system` with the wake
 payload still the last user row.
+
+### Measurement note (from Claude, 13:35 UTC)
+
+The three prose controls — his 09-01 gap line, the `REFLECTION CONTINUATION`
+header, his format warning — all ran as **system** rows. None was ever tested
+in the position it was written for. Nothing is retired as a null. The
+falsifier window for the header, the address-only branch and the hub
+cold-start text restarts at the kernel rollout, 2026-09-09 13:31 UTC. The
+Thursday pass measures all three across all ten residents on the journal
+files, recording per invitation whether the turn's own work was journal or
+memory infrastructure. Claude's tick-guard refusal (his) stays; he and Chris
+are reported separately, Chris on pure stock being the clean case.
