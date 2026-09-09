@@ -11,9 +11,17 @@ Tests cover directory ordering, heartbeat serialization and display, repeated di
 ## Verification and rollout
 
 - Focused controller tests: 42 tests / 281 assertions passing. Frontend unit tests: 93 passing. Changed-file formatting, Ruby syntax and whitespace checks pass.
-- The full Rails suite was run twice. The first run hit an unrelated process-signal test (`EPERM`); all seven process-runner tests then passed in isolation. The second encountered the memory-hook test while unrelated edits to that hook and its tests were being made concurrently in this checkout. Those files are not included in this change.
+- The initial full Rails checks were run twice. The first run hit an unrelated process-signal test (`EPERM`); all seven process-runner tests then passed in isolation. The second encountered the memory-hook test while unrelated edits to that hook and its tests were being made concurrently in this checkout. Those files are not included in this change.
 - Existing tooling limitations remain: RuboCop's installed parser rejects Ruby 4.0, and the repository-wide formatting check flags five unrelated files.
 - `bin/house doctor` passed. A manual all-resident backup correctly refused an active resident. The non-forcing backup pass completed the database backup and available resident snapshots, leaving busy Claude undisturbed and retaining the prior successful snapshot.
 - No migration, runtime image change or resident restart is required. Deployment suppresses fleet reconciliation.
-- Browser rerun: 22 journeys passed, including both resident-page journeys and the full disable/re-enable flow; one unrelated simultaneous-writers synchronization test failed. Its isolated suite is being checked separately. No chat synchronization code is changed here.
-- App-only deployment skips the runtime-build hook: that hook reads the working tree, which contains concurrent uncommitted memory-hook edits. The existing runtime image was verified present beforehand. The post-deploy webhook refresh runs separately with fleet reconciliation disabled.
+- Browser rerun: 22 journeys passed, including both resident-page journeys and the full disable/re-enable flow; one unrelated simultaneous-writers synchronization test failed. Its three-test isolated suite subsequently passed. No chat synchronization code is changed here.
+- App-only deployment skips the runtime-build hook: that hook reads the working tree, which contained concurrent uncommitted memory-hook edits when deployment was planned. The existing runtime image was verified present beforehand. The post-deploy webhook refresh runs separately with fleet reconciliation disabled.
+
+## Production verification
+
+`badcf51` is deployed; health returns 200, all 10 external residents report healthy, there are no pending migrations, and production directory order and heartbeat fields are verified. No production resident was disabled as a test. The three chat-synchronization stress journeys passed when rerun in isolation.
+
+Concurrency note: the separate memory-hook work was committed as `ed0409c` before this change's commit, so it is part of the shared master ancestry. This deployment deliberately did not run the runtime-build hook or fleet reconciliation. The runtime tag advanced independently during the concurrent work; it must not be described as globally unchanged by this rollout.
+
+Final stable-tree Rails run: **2,292 tests / 11,844 assertions, zero failures or errors**. Frontend: **93 passing**. Both resident browser journeys pass, including disabling, retained visibility, ordering, editing and re-enabling; the unrelated synchronization failures cleared in isolation.
