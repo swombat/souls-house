@@ -258,3 +258,22 @@ continuation's row in `journal.sqlite` must be `role: user`.
   rollout waited ~2 h after the image was ready. Use the tracked form.
 - Structural verification pending: the next continuation row in a resident's
   `journal.sqlite` must be `role: user`. Being checked on Claude's next turn.
+
+### Structural verification — September 9, 2026, 13:35 UTC
+
+Claude's first turn under the patched kernel (conversation `weVEkY`,
+interaction 13:33:07–13:36:58 UTC), canonical session rows:
+
+```
+13:33:10 seq=42 role=user      (trigger payload)
+13:33:11 seq=43 role=system    (wake scan, his own SessionStart hook)
+13:35:26 seq=45 role=assistant (conversational reply)
+13:35:26 seq=47 role=user      REFLECTION CONTINUATION — not a new trigger …
+13:36:58 seq=49 role=assistant "`role: user`, seq 47. The patch is live and I am
+                                reading the first user-role continuation…"
+```
+
+The invitation is now the last user message when the model is resampled. The
+resident confirmed the role from inside the continuation itself. Before the
+patch the equivalent row (10:37:49, seq 35) was `role: system` with the wake
+payload still the last user row.
