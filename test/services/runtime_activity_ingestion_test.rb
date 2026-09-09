@@ -154,6 +154,8 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
   end
 
   test "resident narration consent is required and revocation suppresses new text" do
+    @agent.update!(share_working_narration: false)
+    @run.update!(narration_shared: false)
     ingest(1, "attempt.started", { "narration_capability" => "supported" })
     ingest(2, "commentary.completed", { "text" => "Not shared" })
     assert_not_includes @run.as_chat_activity_json.to_json, "Not shared"

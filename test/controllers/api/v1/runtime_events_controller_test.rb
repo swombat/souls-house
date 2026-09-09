@@ -54,6 +54,10 @@ class Api::V1::RuntimeEventsControllerTest < ActionDispatch::IntegrationTest
       as: :json, headers: { Authorization: "Bearer #{resident_key.raw_token}" }
     assert_response :success
     assert @agent.reload.share_working_narration?
+    patch "/api/v1/agent/activity_preferences", params: { share_working_narration: false },
+      as: :json, headers: { Authorization: "Bearer #{resident_key.raw_token}" }
+    assert_response :success
+    assert_not @agent.reload.share_working_narration?
   end
 
   test "replies link to their run but a different chat cannot claim that run" do
