@@ -31,6 +31,12 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes dockerfile, "git apply --check /tmp/chaos-clamp-cached-catalog.patch"
     assert_includes dockerfile, "git apply /tmp/chaos-clamp-cached-catalog.patch"
     assert_includes dockerfile, "clamp-cached-catalog"
+    assert_includes dockerfile, "git apply --check /tmp/chaos-stop-hook-continuation-as-user.patch"
+    assert_includes dockerfile, "git apply /tmp/chaos-stop-hook-continuation-as-user.patch"
+    assert_includes dockerfile, "stop-hook-continuation-as-user"
+    continuation_patch = File.read(Rails.root.join("agent-runtime/patches/chaos-stop-hook-continuation-as-user.patch"))
+    assert_includes continuation_patch, 'role: "user".to_string()'
+    assert_includes continuation_patch, "-                                DeveloperInstructions::new(continuation_prompt).into();"
     assert_includes antigravity_egress_patch, '"daily-cloudcode-pa.googleapis.com"'
     assert_includes antigravity_egress_patch, '"www.googleapis.com"'
     assert_includes antigravity_egress_patch, '"lh3.googleusercontent.com"'

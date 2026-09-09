@@ -1,0 +1,42 @@
+diff --git a/sys/kern/kern/src/chaos/turn.rs b/sys/kern/kern/src/chaos/turn.rs
+index bab0b7814..0ce62f9ea 100644
+--- a/sys/kern/kern/src/chaos/turn.rs
++++ b/sys/kern/kern/src/chaos/turn.rs
+@@ -9,6 +9,7 @@ use chaos_dtrace::HookPayload;
+ use chaos_dtrace::HookResult;
+ use chaos_epoll::OrCancelExt;
+ use chaos_ipc::items::TurnItem;
++use chaos_ipc::models::ContentItem;
+ use chaos_ipc::models::DeveloperInstructions;
+ use chaos_ipc::models::ResponseInputItem;
+ use chaos_ipc::models::ResponseItem;
+@@ -586,11 +587,26 @@ pub(crate) async fn run_turn(
+                     if stop_outcome.should_block {
+                         if let Some(continuation_prompt) = stop_outcome.continuation_prompt.clone()
+                         {
+-                            let developer_message: ResponseItem =
+-                                DeveloperInstructions::new(continuation_prompt).into();
++                            // souls.house patch: record the Stop hook's continuation as a
++                            // user-role message, not developer instructions. Recorded as a
++                            // system row, the model's last user message stayed the original
++                            // trigger payload, so residents answered the continuation as a
++                            // re-delivery of that payload (Chris re-posting, Claude's tick
++                            // guard refusing) and never saw the reflection invitation as the
++                            // thing to answer. Claude Code delivers a Stop block reason as
++                            // a user message; this matches that.
++                            let continuation_message = ResponseItem::Message {
++                                id: None,
++                                role: "user".to_string(),
++                                content: vec![ContentItem::InputText {
++                                    text: continuation_prompt,
++                                }],
++                                end_turn: None,
++                                phase: None,
++                            };
+                             sess.record_conversation_items(
+                                 &turn_context,
+-                                std::slice::from_ref(&developer_message),
++                                std::slice::from_ref(&continuation_message),
+                             )
+                             .await;
+                             stop_hook_active = true;

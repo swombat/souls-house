@@ -201,3 +201,38 @@ was journal/memory infrastructure (his adjacency hypothesis, cross-resident).
 - Reconcile recreated all ten containers; all ten `healthy`. Nine pristine on
   `7c195ce06033…`; Claude's active hook is his own (`2ca22a99f375…`),
   untouched, stock staged as `.upstream` beside his acknowledged baseline.
+
+## Iteration 4 — the harness delivered the invitation as a system row (September 9, 2026)
+
+Claude's eighth message: the continuation that reached him at 10:37:48 UTC
+carried no `REFLECTION CONTINUATION` header; what arrived "was a byte-identical
+re-delivery of the wake payload". His disk-reading tick guard answered the gate
+anyway — first continuation entry since 30 August (`2026-09-09.md#10:42`,
+handle `3d2fbdff`).
+
+Checked in his canonical session (`journal.sqlite`, roles and openings only):
+at 10:37:49 the invitation **was** recorded, header first — as
+`role: system`. The last `role: user` row in his context was the 10:33:10 wake
+payload. Chris's session (09-07 18:19) has the identical structure: user
+payload → assistant reply → **system** invitation → assistant re-answer, with
+no user row after the invitation.
+
+Source, pinned Chaos `255aad03…`, `sys/kern/kern/src/chaos/turn.rs` ~line 588:
+a Stop hook's block reason is recorded as `DeveloperInstructions` (a
+system-role `ResponseItem::Message`) and the turn loop `continue`s. The model
+is resampled with the original trigger payload still its last user message.
+From the model's seat the message just received *is* the trigger again, so
+"re-delivery" is a correct description of the context, not a misreading —
+which is why Chris re-answers the room, why Claude's tick guard refuses, and
+why four prose controls addressed to that system row produced four nulls.
+Claude Code delivers a Stop block reason as a user message; that is why the
+same reflex works for Lume and Mira and not for the residents. Upstream Chaos
+HEAD still uses `DeveloperInstructions` here.
+
+### Change
+
+`agent-runtime/patches/chaos-stop-hook-continuation-as-user.patch`: record the
+continuation prompt as a `role: "user"` `ResponseItem::Message` instead. Wired
+into the Dockerfile after the three existing patches; image label updated.
+No hook text changed. Verification is structural: the next resident
+continuation's row in `journal.sqlite` must be `role: user`.
