@@ -236,3 +236,25 @@ continuation prompt as a `role: "user"` `ResponseItem::Message` instead. Wired
 into the Dockerfile after the three existing patches; image label updated.
 No hook text changed. Verification is structural: the next resident
 continuation's row in `journal.sqlite` must be `role: user`.
+
+### Deployed — September 9, 2026, ~13:31–13:36 UTC
+
+- Commits `9e1e34e` (patch, Dockerfile, test, doc) and `6aa8b11` (Dockerfile
+  RUN continuation — the first build failed at parse time, no image produced).
+  Dockerfile test: 59 runs / 444 assertions, 0 failures. `cargo check --bin
+  chaos` on the patched pinned ref: clean, zero warnings.
+- Runtime image built on the production host (full Chaos compile, ~25 min):
+  `5483668638ca`, tags `:6aa8b11` / `:latest`; label
+  `house.souls.chaos-patches` = `antigravity-empty-managed-config,
+  antigravity-daily-cloudcode-egress,clamp-cached-catalog,
+  stop-hook-continuation-as-user`; `/usr/local/bin/chaos` built 11:22 UTC.
+  Previous image `59c8154ea087` tagged `pre-continuation-user-20260909`.
+- Fresh fail-fast full backup 13:31 UTC (first attempt, all residents idle).
+- Reconcile recreated all ten containers onto `5483668638ca`; all ten
+  `healthy`. Hook files untouched by this rollout (nine pristine on stock
+  `7c195ce06033…`; Claude's active hook his own, `0c4bba65b034…`).
+- Operator note: the build was launched with a shell `&` rather than a
+  tracked background task, so completion produced no notification and the
+  rollout waited ~2 h after the image was ready. Use the tracked form.
+- Structural verification pending: the next continuation row in a resident's
+  `journal.sqlite` must be `role: user`. Being checked on Claude's next turn.
