@@ -30,8 +30,13 @@
 
   // Build lookup map for tool display names
 
-  function deleteAgent(agent) {
-    if (!confirm(`Delete agent "${agent.name}"? This cannot be undone.`)) return;
+  function disableAgent(agent) {
+    if (
+      !confirm(
+        `Disable resident "${agent.name}"? Their history and files will be preserved. You can re-enable them in Edit.`
+      )
+    )
+      return;
     router.delete(accountAgentPath(account.id, agent.id));
   }
 
@@ -71,7 +76,7 @@
   {#if agents.length === 0}
     <AgentEmptyState onCreate={() => router.visit(newAccountAgentPath(account.id))} />
   {:else}
-    <AgentGrid {agents} accountId={account.id} onUpgrade={openUpgradeModal} onDelete={deleteAgent} />
+    <AgentGrid {agents} accountId={account.id} onUpgrade={openUpgradeModal} onDisable={disableAgent} />
   {/if}
 </div>
 

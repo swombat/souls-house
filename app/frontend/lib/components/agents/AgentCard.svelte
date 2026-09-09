@@ -9,6 +9,7 @@
     Graph,
     Notebook,
     HardDrive,
+    Heart,
     TelegramLogo,
     GithubLogo,
     DropboxLogo,
@@ -35,11 +36,13 @@
     return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
   }
 
-  let { agent, accountId, onupgrade, ondelete } = $props();
+  let { agent, accountId, onupgrade, ondisable } = $props();
+  let heartbeatEnabled = $derived(agent.scheduled_wakes_enabled && agent.active && !agent.paused && !agent.deprecated);
   let IconComponent = $derived(agentIconFor(agent.icon));
 </script>
 
-<Card class="hover:border-primary/50 transition-colors">
+<Card
+  class="hover:border-primary/50 transition-colors {!agent.active || agent.deprecated ? 'grayscale opacity-60' : ''}">
   <CardHeader class="pb-3">
     <div class="flex items-start justify-between">
       <div class="flex items-center gap-3">
@@ -61,7 +64,7 @@
               </Badge>
             {/if}
             {#if !agent.active}
-              <Badge variant="secondary">Inactive</Badge>
+              <Badge variant="secondary">Disabled</Badge>
             {/if}
             {#if agent.paused && !agent.deprecated}
               <Badge variant="outline" title="Excluded from cron sweeps. Manual triggers still work.">Paused</Badge>
@@ -101,6 +104,19 @@
           {#if agent.journal_entry_stats?.status === 'unavailable' && agent.journal_entry_stats?.storage_bytes != null}<span
               class="opacity-60">(stale)</span
             >{/if}
+        </span>
+        <span
+          class="inline-flex items-center gap-1 {heartbeatEnabled
+            ? 'text-rose-600 dark:text-rose-400'
+            : 'text-muted-foreground/40'}"
+          title={heartbeatEnabled
+            ? `${agent.heartbeat_wakes_per_day} scheduled heartbeats per day`
+            : 'Heartbeats disabled or paused'}>
+          <Heart
+            class="size-4"
+            weight={heartbeatEnabled ? 'fill' : 'regular'}
+            aria-label={heartbeatEnabled ? 'Daily heartbeats' : 'Heartbeats disabled'} />
+          {#if heartbeatEnabled}{agent.heartbeat_wakes_per_day}{/if}
         </span>
       </div>
     {/if}
@@ -147,7 +163,10 @@
       <Button
         variant="outline"
         size="sm"
-        onclick={() => ondelete?.(agent)}
+        onclick={() => ondisable?.(agent)}
+        disabled={!agent.active}
+        aria-label={`Disable ${agent.name}`}
+        title="Disable resident — preserve their history and files"
         class="text-destructive hover:text-destructive">
         <Trash class="size-4" />
       </Button>

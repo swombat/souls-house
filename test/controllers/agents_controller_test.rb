@@ -27,6 +27,21 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to "#{edit_account_agent_url(@account, @agent)}?tab=integrations"
   end
 
+  test "directory sorts active, disabled and deprecated residents with names within each group" do
+    @agent.update_columns(runtime: "external", active: true, name: "Z Active", scheduled_wakes_enabled: true, heartbeat_wakes_per_day: 8)
+    agents(:code_reviewer).update_columns(runtime: "external", active: false, name: "A Disabled")
+    agents(:inactive_agent).update_columns(runtime: "deprecated", active: true, name: "A Deprecated")
+    get account_agents_path(@account)
+    rows = inertia_shared_props.fetch("agents")
+    active = rows.index { |row| row["id"] == @agent.to_param }
+    disabled = rows.index { |row| row["id"] == agents(:code_reviewer).to_param }
+    deprecated = rows.index { |row| row["id"] == agents(:inactive_agent).to_param }
+    assert_operator active, :<, disabled
+    assert_operator disabled, :<, deprecated
+    assert rows[active]["scheduled_wakes_enabled"]
+    assert_equal 8, rows[active]["heartbeat_wakes_per_day"]
+  end
+
   test "should get index" do
     get account_agents_path(@account)
     assert_response :success
@@ -343,12 +358,24 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Updated prompt", @agent.system_prompt
   end
 
-  test "should destroy agent" do
-    assert_difference "Agent.count", -1 do
+  test "deletion disables and preserves the resident and private memory" do
+    @agent.update_columns(runtime: "external", birth_committed_at: Time.current, scheduled_wakes_enabled: true, heartbeat_wakes_per_day: 8)
+    vault = Mnemodyne::Vault.create!(agent: @agent)
+    node = vault.nodes.create!(node_type: "memory", content: "Preserve this")
+    assert_no_difference [ "Agent.count", "Mnemodyne::Node.count", "Mnemodyne::Vault.count" ] do
       delete account_agent_path(@account, @agent)
     end
 
     assert_redirected_to account_agents_path(@account)
+    assert_not @agent.reload.active?
+    assert @agent.scheduled_wakes_enabled?
+    assert_equal 8, @agent.heartbeat_wakes_per_day
+    assert_equal "Preserve this", node.reload.content
+    assert_no_difference "Agent.count" do
+      delete account_agent_path(@account, @agent)
+    end
+    patch account_agent_path(@account, @agent), params: { agent: { active: true } }
+    assert @agent.reload.active?
   end
 
   test "born-hosted soul seed is write-once while display metadata remains editable" do
@@ -588,13 +615,13 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @user, audit.user
   end
 
-  test "destroy should audit" do
+  test "disabling should audit" do
     assert_difference "AuditLog.count" do
       delete account_agent_path(@account, @agent)
     end
 
     audit = AuditLog.last
-    assert_equal "destroy_agent", audit.action
+    assert_equal "disable_agent", audit.action
     assert_equal @user, audit.user
   end
 

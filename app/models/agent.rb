@@ -91,6 +91,12 @@ class Agent < ApplicationRecord
   scope :active, -> { where(active: true) }
   scope :unpaused, -> { where(paused: false) }
   scope :by_name, -> { order(:name) }
+  scope :for_resident_directory, -> {
+    order(Arel.sql(sanitize_sql_array([
+      "CASE WHEN runtime IN (?) THEN 2 WHEN active = FALSE THEN 1 ELSE 0 END",
+      Agent::RuntimeAvailability::RETIRED_RUNTIMES
+    ]))).by_name
+  }
   scope :externally_hosted, -> { where(runtime: %w[external offline]) }
 
   json_attributes :name, :system_prompt, :reflection_prompt, :memory_reflection_prompt,
@@ -116,7 +122,7 @@ class Agent < ApplicationRecord
 
     if options&.dig(:as) == :resident_card
       hash.slice!("id", "name", "model_id", "model_label", "active?", "paused?", "colour", "icon",
-        "deprecated?", "runtime", "journal_entry_stats")
+        "deprecated?", "runtime", "journal_entry_stats", "scheduled_wakes_enabled?", "heartbeat_wakes_per_day")
     end
 
     if options&.dig(:as) == :list

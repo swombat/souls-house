@@ -9,7 +9,7 @@ class AgentsController < ApplicationController
       return
     end
 
-    @agents = current_account.agents.by_name
+    @agents = current_account.agents.for_resident_directory
     activity = Agents::ResidentActivity.new(@agents).call
     integrations = Agents::ResidentIntegrations.new(current_account, @agents)
     node_counts = Mnemodyne::Node.joins(:vault)
@@ -106,9 +106,11 @@ class AgentsController < ApplicationController
   end
 
   def destroy
-    audit("destroy_agent", @agent)
-    @agent.destroy!
-    redirect_to account_agents_path(current_account), notice: "Resident deleted"
+    # Retain the DELETE route for old clients, but never destroy a resident here.
+    # Keep scheduling preferences, identity, memory and history for re-enabling.
+    @agent.update!(active: false)
+    audit("disable_agent", @agent)
+    redirect_to account_agents_path(current_account), notice: "Resident disabled. Their history and files are preserved."
   end
 
   private

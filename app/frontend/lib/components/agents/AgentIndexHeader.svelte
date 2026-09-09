@@ -13,7 +13,7 @@
   <div class="flex gap-2">
     <Button onclick={onCreate}>
       <Plus class="mr-2 size-4" />
-      New Agent
+      New Resident
     </Button>
   </div>
 </div>

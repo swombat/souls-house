@@ -54,3 +54,29 @@ test('shows the model subtitle, disk and integration permissions, never the prom
   expect(screen.getByLabelText('Persistent disk used').parentElement).toHaveTextContent('1.0 GiB');
   expect(screen.getByTitle('owner/repo · disabled')).toHaveClass('text-muted-foreground/35');
 });
+
+test('shows the daily heartbeat frequency only when enabled and unpaused', () => {
+  render(AgentCard, {
+    agent: { ...agent, scheduled_wakes_enabled: true, heartbeat_wakes_per_day: 8 },
+    accountId: 'test',
+  });
+  expect(screen.getByLabelText('Daily heartbeats').parentElement).toHaveTextContent('8');
+});
+
+test.each([
+  { scheduled_wakes_enabled: false },
+  { scheduled_wakes_enabled: true, paused: true },
+  { scheduled_wakes_enabled: true, active: false },
+])('greys out an unavailable heartbeat: %o', (settings) => {
+  render(AgentCard, { agent: { ...agent, heartbeat_wakes_per_day: 8, ...settings }, accountId: 'test' });
+  expect(screen.getByLabelText('Heartbeats disabled').parentElement).toHaveClass('text-muted-foreground/40');
+  expect(screen.queryByLabelText('Daily heartbeats')).not.toBeInTheDocument();
+});
+
+test('a disabled resident stays visible and editable with a disabled bin', () => {
+  render(AgentCard, { agent: { ...agent, active: false }, accountId: 'test' });
+  expect(screen.getByText('Disabled')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Disable Test resident' })).toBeDisabled();
+  expect(screen.getByRole('link', { name: 'Edit' })).toBeVisible();
+  expect(screen.getByText('Test resident').closest('.grayscale')).not.toBeNull();
+});
