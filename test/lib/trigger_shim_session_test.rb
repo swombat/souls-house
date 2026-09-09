@@ -1273,14 +1273,18 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal 200, result["code2"]
     assert_equal true, second["session_resumed"], "second trigger should resume"
     assert_equal first["chaos_session_id"], second["chaos_session_id"]
-    assert_equal "DELTA ONLY", second["full_invocation_text"], "resumed turn sends the delta, unwrapped"
+    assert second["full_invocation_text"].start_with?("DELTA ONLY")
+    assert_includes second["full_invocation_text"], "<mnemodyne-command-reference/>"
+    assert_includes first["full_invocation_text"], "<mnemodyne-command-reference/>"
+    assert_includes second["full_invocation_text"], '"connections"'
+    assert_not_includes second["full_invocation_text"], "SOUL FIRST"
     assert_equal first["usage"], second["usage"], "Chaos reports each invocation directly"
     assert_equal "resumed", second.dig("telemetry", "session", "outcome")
     assert_equal true, second.dig("telemetry", "session", "mapping_found")
     assert_equal true, second.dig("telemetry", "session", "resume_attempted")
     assert_equal 2, second.dig("telemetry", "session", "trigger_sequence")
     assert_equal "delta", second.dig("telemetry", "prompt", "mode")
-    assert_equal "DELTA ONLY".bytesize, second.dig("telemetry", "prompt", "selected_prompt_bytes")
+    assert_equal second["full_invocation_text"].bytesize, second.dig("telemetry", "prompt", "selected_prompt_bytes")
     assert_nil second.dig("telemetry", "prompt", "full_prompt_bytes")
     assert_equal "not_attempted", second.dig("telemetry", "prompt", "graph_memory_status")
     assert_equal 10, second.dig("telemetry", "prompt", "components", "request")
@@ -1319,7 +1323,8 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     result = JSON.parse(out)
     assert_equal 200, result["code"]
     assert_equal true, result.dig("second", "session_resumed")
-    assert_equal "DELTA ONLY", result.dig("second", "full_invocation_text")
+    assert result.dig("second", "full_invocation_text").start_with?("DELTA ONLY")
+    assert_includes result.dig("second", "full_invocation_text"), "<mnemodyne-command-reference/>"
     assert_nil result.dig("second", "telemetry", "prompt", "full_prompt_bytes")
   end
 

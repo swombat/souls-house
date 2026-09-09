@@ -183,6 +183,7 @@ COPY licenses/CodexBar-LICENSE /usr/local/share/licenses/CodexBar/LICENSE
 COPY stop_journal_reflex.py /usr/local/share/helixkit-agent/stop_journal_reflex.py
 COPY memory_before_turn.py install_memory_hooks.py install_memory_scripts.py /usr/local/share/helixkit-agent/
 COPY docs/memory-guide.md /usr/local/share/helixkit-agent/memory-guide.md
+COPY docs/memory-quick-reference.md /usr/local/share/helixkit-agent/memory-quick-reference.md
 COPY soulshouse-post-message /usr/local/bin/soulshouse-post-message
 COPY soulshouse-send-telegram /usr/local/bin/soulshouse-send-telegram
 COPY soulshouse-append-journal /usr/local/bin/soulshouse-append-journal

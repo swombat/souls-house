@@ -16,11 +16,25 @@ class Api::V1::Memory::HttpClientTest < ActionDispatch::IntegrationTest
         "PYTHONPATH" => Rails.root.join("agent-runtime").to_s }
       script = <<~PY
         import memory_client as m
+        import io, json, contextlib, sys
+        from pathlib import Path
         c = m.Client()
         assert c.request("POST", "vault")["enabled"]
-        n = c.request("POST", "nodes", {"node": {"node_type": "memory", "content": "Synthetic handle", "source_uris": ["identity://journal.md"]}}, key="http-node")["node"]
+        # Execute the documented JSON through the real CLI and real HTTP, not a
+        # separate hand-maintained request fixture that could hide schema drift.
+        reference = Path(m.__file__).with_name("docs").joinpath("memory-quick-reference.md").read_text()
+        payload = json.loads(next(line for line in reference.splitlines() if line.startswith('{"memory":')))
+        payload["memory"]["source_uris"] = ["identity://journal.md"]
+        sys.argv = ["house-memory", "--key", "http-formation", "form"]
+        sys.stdin = io.StringIO(json.dumps(payload))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            assert m.main() == 0
+        receipt = json.loads(out.getvalue())
+        n = receipt["node"]
+        assert len(receipt["connections"]) == 2
         r = c.recall(seeds=[n["id"]])
-        assert len(r["results"]) == 1
+        assert n["id"] in [item["id"] for item in r["results"]]
         assert c.open_source(r["recall_id"], n["id"]) == "Synthetic source body"
         c.use(r["recall_id"], n["id"])
         print("HTTP smoke passed")

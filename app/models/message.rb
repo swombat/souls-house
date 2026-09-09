@@ -54,7 +54,13 @@ class Message < ApplicationRecord
   end
 
   after_create :reopen_all_agents_for_initiation, if: :human_message_in_group_chat?
+  after_create_commit :advance_runtime_response_chain
   after_save_commit :refresh_chat_context_tokens, if: -> { role == "assistant" && saved_change_to_input_tokens? }
+
+  def advance_runtime_response_chain
+    runtime_interaction&.advance_response_chain! if role == "assistant"
+  end
+  private :advance_runtime_response_chain
 
   json_attributes :role, :content, :thinking, :thinking_preview, :user_name, :user_avatar_url,
                   :completed, :created_at_formatted, :created_at_hour, :streaming,

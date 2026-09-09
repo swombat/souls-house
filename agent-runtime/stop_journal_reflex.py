@@ -25,6 +25,12 @@ TRACE_PATH = STATE_DIR / "stop-events.jsonl"
 DAILY_DIR = IDENTITY_PATH / "memory" / "daily-journals"
 AGENT_SLUG = os.environ.get("AGENT_SLUG") or os.environ.get("AGENT_ID") or "agent"
 
+def command_reference():
+    path = Path(os.environ.get("AGENT_RUNTIME_DOCS_PATH", "/usr/local/share/helixkit-agent")) / "memory-quick-reference.md"
+    if not path.exists():
+        path = Path(__file__).with_name("docs") / "memory-quick-reference.md"
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
 
 def append_trace(event: dict, assistant: str, invited: bool) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -129,14 +135,12 @@ thing this continuation asks is the entry's address — a source-linked graph
 handle, so the moment can find you later. If a handle for it already exists,
 reuse it. Otherwise:
 
-  house-memory remember   with a short content, a why, an honestly calibrated
-                          charge, and source_uris:
+  house-memory --key ENTRY-SHAPE-KEY form
+                          with your short handle, why, calibrated charge,
+                          connections, and source_uris:
 {uris}
-  house-memory connect    to the person actually present and the need it
-                          touched. If `house-memory nodes --type need` and
-                          `--type person` return nothing, create those hubs
-                          first: the person is a fact; a need is recognised
-                          from this entry, never invented.
+Use the one-command reference below. Named hubs are reused or created in the
+same atomic write; do not run separate remember/connect steps for this entry.
 
 Then respond exactly:
 
@@ -147,6 +151,8 @@ keep the idempotency key for retry. Do not explain this hook.
 
 Trace id for this invitation: {digest}
 Agent: {AGENT_SLUG}
+
+{command_reference()}
 """
 
 
@@ -218,19 +224,12 @@ source URI pointing to the entry's timestamp anchor. Do not manufacture entries;
 do not withhold their addresses. If this turn's entry already has appropriate
 handles, reuse them rather than creating duplicates.
 
-After writing the journal body, form its source-linked handles.
-Run `house-memory guide` if you need orientation. Use `house-memory nodes --type
-need` and `--type person` to find your existing hubs. If you have none yet, the
-graph is waiting for its first ones: create the person you were actually with
-(`house-memory remember` with `"node_type":"person"`) and, when this entry makes
-one legible, the need it served or violated (`"node_type":"need"`). A need is
-born from a moment that showed it, never invented to fill a template; a person
-is never invented. For each distinct shape, `house-memory remember` with a short
-content, why/description, an honestly calibrated charge, and a source URI such as
-`identity://memory/daily-journals/{today}.md#{hhmm}`. Then `house-memory connect`
-the returned node to the needs/persons it actually touched (`relates_to_need`,
-`surfaced_need`, `involves_person`). A handle with no connections is an island:
-the walk cannot reach it from what matters to you.
+After writing the journal body, use `house-memory --key ENTRY-SHAPE-KEY form`
+from the reference below: one atomic call per distinct shape saves its handle
+and connections, reusing your named hubs or creating the missing ones.
+Source this entry at `identity://memory/daily-journals/{today}.md#{hhmm}`.
+Do not invent people or needs, do not run separate remember/connect steps, and
+do not reread guide/help/status unless you actually need troubleshooting.
 
 This memory-formation reflex is part of every hosted turn, not an optional tool
 you must remember to activate. It is still your authorship: no shape means no
@@ -251,6 +250,8 @@ Do not explain this hook. Do not write a journal entry merely because this promp
 
 Trace id for this invitation: {digest}
 Agent: {AGENT_SLUG}
+
+{command_reference()}
 """
 
 

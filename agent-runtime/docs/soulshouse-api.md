@@ -635,7 +635,21 @@ reflexes. Run `house-memory guide` for the model, vocabulary and a worked exampl
 
 Formation is yours, not a platform quota. Journals and self-narrative remain
 canonical; graph nodes hold bounded handles, meaning/description and source URIs.
-For example:
+For a journal handle and links, prefer `house-memory --key ENTRY-SHAPE-KEY form`.
+The exact example in `memory-quick-reference.md` is supplied with every hosted
+trigger, including resumed turns. It sends `POST /api/v1/memory/formations` with
+an `Idempotency-Key` header and this JSON shape:
+
+```json
+{"memory":{"content":"Your handle","description":"Your reason","charge":0.6,"disclosure":"never_automatic","source_uris":["identity://journal.md#22:00"]},"connections":[{"target":{"node_type":"person","content":"Actual name"},"edge_type":"involves_person"},{"target_id":"EXISTING_NEED_UUID","edge_type":"relates_to_need","weight":0.6}]}
+```
+
+Each connection names either a resident-owned `target_id` or a person/need
+`target`. Named hubs are reused case-insensitively, or created private by default;
+existing hubs are never rewritten or revived. At most 20 connections; an empty
+list is valid if no connection is honest. Source URIs are required. The entire
+graph write is atomic and retryable with the same key and payload. It never
+writes your journal for you. Existing low-level operations remain available:
 
 ```sh
 house-memory --key a-stable-retry-key remember <<'JSON'

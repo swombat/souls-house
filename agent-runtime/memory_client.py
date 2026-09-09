@@ -239,8 +239,27 @@ def main():
     parser = argparse.ArgumentParser(description="This resident's private Mnemodyne graph")
     parser.add_argument("--key", help="stable idempotency key for a write; reuse on retry")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("status", "enable", "remember", "connect", "cancel-erasure", "guide"):
+    for name in ("status", "enable", "cancel-erasure", "guide"):
         commands.add_parser(name)
+    examples = {
+        "remember": ('Create one node; JSON on stdin (no wrapper). For a journal handle plus links, prefer form.\n'
+                     '{"node_type":"memory","content":"Your short handle","description":"Why it mattered",'
+                     '"charge":0.6,"disclosure":"automatic","source_uris":["identity://memory/daily-journals/YYYY-MM-DD.md#HH:MM"]}'),
+        "connect": ('Create one edge; JSON on stdin (no wrapper). Exact field names:\n'
+                    '{"source_id":"MEMORY_UUID","target_id":"HUB_UUID","edge_type":"relates_to_need","weight":0.6}'),
+        "form": ('Atomically create a journal handle and its links; JSON on stdin (no wrapper).\n'
+                 'Requires --key before form; reuse that key and identical JSON on retry.\n'
+                 '{"memory":{"content":"Your short handle","description":"Why it mattered","charge":0.6,'
+                 '"disclosure":"automatic","source_uris":["identity://memory/daily-journals/YYYY-MM-DD.md#HH:MM"]},'
+                 '"connections":[{"target":{"node_type":"person","content":"Actual name"},'
+                 '"edge_type":"involves_person"},{"target_id":"EXISTING_NEED_UUID","edge_type":"relates_to_need","weight":0.6}]}\n'
+                 'Each connection uses target_id OR target (a person/need you name). Named hubs are reused '
+                 'case-insensitively; only missing ones are created, private by default. Existing hubs are never '
+                 'rewritten or revived. Maximum 20 connections; [] is valid when none is honest. '
+                 'No journal body is written by this command. All graph writes succeed or none do.')
+    }
+    for name, help_text in examples.items():
+        commands.add_parser(name, description=help_text, formatter_class=argparse.RawDescriptionHelpFormatter)
     export = commands.add_parser("export")
     export.add_argument("--output", help="create a new private export file (0600)")
     erasure = commands.add_parser("request-erasure")
@@ -266,6 +285,8 @@ def main():
         if name == "open":
             command.add_argument("--source-index", type=int, default=0)
     args = parser.parse_args()
+    if args.command == "form" and not args.key:
+        parser.error("form requires --key BEFORE form: house-memory --key ENTRY-SHAPE-KEY form")
     try:
         command = args.command
         if command == "guide":
@@ -276,13 +297,13 @@ def main():
             return 0
         client = Client()
         key = args.key or str(uuid.uuid4())
-        if command in ("remember", "connect", "update", "delete", "dormant", "revive"):
+        if command in ("form", "remember", "connect", "update", "delete", "dormant", "revive"):
             print(f"Idempotency key: {key} (reuse --key on retry)", file=sys.stderr)
         if command == "status":
             result = client.request("GET", "vault")
         elif command == "enable":
             result = client.request("POST", "vault")
-        elif command in ("remember", "connect", "update"):
+        elif command in ("form", "remember", "connect", "update"):
             text = sys.stdin.read(65_537)
             if len(text.encode()) > 65_536:
                 raise MemoryError("Input exceeds size limit")
@@ -293,8 +314,9 @@ def main():
             path = "edges" if edge else "nodes"
             if command == "update":
                 path += "/" + checked_uuid(args.node_id)
-            result = client.request("PATCH" if command == "update" else "POST", path,
-                                    {"edge" if edge else "node": attributes}, key=key)
+            result = client.request("PATCH" if command == "update" else "POST",
+                                    "formations" if command == "form" else path,
+                                    attributes if command == "form" else {"edge" if edge else "node": attributes}, key=key)
         elif command in ("inspect", "delete", "dormant", "revive"):
             path = "nodes/" + checked_uuid(args.node_id)
             payload = {"node": {"is_dormant": command == "dormant"}} if command in ("dormant", "revive") else None

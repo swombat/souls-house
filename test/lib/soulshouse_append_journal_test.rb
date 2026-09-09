@@ -42,8 +42,8 @@ class SoulshouseAppendJournalTest < ActiveSupport::TestCase
       assert status.success?, stderr
       assert_equal "#{journal_path(identity_path)}\n", stdout
       assert_match(%r{journal entry appended: identity://memory/daily-journals/#{Date.current}\.md#\d{2}:\d{2}}, stderr)
-      assert_includes stderr, "house-memory remember"
-      assert_includes stderr, "house-memory connect"
+      assert_includes stderr, "house-memory --key ENTRY-SHAPE-KEY form"
+      assert_includes stderr, "retry the same key and JSON"
 
       contents = File.read(journal_path(identity_path))
       assert_includes contents, "# Daily Journal: #{Date.current}"

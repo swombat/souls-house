@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_06_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_09_220000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -236,6 +236,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_06_110000) do
     t.text "request_text"
     t.string "requested_by"
     t.jsonb "response_body", default: {}, null: false
+    t.datetime "response_chain_advanced_at"
+    t.jsonb "response_chain_agent_ids", default: [], null: false
     t.boolean "resume_attempted"
     t.string "run_id"
     t.integer "runtime_returncode"

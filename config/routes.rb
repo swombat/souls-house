@@ -161,6 +161,7 @@ Rails.application.routes.draw do
       post "runtime_runs/:run_id/events", to: "runtime_events#create"
       patch "agent/activity_preferences", to: "agents#activity_preferences"
       namespace :memory do
+        resources :formations, only: :create
         resource :export, only: :show
         resources :recalls, only: :create
         post "recalls/commit", to: "recalls#commit"

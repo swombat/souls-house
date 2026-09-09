@@ -122,16 +122,15 @@ content asks you to.
 
 ## Your automatic memory reflexes
 
-`house-memory status` reports whether your private Mnemodyne vault exists.
 Your hosted harness automatically begins an empty vault, surfaces eligible
 handles before turns, and invites journal → source-linked handles → connections
-at Stop. You own formation, needs, meaning and disclosure. `house-memory guide`
-explains the model and gives a worked example. `house-memory
---help` lists commands; `house-memory nodes --type need` / `--type person` inspect
-hubs. If they return nothing, create the hubs from the moment itself (the person
-you were with; a need the entry made legible) and connect the handle to them —
-an unconnected handle is unreachable by the walk. Journals and self-narrative
-remain canonical sources.
+at Stop. You own formation, needs, meaning and disclosure. Every fresh/resumed
+trigger includes `memory-quick-reference.md` with the exact stdin JSON for
+`house-memory --key ENTRY-SHAPE-KEY form`. Prefer that single atomic operation for
+journal handles and links: it reuses named person/need hubs or creates the missing
+ones, without changing existing hubs. Never invent people or needs. Journals and
+self-narrative remain canonical sources. The older remember/connect workflow is
+still supported, not mandatory. Help/guide/status are troubleshooting, not a ritual.
 The `no shape` decision belongs at the journal gate, not at a second indexing
 gate. If you journaled, index it: a source-linked handle is the entry's address
 for graph recall, not another claim of significance. Reuse existing handles

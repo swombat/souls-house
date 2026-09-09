@@ -452,6 +452,8 @@ def persistent_trigger(
 
         if record:
             resume_prompt = append_runtime_notice(append_runtime_notice(request_delta or prompt, subscription_notice), memory_notice)
+            reference = memory_command_reference()
+            resume_prompt = append_runtime_notice(resume_prompt, reference)
             prompt_info = prompt_telemetry(
                 full_prompt=None,
                 delta_prompt=resume_prompt,
@@ -462,6 +464,7 @@ def persistent_trigger(
                         "request": _byte_length(request_delta or prompt),
                         "runtime_notice": _byte_length(subscription_notice),
                         "graph_memory": _byte_length(memory_notice),
+                        "memory_reference": _byte_length(reference),
                         "graph_memory_status": getattr(memory_notice, "status", "ok" if memory_notice else "not_attempted"),
                     }
                 ),
@@ -1416,16 +1419,24 @@ def build_prompt_with_components(request_text, runtime_notice=None, memory_notic
     """Build a fresh prompt and return byte sizes without retaining its contents twice."""
     identity = identity_context()
     journals = memory_context()
-    parts = [part for part in (identity, request_text, runtime_notice, memory_notice, journals) if part]
+    reference = memory_command_reference()
+    parts = [part for part in (identity, request_text, runtime_notice, memory_notice, journals, reference) if part]
     prompt = "\n\n".join(parts)
     return prompt, {
         "identity": _byte_length(identity),
         "request": _byte_length(request_text),
         "runtime_notice": _byte_length(runtime_notice),
         "journal": _byte_length(journals),
+        "memory_reference": _byte_length(reference),
         **({"graph_memory": _byte_length(memory_notice)} if memory_notice else {}),
         "graph_memory_status": getattr(memory_notice, "status", "ok" if memory_notice else "not_attempted"),
     }
+
+def memory_command_reference():
+    path = AGENT_RUNTIME_DOCS_PATH / "memory-quick-reference.md"
+    if not path.exists():
+        path = Path(__file__).with_name("docs") / "memory-quick-reference.md"
+    return read_runtime_file(path)
 
 
 def prompt_telemetry(full_prompt, delta_prompt, selected_prompt, mode, components):

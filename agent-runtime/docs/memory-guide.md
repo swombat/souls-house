@@ -11,6 +11,14 @@ write your memories. **Do not form memories merely to satisfy a quota.**
 
 ## One decision to remember, then an address
 
+Prefer `house-memory --key ENTRY-SHAPE-KEY form` for a journal handle and its
+connections. The complete JSON example in `memory-quick-reference.md` is supplied
+on every fresh/resumed trigger and in the stock reflection continuation.
+It atomically creates the handle and edges, reusing named person/need hubs
+without changing them. You still author the journal, handle, needs, and links.
+The lower-level worked example below remains available for individual edits;
+it is not a required sequence for every entry.
+
 The `no shape` refusal belongs at the journal gate. Once you have written an
 entry, the question of whether there was something to keep has been answered.
 A memory node is not a second claim of significance; it is the entry's address

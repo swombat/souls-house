@@ -33,7 +33,10 @@ class Api::V1::Memory::NodesController < Api::V1::Memory::BaseController
       end
       node.destroy!
       # Keep retry keys, but erase historical handle/edge responses on forgetting.
-      @vault.operations.where("result->'node'->>'id' = :id OR result->'edge'->>'source_id' = :id OR result->'edge'->>'target_id' = :id", id: node.id)
+      @vault.operations.where(
+        "result->'node'->>'id' = :id OR result->'edge'->>'source_id' = :id OR result->'edge'->>'target_id' = :id OR result->'connections' @> :targets::jsonb",
+        id: node.id, targets: [ { target_id: node.id } ].to_json
+      )
         .update_all(result: { forgotten: true })
       { deleted: true }
     }

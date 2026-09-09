@@ -18,7 +18,7 @@ module AgentRuntimeInteraction::LiveActivity
       ENV.fetch("SOULSHOUSE_LIVE_ACTIVITY", "1") != "0"
     end
 
-    def reserve!(agent:, chat:, enqueue: false)
+    def reserve!(agent:, chat:, enqueue: false, response_chain_agent_ids: [])
       chat.with_lock do
         raise ArgumentError, "Conversation unavailable" unless chat.respondable? && chat.manual_responses? && chat.agents.exists?(agent.id)
         agent.reload.require_conversation_runtime!
@@ -32,6 +32,7 @@ module AgentRuntimeInteraction::LiveActivity
           run_id: SecureRandom.uuid, execution_state: "queued",
           execution_deadline_at: PREPARATION_WINDOW.from_now,
           narration_shared: agent.share_working_narration?,
+          response_chain_agent_ids: response_chain_agent_ids,
           enqueue_dispatch: enqueue
         )
       end

@@ -103,11 +103,13 @@ class MemoryScriptInstallTest(unittest.TestCase):
         self.assertEqual(1, len(hooks["Stop"][0]["hooks"]))
         self.assertEqual(f"python3 /home/agent/identity/automation/{name}", hooks["Stop"][0]["hooks"][0]["command"])
         import os
-        env = dict(os.environ, AGENT_IDENTITY_PATH=str(Path(self.tmp.name) / "identity"))
+        env = dict(os.environ, AGENT_IDENTITY_PATH=str(Path(self.tmp.name) / "identity"),
+                   AGENT_RUNTIME_DOCS_PATH=str(RUNTIME / "docs"))
         result = subprocess.run(["python3", str(self.live / name)], input='{"last_assistant_message":"Synthetic meaningful turn"}', text=True, capture_output=True, env=env)
         self.assertEqual(2, result.returncode, result.stderr)
         self.assertIn("resident addition", result.stderr)
-        self.assertIn("house-memory remember", result.stderr)
+        self.assertIn("house-memory --key ENTRY-SHAPE-KEY form", result.stderr)
+        self.assertIn("<mnemodyne-command-reference/>", result.stderr)
         self.assertIn("graph pending", result.stderr)
 
     def prepare_review(self):

@@ -31,10 +31,23 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
     script = Rails.root.join("agent-runtime/memory_before_turn.py").to_s
     [ "<mnemodyne-preview-attempted/>\n", "<mnemodyne-preview-attempted/>\nA memory" ].each do |notice|
       out, error, result = Open3.capture3("python3", script,
-        stdin_data: { input_messages: [ { content: "Synthetic user turn\n#{notice}" } ] }.to_json)
+        stdin_data: { input_messages: [ { content: "Synthetic user turn\n<mnemodyne-command-reference/>\n#{notice}" } ] }.to_json)
       assert result.success?
       assert_empty out
       assert_empty error
+    end
+  end
+
+  test "before turn supplies command reference even when graph preview is skipped or unavailable" do
+    script = Rails.root.join("agent-runtime/memory_before_turn.py").to_s
+    [ "<mnemodyne-preview-attempted/>", "A direct resident turn" ].each do |text|
+      out, _error, result = Open3.capture3("python3", script,
+        stdin_data: { input_messages: [ { content: text } ] }.to_json)
+      assert result.success?
+      context = JSON.parse(out).dig("hookSpecificOutput", "additionalContext")
+      assert_includes context, "<mnemodyne-command-reference/>"
+      assert_includes context, "house-memory --key YYYYMMDD-HHMM-shape-slug form"
+      assert_includes context, '"target_id":"UUID"'
     end
   end
 
@@ -96,8 +109,8 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
       assert_includes prompt, "## #{stamp} — A shape I kept"
       assert_includes prompt, "identity://memory/daily-journals/#{today}.md##{stamp}"
       assert_includes prompt, "Do not write another entry"
-      assert_includes prompt, "house-memory remember"
-      assert_includes prompt, "house-memory connect"
+      assert_includes prompt, "house-memory --key ENTRY-SHAPE-KEY form"
+      assert_includes prompt, "<mnemodyne-command-reference/>"
       assert_not_includes prompt, "decide whether the just-completed turn has narrative shape"
       # An entry older than the last invitation does not count as this turn's.
       old_stamp = (Time.now - 40 * 60).strftime("%H:%M")
@@ -140,7 +153,7 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
       event = { last_assistant_message: "Synthetic meaningful turn" }
       _, prompt, result = Open3.capture3(env, "python3", script, stdin_data: event.to_json)
       assert_equal 2, result.exitstatus
-      assert_includes prompt, "house-memory remember"
+      assert_includes prompt, "house-memory --key ENTRY-SHAPE-KEY form"
       assert_includes prompt, "If you journaled, index it"
       assert_includes prompt, "reuse them rather than creating duplicates"
       assert_includes prompt, "Do not repeat or resend that reply"
@@ -148,14 +161,14 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
       assert_includes prompt, "internal reflection continuation"
       assert_includes prompt, "never_automatic"
       assert_includes prompt, "graph pending"
-      assert_includes prompt, "house-memory connect"
+      assert_includes prompt, '"connections"'
       assert_includes prompt, "no shape"
       assert_includes prompt, "identity://memory/daily-journals/"
       assert prompt.start_with?("REFLECTION CONTINUATION — not a new trigger"), "The continuation must announce itself before any re-delivery guard reads it"
       assert_includes prompt, "Re-delivery, duplicate-tick and already-answered checks"
-      assert_includes prompt, "If you have none yet"
+      assert_includes prompt, "reusing your named hubs or creating the missing ones"
       assert_includes prompt, "\"node_type\":\"person\""
-      assert_includes prompt, "a person\nis never invented"
+      assert_includes prompt, "Never invent a person or need"
       assert_includes prompt, "surfaced_need"
       _, prompt, result = Open3.capture3(env, "python3", script, stdin_data: event.merge(stop_hook_active: true).to_json)
       assert result.success?

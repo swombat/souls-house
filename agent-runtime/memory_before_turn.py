@@ -3,6 +3,15 @@
 import json
 import subprocess
 import sys
+import os
+from pathlib import Path
+
+
+def command_reference():
+    path = Path(os.environ.get("AGENT_RUNTIME_DOCS_PATH", "/usr/local/share/helixkit-agent")) / "memory-quick-reference.md"
+    if not path.exists():
+        path = Path(__file__).with_name("docs") / "memory-quick-reference.md"
+    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 def input_text(value):
@@ -16,10 +25,13 @@ def input_text(value):
 
 
 def main():
+    context = []
     try:
         event = json.loads(sys.stdin.read(65536))
         messages = event.get("input_messages") or []
         text = input_text(messages[-1] if messages else event.get("input") or event.get("prompt") or event.get("last_user_message") or "")
+        if "<mnemodyne-command-reference/>" not in text:
+            context.append(command_reference())
         # The trigger shim already supplies the fresh/resumed conversation preview.
         # The hook closes the loop for direct resident harness turns too.
         if "<mnemodyne-preview-attempted/>" in text or "Recalled memory candidates — not current chat transcript" in text:
@@ -35,12 +47,15 @@ def main():
         status = re.search(r"mnemodyne_preview=(ok|empty|held|timeout|unavailable|http_[0-9]{3})\b", result.stderr)
         print(status.group(0) if status else "mnemodyne_preview=unavailable", file=sys.stderr)
         if result.returncode == 0 and len(result.stdout.encode()) <= 12000:
-            print(json.dumps({"hookSpecificOutput": {"hookEventName": "BeforeTurn",
-                "additionalContext": result.stdout.strip()}}))
+            context.append(result.stdout.strip())
     except subprocess.TimeoutExpired:
         print("mnemodyne_preview=timeout", file=sys.stderr)
     except Exception:
         print("mnemodyne_preview=unavailable", file=sys.stderr)
+    finally:
+        if any(context):
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "BeforeTurn",
+                "additionalContext": "\n\n".join(part for part in context if part)}}))
 
 
 if __name__ == "__main__":

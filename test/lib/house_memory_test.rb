@@ -151,6 +151,51 @@ class HouseMemoryTest < ActiveSupport::TestCase
     assert_equal "ok", result.strip
   end
 
+  test "form sends one atomic request with caller supplied idempotency key" do
+    result = run_python(<<~PY)
+      import io, contextlib
+      calls = []
+      class Fake:
+          def __init__(self, **kw): pass
+          def request(self, *args, **kw):
+              calls.append((args, kw))
+              return {"node": {"id": "saved"}, "connections": []}
+      mod.Client = Fake
+      payload = {"memory": {"content": "My handle", "source_uris": ["identity://journal.md#22:00"]}, "connections": []}
+      mod.sys.argv = ["house-memory", "--key", "my-entry-shape", "form"]
+      mod.sys.stdin = io.StringIO(json.dumps(payload))
+      with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+          assert mod.main() == 0
+      assert calls == [(("POST", "formations", payload), {"key": "my-entry-shape"})]
+      print("ok")
+    PY
+    assert_equal "ok", result.strip
+  end
+
+  test "write command help explains JSON schema without credentials or network" do
+    result = run_python(<<~PY)
+      import io, contextlib
+      mod.Client = lambda **kw: (_ for _ in ()).throw(AssertionError("help must not access graph"))
+      for command, fields in [("form", ["source_uris", "connections", "target_id", "--key"]),
+                              ("remember", ["node_type", "source_uris", "content"]),
+                              ("connect", ["source_id", "target_id", "edge_type"])]:
+          mod.sys.argv = ["house-memory", command, "--help"]
+          output = io.StringIO()
+          with contextlib.redirect_stdout(output):
+              try: mod.main()
+              except SystemExit as error: assert error.code == 0
+          for field in fields: assert field in output.getvalue(), field
+      mod.sys.argv = ["house-memory", "form"]
+      with contextlib.redirect_stderr(io.StringIO()):
+          try:
+              mod.main()
+              raise AssertionError("form allowed unstable retry key")
+          except SystemExit as error: assert error.code == 2
+      print("ok")
+    PY
+    assert_equal "ok", result.strip
+  end
+
   private
 
   def run_python(snippet)
