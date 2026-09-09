@@ -78,7 +78,12 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
       _, prompt, result = Open3.capture3(env, "python3", script, stdin_data: event.to_json)
       assert_equal 2, result.exitstatus
       assert_includes prompt, "decide whether the just-completed turn has narrative shape"
-      # The resident journals by hand during the next turn.
+      # The resident journals by hand during the next turn. Make the previous
+      # turn end three minutes ago so the new heading is unambiguously this turn's.
+      trace = File.join(dir, "memory/automation/state/stop-events.jsonl")
+      rows = File.readlines(trace).map { |l| JSON.parse(l) }
+      rows.last["recorded_at"] = (Time.now - 180).iso8601(6)
+      File.write(trace, rows.map(&:to_json).join("\n") + "\n")
       # The hook reads the system clock (local time), not Time.zone.
       today = Date.today
       journal = File.join(dir, "memory/daily-journals/#{today}.md")
@@ -100,6 +105,31 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
       _, prompt, result = Open3.capture3(env, "python3", script, stdin_data: event.to_json)
       assert_equal 2, result.exitstatus
       assert_includes prompt, "decide whether the just-completed turn has narrative shape"
+    end
+  end
+
+  test "an entry written inside the previous turn does not make the next turn address-only" do
+    Dir.mktmpdir do |dir|
+      env = { "AGENT_IDENTITY_PATH" => dir }
+      script = Rails.root.join("agent-runtime/stop_journal_reflex.py").to_s
+      event = { last_assistant_message: "Synthetic meaningful turn" }
+      today = Date.today
+      journal = File.join(dir, "memory/daily-journals/#{today}.md")
+      FileUtils.mkdir_p(File.dirname(journal))
+      # Turn N: invitation, then the resident journals in-turn, then the
+      # continuation's answer row lands (stop_hook_active: true).
+      _, _, result = Open3.capture3(env, "python3", script, stdin_data: event.to_json)
+      assert_equal 2, result.exitstatus
+      stamp = Time.now.strftime("%H:%M")
+      File.write(journal, "# Daily Journal: #{today}\n\n## #{stamp} — Written in turn N\n\nbody\n")
+      _, out, result = Open3.capture3(env, "python3", script, stdin_data: event.merge(stop_hook_active: true).to_json)
+      assert result.success?
+      assert_empty out
+      # Turn N+1 wrote nothing: it must get the full invitation, not "already written".
+      _, prompt, result = Open3.capture3(env, "python3", script, stdin_data: event.to_json)
+      assert_equal 2, result.exitstatus
+      assert_includes prompt, "decide whether the just-completed turn has narrative shape"
+      assert_not_includes prompt, "Journal already written this turn"
     end
   end
 

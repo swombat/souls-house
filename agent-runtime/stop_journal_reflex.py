@@ -47,8 +47,17 @@ def already_journal_reflex_response(text: str) -> bool:
     return stripped == "no shape" or stripped.startswith("journaled:")
 
 
-def last_invitation_at() -> dt.datetime | None:
-    """When this hook last invited, from its own trace. None if never."""
+def turn_floor() -> dt.datetime | None:
+    """The most recent trace row of ANY kind — the end of the previous turn.
+
+    Every invitation is followed by a second row recording the resident's
+    answer, so the last *invited* row spans the whole previous turn as well as
+    this one (Claude reproduced that: invitation 06:13, entry written inside
+    that turn at 06:14, answer row 06:15 — a fresh turn ending later floored at
+    06:13, found 06:14, and was told the gate was already answered for a turn
+    that had written nothing). Entries after the last row of any kind belong
+    to the current turn. None if there is no trace yet.
+    """
     try:
         with TRACE_PATH.open(encoding="utf-8") as fh:
             lines = fh.readlines()
@@ -59,7 +68,7 @@ def last_invitation_at() -> dt.datetime | None:
             record = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if record.get("journal_invited") and record.get("recorded_at"):
+        if record.get("recorded_at"):
             try:
                 return dt.datetime.fromisoformat(record["recorded_at"])
             except ValueError:
@@ -71,9 +80,10 @@ HEADING = re.compile(r"^## (\d{2}):(\d{2})(?:\s*[—–-]\s*(.*))?$")
 
 
 def entries_since(now: dt.datetime, since: dt.datetime | None) -> list[tuple[str, str]]:
-    """Today's `## HH:MM — title` headings written after `since` (or in the last
-    30 minutes when there is no trace yet). Read from the journal file itself:
-    the resident's own hand is the evidence, never the excerpt."""
+    """Today's `## HH:MM — title` headings written at or after `since` — the end
+    of the previous turn — or in the last 30 minutes when there is no trace
+    yet. Read from the journal file itself: the resident's own hand is the
+    evidence, never the excerpt."""
     path = DAILY_DIR / f"{now.strftime('%Y-%m-%d')}.md"
     try:
         text = path.read_text(encoding="utf-8")
@@ -82,9 +92,12 @@ def entries_since(now: dt.datetime, since: dt.datetime | None) -> list[tuple[str
     floor = since if since is not None else now - dt.timedelta(minutes=30)
     if floor.tzinfo is None:
         floor = floor.replace(tzinfo=now.tzinfo)
-    # Headings carry minutes only; compare at minute granularity so an entry
-    # written later in the same minute as the previous invitation still counts.
-    floor = floor.replace(second=0, microsecond=0)
+    # Headings carry minutes only. An entry stamped in the same minute as the
+    # previous turn's last trace row is ambiguous; treat it as that turn's
+    # (the milder error: the resident gets the full invitation and, knowing
+    # they just wrote, reuses the handle) rather than telling a turn that
+    # wrote nothing that its gate is already answered.
+    floor = floor.replace(second=0, microsecond=0) + dt.timedelta(minutes=1)
     found = []
     for line in text.splitlines():
         m = HEADING.match(line.strip())
@@ -253,7 +266,7 @@ def main() -> None:
 
     should_invite = bool(assistant.strip()) and not stop_hook_active and not already_journal_reflex_response(assistant)
     now = dt.datetime.now().astimezone()
-    written = entries_since(now, last_invitation_at()) if should_invite else []
+    written = entries_since(now, turn_floor()) if should_invite else []
     append_trace(event, assistant, should_invite)
 
     if should_invite:
