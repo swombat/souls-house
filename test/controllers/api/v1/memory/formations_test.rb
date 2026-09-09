@@ -70,6 +70,7 @@ class Api::V1::Memory::FormationsTest < ActionDispatch::IntegrationTest
     invalid = [
       @payload.deep_merge(memory: { source_uris: [] }),
       @payload.merge(connections: [ { from_node_id: "wrong", relation: "theme" } ]),
+      @payload.merge(connections: [ { target_id: [ SecureRandom.uuid ], edge_type: "theme" } ]),
       @payload.merge(connections: [ {} ] * 21),
       @payload.merge(vault_id: @vault.id)
     ]

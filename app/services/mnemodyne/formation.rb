@@ -23,7 +23,9 @@ class Mnemodyne::Formation
       object!(connection, CONNECTION_FIELDS)
       raise ArgumentError unless connection.key?("target_id") ^ connection.key?("target")
       target = if connection.key?("target_id")
-        @vault.nodes.find(connection.fetch("target_id"))
+        id = connection.fetch("target_id")
+        raise ArgumentError unless id.is_a?(String) && id.match?(/\A[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\z/i)
+        @vault.nodes.find(id)
       else
         hub(connection.fetch("target"))
       end

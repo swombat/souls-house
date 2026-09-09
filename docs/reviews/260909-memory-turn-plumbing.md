@@ -61,3 +61,10 @@ were visible. These observations do not measure the memory server's latency.
   outside this patch; left untouched.
 
 Rollout and observed resident behavior remain to be recorded after deployment.
+
+Before release, merged `ccbeb61` (including the already-deployed narration
+default migration `49026c5`) from the sibling development checkout. Resolved
+only the schema version conflict, retaining both migrations and narration's
+`true` default. Re-ran the merged full Rails suite: 2,310 tests / 11,981
+assertions, zero failures or errors. The GitHub mainline contains this merge.
+The production fail-fast full resident + database backup succeeded at 21:52 UTC.
