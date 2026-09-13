@@ -134,6 +134,19 @@ class ProcessTelegramUpdateJob < ApplicationJob
     end
 
     return media_content("voice", message, message["voice"], duration: message.dig("voice", "duration")) if message["voice"].present?
+
+    if message["video_note"].present?
+      length = message.dig("video_note", "length")
+      return media_content(
+        "video",
+        message,
+        message["video_note"],
+        duration: message.dig("video_note", "duration"),
+        width: length,
+        height: length
+      )
+    end
+
     media_content(
       "video",
       message,

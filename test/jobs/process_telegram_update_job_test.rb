@@ -178,6 +178,62 @@ class ProcessTelegramUpdateJobTest < ActiveSupport::TestCase
     assert_equal 8, message.media_metadata["duration"]
   end
 
+  test "stores a round video note as a video and enqueues preparation" do
+    subscription = @agent.telegram_subscriptions.create!(user: @user, telegram_chat_id: 456)
+    update = build_media_update(
+      "video_note" => { "file_id" => "note-1", "file_size" => 50_000, "duration" => 15, "length" => 384 }
+    )
+
+    assert_enqueued_with(job: PrepareTelegramMediaJob) do
+      ProcessTelegramUpdateJob.perform_now(@agent, update)
+    end
+
+    message = subscription.telegram_messages.last
+    assert_equal "video", message.media_kind
+    assert_equal "pending", message.media_status
+    assert_nil message.caption
+    assert_equal "[Video — processing]", message.text
+    assert_equal({ "duration" => 15, "width" => 384, "height" => 384 }, message.media_metadata)
+    assert_equal "note-1", enqueued_jobs.last.fetch("arguments").second
+  end
+
+  test "does not prepare a duplicate video note twice" do
+    @agent.telegram_subscriptions.create!(user: @user, telegram_chat_id: 456)
+    update = build_media_update(
+      "video_note" => { "file_id" => "note-1", "duration" => 15, "length" => 384 }
+    )
+
+    assert_difference "TelegramMessage.count", 1 do
+      assert_enqueued_jobs 1, only: PrepareTelegramMediaJob do
+        2.times { ProcessTelegramUpdateJob.perform_now(@agent, update) }
+      end
+    end
+  end
+
+  test "rejects oversized video notes before preparation" do
+    subscription = @agent.telegram_subscriptions.create!(user: @user, telegram_chat_id: 456)
+    update = build_media_update(
+      "video_note" => {
+        "file_id" => "too-large",
+        "file_size" => TelegramMessage.media_limit_for("video") + 1,
+        "duration" => 30,
+        "length" => 384
+      }
+    )
+
+    Net::HTTP.stub :post, @fake_ok do
+      assert_no_enqueued_jobs only: PrepareTelegramMediaJob do
+        ProcessTelegramUpdateJob.perform_now(@agent, update)
+      end
+    end
+
+    message = subscription.telegram_messages.last
+    assert_equal "video", message.media_kind
+    assert_equal "failed", message.media_status
+    assert_equal "too_large", message.media_error
+    assert_equal "[Video could not be received]", message.text
+  end
+
   test "rejects oversized video before preparation" do
     subscription = @agent.telegram_subscriptions.create!(user: @user, telegram_chat_id: 456)
     update = build_media_update(
