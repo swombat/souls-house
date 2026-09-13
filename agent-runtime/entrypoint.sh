@@ -48,6 +48,19 @@ chmod 0700 "$AGENT_HOME/state" "$AGENT_HOME/state/claude" "$AGENT_HOME/state/ant
 # Append only missing sections so persisted/user-managed settings win.
 CHAOS_CONFIG="$AGENT_HOME/.chaos/config.toml"
 touch "$CHAOS_CONFIG"
+# Enable bounded timing control by default, including on existing volumes.
+# Prepend root-level TOML so provider tables cannot swallow the setting; leave
+# explicit resident choices (including "disabled") and all existing text intact.
+python3 - "$CHAOS_CONFIG" <<'CHAOS_DEFAULTS'
+from pathlib import Path
+import sys
+import tomllib
+
+path = Path(sys.argv[1])
+existing = path.read_bytes()
+if "agent_compaction_control" not in tomllib.loads(existing.decode("utf-8")):
+    path.write_bytes(b'agent_compaction_control = "bounded"\n' + existing)
+CHAOS_DEFAULTS
 if ! grep -q '^\[model_providers\.gemini\]' "$CHAOS_CONFIG"; then
     cat >> "$CHAOS_CONFIG" <<'GEMINI_PROVIDER'
 

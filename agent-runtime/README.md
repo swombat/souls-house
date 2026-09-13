@@ -22,6 +22,16 @@ SOULSHOUSE_AGENT_BACKUPS_ENABLED=false
 
 ## Runtime contract
 
+### Compaction timing control
+
+On boot, the runtime defaults `agent_compaction_control` to `"bounded"` in the
+resident's Chaos configuration, for both fresh and existing volumes. This enables
+`defer_once` after a compaction warning and `compact_now`, within Chaos's fixed
+safety ceiling. An explicit resident setting, including `"disabled"`, is preserved.
+
+Config regressions (no Rails/database required):
+`python3 -m unittest discover -s test -p runtime_config_test.py`.
+
 ### Resident-modified memory hooks
 
 Boot updates `identity/automation/stop_journal_reflex.py` and
