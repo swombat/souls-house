@@ -9,6 +9,15 @@
   const isActive = $derived(Boolean(interaction.active));
   const snapshot = $derived(interaction.snapshot || {});
   const operations = $derived(Object.values(snapshot.operations || {}));
+  let commandsExpanded = $state(false);
+  const narrationReceived = $derived(
+    Boolean(snapshot.commentary) ||
+      (interaction.events || []).some((event) => event.type === 'commentary.completed' && event.data?.text)
+  );
+  const narrationAvailable = $derived(
+    interaction.narration_shared !== false && (snapshot.narration_capability === 'supported' || narrationReceived)
+  );
+  const showCommands = $derived(!narrationAvailable || commandsExpanded);
   const duration = $derived(
     isActive && interaction.started_at
       ? Math.max(0, now - new Date(interaction.started_at).getTime())
@@ -72,7 +81,16 @@
           Contact was lost. Execution was not confirmed stopped; check before requesting the same work again.
         </p>
       {/if}
-      {#if operations.length && isActive}
+      {#if narrationAvailable}
+        <button
+          type="button"
+          class="text-xs underline underline-offset-4"
+          aria-expanded={commandsExpanded}
+          onclick={() => (commandsExpanded = !commandsExpanded)}>
+          {commandsExpanded ? 'Hide commands' : 'Show commands'}
+        </button>
+      {/if}
+      {#if showCommands && operations.length && isActive}
         <ul class="space-y-1">
           {#each operations as operation}
             <li class="break-words">{operation.label}…</li>
@@ -81,11 +99,11 @@
       {/if}
       {#if snapshot.commentary}
         <p class="whitespace-pre-wrap">{snapshot.commentary}</p>
-      {:else if snapshot.narration_capability === 'unsupported'}
-        <p class="text-xs text-muted-foreground">Narration isn't available from this provider connection.</p>
       {:else if interaction.narration_shared === false}
         <p class="text-xs text-muted-foreground">Working narration isn't shared.</p>
-      {:else if interaction.run_id}
+      {:else if snapshot.narration_capability === 'unsupported' && !narrationReceived}
+        <p class="text-xs text-muted-foreground">Narration isn't available from this provider connection.</p>
+      {:else if interaction.run_id && !narrationReceived}
         <p class="text-xs text-muted-foreground">No shared working narration received.</p>
       {/if}
       {#if snapshot.plan?.length}
@@ -99,7 +117,7 @@
         {#each interaction.events || [] as event (event.id)}
           {#if event.type === 'commentary.completed' && event.data?.text}
             <li class="whitespace-pre-wrap">{event.data.text}</li>
-          {:else if eventLabel(event)}
+          {:else if eventLabel(event) && (showCommands || event.type === 'warning')}
             <li class="break-words">{eventLabel(event)}</li>
           {/if}
         {/each}

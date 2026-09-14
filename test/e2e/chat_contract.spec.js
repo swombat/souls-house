@@ -95,6 +95,38 @@ test.describe('browser contracts', () => {
     setup = await setupRun(request);
   });
 
+  test('narration hides commands until expanded, including after reload', async ({ page, request }) => {
+    await login(page, setup.primary_user, setup.password);
+    const response = await request.post('/test/e2e/conversation_fixture', {
+      data: { account_id: setup.account_id, count: 1 },
+    });
+    const fixture = await response.json();
+    await page.goto(`/accounts/${setup.account_id}/chats/${fixture.chat_id}`);
+    const started = await request.post('/test/e2e/runtime_activity', {
+      data: { chat_id: fixture.chat_id, narration: true },
+    });
+    const run = await started.json();
+    const card = page.getByTestId('runtime-activity-card').filter({ hasText: 'E2E Researcher' });
+    await expect(card.getByText('Checking the runtime configuration.').first()).toBeVisible();
+    await expect(card.getByText('grep -n runtime app/services/agent_dispatch.rb…')).toBeHidden();
+    const toggle = card.getByRole('button', { name: 'Show commands' });
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await expect(card.getByText('grep -n runtime app/services/agent_dispatch.rb…')).toBeVisible();
+    await card.getByRole('button', { name: 'Hide commands' }).click();
+    await request.post('/test/e2e/runtime_activity', {
+      data: { chat_id: fixture.chat_id, runtime_run_id: run.runtime_run_id, complete: true },
+    });
+    await expect(card.locator('details')).not.toHaveAttribute('open', '');
+    await page.reload();
+    await card.locator('summary').click();
+    await expect(card.getByText('Checking the runtime configuration.').first()).toBeVisible();
+    await expect(card.getByText('grep -n runtime app/services/agent_dispatch.rb', { exact: true })).toBeHidden();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await card.getByRole('button', { name: 'Show commands' }).click();
+    await expect(card.getByText('grep -n runtime app/services/agent_dispatch.rb', { exact: true })).toBeVisible();
+  });
+
   test.afterEach(async ({ request }) => {
     await cleanupRun(request, setup.run_id);
   });

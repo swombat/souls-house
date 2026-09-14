@@ -101,10 +101,13 @@ module TestSupport
         [ { "seq" => seq + 1, "type" => "supervisor.finished", "data" => { "outcome" => "completed" } } ]
       else
         [
-          { "seq" => 1, "type" => "attempt.started", "data" => { "narration_capability" => "unsupported" } },
+          { "seq" => 1, "type" => "attempt.started", "data" => { "narration_capability" => params[:narration] ? "supported" : "unsupported" } },
           { "seq" => 2, "type" => "turn.started", "data" => {} },
           { "seq" => 3, "type" => "tool.started", "data" => { "category" => "command", "operation_id" => "synthetic-command", "command_preview" => "grep -n runtime app/services/agent_dispatch.rb" } }
         ]
+      end
+      if params[:narration] && !params[:complete]
+        events << { "seq" => 4, "type" => "commentary.completed", "data" => { "text" => "Checking the runtime configuration." } }
       end
       RuntimeActivityIngestion.new(run, {
         "schema_version" => 1, "run_id" => run.run_id, "attempt_id" => attempt_id,

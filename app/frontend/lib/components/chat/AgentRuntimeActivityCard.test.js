@@ -12,6 +12,70 @@ const base = {
   events: [],
 };
 
+const withCommands = {
+  ...base,
+  narration_shared: true,
+  snapshot: {
+    narration_capability: 'supported',
+    commentary: 'Checking the configuration.',
+    operations: { command: { label: 'cat config/settings.yml' } },
+  },
+  events: [
+    { id: '1', type: 'commentary.completed', data: { text: 'First I checked the tests.' } },
+    { id: '2', type: 'tool.finished', data: { label: 'git status', outcome: 'completed' } },
+    { id: '3', type: 'warning', data: {} },
+  ],
+};
+
+test('narration stays visible while live commands and command history are expandable', async () => {
+  const { rerender } = render(AgentRuntimeActivityCard, { interaction: withCommands });
+  expect(screen.getByText('Checking the configuration.')).toBeVisible();
+  expect(screen.getByText('First I checked the tests.')).toBeVisible();
+  expect(screen.getByText('Activity detail unavailable')).toBeVisible();
+  expect(screen.queryByText('cat config/settings.yml…')).not.toBeInTheDocument();
+  expect(screen.queryByText('git status · completed')).not.toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: 'Show commands', expanded: false }));
+  expect(screen.getByText('cat config/settings.yml…')).toBeVisible();
+  expect(screen.getByText('git status · completed')).toBeVisible();
+  await rerender({ interaction: { ...withCommands, revision: 2 } });
+  expect(screen.getByRole('button', { name: 'Hide commands', expanded: true })).toBeVisible();
+  await fireEvent.click(screen.getByRole('button', { name: 'Hide commands' }));
+  expect(screen.queryByText('git status · completed')).not.toBeInTheDocument();
+});
+
+test.each(['unsupported', 'unknown'])('shows commands when narration is %s and none has arrived', (capability) => {
+  render(AgentRuntimeActivityCard, {
+    interaction: {
+      ...withCommands,
+      snapshot: { ...withCommands.snapshot, narration_capability: capability, commentary: null },
+      events: withCommands.events.filter((event) => event.type !== 'commentary.completed'),
+    },
+  });
+  expect(screen.getByText('cat config/settings.yml…')).toBeVisible();
+  expect(screen.getByText('git status · completed')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Show commands' })).not.toBeInTheDocument();
+});
+
+test('keeps commands visible for opted-out residents', () => {
+  render(AgentRuntimeActivityCard, { interaction: { ...withCommands, narration_shared: false } });
+  expect(screen.getByText('cat config/settings.yml…')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Show commands' })).not.toBeInTheDocument();
+});
+
+test('received narration takes precedence over stale capability metadata', async () => {
+  const waiting = {
+    ...withCommands,
+    snapshot: { ...withCommands.snapshot, narration_capability: 'unsupported', commentary: null },
+    events: [],
+  };
+  const { rerender } = render(AgentRuntimeActivityCard, { interaction: waiting });
+  expect(screen.getByText('cat config/settings.yml…')).toBeVisible();
+  await rerender({ interaction: { ...waiting, events: [withCommands.events[0]] } });
+  expect(screen.getByText('First I checked the tests.')).toBeVisible();
+  expect(screen.queryByText('cat config/settings.yml…')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Show commands' })).toBeVisible();
+});
+
 test('minimises on completion, remains present and can be expanded again', async () => {
   const { container, rerender } = render(AgentRuntimeActivityCard, { interaction: base });
   const details = container.querySelector('details');
