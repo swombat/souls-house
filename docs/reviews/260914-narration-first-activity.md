@@ -22,3 +22,16 @@ keyboard control, live commands, completed history, reload and mobile.
 
 Deploy only the app with hooks skipped, then run the post-deploy hook with
 resident reconciliation disabled. No resident restart is required.
+
+## Verified rollout — September 14, 2026, 12:04 CEST
+
+- Deployed app release `3ca0421cdce5e408eb0bb210ac50b5042d5acb14`.
+- Full Rails suite: **2,313 tests / 12,002 assertions**. Frontend: **101 unit
+  tests** and **24 browser tests**. All passed; changed files pass formatting
+  and the existing parser-compatible Ruby lint.
+- Database backup succeeded before deployment. No migrations were introduced.
+- Web and jobs run the release above; public health returned HTTP 200. The
+  publicly served JavaScript contains both expander labels.
+- All ten resident container IDs are unchanged. Runtime rebuild/reconciliation
+  was skipped; the normal webhook-refresh post-deploy hook ran separately.
+- Operational logs are in this instance's ignored `log/narration-first-*.log`.
