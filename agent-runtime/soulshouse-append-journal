@@ -1,31 +1,122 @@
 #!/bin/sh
 set -eu
 
-if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+usage() {
   cat <<'HELP'
-Usage: soulshouse-append-journal [TITLE]
+Usage: soulshouse-append-journal [--file PATH] [--date YYYY-MM-DD] [--at HH:MM] [--] [TITLE]
 
-Append stdin as a new entry in today's hosted-agent daily journal.
-Empty or whitespace-only stdin is rejected without changing the journal.
+Append an entry to a hosted-agent daily journal (today by default).
+Empty or whitespace-only bodies are rejected without changing the journal.
+
+  --file PATH   read the body from a regular file instead of stdin
+  --date DATE   choose the journal date (YYYY-MM-DD) instead of today
+  --at HH:MM    choose the heading time (00:00-23:59) instead of now
+  --            stop option parsing, allowing a title beginning with a dash
+
+Use --date and --at together to preserve an earlier entry address across
+midnight. With --at alone, the journal date still comes from this command's
+own clock. Date and time defaults use the runtime's local timezone.
 
 `helixkit-append-journal` is a permanent alias for this command.
 
 Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md
 HELP
-  exit 0
+}
+
+die() {
+  printf '%s\n' "soulshouse-append-journal: $1" >&2
+  exit 1
+}
+
+BODY_FILE=""
+AT=""
+DATE=""
+TITLE="Journal entry"
+TITLE_SET=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --file)
+      [ $# -ge 2 ] || die "--file needs a path"
+      BODY_FILE="$2"; [ -n "$BODY_FILE" ] || die "--file needs a path"
+      shift 2 ;;
+    --file=*)
+      BODY_FILE="${1#--file=}"
+      [ -n "$BODY_FILE" ] || die "--file needs a path"
+      shift ;;
+    --at)
+      [ $# -ge 2 ] || die "--at needs HH:MM"
+      AT="$2"; [ -n "$AT" ] || die "--at needs HH:MM"
+      shift 2 ;;
+    --at=*)
+      AT="${1#--at=}"
+      [ -n "$AT" ] || die "--at needs HH:MM"
+      shift ;;
+    --date)
+      [ $# -ge 2 ] || die "--date needs YYYY-MM-DD"
+      DATE="$2"; [ -n "$DATE" ] || die "--date needs YYYY-MM-DD"
+      shift 2 ;;
+    --date=*)
+      DATE="${1#--date=}"
+      [ -n "$DATE" ] || die "--date needs YYYY-MM-DD"
+      shift ;;
+    --)
+      shift
+      if [ $# -gt 0 ]; then
+        [ "$TITLE_SET" -eq 0 ] || die "unexpected extra argument: $1"
+        TITLE="${1:-Journal entry}"
+        TITLE_SET=1
+        shift
+      fi
+      break ;;
+    -*) die "unknown option: $1 (use -- before a title starting with a dash)" ;;
+    *)
+      [ "$TITLE_SET" -eq 0 ] || die "unexpected extra argument: $1"
+      TITLE="${1:-Journal entry}"
+      TITLE_SET=1
+      shift ;;
+  esac
+done
+[ $# -eq 0 ] || die "unexpected extra argument: $1"
+
+if [ -n "$AT" ]; then
+  case "$AT" in
+    [01][0-9]:[0-5][0-9]|2[0-3]:[0-5][0-9]) ;;
+    *) die "--at expects HH:MM (00:00-23:59), got: $AT" ;;
+  esac
+fi
+
+if [ -n "$DATE" ]; then
+  case "$DATE" in
+    [0-9][0-9][0-9][0-9]-[01][0-9]-[0-3][0-9]) ;;
+    *) die "--date expects YYYY-MM-DD, got: $DATE" ;;
+  esac
+  # The hosted Linux image supplies GNU date; check the calendar, not just shape.
+  VALID_DATE="$(date -d "$DATE" +%Y-%m-%d 2>/dev/null)" || die "invalid calendar date: $DATE"
+  [ "$VALID_DATE" = "$DATE" ] || die "invalid calendar date: $DATE"
 fi
 
 IDENTITY_PATH="${AGENT_IDENTITY_PATH:-/home/agent/identity}"
 JOURNAL_DIR="$IDENTITY_PATH/memory/daily-journals"
-TODAY="$(date +%Y-%m-%d)"
-NOW="$(date +%H:%M)"
-TITLE="${1:-Journal entry}"
+STAMP="$(date '+%Y-%m-%d %H:%M')"
+TODAY="${DATE:-${STAMP% *}}"
+NOW="${AT:-${STAMP#* }}"
 FILE="$JOURNAL_DIR/$TODAY.md"
 
-BODY="$(cat)"
+if [ -n "$BODY_FILE" ]; then
+  [ -f "$BODY_FILE" ] || die "no such body file: $BODY_FILE"
+  [ -r "$BODY_FILE" ] || die "body file is not readable: $BODY_FILE"
+  BODY="$(cat -- "$BODY_FILE")"
+else
+  BODY="$(cat)"
+fi
+
 if [ -z "$(printf '%s' "$BODY" | tr -d '[:space:]')" ]; then
-  printf '%s\n' "soulshouse-append-journal: empty body on stdin; nothing written" >&2
-  exit 1
+  if [ -n "$BODY_FILE" ]; then
+    die "empty body in $BODY_FILE; nothing written"
+  fi
+  die "empty body on stdin; nothing written"
 fi
 
 mkdir -p "$JOURNAL_DIR"
