@@ -60,6 +60,34 @@ test.describe('long conversation synchronization', () => {
     await cleanupRun(request, setup.run_id);
   });
 
+  test('reconnecting catches up messages whose notifications were missed', async ({ page, request }) => {
+    let socketToReconnect;
+    let subscribed = false;
+    let dropNotifications = false;
+    await page.routeWebSocket('**/cable', (socket) => {
+      socketToReconnect = socket;
+      const server = socket.connectToServer();
+      server.onMessage((message) => {
+        const data = JSON.parse(message);
+        if (data.type === 'confirm_subscription' && JSON.parse(data.identifier).model === 'Chat') {
+          subscribed = true;
+        }
+        if (!dropNotifications || !data.message) socket.send(message);
+      });
+    });
+    const conversation = await seedConversation(request, setup, { count: 1 });
+    await openChat(page, setup, conversation.chat_id);
+    await expect.poll(() => subscribed).toBe(true);
+    await page.waitForLoadState('networkidle');
+    dropNotifications = true;
+    await appendMessages(request, conversation.chat_id, { prefix: 'Missed while disconnected' });
+    // No later broadcast will rescue this message: only reconnect reconciliation can.
+    socketToReconnect.close({ code: 1012, reason: 'Test reconnect' });
+    await expect(page.getByText('Missed while disconnected 000', { exact: true })).toBeVisible({
+      timeout: 20000,
+    });
+  });
+
   test('keeps paginated history while new messages synchronize', async ({ page, request }) => {
     const conversation = await seedConversation(request, setup);
     await openChat(page, setup, conversation.chat_id);

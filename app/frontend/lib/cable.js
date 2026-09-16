@@ -28,7 +28,7 @@ export function debounce(fn, delay) {
 }
 
 // Global debounced reload (shared across all subscriptions)
-const reloadProps = debounce((props) => {
+export const reloadProps = debounce((props) => {
   logging.debug('Reloading props:', props);
   router.reload({
     only: props,
@@ -53,7 +53,12 @@ export function subscribeToModel(model, id, props) {
     {
       connected() {
         logging.debug(`Sync connected: ${model}:${id}`);
-        if (model === 'Chat') window.dispatchEvent(new CustomEvent('runtime-activity-refresh'));
+        if (model === 'Chat') {
+          // Broadcasts are not replayed. Catch up changes missed before the
+          // subscription or during a disconnect, without needing another change.
+          reloadProps(props);
+          window.dispatchEvent(new CustomEvent('runtime-activity-refresh'));
+        }
       },
 
       received(data) {

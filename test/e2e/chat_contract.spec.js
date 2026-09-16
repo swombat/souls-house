@@ -95,6 +95,42 @@ test.describe('browser contracts', () => {
     setup = await setupRun(request);
   });
 
+  test('activity polling recovers a finished reply when websocket notifications are missed', async ({
+    page,
+    request,
+  }) => {
+    let dropNotifications = false;
+    await page.routeWebSocket('**/cable', (socket) => {
+      const server = socket.connectToServer();
+      server.onMessage((message) => {
+        // Lose invalidations, not the connection's handshake or keepalive.
+        if (!dropNotifications || !JSON.parse(message).message) socket.send(message);
+      });
+    });
+    await login(page, setup.primary_user, setup.password);
+    const response = await request.post('/test/e2e/conversation_fixture', {
+      data: { account_id: setup.account_id, count: 1 },
+    });
+    const fixture = await response.json();
+    const started = await request.post('/test/e2e/runtime_activity', { data: { chat_id: fixture.chat_id } });
+    const run = await started.json();
+    await page.goto(`/accounts/${setup.account_id}/chats/${fixture.chat_id}`);
+    const card = page.getByTestId('runtime-activity-card').filter({ hasText: 'E2E Researcher' });
+    await expect(card.getByText('is working')).toBeVisible();
+    // Let initial subscription reconciliation settle before losing notifications.
+    await page.waitForLoadState('networkidle');
+
+    dropNotifications = true;
+    const completed = await request.post('/test/e2e/runtime_activity', {
+      data: { chat_id: fixture.chat_id, runtime_run_id: run.runtime_run_id, complete: true },
+    });
+    expect(completed.ok()).toBe(true);
+    await expect(card.getByText('finished', { exact: true })).toBeVisible();
+    await expect(card.getByText(/1 reply posted/)).toBeVisible();
+    // A finished card is not enough: the actual posted message must converge too.
+    await expect(page.getByText('Synthetic work is complete.', { exact: true })).toBeVisible();
+  });
+
   test('narration hides commands until expanded, including after reload', async ({ page, request }) => {
     await login(page, setup.primary_user, setup.password);
     const response = await request.post('/test/e2e/conversation_fixture', {

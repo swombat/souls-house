@@ -46,7 +46,8 @@
   import { applyStreamingEnd, applyStreamingUpdate } from '$lib/chat-streaming-state';
   import { buildChatSubscriptions, chatSyncSignature } from '$lib/chat-sync-subscriptions';
   import { mode } from 'mode-watcher';
-  import { mergeRuntimeActivity } from '$lib/runtime-activity';
+  import { mergeRuntimeActivity, runtimeActivityNeedsMessageRefresh } from '$lib/runtime-activity';
+  import { reloadProps } from '$lib/cable';
 
   const shikiTheme = $derived(mode.current === 'dark' ? 'catppuccin-mocha' : 'catppuccin-latte');
 
@@ -358,9 +359,15 @@
   const activeRuntimeAgentIds = $derived(
     (runtimeInteractions || []).filter((interaction) => interaction.active).map((interaction) => interaction.agent_id)
   );
-  let activityUpdates = $state({ chatId: null, rows: [] });
+  let activityUpdates = $state({ chatId: null, rows: [], snapshot: [] });
   const runtimeInteractions = $derived(
     mergeRuntimeActivity(initialRuntimeInteractions, activityUpdates.chatId === chat.id ? activityUpdates.rows : [])
+  );
+  // Only compare the server's current activity window, not cards retained
+  // locally after they have aged out of that window.
+  const runtimeMessagesNeedRefresh = $derived(
+    activityUpdates.chatId === chat.id &&
+      runtimeActivityNeedsMessageRefresh(initialRuntimeInteractions, activityUpdates.snapshot)
   );
 
   onMount(() => {
@@ -383,11 +390,15 @@
         if (!disposed && chat.id === chatId) {
           activityUpdates = {
             chatId,
+            snapshot: data.runtime_interactions || [],
             rows: mergeRuntimeActivity(
               activityUpdates.chatId === chatId ? activityUpdates.rows : [],
               data.runtime_interactions || []
             ),
           };
+          if (runtimeMessagesNeedRefresh) {
+            reloadProps(['chat', 'messages', 'runtime_interactions', 'cost_breakdown']);
+          }
         }
       } catch {
         // The persisted card remains; failure to fetch does not mean execution failed.
@@ -405,7 +416,9 @@
     window.addEventListener('runtime-activity-refresh', refreshActivity);
     document.addEventListener('visibilitychange', onVisible);
     const interval = setInterval(() => {
-      if (!document.hidden && runtimeInteractions.some((row) => row.active)) refreshActivity();
+      if (!document.hidden && (runtimeInteractions.some((row) => row.active) || runtimeMessagesNeedRefresh)) {
+        refreshActivity();
+      }
     }, 5000);
     refreshActivity();
     return () => {
