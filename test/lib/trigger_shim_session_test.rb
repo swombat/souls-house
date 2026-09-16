@@ -7,6 +7,104 @@ require "tmpdir"
 # script. Mirrors the harness style of trigger_shim_prompt_test.rb.
 class TriggerShimSessionTest < ActiveSupport::TestCase
 
+  test "concurrent session registration is atomic and excludes itself" do
+    out = run_shim_python(<<~PY)
+      import concurrent.futures, threading
+      barrier = threading.Barrier(8)
+      def register(i):
+          barrier.wait()
+          return mod._register_running_session(f"private-session-{i}")
+      with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+          counts = list(pool.map(register, range(8)))
+      assert sorted(counts) == list(range(8)), counts
+      assert mod._register_running_session("private-session-0") == 7
+      notice = mod.sibling_sessions_notice(7)
+      assert "private-session" not in notice
+      for i in range(8):
+          mod._unregister_running_session(f"private-session-{i}")
+      mod._unregister_running_session("already-gone")
+      assert not mod._running_sessions
+      assert mod.sibling_sessions_notice(0) is None
+      print(json.dumps(True))
+    PY
+
+    assert_equal true, JSON.parse(out)
+  end
+
+  test "trigger includes sibling count in full and resume prompts and cleans up" do
+    out = run_shim_python(<<~PY)
+      import types
+      mod._register_running_session("private-sibling")
+      mod.graph_memory_notice = lambda payload: None
+      calls = []
+      def capture(*args, **kwargs):
+          calls.append(args)
+          return {"status": "ok"}
+      mod.legacy_trigger = capture
+      mod.persistent_trigger = capture
+      for persistent in (False, True):
+          payload = {
+              "session_id": "current", "request": "full", "request_delta": "delta",
+              "persistent_session": persistent,
+              "conversation_id": "private-room", "requested_by": "private-person",
+          }
+          mod.request = types.SimpleNamespace(
+              headers={"Authorization": "Bearer tr_test"},
+              get_json=lambda silent=True: payload,
+          )
+          assert mod.trigger() == {"status": "ok"}
+          args = calls[-1]
+          assert "trigger start: 1." in args[1]
+          assert "private-" not in args[1]
+          if persistent:
+              assert "trigger start: 1." in args[2]
+          assert mod._running_sessions == {"private-sibling"}
+          lock = mod._lock_for("current")
+          assert lock.acquire(blocking=False)
+          before = len(calls)
+          try:
+              assert mod.trigger()[1] == 409
+              assert len(calls) == before
+              assert mod._running_sessions == {"private-sibling"}
+          finally:
+              lock.release()
+      mod._unregister_running_session("private-sibling")
+      mod.trigger()
+      assert calls[-1][1:3] == ("full", "delta")
+      print(json.dumps(True))
+    PY
+
+    assert_equal true, JSON.parse(out)
+  end
+
+  test "trigger failures clear sibling registration and release the session lock" do
+    out = run_shim_python(<<~PY)
+      import types
+      mod.request = types.SimpleNamespace(
+          headers={"Authorization": "Bearer tr_test"},
+          get_json=lambda silent=True: {"session_id": "current", "request": "full"},
+      )
+      def fail(*args, **kwargs):
+          raise RuntimeError("synthetic failure")
+      for stage in ("notice", "memory", "execution"):
+          mod.sibling_sessions_notice = fail if stage == "notice" else lambda count: None
+          mod.graph_memory_notice = fail if stage == "memory" else lambda payload: None
+          mod.legacy_trigger = fail
+          try:
+              mod.trigger()
+              raise AssertionError("failure expected")
+          except RuntimeError as error:
+              assert str(error) == "synthetic failure"
+          assert not mod._running_sessions
+          lock = mod._lock_for("current")
+          assert lock.acquire(blocking=False)
+          lock.release()
+      print(json.dumps(True))
+    PY
+
+    assert_equal true, JSON.parse(out)
+  end
+
   test "runtime image includes the journald companion required for resume" do
     dockerfile = Rails.root.join("agent-runtime/Dockerfile").read
     entrypoint = Rails.root.join("agent-runtime/entrypoint.sh").read

@@ -193,6 +193,7 @@ app = Flask(__name__) if Flask else None
 # against the same logical conversation/session while allowing the resident to
 # handle independent conversations and channels at the same time.
 _session_locks = {}
+_running_sessions = set()
 _activity_context = threading.local()
 _session_locks_guard = threading.Lock()
 _auth_lock = threading.Lock()
@@ -281,6 +282,11 @@ def trigger():
             log.warning("invalid activity configuration; running without reports")
     _activity_context.reporter = reporter
     try:
+        sibling_count = _register_running_session(session_id)
+        sibling_notice = sibling_sessions_notice(sibling_count)
+        prompt = append_runtime_notice(prompt, sibling_notice)
+        if request_delta:
+            request_delta = append_runtime_notice(request_delta, sibling_notice)
         memory_notice = graph_memory_notice(payload.get("memory"))
         if persistent_session:
             response = persistent_trigger(
@@ -305,6 +311,7 @@ def trigger():
         if reporter:
             reporter.disabled = True
         _activity_context.reporter = None
+        _unregister_running_session(session_id)
         session_lock.release()
 
 
@@ -1300,6 +1307,31 @@ def _lock_for(session_id):
         if session_id not in _session_locks:
             _session_locks[session_id] = threading.Lock()
         return _session_locks[session_id]
+
+
+def _register_running_session(session_id):
+    """Atomically register this trigger and snapshot its already-live siblings."""
+    with _session_locks_guard:
+        _running_sessions.add(session_id)
+        return len(_running_sessions - {session_id})
+
+
+def _unregister_running_session(session_id):
+    with _session_locks_guard:
+        _running_sessions.discard(session_id)
+
+
+def sibling_sessions_notice(count):
+    if not count:
+        return None
+    return (
+        "Runtime notice: concurrent sessions.\n\n"
+        f"Other sessions of yours running in this resident container at trigger start: {count}.\n"
+        "Independent conversations run in separate processes with separate context. "
+        "They may write shared files or post messages you have not seen. "
+        "Re-read current state before overwriting shared work or making commitments. "
+        "This is a point-in-time snapshot, not a live feed or a cross-room transcript."
+    )
 
 
 def _utcnow_iso():
