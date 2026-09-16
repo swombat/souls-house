@@ -461,6 +461,43 @@ class MessageTest < ActiveSupport::TestCase
     assert message.valid?
   end
 
+  test "accepts patch and diff extensions regardless of text sniffing variants" do
+    %w[change.patch change.diff CHANGE.PATCH CHANGE.DIFF].each do |filename|
+      %w[text/x-diff text/x-patch application/x-patch application/octet-stream].each do |content_type|
+        message = @chat.messages.build(user: @user, role: "user", content: "Patch for review")
+        blob = ActiveStorage::Blob.new(filename: filename, content_type: content_type, byte_size: 2048)
+        message.attachments.define_singleton_method(:attached?) { true }
+        message.attachments.define_singleton_method(:each) { |&block| block.call(blob) }
+
+        assert message.valid?, "#{filename} (#{content_type}): #{message.errors.full_messages}"
+      end
+    end
+  end
+
+  test "diff MIME types alone do not admit unsupported extensions" do
+    %w[text/x-diff text/x-patch application/x-patch application/x-msdownload].each do |content_type|
+      message = @chat.messages.build(user: @user, role: "user", content: "Not an allowed extension")
+      blob = ActiveStorage::Blob.new(filename: "installer.exe", content_type: content_type, byte_size: 1024)
+      message.attachments.define_singleton_method(:attached?) { true }
+      message.attachments.define_singleton_method(:each) { |&block| block.call(blob) }
+
+      assert_not message.valid?
+      assert_includes message.errors.full_messages.join, "file type not supported"
+    end
+  end
+
+  test "patch attachments retain the file size limit" do
+    message = @chat.messages.build(user: @user, role: "user", content: "Oversized patch")
+    blob = ActiveStorage::Blob.new(filename: "large.patch", content_type: "text/x-diff", byte_size: 51.megabytes)
+    message.attachments.define_singleton_method(:attached?) { true }
+    message.attachments.define_singleton_method(:each) { |&block| block.call(blob) }
+
+    assert_not message.valid?
+    assert_includes message.errors.full_messages.join, "50MB"
+    assert_includes Message::ACCEPTABLE_EXTENSIONS, ".patch"
+    assert_includes Message::ACCEPTABLE_EXTENSIONS, ".diff"
+  end
+
   test "tools_used defaults to empty array" do
     message = @chat.messages.create!(
       user: @user,
