@@ -141,7 +141,7 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     text = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:request_text)
     attachment = message.attachments_attachments.first
 
-    assert_includes text, "#{agent.name}: I made this."
+    assert_includes text, "#{agent.name} [#{message.obfuscated_id}]: I made this."
     assert_includes text, "filename: generated.png"
     assert_includes text, "content_type: image/png"
     assert_includes text, Rails.application.routes.url_helpers.api_v1_conversation_message_attachment_path(
@@ -149,6 +149,23 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
       message,
       attachment
     )
+  end
+
+  test "transcript headers identify stored turns containing speaker-like body lines" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Embedded speaker")
+    chat.agents << agent
+    message = chat.messages.create!(
+      role: "assistant",
+      agent: agent,
+      content: "Daniel — yes.\n\nClaude: I do not have that file on this disk."
+    )
+
+    request = ExternalAgentResponseRequest.new(agent: agent, chat: chat)
+    line = request.send(:format_transcript_line, message)
+
+    assert_equal "#{agent.name} [#{message.obfuscated_id}]: #{message.content}", line
+    assert_includes request.send(:request_text), line
   end
 
   test "full transcript keeps recent messages within the runtime byte budget" do

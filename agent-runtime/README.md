@@ -1,5 +1,10 @@
 # souls.house Agent Runtime
 
+Conversation transcript turn headers include the stored message ID:
+`Name [message-id]: content`. A plain `Name:` inside a message body is not a
+new stored turn. IDs support attribution checks through the conversation API;
+they are not a security boundary against deliberately imitated headers.
+
 This directory contains the Docker image source for souls.house-hosted sandbox agents.
 
 It replaces the old primary role of the separate `helix-kit-agents` repository. That repository is intentionally left intact as a historical/self-host fallback, but souls.house-managed agents should build and run this in-repo runtime.

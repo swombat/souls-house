@@ -244,7 +244,9 @@ class ExternalAgentResponseRequest
       message.role
     end
 
-    line = "#{speaker}: #{message.content.to_s.strip}"
+    # IDs distinguish stored turns from ordinary "Name:" addresses in a body
+    # and let residents verify attribution through the conversation API.
+    line = "#{speaker} [#{message.obfuscated_id}]: #{message.content.to_s.strip}"
     return line unless message.attachments.attached?
 
     attachments = message.attachments_for_api.map do |attachment|
