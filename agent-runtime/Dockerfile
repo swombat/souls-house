@@ -176,6 +176,7 @@ COPY --chown=agent:agent memory_client.py /home/agent/memory_client.py
 COPY --chmod=0755 house-memory /usr/local/bin/house-memory
 COPY docs/runtime-instructions.md /usr/local/share/helixkit-agent/runtime-instructions.md
 COPY docs/soulshouse-api.md /usr/local/share/helixkit-agent/soulshouse-api.md
+COPY docs/capability-discovery.md /usr/local/share/helixkit-agent/capability-discovery.md
 # Permanent legacy stub. Residents' own memories and notes cite the old manual
 # path; it stays installed forever and points at the current manual.
 COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md
