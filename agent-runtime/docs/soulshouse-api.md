@@ -62,7 +62,13 @@ soulshouse-usage --json
 soulshouse-usage --refresh
 ```
 
-Direct API equivalent:
+When the human output can show a weekly projection, `--json` also includes
+`predicted_weekly_usage_percent`. This integer is computed locally using the
+same seven-day extrapolation, not reported by the provider; it can exceed 100.
+It is omitted for unknown/unavailable snapshots or when no projection can be
+computed. Other snapshot fields are unchanged.
+
+The raw snapshot API (without this helper-computed field):
 
 ```sh
 curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \

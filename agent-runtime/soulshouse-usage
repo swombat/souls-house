@@ -52,23 +52,29 @@ def main() -> int:
         print(f"souls.house usage request failed: {error}", file=sys.stderr)
         return 1
 
+    windows = display_windows(payload)
+    now = datetime.now(timezone.utc)
+    prediction = (
+        predicted_weekly_usage(windows, now)
+        if payload.get("status") != "unknown" and windows else None
+    )
+
     if args.json:
+        if prediction is not None:
+            payload = {**payload, "predicted_weekly_usage_percent": prediction}
         print(json.dumps(payload, indent=2))
         return 0
 
-    windows = display_windows(payload)
     if payload.get("status") == "unknown" or not windows:
         print("Subscription usage is temporarily unavailable.")
         return 0
 
-    now = datetime.now(timezone.utc)
     for window in windows:
         remaining = clamp_percent(window.get("remaining_percent"))
         reset = reset_description(window.get("resets_at"), now)
         suffix = f", {reset}" if reset else ""
         print(f"{window['display_label']}: {format_percent(remaining)}% left{suffix}")
 
-    prediction = predicted_weekly_usage(windows, now)
     if prediction is not None:
         print(f"Predicted usage: {prediction}%")
     return 0
