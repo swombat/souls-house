@@ -30,6 +30,7 @@ module Message::Attachable
     .md .markdown .txt .csv .json .xml .html .htm .css .js .ts .jsx .tsx
     .py .rb .yaml .yml .toml .ini .log .rst .tex .sh .bash .zsh
     .c .h .cpp .hpp .java .go .rs .swift .kt .scala .r .sql
+    .patch .diff
     .mp3 .wav .flac .m4a .ogg .oga .opus .webm
   ].freeze
 
