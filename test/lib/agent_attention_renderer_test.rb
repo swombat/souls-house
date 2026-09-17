@@ -22,6 +22,8 @@ class AgentAttentionRendererTest < ActiveSupport::TestCase
     text = AgentAttentionRenderer.section_for(@agent, feed: feed(counts: counts))
 
     assert_includes text, "No current attention candidates were found"
+    assert_includes text, "souls.house conversations and Telegram threads"
+    refute_includes text, "HelixKit"
   end
 
   test "renders a partial failure without hiding the successful channel" do
@@ -30,7 +32,7 @@ class AgentAttentionRendererTest < ActiveSupport::TestCase
       counts: counts(total: 1, human: 1, helixkit: 1)
     ))
 
-    assert_includes text, "HelixKit conversations were checked"
+    assert_includes text, "souls.house conversations were checked"
     assert_includes text, "a human message. Telegram status"
     assert_includes text, "Telegram status is unavailable"
     assert_includes text, "do not infer that Telegram is quiet"
@@ -44,6 +46,18 @@ class AgentAttentionRendererTest < ActiveSupport::TestCase
 
     assert_includes text, "check failed"
     assert_includes text, "Do not infer"
+  end
+
+  test "uses the current house name when only Telegram was checked" do
+    text = AgentAttentionRenderer.section_for(@agent, feed: feed(
+      checked: { helixkit: "failed", telegram: "ok" },
+      counts: counts
+    ))
+
+    assert_includes text, "Telegram threads were checked: no current attention candidates were found."
+    assert_includes text, "souls.house status is unavailable"
+    assert_includes text, "do not infer that souls.house is quiet"
+    refute_includes text, "HelixKit"
   end
 
   test "renders total failure if result rendering itself raises" do

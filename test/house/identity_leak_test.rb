@@ -52,6 +52,7 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/models/agent.rb" => "validation error text shown to residents",
     "app/lib/agent_repo_creator.rb" => "GitHub deploy key title / User-Agent header",
     "app/lib/notices/renderer.rb" => "standing notice copy",
+    "app/lib/agent_attention_renderer.rb" => "cross-room attention notice copy (API channel keys remain helixkit)",
     "app/lib/external_agent_telegram_request.rb" => "Telegram notification copy",
     "app/jobs/safeguard_owner_notice_job.rb" => "Telegram notice copy",
     "app/jobs/prepare_telegram_media_job.rb" => "Telegram error copy",
