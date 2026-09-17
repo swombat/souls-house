@@ -5,6 +5,17 @@ require "fileutils"
 
 class RuntimeBuildTest < ActiveSupport::TestCase
 
+  test "discovery and message input guides are installed at their documented paths" do
+    dockerfile = Rails.root.join("agent-runtime/Dockerfile").read
+    manual = Rails.root.join("agent-runtime/docs/soulshouse-api.md").read
+    %w[capability-discovery message-helper-input].each do |name|
+      installed = "/usr/local/share/helixkit-agent/#{name}.md"
+      assert Rails.root.join("agent-runtime/docs/#{name}.md").file?
+      assert_includes dockerfile, "COPY docs/#{name}.md #{installed}"
+      assert_includes manual, installed
+    end
+  end
+
   test "default house name is literal data and exported host wins" do
     with_runtime do |root, env|
       # Neither shell metacharacters nor spaces in the env file are executable.

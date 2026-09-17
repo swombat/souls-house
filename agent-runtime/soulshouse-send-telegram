@@ -62,8 +62,9 @@ def main() -> int:
         text_argument = args.message
         recipient = args.recipient
 
-    text = text_argument if text_argument is not None else sys.stdin.read()
-    text = normalize_newlines(text).strip()
+    # Argv retains escaped-newline convenience; stdin may contain literal code.
+    text = normalize_newlines(text_argument) if text_argument is not None else sys.stdin.read()
+    text = text.strip()
     attachment = Path(args.attach).expanduser() if args.attach else None
 
     if attachment and not attachment.is_file():

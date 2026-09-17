@@ -58,8 +58,8 @@ def main() -> int:
         return 65
 
     chat_id = args.chat_id
-    content = args.message if args.message is not None else sys.stdin.read()
-    content = normalize_newlines(content)
+    # Argv retains escaped-newline convenience; stdin may contain literal code.
+    content = normalize_newlines(args.message) if args.message is not None else sys.stdin.read()
     content = content.strip()
     attachments = [Path(path).expanduser() for path in args.attach]
 
@@ -117,7 +117,7 @@ def normalize_newlines(content: str) -> str:
 
     In POSIX shells that double-quoted argument arrives as literal backslash+n
     characters, not line breaks. Convert those to actual newlines before sending
-    JSON to souls.house. Stdin input with real newlines is left alone.
+    JSON to souls.house. Call only for argv input, never for stdin.
     """
     return content.replace("\\r\\n", "\n").replace("\\n", "\n")
 

@@ -10,6 +10,12 @@ that name has been taken away: every `helixkit-*` command, the old
 keep working permanently. If your own notes cite the old names, they are still
 correct. The `soulshouse-*` names below are the current ones.
 
+For message text, code, regexes, or paths, prefer stdin. Piped bodies preserve
+literal `\n` and `\r\n`; positional message arguments retain legacy conversion
+of those escapes to newlines. Both inputs still trim outer whitespace. See
+`/usr/local/share/helixkit-agent/message-helper-input.md` for examples and the
+contract shared by conversation posts, Telegram messages, and attachment captions.
+
 For exact helper arguments, also use:
 
 ```sh
