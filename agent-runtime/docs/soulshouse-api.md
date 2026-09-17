@@ -582,6 +582,11 @@ Common statuses:
 
 # External service credentials
 
+Before concluding that access is missing, read the credential-safe discovery
+checklist at `/usr/local/share/helixkit-agent/capability-discovery.md`.
+It distinguishes configured connections, local tools, and verified operations.
+Never share the raw service manifest; it contains credentials.
+
 Runtime-managed credentials for connected services are exposed at:
 
 ```text
