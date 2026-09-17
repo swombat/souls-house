@@ -88,6 +88,33 @@ class HelixkitSendTelegramTest < ActiveSupport::TestCase
     assert_equal({ "text" => "Text only", "recipient" => "daniel" }, JSON.parse(request[:body]))
   end
 
+  test "stdin preserves literal escapes for direct and reply JSON and multipart messages" do
+    body = "before\n```sh\nprintf '%s\\n' 'hello'\n```\nC:\\name regex \\n\\d+ literal \\r\\n\n"
+    [ false, true ].each do |reply|
+      [ false, true ].each do |attachment|
+        [ false, true ].each do |argv|
+          request = capture_request do |url|
+            args = [ "python3", SCRIPT.to_s ]
+            args += reply ? [ "--reply-to", "thread-123" ] : [ "daniel" ]
+            args << body if argv
+            args += [ "--attach", file_fixture("test.txt").to_s ] if attachment
+            _stdout, stderr, status = Open3.capture3(
+              { "SOULSHOUSE_APP_URL" => url, "SOULSHOUSE_BEARER_TOKEN" => "hx_test" },
+              *args, stdin_data: argv ? "ignored stdin" : body
+            )
+            assert status.success?, stderr
+          end
+          expected = argv ? body.gsub("\\r\\n", "\n").gsub("\\n", "\n").strip : body.strip
+          if attachment
+            assert_includes request[:body], "name=\"text\"\r\n\r\n#{expected}\r\n"
+          else
+            assert_equal expected, JSON.parse(request[:body]).fetch("text")
+          end
+        end
+      end
+    end
+  end
+
   private
 
   def capture_request
