@@ -33,7 +33,7 @@ class AgentAttentionRenderer
     private
 
     def complete_body(generated_at, counts)
-      return "Checked at #{generated_at}. No current attention candidates were found across active HelixKit conversations and Telegram threads." if counts[:total].zero?
+      return "Checked at #{generated_at}. No current attention candidates were found across active souls.house conversations and Telegram threads." if counts[:total].zero?
 
       "Checked at #{generated_at}. #{author_summary(counts[:by_author_type])}.\n\n#{guidance}"
     end
@@ -66,11 +66,11 @@ class AgentAttentionRenderer
     end
 
     def channel_label(channel)
-      channel.to_sym == :telegram ? "Telegram threads" : "HelixKit conversations"
+      channel.to_sym == :telegram ? "Telegram threads" : "souls.house conversations"
     end
 
     def failed_label(channel)
-      channel.to_sym == :telegram ? "Telegram" : "HelixKit"
+      channel.to_sym == :telegram ? "Telegram" : "souls.house"
     end
 
     def guidance
