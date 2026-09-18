@@ -1,0 +1,5 @@
+shared:
+  version: <%= Rails.root.join("VERSION").read.strip %>
+  environment: <%= ENV.fetch("RAILS_APP_ENV", Rails.env) %>
+  middleware:
+    enabled: true

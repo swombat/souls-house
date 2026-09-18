@@ -131,6 +131,23 @@ is still honoured as an override but no longer needs exporting by hand.
 
 This application integrates Svelte with Rails using Inertia.js to manage front-end routing while keeping Rails' backend structure. It uses Vite for asset bundling, and all frontend code is located in the `app/frontend` directory. Place assets such as images and fonts inside the `app/frontend/assets` folder.
 
+### Application version
+
+[`rails_app_version`](https://github.com/seuros/rails_app_version) reads the
+application version from the root `VERSION` file, which is also included in
+the Docker image. Bump `VERSION` only when introducing a breaking change or
+when intentionally invalidating caches that include the application version
+in their keys. Routine changes and deployments do not require a version bump.
+Ruby code can read `Rails.application.version` and `Rails.application.env`.
+
+Rails responses include `X-App-Version` and `X-App-Environment` headers,
+configured in `config/app_version.yml`. Check them with
+`curl -I http://localhost:3100/up`. The environment defaults to `Rails.env`;
+set `RAILS_APP_ENV` to override the advertised name.
+
+On Rails 8.1, supply `REVISION` as an environment variable or a root file
+to append a short deploy revision to the version header.
+
 ### Real-time Synchronization System
 
 This application includes a real-time synchronization system that automatically updates Svelte components when Rails models change, using ActionCable and Inertia.js partial reloads.

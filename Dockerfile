@@ -80,7 +80,7 @@ COPY lib lib
 COPY bin bin
 COPY db db
 COPY public public
-COPY Rakefile config.ru ./
+COPY Rakefile config.ru VERSION ./
 COPY config/ config/
 COPY agent-runtime/command_preview_policy.json agent-runtime/command_preview_policy.json
 COPY bin/ bin/
@@ -120,7 +120,7 @@ COPY --from=build --chown=rails:rails /rails/agent-runtime /rails/agent-runtime
 COPY --from=build --chown=rails:rails /rails/db      /rails/db
 COPY --from=build --chown=rails:rails /rails/lib     /rails/lib
 COPY --from=build --chown=rails:rails /rails/public  /rails/public
-COPY --from=build --chown=rails:rails /rails/Rakefile /rails/config.ru /rails/Gemfile /rails/Gemfile.lock ./
+COPY --from=build --chown=rails:rails /rails/Rakefile /rails/config.ru /rails/Gemfile /rails/Gemfile.lock /rails/VERSION ./
 
 USER rails:rails
 
