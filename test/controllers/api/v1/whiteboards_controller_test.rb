@@ -137,6 +137,62 @@ module Api
         assert_equal "Whiteboard was modified by another user", json["error"]
       end
 
+      %w[content summary name].each do |field|
+        test "update rejects null #{field} without changing the board" do
+          before = @whiteboard.reload.attributes
+
+          patch api_v1_whiteboard_url(@whiteboard),
+                params: { field => nil, "lock_version" => @whiteboard.lock_version },
+                headers: { "Authorization" => "Bearer #{@token}" },
+                as: :json
+
+          assert_response :unprocessable_entity
+          assert_equal "Provided name, summary, and content must not be null", response.parsed_body["error"]
+          assert_equal before, @whiteboard.reload.attributes
+        end
+
+        test "update rejects null #{field} alongside a valid edit atomically" do
+          before = @whiteboard.reload.attributes
+          valid_field = field == "name" ? "content" : "name"
+
+          patch api_v1_whiteboard_url(@whiteboard),
+                params: { field => nil, valid_field => "Changed", "lock_version" => @whiteboard.lock_version },
+                headers: { "Authorization" => "Bearer #{@token}" },
+                as: :json
+
+          assert_response :unprocessable_entity
+          assert_equal before, @whiteboard.reload.attributes
+        end
+      end
+
+      %w[content summary].each do |field|
+        test "update allows an explicit empty string to clear #{field}" do
+          before = @whiteboard.attributes.slice("name", "content", "summary")
+          version = @whiteboard.lock_version
+
+          patch api_v1_whiteboard_url(@whiteboard),
+                params: { field => "", "lock_version" => version },
+                headers: { "Authorization" => "Bearer #{@token}" },
+                as: :json
+
+          assert_response :success
+          assert_equal before.merge(field => ""), @whiteboard.reload.attributes.slice("name", "content", "summary")
+          assert_equal version + 1, @whiteboard.lock_version
+        end
+      end
+
+      test "update still rejects an empty name without changing the board" do
+        before = @whiteboard.reload.attributes
+
+        patch api_v1_whiteboard_url(@whiteboard),
+              params: { name: "", lock_version: @whiteboard.lock_version },
+              headers: { "Authorization" => "Bearer #{@token}" },
+              as: :json
+
+        assert_response :unprocessable_entity
+        assert_equal before, @whiteboard.reload.attributes
+      end
+
       test "update sets last_edited_by to API user" do
         patch api_v1_whiteboard_url(@whiteboard),
               params: { content: "Updated content", lock_version: 0 },

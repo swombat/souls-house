@@ -52,6 +52,7 @@ module Api
 
         return render_update_error("lock_version must be an integer") if lock_version.nil?
         return render_update_error("Provide name, summary, or content") if attributes.empty?
+        return render_update_error("Provided name, summary, and content must not be null") if attributes.values.any?(&:nil?)
 
         whiteboard.lock_version = lock_version
         whiteboard.update!(attributes.merge(last_edited_by: current_api_user))
