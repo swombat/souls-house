@@ -4,6 +4,11 @@ Transcription network failures are reported as `ElevenLabsStt::Error`, including
 Net::HTTP open/read/write timeouts and OS-level `ETIMEDOUT`. Invalid JSON or an
 unexpected successful response shape also becomes a transcription error.
 An unrelated outer `Timeout::Error` is not converted by the transport handler.
+OS errors are handled as `SystemCallError` only within the HTTP request boundary,
+not through an enumerated errno list. This also includes local upload-read OS
+errors encountered while streaming the request; the error says “request failed”
+rather than assuming the remote service was unreachable. The original cause is
+preserved.
 
 Existing Telegram preparation handlers retain the raw attachment, record
 `transcription_status: failed`, and continue to **media ready**, enqueueing a

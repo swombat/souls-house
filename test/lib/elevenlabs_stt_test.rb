@@ -45,13 +45,14 @@ class ElevenLabsSttTest < ActiveSupport::TestCase
     end
   end
 
-  [ Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Errno::ECONNRESET, Errno::ETIMEDOUT ].each do |error_class|
+  [ Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Errno::ECONNRESET,
+    Errno::ETIMEDOUT, Errno::ECONNABORTED, Errno::ENETDOWN, Errno::EACCES ].each do |error_class|
     test "normalizes #{error_class} as ElevenLabsStt::Error" do
       stub_request(:post, @api_url).to_raise(error_class)
 
       Rails.application.credentials.stub(:dig, "test-api-key") do
         error = assert_raises(ElevenLabsStt::Error) { ElevenLabsStt.transcribe(@audio) }
-        assert_match(/unreachable/, error.message)
+        assert_match(/request failed/, error.message)
         assert_instance_of error_class, error.cause
       end
     end

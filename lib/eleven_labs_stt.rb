@@ -16,12 +16,7 @@ class ElevenLabsStt
     IOError,
     SocketError,
     OpenSSL::SSL::SSLError,
-    Errno::ECONNRESET,
-    Errno::ECONNREFUSED,
-    Errno::ETIMEDOUT,
-    Errno::EHOSTUNREACH,
-    Errno::ENETUNREACH,
-    Errno::EPIPE
+    SystemCallError
   ].freeze
 
   def self.transcribe(audio_file)
@@ -48,7 +43,7 @@ class ElevenLabsStt
         read_timeout: READ_TIMEOUT, open_timeout: OPEN_TIMEOUT) { |http| http.request(request) }
     rescue *TRANSPORT_ERRORS => e
       Rails.logger.warn("ElevenLabs STT transport failure: #{e.class}")
-      raise Error, "Transcription service unreachable (#{e.class}). Please try again."
+      raise Error, "Transcription request failed (#{e.class}). Please try again."
     end
 
     handle_response(response)
