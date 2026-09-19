@@ -128,6 +128,25 @@ class PrepareTelegramMediaJobTest < ActiveSupport::TestCase
     assert_equal "failed", message.media_metadata["transcription_status"]
   end
 
+  test "voice read timeout keeps raw media ready and enqueues a wake without later messages" do
+    message = create_media_message("voice")
+    stub_telegram_download("voice/file.webm", file_fixture("test_audio.webm").binread)
+    stub_request(:post, ElevenLabsStt::API_URL).to_raise(Net::ReadTimeout)
+
+    Rails.application.credentials.stub(:dig, "test-api-key") do
+      assert_enqueued_with(job: TelegramAgentTriggerJob, args: [ @subscription, message ]) do
+        PrepareTelegramMediaJob.perform_now(message, "voice-file")
+      end
+    end
+
+    message.reload
+    assert_equal "ready", message.media_status
+    assert message.media.attached?
+    assert_nil message.transcription
+    assert_equal "failed", message.media_metadata["transcription_status"]
+    assert message.wake_enqueued_at.present?
+  end
+
   test "video retry replaces ordered preview frames instead of appending" do
     Dir.mktmpdir do |directory|
       path = File.join(directory, "sample.mp4")
