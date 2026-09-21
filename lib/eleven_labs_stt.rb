@@ -7,6 +7,18 @@ class ElevenLabsStt
   READ_TIMEOUT = 60
   OPEN_TIMEOUT = 10
 
+  # Callers can keep raw media usable when transcription transport fails.
+  TRANSPORT_ERRORS = [
+    Net::OpenTimeout,
+    Net::ReadTimeout,
+    Net::WriteTimeout,
+    EOFError,
+    IOError,
+    SocketError,
+    OpenSSL::SSL::SSLError,
+    SystemCallError
+  ].freeze
+
   def self.transcribe(audio_file)
     new.transcribe(audio_file)
   end
@@ -26,8 +38,13 @@ class ElevenLabsStt
       "multipart/form-data"
     )
 
-    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true,
-      read_timeout: READ_TIMEOUT, open_timeout: OPEN_TIMEOUT) { |http| http.request(request) }
+    response = begin
+      Net::HTTP.start(uri.hostname, uri.port, use_ssl: true,
+        read_timeout: READ_TIMEOUT, open_timeout: OPEN_TIMEOUT) { |http| http.request(request) }
+    rescue *TRANSPORT_ERRORS => e
+      Rails.logger.warn("ElevenLabs STT transport failure: #{e.class}")
+      raise Error, "Transcription request failed (#{e.class}). Please try again."
+    end
 
     handle_response(response)
   end
@@ -50,7 +67,14 @@ class ElevenLabsStt
   def handle_response(response)
     case response.code.to_i
     when 200
-      data = JSON.parse(response.body)
+      data = begin
+        JSON.parse(response.body)
+      rescue JSON::ParserError
+        raise Error, "Transcription service returned an unreadable body."
+      end
+      unless data.is_a?(Hash) && (data["text"].nil? || data["text"].is_a?(String))
+        raise Error, "Transcription service returned an invalid response."
+      end
       text = data["text"]&.strip
       text.presence
     when 401

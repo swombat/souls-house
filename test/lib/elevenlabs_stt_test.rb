@@ -45,6 +45,45 @@ class ElevenLabsSttTest < ActiveSupport::TestCase
     end
   end
 
+  [ Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Errno::ECONNRESET,
+    Errno::ETIMEDOUT, Errno::ECONNABORTED, Errno::ENETDOWN, Errno::EACCES ].each do |error_class|
+    test "normalizes #{error_class} as ElevenLabsStt::Error" do
+      stub_request(:post, @api_url).to_raise(error_class)
+
+      Rails.application.credentials.stub(:dig, "test-api-key") do
+        error = assert_raises(ElevenLabsStt::Error) { ElevenLabsStt.transcribe(@audio) }
+        assert_match(/request failed/, error.message)
+        assert_instance_of error_class, error.cause
+      end
+    end
+  end
+
+  test "normalizes an unreadable successful response as ElevenLabsStt::Error" do
+    stub_request(:post, @api_url).to_return(status: 200, body: "<html>gateway</html>")
+
+    Rails.application.credentials.stub(:dig, "test-api-key") do
+      assert_raises(ElevenLabsStt::Error) { ElevenLabsStt.transcribe(@audio) }
+    end
+  end
+
+  test "does not normalize an unrelated outer timeout" do
+    stub_request(:post, @api_url).to_raise(Timeout::Error)
+
+    Rails.application.credentials.stub(:dig, "test-api-key") do
+      assert_raises(Timeout::Error) { ElevenLabsStt.transcribe(@audio) }
+    end
+  end
+
+  [ "null", "[]", "42", "true", '"text"', '{"text":42}', '{"text":[]}', '{"text":{}}' ].each do |body|
+    test "normalizes invalid successful response shape #{body}" do
+      stub_request(:post, @api_url).to_return(status: 200, body: body)
+
+      Rails.application.credentials.stub(:dig, "test-api-key") do
+        assert_raises(ElevenLabsStt::Error) { ElevenLabsStt.transcribe(@audio) }
+      end
+    end
+  end
+
   test "raises on 429 rate limit" do
     stub_request(:post, @api_url)
       .to_return(status: 429, body: { error: "Too many requests" }.to_json)
