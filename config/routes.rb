@@ -105,6 +105,9 @@ Rails.application.routes.draw do
         resource :hosting_diagnostics, only: :show do
           get :file_preview
         end
+        resource :memory_overview, only: :show do
+          get :history
+        end
         resource :sandbox_recreation, only: :create
         resource :telegram_test, only: :create
         resource :telegram_webhook, only: :create

@@ -64,6 +64,8 @@ class AgentsController < ApplicationController
       active_tab: params[:tab],
       local_dev_endpoint_mode: Agents::Config.publish_ports?,
       identity_export_url: identity_export_account_agent_path(current_account, @agent),
+      memory_overview_url: account_agent_memory_overview_path(current_account, @agent),
+      memory_history_url: Current.user.is_site_admin? ? history_account_agent_memory_overview_path(current_account, @agent) : nil,
       hosting_diagnostics_url: account_agent_hosting_diagnostics_path(current_account, @agent),
       runtime_observability_url: Current.user&.is_site_admin? ? admin_agent_runtime_path(@agent) : nil,
       sandbox_recreation_url: account_agent_sandbox_recreation_path(current_account, @agent),

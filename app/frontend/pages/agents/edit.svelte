@@ -1,16 +1,13 @@
 <script>
   import { useForm, router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { Palette, Gear, Plug, CloudArrowUp, TerminalWindow, CurrencyDollar } from 'phosphor-svelte';
+  import { Palette, Gear, Plug, CloudArrowUp, TerminalWindow, CurrencyDollar, Graph } from 'phosphor-svelte';
   import {
     accountAgentsPath,
     accountAgentPath,
     onboardingAccountAgentPath,
     accountAgentTelegramTestPath,
     accountAgentTelegramWebhookPath,
-    accountAgentMemoriesPath,
-    accountAgentMemoryDiscardPath,
-    accountAgentMemoryProtectionPath,
     sendOrientationAccountAgentPath,
     sendTestRequestAccountAgentPath,
   } from '@/routes';
@@ -19,7 +16,7 @@
   import AgentAppearancePanel from '$lib/components/agents/AgentAppearancePanel.svelte';
   import AgentEditHeader from '$lib/components/agents/AgentEditHeader.svelte';
   import AgentIntegrationsPanel from '$lib/components/agents/AgentIntegrationsPanel.svelte';
-  import AgentMemoryPanel from '$lib/components/agents/AgentMemoryPanel.svelte';
+  import ResidentMemoryPanel from '$lib/components/agents/ResidentMemoryPanel.svelte';
   import AgentSettingsPanel from '$lib/components/agents/AgentSettingsPanel.svelte';
   import AgentSettingsTabs from '$lib/components/agents/AgentSettingsTabs.svelte';
   import AgentInteractionsPanel from '$lib/components/agents/AgentInteractionsPanel.svelte';
@@ -30,13 +27,14 @@
     agent,
     telegram_deep_link: telegramDeepLink = null,
     telegram_subscriber_count: telegramSubscriberCount = 0,
-    memories = [],
     grouped_models = {},
     colour_options = [],
     icon_options = [],
     active_tab: activeTabProp = null,
     local_dev_endpoint_mode: localDevEndpointMode = false,
     identity_export_url: identityExportUrl = null,
+    memory_overview_url: memoryOverviewUrl = null,
+    memory_history_url: memoryHistoryUrl = null,
     hosting_diagnostics_url: hostingDiagnosticsUrl = null,
     runtime_observability_url: runtimeObservabilityUrl = null,
     sandbox_recreation_url: sandboxRecreationUrl = null,
@@ -85,7 +83,8 @@
   let diagnosticsLoaded = $state(false);
   let diagnosticsError = $state(null);
   let showFormActions = $derived(
-    activeTab !== 'interactions' &&
+    activeTab !== 'memory' &&
+      activeTab !== 'interactions' &&
       activeTab !== 'costs' &&
       activeTab !== 'integrations' &&
       (!runtimeManaged || activeTab === 'appearance' || activeTab === 'settings' || activeTab === 'hosting')
@@ -114,6 +113,7 @@
     { id: 'integrations', label: 'Integrations', icon: Plug },
     { id: 'hosting', label: 'Hosting', icon: CloudArrowUp },
     { id: 'interactions', label: 'Sessions', icon: TerminalWindow },
+    { id: 'memory', label: 'Memory', icon: Graph },
     { id: 'costs', label: 'Costs', icon: CurrencyDollar },
   ];
 
@@ -149,30 +149,6 @@
   function updateAgent() {
     $form.agent.model_id = selectedModel;
     $form.patch(accountAgentPath(account.id, agent.id));
-  }
-
-  function deleteMemory(memoryId) {
-    if (confirm('Discard this memory?')) {
-      router.post(
-        accountAgentMemoryDiscardPath(account.id, agent.id, memoryId),
-        {},
-        {
-          preserveScroll: true,
-        }
-      );
-    }
-  }
-
-  function undiscardMemory(memoryId) {
-    router.delete(accountAgentMemoryDiscardPath(account.id, agent.id, memoryId), { preserveScroll: true });
-  }
-
-  function toggleConstitutional(memoryId, isCurrentlyProtected) {
-    if (isCurrentlyProtected) {
-      router.delete(accountAgentMemoryProtectionPath(account.id, agent.id, memoryId), { preserveScroll: true });
-    } else {
-      router.post(accountAgentMemoryProtectionPath(account.id, agent.id, memoryId), {}, { preserveScroll: true });
-    }
   }
 
   function sendTestNotification() {
@@ -223,21 +199,6 @@
         onFinish() {
           recreatingSandbox = false;
         },
-      }
-    );
-  }
-
-  function createMemory({ content, memoryType }) {
-    router.post(
-      accountAgentMemoriesPath(account.id, agent.id),
-      {
-        memory: {
-          content,
-          memory_type: memoryType,
-        },
-      },
-      {
-        preserveScroll: true,
       }
     );
   }
@@ -424,14 +385,7 @@
             onsendTestNotification={sendTestNotification}
             onregisterWebhook={registerWebhook} />
         {:else if activeTab === 'memory'}
-          <AgentMemoryPanel
-            {agent}
-            {memories}
-            locked={runtimeManaged}
-            oncreate={createMemory}
-            ondelete={deleteMemory}
-            onundiscard={undiscardMemory}
-            ontoggleProtected={toggleConstitutional} />
+          <ResidentMemoryPanel overviewUrl={memoryOverviewUrl} historyUrl={memoryHistoryUrl} />
         {:else if activeTab === 'hosting'}
           <div class="space-y-6">
             <div class="border rounded-lg p-6 space-y-5">

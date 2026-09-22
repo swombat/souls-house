@@ -19,6 +19,16 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
+  test "edit lazily exposes memory summary endpoint but not admin history" do
+    Agents::MemoryArchive.stub(:new, ->(*) { flunk "Edit must not scan archives" }) do
+      get edit_account_agent_path(@account, @agent), params: { tab: "memory" }
+    end
+    assert_response :success
+    assert_equal account_agent_memory_overview_path(@account, @agent), inertia_shared_props["memory_overview_url"]
+    assert_nil inertia_shared_props["memory_history_url"]
+    assert_equal "memory", inertia_shared_props["active_tab"]
+  end
+
   test "resident URLs are canonical and old links retain their query" do
     assert_equal "/accounts/#{@account.to_param}/residents", account_agents_path(@account)
     get "/accounts/#{@account.to_param}/agents", params: { create: true }
