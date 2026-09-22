@@ -10,6 +10,13 @@
     { key: 'month_summaries', label: 'Month summaries' },
     { key: 'nodes', label: 'Nodes' },
   ];
+  const itemBackgrounds = {
+    journals: 'bg-blue-50/50 dark:bg-blue-950/15',
+    day_summaries: 'bg-blue-100/60 dark:bg-blue-950/35',
+    week_summaries: 'bg-blue-200/60 dark:bg-blue-900/40',
+    month_summaries: 'bg-blue-300/60 dark:bg-blue-800/45',
+    nodes: 'bg-orange-50 dark:bg-orange-950/25',
+  };
   let selected = $state(kinds.map((kind) => kind.key));
   let overview = $state(null);
   let overviewError = $state(null);
@@ -144,8 +151,8 @@
         <h3 class="text-lg font-semibold">Memory history</h3>
         <p class="text-sm text-muted-foreground">
           Site admins only · 50 items per page, newest first. Nodes use creation time; journals use dated headings
-          (local time as written), summaries use the period they describe. Files do not retain per-entry insertion
-          times.
+          (local time as written), summaries use the period they describe. Day summaries appear above that day’s
+          entries. Files do not retain per-entry insertion times.
         </p>
       </div>
       <fieldset class="flex flex-wrap gap-4">
@@ -172,7 +179,7 @@
           </p>{/if}
         <ol class="space-y-4">
           {#each history.items as item (item.id)}
-            <li class="rounded-lg border p-4 space-y-3 break-words">
+            <li class={`rounded-lg border p-4 space-y-3 break-words ${itemBackgrounds[item.kind] || ''}`}>
               <div class="text-xs text-muted-foreground">
                 {kinds.find((kind) => kind.key === item.kind)?.label} · {item.occurred_at
                   .slice(0, 16)

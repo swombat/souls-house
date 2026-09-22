@@ -38,8 +38,14 @@ module Agents
 
     private
 
-    def sort_key(item) = [ item.fetch("occurred_at"), item.fetch("id") ]
-    def verifier = Rails.application.message_verifier("resident-memory-history-v1")
+    def sort_key(item)
+      time = item.fetch("occurred_at")
+      # Put a day's consolidation above its entries without changing its displayed date.
+      time = "#{time[0, 10]}T23:59:59.999999Z" if item["kind"] == "day_summaries"
+      [ time, item.fetch("id") ]
+    end
+
+    def verifier = Rails.application.message_verifier("resident-memory-history-v2")
     def purpose(kinds) = "resident:#{@agent.id}:#{kinds.join(',')}"
 
     def encode_cursor(key, kinds)

@@ -27,7 +27,8 @@ Graph dates use `created_at` in UTC (not decay/update times). Historical Markdow
 files do not retain per-entry insertion times: journals sort by file date plus
 heading time as written; consolidations by the heading's summarized period, with
 file-date fallback. These inferred wall-clock dates are not timezone conversions.
-Ties within a file use byte-offset order. The UI explains this distinction.
+Day summaries sort above all entries for their date; their displayed timestamps
+are unchanged. Ties within a file use byte-offset order. The UI explains this distinction.
 Graph counts include dormant nodes and all node types, but cannot reconstruct
 deleted records. The history is a live view, not an immutable event ledger.
 

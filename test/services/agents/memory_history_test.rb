@@ -24,10 +24,40 @@ class Agents::MemoryHistoryTest < ActiveSupport::TestCase
     assert_nil second[:next_cursor]
     all = first[:items] + second[:items]
     assert_equal 65, all.map { |i| i["id"] }.uniq.size
-    assert_equal all.sort_by { |i| [ i["occurred_at"], i["id"] ] }.reverse, all
+    assert_equal all.sort_by { |i| @service.send(:sort_key, i) }.reverse, all
     assert first[:items].any? { |i| i["kind"] == "nodes" }
     assert first[:items].any? { |i| i["body"] == "private body" }
     refute first[:items].any? { |i| i.key?("fingerprint") }
+  end
+
+  test "day summaries precede their day across page boundaries without changing displayed dates" do
+    @time = Time.utc(2026, 9, 21)
+    add_entry("weekly-journals/2026-09-21.md:000000000001", "day_summaries")
+    55.times do |i|
+      @time = Time.utc(2026, 9, 21, 23, 59, 59) - i.minutes
+      add_entry("daily-journals/2026-09-21.md:#{i}")
+    end
+    @vault.nodes.create!(node_type: "memory", content: "Late node", created_at: Time.utc(2026, 9, 21, 23, 59, 59))
+    @time = Time.utc(2026, 9, 22)
+    add_entry("daily-journals/2026-09-22.md:0")
+    first = @service.call
+    second = @service.call(cursor: first[:next_cursor])
+    all = first[:items] + second[:items]
+    assert_equal 58, all.size
+    assert_equal 58, all.map { |item| item["id"] }.uniq.size
+    assert_equal "2026-09-22", all.first["occurred_at"][0, 10]
+    assert_equal "day_summaries", all[1]["kind"]
+    assert_equal "2026-09-21T00:00:00.000000Z", all[1]["occurred_at"]
+    assert_equal "nodes", all[2]["kind"]
+
+    # A page ending on a summary must still include that day's nodes next.
+    48.times { |i| add_entry("daily-journals/2026-09-22.md:new#{i}") }
+    first = @service.call
+    second = @service.call(cursor: first[:next_cursor])
+    third = @service.call(cursor: second[:next_cursor])
+    assert_equal "day_summaries", first[:items].last["kind"]
+    assert_equal "nodes", second[:items].first["kind"]
+    assert_equal 106, (first[:items] + second[:items] + third[:items]).map { |i| i["id"] }.uniq.size
   end
 
   test "node boundary paginates tied UUIDs correctly" do

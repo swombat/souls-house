@@ -89,3 +89,32 @@ test('shows request failures with a retry instead of stale contents', async () =
   expect(await screen.findByRole('alert')).toHaveTextContent('Access denied.');
   expect(screen.getByRole('button', { name: 'Retry from newest' })).toBeInTheDocument();
 });
+
+test('uses progressively deeper blues for journal layers and peach for nodes', async () => {
+  const backgrounds = {
+    journals: 'bg-blue-50/50',
+    day_summaries: 'bg-blue-100/60',
+    week_summaries: 'bg-blue-200/60',
+    month_summaries: 'bg-blue-300/60',
+    nodes: 'bg-orange-50',
+  };
+  const items = Object.keys(backgrounds).map((kind) => ({
+    ...entry,
+    id: kind,
+    kind,
+    title: `Item ${kind}`,
+    node: { node_type: 'memory', charge: 0.5, source_uris: [] },
+    edges: [],
+    edge_count: 0,
+  }));
+  fetch.mockImplementation(async (url) => ({
+    ok: true,
+    json: async () => (url === '/overview' ? overview : { ...history, items }),
+  }));
+  render(ResidentMemoryPanel, { overviewUrl: '/overview', historyUrl: '/history' });
+  for (const [kind, background] of Object.entries(backgrounds)) {
+    const heading = await screen.findByRole('heading', { name: `Item ${kind}` });
+    expect(heading.closest('li')).toHaveClass(background);
+    expect(heading.closest('li').className).toMatch(/dark:bg-/);
+  }
+});
