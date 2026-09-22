@@ -18,6 +18,7 @@ class ExternalAgentMemoryAggregationRequestTest < ActiveSupport::TestCase
       .with do |request|
         body = JSON.parse(request.body)
         body.fetch("trigger_kind") == "memory_aggregation_daily" &&
+          body.fetch("memory_aggregation").slice("period", "target") == { "period" => "daily", "target" => "2026-05-29" } &&
           body.fetch("timeout_secs") == ExternalAgentMemoryAggregationRequest::AGGREGATION_TIMEOUT_SECS &&
           body.fetch("request").include?("daily memory aggregation for 2026-05-29") &&
           body.fetch("request").include?("~/identity/memory/weekly-journals/2026-05-25.md") &&

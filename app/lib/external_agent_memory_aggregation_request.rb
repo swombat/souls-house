@@ -47,6 +47,7 @@ class ExternalAgentMemoryAggregationRequest
         requested_by: requested_by,
         session_id: session_id,
         trigger_kind: "memory_aggregation_#{period}",
+        trigger_payload: { memory_aggregation: { period: period, target: target, notices: Notices::Renderer.section_for(agent) } },
         request: request,
         provider: provider,
         model: Agents::Sandbox.chaos_model_for(agent),

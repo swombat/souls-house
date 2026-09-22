@@ -11,7 +11,14 @@ def command_reference():
     path = Path(os.environ.get("AGENT_RUNTIME_DOCS_PATH", "/usr/local/share/helixkit-agent")) / "memory-quick-reference.md"
     if not path.exists():
         path = Path(__file__).with_name("docs") / "memory-quick-reference.md"
-    return path.read_text(encoding="utf-8") if path.exists() else ""
+    reference = path.read_text(encoding="utf-8") if path.exists() else ""
+    identity = Path(os.environ.get("AGENT_IDENTITY_PATH", "/home/agent/identity"))
+    if not (identity / "automation/memory-policy.json").exists():
+        return reference
+    sys.path.insert(0, str(path.parent))
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from resident_memory_policy import load_policy, command_reference as policy_reference
+    return policy_reference(reference, load_policy(os.environ.get("AGENT_IDENTITY_PATH", "/home/agent/identity")))
 
 
 def input_text(value):

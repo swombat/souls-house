@@ -4,6 +4,11 @@ require "tmpdir"
 
 class MnemodyneHooksTest < ActiveSupport::TestCase
 
+  test "resident-consented memory policies isolate sessions and preserve opt-out" do
+    output, error, result = Open3.capture3("python3", Rails.root.join("test/runtime/resident_memory_policy_test.py").to_s)
+    assert result.success?, "#{output}\n#{error}"
+  end
+
   test "memory script installer preserves resident edits across image upgrades" do
     output, error, result = Open3.capture3("python3", Rails.root.join("test/memory_script_install_test.py").to_s)
     assert result.success?, "#{output}\n#{error}"

@@ -99,6 +99,9 @@ except ModuleNotFoundError:  # Allows prompt-building tests without Flask instal
         raise RuntimeError("Flask is required to serve trigger_shim.py")
 
 # ----- config -----
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from resident_memory_policy import aggregation_context, aggregation_request, load_policy, command_reference as policy_reference, policy_notice
+
 AGENT_ID = os.environ.get("AGENT_ID", "unknown")
 AGENT_LOG_LABEL = os.environ.get("AGENT_SLUG") or AGENT_ID
 TRIGGER_BEARER_TOKEN = os.environ.get("TRIGGER_BEARER_TOKEN", "")
@@ -282,6 +285,12 @@ def trigger():
             log.warning("invalid activity configuration; running without reports")
     _activity_context.reporter = reporter
     try:
+        # Invocation-local: never mutate os.environ or share this across sessions.
+        _activity_context.memory_aggregation = bool(aggregation_context(payload))
+        consented_request = aggregation_request(payload, AGENT_IDENTITY_PATH)
+        if consented_request:
+            prompt = consented_request
+            request_delta = None
         sibling_count = _register_running_session(session_id)
         sibling_notice = sibling_sessions_notice(sibling_count)
         prompt = append_runtime_notice(prompt, sibling_notice)
@@ -311,6 +320,7 @@ def trigger():
         if reporter:
             reporter.disabled = True
         _activity_context.reporter = None
+        _activity_context.memory_aggregation = False
         _unregister_running_session(session_id)
         session_lock.release()
 
@@ -711,6 +721,9 @@ def run_chaos(
         api_key_env = PROVIDER_API_KEY_ENV.get(selected_provider)
         if api_key_env:
             env.pop(api_key_env, None)
+    env.pop("SOULSHOUSE_MEMORY_AGGREGATION", None)
+    if getattr(_activity_context, "memory_aggregation", False):
+        env["SOULSHOUSE_MEMORY_AGGREGATION"] = "1"
     reporter = getattr(_activity_context, "reporter", None)
     if reporter:
         return reporter.run(args, prompt_text, env, timeout_secs)
@@ -1468,7 +1481,7 @@ def memory_command_reference():
     path = AGENT_RUNTIME_DOCS_PATH / "memory-quick-reference.md"
     if not path.exists():
         path = Path(__file__).with_name("docs") / "memory-quick-reference.md"
-    return read_runtime_file(path)
+    return policy_reference(read_runtime_file(path), load_policy(AGENT_IDENTITY_PATH))
 
 
 def prompt_telemetry(full_prompt, delta_prompt, selected_prompt, mode, components):
@@ -1511,6 +1524,11 @@ def runtime_context() -> str:
     """Return the exact runtime-owned section injected into fresh sessions."""
     path = AGENT_RUNTIME_DOCS_PATH / "runtime-instructions.md"
     content = read_runtime_file(path)
+    policy = load_policy(AGENT_IDENTITY_PATH)
+    if policy and "## Your automatic memory reflexes" in content:
+        start = content.index("## Your automatic memory reflexes")
+        end = content.find("\nAutomatic candidates", start + 1)
+        content = content[:start] + policy_notice(policy) + (content[end:] if end >= 0 else "")
     if not content:
         return ""
 

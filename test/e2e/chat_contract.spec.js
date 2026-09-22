@@ -232,13 +232,13 @@ test.describe('browser contracts', () => {
   }, testInfo) => {
     await login(page, setup.primary_user, setup.password);
     await page.goto(`/accounts/${setup.account_id}/residents`);
-    await expect(page.getByLabel('Mnemodyne nodes', { exact: true })).toHaveCount(3);
+    await expect(page.getByLabel('Mnemodyne nodes / connections', { exact: true })).toHaveCount(3);
     await page.getByRole('checkbox', { name: 'Show disabled' }).check();
-    await expect(page.getByLabel('Mnemodyne nodes', { exact: true })).toHaveCount(4);
+    await expect(page.getByLabel('Mnemodyne nodes / connections', { exact: true })).toHaveCount(4);
     await expect(page.getByLabel('Journal entries', { exact: true })).toHaveCount(4);
     await expect(page.getByText('Core:', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Inactive:', { exact: true })).toHaveCount(0);
-    await expect(page.getByLabel('Mnemodyne nodes', { exact: true }).first().locator('..')).toContainText('0');
+    await expect(page.getByLabel('Mnemodyne nodes / connections', { exact: true }).first().locator('..')).toContainText('0 / 0');
     await page.screenshot({ path: testInfo.outputPath('resident-memory-counts-desktop.png'), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

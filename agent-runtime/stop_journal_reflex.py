@@ -265,9 +265,20 @@ def main() -> None:
     assistant = str(event.get("last_assistant_message") or "")
     stop_hook_active = bool(event.get("stop_hook_active"))
 
-    should_invite = bool(assistant.strip()) and not stop_hook_active and not already_journal_reflex_response(assistant)
+    # Resident scripts live in identity; implementation support is runtime-owned.
+    support = Path(os.environ.get("AGENT_RUNTIME_DOCS_PATH", "/usr/local/share/helixkit-agent"))
+    sys.path.insert(0, str(support))
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    policy = None
+    if (IDENTITY_PATH / "automation/memory-policy.json").exists():
+        from resident_memory_policy import load_policy, reflection_prompt
+        policy = load_policy(IDENTITY_PATH)
+    aggregation = policy and os.environ.get("SOULSHOUSE_MEMORY_AGGREGATION") == "1"
+    should_invite = not aggregation and bool(assistant.strip()) and not stop_hook_active and not already_journal_reflex_response(assistant)
     now = dt.datetime.now().astimezone()
     written = entries_since(now, turn_floor()) if should_invite else []
+    if policy and policy["graph"] == "selective" and written:
+        should_invite = False  # Already authored: no second invitation for an address.
     append_trace(event, assistant, should_invite)
 
     if should_invite:
@@ -276,6 +287,8 @@ def main() -> None:
         # answered, and asking again reads (correctly) as a duplicate. Ask only
         # for the address.
         prompt = index_only_prompt(now, written) if written else journal_prompt(now, assistant)
+        if policy:
+            prompt = reflection_prompt(policy, now, IDENTITY_PATH, written, command_reference())
         sys.stderr.write(prompt)
         sys.exit(2)
 
