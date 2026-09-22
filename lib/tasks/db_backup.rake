@@ -282,7 +282,8 @@ namespace :db_backup do
   desc "Trigger a database and hosted Chaos-agent backup on production via Kamal"
   task :perform do
     puts "Triggering database and hosted Chaos-agent backup on production..."
-    success = system('kamal app exec -r web "bin/rails runner \'FullBackupJob.perform_now(fail_fast: true)\'"')
+    success = system("bin/kamal", "app", "exec", "-r", "web",
+      "bin/rails runner 'FullBackupJob.perform_now(fail_fast: true)'")
     abort "Production backup failed." unless success
   end
 
