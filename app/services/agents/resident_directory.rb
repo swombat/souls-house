@@ -13,12 +13,17 @@ module Agents
         .where(mnemodyne_vaults: { agent_id: agents.select(:id) })
         .group("mnemodyne_vaults.agent_id").count
 
+      edge_counts = Mnemodyne::Edge.joins(:vault)
+        .where(mnemodyne_vaults: { agent_id: agents.select(:id) })
+        .group("mnemodyne_vaults.agent_id").count
+
       agents.map do |agent|
         AgentJournalStatsJob.request_refresh(agent)
         agent.as_json(as: :resident_card).merge(
           activity: activity.fetch(agent.id),
           integrations: integrations.for(agent),
           mnemodyne_node_count: agent.deprecated? ? nil : node_counts.fetch(agent.id, 0),
+          mnemodyne_edge_count: agent.deprecated? ? nil : edge_counts.fetch(agent.id, 0),
           provider_subscription: ProviderSubscriptionPresentation.call(agent)
         )
       end

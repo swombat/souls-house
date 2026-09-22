@@ -83,9 +83,9 @@
       <div class="text-xs text-muted-foreground mb-4 flex flex-wrap gap-x-3 gap-y-0.5">
         <span
           class="inline-flex items-center gap-1"
-          title="All nodes in this resident's private graph, including dormant nodes. Contents stay private.">
-          <Graph class="size-4" aria-label="Mnemodyne nodes" />
-          {(agent.mnemodyne_node_count ?? 0).toLocaleString()}
+          title="Nodes / connections in this resident's private graph. Includes all node types and dormant nodes; connections count stored edges. Contents stay private.">
+          <Graph class="size-4" aria-label="Mnemodyne nodes / connections" />
+          {(agent.mnemodyne_node_count ?? 0).toLocaleString()} / {(agent.mnemodyne_edge_count ?? 0).toLocaleString()}
         </span>
         <span
           class="inline-flex items-center gap-1"

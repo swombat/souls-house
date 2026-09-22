@@ -7,13 +7,14 @@ const agent = {
   active: true,
   model_id: 'test-model',
   mnemodyne_node_count: 1234,
+  mnemodyne_edge_count: 2345,
   journal_entry_stats: { count: 27, status: 'measured', measured_at: '2026-09-06T09:00:00Z' },
   memory_token_summary: { core: 100, active_journal: 200, inactive_journal: 300 },
 };
 
 test('shows node and entry counts, not retired token totals', () => {
   render(AgentCard, { agent, accountId: 'test' });
-  expect(screen.getByLabelText('Mnemodyne nodes').parentElement).toHaveTextContent('1,234');
+  expect(screen.getByLabelText('Mnemodyne nodes / connections').parentElement).toHaveTextContent('1,234 / 2,345');
   expect(screen.getByLabelText('Journal entries').parentElement).toHaveTextContent('27');
   expect(screen.queryByText('Core:')).not.toBeInTheDocument();
   expect(screen.queryByText('Inactive:')).not.toBeInTheDocument();
@@ -34,7 +35,7 @@ test('distinguishes an unmeasured count from zero', () => {
 
 test('hides memory statistics for deprecated inline residents', () => {
   render(AgentCard, { agent: { ...agent, deprecated: true }, accountId: 'test' });
-  expect(screen.queryByLabelText('Mnemodyne nodes')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Mnemodyne nodes / connections')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Journal entries')).not.toBeInTheDocument();
 });
 
@@ -86,4 +87,9 @@ test('shows configured effort and labels an unspecified provider default honestl
   expect(screen.getByText('/ provider default')).toHaveClass('opacity-50');
   expect(screen.queryByRole('button')).not.toBeInTheDocument();
   expect(screen.queryByRole('link')).not.toBeInTheDocument();
+});
+
+test('shows an empty graph as zero nodes and connections', () => {
+  render(AgentCard, { agent: { ...agent, mnemodyne_node_count: 0, mnemodyne_edge_count: 0 }, accountId: 'test' });
+  expect(screen.getByLabelText('Mnemodyne nodes / connections').parentElement).toHaveTextContent('0 / 0');
 });

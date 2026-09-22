@@ -50,15 +50,21 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
   test "index replaces token totals with private aggregate counts and queues journal refresh" do
     @agent.update_columns(runtime: "external", journal_entry_stats: { "count" => 7, "status" => "measured" })
     vault = Mnemodyne::Vault.create!(agent: @agent)
-    vault.nodes.create!(node_type: "memory", content: "Do not disclose this", is_dormant: true)
+    memory = vault.nodes.create!(node_type: "memory", content: "Do not disclose this", is_dormant: true)
+    need = vault.nodes.create!(node_type: "need", content: "Private need")
+    vault.edges.create!(source: memory, target: need, edge_type: "relates_to_need")
     other_vault = Mnemodyne::Vault.create!(agent: agents(:other_account_agent))
-    other_vault.nodes.create!(node_type: "memory", content: "Another private memory")
+    other_memory = other_vault.nodes.create!(node_type: "memory", content: "Another private memory")
+    other_need = other_vault.nodes.create!(node_type: "need", content: "Another private need")
+    other_vault.edges.create!(source: other_memory, target: other_need, edge_type: "relates_to_need")
+    other_vault.edges.create!(source: other_memory, target: other_need, edge_type: "theme")
 
     assert_enqueued_with(job: AgentJournalStatsJob, args: [ @agent.id ]) do
       get account_agents_path(@account)
     end
     row = inertia_shared_props.fetch("agents").find { |item| item.fetch("id") == @agent.to_param }
-    assert_equal 1, row.fetch("mnemodyne_node_count")
+    assert_equal 2, row.fetch("mnemodyne_node_count")
+    assert_equal 1, row.fetch("mnemodyne_edge_count")
     assert_equal 7, row.dig("journal_entry_stats", "count")
     assert_not row.key?("memory_token_summary")
     assert_not row.key?("system_prompt")
