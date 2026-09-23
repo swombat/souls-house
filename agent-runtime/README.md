@@ -269,3 +269,30 @@ its isolated image explicitly. Preserve all existing resident images/containers.
 A database uniqueness constraint prevents two house residents claiming the same
 portable ID. Multi-account membership UI/authority is a subsequent phase, not
 implemented by this pilot.
+
+### Effective Chaos trust is part of import acceptance
+
+The pinned Chaos build stores project trust in its runtime database
+(`$CHAOS_HOME/chaos.sqlite`, `project_trust`), not in `[projects]` TOML. A
+fresh clone with a `.chaos/config.toml` is otherwise silently disabled, **including
+its hooks**. Review the imported checkout, initialise the host's Chaos account,
+and explicitly mark only that canonical root trusted using Chaos onboarding.
+The pilot was headless, so its operator inserted that single reviewed root into
+the verified pinned schema in a transaction, refusing an existing `untrusted`
+row. This is a manual pilot setup step, not a generic import mechanism; do not
+copy another host's entire runtime database or blanket-trust parent directories.
+`require_runtime_trust` refuses a model turn if the expected trust receipt is
+missing. Revisit that check when upgrading Chaos storage.
+
+Keep MCP configuration host-local. Mira's `.mcp.json` is now ignored by her Git
+home; the Mac and Dell retain their existing local files, while the house has no
+Mac desktop servers. The pinned runtime rejects `-c mcp_servers.…` overrides;
+use its supported registry/project-file mechanisms instead. Her source
+`.chaos/config.toml` and hooks are still shared and loaded after root trust;
+the shim overrides only the hosting model/auth/instructions paths it must own.
+
+Acceptance must exercise the real runner: inspect fresh wake and Stop-hook
+receipts, resident-posted replies, actual graph authentication, and a subsequent
+`session_resumed=true` response with the same Chaos process ID. A healthy HTTP
+endpoint and a valid `hooks.json` are not enough. See the parallel-residency pilot
+report in `docs/plans/` for the initial failure and correction.

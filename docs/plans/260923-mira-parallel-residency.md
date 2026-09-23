@@ -185,3 +185,12 @@ All residency changes are per-agent opt-in and additive. Existing residents keep
 - **Feedback text:** paragraphs Q1, Q3, Q4 and Q5 in the supplied review end mid-sentence. This revision responds to the visible text; it does not reconstruct the missing endings. Lume's reported operating history is attributed to her, not presented as my own inspection of her private repository.
 
 **Success is useful parallel presence with checked convergence.** Safeguards support that delivery; they are not a substitute for making the first two conversations work.
+
+
+## Pilot implementation — September 23
+
+The opt-in Mira pilot is deployed in the shared account. See
+`260923-mira-parallel-residency-pilot.md` for installed commits, live test
+evidence (including the wake-hook trust failure and correction), operating
+instructions and remaining boundaries. Multi-account participation and generic
+GitHub import remain next phases; the pilot does not close those requirements.
