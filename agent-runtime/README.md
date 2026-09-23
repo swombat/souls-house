@@ -259,8 +259,8 @@ the private host-local state/config paths, never via committed files or command
 output. Configure Git identity and origin in the volume before launch. A bounded
 periodic sync worker runs every ten minutes; it does not start heartbeat,
 consolidation or Telegram jobs from the imported repository. Those stay on their
-existing hosts. The profile currently requires API-key model authentication;
-subscription/clamp portability is a separate pilot prerequisite.
+existing hosts. The profile supports API-key authentication and OpenAI ChatGPT OAuth.
+Other subscription/clamp portability remains a separate pilot prerequisite.
 
 Build a separately tagged pilot image and select it only for the imported
 resident. The standard Kamal pre-deploy hook builds shared tags, and post-deploy
@@ -296,3 +296,14 @@ receipts, resident-posted replies, actual graph authentication, and a subsequent
 `session_resumed=true` response with the same Chaos process ID. A healthy HTTP
 endpoint and a valid `hooks.json` are not enough. See the parallel-residency pilot
 report in `docs/plans/` for the initial failure and correction.
+
+
+OpenAI OAuth uses `$CHAOS_HOME/oauth-runtime` for isolated credentials and
+runtime configuration. Trust the same reviewed imported root in that runtime
+as well; the turn guard checks the **effective** home, not just the API home.
+The imported shim selects `forced_login_method="chatgpt"` for OpenAI OAuth and
+`"api"` for API mode. Never force API mode over a connected ChatGPT account:
+Chaos enforces that mismatch by logging out the account, not just rejecting a
+request. Fresh and resumed invocations are regression-tested. Authentication
+mode changes intentionally roll the session while preserving stored history
+and supplying the conversation window to the new session.

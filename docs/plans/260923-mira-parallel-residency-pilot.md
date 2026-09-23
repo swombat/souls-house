@@ -106,3 +106,18 @@ resident's participation and stop only its container after active turns finish;
 Mac and Dell continue. Revoke the one repository deploy key if Git access is
 being withdrawn. Never reset the canonical home or delete a house memory vault
 as a rollback shortcut. Shared default `house` residents retain their old path.
+
+
+## OAuth correction — 16:14 CEST
+
+Daniel connected OpenAI OAuth and the next turn failed. The imported profile
+still forced API login; Chaos explicitly logged out the mismatched ChatGPT
+account. This was a pilot bug, not lost conversation data. Runtime `1eb4207`
+selects the requested OpenAI login mode and checks trust in the actual isolated
+OAuth home. The same previously reviewed root was explicitly trusted there;
+no credentials or runtime databases were copied between authentication homes.
+19 Python runtime tests and 62 session tests (460 assertions) passed, covering
+fresh/resumed OAuth, API-key exclusion and fail-closed effective-home trust.
+Only Mira's container was updated. The account needs reconnection because the
+failed turn removed its login; a successful authenticated turn remains to be
+verified after Daniel reconnects. Do not silently switch him back to API billing.
