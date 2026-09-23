@@ -35,3 +35,6 @@ COPY mira-dev-db /usr/local/bin/mira-dev-db
 RUN chmod 0755 /usr/local/bin/mira-dev-db
 COPY mira-rails /usr/local/bin/mira-rails
 RUN chmod 0755 /usr/local/bin/mira-rails
+
+# Ruby fiddle requires libffi headers; verified by the application bundle install.
+RUN apt-get update && apt-get install -y --no-install-recommends libffi-dev && rm -rf /var/lib/apt/lists/*
