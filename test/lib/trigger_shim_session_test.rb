@@ -116,7 +116,7 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes dockerfile, "COPY docs/runtime-instructions.md /usr/local/share/helixkit-agent/runtime-instructions.md"
     assert_includes dockerfile, "COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md"
     assert_includes dockerfile, "COPY soulshouse-usage /usr/local/bin/soulshouse-usage"
-    assert_includes dockerfile, "ARG CLAUDE_CODE_VERSION=2.1.220"
+    assert_includes dockerfile, "ARG CLAUDE_CODE_VERSION=2.1.280"
     assert_includes dockerfile, "claude --version"
     assert_includes dockerfile, "ARG CHAOS_HEAD"
     refute_match(/^ARG CHAOS_HEAD=[0-9a-f]{40}$/, dockerfile)
