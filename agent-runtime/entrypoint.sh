@@ -38,10 +38,12 @@ done
 # The hook scripts live in identity so they
 # is visible in the hosting filesystem browser. hooks.json is installed into the
 # active repo's .chaos directory, where Chaos discovers project hooks.
-mkdir -p "$AGENT_HOME/identity/automation" \
-         "$AGENT_HOME/identity/memory/daily-journals" \
-         "$AGENT_HOME/identity/memory/automation/state" \
-         "$AGENT_HOME/.chaos" \
+if [ "${SOULSHOUSE_HOME_PROFILE:-house}" != "mira_v1" ]; then
+    mkdir -p "$AGENT_HOME/identity/automation" \
+             "$AGENT_HOME/identity/memory/daily-journals" \
+             "$AGENT_HOME/identity/memory/automation/state"
+fi
+mkdir -p "$AGENT_HOME/.chaos" \
          "$AGENT_REPO_PATH/.chaos" \
          "$AGENT_HOME/work" \
          "$AGENT_HOME/state/claude" \
@@ -202,7 +204,7 @@ done
 # Optional local guardrail if the identity volume is itself a git working tree.
 # The hosted path does not require git, but agents may initialize it for local
 # history. Protect soul.md from accidental commits unless explicitly allowed.
-if [ -d "$AGENT_HOME/identity/.git/hooks" ]; then
+if [ "${SOULSHOUSE_HOME_PROFILE:-house}" != "mira_v1" ] && [ -d "$AGENT_HOME/identity/.git/hooks" ]; then
     cat > "$AGENT_HOME/identity/.git/hooks/pre-commit" <<'HOOK'
 #!/bin/sh
 set -e
