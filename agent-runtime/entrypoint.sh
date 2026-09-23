@@ -7,6 +7,11 @@ set -e
 
 AGENT_HOME=/home/agent
 AGENT_REPO_PATH="${AGENT_REPO_PATH:-$AGENT_HOME/repo}"
+if [ "${SOULSHOUSE_HOME_PROFILE:-house}" = "mira_v1" ]; then
+    python3 /home/agent/imported_home.py
+    # Imported hooks belong to the reviewed home; never overlay house defaults.
+    test "$AGENT_REPO_PATH" = "$MIRA_ROOT"
+fi
 
 # External-service credentials are runtime-supplied hosting context. The source
 # is copied into the container before first boot; copy it into tmpfs for the
@@ -83,6 +88,8 @@ OPENROUTER_PROVIDER
 fi
 chown 1000:1000 "$CHAOS_CONFIG" || true
 
+# Imported homes retain their own hooks and instructions. Stock path is unchanged.
+if [ "${SOULSHOUSE_HOME_PROFILE:-house}" != "mira_v1" ]; then
 # Refresh pristine hooks, but preserve resident edits and stage new stock for review.
 python3 /usr/local/share/helixkit-agent/install_memory_scripts.py \
     /usr/local/share/helixkit-agent "$AGENT_HOME/identity/automation"
@@ -139,6 +146,13 @@ than > for an existing journal.
 README
 fi
 chown -R 1000:1000 "$AGENT_REPO_PATH" "$AGENT_HOME/work" "$AGENT_HOME/state" "$AGENT_HOME/identity/automation" "$AGENT_HOME/identity/memory" "$AGENT_HOME/.chaos/helixkit-hooks.md" 2>/dev/null || true
+
+fi # stock memory installation
+
+# A portable home gets only its sync worker, never its host-owned scheduled jobs.
+if [ "${SOULSHOUSE_HOME_PROFILE:-house}" = "mira_v1" ]; then
+    gosu agent python3 /home/agent/home_sync_loop.py &
+fi
 
 # Some chaos providers read API keys directly from the environment (Anthropic),
 # while others require a provider account entry under the agent user's ~/.chaos.

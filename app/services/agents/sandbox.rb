@@ -449,6 +449,13 @@ module Agents
         "-e", "HELIXKIT_BEARER_TOKEN=#{agent.outbound_api_token}",
         "-e", "HELIXKIT_APP_URL=#{Agents::Config.internal_url}"
       ]
+      if agent.imported_home?
+        args += [ "-e", "SOULSHOUSE_HOME_PROFILE=mira_v1",
+                  "-e", "SOULSHOUSE_PORTABLE_HOME_ID=#{agent.portable_home_id}",
+                  "-e", "MIRA_ROOT=/home/agent/identity",
+                  "-e", "AGENT_REPO_PATH=/home/agent/identity",
+                  "-e", "TZ=Europe/Madrid" ]
+      end
       args += provider_env_args
       args += [ "-p", "127.0.0.1::4000" ] if Agents::Config.publish_ports?
       args << agent.container_image

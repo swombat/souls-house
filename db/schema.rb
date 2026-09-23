@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_09_220000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_23_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -316,6 +316,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_09_220000) do
     t.string "github_repo_url"
     t.string "health_state", default: "unknown", null: false
     t.integer "heartbeat_wakes_per_day", default: 2, null: false
+    t.string "home_profile", default: "house", null: false
     t.string "icon"
     t.datetime "identity_seeded_at"
     t.jsonb "journal_entry_stats", default: {}, null: false
@@ -338,6 +339,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_09_220000) do
     t.boolean "paused", default: false, null: false
     t.boolean "persistent_session", default: false, null: false
     t.boolean "persistent_wake_session", default: false, null: false
+    t.string "portable_home_id"
     t.jsonb "provider_auth_modes", default: {}, null: false
     t.jsonb "provider_connections", default: {}, null: false
     t.datetime "provisioning_started_at"
@@ -371,6 +373,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_09_220000) do
     t.index ["account_id"], name: "index_agents_on_account_id"
     t.index ["container_name"], name: "index_agents_on_container_name", unique: true
     t.index ["outbound_api_key_id"], name: "index_agents_on_outbound_api_key_id"
+    t.index ["portable_home_id"], name: "index_agents_on_portable_home_id", unique: true
     t.index ["runtime"], name: "index_agents_on_runtime"
     t.index ["sandbox_host"], name: "index_agents_on_sandbox_host"
     t.index ["telegram_webhook_token"], name: "index_agents_on_telegram_webhook_token", unique: true

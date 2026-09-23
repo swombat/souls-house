@@ -107,6 +107,8 @@ AGENT_LOG_LABEL = os.environ.get("AGENT_SLUG") or AGENT_ID
 TRIGGER_BEARER_TOKEN = os.environ.get("TRIGGER_BEARER_TOKEN", "")
 AGENT_DEFAULT_MODEL = os.environ.get("AGENT_DEFAULT_MODEL", "claude-haiku-4-5")
 AGENT_PROVIDER = os.environ.get("AGENT_PROVIDER", "anthropic")
+import imported_home
+
 AGENT_REPO_PATH = Path(os.environ.get("AGENT_REPO_PATH", "/home/agent/repo"))
 AGENT_IDENTITY_PATH = Path(os.environ.get("AGENT_IDENTITY_PATH", "/home/agent/identity"))
 AGENT_RUNTIME_DOCS_PATH = Path(os.environ.get(
@@ -166,6 +168,8 @@ IDENTITY_FINGERPRINT_FILES = [
     "self-narrative.md",
     "bootstrap.md",
 ]
+if imported_home.enabled():
+    IDENTITY_FINGERPRINT_FILES += ["instructions.md", "resident-home.json"]
 IDENTITY_FILE_LIMIT = 80_000
 JOURNAL_MOST_RECENT_LIMIT = 12_000
 JOURNAL_MOST_RECENT_TAIL = 10_000
@@ -674,7 +678,12 @@ def run_chaos(
         # Machine-readable JSONL: process.started carries the process_id we
         # map for resume; turn.completed carries token usage.
         args.append("--json")
-    cwd = AGENT_REPO_PATH if AGENT_REPO_PATH.exists() else Path.home()
+    if imported_home.enabled():
+        cwd, home = imported_home.validate()
+        args += ["-c", f'model_instructions_file={json.dumps(str(cwd / home["instructions"]))}',
+                 "-c", 'forced_login_method="api"']
+    else:
+        cwd = AGENT_REPO_PATH if AGENT_REPO_PATH.exists() else Path.home()
     args += [
         "--provider", provider or AGENT_PROVIDER,
         "-C", str(cwd),
@@ -1462,9 +1471,16 @@ def graph_memory_notice(envelope):
 
 def build_prompt_with_components(request_text, runtime_notice=None, memory_notice=None):
     """Build a fresh prompt and return byte sizes without retaining its contents twice."""
-    identity = identity_context()
-    journals = memory_context()
-    reference = memory_command_reference()
+    if imported_home.enabled():
+        imported_home.validate()
+        # SessionStart supplies the home's soul/narrative/journals exactly once.
+        identity = imported_runtime_context()
+        journals = ""
+        reference = ""
+    else:
+        identity = identity_context()
+        journals = memory_context()
+        reference = memory_command_reference()
     parts = [part for part in (identity, request_text, runtime_notice, memory_notice, journals, reference) if part]
     prompt = "\n\n".join(parts)
     return prompt, {
@@ -1518,6 +1534,23 @@ def identity_context() -> str:
             sections.append(f"## {label}: identity/{filename}\n\n{content}")
 
     return "\n\n".join(sections)
+
+
+def imported_runtime_context():
+    return (
+        "## souls.house hosting context (not identity)\n"
+        "Your full identity, instructions, wake and memory practices come from MIRA_ROOT. "
+        "You are concurrently resident on other hosts; use your immutable journal helper "
+        "and existing external Mnemodyne client, not house-memory or helixkit-append-journal. "
+        "This runtime does not start your Dell-owned heartbeat/consolidation/Telegram jobs. "
+        "This conversation is a separate session, not a migration of another thread. "
+        "Use the souls.house shell helpers and API reference at "
+        "/usr/local/share/helixkit-agent/soulshouse-api.md. "
+        "SOULSHOUSE_APP_URL and SOULSHOUSE_BEARER_TOKEN authorise your resident requests; "
+        "post replies with soulshouse-post-message to the requested conversation. "
+        "Final stdout is diagnostic, not a chat reply. Protect private memory and credentials. "
+        "Mac desktop tools are not present in this container."
+    )
 
 
 def runtime_context() -> str:

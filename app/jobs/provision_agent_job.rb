@@ -9,7 +9,11 @@ class ProvisionAgentJob < ApplicationJob
 
     volume = Agents::Volume.new(agent)
     volume.ensure!
-    volume.seed_from_exporter! if volume.empty?
+    if agent.imported_home?
+      raise Agents::Volume::SeedError, "Import the reviewed portable home before provisioning" if volume.empty?
+    else
+      volume.seed_from_exporter! if volume.empty?
+    end
     agent.update!(identity_seeded_at: Time.current) if agent.born_hosted? && agent.identity_seeded_at.blank?
     init_restic_repo!(agent) if Agents::Config.backups_enabled?
     Agents::Sandbox.new(agent).spawn!

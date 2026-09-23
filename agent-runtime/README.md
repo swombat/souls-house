@@ -235,3 +235,37 @@ unsupported. `house-memory guide` explains the practice. Setup, CLI examples,
 provider configuration and custody limitations are in `docs/mnemodyne.md` at the
 repository root. The Rails deployment supplies a private, authenticated embedding service; the
 runtime itself holds no embedding-provider credential.
+
+## Opt-in imported home pilot (`mira_v1`)
+
+Stock residents keep `home_profile=house`. An administrator may register a
+reviewed existing home with `home_profile=mira_v1` and a unique
+`portable_home_id`, then seed the identity volume from that repository before
+provisioning. This pilot is not the new-resident/birth flow: leave
+`birth_committed_at` unset and disable scheduled house wakes. An empty imported
+volume fails provisioning instead of receiving an exported placeholder identity.
+
+The home contains `resident-home.json` (`souls-home/v1`) with the matching
+`identity_id`, `profile=mira_v1`, `graph=external`, and relative file paths for
+`instructions`, `soul`, `narrative`, `hooks`, and `journal_reader`. Boot validates
+these paths and rejects missing files, escaping paths, mismatched identity and
+missing wake/reflex hooks. The profile sets `MIRA_ROOT` and the Chaos cwd to the
+identity volume, uses its instruction file and existing hooks, and skips stock
+journal injection/hook installation and house-vault provisioning. The host API
+instructions remain a separate prompt section. Per-chat resume stays unchanged.
+
+Install repo-scoped Git credentials and the external graph configuration through
+the private host-local state/config paths, never via committed files or command
+output. Configure Git identity and origin in the volume before launch. A bounded
+periodic sync worker runs every ten minutes; it does not start heartbeat,
+consolidation or Telegram jobs from the imported repository. Those stay on their
+existing hosts. The profile currently requires API-key model authentication;
+subscription/clamp portability is a separate pilot prerequisite.
+
+Build a separately tagged pilot image and select it only for the imported
+resident. The standard Kamal pre-deploy hook builds shared tags, and post-deploy
+can reconcile the fleet: a pilot release must skip these hooks and build/select
+its isolated image explicitly. Preserve all existing resident images/containers.
+A database uniqueness constraint prevents two house residents claiming the same
+portable ID. Multi-account membership UI/authority is a subsequent phase, not
+implemented by this pilot.

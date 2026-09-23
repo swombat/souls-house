@@ -55,6 +55,12 @@ class Agent < ApplicationRecord
     name model_id model_label active? paused? colour icon runtime health_state deprecated? unavailability_reason
   ].freeze
 
+  validates :home_profile, inclusion: { in: %w[house mira_v1] }
+  validates :portable_home_id, presence: true, if: :imported_home?
+  validates :portable_home_id, uniqueness: true, allow_nil: true
+
+  def imported_home? = home_profile == "mira_v1"
+
   validates :name, presence: true,
                    length: { maximum: 100 },
                    uniqueness: { scope: :account_id }
