@@ -15,10 +15,11 @@ module Chat::ModelSelection
       thinking: { supported: true }
     },
     {
-      model_id: "anthropic/claude-fable-5",
-      label: "Claude Fable 5",
+      model_id: "anthropic/claude-opus-5.5",
+      label: "Claude Opus 5.5",
       group: "Top Models",
-      provider_model_id: "claude-fable-5"
+      provider_model_id: "claude-opus-5-5",
+      thinking: { supported: true, requires_direct_api: true }
     },
     {
       model_id: "deepseek/deepseek-v4-pro-0813",
@@ -35,10 +36,10 @@ module Chat::ModelSelection
       audio_input: true
     },
     {
-      model_id: "x-ai/grok-4.6",
-      label: "Grok 4.6",
+      model_id: "x-ai/grok-4.7",
+      label: "Grok 4.7",
       group: "Top Models",
-      provider_model_id: "grok-4.6",
+      provider_model_id: "grok-4.7",
       thinking: { supported: true }
     },
     { model_id: "mistralai/mistral-large-2512", label: "Mistral Large 2512", group: "Top Models" },
@@ -46,10 +47,17 @@ module Chat::ModelSelection
     { model_id: "minimax/minimax-m3", label: "MiniMax M3", group: "Top Models", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k3", label: "Kimi K3", group: "Top Models", thinking: { supported: true } },
     { model_id: "qwen/qwen3.8-max", label: "Qwen3.8 Max", group: "Top Models", thinking: { supported: true } },
+    { model_id: "xiaomi/mimo-v2.6-pro", label: "MiMo V2.6 Pro", group: "Top Models", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.2", label: "GLM 5.2", group: "Top Models", thinking: { supported: true } },
 
     # OpenAI
     { model_id: "openai/gpt-6-astra", label: "GPT-6 Astra", group: "OpenAI", provider_model_id: "gpt-6-astra", thinking: { supported: true } },
+    # GPT-6 Pro variants are OpenRouter aliases for reasoning.mode=pro, not direct model IDs.
+    { model_id: "openai/gpt-6-astra-pro", label: "GPT-6 Astra Pro", group: "OpenAI", thinking: { supported: true } },
+    { model_id: "openai/gpt-6-sol", label: "GPT-6 Sol", group: "OpenAI", provider_model_id: "gpt-6-sol", thinking: { supported: true } },
+    { model_id: "openai/gpt-6-sol-pro", label: "GPT-6 Sol Pro", group: "OpenAI", thinking: { supported: true } },
+    { model_id: "openai/gpt-6-luna", label: "GPT-6 Luna", group: "OpenAI", provider_model_id: "gpt-6-luna", thinking: { supported: true } },
+    { model_id: "openai/gpt-6-luna-pro", label: "GPT-6 Luna Pro", group: "OpenAI", thinking: { supported: true } },
     { model_id: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol", group: "OpenAI", provider_model_id: "gpt-5.6-sol", thinking: { supported: true } },
     { model_id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", group: "OpenAI", provider_model_id: "gpt-5.6-terra", thinking: { supported: true } },
     { model_id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", group: "OpenAI", provider_model_id: "gpt-5.6-luna", thinking: { supported: true } },
@@ -191,6 +199,8 @@ module Chat::ModelSelection
     { model_id: "openai/gpt-oss-20b", label: "GPT-OSS 20B", group: "OpenAI" },
 
     # Anthropic
+    { model_id: "anthropic/claude-opus-5.5", label: "Claude Opus 5.5", group: "Anthropic", provider_model_id: "claude-opus-5-5", thinking: { supported: true, requires_direct_api: true } },
+    { model_id: "anthropic/claude-fable-5.1", label: "Claude Fable 5.1", group: "Anthropic", provider_model_id: "claude-fable-5-1", thinking: { supported: true, requires_direct_api: true } },
     {
       model_id: "anthropic/claude-opus-5-fast",
       label: "Claude Opus 5 (Fast)",
@@ -428,8 +438,9 @@ module Chat::ModelSelection
     },
 
     # xAI - Grok models
-    # grok-4.6/4.3/4.20: Support configurable reasoning on the direct xAI API
+    # grok-4.7/4.6/4.3/4.20: Support configurable reasoning on the direct xAI API
     # grok-4/grok-3: Built-in reasoning but not exposed/configurable
+    { model_id: "x-ai/grok-4.7", label: "Grok 4.7", group: "xAI", provider_model_id: "grok-4.7", thinking: { supported: true } },
     {
       model_id: "x-ai/grok-4.6",
       label: "Grok 4.6",
@@ -595,6 +606,11 @@ module Chat::ModelSelection
     { model_id: "qwen/qwen3-coder-flash", label: "Qwen3 Coder Flash", group: "Qwen" },
     { model_id: "qwen/qwen3-coder-plus", label: "Qwen3 Coder Plus", group: "Qwen" },
 
+    # Xiaomi (OpenRouter)
+    { model_id: "xiaomi/mimo-v2.6-pro", label: "MiMo V2.6 Pro", group: "Xiaomi", thinking: { supported: true } },
+    { model_id: "xiaomi/mimo-v2.6-pro-ultraspeed", label: "MiMo V2.6 Pro UltraSpeed", group: "Xiaomi", thinking: { supported: true } },
+    { model_id: "xiaomi/mimo-v2.6-flash", label: "MiMo V2.6 Flash", group: "Xiaomi", thinking: { supported: true } },
+
     # Z.ai
     { model_id: "z-ai/glm-5.2", label: "GLM 5.2", group: "Z.ai", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.1", label: "GLM 5.1", group: "Z.ai", thinking: { supported: true } },
@@ -734,6 +750,14 @@ module Chat::ModelSelection
 
     def reasoning_profile_for(model_id)
       case model_id
+      when "openai/gpt-6-sol", "openai/gpt-6-sol-pro", "openai/gpt-6-luna", "openai/gpt-6-luna-pro"
+        REASONING_PROFILES[:openai_max].merge(options: %i[none low medium high xhigh max])
+      when "openai/gpt-6-astra-pro"
+        REASONING_PROFILES[:openai_max]
+      when "anthropic/claude-fable-5.1"
+        REASONING_PROFILES[:anthropic]
+      when "x-ai/grok-4.7"
+        REASONING_PROFILES[:grok_multi_agent]
       when "openai/gpt-5.6-sol"
         REASONING_PROFILES[:openai_ultra].merge(default: "low")
       when "openai/gpt-6-astra", "openai/gpt-5.6-terra"
@@ -758,7 +782,7 @@ module Chat::ModelSelection
         REASONING_PROFILES[:grok_fast]
       when %r{\Ax-ai/grok-}
         REASONING_PROFILES[:grok]
-      when %r{\A(?:deepseek|moonshotai|minimax|qwen|z-ai)/}
+      when %r{\A(?:deepseek|moonshotai|minimax|qwen|xiaomi|z-ai)/}
         REASONING_PROFILES[:thinking_mode] if supports_thinking?(model_id)
       end
     end

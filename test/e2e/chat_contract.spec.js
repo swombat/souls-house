@@ -431,15 +431,29 @@ test.describe('browser contracts', () => {
     await login(page, setup.primary_user, setup.password);
     await page.goto(setup.agents[0].edit_url);
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    const modelPicker = page.getByRole('button', { name: /^(openrouter\/auto|GPT-6 Astra|Gemini 3\.8 Flash)$/ });
-    await modelPicker.click();
-    await page.getByRole('option', { name: 'GPT-6 Astra', exact: true }).first().click();
-    await expect(modelPicker).toHaveText('GPT-6 Astra');
-    await expect(page.getByRole('heading', { name: 'Reasoning effort', exact: true })).toBeVisible();
-    await modelPicker.click();
-    await page.getByRole('option', { name: 'Gemini 3.8 Flash', exact: true }).first().click();
-    await expect(modelPicker).toHaveText('Gemini 3.8 Flash');
-    await expect(page.getByRole('heading', { name: 'Thinking level', exact: true })).toBeVisible();
+    const models = [
+      ['GPT-6 Astra', 'Reasoning effort'],
+      ['Gemini 3.8 Flash', 'Thinking level'],
+      ['GPT-6 Astra Pro', 'Reasoning effort'],
+      ['GPT-6 Sol', 'Reasoning effort'],
+      ['GPT-6 Sol Pro', 'Reasoning effort'],
+      ['GPT-6 Luna', 'Reasoning effort'],
+      ['GPT-6 Luna Pro', 'Reasoning effort'],
+      ['Claude Opus 5.5', 'Effort'],
+      ['Claude Fable 5.1', 'Effort'],
+      ['Grok 4.7', 'Reasoning effort'],
+      ['MiMo V2.6 Pro', 'Thinking mode'],
+      ['MiMo V2.6 Pro UltraSpeed', 'Thinking mode'],
+      ['MiMo V2.6 Flash', 'Thinking mode'],
+    ];
+    let currentModel = 'openrouter/auto';
+    for (const [label, control] of models) {
+      await page.getByRole('button', { name: currentModel, exact: true }).click();
+      await page.getByRole('option', { name: label, exact: true }).first().click();
+      await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: control, exact: true })).toBeVisible();
+      currentModel = label;
+    }
   });
 
   test('agent settings can be edited and saved', async ({ page, request }) => {

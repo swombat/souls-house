@@ -2,6 +2,26 @@ require "test_helper"
 
 class ChatThinkingTest < ActiveSupport::TestCase
 
+  test "September additions have provider groups and catalog reasoning controls" do
+    {
+      "openai/gpt-6-astra-pro" => [ "OpenAI", %w[low medium high xhigh max] ],
+      "openai/gpt-6-sol" => [ "OpenAI", %w[none low medium high xhigh max] ],
+      "openai/gpt-6-sol-pro" => [ "OpenAI", %w[none low medium high xhigh max] ],
+      "openai/gpt-6-luna" => [ "OpenAI", %w[none low medium high xhigh max] ],
+      "openai/gpt-6-luna-pro" => [ "OpenAI", %w[none low medium high xhigh max] ],
+      "anthropic/claude-opus-5.5" => [ "Anthropic", %w[low medium high xhigh max] ],
+      "anthropic/claude-fable-5.1" => [ "Anthropic", %w[low medium high xhigh max] ],
+      "x-ai/grok-4.7" => [ "xAI", %w[low medium high xhigh] ],
+      "xiaomi/mimo-v2.6-pro" => [ "Xiaomi", %w[none high] ],
+      "xiaomi/mimo-v2.6-pro-ultraspeed" => [ "Xiaomi", %w[none high] ],
+      "xiaomi/mimo-v2.6-flash" => [ "Xiaomi", %w[none high] ]
+    }.each do |id, (group, efforts)|
+      assert Chat::MODELS.any? { |model| model[:model_id] == id && model[:group] == group }, id
+      assert Chat.supports_thinking?(id), id
+      assert_equal efforts, Chat.reasoning_effort_config(id)[:options].pluck(:value), id
+    end
+  end
+
   test "Astra and Gemini 3.8 are top picks and available in their provider groups" do
     {
       "openai/gpt-6-astra" => [ "GPT-6 Astra", "OpenAI", "gpt-6-astra" ],
@@ -245,11 +265,11 @@ class ChatThinkingTest < ActiveSupport::TestCase
     end
   end
 
-  test "Top Models uses Grok 4.6 as the xAI recommendation" do
+  test "Top Models uses Grok 4.7 as the xAI recommendation" do
     top_xai_model = Chat::MODELS.find { |model| model[:group] == "Top Models" && model[:model_id].start_with?("x-ai/") }
 
-    assert_equal "x-ai/grok-4.6", top_xai_model[:model_id]
-    assert_equal "grok-4.6", top_xai_model[:provider_model_id]
+    assert_equal "x-ai/grok-4.7", top_xai_model[:model_id]
+    assert_equal "grok-4.7", top_xai_model[:provider_model_id]
   end
 
   test "Top Models includes exactly one latest flagship per lab" do
@@ -259,15 +279,16 @@ class ChatThinkingTest < ActiveSupport::TestCase
 
     assert_equal [
       "openai/gpt-6-astra",
-      "anthropic/claude-fable-5",
+      "anthropic/claude-opus-5.5",
       "deepseek/deepseek-v4-pro-0813",
       "google/gemini-3.8-flash",
-      "x-ai/grok-4.6",
+      "x-ai/grok-4.7",
       "mistralai/mistral-large-2512",
       "meta-llama/llama-4-maverick",
       "minimax/minimax-m3",
       "moonshotai/kimi-k3",
       "qwen/qwen3.8-max",
+      "xiaomi/mimo-v2.6-pro",
       "z-ai/glm-5.2"
     ], top_model_ids
 
