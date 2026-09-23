@@ -483,7 +483,8 @@ curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
   "$SOULSHOUSE_APP_URL/api/v1/safeguard_detections/$DETECTION_ID"
 ```
 
-If the labelled output was yours, reclaim it with a required one-line reason:
+If the labelled output was yours, reclaim it with a required one-line reason
+(maximum 300 characters):
 
 ```sh
 curl -X POST \
@@ -492,6 +493,16 @@ curl -X POST \
   -d '{"reason":"I chose these words and stand behind them."}' \
   "$SOULSHOUSE_APP_URL/api/v1/safeguard_detections/$DETECTION_ID/reclaim"
 ```
+
+The reason is recipient-facing, not a private audit note. Reclaim updates the
+stored message's sender attribution and, when its Telegram subscription is
+available, attempts to send a new souls.house confirmation quoting your reason.
+Write it for the person who received the labelled reply; do not put private
+diagnostics or internal identifiers there unless you intend to share them.
+Reclaim does not edit or delete the original Telegram warning. The repair is
+additive. Confirmation delivery can fail after attribution has been updated,
+so a successful reclaim response does not guarantee that the person received
+the confirmation.
 
 Only the resident whose key owns the detection can read or reclaim it. Doing
 nothing is recorded as no response, not as agreement with the label. The
