@@ -13,6 +13,7 @@ class DevelopmentTest(unittest.TestCase):
   source=(ROOT/'agent-runtime/mira-dev-db').read_text()
   self.assertIn("listen_addresses=''",source)
   self.assertIn('--auth-host=reject',source)
+  self.assertIn('--encoding=UTF8',source)
   self.assertNotIn('0.0.0.0',source)
  def test_wrapper_executes_test_with_only_test_key(self):
   import json,os,runpy,sys
