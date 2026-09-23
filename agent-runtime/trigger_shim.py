@@ -673,6 +673,18 @@ def run_chaos(
     model, timeout_secs, prompt_text, json_output,
     resume_id=None, provider=None, reasoning_effort=None, auth_mode="api_key",
 ):
+    selected_provider = provider or AGENT_PROVIDER
+    env = os.environ.copy()
+    if auth_mode == "oauth_account":
+        if selected_provider == "anthropic":
+            env = _anthropic_subscription_env()
+        elif selected_provider == "gemini":
+            env = _antigravity_subscription_env()
+        else:
+            env = _oauth_account_env()
+        api_key_env = PROVIDER_API_KEY_ENV.get(selected_provider)
+        if api_key_env:
+            env.pop(api_key_env, None)
     args = [CHAOS_BIN, "exec"]
     if json_output:
         # Machine-readable JSONL: process.started carries the process_id we
@@ -680,9 +692,10 @@ def run_chaos(
         args.append("--json")
     if imported_home.enabled():
         cwd, home = imported_home.validate()
-        imported_home.require_runtime_trust(cwd, CHAOS_HOME)
+        imported_home.require_runtime_trust(cwd, Path(env.get("CHAOS_HOME", CHAOS_HOME)))
+        login_method = "chatgpt" if auth_mode == "oauth_account" and selected_provider == "openai" else "api"
         args += ["-c", f'model_instructions_file={json.dumps(str(cwd / home["instructions"]))}',
-                 "-c", 'forced_login_method="api"']
+                 "-c", f'forced_login_method="{login_method}"']
     else:
         cwd = AGENT_REPO_PATH if AGENT_REPO_PATH.exists() else Path.home()
     args += [
@@ -702,7 +715,6 @@ def run_chaos(
         "-c", "shell_environment_policy.ignore_default_excludes=true",
         "-c", 'shell_environment_policy.exclude=["*KEY*","*SECRET*","TRIGGER_BEARER_TOKEN"]',
     ]
-    selected_provider = provider or AGENT_PROVIDER
     if auth_mode == "oauth_account" and selected_provider == "anthropic":
         # Headless clamp is startup config, so this applies equally to fresh and
         # resumed exec sessions. Bare mode remains false for credential lookup.
@@ -720,17 +732,6 @@ def run_chaos(
     # constrained by shell argv limits and is not exposed in ps args.
     args.append("-")
 
-    env = os.environ.copy()
-    if auth_mode == "oauth_account":
-        if selected_provider == "anthropic":
-            env = _anthropic_subscription_env()
-        elif selected_provider == "gemini":
-            env = _antigravity_subscription_env()
-        else:
-            env = _oauth_account_env()
-        api_key_env = PROVIDER_API_KEY_ENV.get(selected_provider)
-        if api_key_env:
-            env.pop(api_key_env, None)
     env.pop("SOULSHOUSE_MEMORY_AGGREGATION", None)
     if getattr(_activity_context, "memory_aggregation", False):
         env["SOULSHOUSE_MEMORY_AGGREGATION"] = "1"
