@@ -1,6 +1,7 @@
 """Opt-in portable home validation. Stock residents never enter this path."""
 import json
 import os
+import sqlite3
 from pathlib import Path
 import sys
 
@@ -30,6 +31,20 @@ def validate(root=None):
     if not all(name in hooks for name in ('SessionStart', 'BeforeTurn', 'Stop')):
         raise ValueError('imported home requires its own wake and memory hooks')
     return root, manifest
+
+
+def require_runtime_trust(root, chaos_home):
+    # The pinned Chaos runtime keeps project trust here, not in config.toml.
+    # Without it the project's config *and hooks* are silently disabled.
+    database = Path(chaos_home) / 'chaos.sqlite'
+    try:
+        with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True) as db:
+            row = db.execute('SELECT trust_level FROM project_trust WHERE project_path = ?',
+                             (str(Path(root).resolve()),)).fetchone()
+    except sqlite3.Error as error:
+        raise ValueError('Review and trust the imported root in Chaos before a resident turn') from error
+    if row != ('trusted',):
+        raise ValueError('Imported home is not trusted in Chaos; its wake hooks would not run')
 
 
 if __name__ == '__main__':

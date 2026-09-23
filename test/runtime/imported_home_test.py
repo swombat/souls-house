@@ -49,7 +49,7 @@ class HomeTest(unittest.TestCase):
         self.assertEqual(info['journal'], 0)
 
     def test_execution_uses_home_instructions_and_cwd(self):
-        with patch.object(shim.subprocess, 'run') as run:
+        with patch.object(imported_home, 'require_runtime_trust'), patch.object(shim.subprocess, 'run') as run:
             shim.run_chaos('test-model', 30, 'request', True)
         args = run.call_args.args[0]
         self.assertEqual(args[args.index('-C')+1], str(self.root))
@@ -62,3 +62,16 @@ class HomeTest(unittest.TestCase):
         with patch.dict(os.environ, {'SOULSHOUSE_HOME_PROFILE':'house'}), patch.object(imported_home, 'validate', side_effect=AssertionError('stock touched')), patch.object(shim, 'identity_context', return_value='STOCK'), patch.object(shim, 'memory_context', return_value='JOURNAL'):
             prompt, _ = shim.build_prompt_with_components('REQUEST')
         self.assertTrue(prompt.startswith('STOCK'))
+
+    def test_effective_trust_required(self):
+        import sqlite3
+        with self.assertRaises(ValueError):
+            imported_home.require_runtime_trust(self.root, self.root)
+        with sqlite3.connect(self.root/'chaos.sqlite') as db:
+            db.execute('CREATE TABLE project_trust(project_path TEXT, trust_level TEXT)')
+            db.execute('INSERT INTO project_trust VALUES(?,?)', (str(self.root), 'untrusted'))
+        with self.assertRaises(ValueError):
+            imported_home.require_runtime_trust(self.root, self.root)
+        with sqlite3.connect(self.root/'chaos.sqlite') as db:
+            db.execute("UPDATE project_trust SET trust_level='trusted'")
+        imported_home.require_runtime_trust(self.root, self.root)
