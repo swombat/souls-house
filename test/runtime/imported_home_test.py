@@ -55,6 +55,8 @@ class HomeTest(unittest.TestCase):
         self.assertEqual(args[args.index('-C')+1], str(self.root))
         self.assertIn('model_instructions_file='+json.dumps(str(self.root/'instructions.md')), args)
         self.assertIn('forced_login_method="api"', args)
+        for name in ("chrome", "crimson", "peekaboo"):
+            self.assertIn(f"mcp_servers.{name}.enabled=false", args)
 
     def test_stock_path_is_not_validated(self):
         with patch.dict(os.environ, {'SOULSHOUSE_HOME_PROFILE':'house'}), patch.object(imported_home, 'validate', side_effect=AssertionError('stock touched')), patch.object(shim, 'identity_context', return_value='STOCK'), patch.object(shim, 'memory_context', return_value='JOURNAL'):
