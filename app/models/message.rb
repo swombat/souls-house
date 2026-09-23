@@ -225,6 +225,7 @@ class Message < ApplicationRecord
         hard_wrap: true
       ),
       autolink: true,
+      no_intra_emphasis: true,
       fenced_code_blocks: true,
       tables: true,
       strikethrough: true
