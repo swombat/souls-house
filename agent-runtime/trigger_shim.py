@@ -683,9 +683,6 @@ def run_chaos(
         imported_home.require_runtime_trust(cwd, CHAOS_HOME)
         args += ["-c", f'model_instructions_file={json.dumps(str(cwd / home["instructions"]))}',
                  "-c", 'forced_login_method="api"']
-        # These home MCP definitions target the Mac, not this container.
-        for name in ("chrome", "crimson", "peekaboo"):
-            args += ["-c", f"mcp_servers.{name}.enabled=false"]
     else:
         cwd = AGENT_REPO_PATH if AGENT_REPO_PATH.exists() else Path.home()
     args += [
