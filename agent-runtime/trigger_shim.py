@@ -1495,6 +1495,8 @@ def build_prompt_with_components(request_text, runtime_notice=None, memory_notic
     }
 
 def memory_command_reference():
+    if imported_home.enabled():
+        return ""  # Resumed sessions retain the imported home memory practice too.
     path = AGENT_RUNTIME_DOCS_PATH / "memory-quick-reference.md"
     if not path.exists():
         path = Path(__file__).with_name("docs") / "memory-quick-reference.md"

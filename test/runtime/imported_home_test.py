@@ -47,6 +47,7 @@ class HomeTest(unittest.TestCase):
         self.assertIn('REQUEST', prompt)
         self.assertNotIn('PRIVATE HOME TEXT', prompt)
         self.assertEqual(info['journal'], 0)
+        self.assertEqual(shim.memory_command_reference(), '')
 
     def test_execution_uses_home_instructions_and_cwd(self):
         with patch.object(imported_home, 'require_runtime_trust'), patch.object(shim.subprocess, 'run') as run:
