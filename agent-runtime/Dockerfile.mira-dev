@@ -38,3 +38,7 @@ RUN chmod 0755 /usr/local/bin/mira-rails
 
 # Ruby fiddle requires libffi headers; verified by the application bundle install.
 RUN apt-get update && apt-get install -y --no-install-recommends libffi-dev && rm -rf /var/lib/apt/lists/*
+
+ENV BUN_INSTALL_CACHE_DIR=/home/agent/work/.bun-cache TMPDIR=/home/agent/state/tmp
+
+RUN apt-get update && apt-get install -y --no-install-recommends libvips42t64 && rm -rf /var/lib/apt/lists/*
