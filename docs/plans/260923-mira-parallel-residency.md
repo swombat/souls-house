@@ -37,6 +37,10 @@ At the Dell inspection around 14:25:
 
 The failed replay suggests merge-based reconciliation may fit these long-lived histories better; it does not prove a merge will be conflict-free. Do not reset the Dell to the Mac or choose one side wholesale. Both histories contain work to preserve.
 
+### Repair update — September 23, 14:51 CEST
+
+The divergence above was subsequently reconciled in Mira home commit `4b7b16e`, after verified full Git-bundle backups. Both hosts then synced the combined history and hardening commit `dc97b50`: ordinary merges, checked commit failures, protected existing Git operations, timeout cleanup, and local BeforeTurn sync-health warnings. Six journal/notebook conflicts preserved both sets of entries. This repairs the observed blockage; it does **not** implement the separate-checkout/write-helper design below or prove future conflict-free operation. Recovery in section 5 is now historical; retain the incident as a regression fixture and continue the remaining sync/concurrency work.
+
 ### Existing house seams
 
 | Concern | Current source | Consequence |
