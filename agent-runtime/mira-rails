@@ -5,6 +5,11 @@ from pathlib import Path
 environment = 'test' if len(sys.argv)>1 and sys.argv[1]=='test' else os.environ.get('RAILS_ENV','development')
 if environment not in ('development','test'):
     sys.exit('mira-rails only supports isolated development/test')
-env={**os.environ,'RAILS_ENV':environment}
+# Do not leak the resident's chat/provider/GitHub credentials into app tests.
+allowed = ('PATH','HOME','USER','LANG','LC_ALL','TZ','TMPDIR',
+           'BUNDLE_PATH','BUNDLE_JOBS','GEM_HOME','GEM_PATH',
+           'PGHOST','PGPORT','PGUSER','BUN_INSTALL_CACHE_DIR')
+env={key:os.environ[key] for key in allowed if key in os.environ}
+env['RAILS_ENV']=environment
 env['RAILS_MASTER_KEY']=json.loads(Path('/home/agent/state/secrets/rails.json').read_text())[environment]
 os.execve('bin/rails',['bin/rails',*sys.argv[1:]],env)
