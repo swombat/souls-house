@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""Use only the explicitly provisioned dev/test Rails key. Never production."""
+import json,os,sys
+from pathlib import Path
+environment = 'test' if len(sys.argv)>1 and sys.argv[1]=='test' else os.environ.get('RAILS_ENV','development')
+if environment not in ('development','test'):
+    sys.exit('mira-rails only supports isolated development/test')
+env={**os.environ,'RAILS_ENV':environment}
+env['RAILS_MASTER_KEY']=json.loads(Path('/home/agent/state/secrets/rails.json').read_text())[environment]
+os.execve('bin/rails',['bin/rails',*sys.argv[1:]],env)

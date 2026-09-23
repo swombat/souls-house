@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+umask 077
+base=/home/agent/state/postgres
+mkdir -p "$base/socket" /home/agent/work/.postgres
+bin=/usr/lib/postgresql/17/bin
+if [ ! -f /home/agent/work/.postgres/PG_VERSION ]; then
+    "$bin/initdb" -D /home/agent/work/.postgres --auth-local=trust --auth-host=reject > "$base/init.log"
+fi
+if ! "$bin/pg_ctl" -D /home/agent/work/.postgres status >/dev/null 2>&1; then
+    "$bin/pg_ctl" -D /home/agent/work/.postgres -l "$base/server.log" -o "-k $base/socket -c listen_addresses=''" start
+fi

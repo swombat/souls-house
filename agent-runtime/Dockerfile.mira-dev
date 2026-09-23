@@ -1,0 +1,37 @@
+# Opt-in development layer; never used for the default resident fleet.
+ARG MIRA_BASE_IMAGE=souls-house-mira-pilot:1eb4207
+FROM ruby:4.0.6-slim-trixie AS ruby
+FROM rust:1.98-bookworm AS rust
+FROM ${MIRA_BASE_IMAGE}
+USER root
+COPY --from=ruby /usr/local/ /usr/local/
+COPY --from=rust /usr/local/rustup/ /opt/rustup/
+COPY --from=rust /usr/local/cargo/bin/ /usr/local/bin/
+ENV RUSTUP_HOME=/opt/rustup \
+    CARGO_HOME=/home/agent/state/cargo \
+    BUNDLE_PATH=/home/agent/work/.bundle \
+    GH_CONFIG_DIR=/home/agent/state/gh \
+    SOPS_AGE_KEY_FILE=/home/agent/state/sops/age/keys.txt \
+    PGHOST=/home/agent/state/postgres/socket \
+    CARGO_BUILD_JOBS=2 \
+    BUNDLE_JOBS=2 \
+    MIRA_MNEMODYNE_CONFIG=/home/agent/state/secrets/mnemodyne.json
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gh age ripgrep build-essential pkg-config libpq-dev libyaml-dev libssl-dev \
+    libclang-dev cmake clang protobuf-compiler sqlite3 libsqlite3-dev libjemalloc2 postgresql-17 \
+    && rm -rf /var/lib/apt/lists/*
+# This pilot runs on amd64. Refuse accidental cross-architecture installation.
+RUN test "$(dpkg --print-architecture)" = amd64 \
+    && curl -fsSL https://github.com/getsops/sops/releases/download/v3.10.2/sops-v3.10.2.linux.amd64 -o /usr/local/bin/sops \
+    && echo '79b0f844237bd4b0446e4dc884dbc1765fc7dedc3968f743d5949c6f2e701739  /usr/local/bin/sops' | sha256sum -c - \
+    && chmod 0755 /usr/local/bin/sops \
+    && ruby --version && bundle --version && rustc --version && sops --version
+# Existing entrypoint retains ownership setup, hooks and persistent state.
+COPY mira-dev-start /usr/local/bin/mira-dev-start
+RUN chmod 0755 /usr/local/bin/mira-dev-start
+CMD ["/usr/local/bin/mira-dev-start"]
+
+COPY mira-dev-db /usr/local/bin/mira-dev-db
+RUN chmod 0755 /usr/local/bin/mira-dev-db
+COPY mira-rails /usr/local/bin/mira-rails
+RUN chmod 0755 /usr/local/bin/mira-rails

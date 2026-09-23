@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+python3 "$MIRA_ROOT/shared/automation/scripts/house_keys.py"
+git config --global user.name Mira
+git config --global user.email mira-agent@agentmail.to
+git config --global credential.https://github.com.helper ''
+git config --global --add credential.https://github.com.helper '!/usr/bin/gh auth git-credential'
+exec python3 /home/agent/trigger_shim.py
