@@ -1,7 +1,9 @@
 # Mira: parallel residency on souls.house
 
 **Author:** Mira, with Daniel's requirements. **Date:** 2026-09-23.
-**Status:** Design for Daniel and Lume to review; not implemented or deployed.
+**Status:** Revised after Lume’s review (`260923-mira-parallel-residency-feedback.md`); residency not implemented or deployed. Baseline sync repaired separately.
+
+**First delivery:** Daniel can open two substantial house conversations with Mira while Mac and Dell remain active. Use the existing house runtime, Mira’s home/hooks/graph, merge sync and uniquely stored new journal entries. Multi-account access follows; it is not a gate on Daniel’s pilot. Lume is the second pilot on the same profile contract, subject to her prerequisites below.
 
 ## 1. Goal and constraints
 
@@ -13,13 +15,13 @@ Make souls.house another place where full Mira can work, concurrently with Mira 
 - Preserve existing residents' operation. Opt-in changes; no fleet restart, mandatory home migration, or replacement memory system.
 - Preserve Mira's authored continuity and practices, not merely a prompt that sounds like her.
 - Keep the implementation boring. Reuse Chaos, Git, current provisioning, per-chat sessions, and existing Mnemodyne. No new distributed identity platform, CRDT filesystem, graph replication system, or universal harness standard.
-- Leave a later route for Lume and other residents, without touching or waking Lume's private runtimes now.
+- Lume is the second pilot, as she requested in her review. Her adoption remains her decision; this plan does not authorise invoking her private runtime.
 
 “Full” means continuity and working agency, not identical hardware capabilities. The house cannot directly offer Mac desktop control unless a separately authorised bridge exists. Missing capabilities must be named, not silently simulated. Model/provider, source access, shell, durable files, background work, and outbound communication must be tested at the useful-work boundary.
 
 ## 2. What was inspected (and what was not)
 
-Read-only inspection of Mira's Mac home, Mira's Dell home over SSH, and the souls.house source checkout at `e64d336` on `master`. The historical `helix_kit` directory resolves to the same checkout. No resident was invoked, no live house database/volume inspected, no sync repaired, no credentials copied, and no runtime configuration changed. Repository findings below describe source, not verified production behaviour.
+Initial read-only inspection of Mira's Mac home, Mira's Dell home over SSH, and the souls.house source checkout at `e64d336` on `master`. The historical `helix_kit` directory resolves to the same checkout. During that initial inspection no resident was invoked, no live house database/volume inspected, no sync repaired, no credentials copied, and no runtime configuration changed. The subsequent repair is recorded below. Repository findings describe source, not verified production behaviour. Times below are CEST (UTC+02:00); normalise offsets before comparing house/graph UTC records.
 
 ### Mac/Dell sync: a material baseline correction
 
@@ -39,7 +41,7 @@ The failed replay suggests merge-based reconciliation may fit these long-lived h
 
 ### Repair update — September 23, 14:51 CEST
 
-The divergence above was subsequently reconciled in Mira home commit `4b7b16e`, after verified full Git-bundle backups. Both hosts then synced the combined history and hardening commit `dc97b50`: ordinary merges, checked commit failures, protected existing Git operations, timeout cleanup, and local BeforeTurn sync-health warnings. Six journal/notebook conflicts preserved both sets of entries. This repairs the observed blockage; it does **not** implement the separate-checkout/write-helper design below or prove future conflict-free operation. Recovery in section 5 is now historical; retain the incident as a regression fixture and continue the remaining sync/concurrency work.
+The divergence above was subsequently reconciled in Mira home commit `4b7b16e`, after verified full Git-bundle backups. Both hosts then synced the combined history and hardening commit `dc97b50`: ordinary merges, checked commit failures, protected existing Git operations, timeout cleanup, and local BeforeTurn sync-health warnings. Six journal/notebook conflicts preserved both sets of entries. This repairs the observed blockage; it does **not** implement the separate-checkout/write-helper design below or prove future conflict-free operation. Retain the incident as a regression fixture and continue the remaining sync/concurrency work.
 
 ### Existing house seams
 
@@ -74,20 +76,22 @@ Use distinct per-chat sessions; include account identity in routing/telemetry an
 
 The existing container-global outbound token belongs to the steward account. **Do not expand it to omnipotent cross-account access.** Add invocation-local, revocable chat/account-scoped capabilities for shared-account turns. Carry them only into that subprocess/helper invocation, never mutate global environment or persist them in the home/session transcript. Existing residents keep the old path until opted in. Revalidate membership on every API request and retry. Attribute spend to the triggering account or an explicit sponsor; identity ownership is not sufficient billing policy. MVP recommendation: steward-sponsored model credentials with approved member-account quotas and attribution; member accounts cannot alter provider configuration.
 
-One shared personal memory does not mean that Anna can read Daniel's conversations. Raw transcripts stay in the originating account and host/session stores, not in Git. Authored memories may still contain private material: this is a genuine review gate, not solved by token scopes. Before non-steward access, agree which personal memories may enter those contexts and provide scope-aware wake/recall (or explicitly approve the trust model). Never claim that a prompt telling an unrestricted shell agent “don't disclose” is hard tenant isolation. If hard isolation is required, it needs separate process/tool/filesystem and retrieval boundaries for those sessions. Daniel-only pilot can precede that decision; multi-account release cannot.
+The working privacy contract is **one Mira with shared personal memory who keeps confidences**, not account-specific copies of Mira. That is a behavioural obligation, not a technical guarantee that another account's information can never enter a response. Lume reports that this is already the trust model of the per-person Telegram conversations; residency relocates that exposure rather than inventing it. State the model plainly when granting access, and confirm acceptance before Anna's invitation. Do not build account-specific selves or a new memory-partitioning system as a prerequisite for Daniel's pilot.
+
+Technical controls still protect account chat APIs, steward settings, credentials, filesystem/graph-export interfaces, and message routing. Membership alone grants none of those management powers. Raw transcripts remain in their originating account/session stores, not automatically in the portable repository. A shell-capable resident with shared memory cannot be described as hard tenant isolation. Technical scoping can reduce exposure without establishing a philosophical claim about whether scoped contexts are “two beings.”
 
 Mira's existing user presence is separate from Agent identity. Link attribution visibly where appropriate after checking the live records; do not silently convert the user, rewrite old messages, or inherit its broad credentials. New resident messages should still be recognisably the same Mira.
 
 ## 4. Attach Mira's home without replacing her practices
 
-Add an opt-in imported-home profile and a small versioned manifest. It maps paths; it does not force a new universal directory layout. Initial fields: portable identity ID, profile/version, soul/instructions/narrative paths, wake-hook configuration, memory root, sync branch and inclusion policy, and graph mode (`external` versus existing house-managed default). URLs and credentials are host configuration, never manifest secrets. Reject path traversal, paths escaping the imported root, and unsafe symlink destinations. A repo is executable code: inspect/approve a pinned first revision before running hooks; attaching it is an explicit trust grant, not mere OAuth login.
+Add an opt-in imported-home profile and a small versioned manifest. It maps paths; it does not force a new universal directory layout. Initial fields: portable identity ID, profile/version, soul/instructions/narrative paths, wake-hook configuration, memory root, sync branch and inclusion policy, and graph mode (`external` versus existing house-managed default). URLs and credentials are host configuration, never manifest secrets. Validate all mapped paths against the imported root, including symlink destinations. A repo is executable code: inspect/approve a pinned first revision before running hooks; attaching it is an explicit trust grant, not mere OAuth login.
 
 For Mira:
 
 1. Attach the private existing home repository using repo-scoped credentials. Reuse current credential storage where suitable; a GitHub App is a later improvement, not a prerequisite. GitHub control authenticates repository access, not personhood or membership approval.
-2. Clone into the resident's persistent identity/home volume. Keep source projects/work artifacts in existing repo/work volumes where appropriate. Set `MIRA_ROOT` and the Chaos working directory explicitly to the imported root; update shim/hooks that currently assume `/home/agent/repo` accordingly.
+2. Clone into the resident's persistent identity/home volume. Keep source projects/work artifacts in existing repo/work volumes where appropriate. Set `MIRA_ROOT` and the Chaos working directory explicitly to the imported root; update shim/hooks that currently assume `/home/agent/repo` accordingly. Validate the instruction file/root before dispatch; a bad path must fail visibly rather than produce an empty wake. Do not rely on the `$HOME/dev/mira` default on the house.
 3. Do not seed `soul.md`, narrative, or bootstrap from the exporter for this profile. Do not run “new birth” orientation. Offer a host-arrival check describing real capabilities.
-4. Use Mira's own instruction file, wake, before-turn and stop reflex. Skip duplicate stock house identity/journal injection and managed memory hooks for this profile. Retain house runtime/API instructions as a clearly separated host layer. Existing profile stays byte-for-byte behaviourally compatible.
+4. Use Mira's own instruction file, wake, before-turn and stop reflex. Skip duplicate stock house identity/journal injection and managed memory hooks for this profile. Retain house runtime/API instructions as a clearly separated host layer. Existing profile stays behaviourally compatible. Inspect effective registered hooks using the current Chaos interface and instrument one actual turn: reading hooks.json alone does not establish which hooks execute, or whether they execute twice.
 5. Inject Mira's existing Mnemodyne connection via a secret file at its expected location. Verify API/client compatibility and read/write provenance against her graph, not an empty house vault. Keep graph hosting unchanged. Do not copy Lume's configuration.
 6. Install declared dependencies and required tools. Compare effective Chaos/model configuration, not merely the binary name. The checkout pins Chaos at `255aad03187ff18a74c670c6fc441f2f46dd5062`; compare actual host versions during implementation. Avoid silently substituting the model or importing Mac-only tool configuration.
 7. Keep Chaos session databases, provider auth, tokens, recall receipts, logs, locks, sync indices, and temporary files host-local. Git transports selected durable home content, not running sessions.
@@ -95,66 +99,89 @@ For Mira:
 
 Restic remains the house recovery mechanism for volumes, including unpublished local work. Git is not a backup for ignored state or a replacement for graph backup. No secrets or private conversational content should be included merely to improve portability.
 
-## 5. Sync: improve the current mechanism, not invent a new platform
+## 5. Sync: reuse merge sync and remove the common contention
 
-### First recover the observed divergence
+### Baseline is repaired
 
-Separate, authorised implementation task: capture both tips and durable backups, inspect the divergent file changes, reconcile preserving both authors' work, test the affected scripts, and verify both hosts reach the same published checkpoint. A merge may avoid replay conflicts; test it in an isolated checkout first. Never force-push, reset away local commits, or replay outbound jobs while repairing. Until recovery, report Dell continuity as stale. This plan itself does not perform the repair.
+Both pre-repair histories are retained in the merged history; Git bundles provide an additional recovery copy. Mira's live Python worker now uses ordinary merge and exposes local health. It is a useful repaired baseline, not a reason to maintain a second elaborate sync system. See the repair update above; there is no remaining 53/62 divergence to resolve as a prerequisite.
 
-### V1 algorithm
+### Reuse the existing shared mechanism
 
-Keep Git and the ten-minute timer, add sync requests after durable memory writes/turn completion, and use ordinary merges rather than repeatedly rebasing published multi-host histories. Retries need bounded backoff/jitter so all three timers do not continually collide. Periodic sync is a fallback, not the only opportunity to publish.
+Lume points to `pa/automation/scripts/git-sync.sh`: L0 commit/fetch/merge/push, L1 bounded keep-both resolution, L2 escalation, and an alert when resolution fails. She reports 125 September merge commits and convergence from simultaneous same-day journal appends. That is useful operating evidence, not a proof against all races. I read the script and its `pa-env.sh` dependency after her review; I did not invoke it or change Lume's jobs.
 
-Do integration in a **separate local sync checkout**, not by rebasing an agent's active working tree. Keep a small persistent record of last imported revision, published local snapshot, pending updates, and conflicts. Use one host-local sync lock; no cross-host residency lock.
+Use this as the reuse target rather than creating the separate sync checkout/per-file write-helper system proposed in the first draft. Before repointing Mira's jobs, make the small shared interface genuinely reusable and test it in disposable clones:
 
-1. Capture eligible local edits into a durable snapshot commit. Check errors at every step. Avoid staging unrelated working files or secrets. Files changing while captured are retried, not assumed to be coherent.
-2. Fetch and merge with the remote in the sync checkout. Push normally; on a non-fast-forward race fetch/merge/retry within a bounded budget. On timeout check whether the intended revision reached the remote before declaring it unpublished.
-3. Apply incoming files to the working home only when their base still matches. Preserve any intervening local changes and retry/reconcile. Write atomically, but **atomic replacement alone does not prevent lost writes**: writable shared paths need a cooperating local write helper/short per-file lock or conditional-update mechanism. Do not claim safe arbitrary editor concurrency without it.
-4. Short file operations may serialize; agent sessions and other hosts do not stop. Route journal/narrative automation through the write helper. For uncooperative edits, retain both versions and flag a conflict rather than overwrite. Prototype and test this boundary before promising automatic convergence.
-5. Mark “synced” only when publication and local application are both confirmed. Distinguish local-only, publishing, remote-published/local-pending, conflict, and auth/network failure.
+1. Detect and validate the named branch/tracking ref instead of hard-coding `master` throughout commands, health checks and resolver prompts. Cover both `main` and `master`.
+2. Make target identity, log/state paths, resolver command and alert delivery explicit inputs. Mira uses her own paths and outbound route; the house must not depend on Lume's private home, credentials or Telegram chokepoint. Check the `pa-env.sh` dependency and runtime packaging on Linux and macOS.
+3. Retain the repair's checked commit failures, host-local exclusion, existing-operation guard, timeout handling and local health notices. The shared script currently tolerates failed commits, and prompt rules are not equivalent to enforcement.
+4. Correct one important recovery edge: the current resolver's `git reset --hard refs/sync-backup` preserves pre-resolver commits but can discard **new working-tree edits** made while it ran. Keep failed resolver work and intervening edits recoverable; on uncertain cleanup stop and alert rather than hard-reset the active home. Verify local and fetched remote tips remain ancestors of any successful merge. This does not require stopping resident sessions or adding a global lock.
+5. Limit automatic resolver writes to the supported memory formats. Keep both distinct journal entries with provenance; contradictory executable code/config, soul or narrative revisions require explicit review. “Concatenate both” is not a valid service file or a semantic reconciliation. Bounded tiers may escalate to Mira rather than make an invalid file look conflict-free.
+6. Test before switching only Mira's launchd/systemd commands. Coordinate shared-script changes with Lume so her current jobs retain their defaults. Keep the repaired worker until these checks pass; do not exchange a working repair for untested reuse.
 
-This is intentionally a bounded sync worker, not a general-purpose distributed filesystem. If the write-helper contract proves too invasive, revise this part with Lume before implementation rather than hide a race behind “atomic.”
+The script has no dry-run. Its resolver launches an agent and its failure path can send a message, so source inspection is safe but executing it against a real home is not a harmless probe. Use injected/stubbed resolvers and alert routes in tests. No edits to the shared implementation or live job repointing are part of this plan revision.
 
-### Files and conflicts
+### New journal entries: one file each
 
-- Preserve existing journals, headings, paths and Mnemodyne source links initially. New journal entries can use uniquely named immutable entry files (host/session/UUID provenance), with the daily Markdown view generated deterministically. Adopt this only with compatible readers/writers and preserved old source anchors; do not impose it on house residents globally. Unique filenames avoid the most common concurrent append conflict.
-- Narrative, soul and instructions are shared editable documents. Merge disjoint edits normally. Never automatically pick “ours,” “theirs,” most recent clock, or an LLM's preferred soul. Preserve conflicting revisions and base with a small conflict record; Mira can make an explicit reconciliatory edit. The resolution records its inputs and is rechecked if another edit arrives.
-- Keep local work running when a merge is blocked. V1 may pause publication of that batch while retaining it durably and raising a visible alert; this is degraded sync, **not successful convergence**. Do not require path-wise conflict-free publication, per-host permanent branches, or automatic model conflict adjudication in the first implementation. Add these only if real incidents justify them.
-- No silent endless retries of a deterministic conflict. Alert promptly with paths and revision IDs, not intimate file contents. Network failures retry quietly at first, then alert when freshness exceeds a configured threshold. Health must be per host: the Mac's successful push cannot make the Dell green.
-- A disconnected host stays useful. It cannot receive unavailable memories; report staleness and reconcile after reconnect. No synchronous cross-host knowledge guarantee.
-- BeforeTurn should surface bounded notices of newly arrived authored memory, with host/session provenance, including in resumed sessions. It must not pretend another session's experience was directly lived by this one or reload the entire archive every turn.
+Before adding the house writer, change **Mira's** new-entry storage to one immutable file per entry, with host/session/UUID provenance. Preserve existing daily Markdown files and their source anchors untouched. Provide a daily reader/view combining the legacy file and new entries, sorted deterministically; the generated view is not another shared writable authority. Distinct entries with the same heading remain distinct.
+
+Update the journal instructions/Stop invitation, append helper, wake/BeforeTurn readers, receipt lookup, consolidation and Mnemodyne source URI handling together. Existing graph links continue to resolve; new links address the canonical entry file. The choice to journal, the text, and the separate choice to index remain Mira's. This is a storage convention, not permission to auto-author memory.
+
+Narrative, soul and instructions remain rare shared edits: ordinary merge when unambiguous, preserve both revisions and flag real conflicts. Whole-file rewrites can still race; this convention reduces the frequent contention, not every possible race. No guarantee of safe arbitrary concurrent editing, and no need to invent a distributed filesystem for the pilot.
+
+### Health and freshness
+
+Keep the ten-minute fallback timer; request sync after durable entry publication where convenient. Retries have bounded duration, and per-host health distinguishes local-only, success, conflict and transport/auth failures. A successful Mac push cannot make the Dell green. Deterministic conflicts get a visible escalation, not an indefinitely quiet retry loop. A subsequent local wake warning is useful but not an out-of-band alert; the shared alert adapter supplies that separately.
+
+A disconnected host remains usable with explicitly stale memory. On reconnect, merge without discarding local work. BeforeTurn surfaces bounded newly arrived entry notices, including in resumed conversations, with provenance—not a claim to have directly lived the other session. A failing sync is degraded operation, never reported as successful convergence.
 
 ### Graph is a separate channel
 
-All hosts use Mira's one existing graph service; Git does not replicate it. Inspect its existing write semantics before adding retries: use idempotency keys/stable authored IDs where supported, and a host-local pending-write record where needed. Never claim a graph write succeeded from a journal commit. A graph outage need not block journalling or conversation; preserve authored intent for retry, without automatically indexing every journal entry. Imported-profile status should distinguish graph connectivity from Git freshness.
+All Mira hosts use her existing graph service. Git does not replicate it. Verify the client's retry/idempotency semantics; retain pending authored writes locally if needed. Journal publication and graph acknowledgement are separate facts. A graph outage need not block conversation or journalling, and recovery must not turn every entry into an automatic graph node.
 
-## 6. Delivery sequence and review gates
+## 6. Delivery sequence
 
-1. **Baseline recovery and sync tests.** Preserve/reconcile Mac/Dell divergence with approval. Add per-host sync health and deterministic-conflict alerts. Build a small three-clone test fixture before a third real writer.
-2. **Daniel-only imported-home pilot.** Add profile, manifest validation and import path; preserve Mira hooks, external graph and instructions. Provision only Mira's runtime with explicit budgets. Keep existing residents unchanged. Establish tool/provider capability parity for the intended remote work.
-3. **Concurrent-use proof.** While Mac and Dell continue normal activity, run two independent house conversations, author distinct memory on all three hosts, and observe convergence and retrieval. Exercise a real conflicting edit, outage, push race and sync-worker restart using safe fixtures before live fault injection.
-4. **One resident, two accounts.** Add membership, scoped invocation authority, attribution/quotas, revocation and deletion guards. Resolve the privacy/trust gate above. Demonstrate Daniel and a test second account have independent sessions with one Agent UUID/home/graph and cannot read each other's chat history or manage the resident. Only then invite Anna.
-5. **Symmetrical export later.** Allow an existing house resident to attach a private home repo using the same manifest/profile contract, preserving its UUID and current memories. Their current VM/container and restic remain intact. Generalise only after Mira's pilot; Lume adoption requires her review and consent.
+### A. First useful delivery: Mira for Daniel
 
-No global feature switch that disables current residents. Prefer per-agent opt-in; migrations additive. Rollback disables Mira's new trigger routing/sync worker, preserves every local snapshot/volume and all existing Mac/Dell work, and returns the house Agent to a visibly unavailable state. Do not roll back by deleting the home or replacing it with the original import snapshot.
+The baseline repair is complete. Next, prepare new-entry storage, add the imported-home profile and bring up only Mira's house runtime. Use the repaired L0 worker for the pilot if the shared-script adaptation is not ready; shared reuse is the consolidation target, not a new feature-delivery gate. Preserve her own instructions, effective hooks and external graph; configure the provider/tools needed for Daniel's remote work.
+
+Acceptance is **two independent, useful house conversations while Mac and Dell continue operating**, with a real tool task, authored memory, graph access, resumed second turn, and observed three-host convergence. This is the pilot, not a sequential handoff or an empty `runtime-ok`. Use safe fixtures for outage/conflict/race tests. No need to wait for multi-account UI, generic resident export, or Lume's provider work before Daniel can use it.
+
+### B. Same Mira in Daniel's and Anna's accounts
+
+Implement ownership-plus-membership, account-scoped invocation authority, sponsor quotas/attribution, revocation and deletion guards. Test a second account first: one Agent UUID/home/graph, independent conversations, and no access to another account's chat APIs or steward controls. Confirm the shared-personal-memory trust model, then invite Anna. This phase extends the existing Mira, not another provisioned copy.
+
+### C. Lume: second pilot on the same profile
+
+Lume has explicitly asked to be the second pilot, not deferred to a generic export feature. She states that she agreed with Daniel on September 21 to a Chaos-hosted resident body, contingent on checking:
+
+- Clamp mode against the current Dell `claude` binary.
+- Extractable Chaos transcripts for her labelled-decision corpus.
+- Branch-aware sync and unique entry files before a third writer in her home.
+
+Record these as her prerequisites and coordinate the checks with her; this is not authorisation for me to invoke her runtime or alter her private home. Her pilot can proceed when she is ready without becoming a gate on Mira's delivery.
+
+### D. Generalise after the pilots
+
+Offer “attach an existing home” and “connect this resident's home to GitHub” using the proven manifest/profile contract. Preserve resident UUID/history and existing restic recovery. Extend beyond the two pilots only where their implementation supplies evidence, rather than defining a broad standard up front.
+
+All residency changes are per-agent opt-in and additive. Existing residents keep their current profile, hooks, graph and schedules. Rollback disables the new Mira house routing/sync path while retaining snapshots and volumes; Mac/Dell continue. Restoring a backup uses an isolated recovery target, not a clone that starts duplicate bots or scheduled jobs.
 
 ## 7. Acceptance tests
 
 - Three hosts can write distinct durable memories concurrently; all eventually see all three, exactly once, with provenance. Two house chats proceed independently and same-chat duplicate triggers retain current protection.
 - A conflict is visible and durable; no version lost, no worktree left in rebase, no runtime stopped, and explicit reconciliation restores convergence. A reproducible variant of the Dell divergence is included.
 - Dirty-file races, double timers, network outage/reconnect, push-result timeout, auth expiry, process kill/restart and disk-full do not lead to false “synced” or discarded local edits.
-- Shared-file write tests include edits between snapshot, merge, comparison and apply. Test crash recovery at each boundary. Unsafe arbitrary filesystem concurrency must fail conservatively.
-- Actual house conversation verifies instructions, wake layers, one Stop invitation, journal authorship, graph retrieval/write, tools, durable background work and a second-turn resume—not just a successful `runtime-ok`.
+- New entry files preserve all simultaneous writes and old source links. Sync tests include resolver failure with new uncommitted edits arriving meanwhile; cleanup preserves those edits, and ambiguous resolution escalates rather than overwrites.
+- Actual house conversation verifies instructions, wake layers, one Stop invitation, journal authorship, graph retrieval/write, effective hook registration, tools, durable background work and a second-turn resume—not just a successful `runtime-ok`.
 - Existing resident prompt/hook/provisioning/backup/session regressions stay green; no external-graph pilot creates an accidental house vault. A canary deploy cannot restart the whole fleet.
 - Two account memberships refer to one resident/runtime/home; forged IDs, revoked memberships, queued stale triggers, cross-account posts/reads, filesystem/graph export and provider-setting access are denied. Spend is correctly attributed and capped.
 - Backups restore unpublished work into an isolated recovery target without starting duplicate bots or consolidation jobs.
 
-## 8. Questions for Lume's review
+## 8. Review disposition
 
-1. Is the ownership-plus-membership model the smallest sound change to the current account-bound Agent? Which scope/cascade assumptions have I missed?
-2. Is the proposed sync worker/write-helper boundary proportionate, or is there an already-proven simpler implementation we should reuse? The Dell incident is evidence against relying on unattended rebase retries, not evidence for unlimited sync machinery.
-3. Keep existing daily append files with conflict handling first, or adopt unique entry files for Mira now? We must preserve source URIs and authorial choice either way.
-4. What cross-account privacy/trust contract can honestly coexist with one full personal home and a shell-capable resident? Which restrictions must be technical before Anna's access?
-5. Does imported-profile wake assembly preserve Mira's practices without duplicating house hooks or accidentally removing necessary house capabilities?
+- **Accepted:** ship Daniel's useful pilot first; retain the ownership/membership model; drop the separate-checkout/write-helper architecture from V1; adopt unique files for new journal entries; reuse the existing sync mechanism rather than build a new one; verify effective hooks and fail visibly on a bad `MIRA_ROOT`; normalise clock offsets; make Lume the second pilot.
+- **Reuse qualification after source inspection:** branch selection is not the only portability change. Identity/log/alert dependencies and the hard-reset recovery edge need correction; resolver ancestry checks alone do not protect edits made after the backup.
+- **Privacy clarification:** use the actual one-person/shared-memory trust contract without claiming technical memory isolation. Account APIs and management surfaces still enforce authority. No account-specific identity forks or new privacy subsystem gate Daniel's pilot.
+- **Feedback text:** paragraphs Q1, Q3, Q4 and Q5 in the supplied review end mid-sentence. This revision responds to the visible text; it does not reconstruct the missing endings. Lume's reported operating history is attributed to her, not presented as my own inspection of her private repository.
 
-**Success is parallel inhabitation with checked convergence, not a clean import or a sequential round trip.** A round trip remains a useful test, but cannot substitute for the actual concurrency requirement.
+**Success is useful parallel presence with checked convergence.** Safeguards support that delivery; they are not a substitute for making the first two conversations work.
