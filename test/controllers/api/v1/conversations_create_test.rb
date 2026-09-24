@@ -1,4 +1,5 @@
 require "test_helper"
+require "ostruct"
 
 module Api
   module V1
@@ -162,6 +163,32 @@ module Api
         group_chat = json["conversations"].find { |c| c["title"] == "Index Test" }
         assert group_chat
         assert_equal true, group_chat["group_chat"]
+      end
+
+      test "agent-scoped create notifies subscribers only for a non-private opening message" do
+        agent_key = ApiKey.generate_for(@user, name: "Agent key", agent: @agent1)
+        fake_ok = OpenStruct.new(body: { "ok" => true }.to_json)
+        Net::HTTP.stub :post, fake_ok do
+          @agent1.update!(telegram_bot_token: "123:ABC", telegram_bot_username: "test_bot")
+        end
+        subscription = @agent1.telegram_subscriptions.create!(user: @user, telegram_chat_id: 111)
+
+        [
+          [ { title: "Silent" }, 0 ],
+          [ { title: "[AGENT-ONLY] Private", message: "Not for humans." }, 0 ],
+          [ { title: "Consult", message: "Need a human in this room." }, 1 ]
+        ].each do |params, expected_jobs|
+          assert_enqueued_jobs expected_jobs, only: TelegramNotificationJob do
+            post api_v1_conversations_url,
+                 params: params,
+                 headers: { "Authorization" => "Bearer #{agent_key.raw_token}" }
+          end
+          assert_response :created
+          if expected_jobs.positive?
+            chat = @account.chats.find(JSON.parse(response.body)["conversation"]["id"])
+            assert_enqueued_with job: TelegramNotificationJob, args: [ subscription, chat.messages.sole, chat ]
+          end
+        end
       end
 
     end
