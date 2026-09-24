@@ -145,8 +145,20 @@
   }
 }
 
+/* Inline code must use our active theme, not a dependency's light-mode surface. */
+[data-streamdown-codespan] {
+  background-color: var(--muted);
+  color: var(--foreground);
+}
+
+/* Streamdown already marks code; typography's synthetic backticks add noise. */
+[data-streamdown-codespan]::before,
+[data-streamdown-codespan]::after {
+  content: none;
+}
+
 /* Let Streamdown/Shiki control code block backgrounds instead of prose defaults */
-.prose :where(pre):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+.prose :where(pre):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
   background-color: transparent;
   color: inherit;
 }

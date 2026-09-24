@@ -52,7 +52,8 @@
   }
 </script>
 
-<div class="space-y-2">
+<!-- The picker occupies one control cell; attachments span the composer below it. -->
+<div class="contents">
   <input
     bind:this={fileInput}
     type="file"
@@ -68,13 +69,13 @@
     size="sm"
     onclick={() => fileInput?.click()}
     {disabled}
-    class="h-10 w-10 p-0"
+    class="col-start-1 row-start-1 h-10 w-10 p-0"
     title="Attach files">
     <Paperclip size={18} />
   </Button>
 
-  {#if files.length > 0}
-    <div class="space-y-2">
+  {#if files.length > 0 || error}
+    <div class="col-span-full row-start-2 min-w-0 max-h-32 overflow-y-auto space-y-2" aria-live="polite">
       {#each files as file, index}
         <div class="flex items-center gap-2 p-2 rounded-md border border-border bg-muted/50">
           <div class="flex-1 min-w-0">
@@ -87,15 +88,15 @@
             size="sm"
             onclick={() => removeFile(index)}
             {disabled}
+            aria-label={`Remove ${file.name}`}
             class="h-8 w-8 p-0">
             <X size={16} />
           </Button>
         </div>
       {/each}
+      {#if error}
+        <div class="text-sm text-destructive">{error}</div>
+      {/if}
     </div>
-  {/if}
-
-  {#if error}
-    <div class="text-sm text-destructive">{error}</div>
   {/if}
 </div>

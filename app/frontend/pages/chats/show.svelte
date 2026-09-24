@@ -646,7 +646,7 @@
   <title>{chat?.title || 'Chat'}</title>
 </svelte:head>
 
-<div class="flex h-[calc(100dvh-4rem)]">
+<div class="flex min-h-0 flex-1">
   <!-- Left sidebar: Chat list -->
   <ChatList
     {chats}
@@ -656,7 +656,7 @@
     onClose={() => (sidebarOpen = false)} />
 
   <!-- Right side: Chat messages -->
-  <main class="flex-1 flex flex-col bg-background min-w-0">
+  <main class="flex-1 flex flex-col bg-background min-w-0 min-h-0">
     <!-- Chat header -->
     <ChatHeader
       {chat}

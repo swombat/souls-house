@@ -66,7 +66,11 @@
 </script>
 
 <!-- Messages container -->
-<div bind:this={messagesContainer} onscroll={handleScroll} class="flex-1 overflow-y-auto px-3 md:px-6 py-4 space-y-4">
+<div
+  bind:this={messagesContainer}
+  onscroll={handleScroll}
+  data-testid="chat-messages"
+  class="flex-1 min-h-0 overflow-y-auto px-3 md:px-6 py-4 space-y-4">
   {#if loadingMore}
     <div class="flex justify-center py-4">
       <Spinner size={24} class="animate-spin text-muted-foreground" />

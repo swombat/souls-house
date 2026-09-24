@@ -32,9 +32,9 @@
 </script>
 
 <ModeWatcher />
-<div class="flex min-h-screen flex-col bg-bg">
-  <Navbar />
-  <main class="flex-1">{@render children?.()}</main>
+<div class="flex flex-col bg-bg {showFooter ? 'min-h-dvh' : 'h-dvh overflow-hidden'}">
+  <div class="shrink-0"><Navbar /></div>
+  <main class={showFooter ? 'flex-1' : 'flex min-h-0 flex-1 flex-col'}>{@render children?.()}</main>
   {#if showFooter}
     <Footer />
   {/if}

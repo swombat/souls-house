@@ -126,8 +126,8 @@
 </script>
 
 <!-- Message input -->
-<div class="border-t border-border bg-muted/30 p-3 md:p-4">
-  <div class="flex gap-2 md:gap-3 items-start">
+<div class="shrink-0 border-t border-border bg-muted/30 p-3 md:p-4" data-testid="message-composer">
+  <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-2 md:gap-3 items-start">
     <FileUploadInput
       bind:files={selectedFiles}
       disabled={submitting || disabled}
@@ -135,7 +135,7 @@
       allowedExtensions={fileUploadConfig.acceptable_extensions || []}
       maxSize={fileUploadConfig.max_size || 50 * 1024 * 1024} />
 
-    <div class="flex-1">
+    <div class="min-w-0 col-start-2 row-start-1">
       <textarea
         bind:this={textareaRef}
         bind:value={$messageForm.message.content}
@@ -148,16 +148,19 @@
                min-h-[40px] max-h-[240px] overflow-y-auto disabled:opacity-50 disabled:cursor-not-allowed"
         rows="1"></textarea>
     </div>
-    <MicButton
-      disabled={submitting || disabled}
-      {accountId}
-      {chatId}
-      onsuccess={handleTranscription}
-      onerror={handleTranscriptionError} />
+    <div class="col-start-3 row-start-1">
+      <MicButton
+        disabled={submitting || disabled}
+        {accountId}
+        {chatId}
+        onsuccess={handleTranscription}
+        onerror={handleTranscriptionError} />
+    </div>
     <button
       onclick={sendMessage}
       disabled={(!$messageForm.message.content.trim() && selectedFiles.length === 0) || submitting || disabled}
-      class="h-10 w-10 p-0 inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
+      aria-label="Send message"
+      class="col-start-4 row-start-1 h-10 w-10 p-0 inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
       {#if submitting}
         <Spinner size={16} class="animate-spin" />
       {:else}
