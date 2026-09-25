@@ -113,7 +113,8 @@ class AgentsController < ApplicationController
       :thinking_enabled, :thinking_budget, :reasoning_effort,
       :telegram_bot_token, :telegram_bot_username,
       :voice_id, :persistent_session, :persistent_wake_session, :scheduled_wakes_enabled,
-      :heartbeat_wakes_per_day
+      :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
+      :session_context_budget_tokens
     )
 
     permitted.delete(:telegram_bot_token) if permitted[:telegram_bot_token].blank?

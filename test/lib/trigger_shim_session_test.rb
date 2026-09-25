@@ -1388,6 +1388,127 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_equal 10, second.dig("telemetry", "prompt", "components", "request")
   end
 
+  test "session policy rolls idle, old, and over-budget sessions in that order" do
+    out = run_shim_python(<<~PY)
+      from datetime import datetime, timedelta, timezone
+      now = datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc)
+      def at(minutes_ago):
+          return (now - timedelta(minutes=minutes_ago)).isoformat()
+      policy = mod.normalize_session_policy({
+          "idle_timeout_secs": 45 * 60, "max_age_secs": 240 * 60,
+          "context_budget_tokens": 300000, "unknown": 5,
+      })
+      fresh = {"created_at": at(30), "last_finished_at": at(5), "last_context_tokens": 90000}
+      idle = dict(fresh, last_finished_at=at(46))
+      old = dict(fresh, created_at=at(241))
+      big = dict(fresh, last_context_tokens=300001)
+      everything = {"created_at": at(500), "last_finished_at": at(100), "last_context_tokens": 900000}
+      unmeasured = dict(fresh, last_context_tokens=None)
+      print(json.dumps({
+          "policy": policy,
+          "fresh": mod.session_policy_roll_reason(fresh, policy, now=now),
+          "idle": mod.session_policy_roll_reason(idle, policy, now=now),
+          "old": mod.session_policy_roll_reason(old, policy, now=now),
+          "big": mod.session_policy_roll_reason(big, policy, now=now),
+          "everything": mod.session_policy_roll_reason(everything, policy, now=now),
+          "unmeasured": mod.session_policy_roll_reason(unmeasured, policy, now=now),
+          "disabled": mod.session_policy_roll_reason(everything, mod.normalize_session_policy({"idle_timeout_secs": 0}), now=now),
+          "absent": mod.session_policy_roll_reason(everything, mod.normalize_session_policy(None), now=now),
+          "junk": mod.normalize_session_policy({"idle_timeout_secs": "soon", "max_age_secs": -5}),
+          "notice": mod.session_policy_roll_notice("idle-timeout", idle, policy, now=now),
+      }))
+    PY
+
+    result = JSON.parse(out)
+    assert_equal({ "idle_timeout_secs" => 2700, "max_age_secs" => 14_400, "context_budget_tokens" => 300_000 }, result["policy"])
+    assert_nil result["fresh"]
+    assert_equal "idle-timeout", result["idle"]
+    assert_equal "max-age", result["old"]
+    assert_equal "context-budget", result["big"]
+    assert_equal "idle-timeout", result["everything"]
+    assert_nil result["unmeasured"], "an unmeasurable context never forces a roll"
+    assert_nil result["disabled"]
+    assert_nil result["absent"], "older HelixKit sends no policy and keeps resuming"
+    assert_equal({}, result["junk"])
+    assert_includes result["notice"], "idle for 46 minutes (limit 45)"
+    assert_includes result["notice"], "helixkit-api.md"
+  end
+
+  test "context estimate is per provider request and absent for clamp subscription transports" do
+    out = run_shim_python(<<~PY)
+      events = {"telemetry_status": "detailed", "usage": {"input_tokens": 900000, "provider_request_count": 6}}
+      print(json.dumps({
+          "api_key": mod.context_tokens_estimate(events, "anthropic", "api_key"),
+          "openai_subscription": mod.context_tokens_estimate(events, "openai", "oauth_account"),
+          "claude_subscription": mod.context_tokens_estimate(events, "anthropic", "oauth_account"),
+          "gemini_subscription": mod.context_tokens_estimate(events, "gemini", "oauth_account"),
+          "legacy": mod.context_tokens_estimate({"telemetry_status": "legacy"}, "openai", "api_key"),
+          "no_requests": mod.context_tokens_estimate(
+              {"telemetry_status": "detailed", "usage": {"input_tokens": 5, "provider_request_count": 0}},
+              "openai", "api_key",
+          ),
+      }))
+    PY
+
+    result = JSON.parse(out)
+    assert_equal 150_000, result["api_key"]
+    assert_equal 150_000, result["openai_subscription"]
+    assert_nil result["claude_subscription"]
+    assert_nil result["gemini_subscription"]
+    assert_nil result["legacy"]
+    assert_nil result["no_requests"]
+  end
+
+  test "an idle persistent session rolls to a full prompt with a fresh-session notice" do
+    out = run_shim_python(<<~PY, fake_chaos: :echo_resumed_pid)
+      from datetime import datetime, timedelta, timezone
+      policy = {"idle_timeout_secs": 45 * 60, "max_age_secs": 240 * 60, "context_budget_tokens": 300000}
+      first, _ = mod.persistent_trigger("sess-idle", "REQUEST FULL", None, "claude-opus-4-7", 30, session_policy=policy)
+      path = mod.session_record_path("sess-idle")
+      record = json.loads(path.read_text())
+      recorded_context = record["last_context_tokens"]
+      record["last_finished_at"] = (datetime.now(timezone.utc) - timedelta(minutes=50)).isoformat()
+      path.write_text(json.dumps(record))
+      second, code = mod.persistent_trigger(
+          "sess-idle", "REQUEST FULL 2", "DELTA ONLY", "claude-opus-4-7", 30, session_policy=policy
+      )
+      retired = sorted(p.name for p in path.parent.glob("*.retired-idle-timeout.json"))
+      print(json.dumps({"first": first, "second": second, "code": code,
+                        "recorded_context": recorded_context, "retired": len(retired)}))
+    PY
+
+    result = JSON.parse(out)
+    second = result["second"]
+    assert_equal 120, result["recorded_context"]
+    assert_equal 200, result["code"]
+    assert_equal false, second["session_resumed"]
+    assert_not_equal result.dig("first", "chaos_session_id"), second["chaos_session_id"]
+    assert_equal "rolled", second.dig("telemetry", "session", "outcome")
+    assert_equal "idle-timeout", second.dig("telemetry", "session", "roll_reason")
+    assert_equal "idle-timeout", second["session_roll_reason"]
+    assert_equal "full", second.dig("telemetry", "prompt", "mode")
+    assert_includes second["full_invocation_text"], "SOUL FIRST"
+    assert_includes second["full_invocation_text"], "REQUEST FULL 2"
+    assert_includes second["full_invocation_text"], "Runtime notice: fresh session."
+    assert_not_includes second["full_invocation_text"], "DELTA ONLY"
+    assert_equal 1, result["retired"]
+  end
+
+  test "an over-budget persistent session rolls on the next trigger" do
+    out = run_shim_python(<<~PY, fake_chaos: :echo_resumed_pid)
+      policy = {"context_budget_tokens": 100}
+      mod.persistent_trigger("sess-budget", "REQUEST FULL", None, "claude-opus-4-7", 30, session_policy=policy)
+      second, _ = mod.persistent_trigger("sess-budget", "REQUEST FULL 2", "DELTA", "claude-opus-4-7", 30, session_policy=policy)
+      third, _ = mod.persistent_trigger("sess-budget", "REQUEST FULL 3", "DELTA", "claude-opus-4-7", 30)
+      print(json.dumps({"second": second, "third": third}))
+    PY
+
+    result = JSON.parse(out)
+    assert_equal "context-budget", result.dig("second", "telemetry", "session", "roll_reason")
+    assert_includes result.dig("second", "full_invocation_text"), "about 120 tokens (budget 100)"
+    assert_equal "resumed", result.dig("third", "telemetry", "session", "outcome"), "no policy means resume"
+  end
+
   test "explicit safeguard roll is reported even when no sidecar mapping exists" do
     out = run_shim_python(<<~PY, fake_chaos: :echo_resumed_pid)
       response, code = mod.persistent_trigger(

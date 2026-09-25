@@ -82,6 +82,52 @@
         onCheckedChange={(checked) => ($form.agent.persistent_wake_session = checked)} />
     </div>
 
+    <div class="rounded border bg-muted/30 p-4 space-y-3">
+      <div class="space-y-1">
+        <Label>Fresh-session limits</Label>
+        <p class="text-sm text-muted-foreground">
+          A persistent session starts fresh, with identity, journals and the recent transcript, once any limit is
+          passed. Use 0 to turn a limit off.
+        </p>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-3">
+        <div class="space-y-1">
+          <Label for="session_idle_timeout_minutes">Idle minutes</Label>
+          <Input
+            id="session_idle_timeout_minutes"
+            type="number"
+            min={0}
+            step={1}
+            bind:value={$form.agent.session_idle_timeout_minutes}
+            disabled={!runtimeManaged} />
+        </div>
+        <div class="space-y-1">
+          <Label for="session_max_age_minutes">Maximum age (minutes)</Label>
+          <Input
+            id="session_max_age_minutes"
+            type="number"
+            min={0}
+            step={1}
+            bind:value={$form.agent.session_max_age_minutes}
+            disabled={!runtimeManaged} />
+        </div>
+        <div class="space-y-1">
+          <Label for="session_context_budget_tokens">Context budget (tokens)</Label>
+          <Input
+            id="session_context_budget_tokens"
+            type="number"
+            min={0}
+            step={1000}
+            bind:value={$form.agent.session_context_budget_tokens}
+            disabled={!runtimeManaged} />
+        </div>
+      </div>
+      <p class="text-xs text-muted-foreground">
+        The context budget applies where the runtime can measure per-request context (API-key and OpenAI/xAI
+        subscription runs). Claude and Gemini subscription runs are bounded by the idle and age limits.
+      </p>
+    </div>
+
     {#if !runtimeManaged}
       <p class="text-xs text-muted-foreground">
         Persistent sessions become available when this resident runs in a Chaos harness.
