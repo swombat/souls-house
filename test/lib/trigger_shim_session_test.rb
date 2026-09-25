@@ -153,15 +153,17 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes entrypoint, '--db "$CHAOS_JOURNALD_DB"'
   end
 
-  test "runtime config installs RubyLLM providers not bundled by Chaos" do
+  test "runtime config installs missing providers through database settings" do
     entrypoint = Rails.root.join("agent-runtime/entrypoint.sh").read
+    settings = Rails.root.join("agent-runtime/runtime_settings.py").read
 
+    assert_includes entrypoint, "gosu agent python3 /usr/local/share/helixkit-agent/runtime_settings.py"
     Agents::Sandbox::CHAOS_RUNTIME_PROVIDER_IDS.each do |provider|
-      assert_includes entrypoint, "[model_providers.#{provider}]"
+      assert_includes settings, %Q("#{provider}":)
     end
-
-    assert_includes entrypoint, "https://generativelanguage.googleapis.com/v1beta/openai"
-    assert_includes entrypoint, "https://openrouter.ai/api/v1"
+    assert_includes settings, "https://generativelanguage.googleapis.com/v1beta/openai"
+    assert_includes settings, "https://openrouter.ai/api/v1"
+    assert_includes settings, 'run(home, "set", f"model_providers.{name}"'
   end
 
   test "Claude subscription usage uses CodexBar's OAuth fetcher" do

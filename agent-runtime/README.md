@@ -27,6 +27,34 @@ SOULSHOUSE_AGENT_BACKUPS_ENABLED=false
 
 ## Runtime contract
 
+### SQLite settings migration (Chaos 47.6)
+
+Startup runs `runtime_settings.py` as the resident UID **before** account
+registration, journald, or the trigger server. It explicitly migrates legacy
+settings, preserves the storage destination, and adds missing provider/compaction
+defaults through Chaos's database-backed config interface. It never rewrites
+preferences into bootstrap TOML. Existing `oauth-runtime` homes are prepared too;
+new OAuth homes are not created opportunistically. Explicit resident choices win.
+
+Before upgrading an existing resident, block new triggers, drain in-flight work,
+stop the old container, and snapshot its volumes plus routing/session metadata.
+Never mount a live old home into the new runtime. Keep the old image and matching
+state for rollback; downgrading the binary alone is not rollback. Preflight literal
+settings/global-MCP credentials: migration may need a durable isolated credential
+store. Do not loosen container isolation to obtain one. This is a SQLite schema
+upgrade, not a PostgreSQL transfer.
+
+Build a separate candidate tag for staged rollouts: `scripts/build-agent-runtime`
+also advances fleet `latest` tags, so do not use it while holding other residents
+back. Set only selected residents' `container_image` to the verified candidate;
+keep busy/held residents on their original images.
+
+Run real migration/repeated-boot tests with a built candidate:
+
+```sh
+CHAOS_TEST_BIN=/path/to/chaos python3 -m unittest discover -s test -p runtime_config_test.py
+```
+
 ### Compaction timing control
 
 On boot, the runtime defaults `agent_compaction_control` to `"bounded"` in the
@@ -296,7 +324,6 @@ receipts, resident-posted replies, actual graph authentication, and a subsequent
 `session_resumed=true` response with the same Chaos process ID. A healthy HTTP
 endpoint and a valid `hooks.json` are not enough. See the parallel-residency pilot
 report in `docs/plans/` for the initial failure and correction.
-
 
 OpenAI OAuth uses `$CHAOS_HOME/oauth-runtime` for isolated credentials and
 runtime configuration. Trust the same reviewed imported root in that runtime

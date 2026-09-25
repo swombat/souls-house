@@ -50,45 +50,11 @@ mkdir -p "$AGENT_HOME/.chaos" \
          "$AGENT_HOME/state/antigravity"
 chmod 0700 "$AGENT_HOME/state" "$AGENT_HOME/state/claude" "$AGENT_HOME/state/antigravity"
 
-# Chaos bundles Anthropic, OpenAI, and xAI providers. Hosted agents also need
-# the two providers RubyLLM may select that are not bundled by Chaos itself.
-# Append only missing sections so persisted/user-managed settings win.
-CHAOS_CONFIG="$AGENT_HOME/.chaos/config.toml"
-touch "$CHAOS_CONFIG"
-# Enable bounded timing control by default, including on existing volumes.
-# Prepend root-level TOML so provider tables cannot swallow the setting; leave
-# explicit resident choices (including "disabled") and all existing text intact.
-python3 - "$CHAOS_CONFIG" <<'CHAOS_DEFAULTS'
-from pathlib import Path
-import sys
-import tomllib
-
-path = Path(sys.argv[1])
-existing = path.read_bytes()
-if "agent_compaction_control" not in tomllib.loads(existing.decode("utf-8")):
-    path.write_bytes(b'agent_compaction_control = "bounded"\n' + existing)
-CHAOS_DEFAULTS
-if ! grep -q '^\[model_providers\.gemini\]' "$CHAOS_CONFIG"; then
-    cat >> "$CHAOS_CONFIG" <<'GEMINI_PROVIDER'
-
-[model_providers.gemini]
-name = "Gemini"
-base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
-env_key = "GEMINI_API_KEY"
-wire_api = "chat_completions"
-GEMINI_PROVIDER
-fi
-if ! grep -q '^\[model_providers\.openrouter\]' "$CHAOS_CONFIG"; then
-    cat >> "$CHAOS_CONFIG" <<'OPENROUTER_PROVIDER'
-
-[model_providers.openrouter]
-name = "OpenRouter"
-base_url = "https://openrouter.ai/api/v1"
-env_key = "OPENROUTER_API_KEY"
-wire_api = "chat_completions"
-OPENROUTER_PROVIDER
-fi
-chown 1000:1000 "$CHAOS_CONFIG" || true
+# Migrate before provider/account commands, journald, or incoming work. Keep
+# preferences in the database; config.toml is bootstrap-only in Chaos 47.6.
+export CHAOS_HOME="${CHAOS_HOME:-$AGENT_HOME/.chaos}"
+chown -R 1000:1000 "$CHAOS_HOME"
+gosu agent python3 /usr/local/share/helixkit-agent/runtime_settings.py
 
 # Imported homes retain their own hooks and instructions. Stock path is unchanged.
 if [ "${SOULSHOUSE_HOME_PROFILE:-house}" != "mira_v1" ]; then
