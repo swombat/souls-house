@@ -87,6 +87,57 @@ test.describe('mobile chat layout', () => {
     });
   }
 
+  for (const kind of ['existing', 'new']) {
+    test(`${kind} long draft stays above a visual-only keyboard`, async ({ page, request }, testInfo) => {
+      // Desktop Chromium cannot open an Android IME. Model its visual viewport
+      // independently of the layout viewport, which stays at 740px throughout.
+      await page.addInitScript(() => {
+        const viewport = Object.assign(new EventTarget(), { height: 740, offsetTop: 0, scale: 1 });
+        Object.defineProperty(window, 'visualViewport', { value: viewport, configurable: true });
+      });
+      if (kind === 'existing') await openConversation(page, request);
+      else await page.goto(`/accounts/${setup.account_id}/chats`);
+      const composer = page.getByTestId('message-composer');
+      const input = composer.locator('textarea');
+      const draft = Array.from({ length: 30 }, (_, i) => `Long draft line ${i}`).join('\n');
+      await input.fill(draft);
+      for (const [height, offsetTop] of [
+        [350, 0],
+        [350, 45],
+        [290, 0],
+        [740, 0],
+      ]) {
+        await page.evaluate(
+          ({ height, offsetTop }) => {
+            Object.assign(window.visualViewport, { height, offsetTop });
+            window.visualViewport.dispatchEvent(new Event('resize'));
+            window.visualViewport.dispatchEvent(new Event('scroll'));
+          },
+          { height, offsetTop }
+        );
+        await expect
+          .poll(async () => {
+            const box = await composer.boundingBox();
+            return Math.abs(box.y + box.height - height - offsetTop);
+          })
+          .toBeLessThanOrEqual(2);
+        const box = await input.boundingBox();
+        expect(box.y).toBeGreaterThanOrEqual(offsetTop);
+        expect(box.y + box.height).toBeLessThanOrEqual(offsetTop + height);
+        expect(box.height).toBeLessThanOrEqual(Math.min(240, height * 0.35) + 1);
+        await input.press('Control+End');
+        await input.press('End');
+        await input.press('a');
+        await input.press('Backspace');
+        await expect(input).toHaveValue(draft);
+        expect(await input.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+        if (height === 350 && offsetTop === 0) {
+          await page.screenshot({ path: testInfo.outputPath(`${kind}-keyboard-long-draft.png`) });
+        }
+      }
+    });
+  }
+
   test('inline code uses contrasting theme colours in both themes alongside fenced code', async ({
     page,
     request,

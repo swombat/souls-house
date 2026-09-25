@@ -1,4 +1,5 @@
 <script>
+  import { chatViewport } from '$lib/chat-viewport';
   import { page } from '@inertiajs/svelte';
   import { Toaster } from '$lib/components/shadcn/sonner/index.js';
   import { toast } from 'svelte-sonner';
@@ -32,7 +33,10 @@
 </script>
 
 <ModeWatcher />
-<div class="flex flex-col bg-bg {showFooter ? 'min-h-dvh' : 'h-dvh overflow-hidden'}">
+<div
+  use:chatViewport={!showFooter}
+  class:chat-viewport={!showFooter}
+  class="flex flex-col bg-bg {showFooter ? 'min-h-dvh' : 'overflow-hidden'}">
   <div class="shrink-0"><Navbar /></div>
   <main class={showFooter ? 'flex-1' : 'flex min-h-0 flex-1 flex-col'}>{@render children?.()}</main>
   {#if showFooter}
@@ -40,3 +44,12 @@
   {/if}
   <Toaster />
 </div>
+
+<style>
+  .chat-viewport {
+    position: fixed;
+    inset-inline: 0;
+    top: var(--chat-viewport-top, 0px);
+    height: var(--chat-viewport-height, 100dvh);
+  }
+</style>

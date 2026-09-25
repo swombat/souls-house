@@ -657,70 +657,73 @@
 
   <!-- Right side: Chat messages -->
   <main class="flex-1 flex flex-col bg-background min-w-0 min-h-0">
-    <!-- Chat header -->
-    <ChatHeader
-      {chat}
-      {account}
-      {agents}
-      {allMessages}
-      {contextTokens}
-      {costTokens}
-      {costBreakdown}
-      {thresholds}
-      availableAgents={available_agents}
-      addableAgents={addable_agents}
-      bind:showAllMessages
-      bind:debugMode
-      bind:showCosts
-      bind:showMessageTelemetry
-      onsidebaropen={() => (sidebarOpen = true)}
-      onassignagent={() => (assignAgentOpen = true)}
-      onaddagent={() => (addAgentOpen = true)}
-      onwhiteboardopen={() => (whiteboardOpen = true)}
-      onerror={(msg) => {
-        errorMessage = msg;
-        setTimeout(() => (errorMessage = null), 3000);
-      }}
-      onsuccess={(msg) => {
-        successMessage = msg;
-        setTimeout(() => (successMessage = null), 3000);
-      }} />
+    <!-- Keep header/history scrollable when the keyboard leaves little height. -->
+    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <!-- Chat header -->
+      <ChatHeader
+        {chat}
+        {account}
+        {agents}
+        {allMessages}
+        {contextTokens}
+        {costTokens}
+        {costBreakdown}
+        {thresholds}
+        availableAgents={available_agents}
+        addableAgents={addable_agents}
+        bind:showAllMessages
+        bind:debugMode
+        bind:showCosts
+        bind:showMessageTelemetry
+        onsidebaropen={() => (sidebarOpen = true)}
+        onassignagent={() => (assignAgentOpen = true)}
+        onaddagent={() => (addAgentOpen = true)}
+        onwhiteboardopen={() => (whiteboardOpen = true)}
+        onerror={(msg) => {
+          errorMessage = msg;
+          setTimeout(() => (errorMessage = null), 3000);
+        }}
+        onsuccess={(msg) => {
+          successMessage = msg;
+          setTimeout(() => (successMessage = null), 3000);
+        }} />
 
-    <TokenWarningBanner level={tokenWarningLevel} {contextTokens} />
+      <TokenWarningBanner level={tokenWarningLevel} {contextTokens} />
 
-    <!-- Telegram notification banner -->
-    <TelegramBanner {telegramDeepLink} {agents} chatId={chat?.id} />
+      <!-- Telegram notification banner -->
+      <TelegramBanner {telegramDeepLink} {agents} chatId={chat?.id} />
 
-    <!-- Debug panel for site admins -->
-    {#if debugMode && isSiteAdmin}
-      <DebugPanel logs={debugLogs} onclear={() => (debugLogs = [])} />
-    {/if}
+      <!-- Debug panel for site admins -->
+      {#if debugMode && isSiteAdmin}
+        <DebugPanel logs={debugLogs} onclear={() => (debugLogs = [])} />
+      {/if}
 
-    <ChatMessageList
-      bind:messagesContainer
-      {loadingMore}
-      {hasMore}
-      {oldestId}
-      {visibleMessages}
-      {runtimeInteractions}
-      {allMessages}
-      {chat}
-      {showAllMessages}
-      {showMessageTelemetry}
-      {lastMessageIsHiddenThinking}
-      {shouldShowSendingPlaceholder}
-      {isTimedOut}
-      {streamingThinking}
-      {shikiTheme}
-      {showAgentPrompt}
-      {handleScroll}
-      {loadMoreMessages}
-      {shouldShowTimestamp}
-      {timestampLabel}
-      {startEditingMessage}
-      {deleteMessage}
-      {openImageLightbox}
-      {requestVoice} />
+      <ChatMessageList
+        bind:messagesContainer
+        {loadingMore}
+        {hasMore}
+        {oldestId}
+        {visibleMessages}
+        {runtimeInteractions}
+        {allMessages}
+        {chat}
+        {showAllMessages}
+        {showMessageTelemetry}
+        {lastMessageIsHiddenThinking}
+        {shouldShowSendingPlaceholder}
+        {isTimedOut}
+        {streamingThinking}
+        {shikiTheme}
+        {showAgentPrompt}
+        {handleScroll}
+        {loadMoreMessages}
+        {shouldShowTimestamp}
+        {timestampLabel}
+        {startEditingMessage}
+        {deleteMessage}
+        {openImageLightbox}
+        {requestVoice} />
+    </div>
 
     <ChatInputArea
       {chat}

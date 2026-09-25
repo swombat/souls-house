@@ -93,11 +93,13 @@
 
   <!-- Right side: New chat form -->
   <main class="flex-1 flex flex-col bg-background min-w-0 min-h-0">
-    <NewChatHeader onMenuOpen={() => (sidebarOpen = true)} />
+    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <NewChatHeader onMenuOpen={() => (sidebarOpen = true)} />
 
-    <GroupChatAgentPicker {agents} accountId={account.id} showUsage={showUsageInChat} bind:selectedAgentIds />
+      <GroupChatAgentPicker {agents} accountId={account.id} showUsage={showUsageInChat} bind:selectedAgentIds />
 
-    <NewChatEmptyState />
+      <NewChatEmptyState />
+    </div>
 
     <NewChatComposer
       bind:selectedFiles
