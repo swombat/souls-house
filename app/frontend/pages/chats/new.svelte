@@ -28,6 +28,7 @@
 
   let selectedFiles = $state([]);
   let message = $state('');
+  let title = $state('');
   let processing = $state(false);
   let pendingAudioSignedId = $state(null);
   let error = $state('');
@@ -62,6 +63,7 @@
     // Use FormData to include files
     const formData = new FormData();
     formData.append('message', message);
+    if (title.trim()) formData.append('chat[title]', title.trim());
     if (pendingAudioSignedId) formData.append('audio_signed_id', pendingAudioSignedId);
 
     // Append each file
@@ -91,7 +93,7 @@
 </script>
 
 <svelte:head>
-  <title>New Chat</title>
+  <title>{title || 'New Chat'}</title>
 </svelte:head>
 
 <div class="flex min-h-0 flex-1">
@@ -106,7 +108,7 @@
   <!-- Right side: New chat form -->
   <main class="flex-1 flex flex-col bg-background min-w-0 min-h-0">
     <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <NewChatHeader onMenuOpen={() => (sidebarOpen = true)} />
+      <NewChatHeader bind:title onMenuOpen={() => (sidebarOpen = true)} />
 
       <GroupChatAgentPicker {agents} accountId={account.id} showUsage={showUsageInChat} bind:selectedAgentIds />
 

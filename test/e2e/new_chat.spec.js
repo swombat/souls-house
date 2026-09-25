@@ -28,5 +28,21 @@ for (const width of [360, 1280]) {
       await expect(page.getByRole('button', { name: 'Start conversation' })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     });
+
+    test('names the conversation before sending its first message', async ({ page }) => {
+      await page.getByTitle('Edit chat title').click();
+      await page.locator('header input').fill('A conversation for Paulina');
+      // Blur also saves, so touch users do not need a hardware Enter key.
+      await page.getByTestId('message-composer').locator('textarea').click();
+      await expect(page.getByTitle('Edit chat title')).toHaveText('A conversation for Paulina');
+      await expect(page).toHaveURL(new RegExp(`/accounts/${setup.account_id}/chats$`));
+      await page.getByTestId('message-composer').locator('textarea').fill('Hello there');
+      await page.getByRole('button', { name: 'Start conversation' }).click();
+      await expect(page).toHaveURL(/\/chats\/[^/]+$/);
+      await expect(page.getByTitle('Edit chat title')).toHaveText('A conversation for Paulina');
+      await page.reload();
+      await expect(page.getByTitle('Edit chat title')).toHaveText('A conversation for Paulina');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    });
   });
 }

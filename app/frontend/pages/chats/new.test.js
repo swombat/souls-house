@@ -11,6 +11,29 @@ const props = {
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.unstubAllGlobals());
 
+test('names a draft locally and includes the name when creating the conversation', async () => {
+  render(NewChat, props);
+  await fireEvent.click(screen.getByTitle('Edit chat title'));
+  const title = screen.getAllByRole('textbox').find((input) => input.tagName === 'INPUT');
+  await fireEvent.input(title, { target: { value: '  Paulina’s conversation  ' } });
+  await fireEvent.keyDown(title, { key: 'Enter' });
+  expect(router.post).not.toHaveBeenCalled();
+  expect(screen.getByTitle('Edit chat title')).toHaveTextContent('Paulina’s conversation');
+  await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'First message' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Start conversation' }));
+  expect(router.post.mock.calls[0][1].get('chat[title]')).toBe('Paulina’s conversation');
+});
+
+test('cancelling a draft rename keeps the default title', async () => {
+  render(NewChat, props);
+  await fireEvent.click(screen.getByTitle('Edit chat title'));
+  const title = screen.getAllByRole('textbox').find((input) => input.tagName === 'INPUT');
+  await fireEvent.input(title, { target: { value: 'Do not save' } });
+  await fireEvent.keyDown(title, { key: 'Escape' });
+  expect(screen.getByTitle('Edit chat title')).toHaveTextContent('New Chat');
+  expect(router.post).not.toHaveBeenCalled();
+});
+
 test('records the first message using the account endpoint and submits its audio', async () => {
   const stop = vi.fn();
   vi.stubGlobal('navigator', {

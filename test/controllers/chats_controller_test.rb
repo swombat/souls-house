@@ -315,6 +315,18 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_chat_path(@account, chat)
   end
 
+  test "preserves a title chosen before creation without generating another" do
+    assert_no_enqueued_jobs only: GenerateTitleJob do
+      post account_chats_path(@account), params: {
+        chat: { title: "Paulina's conversation" },
+        message: "First message",
+        agent_ids: [ agents(:research_assistant).to_param ]
+      }
+    end
+    assert_equal "Paulina's conversation", Chat.last.title
+    assert_redirected_to account_chat_path(@account, Chat.last)
+  end
+
   test "creates first voice message with its original recording" do
     blob = ActiveStorage::Blob.create_and_upload!(
       io: StringIO.new("synthetic audio"), filename: "recording.webm", content_type: "audio/webm"
