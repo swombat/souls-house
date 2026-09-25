@@ -31,7 +31,7 @@ for (const width of [360, 1280]) {
 
     test('names the conversation before sending its first message', async ({ page }) => {
       await page.getByTitle('Edit chat title').click();
-      await page.locator('header input').fill('A conversation for Paulina');
+      await page.locator('header input[type="text"]').fill('A conversation for Paulina');
       // Blur also saves, so touch users do not need a hardware Enter key.
       await page.getByTestId('message-composer').locator('textarea').click();
       await expect(page.getByTitle('Edit chat title')).toHaveText('A conversation for Paulina');
@@ -43,6 +43,28 @@ for (const width of [360, 1280]) {
       await page.reload();
       await expect(page.getByTitle('Edit chat title')).toHaveText('A conversation for Paulina');
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    });
+
+    test('offers the three latest conversations on mobile only', async ({ page }) => {
+      for (const title of ['Oldest', 'Third latest', 'Second latest', 'Most recent']) {
+        await page.goto(`/accounts/${setup.account_id}/chats`);
+        await page.getByTitle('Edit chat title').click();
+        await page.locator('header input[type="text"]').fill(title);
+        await page.locator('header input[type="text"]').press('Enter');
+        await page.getByTestId('message-composer').locator('textarea').fill('A synthetic first message');
+        await page.getByRole('button', { name: 'Start conversation' }).click();
+        await expect(page).toHaveURL(/\/chats\/[^/]+$/);
+      }
+      await page.goto(`/accounts/${setup.account_id}/chats`);
+      const recent = page.getByRole('navigation', { name: 'Recent conversations' });
+      if (width < 768) {
+        await expect(recent).toBeVisible();
+        await expect(recent.getByRole('link')).toHaveText(['Most recent', 'Second latest', 'Third latest']);
+        await recent.getByRole('link', { name: 'Second latest', exact: true }).click();
+        await expect(page.getByTitle('Edit chat title')).toHaveText('Second latest');
+      } else {
+        await expect(recent).toBeHidden();
+      }
     });
   });
 }

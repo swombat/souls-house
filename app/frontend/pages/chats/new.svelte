@@ -112,7 +112,7 @@
 
       <GroupChatAgentPicker {agents} accountId={account.id} showUsage={showUsageInChat} bind:selectedAgentIds />
 
-      <NewChatEmptyState />
+      <NewChatEmptyState {chats} accountId={account.id} />
     </div>
 
     {#if error}
