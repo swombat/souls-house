@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Device streams</title><%= csrf_meta_tags %></head>
+<body><main>
+  <h1>Your device streams</h1>
+  <p>Create a stream only for your own data. It starts disabled with no readers other than you.</p>
+  <%= form_with url: device_streams_path, local: true do |f| %>
+    <%= f.label :account_id, "House/account" %>
+    <%= f.select :account_id, @accounts.map { |account| [account.name, account.to_param] } %>
+    <%= f.label :name, "Stream name" %> <%= f.text_field :name, required: true, maxlength: 100 %>
+    <%= f.submit "Create disabled stream" %>
+  <% end if @accounts.any? %>
+  <ul><% @streams.each do |stream| %>
+    <li><%= link_to stream.name, device_stream_path(stream.stream_key) %><%= " (erased)" if stream.erased_at? %></li>
+  <% end %></ul>
+</main></body></html>

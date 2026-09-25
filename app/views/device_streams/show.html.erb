@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Device stream controls</title><%= csrf_meta_tags %></head>
+<body><main>
+  <h1><%= @stream.name %></h1>
+  <p>Stream key: <code><%= @stream.stream_key %></code></p>
+  <p>RR data stays until you erase it or capacity is reached. Readers may analyse it; this does not authorize publication.
+    Erasure removes live server samples, not Mac files, downloaded copies, derived findings or backups.
+    Ask your operator about backup expiry and restoration handling. Infrastructure administrators can access stored data.</p>
+  <% if @stream.erased_at? %><p>This stream is permanently erased and cannot ingest again.</p><% else %>
+    <%= form_with url: device_stream_path(@stream.stream_key), method: :patch, local: true do %>
+      <fieldset><legend>Readers (explicit selection; future house members are not automatically added)</legend>
+        <% @users.each do |user| %>
+          <label><%= check_box_tag "reader_user_ids[]", user.to_param, @stream.reader_user_ids.include?(user.id) %> <%= user.display_name %></label><br>
+        <% end %>
+        <% @agents.each do |agent| %>
+          <label><%= check_box_tag "reader_agent_ids[]", agent.to_param, @stream.reader_agent_ids.include?(agent.id) %> <%= agent.name %> (agent)</label><br>
+        <% end %>
+      </fieldset>
+      <label><%= check_box_tag "enabled", "1", @stream.enabled? %> Enable device ingestion</label>
+      <%= submit_tag "Save readers and ingestion choice" %>
+    <% end %>
+    <h2>Devices</h2>
+    <%= button_to "Create append-only device credential", credential_device_stream_path(@stream.stream_key) %>
+    <ul><% @stream.device_stream_credentials.order(created_at: :desc).each do |credential| %>
+      <li>Created <%= credential.created_at.utc %> —
+      <% if credential.revoked_at? %>revoked<% else %>
+        <%= button_to "Revoke device", revoke_device_stream_path(@stream.stream_key, credential_id: credential.to_param), method: :delete %>
+      <% end %></li>
+    <% end %></ul>
+    <h2>Sessions (newest 100)</h2>
+    <ul><% @sessions.each do |session| %>
+      <li><code><%= session.session_uuid %></code>
+      <% if session.erased_at? %> erased<% else %>
+        <%= button_to "Permanently erase session", erase_session_device_stream_path(@stream.stream_key, session_id: session.session_uuid), method: :delete %>
+      <% end %></li>
+    <% end %></ul>
+    <h2>Erase an older session by UUID</h2>
+    <%= form_with url: erase_session_device_stream_path(@stream.stream_key), method: :delete, local: true do |f| %>
+      <%= f.label :session_id, "Session UUID" %><%= f.text_field :session_id, required: true %><%= f.submit "Permanently erase session" %>
+    <% end %>
+    <h2>Permanent bulk erasure</h2>
+    <p>This removes every session payload and revokes every device. You cannot reopen this stream.</p>
+    <%= button_to "Permanently erase all data and close stream", device_stream_path(@stream.stream_key), method: :delete %>
+  <% end %>
+  <%= link_to "Your streams", device_streams_path %>
+</main></body></html>
