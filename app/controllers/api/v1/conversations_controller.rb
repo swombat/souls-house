@@ -103,6 +103,7 @@ module Api
 
       def create_agent_scoped_conversation!
         agent_ids = ([ current_api_agent.id ] + Array(resolve_agent_ids)).uniq
+        opening_message = nil
 
         current_api_account.chats.transaction do
           chat = current_api_account.chats.new(
@@ -116,7 +117,7 @@ module Api
           chat.save!
 
           if params[:message].present?
-            chat.messages.create!(
+            opening_message = chat.messages.create!(
               role: "assistant",
               agent: current_api_agent,
               content: params[:message]
@@ -124,6 +125,9 @@ module Api
           end
 
           chat
+        end.tap do |chat|
+          # Match Chat.initiate_by_agent! without notifying message-less rooms.
+          current_api_agent.notify_subscribers!(opening_message, chat) if opening_message
         end
       end
 
