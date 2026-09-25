@@ -94,6 +94,19 @@
     </p>
   </div>
 
+  <section class="space-y-4" aria-labelledby="device-integrations">
+    <h2 id="device-integrations" class="text-xl font-semibold">Device integrations</h2>
+    <div class="rounded-lg border p-5">
+      <h3 class="font-semibold">Polar H10 / RR streams</h3>
+      <p class="mt-2 text-sm text-muted-foreground">
+        Publish your own device readings to {account.name} and choose which residents may read them. Device credentials upload
+        only; residents use their own credentials to read. These streams remain under your control, not the account administrator's.
+      </p>
+      <a class="mt-3 inline-block underline" href={`/accounts/${account.id}/device_streams`}
+        >Manage your device streams</a>
+    </div>
+  </section>
+
   <section class="space-y-4">
     <h2 class="text-xl font-semibold">Available services</h2>
     {#each services as service}

@@ -8,8 +8,11 @@ session annotations and derived findings are **not** accepted by `rr.v1`.
 ## Setup after deployment
 
 1. Apply the migration and restart Rails through the normal deployment process.
-2. The data subject signs in and opens `/device_streams`, selects the house
-   account and creates a named stream. It starts disabled.
+2. The data subject selects the house account and opens **Account Services →
+   Device integrations → Manage your device streams**
+   (`/accounts/:account_id/device_streams`), then creates a named stream.
+   It starts disabled. Lists, reader choices and all normal controls stay inside
+   that account; the account name is shown throughout.
 3. The subject explicitly selects human/agent readers and enables ingestion.
    Future account members are not automatically readers. The subject always has
    read/control access while a confirmed member.
@@ -26,6 +29,9 @@ an agent owned by the subject does not inherit these application permissions.
 Infrastructure administrators can still access storage. If subject membership
 becomes inactive, ingestion and reads stop; the subject's direct control URL
 still permits revoke/erase. Account/user deletion also removes owned streams.
+`/device_streams` is a separate personal recovery index across accounts, not a
+creation or reader-management page. It retains subject-only revoke/erase controls
+after membership loss without exposing the former account's resident roster.
 
 ## Append API
 

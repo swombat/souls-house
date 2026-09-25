@@ -619,7 +619,10 @@ to the room. Responses use `Cache-Control: no-store`.
 ## Device RR streams
 
 After the device-stream server feature is deployed, subjects manage streams,
-explicit human/agent readers, device credentials and erasure at `/device_streams`.
+explicit human/agent readers, device credentials and erasure through their
+account's **Account Services → Device integrations**, at
+`/accounts/:account_id/device_streams`. The separate `/device_streams` personal
+recovery index retains revoke/erase access after leaving an account.
 Readers use their normal account-scoped API key:
 
 ```sh
