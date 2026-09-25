@@ -77,7 +77,7 @@ class Chat < ApplicationRecord
   scope :latest, -> { order(updated_at: :desc) }
 
   # Create chat with optional initial message
-  def self.create_with_message!(attributes, message_content: nil, user: nil, files: nil, agent_ids: nil)
+  def self.create_with_message!(attributes, message_content: nil, user: nil, files: nil, agent_ids: nil, audio_signed_id: nil)
     transaction do
       chat = new(attributes)
       chat.agent_ids = agent_ids if agent_ids.present?
@@ -91,6 +91,14 @@ class Chat < ApplicationRecord
           skip_content_validation: message_content.blank? && files.present? && files.any? # Skip content validation if we have files but no content
         })
         message.attachments.attach(files) if files.present? && files.any?
+        if audio_signed_id.present?
+          begin
+            message.audio_recording.attach(audio_signed_id)
+            message.update!(audio_source: true)
+          rescue ActiveSupport::MessageVerifier::InvalidSignature
+            Rails.logger.warn "Invalid audio_signed_id for initial message in chat #{chat.id}"
+          end
+        end
       end
       chat
     end

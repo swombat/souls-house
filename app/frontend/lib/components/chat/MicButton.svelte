@@ -96,7 +96,10 @@
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
 
-      const response = await fetch(`/accounts/${accountId}/chats/${chatId}/transcription`, {
+      const path = chatId
+        ? `/accounts/${accountId}/chats/${chatId}/transcription`
+        : `/accounts/${accountId}/chats/transcription`;
+      const response = await fetch(path, {
         method: 'POST',
         headers: {
           'X-CSRF-Token': csrfToken,

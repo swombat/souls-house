@@ -32,6 +32,31 @@ class Chats::TranscriptionsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "transcribes before a chat exists without creating a chat" do
+    ElevenLabsStt.stub(:transcribe, "First voice note") do
+      assert_no_difference "Chat.count" do
+        post transcription_account_chats_path(@account),
+          params: { audio: fixture_file_upload("test_audio.webm", "audio/webm") }
+      end
+      assert_response :success
+      assert_equal "First voice note", response.parsed_body["text"]
+      assert ActiveStorage::Blob.find_signed!(response.parsed_body["audio_signed_id"])
+    end
+  end
+
+  test "new chat transcription requires authentication" do
+    delete logout_path
+    post transcription_account_chats_path(@account),
+      params: { audio: fixture_file_upload("test_audio.webm", "audio/webm") }
+    assert_response :redirect
+  end
+
+  test "new chat transcription rejects another account" do
+    post transcription_account_chats_path(accounts(:existing_user_account)),
+      params: { audio: fixture_file_upload("test_audio.webm", "audio/webm") }
+    assert_response :not_found
+  end
+
   test "returns audio_signed_id with successful transcription" do
     audio = fixture_file_upload("test_audio.webm", "audio/webm")
 

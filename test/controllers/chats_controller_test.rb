@@ -315,6 +315,31 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_chat_path(@account, chat)
   end
 
+  test "creates first voice message with its original recording" do
+    blob = ActiveStorage::Blob.create_and_upload!(
+      io: StringIO.new("synthetic audio"), filename: "recording.webm", content_type: "audio/webm"
+    )
+    post account_chats_path(@account), params: {
+      agent_ids: [ agents(:research_assistant).to_param ],
+      message: "My first voice note", audio_signed_id: blob.signed_id
+    }
+    message = Chat.last.messages.last
+    assert_equal "My first voice note", message.content
+    assert message.audio_source?
+    assert_equal blob, message.audio_recording.blob
+  end
+
+  test "invalid initial audio signature does not lose the transcript" do
+    post account_chats_path(@account), params: {
+      agent_ids: [ agents(:research_assistant).to_param ],
+      message: "Keep this transcript", audio_signed_id: "invalid"
+    }
+    message = Chat.last.messages.last
+    assert_equal "Keep this transcript", message.content
+    assert_not message.audio_source?
+    assert_not message.audio_recording.attached?
+  end
+
   test "should ignore model chat attributes when creating a chat" do
     agent = agents(:research_assistant)
 

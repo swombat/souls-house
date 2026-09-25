@@ -1,9 +1,13 @@
 <script>
   import FileUploadInput from '$lib/components/chat/FileUploadInput.svelte';
+  import MicButton from '$lib/components/chat/MicButton.svelte';
   import { ArrowUp } from 'phosphor-svelte';
 
   let {
     selectedFiles = $bindable([]),
+    accountId,
+    onTranscription,
+    onError,
     message = $bindable(''),
     textareaRef = $bindable(null),
     fileUploadConfig = {},
@@ -18,7 +22,7 @@
 </script>
 
 <div class="shrink-0 border-t border-border bg-muted/30 p-3 md:p-4" data-testid="message-composer">
-  <div class="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-2 md:gap-3 items-start">
+  <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-2 md:gap-3 items-start">
     <FileUploadInput
       bind:files={selectedFiles}
       disabled={processing}
@@ -40,13 +44,20 @@
         style:max-height="min(240px, calc(var(--chat-viewport-height, 100dvh) * 0.35))"
         rows="1"></textarea>
     </div>
+    <div class="col-start-3 row-start-1">
+      <MicButton
+        {accountId}
+        disabled={processing || (isGroupChat && selectedAgentIds.length === 0)}
+        onsuccess={onTranscription}
+        onerror={onError} />
+    </div>
     <button
       onclick={onSubmit}
       disabled={(!message.trim() && selectedFiles.length === 0) ||
         processing ||
         (isGroupChat && selectedAgentIds.length === 0)}
       aria-label="Start conversation"
-      class="col-start-3 row-start-1 h-10 w-10 p-0 inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
+      class="col-start-4 row-start-1 h-10 w-10 p-0 inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50">
       <ArrowUp size={16} />
     </button>
   </div>

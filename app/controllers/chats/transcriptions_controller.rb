@@ -2,7 +2,8 @@ class Chats::TranscriptionsController < ApplicationController
 
   include ChatScoped
 
-  before_action :require_respondable_chat
+  skip_before_action :set_chat, unless: -> { params[:chat_id].present? }
+  before_action :require_respondable_chat, if: -> { params[:chat_id].present? }
 
   def create
     audio = params.require(:audio)

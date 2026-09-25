@@ -83,6 +83,7 @@ class ChatsController < ApplicationController
       message_content: params[:message],
       user: Current.user,
       files: params[:files],
+      audio_signed_id: params[:audio_signed_id],
       agent_ids: agents.map(&:id)
     )
     audit("create_chat", @chat, **chat_create_params.to_h)

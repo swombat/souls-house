@@ -29,6 +29,14 @@
   let selectedFiles = $state([]);
   let message = $state('');
   let processing = $state(false);
+  let pendingAudioSignedId = $state(null);
+  let error = $state('');
+
+  function handleTranscription(text, audioSignedId) {
+    message = text;
+    pendingAudioSignedId = audioSignedId || null;
+    startChat();
+  }
 
   function handleKeydown(event) {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -49,10 +57,12 @@
     if (processing) return;
 
     processing = true;
+    error = '';
 
     // Use FormData to include files
     const formData = new FormData();
     formData.append('message', message);
+    if (pendingAudioSignedId) formData.append('audio_signed_id', pendingAudioSignedId);
 
     // Append each file
     selectedFiles.forEach((file) => {
@@ -67,11 +77,13 @@
       onSuccess: () => {
         message = '';
         selectedFiles = [];
+        pendingAudioSignedId = null;
         processing = false;
         if (textareaRef) textareaRef.style.height = 'auto';
       },
       onError: (errors) => {
         console.error('Chat creation failed:', errors);
+        error = 'Could not start the conversation. Please try again.';
         processing = false;
       },
     });
@@ -101,7 +113,13 @@
       <NewChatEmptyState />
     </div>
 
+    {#if error}
+      <p role="alert" class="px-4 py-2 text-destructive">{error}</p>
+    {/if}
     <NewChatComposer
+      accountId={account.id}
+      onTranscription={handleTranscription}
+      onError={(message) => (error = message)}
       bind:selectedFiles
       bind:message
       bind:textareaRef
