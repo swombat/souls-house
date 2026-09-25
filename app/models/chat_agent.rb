@@ -4,6 +4,7 @@ class ChatAgent < ApplicationRecord
 
   belongs_to :chat
   belongs_to :agent
+  has_one :agent_bookmark, dependent: :destroy
 
   validates :agent_id, uniqueness: { scope: :chat_id }
 

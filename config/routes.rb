@@ -162,6 +162,7 @@ Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
       post "runtime_runs/:run_id/events", to: "runtime_events#create"
+      get "agent/bookmarks", to: "agent_bookmarks#index", as: :agent_bookmarks
       patch "agent/activity_preferences", to: "agents#activity_preferences"
       namespace :memory do
         resources :formations, only: :create
@@ -178,6 +179,7 @@ Rails.application.routes.draw do
       post "agents/:uuid/announce", to: "agents#announce", as: :agent_announce
       get "agents/:uuid/health", to: "agents#health", as: :agent_health
       resources :conversations, only: [ :index, :show, :create ] do
+        resource :bookmark, only: [ :show, :update, :destroy ], controller: "agent_bookmarks"
         resources :messages, only: :create do
           resources :attachments, only: :show
         end

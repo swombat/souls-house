@@ -5,7 +5,7 @@
 # See the ActiveSupport::ParameterFilter documentation for supported notations and behaviors.
 Rails.application.config.filter_parameters += [
   :passw, :email, :secret, :token, :_key, :crypt, :salt, :certificate, :otp, /\Acode\z/i, :ssn, :cvv, :cvc,
-  :activity, :events
+  :activity, :events, /\Anote\z/
 ]
 
 # SQL bind logging uses ActiveRecord::Base's application-wide inspection filter,
