@@ -334,3 +334,13 @@ Chaos enforces that mismatch by logging out the account, not just rejecting a
 request. Fresh and resumed invocations are regression-tested. Authentication
 mode changes intentionally roll the session while preserving stored history
 and supplying the conversation window to the new session.
+
+### Antigravity daily endpoint compatibility
+
+The pinned Chaos version replaces the CLI system prompt only on the standard
+Cloud Code hostname. Hosted Antigravity also uses
+`daily-cloudcode-pa.googleapis.com`; merely allowing its egress is insufficient.
+`chaos-antigravity-daily-prompt.patch` applies the same canonical prompt rewrite
+to that exact hostname, retaining fail-closed behavior for unknown generation
+endpoints. Its regression tests run in the incremental builder layer. This does
+not disable prompt replacement or widen the network allowlist.

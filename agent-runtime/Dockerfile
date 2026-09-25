@@ -62,6 +62,15 @@ RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
 RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos_journald \
     && cp target/release/chaos_journald /usr/local/bin/chaos_journald
 
+# Extend canonical prompt rewriting to the daily Cloud Code endpoint. Keep this
+# incremental layer after the base build so existing compiler artifacts are reused.
+COPY patches/chaos-antigravity-daily-prompt.patch /tmp/chaos-antigravity-daily-prompt.patch
+RUN git apply --check /tmp/chaos-antigravity-daily-prompt.patch \
+    && git apply /tmp/chaos-antigravity-daily-prompt.patch \
+    && cargo test --release --jobs "${CARGO_BUILD_JOBS}" -p chaos-clamp egress::prompt::tests \
+    && cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
+    && cp target/release/chaos /usr/local/bin/chaos
+
 # =============================================================================
 # Stage 2 — runtime
 # =============================================================================
@@ -70,7 +79,7 @@ FROM node:22-trixie-slim AS runtime
 
 ARG CHAOS_HEAD
 LABEL house.souls.chaos-ref="${CHAOS_HEAD}"
-LABEL house.souls.chaos-patches="antigravity-empty-managed-config,antigravity-daily-cloudcode-egress,clamp-cached-catalog,stop-hook-continuation-as-user"
+LABEL house.souls.chaos-patches="antigravity-empty-managed-config,antigravity-daily-cloudcode-egress,clamp-cached-catalog,stop-hook-continuation-as-user,antigravity-daily-prompt"
 
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 
