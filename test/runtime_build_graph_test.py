@@ -10,6 +10,10 @@ class RuntimeBuildGraphTest(unittest.TestCase):
     def test_final_source_is_built_once_for_both_runtime_binaries(self):
         dockerfile = (ROOT / "agent-runtime/Dockerfile").read_text()
         builder = dockerfile.split("FROM oven/bun:", 1)[0]
+        self.assertNotIn("git apply", builder, "use accepted upstream source, not local patches")
+        self.assertNotIn("COPY patches/", builder)
+        self.assertIn('LABEL house.souls.chaos-patches=""', dockerfile)
+        self.assertFalse(list((ROOT / "agent-runtime/patches").glob("*.patch")))
         commands = re.sub(r"\\\s*\n\s*", " ", builder)
         builds = list(re.finditer(r"\bcargo build\b[^\n]*", commands))
         self.assertEqual(len(builds), 1, "do not append patch-and-rebuild layers")

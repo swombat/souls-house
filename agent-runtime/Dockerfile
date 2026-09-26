@@ -38,29 +38,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-COPY patches/chaos-antigravity-empty-managed-config.patch /tmp/chaos-antigravity-empty-managed-config.patch
-COPY patches/chaos-antigravity-daily-cloudcode-egress.patch /tmp/chaos-antigravity-daily-cloudcode-egress.patch
-COPY patches/chaos-clamp-cached-catalog.patch /tmp/chaos-clamp-cached-catalog.patch
-COPY patches/chaos-stop-hook-continuation-as-user.patch /tmp/chaos-stop-hook-continuation-as-user.patch
-# Temporary legacy exceptions tracked in Chaos #70; remove after upstream acceptance.
-COPY patches/chaos-antigravity-daily-prompt.patch /tmp/chaos-antigravity-daily-prompt.patch
-COPY patches/chaos-antigravity-tool-catalog.patch /tmp/chaos-antigravity-tool-catalog.patch
 RUN test -n "${CHAOS_HEAD}" \
     && git -c http.version=HTTP/1.1 clone --filter=blob:none ${CHAOS_REPO} chaos \
     && cd chaos \
-    && git checkout ${CHAOS_HEAD} \
-    && git apply --check /tmp/chaos-antigravity-empty-managed-config.patch \
-    && git apply /tmp/chaos-antigravity-empty-managed-config.patch \
-    && git apply --check /tmp/chaos-antigravity-daily-cloudcode-egress.patch \
-    && git apply /tmp/chaos-antigravity-daily-cloudcode-egress.patch \
-    && git apply --check /tmp/chaos-clamp-cached-catalog.patch \
-    && git apply /tmp/chaos-clamp-cached-catalog.patch \
-    && git apply --check /tmp/chaos-stop-hook-continuation-as-user.patch \
-    && git apply /tmp/chaos-stop-hook-continuation-as-user.patch \
-    && git apply --check /tmp/chaos-antigravity-daily-prompt.patch \
-    && git apply /tmp/chaos-antigravity-daily-prompt.patch \
-    && git apply --check /tmp/chaos-antigravity-tool-catalog.patch \
-    && git apply /tmp/chaos-antigravity-tool-catalog.patch
+    && git checkout ${CHAOS_HEAD}
 
 WORKDIR /build/chaos
 # Validate the final clamp source before building both runtime binaries once.
@@ -79,7 +60,7 @@ FROM node:22-trixie-slim AS runtime
 
 ARG CHAOS_HEAD
 LABEL house.souls.chaos-ref="${CHAOS_HEAD}"
-LABEL house.souls.chaos-patches="antigravity-empty-managed-config,antigravity-daily-cloudcode-egress,clamp-cached-catalog,stop-hook-continuation-as-user,antigravity-daily-prompt,antigravity-tool-catalog"
+LABEL house.souls.chaos-patches=""
 
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 

@@ -335,50 +335,42 @@ request. Fresh and resumed invocations are regression-tested. Authentication
 mode changes intentionally roll the session while preserving stored history
 and supplying the conversation window to the new session.
 
-### Antigravity daily endpoint compatibility
+### Upstream Chaos runtime
 
-The pinned Chaos version replaces the CLI system prompt only on the standard
-Cloud Code hostname. Hosted Antigravity also uses
-`daily-cloudcode-pa.googleapis.com`; merely allowing its egress is insufficient.
-`chaos-antigravity-daily-prompt.patch` applies the same canonical prompt rewrite
-to that exact hostname, retaining fail-closed behavior for unknown generation
-endpoints. The image builder applies all source changes, runs the clamp unit
-suite, and then builds both runtime binaries in one Cargo build. This does not disable
-prompt replacement or widen the network allowlist.
+The pinned upstream source contains the replacements for the former six-patch
+stack (Chaos #68 and #71–#75; design audit #70). No local Chaos patch is applied.
 
-The canonical replacement also removes agy's lazy-loaded MCP tool catalogue.
-`chaos-antigravity-tool-catalog.patch` supplies the current kernel-owned tool
-specifications using the same conversion as the MCP bridge (including freeform
-input envelopes). It explains the `call_mcp_tool` transport without retaining
-CLI system instructions or enabling native tools. The catalogue is refreshed
-alongside the canonical prompt on subsequent turns; tool permissions are unchanged.
+- Empty managed Antigravity configuration is treated as first-run configuration.
+- The exact daily Cloud Code generation endpoint receives both egress permission
+  and canonical prompt replacement. Broad Google API/avatar hosts are not added.
+- CLI inference uses eligible cached model metadata without automatic native API
+  discovery. Explicit forced refresh still performs native discovery and reports
+  missing credentials normally.
+- The kernel renders the current MCP catalogue using the live tool projection,
+  including freeform input envelopes and excluding provider-native tools.
+- Claude and Antigravity continuations carry all unsent items without rewriting
+  journal roles. Native checkpoints are bound to compatible history and context,
+  consumed before dispatch, and renewed only after success. Transport failures
+  do not automatically replay potentially executed tools. This is not rollback
+  or a guarantee against a model choosing to repeat an action.
 
-### Retiring the legacy Chaos patch stack
+Antigravity's live authenticated compatibility check remains separate from the
+fixture-based regression gate; an image build is not that validation.
 
-We have upstream write access, but contributions still require the current Chaos
+We have upstream write access, but contributions still follow Chaos's current
 contribution process. General-purpose changes must go upstream, not become new
 image-local patches. See `AGENTS.md` and
 [Chaos issue #70](https://github.com/seuros/chaos/issues/70).
 
-The six existing patches are temporary legacy exceptions owned by Mira during
-that migration. They remain only to avoid silently removing deployed behavior
-before reviewed upstream replacements are available. No new exception is granted
-by their presence. Removal condition: accepted upstream functionality, a pinned
-replacement commit, and passing source/runtime regressions. The cached-catalog
-policy, tool catalogue, and continuation behavior require upstream design review;
-the broad Google API/avatar egress additions are not presumed necessary.
-
-Until that migration is complete, apply the complete legacy stack before a
-single `cargo build --release --bin chaos --bin chaos_journald`. Never add a
-patch-and-rebuild layer. Before building a candidate image, run the affected Chaos
-source tests and contribution gates. The builder also runs the final clamp unit
-suite before compiling the binaries; compilation alone is not a regression gate.
-The build-graph contract can be checked without Docker or Rails:
+The builder checks out the pinned upstream revision, runs the clamp unit suite,
+and compiles both runtime binaries in one Cargo build. Never append a
+patch-and-rebuild layer. The build-graph contract can be checked without Docker
+or Rails:
 
 ```sh
 python3 -m unittest discover -s test -p runtime_build_graph_test.py
 ```
 
-This ordering cleanup does not mean the patches are upstreamed or a candidate
-image has been built or deployed. Do not restart the cancelled deployment until
-its reviewed source/pin and selected-resident rollout checks are ready.
+Source acceptance and successful CI are not a production rollout. Build a
+separate candidate tag, verify runtime regressions, then apply the selected-
+resident backup, idle, identity and mount checks before changing any runtime.
