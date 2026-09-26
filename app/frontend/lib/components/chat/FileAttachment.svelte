@@ -3,7 +3,7 @@
 
   let { file, onImageClick = null } = $props();
 
-  const isImage = file.content_type?.startsWith('image/');
+  const isImage = !!file.thumb_url;
 
   function getIcon(contentType) {
     if (!contentType) return File;

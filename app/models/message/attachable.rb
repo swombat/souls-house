@@ -2,38 +2,6 @@ module Message::Attachable
 
   extend ActiveSupport::Concern
 
-  ACCEPTABLE_FILE_TYPES = {
-    images: %w[image/png image/jpeg image/jpg image/gif image/webp image/bmp],
-    audio: %w[
-      audio/mpeg
-      audio/wav audio/x-wav audio/vnd.wave
-      audio/flac audio/x-flac
-      audio/m4a audio/x-m4a audio/mp4
-      audio/ogg audio/vorbis audio/opus
-      audio/webm
-    ],
-    video: %w[video/mp4 video/quicktime video/x-msvideo video/webm],
-    documents: %w[
-      application/pdf
-      application/msword
-      application/vnd.openxmlformats-officedocument.wordprocessingml.document
-      text/plain text/markdown text/csv text/html text/css text/xml
-      application/json application/xml
-      text/x-python application/x-python
-      text/x-ruby application/x-ruby
-      application/javascript text/javascript
-      application/x-yaml text/yaml text/x-yaml
-    ]
-  }.freeze
-
-  ACCEPTABLE_EXTENSIONS = %w[
-    .md .markdown .txt .csv .json .xml .html .htm .css .js .ts .jsx .tsx
-    .py .rb .yaml .yml .toml .ini .log .rst .tex .sh .bash .zsh
-    .c .h .cpp .hpp .java .go .rs .swift .kt .scala .r .sql
-    .patch .diff
-    .mp3 .wav .flac .m4a .ogg .oga .opus .webm
-  ].freeze
-
   MAX_FILE_SIZE = 50.megabytes
 
   included do
@@ -69,9 +37,9 @@ module Message::Attachable
       }
 
       begin
-        file_data[:url] = url_helpers.rails_blob_url(file, only_path: true)
+        file_data[:url] = url_helpers.rails_blob_url(file, only_path: true, disposition: :attachment)
 
-        if file.content_type&.start_with?("image/")
+        if file.variable?
           file_data[:thumb_url] = url_helpers.rails_representation_url(file.variant(:thumb), only_path: true)
           file_data[:preview_url] = url_helpers.rails_representation_url(file.variant(:preview), only_path: true)
         end
@@ -115,21 +83,10 @@ module Message::Attachable
     return unless attachments.attached?
 
     attachments.each do |file|
-      unless acceptable_file_type?(file)
-        errors.add(:attachments, "#{file.filename}: file type not supported")
-      end
-
       if file.byte_size > MAX_FILE_SIZE
         errors.add(:attachments, "#{file.filename}: must be less than #{MAX_FILE_SIZE / 1.megabyte}MB")
       end
     end
-  end
-
-  def acceptable_file_type?(file)
-    return true if ACCEPTABLE_FILE_TYPES.values.flatten.include?(file.content_type)
-
-    extension = File.extname(file.filename.to_s).downcase
-    ACCEPTABLE_EXTENSIONS.include?(extension)
   end
 
 end

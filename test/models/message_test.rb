@@ -54,7 +54,6 @@ class MessageTest < ActiveSupport::TestCase
 
   test "accepts audio MIME types emitted by Marcel" do
     message = @chat.messages.build(user: @user, role: "user", content: "Audio")
-    file = Struct.new(:content_type, :filename)
 
     {
       "audio/mpeg" => "recording.mp3",
@@ -67,17 +66,22 @@ class MessageTest < ActiveSupport::TestCase
       "audio/webm" => "recording.webm",
       "video/webm" => "recording.webm"
     }.each do |content_type, filename|
-      assert message.send(:acceptable_file_type?, file.new(content_type, filename)),
+      blob = ActiveStorage::Blob.new(content_type: content_type, filename: filename, byte_size: 1024)
+      message.attachments.define_singleton_method(:attached?) { true }
+      message.attachments.define_singleton_method(:each) { |&block| block.call(blob) }
+      assert message.valid?,
         "Expected #{filename} with #{content_type} to be accepted"
     end
   end
 
   test "accepts supported audio extensions when MIME detection varies" do
     message = @chat.messages.build(user: @user, role: "user", content: "Audio")
-    file = Struct.new(:content_type, :filename)
 
     %w[mp3 wav flac m4a ogg oga opus webm].each do |extension|
-      assert message.send(:acceptable_file_type?, file.new("application/octet-stream", "recording.#{extension}")),
+      blob = ActiveStorage::Blob.new(content_type: "application/octet-stream", filename: "recording.#{extension}", byte_size: 1024)
+      message.attachments.define_singleton_method(:attached?) { true }
+      message.attachments.define_singleton_method(:each) { |&block| block.call(blob) }
+      assert message.valid?,
         "Expected .#{extension} audio files to be accepted"
     end
   end
@@ -396,6 +400,26 @@ class MessageTest < ActiveSupport::TestCase
     assert_equal [], message.attachments_for_api
   end
 
+  test "unknown formats and non-previewable images remain downloadable without thumbnails" do
+    [
+      [ "data.json", "application/json" ],
+      [ "archive.zip", "application/zip" ],
+      [ "README", "application/octet-stream" ],
+      [ "drawing.svg", "image/svg+xml" ],
+      [ "custom.xyz", "application/x-custom" ]
+    ].each do |filename, content_type|
+      message = @chat.messages.create!(user: @user, role: "user", content: "Attachment: #{filename}")
+      message.attachments.attach(io: StringIO.new("synthetic file"), filename: filename,
+        content_type: content_type, identify: false)
+      assert message.reload.valid?
+      metadata = message.files_json.first
+      assert_equal filename, metadata[:filename]
+      assert_includes metadata[:url], "disposition=attachment"
+      assert_nil metadata[:thumb_url]
+      assert_nil metadata[:preview_url]
+    end
+  end
+
   test "validates file size limit" do
     message = @chat.messages.build(
       user: @user,
@@ -418,7 +442,7 @@ class MessageTest < ActiveSupport::TestCase
     assert_includes message.errors.full_messages.join, "50MB"
   end
 
-  test "validates file type" do
+  test "accepts executable files as attachments without a type allowlist" do
     message = @chat.messages.build(
       user: @user,
       role: "user",
@@ -436,8 +460,7 @@ class MessageTest < ActiveSupport::TestCase
     message.attachments.define_singleton_method(:attached?) { true }
     message.attachments.define_singleton_method(:each) { |&block| block.call(invalid_blob) }
 
-    assert_not message.valid?
-    assert_includes message.errors.full_messages.join, "file type not supported"
+    assert message.valid?, message.errors.full_messages.join
   end
 
   test "accepts valid file types" do
@@ -474,15 +497,14 @@ class MessageTest < ActiveSupport::TestCase
     end
   end
 
-  test "diff MIME types alone do not admit unsupported extensions" do
+  test "accepts arbitrary extensions regardless of detected MIME type" do
     %w[text/x-diff text/x-patch application/x-patch application/x-msdownload].each do |content_type|
       message = @chat.messages.build(user: @user, role: "user", content: "Not an allowed extension")
       blob = ActiveStorage::Blob.new(filename: "installer.exe", content_type: content_type, byte_size: 1024)
       message.attachments.define_singleton_method(:attached?) { true }
       message.attachments.define_singleton_method(:each) { |&block| block.call(blob) }
 
-      assert_not message.valid?
-      assert_includes message.errors.full_messages.join, "file type not supported"
+      assert message.valid?, message.errors.full_messages.join
     end
   end
 
@@ -494,8 +516,6 @@ class MessageTest < ActiveSupport::TestCase
 
     assert_not message.valid?
     assert_includes message.errors.full_messages.join, "50MB"
-    assert_includes Message::ACCEPTABLE_EXTENSIONS, ".patch"
-    assert_includes Message::ACCEPTABLE_EXTENSIONS, ".diff"
   end
 
   test "tools_used defaults to empty array" do
@@ -794,10 +814,6 @@ class MessageTest < ActiveSupport::TestCase
     assert_includes json.keys, "audio_url"
     assert_equal false, json["audio_source"]
     assert_nil json["audio_url"]
-  end
-
-  test "audio/webm is in ACCEPTABLE_FILE_TYPES" do
-    assert_includes Message::ACCEPTABLE_FILE_TYPES[:audio], "audio/webm"
   end
 
   # Search scope tests

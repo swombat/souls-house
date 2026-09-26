@@ -29,6 +29,37 @@ for (const width of [360, 1280]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     });
 
+    test('uploads JSON and unknown formats in new and existing conversations without a picker filter', async ({
+      page,
+    }) => {
+      const composer = page.getByTestId('message-composer');
+      const input = composer.locator('input[type=file]');
+      await expect(input).not.toHaveAttribute('accept');
+      await input.setInputFiles({
+        name: 'settings.json',
+        mimeType: 'application/json',
+        buffer: Buffer.from('{"example":true}'),
+      });
+      await composer.locator('textarea').fill('JSON attachment');
+      await page.getByRole('button', { name: 'Start conversation' }).click();
+      await expect(page).toHaveURL(/\/chats\/[^/]+$/);
+      await expect(page.getByRole('link', { name: /settings.json/ })).toBeVisible();
+      await expect(input).not.toHaveAttribute('accept');
+      await input.setInputFiles({
+        name: 'custom.unrecognized',
+        mimeType: 'application/octet-stream',
+        buffer: Buffer.from('synthetic opaque file'),
+      });
+      await composer.locator('textarea').fill('Unknown format attachment');
+      await page.getByRole('button', { name: 'Send message', exact: true }).click();
+      const attachment = page.getByRole('link', { name: /custom.unrecognized/ });
+      await expect(attachment).toBeVisible();
+      await expect(attachment).toHaveAttribute('download', 'custom.unrecognized');
+      await page.reload();
+      await expect(attachment).toBeVisible();
+      await expect(page.getByRole('link', { name: /settings.json/ })).toBeVisible();
+    });
+
     test('names the conversation before sending its first message', async ({ page }) => {
       await page.getByTitle('Edit chat title').click();
       await page.locator('header input[type="text"]').fill('A conversation for Paulina');

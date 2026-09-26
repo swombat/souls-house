@@ -1,22 +1,13 @@
 <script>
   import { Paperclip, X } from 'phosphor-svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { acceptAttributeFor, addUploadFiles, formatFileSize, removeUploadFile } from '$lib/file-upload-rules';
+  import { addUploadFiles, formatFileSize, removeUploadFile } from '$lib/file-upload-rules';
 
-  let {
-    files = $bindable([]),
-    disabled = false,
-    maxFiles = 5,
-    maxSize = 50 * 1024 * 1024,
-    allowedTypes = [],
-    allowedExtensions = [],
-  } = $props();
+  let { files = $bindable([]), disabled = false, maxFiles = 5, maxSize = 50 * 1024 * 1024 } = $props();
 
   let fileInput;
   let error = $state(null);
   let dragActive = $state(false);
-
-  const acceptAttribute = $derived(acceptAttributeFor({ allowedTypes, allowedExtensions }));
 
   function handleFileSelect(event) {
     const selectedFiles = Array.from(event.target.files || []);
@@ -24,7 +15,7 @@
   }
 
   function processFiles(selectedFiles) {
-    const result = addUploadFiles(files, selectedFiles, { maxFiles, maxSize, allowedTypes, allowedExtensions });
+    const result = addUploadFiles(files, selectedFiles, { maxFiles, maxSize });
     files = result.files;
     error = result.error;
   }
@@ -54,14 +45,7 @@
 
 <!-- The picker occupies one control cell; attachments span the composer below it. -->
 <div class="contents">
-  <input
-    bind:this={fileInput}
-    type="file"
-    multiple
-    accept={acceptAttribute}
-    onchange={handleFileSelect}
-    {disabled}
-    class="hidden" />
+  <input bind:this={fileInput} type="file" multiple onchange={handleFileSelect} {disabled} class="hidden" />
 
   <Button
     type="button"

@@ -108,22 +108,22 @@ module Api
         assert_includes JSON.parse(response.body)["errors"], "Content or at least one file is required"
       end
 
-      test "rejects an unsupported agent attachment without creating a message" do
+      test "accepts arbitrary agent attachment formats" do
         agent = agents(:research_assistant)
         agent_key = ApiKey.generate_for(@user, name: "Agent invalid file postback", agent: agent)
         @chat.agents << agent
 
-        assert_no_difference "Message.count" do
+        assert_difference "Message.count" do
           post api_v1_conversation_messages_url(@chat),
             params: {
-              content: "Do not store this",
+              content: "Store as a downloadable attachment",
               files: [ fixture_file_upload("test.exe", "application/x-msdownload") ]
             },
             headers: { "Authorization" => "Bearer #{agent_key.raw_token}" }
         end
 
-        assert_response :unprocessable_entity
-        assert_match(/file type not supported/, response.body)
+        assert_response :created
+        assert_equal "test.exe", Message.last.attachments.first.filename.to_s
       end
 
       test "agent-scoped key cannot post to conversation without agent" do

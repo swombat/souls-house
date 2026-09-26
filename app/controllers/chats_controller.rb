@@ -165,8 +165,6 @@ class ChatsController < ApplicationController
 
   def file_upload_config
     {
-      acceptable_types: Message::ACCEPTABLE_FILE_TYPES.values.flatten,
-      acceptable_extensions: Message::ACCEPTABLE_EXTENSIONS,
       max_size: Message::MAX_FILE_SIZE
     }
   end

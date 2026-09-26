@@ -1,41 +1,35 @@
 import { describe, expect, test } from 'vitest';
-import {
-  acceptAttributeFor,
-  addUploadFiles,
-  formatFileSize,
-  removeUploadFile,
-  validateUploadFile,
-} from './file-upload-rules';
+import { addUploadFiles, formatFileSize, removeUploadFile, validateUploadFile } from './file-upload-rules';
 
 const file = (name, type, size = 10) => ({ name, type, size });
 
 describe('file upload rules', () => {
-  test('builds a deduplicated accept attribute from MIME types and explicit extensions', () => {
-    expect(
-      acceptAttributeFor({
-        allowedTypes: ['image/png', 'application/pdf', 'unknown/type'],
-        allowedExtensions: ['.png', '.heic'],
-      })
-    ).toBe('.png,.pdf,.heic');
+  test('accepts arbitrary formats, unknown MIME types, and extensionless files', () => {
+    for (const [name, type] of [
+      ['data.json', 'application/json'],
+      ['archive.zip', 'application/zip'],
+      ['program.exe', 'application/x-msdownload'],
+      ['custom.unrecognized', 'application/octet-stream'],
+      ['README', ''],
+    ]) {
+      expect(validateUploadFile(file(name, type), { maxSize: 100 })).toBeNull();
+    }
   });
 
-  test('accepts files by MIME type or filename extension', () => {
-    const options = { maxSize: 100, allowedTypes: ['image/png'], allowedExtensions: ['.md'] };
-
-    expect(validateUploadFile(file('photo.bin', 'image/png'), options)).toBeNull();
-    expect(validateUploadFile(file('notes.MD', 'text/plain'), options)).toBeNull();
-    expect(validateUploadFile(file('script.exe', 'application/x-msdownload'), options)).toMatch(/not supported/);
+  test('retains the size limit for every format', () => {
+    expect(validateUploadFile(file('data.json', '', 101), { maxSize: 100 })).toMatch(/File too large/);
+    expect(validateUploadFile(file('data.json', '', 100), { maxSize: 100 })).toBeNull();
   });
 
   test('returns the original file list when a batch exceeds limits or contains invalid files', () => {
     const existing = [file('one.png', 'image/png')];
-    const options = { maxFiles: 2, maxSize: 100, allowedTypes: ['image/png'], allowedExtensions: [] };
+    const options = { maxFiles: 2, maxSize: 100 };
 
     expect(addUploadFiles(existing, [file('two.png', 'image/png'), file('three.png', 'image/png')], options)).toEqual({
       files: existing,
       error: 'Maximum 2 files allowed.',
     });
-    expect(addUploadFiles(existing, [file('two.exe', 'application/x-msdownload')], options).files).toBe(existing);
+    expect(addUploadFiles(existing, [file('two.zip', 'application/zip', 101)], options).files).toBe(existing);
   });
 
   test('adds and removes valid files without mutating the original list', () => {
@@ -44,8 +38,6 @@ describe('file upload rules', () => {
     const result = addUploadFiles(existing, [nextFile], {
       maxFiles: 2,
       maxSize: 100,
-      allowedTypes: ['image/png'],
-      allowedExtensions: [],
     });
 
     expect(result.files).toEqual([existing[0], nextFile]);

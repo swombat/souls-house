@@ -136,21 +136,23 @@ class ChatFileUploadTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  test "file upload with validation errors redirects with error message" do
-    invalid_file = fixture_file_upload("test.exe", "application/x-msdownload")
+  test "arbitrary file formats are stored and offered as downloads" do
+    file = fixture_file_upload("test.exe", "application/x-msdownload")
 
-    assert_no_difference "Message.count" do
+    assert_difference "Message.count" do
       post account_chat_messages_path(@account, @chat), params: {
-        message: { content: "Invalid file upload" },
-        files: [ invalid_file ]
+        message: { content: "File for download" },
+        files: [ file ]
       }
     end
 
     assert_response :redirect
     follow_redirect!
 
-    # Verify error message is displayed
-    assert_match /file type not supported/, flash[:alert]
+    metadata = Message.last.files_json.first
+    assert_equal "test.exe", metadata[:filename]
+    assert_includes metadata[:url], "disposition=attachment"
+    assert_nil metadata[:thumb_url]
     assert_response :success
   end
 

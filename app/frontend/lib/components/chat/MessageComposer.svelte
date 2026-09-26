@@ -131,8 +131,6 @@
     <FileUploadInput
       bind:files={selectedFiles}
       disabled={submitting || disabled}
-      allowedTypes={fileUploadConfig.acceptable_types || []}
-      allowedExtensions={fileUploadConfig.acceptable_extensions || []}
       maxSize={fileUploadConfig.max_size || 50 * 1024 * 1024} />
 
     <div class="min-w-0 col-start-2 row-start-1">

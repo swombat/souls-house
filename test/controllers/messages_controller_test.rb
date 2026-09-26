@@ -133,10 +133,10 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_chat_path(@account, @chat)
   end
 
-  test "should reject invalid file types" do
+  test "should accept files outside the former type allowlist" do
     invalid_file = fixture_file_upload("test.exe", "application/x-msdownload")
 
-    assert_no_difference "Message.count" do
+    assert_difference "Message.count" do
       post account_chat_messages_path(@account, @chat), params: {
         message: { content: "Invalid file type" },
         files: [ invalid_file ]
@@ -144,15 +144,14 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :redirect
-    follow_redirect!
-    assert_match /file type not supported/, flash[:alert]
+    assert_equal "test.exe", Message.last.attachments.first.filename.to_s
   end
 
-  test "should handle mixed valid and invalid files" do
+  test "should accept mixed file formats" do
     valid_file = fixture_file_upload("test_image.png", "image/png")
     invalid_file = fixture_file_upload("test.exe", "application/x-msdownload")
 
-    assert_no_difference "Message.count" do
+    assert_difference "Message.count" do
       post account_chat_messages_path(@account, @chat), params: {
         message: { content: "Mixed file types" },
         files: [ valid_file, invalid_file ]
@@ -160,8 +159,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :redirect
-    follow_redirect!
-    assert_match /file type not supported/, flash[:alert]
+    assert_equal 2, Message.last.attachments.count
   end
 
   test "should provide file metadata in JSON serialization" do
