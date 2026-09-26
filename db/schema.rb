@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_25_170000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_25_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -529,6 +529,58 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_170000) do
     t.index ["chat_id"], name: "index_conversation_compactions_on_chat_id"
   end
 
+  create_table "device_stream_batches", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "device_stream_session_id", null: false
+    t.datetime "observed_at", null: false
+    t.string "payload_digest", null: false
+    t.jsonb "rr_ms", null: false
+    t.bigint "sequence", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_at"], name: "index_device_stream_batches_on_created_at"
+    t.index ["device_stream_session_id", "sequence"], name: "idx_on_device_stream_session_id_sequence_dbc9d30154", unique: true
+    t.index ["device_stream_session_id"], name: "index_device_stream_batches_on_device_stream_session_id"
+    t.index ["observed_at"], name: "index_device_stream_batches_on_observed_at"
+    t.check_constraint "sequence >= 0", name: "device_batch_nonnegative_sequence"
+  end
+
+  create_table "device_stream_credentials", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "device_stream_id", null: false
+    t.datetime "revoked_at"
+    t.string "token_digest", null: false
+    t.datetime "updated_at", null: false
+    t.index ["device_stream_id"], name: "index_device_stream_credentials_on_device_stream_id"
+    t.index ["token_digest"], name: "index_device_stream_credentials_on_token_digest", unique: true
+  end
+
+  create_table "device_stream_sessions", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "device_stream_id", null: false
+    t.datetime "erased_at"
+    t.string "session_uuid", null: false
+    t.datetime "updated_at", null: false
+    t.index ["device_stream_id", "session_uuid"], name: "idx_on_device_stream_id_session_uuid_f4387caf71", unique: true
+    t.index ["device_stream_id"], name: "index_device_stream_sessions_on_device_stream_id"
+  end
+
+  create_table "device_streams", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.integer "batches_count", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.boolean "enabled", default: true, null: false
+    t.datetime "erased_at"
+    t.string "name", null: false
+    t.jsonb "reader_agent_ids", default: [], null: false
+    t.jsonb "reader_user_ids", default: [], null: false
+    t.string "stream_key", null: false
+    t.bigint "subject_user_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_device_streams_on_account_id"
+    t.index ["stream_key"], name: "index_device_streams_on_stream_key", unique: true
+    t.index ["subject_user_id"], name: "index_device_streams_on_subject_user_id"
+  end
+
   create_table "github_integrations", force: :cascade do |t|
     t.text "access_token"
     t.bigint "account_id", null: false
@@ -1015,6 +1067,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_170000) do
   add_foreign_key "chats", "ai_models"
   add_foreign_key "chats", "whiteboards", column: "active_whiteboard_id"
   add_foreign_key "conversation_compactions", "chats"
+  add_foreign_key "device_stream_batches", "device_stream_sessions"
+  add_foreign_key "device_stream_credentials", "device_streams"
+  add_foreign_key "device_stream_sessions", "device_streams"
+  add_foreign_key "device_streams", "accounts"
+  add_foreign_key "device_streams", "users", column: "subject_user_id"
   add_foreign_key "github_integrations", "accounts"
   add_foreign_key "memberships", "accounts"
   add_foreign_key "memberships", "users"

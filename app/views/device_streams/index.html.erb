@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Device streams</title><%= csrf_meta_tags %></head>
+<body><main>
+  <% if @stream_account %>
+  <nav><%= link_to "Account Services", account_services_path(@stream_account) %></nav>
+  <h1>Device streams — <%= @stream_account.name %></h1>
+  <p>Create a stream only for your own data in this account. It starts disabled with no readers other than you.</p>
+  <%= form_with url: account_device_streams_path(@stream_account), local: true do |f| %>
+    <%= f.label :name, "Stream name" %> <%= f.text_field :name, required: true, maxlength: 100 %>
+    <%= f.submit "Create disabled stream" %>
+  <% end %>
+  <p><%= link_to "Personal data recovery (all accounts)", device_streams_path %> — revoke devices or erase your data even after leaving an account.</p>
+  <% else %>
+  <h1>Personal device data recovery</h1>
+  <p>Revoke devices or erase your own data across accounts, including accounts you have left.
+    To create a stream or manage readers, open Device streams from that account's Services page.</p>
+  <% end %>
+  <ul><% @streams.each do |stream| %>
+    <li><%= link_to stream.name, @stream_account ? account_device_stream_path(@stream_account, stream.stream_key) : device_stream_path(stream.stream_key) %>
+      — <%= stream.account.name %><%= " (erased)" if stream.erased_at? %></li>
+  <% end %></ul>
+</main></body></html>

@@ -45,6 +45,13 @@ Rails.application.routes.draw do
   # Legacy entry point for browser-managed external access keys.
   # The controller redirects this to the user's default account.
   get "api_keys", to: "api_keys#index", as: :api_keys
+  # Personal recovery controls remain reachable after account membership ends.
+  resources :device_streams, only: [ :index, :show, :destroy ] do
+    member do
+      delete :revoke
+      delete :erase_session
+    end
+  end
 
   # API Key Approvals (all actions keyed by token)
   get    "api_keys/approvals/:token", to: "api_key_approvals#show",    as: :api_key_approval
@@ -55,6 +62,13 @@ Rails.application.routes.draw do
   post "telegram/webhook/:token", to: "telegram_webhooks#receive", as: :telegram_webhook
 
   resources :accounts, only: [ :new, :create, :show, :edit, :update ] do
+    resources :device_streams, only: [ :index, :create, :show, :update, :destroy ] do
+      member do
+        post :credential
+        delete :revoke
+        delete :erase_session
+      end
+    end
     resources :members, controller: "account_members", only: [ :destroy ]
     resources :invitations, only: [ :create ] do
       member do
@@ -162,6 +176,8 @@ Rails.application.routes.draw do
   # JSON API for external clients (Claude Code, etc.)
   namespace :api do
     namespace :v1 do
+      post "streams/:stream_key/samples", to: "stream_samples#create"
+      get "streams/:stream_key/latest", to: "streams#latest"
       post "runtime_runs/:run_id/events", to: "runtime_events#create"
       get "agent/bookmarks", to: "agent_bookmarks#index", as: :agent_bookmarks
       patch "agent/activity_preferences", to: "agents#activity_preferences"

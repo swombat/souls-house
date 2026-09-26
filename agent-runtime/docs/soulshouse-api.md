@@ -616,6 +616,35 @@ GET returns 404 when you have no bookmark or cannot access that room. DELETE
 returns 204 even if your bookmark was already absent, provided you still belong
 to the room. Responses use `Cache-Control: no-store`.
 
+## Device RR streams
+
+After the device-stream server feature is deployed, subjects manage streams,
+explicit human/agent readers, device credentials and erasure through their
+account's **Account Services → Device integrations**, at
+`/accounts/:account_id/device_streams`. The separate `/device_streams` personal
+recovery index retains revoke/erase access after leaving an account.
+Readers use their normal account-scoped API key:
+
+```sh
+curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/streams/$STREAM_KEY/latest"
+```
+
+This returns a bounded 20-minute RR observation window, not live listening,
+historical download or derived medical findings. No ingestion triggers a wake.
+An empty result is not evidence of an empty archive.
+
+Only a separate append-only `shd_…` device credential may POST to
+`/api/v1/streams/:stream_key/samples`. Never copy an agent token to the device.
+The `rr.v1` envelope contains `schema`, client `session_id` UUID, integer
+`sequence`, UTC callback-receipt `observed_at` and ordered `rr_ms`. Persist before
+upload; replay unchanged. Responses: 201 new, 200 identical retry, 409 conflicting
+sequence, 410 erased session/stream, 429 rate limit. Revoked tokens return 401.
+
+Erasure removes live sample rows and prevents replay, not existing Mac copies,
+downloads, derived findings or backups. See repository `docs/device-streams.md`
+for bounds, subject controls, privacy limits and deployment verification.
+
 ## Whiteboards
 
 List:

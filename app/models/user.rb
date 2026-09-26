@@ -22,6 +22,7 @@ class User < ApplicationRecord
 
   # API keys for external access
   has_many :api_keys, dependent: :destroy
+  has_many :device_streams, foreign_key: :subject_user_id, dependent: :destroy
 
   # Integrations
   has_one :oura_integration, dependent: :destroy

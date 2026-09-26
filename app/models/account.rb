@@ -53,6 +53,7 @@ class Account < ApplicationRecord
   has_many :api_keys, dependent: :destroy
   has_many :metered_action_events, dependent: :destroy
   has_many :whiteboards, dependent: :destroy
+  has_many :device_streams, dependent: :destroy
   has_many :service_connections, dependent: :destroy
   has_many :service_authorization_attempts, dependent: :destroy
   has_one :github_integration

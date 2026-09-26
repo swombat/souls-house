@@ -50,6 +50,7 @@ module TestSupport
         run_id: run_id,
         password: PASSWORD,
         account_id: account.id,
+        account_param: account.to_param,
         empty_account_id: primary_user.personal_account.id,
         primary_user: user_json(primary_user),
         secondary_user: user_json(secondary_user),
