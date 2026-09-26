@@ -31,6 +31,20 @@ class DeployTemplateTest < ActiveSupport::TestCase
     end
   end
 
+  test "an explicit remote builder never compiles locally on a matching architecture" do
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST,
+                              "HOUSE_BUILDER_REMOTE" => "ssh://deploy@builder.example:22")) do
+      builder = YAML.safe_load(render_deploy_yml).fetch("builder")
+      assert_equal "ssh://deploy@builder.example:22", builder.fetch("remote")
+      assert_equal false, builder.fetch("local")
+    end
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST)) do
+      builder = YAML.safe_load(render_deploy_yml).fetch("builder")
+      assert_not builder.key?("local")
+      assert_not builder.key?("remote")
+    end
+  end
+
   test "rendering without house.env raises, pointing at house.env" do
     with_env(example_env.except("HOUSE_DOMAIN", "HOUSE_HOST")) do
       error = assert_raises(RuntimeError) { render_deploy_yml }

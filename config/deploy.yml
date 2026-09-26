@@ -136,6 +136,7 @@ proxy:
 builder:
   arch: amd64
 <% if house_builder_remote %>
+  local: false # Kamal otherwise prefers the local host when architectures match.
   remote: <%= house_builder_remote %>
 <% end %>
   args:
