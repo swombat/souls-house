@@ -143,6 +143,9 @@
       persistent_wake_session: agent.persistent_wake_session || false,
       scheduled_wakes_enabled: agent.scheduled_wakes_enabled ?? true,
       heartbeat_wakes_per_day: agent.heartbeat_wakes_per_day ?? 2,
+      session_idle_timeout_minutes: agent.session_idle_timeout_minutes ?? 45,
+      session_max_age_minutes: agent.session_max_age_minutes ?? 240,
+      session_context_budget_tokens: agent.session_context_budget_tokens ?? 300000,
     },
   });
 

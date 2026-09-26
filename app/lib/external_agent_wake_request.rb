@@ -42,6 +42,7 @@ class ExternalAgentWakeRequest
         trigger_kind: "wake",
         request: request,
         persistent_session: agent.persistent_wake_session?,
+        session_policy: agent.runtime_session_policy,
         provider: provider,
         model: Agents::Sandbox.chaos_model_for(agent),
         reasoning_effort: agent.reasoning_effort,

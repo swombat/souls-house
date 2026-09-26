@@ -1,4 +1,5 @@
 require "test_helper"
+require "webmock/minitest"
 
 class ExternalAgentWakeRequestTest < ActiveSupport::TestCase
 
@@ -43,6 +44,32 @@ class ExternalAgentWakeRequestTest < ActiveSupport::TestCase
     )
 
     assert_includes ExternalAgentWakeRequest.new(agent: agent).send(:request_text), "Wake notice"
+  end
+
+  test "wake triggers carry the agent session policy" do
+    agent = agents(:research_assistant)
+    agent.update!(
+      runtime: "external",
+      uuid: SecureRandom.uuid_v7,
+      endpoint_url: "https://agent.example.com",
+      trigger_bearer_token: "tr_valid",
+      health_state: "healthy",
+      consecutive_health_failures: 0,
+      persistent_wake_session: true,
+      session_idle_timeout_minutes: 30
+    )
+    stub = stub_request(:post, "https://agent.example.com/trigger")
+      .with do |request|
+        body = JSON.parse(request.body)
+        body["persistent_session"] == true &&
+          body.dig("session_policy", "idle_timeout_secs") == 1800 &&
+          body.dig("session_policy", "max_age_secs") == 14_400
+      end
+      .to_return(status: 200, body: { status: "ok" }.to_json)
+
+    ExternalAgentWakeRequest.new(agent: agent).send(:perform)
+
+    assert_requested stub
   end
 
 end

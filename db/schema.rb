@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_25_131000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_25_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -362,6 +362,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_25_131000) do
     t.text "sandbox_last_error"
     t.datetime "sandbox_last_error_at"
     t.boolean "scheduled_wakes_enabled", default: true, null: false
+    t.integer "session_context_budget_tokens", default: 300000, null: false
+    t.integer "session_idle_timeout_minutes", default: 45, null: false
+    t.integer "session_max_age_minutes", default: 240, null: false
     t.boolean "share_working_narration", default: true, null: false
     t.jsonb "storage_usage", default: {}, null: false
     t.text "summary_prompt"
