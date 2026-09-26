@@ -71,6 +71,15 @@ RUN git apply --check /tmp/chaos-antigravity-daily-prompt.patch \
     && cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
     && cp target/release/chaos /usr/local/bin/chaos
 
+# The canonical prompt also needs the kernel-owned MCP tool catalogue because
+# agy's lazy catalogue was part of the CLI prompt being replaced.
+COPY patches/chaos-antigravity-tool-catalog.patch /tmp/chaos-antigravity-tool-catalog.patch
+RUN git apply --check /tmp/chaos-antigravity-tool-catalog.patch \
+    && git apply /tmp/chaos-antigravity-tool-catalog.patch \
+    && cargo test --release --jobs "${CARGO_BUILD_JOBS}" -p chaos-clamp canonical_tool_catalogue \
+    && cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
+    && cp target/release/chaos /usr/local/bin/chaos
+
 # =============================================================================
 # Stage 2 — runtime
 # =============================================================================
@@ -79,7 +88,7 @@ FROM node:22-trixie-slim AS runtime
 
 ARG CHAOS_HEAD
 LABEL house.souls.chaos-ref="${CHAOS_HEAD}"
-LABEL house.souls.chaos-patches="antigravity-empty-managed-config,antigravity-daily-cloudcode-egress,clamp-cached-catalog,stop-hook-continuation-as-user,antigravity-daily-prompt"
+LABEL house.souls.chaos-patches="antigravity-empty-managed-config,antigravity-daily-cloudcode-egress,clamp-cached-catalog,stop-hook-continuation-as-user,antigravity-daily-prompt,antigravity-tool-catalog"
 
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 

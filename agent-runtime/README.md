@@ -344,3 +344,10 @@ Cloud Code hostname. Hosted Antigravity also uses
 to that exact hostname, retaining fail-closed behavior for unknown generation
 endpoints. Its regression tests run in the incremental builder layer. This does
 not disable prompt replacement or widen the network allowlist.
+
+The canonical replacement also removes agy's lazy-loaded MCP tool catalogue.
+`chaos-antigravity-tool-catalog.patch` supplies the current kernel-owned tool
+specifications using the same conversion as the MCP bridge (including freeform
+input envelopes). It explains the `call_mcp_tool` transport without retaining
+CLI system instructions or enabling native tools. The catalogue is refreshed
+alongside the canonical prompt on subsequent turns; tool permissions are unchanged.
