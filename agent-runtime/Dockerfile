@@ -62,6 +62,24 @@ RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
 RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos_journald \
     && cp target/release/chaos_journald /usr/local/bin/chaos_journald
 
+# Extend canonical prompt rewriting to the daily Cloud Code endpoint. Keep this
+# incremental layer after the base build so existing compiler artifacts are reused.
+COPY patches/chaos-antigravity-daily-prompt.patch /tmp/chaos-antigravity-daily-prompt.patch
+RUN git apply --check /tmp/chaos-antigravity-daily-prompt.patch \
+    && git apply /tmp/chaos-antigravity-daily-prompt.patch \
+    && cargo test --release --jobs "${CARGO_BUILD_JOBS}" -p chaos-clamp egress::prompt::tests \
+    && cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
+    && cp target/release/chaos /usr/local/bin/chaos
+
+# The canonical prompt also needs the kernel-owned MCP tool catalogue because
+# agy's lazy catalogue was part of the CLI prompt being replaced.
+COPY patches/chaos-antigravity-tool-catalog.patch /tmp/chaos-antigravity-tool-catalog.patch
+RUN git apply --check /tmp/chaos-antigravity-tool-catalog.patch \
+    && git apply /tmp/chaos-antigravity-tool-catalog.patch \
+    && cargo test --release --jobs "${CARGO_BUILD_JOBS}" -p chaos-clamp canonical_tool_catalogue \
+    && cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
+    && cp target/release/chaos /usr/local/bin/chaos
+
 # =============================================================================
 # Stage 2 — runtime
 # =============================================================================
@@ -70,7 +88,7 @@ FROM node:22-trixie-slim AS runtime
 
 ARG CHAOS_HEAD
 LABEL house.souls.chaos-ref="${CHAOS_HEAD}"
-LABEL house.souls.chaos-patches="antigravity-empty-managed-config,antigravity-daily-cloudcode-egress,clamp-cached-catalog,stop-hook-continuation-as-user"
+LABEL house.souls.chaos-patches="antigravity-empty-managed-config,antigravity-daily-cloudcode-egress,clamp-cached-catalog,stop-hook-continuation-as-user,antigravity-daily-prompt,antigravity-tool-catalog"
 
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 
@@ -200,6 +218,7 @@ COPY antigravity-browser-open /usr/local/libexec/helixkit-antigravity-login/xdg-
 # Imported Git homes use repo-scoped SSH deploy keys.
 RUN apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*
 COPY imported_home.py home_sync_loop.py /home/agent/
+COPY runtime_settings.py /usr/local/share/helixkit-agent/runtime_settings.py
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/soulshouse-post-message /usr/local/bin/soulshouse-send-telegram /usr/local/bin/soulshouse-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/soulshouse-youtube /usr/local/bin/soulshouse-x /usr/local/bin/soulshouse-gws \
     /usr/local/libexec/helixkit-antigravity-login/xdg-open \

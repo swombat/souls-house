@@ -152,6 +152,16 @@ SUBSCRIPTION_USAGE_TIMEOUT_SECS = 20
 SUBSCRIPTION_NOTICE_INTERVAL_SECS = 60 * 60
 SHIM_TELEMETRY_SCHEMA_VERSION = 1
 SIDECAR_SCHEMA_VERSION = 3
+# Session-policy rolls: HelixKit supplies the thresholds per trigger. A missing
+# or zero threshold disables that check, so an older HelixKit keeps today's
+# resume-forever behaviour.
+SESSION_POLICY_FIELDS = ("idle_timeout_secs", "max_age_secs", "context_budget_tokens")
+SESSION_POLICY_ROLL_REASONS = ("idle-timeout", "max-age", "context-budget")
+# Subscription transports hand the whole turn to a provider CLI (Claude Code,
+# Antigravity) that runs its own tool loop. Chaos then counts one provider
+# request per CLI dispatch while usage sums every internal call, so the
+# per-request context size cannot be derived from invocation usage.
+CLAMP_SUBSCRIPTION_PROVIDERS = ("anthropic", "gemini")
 SUPPORTED_CHAOS_TELEMETRY_SCHEMA_VERSION = 1
 SUPPORTED_REASONING_EFFORTS = (
     "none",
@@ -232,6 +242,7 @@ def trigger():
     persistent_session = bool(payload.get("persistent_session"))
     roll_session = bool(payload.get("roll_session"))
     runtime_session_generation = _optional_int(payload.get("runtime_session_generation")) or 0
+    session_policy = normalize_session_policy(payload.get("session_policy"))
     provider = payload.get("provider", AGENT_PROVIDER)
     model = payload.get("model", AGENT_DEFAULT_MODEL)
     reasoning_effort = payload.get("reasoning_effort")
@@ -308,6 +319,7 @@ def trigger():
                 session_lock=session_lock, roll_session=roll_session,
                 runtime_session_generation=runtime_session_generation,
                 subscription_snapshot=subscription_snapshot,
+                session_policy=session_policy,
                 **({"memory_notice": memory_notice} if memory_notice or isinstance(memory_notice, GraphMemoryNotice) else {}),
             )
         else:
@@ -415,6 +427,7 @@ def persistent_trigger(
     session_id, prompt, request_delta, model, timeout_secs,
     provider=None, reasoning_effort=None, auth_mode="api_key", session_lock=None,
     roll_session=False, runtime_session_generation=0, subscription_snapshot=None, memory_notice=None,
+    session_policy=None,
 ):
     """Resume the session mapped to session_id, or start (and record) a fresh one.
 
@@ -460,11 +473,15 @@ def persistent_trigger(
                 record, model, provider, auth_mode=auth_mode,
                 roll_session=roll_session,
                 runtime_session_generation=runtime_session_generation,
+                session_policy=session_policy,
             )
             if record else ("safeguard-detected" if roll_session else None, [])
         )
+        policy_roll_notice = None
         if record and roll:
             log.info(f"rolling session session_id={session_id} reason={roll}")
+            if roll in SESSION_POLICY_ROLL_REASONS:
+                policy_roll_notice = session_policy_roll_notice(roll, record, session_policy)
             retire_session_record(session_id, reason=roll)
             record = None
 
@@ -581,7 +598,7 @@ def persistent_trigger(
         # to affect a turn whose actual prompt contains only the delta.
         full_prompt, prompt_components = build_prompt_with_components(
             prompt,
-            runtime_notice=subscription_notice,
+            runtime_notice=append_runtime_notice(policy_roll_notice, subscription_notice),
             memory_notice=memory_notice,
         )
         prompt_info = prompt_telemetry(
@@ -1198,6 +1215,9 @@ def save_session_record(
         "trigger_sequence": 1,
         "identity_fingerprint": identity_fingerprint(),
         "runtime_context_fingerprint": runtime_context_fingerprint(),
+        "last_context_tokens": context_tokens_estimate(
+            events, provider or AGENT_PROVIDER, auth_mode
+        ),
     }
     if subscription_notice_at:
         record["subscription_notice_at"] = subscription_notice_at
@@ -1210,6 +1230,11 @@ def update_session_record(session_id, record, events, subscription_notice_at=Non
     record["last_finished_at"] = _utcnow_iso()
     record["trigger_sequence"] = next_trigger_sequence(record)
     record["identity_fingerprint"] = identity_fingerprint()
+    record["last_context_tokens"] = context_tokens_estimate(
+        events,
+        record.get("provider", AGENT_PROVIDER),
+        record.get("auth_mode", "api_key"),
+    )
     if subscription_notice_at:
         record["subscription_notice_at"] = subscription_notice_at
     _store_legacy_cumulative_usage(record, events)
@@ -1241,7 +1266,7 @@ def retire_session_record(session_id, reason):
 
 def roll_decision(
     record, model, provider=None, auth_mode="api_key",
-    roll_session=False, runtime_session_generation=0,
+    roll_session=False, runtime_session_generation=0, session_policy=None,
 ):
     """Return (reason, changed identity files); reason None means resume."""
     if roll_session:
@@ -1262,7 +1287,94 @@ def roll_decision(
         return "identity-changed", changed_files
     if record.get("runtime_context_fingerprint") != runtime_context_fingerprint():
         return "runtime-context-changed", []
+    policy_reason = session_policy_roll_reason(record, session_policy)
+    if policy_reason:
+        return policy_reason, []
     return None, []
+
+
+def normalize_session_policy(policy):
+    """Keep only positive integer thresholds; anything else disables that check."""
+    if not isinstance(policy, dict):
+        return {}
+    normalized = {}
+    for field in SESSION_POLICY_FIELDS:
+        value = _optional_int(policy.get(field))
+        if value and value > 0:
+            normalized[field] = value
+    return normalized
+
+
+def session_policy_roll_reason(record, session_policy, now=None):
+    """Bound a persistent session the way a reaped CLI process is bounded.
+
+    Idle time is measured from the last successful turn, age from the session's
+    first turn, and context from the previous turn's per-request estimate.
+    """
+    policy = session_policy or {}
+    if not policy:
+        return None
+    now = now or datetime.now(timezone.utc)
+    idle_limit = policy.get("idle_timeout_secs")
+    idle = _seconds_since(record.get("last_finished_at"), now)
+    if idle_limit and idle is not None and idle > idle_limit:
+        return "idle-timeout"
+    age_limit = policy.get("max_age_secs")
+    age = _seconds_since(record.get("created_at"), now)
+    if age_limit and age is not None and age > age_limit:
+        return "max-age"
+    budget = policy.get("context_budget_tokens")
+    context = _optional_int(record.get("last_context_tokens"))
+    if budget and context is not None and context > budget:
+        return "context-budget"
+    return None
+
+
+def session_policy_roll_notice(reason, record, session_policy, now=None):
+    now = now or datetime.now(timezone.utc)
+    policy = session_policy or {}
+    if reason == "idle-timeout":
+        detail = (
+            f"it had been idle for {_minutes(_seconds_since(record.get('last_finished_at'), now))} minutes "
+            f"(limit {_minutes(policy.get('idle_timeout_secs'))})"
+        )
+    elif reason == "max-age":
+        detail = (
+            f"it was {_minutes(_seconds_since(record.get('created_at'), now))} minutes old "
+            f"(limit {_minutes(policy.get('max_age_secs'))})"
+        )
+    else:
+        detail = (
+            f"its context had reached about {_optional_int(record.get('last_context_tokens'))} tokens "
+            f"(budget {policy.get('context_budget_tokens')})"
+        )
+    return (
+        "Runtime notice: fresh session.\n\n"
+        f"Your previous session for this thread was retired because {detail}. "
+        "This is routine housekeeping that keeps each turn's context small, not a fault. "
+        "This prompt carries your identity, recent journals and the recent transcript window. "
+        "If you need older history from this thread, re-read it through the souls.house API "
+        "(see /usr/local/share/helixkit-agent/helixkit-api.md) rather than assuming it."
+    )
+
+
+def context_tokens_estimate(events, provider, auth_mode):
+    """Estimate the context carried into each provider request of the last turn.
+
+    Invocation usage sums every provider request in the turn, so the average
+    input per request is a lower bound on the final request's context. Clamp
+    subscription transports hide their internal request count, so no estimate.
+    """
+    if auth_mode == "oauth_account" and provider in CLAMP_SUBSCRIPTION_PROVIDERS:
+        return None
+    if (events or {}).get("telemetry_status") != "detailed":
+        return None
+    usage = events.get("usage") or {}
+    requests = _optional_int(usage.get("provider_request_count"))
+    input_tokens = _optional_int(usage.get("input_tokens"))
+    if not requests or requests <= 0 or input_tokens is None:
+        return None
+    return input_tokens // requests
 
 
 def roll_reason(record, model, provider=None, auth_mode="api_key"):
@@ -1360,6 +1472,22 @@ def sibling_sessions_notice(count):
 
 def _utcnow_iso():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _seconds_since(timestamp, now):
+    if not timestamp:
+        return None
+    try:
+        moment = datetime.fromisoformat(timestamp)
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        return max(0, int((now - moment).total_seconds()))
+    except (TypeError, ValueError):
+        return None
+
+
+def _minutes(seconds):
+    return None if seconds is None else int(seconds) // 60
 
 
 def _session_age_seconds(record):

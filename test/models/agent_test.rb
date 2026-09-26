@@ -793,4 +793,25 @@ class AgentTest < ActiveSupport::TestCase
     assert_equal "anthropic/claude-opus-4.6", successor.model_id
   end
 
+  test "persistent sessions roll after 45 idle minutes, four hours, or 300k context tokens by default" do
+    agent = agents(:research_assistant)
+
+    assert_equal(
+      { idle_timeout_secs: 2700, max_age_secs: 14_400, context_budget_tokens: 300_000 },
+      agent.runtime_session_policy
+    )
+  end
+
+  test "session policy thresholds may be disabled with zero but not negative" do
+    agent = agents(:research_assistant)
+
+    agent.session_idle_timeout_minutes = 0
+    assert agent.valid?
+    assert_equal 0, agent.runtime_session_policy[:idle_timeout_secs]
+
+    agent.session_context_budget_tokens = -1
+    assert_not agent.valid?
+    assert agent.errors.of_kind?(:session_context_budget_tokens, :greater_than_or_equal_to)
+  end
+
 end

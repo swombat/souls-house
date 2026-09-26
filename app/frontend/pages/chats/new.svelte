@@ -28,7 +28,16 @@
 
   let selectedFiles = $state([]);
   let message = $state('');
+  let title = $state('');
   let processing = $state(false);
+  let pendingAudioSignedId = $state(null);
+  let error = $state('');
+
+  function handleTranscription(text, audioSignedId) {
+    message = text;
+    pendingAudioSignedId = audioSignedId || null;
+    startChat();
+  }
 
   function handleKeydown(event) {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -49,10 +58,13 @@
     if (processing) return;
 
     processing = true;
+    error = '';
 
     // Use FormData to include files
     const formData = new FormData();
     formData.append('message', message);
+    if (title.trim()) formData.append('chat[title]', title.trim());
+    if (pendingAudioSignedId) formData.append('audio_signed_id', pendingAudioSignedId);
 
     // Append each file
     selectedFiles.forEach((file) => {
@@ -67,11 +79,13 @@
       onSuccess: () => {
         message = '';
         selectedFiles = [];
+        pendingAudioSignedId = null;
         processing = false;
         if (textareaRef) textareaRef.style.height = 'auto';
       },
       onError: (errors) => {
         console.error('Chat creation failed:', errors);
+        error = 'Could not start the conversation. Please try again.';
         processing = false;
       },
     });
@@ -79,7 +93,7 @@
 </script>
 
 <svelte:head>
-  <title>New Chat</title>
+  <title>{title || 'New Chat'}</title>
 </svelte:head>
 
 <div class="flex min-h-0 flex-1">
@@ -94,14 +108,20 @@
   <!-- Right side: New chat form -->
   <main class="flex-1 flex flex-col bg-background min-w-0 min-h-0">
     <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <NewChatHeader onMenuOpen={() => (sidebarOpen = true)} />
+      <NewChatHeader bind:title onMenuOpen={() => (sidebarOpen = true)} />
 
       <GroupChatAgentPicker {agents} accountId={account.id} showUsage={showUsageInChat} bind:selectedAgentIds />
 
-      <NewChatEmptyState />
+      <NewChatEmptyState {chats} accountId={account.id} />
     </div>
 
+    {#if error}
+      <p role="alert" class="px-4 py-2 text-destructive">{error}</p>
+    {/if}
     <NewChatComposer
+      accountId={account.id}
+      onTranscription={handleTranscription}
+      onError={(message) => (error = message)}
       bind:selectedFiles
       bind:message
       bind:textareaRef

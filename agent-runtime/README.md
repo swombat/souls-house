@@ -27,6 +27,34 @@ SOULSHOUSE_AGENT_BACKUPS_ENABLED=false
 
 ## Runtime contract
 
+### SQLite settings migration (Chaos 47.6)
+
+Startup runs `runtime_settings.py` as the resident UID **before** account
+registration, journald, or the trigger server. It explicitly migrates legacy
+settings, preserves the storage destination, and adds missing provider/compaction
+defaults through Chaos's database-backed config interface. It never rewrites
+preferences into bootstrap TOML. Existing `oauth-runtime` homes are prepared too;
+new OAuth homes are not created opportunistically. Explicit resident choices win.
+
+Before upgrading an existing resident, block new triggers, drain in-flight work,
+stop the old container, and snapshot its volumes plus routing/session metadata.
+Never mount a live old home into the new runtime. Keep the old image and matching
+state for rollback; downgrading the binary alone is not rollback. Preflight literal
+settings/global-MCP credentials: migration may need a durable isolated credential
+store. Do not loosen container isolation to obtain one. This is a SQLite schema
+upgrade, not a PostgreSQL transfer.
+
+Build a separate candidate tag for staged rollouts: `scripts/build-agent-runtime`
+also advances fleet `latest` tags, so do not use it while holding other residents
+back. Set only selected residents' `container_image` to the verified candidate;
+keep busy/held residents on their original images.
+
+Run real migration/repeated-boot tests with a built candidate:
+
+```sh
+CHAOS_TEST_BIN=/path/to/chaos python3 -m unittest discover -s test -p runtime_config_test.py
+```
+
 ### Compaction timing control
 
 On boot, the runtime defaults `agent_compaction_control` to `"bounded"` in the
@@ -297,7 +325,6 @@ receipts, resident-posted replies, actual graph authentication, and a subsequent
 endpoint and a valid `hooks.json` are not enough. See the parallel-residency pilot
 report in `docs/plans/` for the initial failure and correction.
 
-
 OpenAI OAuth uses `$CHAOS_HOME/oauth-runtime` for isolated credentials and
 runtime configuration. Trust the same reviewed imported root in that runtime
 as well; the turn guard checks the **effective** home, not just the API home.
@@ -307,3 +334,20 @@ Chaos enforces that mismatch by logging out the account, not just rejecting a
 request. Fresh and resumed invocations are regression-tested. Authentication
 mode changes intentionally roll the session while preserving stored history
 and supplying the conversation window to the new session.
+
+### Antigravity daily endpoint compatibility
+
+The pinned Chaos version replaces the CLI system prompt only on the standard
+Cloud Code hostname. Hosted Antigravity also uses
+`daily-cloudcode-pa.googleapis.com`; merely allowing its egress is insufficient.
+`chaos-antigravity-daily-prompt.patch` applies the same canonical prompt rewrite
+to that exact hostname, retaining fail-closed behavior for unknown generation
+endpoints. Its regression tests run in the incremental builder layer. This does
+not disable prompt replacement or widen the network allowlist.
+
+The canonical replacement also removes agy's lazy-loaded MCP tool catalogue.
+`chaos-antigravity-tool-catalog.patch` supplies the current kernel-owned tool
+specifications using the same conversion as the MCP bridge (including freeform
+input envelopes). It explains the `call_mcp_tool` transport without retaining
+CLI system instructions or enabling native tools. The catalogue is refreshed
+alongside the canonical prompt on subsequent turns; tool permissions are unchanged.

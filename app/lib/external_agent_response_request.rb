@@ -65,6 +65,7 @@ class ExternalAgentResponseRequest
         request_delta: delta,
         trigger_payload: memory_trigger_payload,
         persistent_session: agent.persistent_session?,
+        session_policy: agent.runtime_session_policy,
         provider: provider,
         model: Agents::Sandbox.chaos_model_for(agent),
         reasoning_effort: agent.reasoning_effort,

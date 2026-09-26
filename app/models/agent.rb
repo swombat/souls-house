@@ -11,6 +11,7 @@ class Agent < ApplicationRecord
   include Agent::Memory
   include Agent::Predecessor
   include Agent::RuntimeAvailability
+  include Agent::SessionPolicy
 
   belongs_to :account
   has_one :memory_vault, class_name: "Mnemodyne::Vault", dependent: :restrict_with_error, inverse_of: :agent
@@ -120,7 +121,8 @@ class Agent < ApplicationRecord
                    :orientation_requested_at, :orientation_completed_at,
                    :orientation_last_error, :orientation_last_error_at, :oriented_at,
                    :persistent_session?, :persistent_wake_session?, :scheduled_wakes_enabled?,
-                       :heartbeat_wakes_per_day,
+                       :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
+                       :session_context_budget_tokens,
                   except: SENSITIVE_JSON_ATTRIBUTES do |hash, options|
     # Keep credentials out even if a caller supplies runtime serialization options
     # that would otherwise override the configured `except` list.

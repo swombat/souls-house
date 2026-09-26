@@ -128,4 +128,24 @@ class ChaosTriggerClientTest < ActiveSupport::TestCase
     assert_requested stub
   end
 
+  test "sends the session policy only with persistent sessions" do
+    policy = { idle_timeout_secs: 2700, max_age_secs: 14_400, context_budget_tokens: 300_000 }
+    persistent = stub_request(:post, "https://agent.example.com/trigger")
+      .with { |request| JSON.parse(request.body)["session_policy"] == policy.stringify_keys }
+      .to_return(status: 200, body: { status: "ok" }.to_json)
+
+    client = ChaosTriggerClient.new("https://agent.example.com", "tr_valid")
+    client.request_response(conversation_id: nil, requested_by: "test", session_id: "s", request: "hi",
+      persistent_session: true, session_policy: policy)
+    assert_requested persistent
+
+    remove_request_stub(persistent)
+    fresh = stub_request(:post, "https://agent.example.com/trigger")
+      .with { |request| !JSON.parse(request.body).key?("session_policy") }
+      .to_return(status: 200, body: { status: "ok" }.to_json)
+    client.request_response(conversation_id: nil, requested_by: "test", session_id: "s", request: "hi",
+      persistent_session: false, session_policy: policy)
+    assert_requested fresh
+  end
+
 end

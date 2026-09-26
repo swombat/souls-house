@@ -89,6 +89,7 @@ Rails.application.routes.draw do
       get :activity, on: :member
       collection do
         get :search
+        post :transcription, to: "chats/transcriptions#create"
       end
       scope module: :chats do
         resource :archive, only: [ :create, :destroy ]
