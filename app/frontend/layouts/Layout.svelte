@@ -32,7 +32,8 @@
   });
 </script>
 
-<ModeWatcher />
+<!-- Match --background in application.css using browser-chrome-safe sRGB colours. -->
+<ModeWatcher themeColors={{ light: '#ffffff', dark: '#0a0a0a' }} />
 <div
   use:chatViewport={!showFooter}
   class:chat-viewport={!showFooter}
