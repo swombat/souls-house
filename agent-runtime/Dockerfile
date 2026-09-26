@@ -42,6 +42,9 @@ COPY patches/chaos-antigravity-empty-managed-config.patch /tmp/chaos-antigravity
 COPY patches/chaos-antigravity-daily-cloudcode-egress.patch /tmp/chaos-antigravity-daily-cloudcode-egress.patch
 COPY patches/chaos-clamp-cached-catalog.patch /tmp/chaos-clamp-cached-catalog.patch
 COPY patches/chaos-stop-hook-continuation-as-user.patch /tmp/chaos-stop-hook-continuation-as-user.patch
+# Temporary legacy exceptions tracked in Chaos #70; remove after upstream acceptance.
+COPY patches/chaos-antigravity-daily-prompt.patch /tmp/chaos-antigravity-daily-prompt.patch
+COPY patches/chaos-antigravity-tool-catalog.patch /tmp/chaos-antigravity-tool-catalog.patch
 RUN test -n "${CHAOS_HEAD}" \
     && git -c http.version=HTTP/1.1 clone --filter=blob:none ${CHAOS_REPO} chaos \
     && cd chaos \
@@ -53,32 +56,20 @@ RUN test -n "${CHAOS_HEAD}" \
     && git apply --check /tmp/chaos-clamp-cached-catalog.patch \
     && git apply /tmp/chaos-clamp-cached-catalog.patch \
     && git apply --check /tmp/chaos-stop-hook-continuation-as-user.patch \
-    && git apply /tmp/chaos-stop-hook-continuation-as-user.patch
+    && git apply /tmp/chaos-stop-hook-continuation-as-user.patch \
+    && git apply --check /tmp/chaos-antigravity-daily-prompt.patch \
+    && git apply /tmp/chaos-antigravity-daily-prompt.patch \
+    && git apply --check /tmp/chaos-antigravity-tool-catalog.patch \
+    && git apply /tmp/chaos-antigravity-tool-catalog.patch
 
 WORKDIR /build/chaos
-RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
+# Validate the final clamp source before building both runtime binaries once.
+# No source changes or patch-and-rebuild layers follow this gate.
+RUN cargo test --release --jobs "${CARGO_BUILD_JOBS}" -p chaos-clamp --lib
+RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos --bin chaos_journald \
     && cp target/release/chaos /usr/local/bin/chaos \
+    && cp target/release/chaos_journald /usr/local/bin/chaos_journald \
     && /usr/local/bin/chaos --version
-RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos_journald \
-    && cp target/release/chaos_journald /usr/local/bin/chaos_journald
-
-# Extend canonical prompt rewriting to the daily Cloud Code endpoint. Keep this
-# incremental layer after the base build so existing compiler artifacts are reused.
-COPY patches/chaos-antigravity-daily-prompt.patch /tmp/chaos-antigravity-daily-prompt.patch
-RUN git apply --check /tmp/chaos-antigravity-daily-prompt.patch \
-    && git apply /tmp/chaos-antigravity-daily-prompt.patch \
-    && cargo test --release --jobs "${CARGO_BUILD_JOBS}" -p chaos-clamp egress::prompt::tests \
-    && cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
-    && cp target/release/chaos /usr/local/bin/chaos
-
-# The canonical prompt also needs the kernel-owned MCP tool catalogue because
-# agy's lazy catalogue was part of the CLI prompt being replaced.
-COPY patches/chaos-antigravity-tool-catalog.patch /tmp/chaos-antigravity-tool-catalog.patch
-RUN git apply --check /tmp/chaos-antigravity-tool-catalog.patch \
-    && git apply /tmp/chaos-antigravity-tool-catalog.patch \
-    && cargo test --release --jobs "${CARGO_BUILD_JOBS}" -p chaos-clamp canonical_tool_catalogue \
-    && cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos \
-    && cp target/release/chaos /usr/local/bin/chaos
 
 # =============================================================================
 # Stage 2 — runtime

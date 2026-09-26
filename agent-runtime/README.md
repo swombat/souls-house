@@ -342,8 +342,9 @@ Cloud Code hostname. Hosted Antigravity also uses
 `daily-cloudcode-pa.googleapis.com`; merely allowing its egress is insufficient.
 `chaos-antigravity-daily-prompt.patch` applies the same canonical prompt rewrite
 to that exact hostname, retaining fail-closed behavior for unknown generation
-endpoints. Its regression tests run in the incremental builder layer. This does
-not disable prompt replacement or widen the network allowlist.
+endpoints. The image builder applies all source changes, runs the clamp unit
+suite, and then builds both runtime binaries in one Cargo build. This does not disable
+prompt replacement or widen the network allowlist.
 
 The canonical replacement also removes agy's lazy-loaded MCP tool catalogue.
 `chaos-antigravity-tool-catalog.patch` supplies the current kernel-owned tool
@@ -351,3 +352,33 @@ specifications using the same conversion as the MCP bridge (including freeform
 input envelopes). It explains the `call_mcp_tool` transport without retaining
 CLI system instructions or enabling native tools. The catalogue is refreshed
 alongside the canonical prompt on subsequent turns; tool permissions are unchanged.
+
+### Retiring the legacy Chaos patch stack
+
+We have upstream write access, but contributions still require the current Chaos
+contribution process. General-purpose changes must go upstream, not become new
+image-local patches. See `AGENTS.md` and
+[Chaos issue #70](https://github.com/seuros/chaos/issues/70).
+
+The six existing patches are temporary legacy exceptions owned by Mira during
+that migration. They remain only to avoid silently removing deployed behavior
+before reviewed upstream replacements are available. No new exception is granted
+by their presence. Removal condition: accepted upstream functionality, a pinned
+replacement commit, and passing source/runtime regressions. The cached-catalog
+policy, tool catalogue, and continuation behavior require upstream design review;
+the broad Google API/avatar egress additions are not presumed necessary.
+
+Until that migration is complete, apply the complete legacy stack before a
+single `cargo build --release --bin chaos --bin chaos_journald`. Never add a
+patch-and-rebuild layer. Before building a candidate image, run the affected Chaos
+source tests and contribution gates. The builder also runs the final clamp unit
+suite before compiling the binaries; compilation alone is not a regression gate.
+The build-graph contract can be checked without Docker or Rails:
+
+```sh
+python3 -m unittest discover -s test -p runtime_build_graph_test.py
+```
+
+This ordering cleanup does not mean the patches are upstreamed or a candidate
+image has been built or deployed. Do not restart the cancelled deployment until
+its reviewed source/pin and selected-resident rollout checks are ready.
