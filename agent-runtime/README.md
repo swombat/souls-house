@@ -338,11 +338,14 @@ and supplying the conversation window to the new session.
 ### Upstream Chaos runtime
 
 The pinned upstream source contains the replacements for the former six-patch
-stack (Chaos #68 and #71–#75; design audit #70). No local Chaos patch is applied.
+stack (Chaos #68 and #71–#76; design audit #70). No local Chaos patch is applied.
 
 - Empty managed Antigravity configuration is treated as first-run configuration.
 - The exact daily Cloud Code generation endpoint receives both egress permission
-  and canonical prompt replacement. Broad Google API/avatar hosts are not added.
+  and canonical prompt replacement. Exact `www.googleapis.com` userinfo and
+  `lh3.googleusercontent.com` profile-picture hosts are also required: agy 1.1.22
+  treats either eligibility lookup failing as fatal, even in text-only mode.
+  Sibling hosts and suffix lookalikes remain denied.
 - CLI inference uses eligible cached model metadata without automatic native API
   discovery. Explicit forced refresh still performs native discovery and reports
   missing credentials normally.
@@ -355,7 +358,10 @@ stack (Chaos #68 and #71–#75; design audit #70). No local Chaos patch is appli
   or a guarantee against a model choosing to repeat an action.
 
 Antigravity's live authenticated compatibility check remains separate from the
-fixture-based regression gate; an image build is not that validation.
+fixture-based regression gate; an image build is not that validation. The pinned
+revision passed a live tool/retention/fresh-read check on 2026-09-26, followed by
+a separate exec that retained the same Antigravity native conversation ID. This
+is not a claim of exhaustive live failure-injection coverage (Chaos #69).
 
 We have upstream write access, but contributions still follow Chaos's current
 contribution process. General-purpose changes must go upstream, not become new
