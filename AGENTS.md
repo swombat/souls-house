@@ -34,3 +34,17 @@ a running process.
 
 ## Environment & Safety
 The shared development database is long-lived—never run `rails db:drop`, `db:reset`, or mass `destroy_all`. Leave the existing `bin/dev` process running instead of killing its PID in `tmp/pids`. Manage secrets with `config/credentials.yml.enc` and consult `docs/` before altering infrastructure or dependencies. Installation identity (domain, host, SSH, registry, docker gid, storage backend, embeddings digest) lives only in gitignored `config/house.env`, with `config/house.env.example` as the committed template—never hard-code a host, domain, registry, or IP anywhere else. `test/house/identity_leak_test.rb` fails the suite on a violation; its allowlist is where a legitimate exception gets recorded, with its reason. Deploying needs `house.env` present; run `bin/house doctor` to check.
+
+## Chaos Runtime: Upstream First
+We have write access to `seuros/chaos`. General-purpose Chaos fixes and useful
+runtime functionality belong in that repository, through focused issues and PRs,
+not a persistent patch stack in souls.house. Read Chaos's current
+`docs/contributing.md` before contributing; write access does not bypass review,
+tests, or authorship/sign-off requirements.
+
+Use a pinned upstream commit in `agent-runtime/chaos-ref`. Local patches are an
+exception only when absolutely necessary to unblock an urgent problem: document
+the reason, upstream issue/PR, owner, and removal condition. Remove the exception
+as soon as the upstream fix is available. Do not discard a working fix before its
+replacement is verified. Review the complete build graph before expensive builds;
+compile the final source once, never append patch-and-rebuild layers.
