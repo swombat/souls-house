@@ -56,5 +56,8 @@
     "svelte-streamdown": "^2.4.5",
     "tailwindcss": "^4.1.11",
     "tw-animate-css": "^1.3.5"
+  },
+  "patchedDependencies": {
+    "svelte-streamdown@https://registry.npmjs.org/svelte-streamdown/-/svelte-streamdown-2.6.1.tgz": "patches/svelte-streamdown@https%3A%2F%2Fregistry.npmjs.org%2Fsvelte-streamdown%2F-%2Fsvelte-streamdown-2.6.1.tgz.patch"
   }
 }

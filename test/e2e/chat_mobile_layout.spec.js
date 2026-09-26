@@ -138,6 +138,23 @@ test.describe('mobile chat layout', () => {
     });
   }
 
+  test('completed prose keeps bare shell paths literal and within the mobile bubble', async ({ page, request }) => {
+    const fixture = await openConversation(page, request);
+    const content =
+      'Stored in $MIRA_ROOT/secrets/example.json for my own machines. Keep these words spaced.\n\nRun from $MIRA_ROOT:\npython3 example.py\n\nSee https://example.org/' +
+      'long-path-'.repeat(25);
+    await request.post('/test/e2e/assistant_message', { data: { chat_id: fixture.chat_id, content } });
+    await page.reload();
+    const prose = page.locator('.prose').filter({ hasText: 'Stored in $MIRA_ROOT' });
+    await expect(prose).toContainText('Keep these words spaced.');
+    await expect(prose.locator('.katex')).toHaveCount(0);
+    const box = await prose.boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(360);
+    const dimensions = await prose.evaluate((node) => ({ width: node.clientWidth, scrollWidth: node.scrollWidth }));
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width + 1);
+  });
+
   test('inline code uses contrasting theme colours in both themes alongside fenced code', async ({
     page,
     request,

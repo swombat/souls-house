@@ -72,6 +72,7 @@ RUN --mount=type=cache,target=/usr/local/bundle/cache \
 
 # 2) JavaScript dependencies
 COPY package.json bun.lock ./
+COPY patches/ patches/
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile
 
 # 3) Copy minimal inputs for assets (adjust for your stack)

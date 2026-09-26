@@ -48,6 +48,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "svelte-streamdown@https://registry.npmjs.org/svelte-streamdown/-/svelte-streamdown-2.6.1.tgz": "patches/svelte-streamdown@https%3A%2F%2Fregistry.npmjs.org%2Fsvelte-streamdown%2F-%2Fsvelte-streamdown-2.6.1.tgz.patch",
+  },
   "packages": {
     "@4az/prettier-plugin-html-erb": ["@4az/prettier-plugin-html-erb@https://registry.npmjs.org/@4az/prettier-plugin-html-erb/-/prettier-plugin-html-erb-0.0.7.tgz", {}, "sha512-R5Y7/y+6W5A742NXg9HtWjxDF2Gblo62RO6+mLyusO3DJYr4Z/DfJVP+ol/QLMvGKGw75SY5Iq8i9/niJXrNPg=="],
 

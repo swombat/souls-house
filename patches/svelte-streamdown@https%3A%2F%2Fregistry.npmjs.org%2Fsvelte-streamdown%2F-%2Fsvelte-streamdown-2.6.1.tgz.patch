@@ -1,0 +1,16 @@
+diff --git a/dist/Block.svelte b/dist/Block.svelte
+index da5297db5ca0a24c3d30bdeb6c4b6e398488399a..3d1e0544396258ddfdc124ce30dab790300356f9 100644
+--- a/dist/Block.svelte
++++ b/dist/Block.svelte
+@@ -13,7 +13,10 @@
+ 	} = $props();
+ 
+ 	const streamdown = useStreamdown();
+-	const tokens = $derived(lex(parseIncompleteMarkdown(block.trim()), streamdown.extensions));
++	const tokens = $derived(lex(
++		streamdown.parseIncompleteMarkdown === false ? block.trim() : parseIncompleteMarkdown(block.trim()),
++		streamdown.extensions
++	));
+ 	const insidePopover = getContext('POPOVER');
+ </script>
+ 

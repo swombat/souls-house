@@ -53,7 +53,7 @@
 <div class="space-y-1">
   {#if message.role === 'user'}
     <div class="flex justify-end group">
-      <div class="max-w-[85%] md:max-w-[70%]">
+      <div class="min-w-0 max-w-[85%] md:max-w-[70%]">
         <div class="flex justify-end items-center gap-2">
           {#if message.editable}
             <button
@@ -86,11 +86,12 @@
               {/if}
               <Streamdown
                 content={message.content}
+                parseIncompleteMarkdown={message.streaming === true}
                 inlineCitation={expressionTag}
                 baseTheme="shadcn"
                 {shikiTheme}
                 shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']}
-                class="prose" />
+                class="prose [overflow-wrap:anywhere]" />
             </Card.Content>
           </Card.Root>
         </div>
@@ -115,7 +116,7 @@
     </div>
   {:else}
     <div class="flex justify-start group">
-      <div class="max-w-[85%] md:max-w-[70%]">
+      <div class="min-w-0 max-w-[85%] md:max-w-[70%]">
         <Card.Root class={getBubbleClass(message.author_colour)}>
           <Card.Content class="p-4">
             {#if message.status === 'failed'}
@@ -138,11 +139,12 @@
 
               <Streamdown
                 content={message.content}
+                parseIncompleteMarkdown={message.streaming === true}
                 inlineCitation={expressionTag}
                 baseTheme="shadcn"
                 {shikiTheme}
                 shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']}
-                class="prose" />
+                class="prose [overflow-wrap:anywhere]" />
             {/if}
 
             {#if message.files_json && message.files_json.length > 0}
