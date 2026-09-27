@@ -28,8 +28,10 @@ begin
   end
   ref = pinned_ref || File.read(File.join(config.root, "agent-runtime/chaos-ref")).strip
   abort "Invalid pinned Chaos commit" unless ref.match?(/\A[0-9a-f]{40}\z/)
+  build_mode = ENV.fetch("HELIXKIT_CHAOS_BUILD_MODE", "prebuilt")
+  abort "HELIXKIT_CHAOS_BUILD_MODE must be prebuilt or source" unless %w[prebuilt source].include?(build_mode)
   puts "Building only #{config.image} on the local Docker daemon (no latest/deployment tags)"
-  exec "docker", "build", "--build-arg", "CHAOS_HEAD=#{ref}", "-t", config.image, File.join(config.root, "agent-runtime")
+  exec "docker", "build", "--build-arg", "CHAOS_HEAD=#{ref}", "--build-arg", "CHAOS_BUILD_MODE=#{build_mode}", "-t", config.image, File.join(config.root, "agent-runtime")
 rescue LocalInstance::Error => error
   abort error.message
 end

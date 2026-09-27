@@ -12,7 +12,8 @@ It replaces the old primary role of the separate `helix-kit-agents` repository. 
 ## Local build
 
 ```bash
-docker build -t helixkit-agent-runtime:local agent-runtime
+docker build --build-arg CHAOS_HEAD="$(cat agent-runtime/chaos-ref)" \
+  -t helixkit-agent-runtime:local agent-runtime
 ```
 
 Local Rails development defaults should point at that tag:
@@ -358,9 +359,9 @@ stack (Chaos #68 and #71–#76; design audit #70). No local Chaos patch is appli
   or a guarantee against a model choosing to repeat an action.
 
 Antigravity's live authenticated compatibility check remains separate from the
-fixture-based regression gate; an image build is not that validation. The pinned
-revision passed a live tool/retention/fresh-read check on 2026-09-26, followed by
-a separate exec that retained the same Antigravity native conversation ID. This
+fixture-based regression gate; an image build is not that validation. Runtime
+source at `17d73e1f9` passed a live tool/retention/fresh-read check on 2026-09-26,
+followed by a separate exec that retained the same Antigravity native conversation ID. This
 is not a claim of exhaustive live failure-injection coverage (Chaos #69).
 
 We have upstream write access, but contributions still follow Chaos's current
@@ -368,13 +369,33 @@ contribution process. General-purpose changes must go upstream, not become new
 image-local patches. See `AGENTS.md` and
 [Chaos issue #70](https://github.com/seuros/chaos/issues/70).
 
-The builder checks out the pinned upstream revision, runs the clamp unit suite,
-and compiles both runtime binaries in one Cargo build. Never append a
-patch-and-rebuild layer. The build-graph contract can be checked without Docker
-or Rails:
+By default the builder downloads the commit-pinned upstream Linux x86_64 CI
+bundle (`build-<full SHA>`), verifies its SHA-256 and source manifest, and installs
+`chaos` and its `chaos_journald` companion, preserving the existing runtime
+executable set. The upstream workflow builds on Debian bookworm,
+runs the clamp unit suite and smoke-tests the executable. No Rust compiler runs
+in the default image build, and no moving `latest` binary is used. This is
+compatible with the Debian trixie runtime. Full upstream test CI remains a
+separate gate when selecting a new pin.
+
+A missing artifact, checksum mismatch, wrong revision or unsupported architecture
+fails visibly; there is no silent source fallback. For an older pin or another
+architecture, explicitly select the source build:
+
+```sh
+docker build --build-arg CHAOS_HEAD="$(cat agent-runtime/chaos-ref)" \
+  --build-arg CHAOS_BUILD_MODE=source -t helixkit-agent-runtime:source agent-runtime
+```
+
+The build scripts also accept `HELIXKIT_CHAOS_BUILD_MODE=source` (including
+`scripts/build-local-agent-runtime` on ARM machines).
+
+The source path still tests clamp and builds once. Never append a patch-and-rebuild
+layer. Downloader and build-graph contracts can be checked without Docker or Rails:
 
 ```sh
 python3 -m unittest discover -s test -p runtime_build_graph_test.py
+python3 -m unittest discover -s test -p chaos_binary_install_test.py
 ```
 
 Source acceptance and successful CI are not a production rollout. Build a

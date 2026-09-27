@@ -38,10 +38,14 @@ chaos_repo = value.call("HELIXKIT_CHAOS_REPO") || "https://github.com/seuros/cha
 chaos_head = value.call("HELIXKIT_CHAOS_REF") || File.read(File.join(root, "agent-runtime/chaos-ref")).strip
 abort "HELIXKIT_CHAOS_REF must be a full Chaos commit SHA" unless chaos_head.match?(/\A[0-9a-f]{40}\z/)
 
+chaos_build_mode = value.call("HELIXKIT_CHAOS_BUILD_MODE") || "prebuilt"
+abort "HELIXKIT_CHAOS_BUILD_MODE must be prebuilt or source" unless %w[prebuilt source].include?(chaos_build_mode)
+
 tags = [ image, "#{repository}:#{sha_tag}", "#{repository}:latest", "#{compat_image}:#{sha_tag}", "#{compat_image}:latest" ].uniq
 puts "Building hosted-agent runtime on Docker host: #{docker_host}"
 puts "Chaos pinned commit: #{chaos_head}"
 puts "Tags:", *tags.map { |tag| "  #{tag}" }
 exec("docker", "--host", docker_host, "build",
      "--build-arg", "CHAOS_REPO=#{chaos_repo}", "--build-arg", "CHAOS_HEAD=#{chaos_head}",
+     "--build-arg", "CHAOS_BUILD_MODE=#{chaos_build_mode}",
      *tags.flat_map { |tag| [ "-t", tag ] }, File.join(root, "agent-runtime"))

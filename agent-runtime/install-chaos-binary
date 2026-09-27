@@ -1,0 +1,33 @@
+#!/bin/sh
+# Fetch only an exact upstream CI build; never silently compile or use latest.
+set -eu
+repo=${1:?repository URL required}
+revision=${2:?full revision required}
+arch=${3:?target architecture required}
+destination=${4:-/usr/local/bin}
+case "$revision" in *[!0-9a-f]*|'') echo 'Invalid Chaos revision' >&2; exit 1;; esac
+[ "${#revision}" -eq 40 ] || { echo 'Full Chaos revision required' >&2; exit 1; }
+[ "$arch" = amd64 ] || { echo 'Prebuilt Chaos requires amd64; use CHAOS_BUILD_MODE=source' >&2; exit 1; }
+case "$repo" in https://github.com/*/*) ;; *) echo 'Prebuilt Chaos requires a GitHub HTTPS repository' >&2; exit 1;; esac
+repo=${repo%.git}
+artifact="chaos-linux-x86_64-${revision}.tar.gz"
+url="${repo}/releases/download/build-${revision}/${artifact}"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+cd "$tmp"
+curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' "$url" -o "$artifact"
+curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' "$url.sha256" -o "$artifact.sha256"
+# Reconstruct a check for exactly the requested asset, never arbitrary paths
+# supplied by a checksum file.
+checksum=$(cut -d ' ' -f 1 "$artifact.sha256")
+case "$checksum" in *[!0-9a-f]*|'') echo 'Invalid Chaos checksum' >&2; exit 1;; esac
+[ "${#checksum}" -eq 64 ] || { echo 'Invalid Chaos checksum length' >&2; exit 1; }
+printf '%s  %s\n' "$checksum" "$artifact" | sha256sum -c -
+mkdir unpack
+tar -xzf "$artifact" -C unpack ./chaos ./chaos_journald ./SOURCE_REVISION
+[ "$(cat unpack/SOURCE_REVISION)" = "$revision" ] || { echo 'Chaos source revision mismatch' >&2; exit 1; }
+mkdir -p "$destination"
+for binary in chaos chaos_journald; do
+    install -m 0755 "unpack/$binary" "$destination/$binary"
+done
+"$destination/chaos" --version

@@ -7,6 +7,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RuntimeBuildGraphTest(unittest.TestCase):
+    def test_default_build_downloads_pinned_binaries_without_compiling(self):
+        dockerfile = (ROOT / "agent-runtime/Dockerfile").read_text()
+        self.assertIn("ARG CHAOS_BUILD_MODE=prebuilt", dockerfile)
+        self.assertIn("FROM chaos-${CHAOS_BUILD_MODE} AS builder", dockerfile)
+        prebuilt = dockerfile.split("AS chaos-prebuilt", 1)[1].split("FROM chaos-${", 1)[0]
+        self.assertNotIn("cargo", prebuilt)
+        self.assertNotIn("git clone", prebuilt)
+        self.assertIn('"${CHAOS_HEAD}" "${TARGETARCH}"', prebuilt)
+        for binary in ("chaos", "chaos_journald"):
+            self.assertIn(f"COPY --from=builder /usr/local/bin/{binary} /usr/local/bin/{binary}", dockerfile)
+
     def test_final_source_is_built_once_for_both_runtime_binaries(self):
         dockerfile = (ROOT / "agent-runtime/Dockerfile").read_text()
         builder = dockerfile.split("FROM oven/bun:", 1)[0]

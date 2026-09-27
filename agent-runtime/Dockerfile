@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # HelixKit agent runtime image.
 #
 # This image is built from the HelixKit monorepo and run by HelixKit's hosted
@@ -15,13 +16,15 @@
 # should fail the deployment visibly when a new Chaos master is incompatible.
 ARG CHAOS_REPO=https://github.com/seuros/chaos.git
 ARG CHAOS_HEAD
+# The source path is an explicit escape hatch for older pins/other architectures.
+ARG CHAOS_BUILD_MODE=prebuilt
 # Keep this in sync with mise.toml.
 ARG BUN_VERSION=1.4.0
 
 # =============================================================================
-# Stage 1 — pull and build chaos. Source tree is discarded after the binary copies.
+# Stage 1 — choose prebuilt binaries (default) or an explicit source build.
 # =============================================================================
-FROM rust:1.98-bookworm AS builder
+FROM rust:1.98-bookworm AS chaos-source
 
 ARG CHAOS_REPO
 ARG CHAOS_HEAD
@@ -46,11 +49,25 @@ RUN test -n "${CHAOS_HEAD}" \
 WORKDIR /build/chaos
 # Validate the final clamp source before building both runtime binaries once.
 # No source changes or patch-and-rebuild layers follow this gate.
-RUN cargo test --release --jobs "${CARGO_BUILD_JOBS}" -p chaos-clamp --lib
-RUN cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos --bin chaos_journald \
+RUN cargo test --release --locked --jobs "${CARGO_BUILD_JOBS}" -p chaos-clamp --lib
+RUN cargo build --release --locked --jobs "${CARGO_BUILD_JOBS}" --bin chaos --bin chaos_journald \
     && cp target/release/chaos /usr/local/bin/chaos \
     && cp target/release/chaos_journald /usr/local/bin/chaos_journald \
     && /usr/local/bin/chaos --version
+
+# The default path downloads the exact commit artifact instead of compiling Rust.
+# BuildKit skips chaos-source entirely unless explicitly selected.
+FROM debian:bookworm-slim AS chaos-prebuilt
+ARG CHAOS_REPO
+ARG CHAOS_HEAD
+ARG TARGETARCH
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl libdbus-1-3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY install-chaos-binary /usr/local/bin/install-chaos-binary
+RUN install-chaos-binary "${CHAOS_REPO}" "${CHAOS_HEAD}" "${TARGETARCH}" /usr/local/bin
+
+FROM chaos-${CHAOS_BUILD_MODE} AS builder
 
 # =============================================================================
 # Stage 2 — runtime
@@ -158,6 +175,8 @@ RUN case "${TARGETARCH}" in \
 
 COPY --from=builder /usr/local/bin/chaos /usr/local/bin/chaos
 COPY --from=builder /usr/local/bin/chaos_journald /usr/local/bin/chaos_journald
+# Verify the binaries in the final runtime, not only the download stage.
+RUN chaos --version && chaos_journald --help > /dev/null
 RUN mkdir -p /usr/local/share/helixkit-agent
 COPY --chown=agent:agent trigger_shim.py /home/agent/trigger_shim.py
 COPY --chown=agent:agent resident_memory_policy.py /home/agent/resident_memory_policy.py

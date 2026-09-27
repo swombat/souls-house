@@ -28,6 +28,7 @@ class RuntimeBuildTest < ActiveSupport::TestCase
       args = JSON.parse(output.lines.last)
       assert_equal "ssh://deploy@198.51.100.9:22", args[1]
       assert_includes args, "helixkit-agent-runtime:latest"
+      assert_includes args, "CHAOS_BUILD_MODE=prebuilt"
       assert_not File.exist?("#{root}/executed")
     end
   end
@@ -53,6 +54,19 @@ class RuntimeBuildTest < ActiveSupport::TestCase
       args = JSON.parse(output.lines.last)
       assert_equal "ssh://override", args[1]
       assert_includes args, "legacy-runtime:latest"
+    end
+  end
+
+  test "source compilation is an explicit build mode" do
+    with_runtime do |root, env|
+      output, status = Open3.capture2e(env.merge("HELIXKIT_CHAOS_BUILD_MODE" => "source"),
+                                     "#{root}/scripts/build-agent-runtime", "testsha")
+      assert status.success?, output
+      assert_includes JSON.parse(output.lines.last), "CHAOS_BUILD_MODE=source"
+      output, status = Open3.capture2e(env.merge("HELIXKIT_CHAOS_BUILD_MODE" => "latest"),
+                                     "#{root}/scripts/build-agent-runtime", "testsha")
+      assert_not status.success?
+      assert_includes output, "must be prebuilt or source"
     end
   end
 
