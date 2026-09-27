@@ -59,6 +59,35 @@ class AccountInteractionCostReportTest < ActiveSupport::TestCase
     assert_nil report.dig(:days, 0, :agent_costs, @second_agent.to_param)
   end
 
+  test "keeps unpriced residents visible without presenting their usage as zero" do
+    2.times { create_interaction!(@first_agent, Time.current, model: "unpriced-model") }
+    create_interaction!(@second_agent, Time.current, output_tokens: nil)
+
+    report = AccountInteractionCostReport.new(account: @account).call
+
+    assert_nil report[:total_amount_usd]
+    assert_empty report[:days]
+    assert_equal 2, report[:unestimated].size
+    assert_equal "Research Assistant", report[:unestimated][0][:agent_name]
+    assert_equal "unpriced-model", report[:unestimated][0][:model]
+    assert_equal 2, report[:unestimated][0][:interaction_count]
+    assert_match(/no price/, report[:unestimated][0][:reason])
+    assert_match(/token categories are unknown/, report[:unestimated][1][:reason])
+  end
+
+  test "unestimated usage does not change priced totals and excludes other accounts" do
+    create_interaction!(@first_agent, Time.current)
+    create_interaction!(@second_agent, Time.current, model: "unpriced-model")
+    other_agent = agents(:other_account_agent)
+    assert_not_equal @account.id, other_agent.account_id
+    create_interaction!(other_agent, Time.current, model: "private-model")
+
+    report = AccountInteractionCostReport.new(account: @account).call
+
+    assert_equal "0.00225", report[:total_amount_usd]
+    assert_equal [ "unpriced-model" ], report[:unestimated].pluck(:model)
+  end
+
   private
 
   def create_interaction!(agent, started_at, **attributes)

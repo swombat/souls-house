@@ -135,6 +135,73 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
     assert_match(/no price/, unknown.estimated_cost[:note])
   end
 
+  test "prices current Nexus models under both catalogue and direct IDs" do
+    {
+      "openai/gpt-6-astra" => [ "gpt-6-astra", "73.5", "12.5", "1.0" ],
+      "openai/gpt-6-sol" => [ "gpt-6-sol", "14.7", "2.5", "0.2" ],
+      "openai/gpt-6-luna" => [ "gpt-6-luna", "0.735", "0.125", "0.01" ],
+      "anthropic/claude-opus-5.5" => [ "claude-opus-5-5", "29.2", "5.0", "0.2" ],
+      "google/gemini-3.8-flash" => [ "gemini-3.8-flash", "5.325", "0.75", "0.075" ]
+    }.each do |catalogue_id, (direct_id, amount, write, read)|
+      assert_equal direct_id, Chat.provider_model_id(catalogue_id)
+      [ catalogue_id, direct_id ].each do |model|
+        cost = build_interaction(
+          model: model, started_at: Time.utc(2026, 9, 27),
+          uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000,
+          cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000
+        ).estimated_cost
+        assert_equal "estimated", cost[:status], model
+        assert_equal amount, cost[:amount_usd], model
+        assert_equal write, cost.dig(:components_usd, :cache_creation_input), model
+        assert_equal read, cost.dig(:components_usd, :cache_read_input), model
+        assert_equal "2026-09-27", cost[:pricing_as_of]
+      end
+    end
+  end
+
+  test "Opus 5.5 supports dotted runtime ID and one hour cache writes" do
+    cost = build_interaction(
+      provider: "anthropic", model: "claude-opus-5.5", cache_ttl: "1h",
+      cache_creation_input_tokens: 1_000_000, cache_read_input_tokens: 1_000_000
+    ).estimated_cost
+
+    assert_equal "8.2", cost[:amount_usd]
+  end
+
+  test "Gemini 3.8 uses the routed catalogue cache write rate only on OpenRouter" do
+    cost = build_interaction(
+      provider: "openrouter", model: "google/gemini-3.8-flash", started_at: Time.utc(2026, 9, 27),
+      uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 1_000_000,
+      cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000
+    ).estimated_cost
+
+    assert_equal "openrouter", cost[:pricing_source]
+    assert_equal "4.61666667", cost[:amount_usd]
+  end
+
+  test "Gemini promotional rates follow the interaction date not the report date" do
+    travel_to Time.utc(2027, 2, 1) do
+      [ [ Time.utc(2026, 12, 31, 23, 59, 59), "4.575" ],
+        [ Time.utc(2027, 1, 1), "9.15" ] ].each do |started_at, amount|
+        cost = build_interaction(
+          model: "gemini-3.8-flash", started_at: started_at,
+          uncached_input_tokens: 1_000_000, cache_read_input_tokens: 1_000_000,
+          output_tokens: 1_000_000
+        ).estimated_cost
+        assert_equal amount, cost[:amount_usd]
+      end
+    end
+  end
+
+  test "new pricing does not guess Pro aliases or missing token categories" do
+    %w[openai/gpt-6-astra-pro openai/gpt-6-sol-pro openai/gpt-6-luna-pro].each do |model|
+      assert_nil build_interaction(model: model).estimated_cost[:amount_usd]
+    end
+    cost = build_interaction(model: "gpt-6-astra", cache_read_input_tokens: nil).estimated_cost
+    assert_nil cost[:amount_usd]
+    assert_match(/token categories are unknown/, cost[:note])
+  end
+
   private
 
   def build_interaction(**attributes)

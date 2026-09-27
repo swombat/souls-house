@@ -1,5 +1,6 @@
 <script>
   import { useSync } from '$lib/use-sync';
+  import UnestimatedCosts from '$lib/components/agents/UnestimatedCosts.svelte';
 
   let { account, agents = [], cost_report: costReport = {} } = $props();
 
@@ -37,7 +38,13 @@
       Estimated interaction costs for {account.name}, grouped by day and resident. The latest 30 days with available
       estimates are shown.
     </p>
+    <p class="mt-1 text-xs text-muted-foreground">
+      Standard token-rate estimates, not invoices. Context/tier surcharges, tool fees and cache storage are not
+      included.
+    </p>
   </div>
+
+  <UnestimatedCosts rows={costReport.unestimated} />
 
   {#if !costReport.total_amount_usd && !costReport.subscription_estimate_usd}
     <div class="rounded border p-8 text-center text-sm text-muted-foreground">

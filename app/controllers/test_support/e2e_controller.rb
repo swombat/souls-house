@@ -28,6 +28,20 @@ module TestSupport
         create_agent!(account, "E2E Inactive Fork", "gray", active: false)
       ]
       agents.each { |agent| agent.update_columns(runtime: "deprecated") } if params[:deprecated]
+      if params[:costs].in?(%w[mixed unpriced])
+        2.times do
+          AgentRuntimeInteraction.create!(agent: agents.second, trigger_kind: "wake", started_at: Time.current,
+            model: "future-unpriced-model", telemetry_schema_version: 1, usage_scope: "trigger",
+            usage_complete: true, uncached_input_tokens: 1_000, cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0, output_tokens: 100)
+        end
+        if params[:costs] == "mixed"
+          AgentRuntimeInteraction.create!(agent: agents.first, trigger_kind: "wake", started_at: Time.current,
+            provider: "openai", model: "gpt-6-astra", telemetry_schema_version: 1, usage_scope: "trigger",
+            usage_complete: true, uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000)
+        end
+      end
       if params[:resident_dashboard]
         resident = agents.first
         resident.update_columns(model_id: "anthropic/claude-opus-4.6", health_state: "healthy",

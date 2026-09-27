@@ -17,10 +17,14 @@ class AgentInteractionCostReport
     end
     pricing_dates = []
     interaction_count = 0
+    unestimated = UnestimatedInteractionCosts.new(agents: [ agent ])
 
     agent.agent_runtime_interactions.find_each do |interaction|
       cost = interaction.estimated_cost
-      next unless cost[:amount_usd]
+      unless cost[:amount_usd]
+        unestimated.add(interaction, cost)
+        next
+      end
 
       date = interaction.started_at.in_time_zone.to_date
       if interaction.subscription_based?
@@ -50,6 +54,7 @@ class AgentInteractionCostReport
       interaction_count: interaction_count,
       subscription_interaction_count: daily_costs.values.sum { |values| values[:subscription_interaction_count] },
       pricing_as_of: pricing_dates.max,
+      unestimated: unestimated.rows,
       days: days
     }
   end

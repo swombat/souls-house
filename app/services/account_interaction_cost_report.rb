@@ -16,10 +16,14 @@ class AccountInteractionCostReport
     totals = Hash.new { |agents, agent_id| agents[agent_id] = BigDecimal("0") }
     subscription_estimates = Hash.new { |agents, agent_id| agents[agent_id] = BigDecimal("0") }
     pricing_dates = []
+    unestimated = UnestimatedInteractionCosts.new(agents: account.agents)
 
     interactions.find_each do |interaction|
       cost = interaction.estimated_cost
-      next unless cost[:amount_usd]
+      unless cost[:amount_usd]
+        unestimated.add(interaction, cost)
+        next
+      end
 
       amount = BigDecimal(cost[:amount_usd])
       date = interaction.started_at.in_time_zone.to_date
@@ -63,7 +67,8 @@ class AccountInteractionCostReport
       end,
       total_amount_usd: included_agent_ids.any? ? totals.values.sum.to_s("F") : nil,
       subscription_estimate_usd: optional_amount(subscription_estimates.values.sum),
-      pricing_as_of: pricing_dates.max
+      pricing_as_of: pricing_dates.max,
+      unestimated: unestimated.rows
     }
   end
 

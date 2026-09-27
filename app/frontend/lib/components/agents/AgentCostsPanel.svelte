@@ -1,4 +1,6 @@
 <script>
+  import UnestimatedCosts from './UnestimatedCosts.svelte';
+
   let { report = {} } = $props();
 
   function dollars(value) {
@@ -27,7 +29,13 @@
       Estimated interaction costs grouped by day. Only interactions with available usage telemetry and configured prices
       are included. The latest 30 days with estimates are shown.
     </p>
+    <p class="mt-1 text-xs text-muted-foreground">
+      Standard token-rate estimates, not invoices. Context/tier surcharges, tool fees and cache storage are not
+      included.
+    </p>
   </div>
+
+  <UnestimatedCosts rows={report.unestimated} />
 
   {#if !report.total_amount_usd && !report.subscription_estimate_usd}
     <div class="rounded border p-8 text-center text-sm text-muted-foreground">

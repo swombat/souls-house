@@ -5,6 +5,10 @@ module Chat::ModelSelection
   # Available AI models grouped by category
   # Model IDs from OpenRouter API: https://openrouter.ai/api/v1/models
   # provider_model_id: the model ID used when calling the provider's direct API
+  # When adding/updating models, also update AgentRuntimeInteractionCost prices,
+  # cache rates and pricing tests (both catalogue and direct provider IDs).
+  # Verify provider pricing first; never silently reuse a predecessor's rates.
+  # See docs/interaction-cost-pricing.md for sources and estimate limitations.
   MODELS = [
     # Top Models - Flagship from each major provider
     {

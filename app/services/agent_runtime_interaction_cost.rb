@@ -1,13 +1,21 @@
 class AgentRuntimeInteractionCost
 
   PRICING_AS_OF = Date.new(2026, 8, 15)
+  UPDATED_PRICING_AS_OF = Date.new(2026, 9, 27)
+  UPDATED_MODELS = %w[
+    anthropic/claude-opus-5.5 openai/gpt-6-astra openai/gpt-6-sol
+    openai/gpt-6-luna google/gemini-3.8-flash
+  ].freeze
   TOKENS_PER_MILLION = BigDecimal("1000000")
 
   # Public list prices in USD per million tokens, taken from the route's
   # provider pricing or the OpenRouter catalog on PRICING_AS_OF.
+  # UPDATED_MODELS were reverified separately; sources and estimate limits
+  # are recorded in docs/interaction-cost-pricing.md.
   #
   # Keep the rules ordered from most specific to least specific.
   PRICE_RULES = [
+    [ /\A(?:anthropic\/)?claude-opus-5[-.]5\z/, "anthropic/claude-opus-5.5", 4, 20 ],
     [ /(?:anthropic\/)?claude-opus-5\z/, "anthropic/claude-opus-5", 5, 25 ],
     [ /(?:anthropic\/)?claude-fable-5/, "anthropic/claude-fable-5", 10, 50 ],
     [ /(?:anthropic\/)?claude-sonnet-5/, "anthropic/claude-sonnet-5", 2, 10 ],
@@ -22,6 +30,9 @@ class AgentRuntimeInteractionCost
     [ /(?:anthropic\/)?claude-opus-4(?:-\d{8})?\z/, "anthropic/claude-opus-4", 15, 75 ],
     [ /(?:anthropic\/)?claude-sonnet-4(?:-\d{8})?\z/, "anthropic/claude-sonnet-4", 3, 15 ],
 
+    [ /\A(?:openai\/)?gpt-6-astra\z/, "openai/gpt-6-astra", 10, 50 ],
+    [ /\A(?:openai\/)?gpt-6-sol\z/, "openai/gpt-6-sol", 2, 10 ],
+    [ /\A(?:openai\/)?gpt-6-luna\z/, "openai/gpt-6-luna", 0.1, 0.5 ],
     [ /(?:openai\/)?gpt-5\.6-sol(?:-pro)?\z/, "openai/gpt-5.6-sol", 5, 30 ],
     [ /(?:openai\/)?gpt-5\.6-terra(?:-pro)?\z/, "openai/gpt-5.6-terra", 2.5, 15 ],
     [ /(?:openai\/)?gpt-5\.6-luna(?:-pro)?\z/, "openai/gpt-5.6-luna", 1, 6 ],
@@ -43,6 +54,7 @@ class AgentRuntimeInteractionCost
     [ /(?:openai\/)?gpt-4o-mini(?:-\d{4}-\d{2}-\d{2})?\z/, "openai/gpt-4o-mini", 0.15, 0.6 ],
     [ /(?:openai\/)?gpt-4o(?:-\d{4}-\d{2}-\d{2})?\z/, "openai/gpt-4o", 2.5, 10 ],
 
+    [ /\A(?:google\/)?gemini-3\.8-flash\z/, "google/gemini-3.8-flash", 0.75, 3.75 ],
     [ /(?:google\/)?gemini-3\.7-flash\z/, "google/gemini-3.7-flash", 0.75, 3.75 ],
     [ /(?:google\/)?gemini-3\.5-flash\z/, "google/gemini-3.5-flash", 1.5, 9 ],
     [ /(?:google\/)?gemini-3\.1-pro-preview\z/, "google/gemini-3.1-pro-preview", 2, 12 ],
@@ -74,6 +86,8 @@ class AgentRuntimeInteractionCost
   end.freeze
 
   CACHE_READ_RATES = {
+    "anthropic/claude-opus-5.5" => 0.2,
+    "google/gemini-3.8-flash" => 0.075,
     "openai/gpt-4.1" => 0.5,
     "openai/gpt-4.1-mini" => 0.1,
     "openai/gpt-4.1-nano" => 0.025,
@@ -97,6 +111,9 @@ class AgentRuntimeInteractionCost
   }.transform_values { |rate| BigDecimal(rate.to_s) }.freeze
 
   CACHE_WRITE_RATES = {
+    "openai/gpt-6-astra" => 12.5,
+    "openai/gpt-6-sol" => 2.5,
+    "openai/gpt-6-luna" => 0.125,
     "google/gemini-3.7-flash" => 0.16666666666666667,
     "google/gemini-3.5-flash" => 0.08333333333333334,
     "google/gemini-3.1-pro-preview" => 0.375,
@@ -132,7 +149,7 @@ class AgentRuntimeInteractionCost
       currency: "USD",
       pricing_source: interaction.provider == "openrouter" ? "openrouter" : "direct_api",
       pricing_model: price[:model],
-      pricing_as_of: PRICING_AS_OF.iso8601,
+      pricing_as_of: pricing_as_of(price),
       components_usd: components.transform_values { |value| decimal(value) },
       note: "Reasoning tokens are included in output tokens and are not charged twice."
     }
@@ -143,10 +160,28 @@ class AgentRuntimeInteractionCost
   attr_reader :interaction
 
   def price_for(model)
-    PRICE_RULES.find { |rule| model.to_s.match?(rule[:pattern]) }
+    price = PRICE_RULES.find { |rule| model.to_s.match?(rule[:pattern]) }
+    # Use the interaction date, not today's date, so historical promotional
+    # usage retains its rate. Storage time is not present in token telemetry.
+    if price && price[:model] == "google/gemini-3.8-flash" &&
+        interaction.started_at.to_date >= Date.new(2027, 1, 1)
+      price = price.merge(input: price[:input] * 2, output: price[:output] * 2,
+        cache_read: BigDecimal("0.15"))
+    end
+    price
+  end
+
+  def pricing_as_of(price)
+    (UPDATED_MODELS.include?(price&.dig(:model)) ? UPDATED_PRICING_AS_OF : PRICING_AS_OF).iso8601
   end
 
   def cache_creation_rate(price)
+    if interaction.provider == "openrouter" && price[:model] == "google/gemini-3.8-flash"
+      # The routed catalogue quotes a token write rate; the direct API instead
+      # documents storage by token-hour. Do not apply one route's rate to both.
+      return BigDecimal("0.0416666666666667") * (price[:input] / BigDecimal("0.75"))
+    end
+
     if anthropic?
       return price[:input] * (interaction.cache_ttl == "1h" ? 2 : BigDecimal("1.25"))
     end
@@ -155,6 +190,7 @@ class AgentRuntimeInteractionCost
   end
 
   def cache_read_rate(price)
+    return price[:cache_read] if price.key?(:cache_read)
     return CACHE_READ_RATES[price[:model]] if CACHE_READ_RATES.key?(price[:model])
     return price[:input] * BigDecimal("0.1") if anthropic? || openai? || gemini?
     return price[:input] * BigDecimal("0.15") if xai?
@@ -195,7 +231,7 @@ class AgentRuntimeInteractionCost
       currency: "USD",
       pricing_source: nil,
       pricing_model: price&.dig(:model),
-      pricing_as_of: PRICING_AS_OF.iso8601,
+      pricing_as_of: pricing_as_of(price),
       components_usd: nil,
       note: reason
     }
