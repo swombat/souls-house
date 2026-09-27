@@ -8,6 +8,12 @@
 # Local build:
 #   mise exec -- scripts/build-local-agent-runtime
 
+# POLICY: Local Chaos patches and patch-and-recompile layers are VERBOTEN.
+# Fix Chaos upstream, let upstream CI publish the binary, then update chaos-ref.
+# Normal deployments download pinned, checksum-verified binaries: zero Chaos
+# compilations. Never use the source escape hatch below to sneak in local fixes
+# or add a compile fallback when a prebuilt artifact is missing.
+#
 # Build callers use agent-runtime/chaos-ref unless explicitly overridden with
 # a full commit SHA. This is a cache key and provenance for the resulting image.
 #
