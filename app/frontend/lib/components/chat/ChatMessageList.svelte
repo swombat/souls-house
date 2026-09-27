@@ -1,5 +1,5 @@
 <script>
-  import { progressMessageGroups } from '$lib/progress-messages';
+  import { chatTimelineItems } from '$lib/chat-timeline';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import MessageBubble from '$lib/components/chat/MessageBubble.svelte';
   import AgentRuntimeActivityCard from '$lib/components/chat/AgentRuntimeActivityCard.svelte';
@@ -36,10 +36,12 @@
     requestVoice = () => {},
   } = $props();
 
+  const timelineItems = $derived(chatTimelineItems(allMessages, visibleMessages, runtimeInteractions));
+
   // Measure before adding sections: after a tall update, a reader who was
   // following the bottom may already be more than 100px away from it.
   $effect.pre(() => {
-    visibleMessages;
+    timelineItems;
     const container = messagesContainer;
     if (!container) return;
     const following = container.scrollTop + container.clientHeight >= container.scrollHeight - 100;
@@ -49,35 +51,8 @@
       });
   });
 
-  const timelineItems = $derived.by(() => {
-    const messageItems = progressMessageGroups(allMessages, visibleMessages).map((group) => ({
-      type: 'message',
-      id: `message-${group.message.id}`,
-      created_at: group.message.created_at,
-      message: group.message,
-      group,
-    }));
-
-    const runtimeItems = (runtimeInteractions || []).map((interaction) => ({
-      type: 'runtime_interaction',
-      id: `runtime-${interaction.id}`,
-      created_at: interaction.created_at,
-      interaction,
-    }));
-
-    // Speech was stably sorted before grouping, including late arrivals.
-    // Activity cards are annotations, not spoken boundaries.
-    const items = [...messageItems];
-    for (const runtime of runtimeItems.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))) {
-      const index = items.findIndex(
-        (item) => item.type === 'message' && new Date(item.created_at) >= new Date(runtime.created_at)
-      );
-      items.splice(index < 0 ? items.length : index, 0, runtime);
-    }
-    return items;
-  });
-
   function shouldShowTimelineTimestamp(index) {
+    if (timelineItems[index]?.interaction?.active) return false;
     return shouldShowTimestampForMessages(timelineItems, index);
   }
 
