@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_27_080000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_27_083000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -235,7 +235,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_080000) do
     t.bigint "output_tokens"
     t.boolean "persistent_session_requested"
     t.string "prior_chaos_session_id"
-    t.datetime "progress_notified_at"
     t.jsonb "prompt_component_bytes", default: {}
     t.string "prompt_mode"
     t.string "provider"

@@ -8,7 +8,9 @@ export function patchMessageInCollections({ recentMessages = [], olderMessages =
 }
 
 export function removeMessageFromCollections({ recentMessages = [], olderMessages = [], messageId }) {
-  const all = combinePaginatedMessages(olderMessages, recentMessages);
+  const all = combinePaginatedMessages(olderMessages, recentMessages).sort(
+    (a, b) => new Date(a.created_at) - new Date(b.created_at)
+  );
   const previous = all[all.findIndex((message) => message.id === messageId) - 1];
   const remove = (messages) =>
     messages

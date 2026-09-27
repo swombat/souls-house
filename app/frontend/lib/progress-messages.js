@@ -1,11 +1,15 @@
 // Use the full message sequence, not just visible speech: hidden/system posts
 // still interrupt. No bodies are merged; every section retains its message ID.
 export function progressMessageGroups(messages, visibleMessages = messages) {
+  // Match the historical timeline order before grouping. Sorting groups after
+  // grouping would still swallow an interruption delivered out of order.
+  // Modern JS sort is stable: equal timestamps retain server/arrival order.
+  const ordered = [...messages].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   const visible = new Set(visibleMessages.map((message) => message.id));
   const groups = [];
   const seenRuns = new Set();
   let previous = null;
-  for (const message of messages) {
+  for (const message of ordered) {
     const key =
       message.progress_message && message.runtime_interaction_id && message.agent_id
         ? `${message.agent_id}:${message.runtime_interaction_id}`
@@ -38,7 +42,10 @@ export function progressMessageGroups(messages, visibleMessages = messages) {
   for (const group of groups) {
     if (group.runKey) lastByRun.set(group.runKey, group);
   }
-  for (const group of groups) group.lastForRun = lastByRun.get(group.runKey) === group;
+  for (const group of groups) {
+    group.lastForRun = lastByRun.get(group.runKey) === group;
+    group.isTail = group.messages.at(-1) === ordered.at(-1);
+  }
   return groups;
 }
 

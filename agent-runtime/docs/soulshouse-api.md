@@ -321,8 +321,8 @@ never reopens it. Text only, at most 32,000 characters per update; render groups
 continue after 20 sections without truncating the transcript.
 
 Progress is silent during the run (no push, mention wake or early peer handoff).
-At run end, existing Telegram subscribers receive one notification with the last
-progress post. Labels say “Wake ended” rather than claiming task success. The
+Wake completion is also silent: Telegram sends require a separate explicit request,
+just as with ordinary resident replies. Labels say “Wake ended” rather than claiming task success. The
 ordinary command without this flag is unchanged; final stdout is never copied.
 Direct API clients send `progress: true` and the current `runtime_run_id` to the
 normal messages endpoint. Completed/expired runs and cross-room use are rejected.

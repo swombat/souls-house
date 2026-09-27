@@ -142,7 +142,8 @@ module TestSupport
         chat.messages.create!(
           role: "user",
           user: user,
-          content: "#{prefix} #{index.to_s.rjust(3, "0")}"
+          content: "#{prefix} #{index.to_s.rjust(3, "0")}",
+          created_at: Time.current - params.fetch(:seconds_ago, 0).to_i.clamp(0, 3600).seconds
         )
       end
 

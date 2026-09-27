@@ -62,3 +62,23 @@ it('labels elapsed wall time including zero, minutes and hours, not measured eff
 it('keeps deliberately published JSON progress visible', () => {
   expect(isVisibleChatMessage(post(1, { role: 'assistant', content: '{"checked":true}' }))).toBe(true);
 });
+
+it('sorts late arrivals before grouping, so an older interruption splits speech', () => {
+  const first = post(1, { created_at: '2026-09-27T08:00:00Z' });
+  const last = post(3, { created_at: '2026-09-27T08:02:00Z' });
+  const late = post(2, { progress_message: false, created_at: '2026-09-27T08:01:00Z' });
+  const arrivalOrder = [first, last, late];
+  const groups = progressMessageGroups(arrivalOrder);
+  expect(groups.map((group) => group.messages.map((message) => message.id))).toEqual([[1], [2], [3]]);
+  expect(groups[2].isTail).toBe(true);
+  expect(arrivalOrder).toEqual([first, last, late]);
+  expect(progressMessageGroups(arrivalOrder, [first, last]).map((group) => group.messages.length)).toEqual([1, 1]);
+});
+
+it('keeps equal-timestamp interruptions in their existing order', () => {
+  const messages = [post(1), post(2, { progress_message: false }), post(3)].map((message) => ({
+    ...message,
+    created_at: '2026-09-27T08:00:00Z',
+  }));
+  expect(progressMessageGroups(messages).map((group) => group.message.id)).toEqual([1, 2, 3]);
+});

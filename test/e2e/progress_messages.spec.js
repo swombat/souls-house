@@ -17,7 +17,7 @@ for (const mobile of [false, true]) {
       await page.getByRole('button', { name: /sign in|log in/i }).click();
       await expect(page).toHaveURL(/\/$/);
       const fixtureResponse = await request.post('/test/e2e/conversation_fixture', {
-        data: { account_id: setup.account_id, count: 1 },
+        data: { account_id: setup.account_id, count: 1, seconds_ago: 300 },
       });
       const { chat_id: chatId } = await fixtureResponse.json();
       const started = await request.post('/test/e2e/runtime_activity', { data: { chat_id: chatId } });
@@ -39,23 +39,39 @@ for (const mobile of [false, true]) {
       await expect(page.locator('[data-progress-section] strong').getByText('Live and checked.')).toBeVisible();
       await expect(page.getByText(/2m \d{2}s elapsed/)).toBeVisible();
       await expect(page.getByTestId('progress-status')).toHaveText('In progress');
+      // Arrives last but belongs between the two progress sections. Sorting
+      // only completed groups would leave this interruption below both.
+      await post('Late interruption', { progress: false, seconds_ago: 60 });
+      await expect(page.getByTestId('progress-status')).toHaveCount(2);
+      const ordered = () =>
+        page.getByText('Late interruption', { exact: true }).evaluate((element) => {
+          const sections = document.querySelectorAll('[data-progress-section]');
+          return (
+            Boolean(sections[0].compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+            Boolean(element.compareDocumentPosition(sections[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
+          );
+        });
+      expect(await ordered()).toBe(true);
+      await page.reload();
+      await expect(page.getByTestId('progress-status')).toHaveCount(2);
+      expect(await ordered()).toBe(true);
       await post('A separate thought.', { progress: false });
       await post('Continuation after the standalone post.');
-      await expect(page.getByTestId('progress-status')).toHaveCount(2);
-      await expect(page.getByText('Continued', { exact: true })).toBeVisible();
+      await expect(page.getByTestId('progress-status')).toHaveCount(3);
+      await expect(page.getByText('Continued', { exact: true })).toHaveCount(2);
       await expect(page.getByText('A separate thought.', { exact: true })).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath('elapsed-dividers.png'), fullPage: true });
       await page.locator('main textarea').last().fill('Human interruption');
       await page.getByRole('button', { name: 'Send message', exact: true }).click();
       await expect(page.getByText('Human interruption', { exact: true })).toBeVisible();
       await post('Continuation after the human interruption.');
-      await expect(page.getByTestId('progress-status')).toHaveCount(3);
+      await expect(page.getByTestId('progress-status')).toHaveCount(4);
       page.once('dialog', (dialog) => dialog.accept());
       await page.getByRole('button', { name: 'Delete message', exact: true }).last().click();
       await expect(page.getByText('Human interruption', { exact: true })).toBeHidden();
-      await expect(page.getByTestId('progress-status')).toHaveCount(3);
+      await expect(page.getByTestId('progress-status')).toHaveCount(4);
       await page.reload();
-      await expect(page.getByTestId('progress-status')).toHaveCount(3);
+      await expect(page.getByTestId('progress-status')).toHaveCount(4);
 
       const history = page.getByTestId('chat-messages');
       await history.evaluate((element) => {
@@ -80,7 +96,7 @@ for (const mobile of [false, true]) {
       await expect(page.getByTestId('progress-status').last()).toHaveText('Wake ended');
       await page.reload();
       await expect(page.locator('[data-progress-section]')).toHaveCount(6);
-      await expect(page.getByTestId('progress-status')).toHaveCount(3);
+      await expect(page.getByTestId('progress-status')).toHaveCount(4);
       await expect(page.getByTestId('progress-status').last()).toHaveText('Wake ended');
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await page.screenshot({ path: testInfo.outputPath('progress-messages.png'), fullPage: true });

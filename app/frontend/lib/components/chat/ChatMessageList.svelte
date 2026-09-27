@@ -65,8 +65,8 @@
       interaction,
     }));
 
-    // Keep speech in the server's message sequence, even if timestamps tie or
-    // arrive out of order. Activity cards are annotations, not spoken boundaries.
+    // Speech was stably sorted before grouping, including late arrivals.
+    // Activity cards are annotations, not spoken boundaries.
     const items = [...messageItems];
     for (const runtime of runtimeItems.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))) {
       const index = items.findIndex(
@@ -130,7 +130,7 @@
           progressContinued={item.group.continued}
           progressLastForRun={item.group.lastForRun}
           progressRuntime={runtimeInteractions.find((run) => run.run_id === message.progress_run_id)}
-          progressIsTail={item.group.messages.at(-1)?.id === allMessages.at(-1)?.id}
+          progressIsTail={item.group.isTail}
           isLastVisible={index === timelineItems.length - 1}
           isGroupChat={chat?.manual_responses}
           {showMessageTelemetry}

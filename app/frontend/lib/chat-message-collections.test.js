@@ -57,3 +57,16 @@ test('deleting a loaded-page interruption preserves the preceding progress bound
   expect(result.olderMessages[0].progress_break_after).toBe(true);
   expect(result.recentMessages).toEqual([{ id: 3, progress_message: true }]);
 });
+
+test('deleting a late arrival marks its chronological predecessor locally', () => {
+  const result = removeMessageFromCollections({
+    recentMessages: [
+      { id: 1, progress_message: true, created_at: '2026-09-27T08:00:00Z' },
+      { id: 3, progress_message: true, created_at: '2026-09-27T08:02:00Z' },
+      { id: 2, role: 'user', created_at: '2026-09-27T08:01:00Z' },
+    ],
+    messageId: 2,
+  });
+  expect(result.recentMessages[0].progress_break_after).toBe(true);
+  expect(result.recentMessages[1].progress_break_after).toBeUndefined();
+});
