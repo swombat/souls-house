@@ -1,0 +1,4 @@
+@import '../app/frontend/entrypoints/application.css';
+
+/* The component runner's Vite root is playwright/, not the application root. */
+@source '../app/frontend';

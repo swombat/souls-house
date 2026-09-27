@@ -1,5 +1,5 @@
 // Import styles
-import '../app/frontend/entrypoints/application.css';
+import './styles.css';
 
 // This file is required for Playwright component testing
 // It sets up the environment before mounting components

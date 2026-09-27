@@ -81,7 +81,7 @@
           {#if message.editable}
             <button
               onclick={() => onedit(message)}
-              class="p-1.5 rounded-full text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted
+              class="shrink-0 p-1.5 rounded-full text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted
                      opacity-50 hover:opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity
                      focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"
               title="Edit message">
@@ -91,14 +91,14 @@
           {#if message.deletable}
             <button
               onclick={() => ondelete(message.id)}
-              class="p-1.5 rounded-full text-muted-foreground/50 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950
+              class="shrink-0 p-1.5 rounded-full text-muted-foreground/50 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950
                      opacity-50 hover:opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity
                      focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring"
               title="Delete message">
               <Trash size={20} weight="regular" />
             </button>
           {/if}
-          <Card.Root class="{getBubbleClass(message.author_colour)} w-fit">
+          <Card.Root class="{getBubbleClass(message.author_colour)} min-w-0 w-fit">
             <Card.Content class="p-4">
               {#if message.files_json && message.files_json.length > 0}
                 <div class="space-y-2 mb-3">

@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/experimental-ct-svelte';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
+import tailwindcss from '@tailwindcss/vite';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 import { instance } from './playwright/instance.js';
 
@@ -27,6 +29,7 @@ export default defineConfig({
     // Component testing specific options
     ctPort: instance.ports.component, // Changed from 3100 to avoid conflict with Rails test server
     ctViteConfig: {
+      plugins: [svelte(), tailwindcss()],
       resolve: {
         alias: {
           $lib: resolve(__dirname, 'app/frontend/lib'),
