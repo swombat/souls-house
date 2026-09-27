@@ -35,9 +35,23 @@ export function preserveDisplacedRecentMessages({
 }) {
   if (previousRecentMessages.length === 0) return olderMessages;
 
+  if (recentMessages.length === 0) return olderMessages.length ? [] : olderMessages;
   const currentIds = new Set(recentMessages.map((message) => message.id));
-  const displacedMessages = previousRecentMessages.filter((message) => !currentIds.has(message.id));
-  if (displacedMessages.length === 0) return olderMessages;
-
-  return combinePaginatedMessages(olderMessages, displacedMessages);
+  const overlap = previousRecentMessages.findIndex((message) => currentIds.has(message.id));
+  // Only records before the surviving window were pushed out by new arrivals.
+  // A missing record inside that window was deleted, not paginated away.
+  const boundary = overlap < 0 ? previousRecentMessages.length : overlap;
+  const displacedMessages = previousRecentMessages.slice(0, boundary).filter((message) => !currentIds.has(message.id));
+  const deletedIds = new Set(
+    previousRecentMessages
+      .slice(boundary)
+      .filter((message) => !currentIds.has(message.id))
+      .map((message) => message.id)
+  );
+  if (displacedMessages.length === 0 && !olderMessages.some((message) => deletedIds.has(message.id)))
+    return olderMessages;
+  return combinePaginatedMessages(
+    olderMessages.filter((message) => !deletedIds.has(message.id)),
+    displacedMessages
+  );
 }

@@ -135,6 +135,25 @@ class HelixkitPostMessageTest < ActiveSupport::TestCase
     end
   end
 
+  test "progress flag requires the current room run and preserves literal stdin" do
+    request = capture_request do |url|
+      _stdout, stderr, status = Open3.capture3(
+        { "SOULSHOUSE_APP_URL" => url, "SOULSHOUSE_BEARER_TOKEN" => "hx_test",
+          "SOULSHOUSE_RUNTIME_RUN_ID" => "run-123", "SOULSHOUSE_RUNTIME_CHAT_ID" => "chat-123" },
+        "python3", SCRIPT.to_s, "chat-123", "--progress", stdin_data: "Checking $value `code`"
+      )
+      assert status.success?, stderr
+    end
+    assert_equal({ "content" => "Checking $value `code`", "runtime_run_id" => "run-123", "progress" => true }, JSON.parse(request[:body]))
+    _stdout, stderr, status = Open3.capture3(
+      { "SOULSHOUSE_APP_URL" => "http://127.0.0.1:1", "SOULSHOUSE_BEARER_TOKEN" => "hx_test",
+        "SOULSHOUSE_RUNTIME_RUN_ID" => "run-123", "SOULSHOUSE_RUNTIME_CHAT_ID" => "chat-123" },
+      "python3", SCRIPT.to_s, "other-room", "--progress", stdin_data: "Checking"
+    )
+    assert_equal 66, status.exitstatus
+    assert_includes stderr, "current house conversation run"
+  end
+
   private
 
   def capture_request

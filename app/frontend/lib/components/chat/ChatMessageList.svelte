@@ -1,8 +1,10 @@
 <script>
+  import { progressMessageGroups } from '$lib/progress-messages';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import MessageBubble from '$lib/components/chat/MessageBubble.svelte';
   import AgentRuntimeActivityCard from '$lib/components/chat/AgentRuntimeActivityCard.svelte';
   import { Spinner } from 'phosphor-svelte';
+  import { tick } from 'svelte';
   import { fade } from 'svelte/transition';
   import { formatTime, formatDate } from '$lib/utils';
   import { shouldShowTimestampForMessages, timestampLabelForMessages } from '$lib/chat-message-state';
@@ -34,12 +36,26 @@
     requestVoice = () => {},
   } = $props();
 
+  // Measure before adding sections: after a tall update, a reader who was
+  // following the bottom may already be more than 100px away from it.
+  $effect.pre(() => {
+    visibleMessages;
+    const container = messagesContainer;
+    if (!container) return;
+    const following = container.scrollTop + container.clientHeight >= container.scrollHeight - 100;
+    if (following)
+      tick().then(() => {
+        container.scrollTop = container.scrollHeight;
+      });
+  });
+
   const timelineItems = $derived.by(() => {
-    const messageItems = (visibleMessages || []).map((message) => ({
+    const messageItems = progressMessageGroups(allMessages, visibleMessages).map((group) => ({
       type: 'message',
-      id: `message-${message.id}`,
-      created_at: message.created_at,
-      message,
+      id: `message-${group.message.id}`,
+      created_at: group.message.created_at,
+      message: group.message,
+      group,
     }));
 
     const runtimeItems = (runtimeInteractions || []).map((interaction) => ({
@@ -49,11 +65,16 @@
       interaction,
     }));
 
-    return [...messageItems, ...runtimeItems].sort((a, b) => {
-      const aTime = new Date(a.created_at).getTime();
-      const bTime = new Date(b.created_at).getTime();
-      return aTime - bTime;
-    });
+    // Keep speech in the server's message sequence, even if timestamps tie or
+    // arrive out of order. Activity cards are annotations, not spoken boundaries.
+    const items = [...messageItems];
+    for (const runtime of runtimeItems.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))) {
+      const index = items.findIndex(
+        (item) => item.type === 'message' && new Date(item.created_at) >= new Date(runtime.created_at)
+      );
+      items.splice(index < 0 ? items.length : index, 0, runtime);
+    }
+    return items;
   });
 
   function shouldShowTimelineTimestamp(index) {
@@ -105,6 +126,11 @@
         {@const message = item.message}
         <MessageBubble
           {message}
+          progressMessages={item.group.runKey ? item.group.messages : []}
+          progressContinued={item.group.continued}
+          progressLastForRun={item.group.lastForRun}
+          progressRuntime={runtimeInteractions.find((run) => run.run_id === message.progress_run_id)}
+          progressIsTail={item.group.messages.at(-1)?.id === allMessages.at(-1)?.id}
           isLastVisible={index === timelineItems.length - 1}
           isGroupChat={chat?.manual_responses}
           {showMessageTelemetry}

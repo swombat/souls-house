@@ -7,6 +7,7 @@ class Message < ApplicationRecord
   include Message::Attachable
   include Message::Moderatable
   include Message::Replayable
+  include Message::Progress
   include Message::Streamable
 
   belongs_to :ai_model, optional: true
@@ -58,11 +59,12 @@ class Message < ApplicationRecord
   after_save_commit :refresh_chat_context_tokens, if: -> { role == "assistant" && saved_change_to_input_tokens? }
 
   def advance_runtime_response_chain
-    runtime_interaction&.advance_response_chain! if role == "assistant"
+    runtime_interaction&.advance_response_chain! if role == "assistant" && !progress_message?
   end
   private :advance_runtime_response_chain
 
   json_attributes :role, :content, :thinking, :thinking_preview, :user_name, :user_avatar_url,
+                  :progress_message, :progress_break_after, :progress_status, :progress_run_id, :runtime_interaction_id,
                   :completed, :created_at_formatted, :created_at_hour, :streaming,
                   :files_json, :content_html, :tools_used, :tool_status,
                   :author_name, :author_type, :author_colour, :input_tokens, :output_tokens,

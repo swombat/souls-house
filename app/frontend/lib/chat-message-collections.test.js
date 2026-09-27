@@ -44,3 +44,16 @@ describe('chat message collections', () => {
     expect(appendMessageIfMissing(messages, newMessage)).toEqual([...messages, newMessage]);
   });
 });
+
+test('deleting a loaded-page interruption preserves the preceding progress boundary immediately', () => {
+  const result = removeMessageFromCollections({
+    olderMessages: [{ id: 1, progress_message: true }],
+    recentMessages: [
+      { id: 2, role: 'user' },
+      { id: 3, progress_message: true },
+    ],
+    messageId: 2,
+  });
+  expect(result.olderMessages[0].progress_break_after).toBe(true);
+  expect(result.recentMessages).toEqual([{ id: 3, progress_message: true }]);
+});

@@ -618,6 +618,7 @@
       });
 
       if (response.ok) {
+        previousRecentMessages = previousRecentMessages.filter((message) => message.id !== messageId);
         const result = removeMessageFromCollections({ recentMessages, olderMessages, messageId });
         recentMessages = result.recentMessages;
         olderMessages = result.olderMessages;

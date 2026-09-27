@@ -1,3 +1,5 @@
+import { combinePaginatedMessages } from './chat-pagination-state';
+
 export function patchMessageInCollections({ recentMessages = [], olderMessages = [], messageId, patch = {} }) {
   return {
     recentMessages: recentMessages.map((message) => (message.id === messageId ? { ...message, ...patch } : message)),
@@ -6,10 +8,15 @@ export function patchMessageInCollections({ recentMessages = [], olderMessages =
 }
 
 export function removeMessageFromCollections({ recentMessages = [], olderMessages = [], messageId }) {
-  return {
-    recentMessages: recentMessages.filter((message) => message.id !== messageId),
-    olderMessages: olderMessages.filter((message) => message.id !== messageId),
-  };
+  const all = combinePaginatedMessages(olderMessages, recentMessages);
+  const previous = all[all.findIndex((message) => message.id === messageId) - 1];
+  const remove = (messages) =>
+    messages
+      .filter((message) => message.id !== messageId)
+      .map((message) =>
+        previous?.progress_message && message.id === previous.id ? { ...message, progress_break_after: true } : message
+      );
+  return { recentMessages: remove(recentMessages), olderMessages: remove(olderMessages) };
 }
 
 export function appendMessageIfMissing(messages = [], message) {

@@ -11,10 +11,16 @@
   import { Streamdown } from 'svelte-streamdown';
   import { formatTime, formatDateTime } from '$lib/utils';
   import { reasoningSkipTooltip } from '$lib/chat-utils';
+  import { elapsedBetween } from '$lib/progress-messages';
   import { formatToolsUsed } from '$lib/chat-message-formatting';
 
   let {
     message,
+    progressMessages = [],
+    progressContinued = false,
+    progressLastForRun = false,
+    progressRuntime = null,
+    progressIsTail = false,
     isLastVisible = false,
     isGroupChat = false,
     showMessageTelemetry = false,
@@ -25,6 +31,23 @@
     onimagelightbox,
     onvoice,
   } = $props();
+
+  const progressStatus = $derived.by(() => {
+    const terminal = {
+      completed: 'Wake ended',
+      failed: 'Failed',
+      timed_out: 'Timed out',
+      cancelled: 'Cancelled',
+      outcome_unknown: 'Interrupted',
+      busy: 'Interrupted',
+    };
+    if (terminal[progressRuntime?.status]) return terminal[progressRuntime.status];
+    const stored = progressMessages.at(-1)?.progress_status;
+    // Older paginated messages may predate the final message refresh. Never
+    // keep a cached "In progress" label after its live interaction disappears.
+    if (stored === 'In progress' && !progressRuntime?.active) return 'Status unknown';
+    return stored || 'Status unknown';
+  });
 
   // Generate bubble background class based on author colour
   function getBubbleClass(colour) {
@@ -119,7 +142,45 @@
       <div class="min-w-0 max-w-[85%] md:max-w-[70%]">
         <Card.Root class={getBubbleClass(message.author_colour)}>
           <Card.Content class="p-4">
-            {#if message.status === 'failed'}
+            {#if progressMessages.length}
+              {#if progressContinued}
+                <div class="text-xs text-muted-foreground mb-3">Continued</div>
+              {/if}
+              <div aria-live="polite" aria-relevant="additions" aria-atomic="false">
+                {#each progressMessages as section, sectionIndex (section.id)}
+                  <section
+                    data-progress-section={section.id}
+                    aria-label={`${section.author_name} update at ${formatDateTime(section.created_at)}`}>
+                    {#if sectionIndex > 0}
+                      <div
+                        class="flex items-center gap-3 my-4 text-xs text-muted-foreground"
+                        title="Wall-clock time between published updates, including waits">
+                        <div class="flex-1 border-t border-border"></div>
+                        <span
+                          >{elapsedBetween(progressMessages[sectionIndex - 1].created_at, section.created_at) ||
+                            formatTime(section.created_at)}</span>
+                        <div class="flex-1 border-t border-border"></div>
+                      </div>
+                    {/if}
+                    <Streamdown
+                      content={section.content}
+                      parseIncompleteMarkdown={false}
+                      inlineCitation={expressionTag}
+                      baseTheme="shadcn"
+                      {shikiTheme}
+                      shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']}
+                      class="prose [overflow-wrap:anywhere]" />
+                  </section>
+                {/each}
+              </div>
+              <div class="mt-3 text-xs text-muted-foreground" data-testid="progress-status">
+                {#if progressIsTail || (progressLastForRun && progressStatus !== 'In progress')}
+                  {progressStatus}
+                {:else}
+                  Last update {formatTime(progressMessages.at(-1).created_at)}
+                {/if}
+              </div>
+            {:else if message.status === 'failed'}
               <div class="text-red-600 mb-2 text-sm">Failed to generate response</div>
             {:else if message.status === 'pending'}
               <div class="text-muted-foreground text-sm">Thinking...</div>
@@ -210,7 +271,7 @@
             <MessageTelemetry telemetry={message.ruby_llm_telemetry} />
           {/if}
         </div>
-        {#if message.voice_available && !message.streaming}
+        {#if message.voice_available && !message.streaming && !progressMessages.length}
           <div class="mt-1">
             {#if message.voice_audio_url}
               <AudioPlayer src={message.voice_audio_url} />

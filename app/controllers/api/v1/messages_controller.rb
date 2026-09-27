@@ -22,6 +22,7 @@ module Api
             user: current_api_user
           )
         end
+        message.progress_message = ActiveModel::Type::Boolean.new.cast(params[:progress]) || false
         message.attachments.attach(params[:files]) if params[:files].present?
         if params[:runtime_run_id].present?
           return head :forbidden unless current_api_agent
@@ -37,7 +38,22 @@ module Api
           return render json: { errors: [ "Content or at least one file is required" ] }, status: :unprocessable_entity
         end
 
-        unless message.save
+        if message.progress_message?
+          return head :unprocessable_entity unless interaction
+          saved = interaction.with_lock do
+            if interaction.finished_at? || interaction.execution_state.in?(AgentRuntimeInteraction::TERMINAL_STATES) ||
+                !interaction.execution_deadline_at&.future?
+              message.errors.add(:runtime_interaction, "is no longer live")
+              false
+            else
+              message.save
+            end
+          end
+        else
+          saved = message.save
+        end
+
+        unless saved
           return render json: { errors: message.errors.full_messages }, status: :unprocessable_entity
         end
 

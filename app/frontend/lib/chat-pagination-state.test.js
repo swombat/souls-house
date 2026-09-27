@@ -61,3 +61,41 @@ describe('chat pagination state', () => {
     ).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }]);
   });
 });
+
+test('does not resurrect a deleted interruption as paginated history', () => {
+  expect(
+    preserveDisplacedRecentMessages({
+      olderMessages: [{ id: 1 }],
+      previousRecentMessages: [{ id: 2 }, { id: 3 }, { id: 4 }],
+      recentMessages: [{ id: 2 }, { id: 4 }],
+    })
+  ).toEqual([{ id: 1 }]);
+});
+
+test('keeps a completely displaced window but clears deleted empty history', () => {
+  expect(
+    preserveDisplacedRecentMessages({
+      previousRecentMessages: [{ id: 1 }, { id: 2 }],
+      recentMessages: [{ id: 3 }, { id: 4 }],
+    })
+  ).toEqual([{ id: 1 }, { id: 2 }]);
+  expect(
+    preserveDisplacedRecentMessages({
+      olderMessages: [{ id: 1 }],
+      previousRecentMessages: [{ id: 2 }],
+      recentMessages: [],
+    })
+  ).toEqual([]);
+});
+
+test('preserves array identity when no pagination or deletion happened', () => {
+  const olderMessages = [{ id: 1 }];
+  const recentMessages = [{ id: 2 }];
+  expect(
+    preserveDisplacedRecentMessages({ olderMessages, previousRecentMessages: recentMessages, recentMessages })
+  ).toBe(olderMessages);
+  const empty = [];
+  expect(
+    preserveDisplacedRecentMessages({ olderMessages: empty, previousRecentMessages: [{ id: 2 }], recentMessages: [] })
+  ).toBe(empty);
+});

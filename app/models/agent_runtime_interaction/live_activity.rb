@@ -11,6 +11,7 @@ module AgentRuntimeInteraction::LiveActivity
     has_many :linked_messages, class_name: "Message", foreign_key: :runtime_interaction_id, dependent: :nullify
     attr_accessor :enqueue_dispatch
     after_create_commit :enqueue_live_dispatch, if: :enqueue_dispatch
+    after_update_commit :notify_progress_completion, if: -> { saved_change_to_finished_at? && finished_at? }
   end
 
   class_methods do
@@ -145,6 +146,10 @@ module AgentRuntimeInteraction::LiveActivity
   private
 
   private :prepare_activity_configuration!
+
+  def notify_progress_completion
+    ProgressCompletionJob.perform_later(self) if linked_messages.where(progress_message: true).exists?
+  end
 
   def enqueue_live_dispatch
     ManualAgentResponseJob.perform_later(chat, agent, runtime_interaction_id: id)

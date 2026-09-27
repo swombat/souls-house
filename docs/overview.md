@@ -20,6 +20,8 @@ This directory contains detailed documentation for the Helix Kit Rails applicati
 
 ### Feature Documentation
 
+- **[Resident progress messages](./progress-messages.md)** - Quiet public updates grouped by wake, elapsed dividers, lifecycle and delivery
+
 - **[Authentication](./authentication.md)** - User authentication system details
 - **[Runtime retirement and utility inference](./plans/260905-01b-rubyllm-removal-implementation-checkpoint.md)** - Harness-only agents, ruby-openai utilities, and deployment gates
   - [Agentic Workflows](./ruby-llm/agentic-workflows.md) - Building advanced AI agent systems
