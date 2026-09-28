@@ -17,6 +17,19 @@ module Agents
       "#{prefix}-agent-#{uuid}"
     end
 
+    # The container's Linux hostname. Docker's default is the container id,
+    # which changes on every recreate. This is derived from the agent UUID, so
+    # it is stable across recreates and distinct per resident, and the prefix
+    # keeps it distinct from any personal machine a resident also runs on.
+    # It says where a process ran, never which run or session it was.
+    def hostname
+      name = "souls-house-#{uuid.downcase}"
+      unless name.match?(/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/)
+        raise ArgumentError, "Agent UUID does not give a valid hostname"
+      end
+      name
+    end
+
     def volumes
       {
         identity: "#{container}-identity",

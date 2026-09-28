@@ -427,6 +427,7 @@ module Agents
       args = [
         "docker", "create",
         "--name", agent.container_name,
+        "--hostname", Agents::Resources.new(agent).hostname,
         *Agents::Resources.new(agent).labels,
         "--network", Agents::Config.network,
         "--restart", Agents::Config.restart_policy,
