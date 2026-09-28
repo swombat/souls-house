@@ -452,6 +452,7 @@ module Agents
         "-e", "HELIXKIT_APP_URL=#{Agents::Config.internal_url}"
       ]
       args += home_profile_env_args
+      args += house_trust_env_args
       args += provider_env_args
       args += [ "-p", "127.0.0.1::4000" ] if Agents::Config.publish_ports?
       args << agent.container_image
@@ -577,6 +578,13 @@ module Agents
       # Default off. Only the Anthropic-subscription clamp combination reads it.
       args += [ "-e", "SOULSHOUSE_IMPORTED_CLAMP_OMIT_FORCED_LOGIN=1" ] if Agents::Config.imported_clamp_omit_forced_login?
       args
+    end
+
+    # Default off; adds nothing to docker create unless the host enables it.
+    def house_trust_env_args
+      return [] if agent.imported_home? || !Agents::Config.require_house_trust?
+
+      [ "-e", "SOULSHOUSE_REQUIRE_HOUSE_TRUST=1" ]
     end
 
     def provider_env_args

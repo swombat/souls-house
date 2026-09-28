@@ -121,7 +121,7 @@ def validate(root=None):
     return root, manifest
 
 
-def require_runtime_trust(root, chaos_home):
+def check_project_trust(root, chaos_home, unreadable_message, untrusted_message):
     # The pinned Chaos runtime keeps project trust here, not in config.toml.
     # Without it the project's config *and hooks* are silently disabled.
     database = Path(chaos_home) / 'chaos.sqlite'
@@ -130,9 +130,17 @@ def require_runtime_trust(root, chaos_home):
             row = db.execute('SELECT trust_level FROM project_trust WHERE project_path = ?',
                              (str(Path(root).resolve()),)).fetchone()
     except sqlite3.Error as error:
-        raise ValueError('Review and trust the imported root in Chaos before a resident turn') from error
+        raise ValueError(unreadable_message) from error
     if row != ('trusted',):
-        raise ValueError('Imported home is not trusted in Chaos; its wake hooks would not run')
+        raise ValueError(untrusted_message)
+
+
+def require_runtime_trust(root, chaos_home):
+    check_project_trust(
+        root, chaos_home,
+        'Review and trust the imported root in Chaos before a resident turn',
+        'Imported home is not trusted in Chaos; its wake hooks would not run',
+    )
 
 
 def main(argv):

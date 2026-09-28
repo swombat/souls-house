@@ -728,6 +728,25 @@ def imported_forced_login_method(provider, auth_mode, environ=None):
     return "api"
 
 
+REQUIRE_HOUSE_TRUST_ENV = "SOULSHOUSE_REQUIRE_HOUSE_TRUST"
+
+
+def house_trust_required(environ=None):
+    """Default off. When on, a house turn refuses to start unless Chaos trusts
+    the workspace, as imported homes already do. Between 2026-09-26 and
+    2026-09-28 a settings migration dropped trust and every house resident's
+    hooks stopped without any error."""
+    return _env_flag(REQUIRE_HOUSE_TRUST_ENV, environ)
+
+
+def require_house_trust(cwd, chaos_home):
+    imported_home.check_project_trust(
+        cwd, chaos_home,
+        "Review and trust the resident workspace in Chaos before a resident turn",
+        "Resident workspace is not trusted in Chaos; its memory hooks would not run",
+    )
+
+
 def run_chaos(
     model, timeout_secs, prompt_text, json_output,
     resume_id=None, provider=None, reasoning_effort=None, auth_mode="api_key",
@@ -768,6 +787,8 @@ def run_chaos(
             args += ["-c", f'forced_login_method="{login_method}"']
     else:
         cwd = AGENT_REPO_PATH if AGENT_REPO_PATH.exists() else Path.home()
+        if house_trust_required():
+            require_house_trust(cwd, Path(env.get("CHAOS_HOME", CHAOS_HOME)))
     args += [
         "--provider", provider or AGENT_PROVIDER,
         "-C", str(cwd),

@@ -54,5 +54,17 @@ module Agents
       assert_not_includes env_args(agent), "SOULSHOUSE_IMPORTED_CLAMP_OMIT_FORCED_LOGIN=1"
     end
 
+    test "house trust guard is off by default and only reaches house residents" do
+      agent = agents(:research_assistant)
+      sandbox = Agents::Sandbox.new(agent)
+      assert_not Agents::Config.require_house_trust?
+      assert_equal [], sandbox.send(:house_trust_env_args)
+      Agents::Config.stub(:require_house_trust?, true) do
+        assert_equal [ "-e", "SOULSHOUSE_REQUIRE_HOUSE_TRUST=1" ], sandbox.send(:house_trust_env_args)
+        agent.update!(home_profile: "mira_v1", portable_home_id: "test-mira")
+        assert_equal [], sandbox.send(:house_trust_env_args)
+      end
+    end
+
   end
 end
