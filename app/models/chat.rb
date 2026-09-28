@@ -229,12 +229,16 @@ class Chat < ApplicationRecord
     manual_responses?
   end
 
+  # An ArgumentError, so the web still treats it as a refused trigger; the app
+  # API tells it apart as a 409 (#94 B, step 4b-iii).
+  class AlreadyResponding < ArgumentError; end
+
   def trigger_agent_response!(agent)
     raise ArgumentError, "Agent not in this conversation" unless agents.include?(agent)
     agent.require_conversation_runtime!
     raise ArgumentError, "This chat does not support manual responses" unless manual_responses?
     raise ArgumentError, "This conversation is archived or deleted" unless respondable?
-    raise ArgumentError, "#{agent.name} is already responding" if agent_response_active?(agent)
+    raise AlreadyResponding, "#{agent.name} is already responding" if agent_response_active?(agent)
 
     if AgentRuntimeInteraction.live_activity_enabled?
       AgentRuntimeInteraction.reserve!(agent: agent, chat: self, enqueue: true)
@@ -254,7 +258,7 @@ class Chat < ApplicationRecord
       raise Agent::RuntimeAvailability::Unavailable.new("No available agents in this conversation", code: "no_available_agents")
     end
     active_agent = ordered_agents.find { |agent| agent.eligible_for_conversation? && agent_response_active?(agent) }
-    raise ArgumentError, "#{active_agent.name} is already responding" if active_agent
+    raise AlreadyResponding, "#{active_agent.name} is already responding" if active_agent
 
     agent_ids = ordered_agents.map(&:id)
 
@@ -275,6 +279,17 @@ class Chat < ApplicationRecord
     }.sort_by { |agent|
       content.index(/@#{Regexp.escape(agent.name)}\b/i)
     }.map(&:id)
+  end
+
+  # The conversation's recent runtime interactions, oldest first, with
+  # in-flight live runs reconciled first so a lost run doesn't show as
+  # working. Shared by the web activity panel and the app API.
+  def activity_timeline(limit: 20)
+    scope = agent_runtime_interactions.includes(:agent)
+    active = scope.where(finished_at: nil).where.not(run_id: nil).to_a
+    active.each(&:reconcile_activity!)
+    (active + scope.recent.limit(limit).to_a).uniq
+      .sort_by { |interaction| [ interaction.created_at, interaction.id ] }
   end
 
   def agent_response_active?(agent)

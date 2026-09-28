@@ -185,9 +185,13 @@ Rails.application.routes.draw do
       namespace :v1 do
         resource :session, only: [ :show, :destroy ]
         resources :accounts, only: :index do
-          resources :conversations, only: :index
+          resources :conversations, only: [ :index, :create ]
         end
         resources :conversations, only: [] do
+          member do
+            post :invoke
+            get :activity
+          end
           resources :messages, only: [ :index, :create, :update, :destroy ] do
             get :dispatch, on: :member, action: :dispatch_status
           end

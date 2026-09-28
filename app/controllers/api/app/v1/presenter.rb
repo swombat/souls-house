@@ -59,6 +59,25 @@ module Api
           }
         end
 
+        # A resident's run in a conversation, status only. The web panel's
+        # working narration and event log aren't part of the phone contract in
+        # v1; replies arrive as messages through changes.
+        def activity(interaction)
+          # status and active as the web panel shows them, live runs included.
+          web = interaction.as_chat_activity_json
+          {
+            id: interaction.to_param,
+            conversation_id: interaction.chat.to_param,
+            agent: { type: "agent", id: interaction.agent.to_param, name: interaction.agent.name },
+            trigger_kind: interaction.trigger_kind,
+            status: web[:status],
+            active: web[:active],
+            created_at: interaction.created_at.iso8601(6),
+            started_at: interaction.started_at&.iso8601(6),
+            finished_at: interaction.finished_at&.iso8601(6)
+          }
+        end
+
         def discarded_marker(message)
           {
             id: message.to_param,

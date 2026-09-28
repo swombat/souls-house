@@ -85,7 +85,7 @@ module Api
         def audit(action, auditable, **data)
           AuditLog.create!(
             user: current_user,
-            account: auditable.try(:chat)&.account,
+            account: (auditable.is_a?(Chat) ? auditable : auditable.try(:chat))&.account,
             action: action,
             auditable: auditable,
             data: data.merge(app_session_id: current_app_session.id),

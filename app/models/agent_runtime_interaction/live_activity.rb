@@ -26,7 +26,7 @@ module AgentRuntimeInteraction::LiveActivity
         raise ArgumentError, "Conversation unavailable" unless chat.respondable? && chat.manual_responses? && chat.agents.exists?(agent.id)
         agent.reload.require_conversation_runtime!
         chat.agent_runtime_interactions.where(agent: agent, finished_at: nil).each(&:reconcile_activity!)
-        raise ArgumentError, "#{agent.name} is already responding" if chat.agent_response_active?(agent)
+        raise Chat::AlreadyResponding, "#{agent.name} is already responding" if chat.agent_response_active?(agent)
 
         create!(
           agent: agent, chat: chat, trigger_kind: "conversation",
