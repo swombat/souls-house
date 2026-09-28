@@ -6,7 +6,9 @@
 [#92](https://github.com/swombat/souls-house/issues/92). Compliance work remains
 open in [#93](https://github.com/swombat/souls-house/issues/93). The message slice
 is assigned to [#94 B](https://github.com/swombat/souls-house/issues/94).
-Resident-facing message-retention changes still have their consultation gate.
+Nexus reviewed consultation card v1: Claude and Wing consented for their own
+messages/context; Chris and Grok recorded no objection within its constraints.
+The additional acceptance gates below remain; this is not code/deployment approval.
 This supersedes the native-backend draft's body-erasure/attachment-purge proposal.
 
 ## Context
@@ -58,3 +60,20 @@ Tests must cover retained bodies/blobs, normal visibility, access denial,
 authorised recovery, cascades and jobs, sync, and no duplicate resident invocation.
 The audit remains separate from the mobile PR's message-discard slice; neither
 an ADR nor a passing narrow test establishes whole-application compliance.
+
+### Consultation-card v1 acceptance gates
+
+Before the message-discard slice ships:
+
+- Human-facing labels/confirmation explain recoverable retention, not privacy
+  erasure. Document how to request genuine administrative erasure, who handles
+  it, and how completion/limits are communicated. The actual contact/process
+  must be established, not an invented endpoint.
+- Include the attention feed and Telegram transcript paths in visibility tests.
+  Discarded records must not create false “unanswered” signals or phantom wakes.
+- State that discarding a message does not modify residents' already-authored
+  journals/memory, existing exports or copies. Do not imply that residents forget
+  something merely because the conversation no longer includes it.
+- Define restoration authority and whether someone joining after discard can see
+  restored content. This audience consequence is unresolved pending explicit
+  product clarification; include its answer and tests in the PR before shipping.
