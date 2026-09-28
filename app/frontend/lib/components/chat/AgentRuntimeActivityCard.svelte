@@ -14,10 +14,6 @@
     Boolean(snapshot.commentary) ||
       (interaction.events || []).some((event) => event.type === 'commentary.completed' && event.data?.text)
   );
-  const narrationAvailable = $derived(
-    interaction.narration_shared !== false && (snapshot.narration_capability === 'supported' || narrationReceived)
-  );
-  const showCommands = $derived(!narrationAvailable || commandsExpanded);
   const duration = $derived(
     isActive && interaction.started_at
       ? Math.max(0, now - new Date(interaction.started_at).getTime())
@@ -81,16 +77,14 @@
           Contact was lost. Execution was not confirmed stopped; check before requesting the same work again.
         </p>
       {/if}
-      {#if narrationAvailable}
-        <button
-          type="button"
-          class="text-xs underline underline-offset-4"
-          aria-expanded={commandsExpanded}
-          onclick={() => (commandsExpanded = !commandsExpanded)}>
-          {commandsExpanded ? 'Hide commands' : 'Show commands'}
-        </button>
-      {/if}
-      {#if showCommands && operations.length && isActive}
+      <button
+        type="button"
+        class="text-xs underline underline-offset-4"
+        aria-expanded={commandsExpanded}
+        onclick={() => (commandsExpanded = !commandsExpanded)}>
+        {commandsExpanded ? 'Hide commands' : 'Show commands'}
+      </button>
+      {#if commandsExpanded && operations.length && isActive}
         <ul class="space-y-1">
           {#each operations as operation}
             <li class="break-words">{operation.label}…</li>
@@ -117,7 +111,7 @@
         {#each interaction.events || [] as event (event.id)}
           {#if event.type === 'commentary.completed' && event.data?.text}
             <li class="whitespace-pre-wrap">{event.data.text}</li>
-          {:else if eventLabel(event) && (showCommands || event.type === 'warning')}
+          {:else if eventLabel(event) && (commandsExpanded || event.type === 'warning')}
             <li class="break-words">{eventLabel(event)}</li>
           {/if}
         {/each}

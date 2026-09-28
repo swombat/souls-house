@@ -35,3 +35,16 @@ resident reconciliation disabled. No resident restart is required.
 - All ten resident container IDs are unchanged. Runtime rebuild/reconciliation
   was skipped; the normal webhook-refresh post-deploy hook ran separately.
 - Operational logs are in this instance's ignored `log/narration-first-*.log`.
+
+## September 28 follow-up: compact commands regardless of narration
+
+Supersedes the original fallback above: live commands and non-narration history
+now always start collapsed, including unknown/unsupported connections and
+residents who opted out. The Show commands / Hide commands control is always
+available. Commentary, plans, warnings and lifecycle status remain visible;
+completion minimisation and preserving a user's expansion on refresh are unchanged.
+
+Focused component coverage: 10 passing tests across supported, unsupported,
+unknown, absent capability metadata, opt-out and incoming narration states.
+Production rollout is separate; the resident development container has no
+production deployment credentials.
