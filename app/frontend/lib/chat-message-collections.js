@@ -16,7 +16,12 @@ export function removeMessageFromCollections({ recentMessages = [], olderMessage
     messages
       .filter((message) => message.id !== messageId)
       .map((message) =>
-        previous?.progress_message && message.id === previous.id ? { ...message, progress_break_after: true } : message
+        previous?.role === 'assistant' &&
+        previous.agent_id &&
+        previous.runtime_interaction_id &&
+        message.id === previous.id
+          ? { ...message, progress_break_after: true }
+          : message
       );
   return { recentMessages: remove(recentMessages), olderMessages: remove(olderMessages) };
 }

@@ -6,17 +6,17 @@ const post = (id, overrides = {}) => ({
   id,
   agent_id: 1,
   runtime_interaction_id: 10,
-  progress_message: true,
+  role: 'assistant',
   ...overrides,
 });
 const sizes = (messages, visible = messages) =>
   progressMessageGroups(messages, visible).map((group) => group.messages.length);
 
 describe('progress grouping', () => {
-  it('groups only consecutive explicit progress from the same resident and wake', () => {
+  it('groups only consecutive ordinary posts from the same resident and wake', () => {
     expect(sizes([post(1), post(2), post(3)])).toEqual([3]);
     for (const boundary of [
-      { progress_message: false },
+      { role: 'user' },
       { agent_id: 2 },
       { runtime_interaction_id: 11 },
       { runtime_interaction_id: null },
@@ -27,11 +27,11 @@ describe('progress grouping', () => {
   });
   it('does not bridge a deleted or hidden interruption', () => {
     expect(sizes([post(1, { progress_break_after: true }), post(3)])).toEqual([1, 1]);
-    const messages = [post(1), post(2, { progress_message: false }), post(3)];
+    const messages = [post(1), post(2, { role: 'user' }), post(3)];
     expect(sizes(messages, [messages[0], messages[2]])).toEqual([1, 1]);
   });
   it('marks continuation without changing or joining message bodies', () => {
-    const messages = [post(1), post(2, { progress_message: false }), post(3)];
+    const messages = [post(1), post(2, { role: 'user' }), post(3)];
     const groups = progressMessageGroups(messages);
     expect(groups[2].continued).toBe(true);
     expect(groups[2].message).toBe(messages[2]);
@@ -60,13 +60,15 @@ it('labels elapsed wall time including zero, minutes and hours, not measured eff
 });
 
 it('keeps deliberately published JSON progress visible', () => {
-  expect(isVisibleChatMessage(post(1, { role: 'assistant', content: '{"checked":true}' }))).toBe(true);
+  expect(
+    isVisibleChatMessage(post(1, { progress_message: true, role: 'assistant', content: '{"checked":true}' }))
+  ).toBe(true);
 });
 
 it('sorts late arrivals before grouping, so an older interruption splits speech', () => {
   const first = post(1, { created_at: '2026-09-27T08:00:00Z' });
   const last = post(3, { created_at: '2026-09-27T08:02:00Z' });
-  const late = post(2, { progress_message: false, created_at: '2026-09-27T08:01:00Z' });
+  const late = post(2, { role: 'user', created_at: '2026-09-27T08:01:00Z' });
   const arrivalOrder = [first, last, late];
   const groups = progressMessageGroups(arrivalOrder);
   expect(groups.map((group) => group.messages.map((message) => message.id))).toEqual([[1], [2], [3]]);
@@ -76,9 +78,19 @@ it('sorts late arrivals before grouping, so an older interruption splits speech'
 });
 
 it('keeps equal-timestamp interruptions in their existing order', () => {
-  const messages = [post(1), post(2, { progress_message: false }), post(3)].map((message) => ({
+  const messages = [post(1), post(2, { role: 'user' }), post(3)].map((message) => ({
     ...message,
     created_at: '2026-09-27T08:00:00Z',
   }));
   expect(progressMessageGroups(messages).map((group) => group.message.id)).toEqual([1, 2, 3]);
+});
+
+it('ignores legacy opt-in flags when grouping ordinary messages', () => {
+  expect(sizes([post(1, { progress_message: false }), post(2), post(3, { progress_message: true })])).toEqual([3]);
+});
+
+it('keeps attachment-only ordinary posts visible and groupable', () => {
+  const attachment = post(2, { content: '', files_json: [{ filename: 'result.png' }] });
+  expect(isVisibleChatMessage(attachment)).toBe(true);
+  expect(sizes([post(1), attachment])).toEqual([2]);
 });

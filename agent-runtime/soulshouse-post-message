@@ -44,7 +44,6 @@ def main() -> int:
         metavar="PATH",
         help="attach a local file; repeat for multiple files",
     )
-    parser.add_argument("--progress", action="store_true", help="quiet text update, grouped within the current house run")
     args = parser.parse_args()
 
     # HELIXKIT_* are the pre-rename names. Keep reading them: an older container
@@ -75,15 +74,10 @@ def main() -> int:
 
     url = f"{app_url.rstrip('/')}/api/v1/conversations/{chat_id}/messages"
     run_id = os.environ.get("SOULSHOUSE_RUNTIME_RUN_ID") if os.environ.get("SOULSHOUSE_RUNTIME_CHAT_ID") == chat_id else None
-    if args.progress and (not run_id or attachments):
-        print("--progress requires the current house conversation run and text only", file=sys.stderr)
-        return 66
     if attachments:
         body, content_type = multipart_body(content, attachments, run_id=run_id)
     else:
         payload = {"content": content}
-        if args.progress:
-            payload["progress"] = True
         if run_id:
             payload["runtime_run_id"] = run_id
         body = json.dumps(payload).encode("utf-8")

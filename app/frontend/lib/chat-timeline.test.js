@@ -59,7 +59,7 @@ describe('chat activity timeline', () => {
   });
 
   it('preserves progress groups and hidden-message interruptions', () => {
-    const progress = { progress_message: true, runtime_interaction_id: 1, agent_id: 1 };
+    const progress = { role: 'assistant', runtime_interaction_id: 1, agent_id: 1 };
     const messages = [
       message('a', 1, progress),
       message('b', 3, progress),

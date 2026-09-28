@@ -6,6 +6,18 @@ class HelixkitPostMessageTest < ActiveSupport::TestCase
 
   SCRIPT = Rails.root.join("agent-runtime/soulshouse-post-message")
 
+  # Hosted runs carry real API credentials. Subprocess fixtures must never
+  # inherit them, including when exercising the legacy HELIXKIT_* fallback.
+  setup do
+    keys = %w[SOULSHOUSE_APP_URL SOULSHOUSE_BEARER_TOKEN SOULSHOUSE_RUNTIME_RUN_ID SOULSHOUSE_RUNTIME_CHAT_ID
+              HELIXKIT_APP_URL HELIXKIT_BEARER_TOKEN HELIXKIT_RUNTIME_RUN_ID HELIXKIT_RUNTIME_CHAT_ID]
+    @runtime_environment = keys.to_h { |key| [ key, ENV.delete(key) ] }
+  end
+
+  teardown do
+    @runtime_environment.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+  end
+
   test "help documents attachments and the canonical runtime manual" do
     stdout, stderr, status = Open3.capture3("python3", SCRIPT.to_s, "--help")
 
@@ -135,23 +147,16 @@ class HelixkitPostMessageTest < ActiveSupport::TestCase
     end
   end
 
-  test "progress flag requires the current room run and preserves literal stdin" do
+  test "ordinary posts carry the current room run and preserve literal stdin" do
     request = capture_request do |url|
       _stdout, stderr, status = Open3.capture3(
         { "SOULSHOUSE_APP_URL" => url, "SOULSHOUSE_BEARER_TOKEN" => "hx_test",
           "SOULSHOUSE_RUNTIME_RUN_ID" => "run-123", "SOULSHOUSE_RUNTIME_CHAT_ID" => "chat-123" },
-        "python3", SCRIPT.to_s, "chat-123", "--progress", stdin_data: "Checking $value `code`"
+        "python3", SCRIPT.to_s, "chat-123", stdin_data: "Checking $value `code`"
       )
       assert status.success?, stderr
     end
-    assert_equal({ "content" => "Checking $value `code`", "runtime_run_id" => "run-123", "progress" => true }, JSON.parse(request[:body]))
-    _stdout, stderr, status = Open3.capture3(
-      { "SOULSHOUSE_APP_URL" => "http://127.0.0.1:1", "SOULSHOUSE_BEARER_TOKEN" => "hx_test",
-        "SOULSHOUSE_RUNTIME_RUN_ID" => "run-123", "SOULSHOUSE_RUNTIME_CHAT_ID" => "chat-123" },
-      "python3", SCRIPT.to_s, "other-room", "--progress", stdin_data: "Checking"
-    )
-    assert_equal 66, status.exitstatus
-    assert_includes stderr, "current house conversation run"
+    assert_equal({ "content" => "Checking $value `code`", "runtime_run_id" => "run-123" }, JSON.parse(request[:body]))
   end
 
   private

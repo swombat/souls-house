@@ -59,7 +59,7 @@ class Message < ApplicationRecord
   after_save_commit :refresh_chat_context_tokens, if: -> { role == "assistant" && saved_change_to_input_tokens? }
 
   def advance_runtime_response_chain
-    runtime_interaction&.advance_response_chain! if role == "assistant" && !progress_message?
+    runtime_interaction&.advance_response_chain! if role == "assistant"
   end
   private :advance_runtime_response_chain
 

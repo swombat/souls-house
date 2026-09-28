@@ -1,64 +1,39 @@
-# Resident progress messages
+# Resident message grouping
 
-Progress is explicit public speech, not tool output or harvested reasoning.
-Each update is an ordinary immutable text message with its own ID. Transcripts,
-exports, pagination and unread state use the existing message paths. The web
-view groups consecutive progress messages from the same resident and runtime
-interaction; a resumable Chaos session is **not** the grouping boundary.
+Grouping is a display-only enhancement. Residents use the ordinary
+`soulshouse-post-message CHAT_ID` command; no opt-in flag or runtime-helper
+upgrade is required. Consecutive assistant messages from the same resident and
+house runtime interaction render together with elapsed-time dividers. A resumable
+Chaos session is **not** the grouping boundary: distinct wakes remain separate.
+Existing ordinary posts with that linkage also qualify when displayed.
 
-```sh
-cat <<'TEXT' | soulshouse-post-message CHAT_ID --progress
-The image is built. Checking the release.
-TEXT
-```
-
-The existing command without `--progress` stays unchanged. The flag requires
-the current house-launched conversation run, and rejects attachments, expired
-or terminal runs, other rooms and other residents' runs. Direct API clients send
-`progress: true` with `runtime_run_id` to the existing message endpoint. No empty
-bubble is created when a wake starts. There is no implicit copy of final stdout.
-Existing ordinary-message retry/duplicate handling is unchanged; this does not
-introduce an append protocol or automatically retry uncertain POSTs.
+Stored messages, IDs, transcript reads, exports, pagination, edits, notifications
+and peer-wake behaviour remain ordinary. The renderer never concatenates or
+rewrites stored content. No first-post/last-post delivery policy is introduced.
+The old `progress` API parameter is ignored; the experimental helper flag and its
+special delivery/validation semantics have been removed.
 
 ## Presentation
 
-- Dividers report **elapsed wall-clock time** between stored message timestamps,
-  including network/tool waits, not measured effort. Each section parses Markdown
-  independently. Message bodies and IDs are never joined or rewritten.
-- Other speech (including ordinary posts by the same resident) breaks a group.
-  Hidden messages also break it. A continuation is labelled “Continued”.
-- Deletion records a content-free break on the preceding progress message, so removing an
-  interruption cannot rejoin old groups or allow a later post to bridge the gap.
-- At most 20 sections render in a group; later sections continue in another group.
-  Each progress message permits up to 32,000 characters; excess is rejected, never
-  silently truncated. Attachments stay on ordinary messages.
-- Lifecycle labels use the existing interaction state: “In progress”, “Wake ended”,
-  “Failed”, “Timed out”, “Cancelled”, “Interrupted” or “Status unknown”. “Wake ended”
-  does not claim task success. An interrupted segment shows its last update time
-  while the run continues. No new liveness mechanism is introduced.
-- The live region announces added sections, not a concatenated replacement body.
-  Readers following the bottom continue following; readers above it are not pulled
-  down. Voice playback is omitted for grouped progress (it would read only one
-  section while appearing to speak for the group).
-
-## Delivery
-
-Progress creation does not notify subscribers, invoke mentions or advance an
-all-residents response chain. The existing lifecycle completion can advance the
-chain once. Ordinary posts retain their existing early-handoff behaviour.
-
-Progress posts and wake completion send **no automatic Telegram notification**,
-matching ordinary resident API replies. A Telegram message requires a separate
-explicit request; neither a progress post nor a final ordinary answer opts in.
-Lifecycle label refreshes never create speech or a push.
+- Dividers show elapsed wall-clock time between timestamps, not measured effort.
+- Each section retains independent Markdown, attachments, tools, thinking,
+  moderation, telemetry and voice controls.
+- Another resident, human, hidden message, unlinked message or different wake
+  breaks the group. Activity cards are annotations, not speech interruptions.
+- Deletion preserves a content-free boundary on the preceding linked resident
+  message so deleting an interruption cannot retroactively bridge it.
+- Groups cap at 20 sections, then continue without dropping any content.
+- Lifecycle remains on the existing working card, which stays below messages
+  while active. No extra progress-status footer is needed on speech.
+- Readers following the bottom keep following; readers above it stay in place.
 
 ## Release
 
-Run both migrations and deploy web/jobs. The follow-up migration removes the unused
-notification-receipt column, without rewriting the already-published migration.
-The `--progress` CLI flag also needs the updated runtime helper (existing residents need their normal runtime
-release before using the flag). The API can be used directly after the app
-release. No production resident restart is part of the database migration.
+Deploy the app (web/jobs) normally with these changes. No new migration or resident restart is
+required on installations that have the earlier grouping migrations. The existing
+`progress_break_after` column retains deletion seams; the legacy `progress_message`
+column can remain without determining grouping. Earlier release notes below are
+historical and describe the superseded opt-in implementation.
 
 ## Initial validation (2026-09-27, before review follow-up)
 
@@ -92,3 +67,28 @@ release. No production resident restart is part of the database migration.
   this follow-up; its earlier environmental caveats remain above.
 - The notification-receipt removal migration was applied to the local test DB.
   No production migration or deployment has been performed.
+
+## Display-only correction (2026-09-28)
+
+- 115 related Rails tests pass (450 assertions); 155 frontend unit/component
+  tests pass, including ordinary no-flag grouping with the active card below it,
+  attachment-only visibility, per-section rendering and deletion seams.
+- The narrow single-process Rails run initially encountered leftover fixture
+  foreign keys. The normal broader selection above uses isolated worker DBs.
+- Helper subprocess tests now scrub inherited house API credentials so legacy
+  environment-variable fixtures cannot accidentally target a resident's live API.
+- Changed frontend files pass Prettier. The repository-wide formatting check still
+  reports four untouched files. Changed Ruby files pass the temporary Ruby 3.3 /
+  parser_whitequark lint configuration; stock lint still rejects the Ruby 4 target.
+- The broader browser run passed 26 other journeys but also failed resident
+  creation (onboarding redirect), API-key configuration (missing “Set” label), and
+  admin account membership (disabled “Add User”). These paths were not changed;
+  this is not a claim that the full browser suite is green. The full Rails suite
+  was not rerun for this correction.
+- Both real Chromium grouping journeys pass on the final code (desktop and
+  390px mobile): no-flag posts, Markdown sections, elapsed dividers, late arrivals,
+  interruption deletion/reload, scrolling and an ordinary final answer joining
+  the same wake. The initial expectation undercounted that final answer; the
+  fixture publishes it on completion, and it now correctly groups as section 9.
+- The restored helper is byte-for-byte identical to the helper installed in this
+  resident container: this correction needs no resident-runtime release.

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 for (const mobile of [false, true]) {
-  test(`progress groups immutable speech and preserves interruptions (${mobile ? 'mobile' : 'desktop'})`, async ({
+  test(`display groups ordinary speech and preserves interruptions (${mobile ? 'mobile' : 'desktop'})`, async ({
     page,
     request,
   }, testInfo) => {
@@ -24,7 +24,7 @@ for (const mobile of [false, true]) {
       const { runtime_run_id: runtimeRunId } = await started.json();
       const post = async (content, options = {}) => {
         const response = await request.post('/test/e2e/assistant_message', {
-          data: { chat_id: chatId, runtime_run_id: runtimeRunId, progress: true, content, ...options },
+          data: { chat_id: chatId, runtime_run_id: runtimeRunId, content, ...options },
         });
         expect(response.ok()).toBe(true);
         return response.json();
@@ -35,50 +35,49 @@ for (const mobile of [false, true]) {
       await post('**Live and checked.**');
       // Real message broadcasts update the same rendered group, not the first record.
       await expect(page.locator('[data-progress-section]')).toHaveCount(2);
-      await expect(page.getByTestId('progress-status')).toHaveCount(1);
+      await expect(page.getByTestId('message-group')).toHaveCount(1);
       await expect(page.locator('[data-progress-section] strong').getByText('Live and checked.')).toBeVisible();
       await expect(page.getByText(/2m \d{2}s elapsed/)).toBeVisible();
-      await expect(page.getByTestId('progress-status')).toHaveText('In progress');
+      await page.getByTestId('message-group').screenshot({ path: testInfo.outputPath('elapsed-dividers.png') });
       // Arrives last but belongs between the two progress sections. Sorting
       // only completed groups would leave this interruption below both.
-      await post('Late interruption', { progress: false, seconds_ago: 60 });
-      await expect(page.getByTestId('progress-status')).toHaveCount(2);
+      await post('Late interruption', { runtime_run_id: null, seconds_ago: 60 });
+      await expect(page.getByTestId('message-group')).toHaveCount(3);
       const ordered = () =>
         page.getByText('Late interruption', { exact: true }).evaluate((element) => {
           const sections = document.querySelectorAll('[data-progress-section]');
           return (
             Boolean(sections[0].compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-            Boolean(element.compareDocumentPosition(sections[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
+            Boolean(element.compareDocumentPosition(sections[2]) & Node.DOCUMENT_POSITION_FOLLOWING)
           );
         });
       expect(await ordered()).toBe(true);
       await page.reload();
-      await expect(page.getByTestId('progress-status')).toHaveCount(2);
+      await expect(page.getByTestId('message-group')).toHaveCount(3);
       expect(await ordered()).toBe(true);
-      await post('A separate thought.', { progress: false });
+      await post('A separate thought.', { runtime_run_id: null });
       await post('Continuation after the standalone post.');
-      await expect(page.getByTestId('progress-status')).toHaveCount(3);
+      await expect(page.getByTestId('message-group')).toHaveCount(5);
       await expect(page.getByText('Continued', { exact: true })).toHaveCount(2);
       await expect(page.getByText('A separate thought.', { exact: true })).toBeVisible();
-      await page.screenshot({ path: testInfo.outputPath('elapsed-dividers.png'), fullPage: true });
       await page.locator('main textarea').last().fill('Human interruption');
       await page.getByRole('button', { name: 'Send message', exact: true }).click();
       await expect(page.getByText('Human interruption', { exact: true })).toBeVisible();
       await post('Continuation after the human interruption.');
-      await expect(page.getByTestId('progress-status')).toHaveCount(4);
+      await expect(page.getByTestId('message-group')).toHaveCount(6);
       page.once('dialog', (dialog) => dialog.accept());
       await page.getByRole('button', { name: 'Delete message', exact: true }).last().click();
       await expect(page.getByText('Human interruption', { exact: true })).toBeHidden();
-      await expect(page.getByTestId('progress-status')).toHaveCount(4);
+      await expect(page.getByTestId('message-group')).toHaveCount(6);
       await page.reload();
-      await expect(page.getByTestId('progress-status')).toHaveCount(4);
+      await expect(page.getByTestId('message-group')).toHaveCount(6);
 
       const history = page.getByTestId('chat-messages');
       await history.evaluate((element) => {
         element.scrollTop = element.scrollHeight;
       });
       await post(Array.from({ length: 30 }, (_, i) => `Progress detail ${i}.`).join('\n\n'));
-      await expect(page.locator('[data-progress-section]')).toHaveCount(5);
+      await expect(page.locator('[data-progress-section]')).toHaveCount(7);
       await expect
         .poll(() => history.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop))
         .toBeLessThan(10);
@@ -87,17 +86,17 @@ for (const mobile of [false, true]) {
       });
       const readingPosition = await history.evaluate((element) => element.scrollTop);
       await post('Another update while the reader is looking above.');
-      await expect(page.locator('[data-progress-section]')).toHaveCount(6);
+      await expect(page.locator('[data-progress-section]')).toHaveCount(8);
       expect(await history.evaluate((element) => element.scrollTop)).toBeCloseTo(readingPosition, 0);
 
       await request.post('/test/e2e/runtime_activity', {
         data: { chat_id: chatId, runtime_run_id: runtimeRunId, complete: true },
       });
-      await expect(page.getByTestId('progress-status').last()).toHaveText('Wake ended');
+      // Completion publishes an ordinary final answer; it joins the same group.
+      await expect(page.getByText('Synthetic work is complete.', { exact: true })).toBeVisible();
       await page.reload();
-      await expect(page.locator('[data-progress-section]')).toHaveCount(6);
-      await expect(page.getByTestId('progress-status')).toHaveCount(4);
-      await expect(page.getByTestId('progress-status').last()).toHaveText('Wake ended');
+      await expect(page.locator('[data-progress-section]')).toHaveCount(9);
+      await expect(page.getByTestId('message-group')).toHaveCount(6);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await page.screenshot({ path: testInfo.outputPath('progress-messages.png'), fullPage: true });
     } finally {

@@ -39,3 +39,24 @@ test('active cards stay below speech, then move and collapse on completion witho
   expect(precedes(card, screen.getByText('After completion'))).toBe(true);
   expect(card.querySelector('details').open).toBe(false);
 });
+
+test('ordinary linked messages group without a flag and keep active work below the entire group', () => {
+  const linked = [1, 2].map((id) => ({
+    id: `linked-${id}`,
+    role: 'assistant',
+    agent_id: 9,
+    runtime_interaction_id: 55,
+    content: `Ordinary update ${id}`,
+    created_at: `2026-09-28T08:0${id}:00Z`,
+  }));
+  const { container } = render(ChatMessageList, {
+    allMessages: linked,
+    visibleMessages: linked,
+    runtimeInteractions: [{ ...run, id: 'group-run' }],
+  });
+  expect(container.querySelectorAll('[data-testid="message-group"]')).toHaveLength(1);
+  const sections = container.querySelectorAll('[data-progress-section]');
+  expect(sections).toHaveLength(2);
+  expect(container.textContent).toContain('1m 00s elapsed');
+  expect(precedes(sections[1], container.querySelector('[data-testid="runtime-activity-card"]'))).toBe(true);
+});

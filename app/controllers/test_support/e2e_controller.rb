@@ -84,7 +84,6 @@ module TestSupport
         content: params.fetch(:content),
         thinking: params[:thinking],
         streaming: false,
-        progress_message: params[:progress] == true,
         runtime_interaction: params[:runtime_run_id] && chat.agent_runtime_interactions.find_by!(run_id: params[:runtime_run_id]),
         created_at: Time.current - params.fetch(:seconds_ago, 0).to_i.clamp(0, 3600).seconds
       )

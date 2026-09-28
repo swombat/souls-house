@@ -2,7 +2,7 @@ const RESPONSE_TIMEOUT_MS = 60 * 1000;
 
 export function isVisibleChatMessage(message) {
   if (message.role === 'tool') return false;
-  if (message.progress_message) return true;
+  if (message.progress_message || message.files_json?.length) return true;
 
   if (message.role === 'assistant' && (!message.content || message.content.trim() === '') && !message.streaming) {
     return false;

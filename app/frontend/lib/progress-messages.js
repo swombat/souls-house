@@ -11,7 +11,7 @@ export function progressMessageGroups(messages, visibleMessages = messages) {
   let previous = null;
   for (const message of ordered) {
     const key =
-      message.progress_message && message.runtime_interaction_id && message.agent_id
+      message.role === 'assistant' && message.runtime_interaction_id && message.agent_id
         ? `${message.agent_id}:${message.runtime_interaction_id}`
         : null;
     if (!visible.has(message.id)) {

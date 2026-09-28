@@ -31,35 +31,11 @@ class ProgressMessagesTest < ActiveSupport::TestCase
     assert first.reload.progress_break_after?
   end
 
-  test "progress and completion stay silent even with an ordinary final answer" do
-    @agent.update!(telegram_bot_token: "test-token", telegram_bot_username: "test_bot")
-    @agent.telegram_subscriptions.create!(user: users(:confirmed_user), telegram_chat_id: 12345)
+  test "groupable posts retain ordinary response-chain behaviour without Telegram pushes" do
     @run.update!(response_chain_agent_ids: [ agents(:code_reviewer).id ])
-    assert_no_enqueued_jobs(only: TelegramNotificationJob) do
-      assert_no_enqueued_jobs(only: AllAgentsResponseJob) { progress("Starting") }
-      last = progress("Checking")
-      @chat.messages.create!(role: "assistant", agent: @agent, runtime_interaction: @run, content: "Final answer")
-      @run.finish_execution!("completed")
-      assert_equal "Wake ended", last.reload.progress_status
-    end
-  end
-
-  test "failed and lost runs do not imply task success or stay in progress" do
-    message = progress("Checking")
-    @run.update!(execution_deadline_at: 1.second.ago)
-    assert_equal "Status unknown", message.reload.progress_status
-    @run.finish_execution!("failed")
-    assert_equal "Failed", message.reload.progress_status
-  end
-
-  test "progress-only wake completion advances the peer chain without a push" do
-    @agent.update!(telegram_bot_token: "test-token", telegram_bot_username: "test_bot")
-    @agent.telegram_subscriptions.create!(user: users(:confirmed_user), telegram_chat_id: 12345)
-    @run.update!(response_chain_agent_ids: [ agents(:code_reviewer).id ])
-    progress("Published update")
     assert_no_enqueued_jobs(only: TelegramNotificationJob) do
       assert_enqueued_jobs 1, only: AllAgentsResponseJob do
-        @run.finish_execution!("completed")
+        progress("Starting")
       end
     end
   end
@@ -71,9 +47,9 @@ class ProgressMessagesTest < ActiveSupport::TestCase
     assert_nil first.reload.runtime_interaction_id
     first.update!(moderation_scores: { "test" => 0.1 })
     following.destroy!
-    assert first.reload.progress_break_after?
-    assert_not first.update(content: "Rewritten")
-    assert_equal "Kept speech", first.reload.content
+    assert_not first.reload.progress_break_after?
+    assert first.update(content: "Rewritten")
+    assert_equal "Rewritten", first.reload.content
   end
 
   test "deleting a message does not validate or mark an ordinary predecessor" do
@@ -98,7 +74,7 @@ class ProgressMessagesTest < ActiveSupport::TestCase
 
   def progress(content)
     @chat.messages.create!(role: "assistant", agent: @agent, runtime_interaction: @run,
-      progress_message: true, content: content)
+      content: content)
   end
 
 end

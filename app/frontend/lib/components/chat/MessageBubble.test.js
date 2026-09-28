@@ -28,3 +28,23 @@ test('streaming messages still complete unfinished formatting', () => {
   });
   expect(container.querySelector('strong')?.textContent).toBe('Arriving words');
 });
+
+test('ordinary grouped sections keep independent Markdown, files, tools and voice controls', async () => {
+  const first = { id: 'a', role: 'assistant', content: '```text\nunclosed', created_at: '2026-09-28T08:00:00Z' };
+  const second = {
+    id: 'b',
+    role: 'assistant',
+    content: '**Checked.**',
+    created_at: '2026-09-28T08:02:03Z',
+    files_json: [{ id: 'file', filename: 'report.txt', content_type: 'text/plain', url: '/report.txt' }],
+    tools_used: ['web_search'],
+    voice_available: true,
+  };
+  const { container } = render(MessageBubble, { message: first, progressMessages: [first, second] });
+  expect(container.querySelectorAll('section')).toHaveLength(2);
+  expect(container.querySelector('strong')?.textContent).toBe('Checked.');
+  expect(container.textContent).toContain('2m 03s elapsed');
+  expect(container.textContent).toContain('report.txt');
+  expect(container.querySelector('button[title="Play voice"]')).not.toBeNull();
+  expect(container.textContent).not.toContain('Status unknown');
+});

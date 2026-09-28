@@ -103,13 +103,11 @@
           {message}
           progressMessages={item.group.runKey ? item.group.messages : []}
           progressContinued={item.group.continued}
-          progressLastForRun={item.group.lastForRun}
-          progressRuntime={runtimeInteractions.find((run) => run.run_id === message.progress_run_id)}
-          progressIsTail={item.group.isTail}
           isLastVisible={index === timelineItems.length - 1}
           isGroupChat={chat?.manual_responses}
           {showMessageTelemetry}
           streamingThinking={streamingThinking[message.id] || ''}
+          sectionThinking={streamingThinking}
           {shikiTheme}
           onedit={startEditingMessage}
           ondelete={deleteMessage}
