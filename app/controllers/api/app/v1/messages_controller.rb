@@ -1,8 +1,9 @@
 module Api
   module App
     module V1
-      # History pages, newest first by id, for scrolling back. A page is not a
-      # sync checkpoint: reconciliation goes through ChangesController.
+      # History pages for scrolling back: each page is the newest `limit` kept
+      # messages before `before`, returned oldest first (chronological). A page
+      # is not a sync checkpoint: reconciliation goes through ChangesController.
       class MessagesController < BaseController
 
         DEFAULT_LIMIT = 30

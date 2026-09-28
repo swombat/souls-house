@@ -5,16 +5,20 @@ module Api
       # the client's cursor, in revision order: current state for kept messages,
       # a marker for discarded ones. Revisions are allocated under the chat row
       # lock inside the writing transaction, so they commit in order and a row
-      # can never commit behind a cursor that has already passed it. Bootstrap
-      # is since=0.
+      # can never commit behind a cursor that has already passed it. since is
+      # required: bootstrap is an explicit since=0, and a missing cursor is a
+      # 422 rather than a silent re-sync from the start.
       class ChangesController < BaseController
 
+        # messages.revision is a signed bigint; a larger cursor would overflow
+        # the query instead of failing validation.
+        MAX_REVISION = 2**63 - 1
         DEFAULT_LIMIT = 100
         MAX_LIMIT = 500
 
         def index
           chat = find_conversation!(params[:conversation_id])
-          since = bounded_integer(:since, default: :required, min: 0) or return
+          since = bounded_integer(:since, default: :required, min: 0, max: MAX_REVISION) or return
           limit = bounded_integer(:limit, default: DEFAULT_LIMIT, min: 1, max: MAX_LIMIT) or return
 
           # Read the head before the page: anything committed after this read

@@ -33,8 +33,15 @@ module Api
 
         # A discarded message is a marker: identity and revision only. Its
         # retained body and attachments stay server-side (ADR 0001).
+        #
+        # Native replies arrive complete (ADR 0004). Streaming chunks don't take
+        # a revision, so a row mid-stream is shown with its body withheld and
+        # completed: false; stop_streaming saves, bumps the revision, and the
+        # finished reply reaches the client through changes.
         def message(message, viewer:)
           return discarded_marker(message) if message.discarded?
+
+          streaming = message.streaming?
 
           {
             id: message.to_param,
@@ -43,9 +50,9 @@ module Api
             discarded: false,
             role: message.role,
             author: author(message),
-            content: message.content,
-            completed: message.completed?,
-            attachments: attachments(message),
+            content: (streaming ? "" : message.content),
+            completed: !streaming && message.completed?,
+            attachments: (streaming ? [] : attachments(message)),
             client_message_id: (message.client_message_id if message.user_id.present? && message.user_id == viewer.id),
             created_at: message.created_at.iso8601(6),
             updated_at: message.updated_at.iso8601(6)

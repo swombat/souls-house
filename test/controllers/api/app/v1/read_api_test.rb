@@ -123,6 +123,48 @@ class Api::App::V1::ReadApiTest < ActionDispatch::IntegrationTest
     assert_error :unprocessable_entity, "invalid_parameter"
   end
 
+  test "since is bounded to the bigint revision column" do
+    max = Api::App::V1::ChangesController::MAX_REVISION
+    get "/api/app/v1/conversations/#{@chat.to_param}/changes", params: { since: max }, headers: bearer(@tokens)
+    assert_response :success
+    assert_equal max, response.parsed_body["next_since"]
+    get "/api/app/v1/conversations/#{@chat.to_param}/changes", params: { since: (max + 1).to_s }, headers: bearer(@tokens)
+    assert_error :unprocessable_entity, "invalid_parameter"
+  end
+
+  test "a reply mid-stream is withheld until it finishes, then arrives at a new revision" do
+    reply = @chat.messages.create!(role: "assistant", content: "")
+    reply.stream_content("unfinished sentence")
+
+    get "/api/app/v1/conversations/#{@chat.to_param}/changes", params: { since: 0 }, headers: bearer(@tokens)
+    assert_response :success
+    state = response.parsed_body["changes"].find { |m| m["id"] == reply.to_param }
+    assert_equal false, state["completed"]
+    assert_equal "", state["content"]
+    assert_not_includes response.body, "unfinished sentence"
+    cursor = response.parsed_body["next_since"]
+
+    get "/api/app/v1/conversations/#{@chat.to_param}/messages", headers: bearer(@tokens)
+    assert_not_includes response.body, "unfinished sentence", "history uses the same presenter"
+
+    reply.stream_content(", now finished")
+    reply.reload.stop_streaming
+
+    get "/api/app/v1/conversations/#{@chat.to_param}/changes", params: { since: cursor }, headers: bearer(@tokens)
+    final = response.parsed_body["changes"].find { |m| m["id"] == reply.to_param }
+    assert final, "the finished reply is past the cursor that saw it mid-stream"
+    assert_equal true, final["completed"]
+    assert_equal "unfinished sentence, now finished", final["content"]
+    assert_operator final["revision"], :>, cursor
+  end
+
+  test "history returns a page in chronological order" do
+    first = @chat.messages.create!(role: "user", user: @user, content: "first")
+    second = @chat.messages.create!(role: "user", user: @user, content: "second")
+    get "/api/app/v1/conversations/#{@chat.to_param}/messages", headers: bearer(@tokens)
+    assert_equal [ first.to_param, second.to_param ], response.parsed_body["messages"].map { |m| m["id"] }
+  end
+
   test "bootstrap from since=0 returns every message in revision order, discarded ones as bare markers" do
     a = @chat.messages.create!(role: "user", user: @user, content: "hello")
     b = @chat.messages.create!(role: "user", user: @user, content: "secret")
