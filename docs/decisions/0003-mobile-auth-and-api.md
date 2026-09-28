@@ -39,6 +39,10 @@ silently change permissions and expose the wrong contract.
   lists only those memberships; it grants no further authority. Test the same
   checks across HTTP, Cable and attachments. Current confirmed membership and permissions are
   checked; a user identity alone must never expand token authority.
+- Mobile message edit/discard is restricted to the author's own human messages,
+  with no site-admin override. This is intentionally narrower than the web's
+  administrative controls; confirmed account membership is still required.
+  Admin-only restoration remains a separate operation under ADR 0001.
 - Ordinary Rails controllers expose `/api/app/v1` with a dedicated presenter,
   stable error shapes and request IDs. Do not expose Inertia props or the agent
   transcript as the phone contract. Share authorised product operations (including

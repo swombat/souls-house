@@ -54,8 +54,13 @@ transaction after the client's cursor has passed it.
   identical submissions safely; reject conflicting payloads (proposed 409).
   Persist identity and comparison data through edit/discard/restore. Never
   resurrect discarded content or invoke a resident twice on a retry.
-- `Messages::PostFromHuman` gives web and phone the same permission/trigger
-  semantics. Test parity and failure/retry boundaries, including attachment upload
+- A new client identity still undergoes normal send validation, including the
+  existing same-as-last-content guard (`422 duplicate_message` on mobile).
+  Do not bypass it merely because a key is present; an identical retry of an
+  already accepted identity still returns its current state without re-sending.
+- `Messages::PostFromHuman` gives web and phone the same human-send trigger
+  semantics; mobile edit/discard permissions are specified separately in ADR 0003.
+  Test parity and failure/retry boundaries, including attachment upload
   completion not being equivalent to message acceptance.
 - A discard marker hides recoverable content; it does not erase it. Retained rows
   can support non-expiring sync markers in v1, but this is an explicit retention
