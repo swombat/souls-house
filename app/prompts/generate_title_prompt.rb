@@ -27,7 +27,7 @@ class GenerateTitlePrompt
   end
 
   def build_conversation_lines
-    chat.messages
+    chat.messages.kept
         .order(:created_at)
         .limit(MAX_MESSAGES)
         .map { |message| format_message_line(message) }

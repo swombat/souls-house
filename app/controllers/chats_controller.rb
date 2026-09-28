@@ -41,7 +41,7 @@ class ChatsController < ApplicationController
 
     if inertia_prop_requested?(:messages)
       messages = @chat.messages_page
-      has_more = messages.any? && @chat.messages.where("id < ?", messages.first.id).exists?
+      has_more = messages.any? && @chat.messages.kept.where("id < ?", messages.first.id).exists?
       interaction_costs = InteractionCostsByMessage.new(chat: @chat, messages: messages).call
       props[:messages] = messages.map { |message| message_json(message, interaction_costs[message.id]) }
       props[:has_more_messages] = has_more

@@ -366,21 +366,48 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
 
   # Delete Message feature tests
 
-  test "deletes message" do
+  test "deletes message by discarding it" do
     message = @chat.messages.create!(user: @user, role: "user", content: "To be deleted")
 
-    assert_difference "Message.count", -1 do
+    assert_no_difference "Message.count" do
+      assert_difference "Message.kept.count", -1 do
+        delete message_path(message), as: :json
+      end
+    end
+
+    assert_response :ok
+    assert message.reload.discarded?
+    assert_equal "To be deleted", message.content
+  end
+
+  test "deleting an already-deleted message is a no-op" do
+    message = @chat.messages.create!(user: @user, role: "user", content: "Twice")
+    delete message_path(message), as: :json
+    revision = message.reload.revision
+
+    assert_no_difference "AuditLog.count" do
       delete message_path(message), as: :json
     end
 
     assert_response :ok
+    assert_equal revision, message.reload.revision
+  end
+
+  test "a deleted message cannot be edited" do
+    message = @chat.messages.create!(user: @user, role: "user", content: "Gone")
+    message.discard!
+
+    patch message_path(message), params: { message: { content: "Back" } }, as: :json
+
+    assert_response :not_found
+    assert_equal "Gone", message.reload.content
   end
 
   test "can delete message even with subsequent messages" do
     message = @chat.messages.create!(user: @user, role: "user", content: "Original")
     @chat.messages.create!(role: "assistant", content: "Response")
 
-    assert_difference "Message.count", -1 do
+    assert_difference "Message.kept.count", -1 do
       delete message_path(message), as: :json
     end
 
@@ -392,7 +419,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     other_user.profile.update!(first_name: "Other", last_name: "User")
     message = @chat.messages.create!(user: other_user, role: "user", content: "Their message")
 
-    assert_no_difference "Message.count" do
+    assert_no_difference "Message.kept.count" do
       delete message_path(message), as: :json
     end
 
@@ -402,7 +429,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
   test "cannot delete assistant messages" do
     message = @chat.messages.create!(role: "assistant", content: "AI response")
 
-    assert_no_difference "Message.count" do
+    assert_no_difference "Message.kept.count" do
       delete message_path(message), as: :json
     end
 
@@ -416,7 +443,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     other_chat = other_account.chats.create!(model_id: "gpt-4o")
     other_message = other_chat.messages.create!(user: other_user, role: "user", content: "Their message")
 
-    assert_no_difference "Message.count" do
+    assert_no_difference "Message.kept.count" do
       delete message_path(other_message), as: :json
     end
 
@@ -494,7 +521,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     admin_user = users(:site_admin_user)
     post login_path, params: { email_address: admin_user.email_address, password: "password123" }
 
-    assert_difference "Message.count", -1 do
+    assert_difference "Message.kept.count", -1 do
       delete message_path(message), as: :json
     end
 

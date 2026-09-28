@@ -8,7 +8,7 @@ class MessagesController < ApplicationController
 
   def index
     @messages = @chat.messages_page(before_id: params[:before_id])
-    @has_more = @messages.any? && @chat.messages.where("id < ?", @messages.first.id).exists?
+    @has_more = @messages.any? && @chat.messages.kept.where("id < ?", @messages.first.id).exists?
     interaction_costs = InteractionCostsByMessage.new(chat: @chat, messages: @messages).call
 
     render json: {
@@ -74,9 +74,13 @@ class MessagesController < ApplicationController
     end
   end
 
+  # Delete is discard (#92): the row and its content stay, hidden from every
+  # transcript and restorable by an admin. Repeating it is a no-op.
   def destroy
-    audit(:delete_message, @message, content: @message.content)
-    @message.destroy!
+    unless @message.discarded?
+      audit(:delete_message, @message, content: @message.content)
+      @message.discard!
+    end
     head :ok
   end
 
@@ -87,7 +91,8 @@ class MessagesController < ApplicationController
   end
 
   def set_message
-    @message = Message.find(params[:id])
+    # Only delete may find an already-discarded message, so a repeat is a no-op.
+    @message = (action_name == "destroy" ? Message : Message.kept).find(params[:id])
     @chat = if Current.user.site_admin
       Chat.find(@message.chat_id)
     else

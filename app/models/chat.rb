@@ -159,14 +159,14 @@ class Chat < ApplicationRecord
   end
 
   def message_count
-    messages.count
+    messages.kept.count
   end
 
   # Returns paginated messages for display
   # Uses cursor-based pagination with before_id for efficient loading of older messages
   # Returns the most recent N messages that are older than before_id, in ascending order for display
   def messages_page(before_id: nil, limit: 30)
-    scope = messages.includes(:user, :agent, :runtime_interaction).with_attached_attachments.with_attached_audio_recording
+    scope = messages.kept.includes(:user, :agent, :runtime_interaction).with_attached_attachments.with_attached_audio_recording
     scope = scope.where("messages.id < ?", Message.decode_id(before_id)) if before_id.present?
     # Use reorder to replace the association ordering,
     # get the most recent messages by ordering by ID DESC, limit, then reverse for display
@@ -176,7 +176,7 @@ class Chat < ApplicationRecord
   # Worst-case input-token pressure across recent assistant turns. Cached on the row so the chats
   # sidebar can include it without N+1 queries; refreshed by Message after_save_commit.
   def recalculate_context_tokens!
-    value = messages.where(role: "assistant").reorder(created_at: :desc).limit(10).maximum(:input_tokens) || 0
+    value = messages.kept.where(role: "assistant").reorder(created_at: :desc).limit(10).maximum(:input_tokens) || 0
     return if value == context_tokens
     update_columns(context_tokens: value, updated_at: Time.current)
   end
@@ -211,7 +211,7 @@ class Chat < ApplicationRecord
     end
 
     # Add unique human participants from messages
-    messages.unscope(:order).where.not(user_id: nil).distinct.pluck(:user_id).each do |user_id|
+    messages.kept.unscope(:order).where.not(user_id: nil).distinct.pluck(:user_id).each do |user_id|
       user = User.find(user_id)
       participants << {
         type: "human",

@@ -70,7 +70,7 @@ class AgentAttentionFeed
   end
 
   def latest_helixkit_message_ids
-    Message
+    Message.kept
       .where(chat_id: agent.chats.kept.active.select(:id), role: %w[user assistant])
       .select("DISTINCT ON (messages.chat_id) messages.id")
       .reorder("messages.chat_id, messages.created_at DESC, messages.id DESC")

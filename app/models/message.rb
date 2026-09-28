@@ -1,5 +1,6 @@
 class Message < ApplicationRecord
 
+  include Discard::Model
   include Broadcastable
   include ObfuscatesId
   include JsonAttributes
@@ -10,7 +11,6 @@ class Message < ApplicationRecord
   include Message::Progress
   include Message::Streamable
   include Message::Revisioned
-  include Discard::Model
 
   belongs_to :ai_model, optional: true
   belongs_to :parent_tool_call, class_name: "ToolCall", foreign_key: :tool_call_id, optional: true
@@ -50,6 +50,7 @@ class Message < ApplicationRecord
 
     joins(:chat)
       .where(chats: { account_id: account.id, discarded_at: nil })
+      .where(discarded_at: nil)
       .where("messages.content ILIKE ?", "%#{sanitize_sql_like(query)}%")
       .where(role: %w[user assistant])
       .includes(:chat, :user, :agent)
@@ -213,7 +214,7 @@ class Message < ApplicationRecord
 
     # Only check against persisted messages (exclude any unsaved records in the association)
     # Use reorder to override any default scope ordering
-    last_message = chat.messages.where.not(id: nil).reorder(created_at: :desc).first
+    last_message = chat.messages.kept.where.not(id: nil).reorder(created_at: :desc).first
     return if last_message.nil?
 
     if last_message.content == content
