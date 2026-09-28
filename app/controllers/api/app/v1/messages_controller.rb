@@ -65,7 +65,15 @@ module Api
           unless @chat.respondable?
             return render_error(:unprocessable_entity, "conversation_not_respondable", "This conversation is archived and cannot receive new messages")
           end
-          attachment_error(blobs) and return
+          if (refusal = attachment_refusal(blobs))
+            # A same-key twin that committed since the lookup above has taken
+            # these uploads; that is this send's retry, not a refusal.
+            if refusal[1] == "invalid_attachment" && (twin = find_submission(client_message_id))
+              return render_retry(twin, content, blobs)
+            end
+
+            return render_error(*refusal)
+          end
 
           result = begin
             Messages::PostFromHuman.new(chat: @chat, user: current_user, content: content, files: blobs.presence, client_message_id: client_message_id)
@@ -176,20 +184,18 @@ module Api
         # Authority for a file is the upload's: made by this user for this
         # conversation (uploads#create) and not yet part of any message. A
         # signed id alone is not enough, since one can outlive its purpose.
-        # Renders and returns true when a file can't be sent.
-        def attachment_error(blobs)
+        # Returns render_error arguments when a file can't be sent, else nil.
+        def attachment_refusal(blobs)
           blobs.each_with_index do |blob, index|
             upload = blob&.metadata&.dig("app_upload") || {}
             unless blob && upload["user_id"] == current_user.id && upload["chat_id"] == @chat.id && !blob.attachments.exists?
-              render_error :unprocessable_entity, "invalid_attachment", "An attachment is not an upload for this conversation", { index: index }
-              return true
+              return [ :unprocessable_entity, "invalid_attachment", "An attachment is not an upload for this conversation", { index: index } ]
             end
             unless blob.service.exist?(blob.key)
-              render_error :unprocessable_entity, "upload_incomplete", "An attachment has not finished uploading; nothing was saved", { index: index, retryable: true }
-              return true
+              return [ :unprocessable_entity, "upload_incomplete", "An attachment has not finished uploading; nothing was saved", { index: index, retryable: true } ]
             end
           end
-          false
+          nil
         end
 
         def render_retry(message, content, blobs)

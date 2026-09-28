@@ -261,7 +261,48 @@ class Api::App::V1::AttachmentsApiTest < ActionDispatch::IntegrationTest
     assert_equal 1, blob.attachments.count
   end
 
+  test "the same send committing between its identity lookup and the attachment check is a retry" do
+    blob = uploaded_blob
+    winner = committing_after_first_lookup("twin", "early-twin-0001", blob) do
+      send_message("early-twin-0001", "twin", [ blob.signed_id ])
+    end
+    assert winner.created?
+    assert_response :ok
+    assert_equal winner.message.to_param, response.parsed_body.dig("message", "id")
+    assert_equal 1, blob.attachments.count
+  end
+
+  test "a different payload under that key in the same gap is still a conflict" do
+    blob = uploaded_blob
+    winner = committing_after_first_lookup("twin", "early-twin-0002", blob) do
+      send_message("early-twin-0002", "not the twin", [ blob.signed_id ])
+    end
+    assert winner.created?
+    assert_error :conflict, "idempotency_conflict"
+    assert_equal 1, blob.attachments.count
+  end
+
   private
+
+  # Commits a send of +blob+ under +key+ just after the request's first
+  # identity lookup returns, the gap before its attachment check.
+  def committing_after_first_lookup(content, key, blob)
+    chat, user = @chat, @user
+    controller = Api::App::V1::MessagesController
+    original = controller.instance_method(:find_submission)
+    winner = nil
+    controller.send(:define_method, :find_submission) do |client_message_id|
+      original.bind_call(self, client_message_id).tap do
+        winner ||= Messages::PostFromHuman.new(chat: chat, user: user, content: content, files: [ ActiveStorage::Blob.find(blob.id) ], client_message_id: key).call
+      end
+    end
+    controller.send(:private, :find_submission)
+    yield
+    winner
+  ensure
+    controller.send(:define_method, :find_submission, original)
+    controller.send(:private, :find_submission)
+  end
 
   # The disk service's URL carries the blob key in a signed token.
   def blob_behind(url)
