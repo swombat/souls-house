@@ -92,12 +92,20 @@ module Api
           { type: message.author_type, id: id, name: message.author_name }
         end
 
-        # Download URLs arrive with the attachment endpoint (step 4c).
+        # download_path answers with a redirect to a short-lived storage URL
+        # (attachments#show); fetch it with the bearer, follow without it.
         def attachments(message)
           return [] unless message.attachments.attached?
 
+          routes = Rails.application.routes.url_helpers
           message.attachments.map do |file|
-            { id: file.id, filename: file.filename.to_s, content_type: file.content_type, byte_size: file.byte_size }
+            {
+              id: file.id,
+              filename: file.filename.to_s,
+              content_type: file.content_type,
+              byte_size: file.byte_size,
+              download_path: routes.api_app_v1_conversation_message_attachment_path(message.chat.to_param, message.to_param, file.id)
+            }
           end
         end
 

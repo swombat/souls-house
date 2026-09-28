@@ -94,6 +94,12 @@ module Api
           )
         end
 
+        # Storage URLs (disk service in development and test) are built for
+        # this request's origin.
+        def with_storage_urls(&)
+          ActiveStorage::Current.set(url_options: { protocol: request.protocol, host: request.host, port: request.optional_port }, &)
+        end
+
         # One error shape. The request id is also in the X-Request-Id header.
         def render_error(status, code, message, details = {})
           render json: { error: { code: code, message: message, details: details, request_id: request.request_id } }, status: status

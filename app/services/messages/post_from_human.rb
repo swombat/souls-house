@@ -12,10 +12,16 @@ class Messages::PostFromHuman
   end
 
   # What a retry is compared against (ADR 0004): written at create and never
-  # changed by edit, discard or restore. Versioned so attachments (step 4c)
-  # can join the payload without reinterpreting stored digests.
-  def self.submission_digest(content:)
-    "v1:" + Digest::SHA256.hexdigest({ content: content.to_s }.to_json)
+  # changed by edit, discard or restore. A text-only send keeps its v1 digest;
+  # a send with attachments (step 4c) is v2 and also covers each file's
+  # checksum, size, name and type in order, so a retry that re-uploaded the
+  # same file still matches and a different file is a conflict. A blob that
+  # can't be resolved (nil) digests as an empty slot, so it never matches.
+  def self.submission_digest(content:, blobs: [])
+    return "v1:" + Digest::SHA256.hexdigest({ content: content.to_s }.to_json) if blobs.empty?
+
+    files = blobs.map { |b| b && [ b.checksum, b.byte_size, b.filename.to_s, b.content_type ] }
+    "v2:" + Digest::SHA256.hexdigest({ content: content.to_s, attachments: files }.to_json)
   end
 
   def initialize(chat:, user:, content:, files: nil, audio_signed_id: nil, client_message_id: nil)
@@ -40,9 +46,13 @@ class Messages::PostFromHuman
     message = @chat.messages.build(content: @content, user: @user, role: "user")
     if @client_message_id
       message.client_message_id = @client_message_id
-      message.submission_digest = self.class.submission_digest(content: @content)
+      message.submission_digest = self.class.submission_digest(content: @content, blobs: app_blobs)
     end
-    message.attachments.attach(@files) if @files.present?
+    if @files.present?
+      message.attachments.attach(@files)
+      # A file with no caption is a message, as in Chat#create_with_message.
+      message.skip_content_validation = @content.blank?
+    end
     attach_audio(message) if @audio_signed_id.present?
 
     target_ids = @chat.mentioned_agent_ids(@content.to_s)
@@ -81,6 +91,11 @@ class Messages::PostFromHuman
   end
 
   private
+
+  # The digest is only written for app sends, whose files are blobs.
+  def app_blobs
+    Array(@files).grep(ActiveStorage::Blob)
+  end
 
   def enqueue(dispatch)
     MessageDispatchJob.perform_later(dispatch)

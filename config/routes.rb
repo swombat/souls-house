@@ -194,7 +194,9 @@ Rails.application.routes.draw do
           end
           resources :messages, only: [ :index, :create, :update, :destroy ] do
             get :dispatch, on: :member, action: :dispatch_status
+            resources :attachments, only: :show
           end
+          resources :uploads, only: :create
           get :changes, to: "changes#index"
         end
       end
