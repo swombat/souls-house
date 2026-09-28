@@ -1,5 +1,6 @@
 require "test_helper"
 class MiraDiscardTelegramReviewTest < ActiveSupport::TestCase
+
   test "review: queued Telegram notification does not send discarded content" do
     agent = agents(:research_assistant)
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Notify discard")
@@ -16,10 +17,11 @@ class MiraDiscardTelegramReviewTest < ActiveSupport::TestCase
     end
     assert_nil captured, "discarded content was sent: #{captured.inspect}"
   end
+
 end
 
-
 class DiscardTelegramStillSendsTest < ActiveSupport::TestCase
+
   test "a kept message is still sent" do
     agent = agents(:research_assistant)
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Notify kept")
@@ -34,4 +36,5 @@ class DiscardTelegramStillSendsTest < ActiveSupport::TestCase
     end
     assert_includes captured.last, "Kept body"
   end
+
 end

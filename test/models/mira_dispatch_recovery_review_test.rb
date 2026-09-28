@@ -1,6 +1,7 @@
 require_relative "message_dispatch_test"
 
 class MessageDispatchTest
+
   test "review sweeper settles an expired reservation without a delivered job" do
     MessageDispatchJob.perform_now(@dispatch)
     run = @dispatch.reload.runtime_interaction
@@ -18,4 +19,5 @@ class MessageDispatchTest
       assert_equal "expired", @dispatch.reload.status
     end
   end
+
 end

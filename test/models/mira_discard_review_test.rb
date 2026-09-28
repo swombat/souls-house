@@ -1,5 +1,6 @@
 require "test_helper"
 class MiraDiscardReviewTest < ActiveSupport::TestCase
+
   setup do
     @agent = agents(:research_assistant)
     @user = users(:user_1)
@@ -28,5 +29,5 @@ class MiraDiscardReviewTest < ActiveSupport::TestCase
     assert progress.reload.progress_break_after?
     assert_operator progress.revision, :>, old_revision, "client-visible seam changed without a sync revision"
   end
-end
 
+end

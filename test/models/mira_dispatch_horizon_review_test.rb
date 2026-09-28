@@ -1,6 +1,7 @@
 require_relative "message_dispatch_test"
 
 class MessageDispatchTest
+
   test "review retry recovery cannot bypass the horizon before the sweeper arrives" do
     MessageDispatchJob.perform_now(@dispatch)
     run = @dispatch.reload.runtime_interaction
@@ -30,5 +31,5 @@ class MessageDispatchTest
       end
     end
   end
-end
 
+end
