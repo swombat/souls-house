@@ -20,6 +20,12 @@ module Message::Revisioned
     before_save :take_next_revision, if: :sync_visible_change?
   end
 
+  # For the rare callback that must write another message without running its
+  # callbacks: the change is still client-visible, so it still takes a revision.
+  def update_columns_with_revision(attributes)
+    update_columns(attributes.merge(revision: take_next_revision))
+  end
+
   private
 
   def sync_visible_change?

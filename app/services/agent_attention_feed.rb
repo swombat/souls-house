@@ -39,7 +39,7 @@ class AgentAttentionFeed
   end
 
   def helixkit_items
-    latest_messages = Message
+    latest_messages = Message.kept
       .where(id: latest_helixkit_message_ids)
       .where("messages.agent_id IS NULL OR messages.agent_id != ?", agent.id)
       .includes(:chat, :agent, user: :profile)
@@ -69,8 +69,11 @@ class AgentAttentionFeed
     end
   end
 
+  # The latest turn is taken over every message, discarded or not, so removing
+  # an answer can't resurface the question before it as unanswered. A room
+  # whose latest turn was discarded simply has nothing to show.
   def latest_helixkit_message_ids
-    Message.kept
+    Message
       .where(chat_id: agent.chats.kept.active.select(:id), role: %w[user assistant])
       .select("DISTINCT ON (messages.chat_id) messages.id")
       .reorder("messages.chat_id, messages.created_at DESC, messages.id DESC")
