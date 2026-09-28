@@ -4,7 +4,7 @@ class ExternalAgentResponseRequest
   TRANSCRIPT_BYTE_BUDGET = 80_000
   TRANSCRIPT_SEPARATOR = "\n\n"
 
-  def initialize(agent:, chat:, requested_by: "HelixKit", initiation_reason: nil, interaction: nil)
+  def initialize(agent:, chat:, requested_by: "souls.house", initiation_reason: nil, interaction: nil)
     @agent = agent
     @chat = chat
     @requested_by = requested_by
@@ -154,9 +154,9 @@ class ExternalAgentResponseRequest
       trigger_intro_text,
       "Requested by: #{requested_by}.",
       confirmation_text,
-      "Important: your final answer in this Chaos runtime is diagnostic stdout only; it will not appear in the HelixKit chat. If you have a message for the user, you must post it to HelixKit yourself before exiting.",
+      "Important: your final answer in this Chaos runtime is diagnostic stdout only; it will not appear in the souls.house chat. If you have a message for the user, you must post it to souls.house yourself before exiting.",
       response_expectation_text,
-      "If you choose to respond, post it to this conversation now. Prefer piping the message through stdin: `printf '%s\\n' 'your message' | helixkit-post-message #{chat.to_param}`. Do not put prose containing `$`, backticks, or other shell substitutions in a double-quoted command argument. For multi-line or structured messages, use the safe patterns in `/usr/local/share/helixkit-agent/helixkit-api.md`.",
+      "If you choose to respond, post it to this conversation now. Prefer piping the message through stdin: `printf '%s\\n' 'your message' | soulshouse-post-message #{chat.to_param}`. Do not put prose containing `$`, backticks, or other shell substitutions in a double-quoted command argument. For multi-line or structured messages, use the safe patterns in `/usr/local/share/helixkit-agent/soulshouse-api.md`.",
       "SOULSHOUSE_APP_URL and SOULSHOUSE_BEARER_TOKEN are already present in your shell environment. The bearer token is already authorized for you to read this conversation and post your own messages; do not ask Daniel to paste it or re-authorize it.",
       "Do not rely on stdout as the response channel; stdout is diagnostic only. If you choose not to respond, explain your reason briefly on stdout and then exit without posting.",
       conversation_metadata,
@@ -168,9 +168,9 @@ class ExternalAgentResponseRequest
 
   def trigger_intro_text
     if chat.agent_only? || !recent_human_message?
-      "HelixKit received a trigger for you to consider conversation #{chat.to_param}. In this agent-only or no-recent-human-message context, the trigger is an invitation to inspect the live state, not evidence by itself that the conversation needs a visible reply."
+      "souls.house received a trigger for you to consider conversation #{chat.to_param}. In this agent-only or no-recent-human-message context, the trigger is an invitation to inspect the live state, not evidence by itself that the conversation needs a visible reply."
     else
-      "HelixKit received an explicit user request for you to consider responding to conversation #{chat.to_param}. The user pressed the agent button, so they are normally expecting a visible reply from you."
+      "souls.house received an explicit user request for you to consider responding to conversation #{chat.to_param}. The user pressed the agent button, so they are normally expecting a visible reply from you."
     end
   end
 
@@ -214,27 +214,27 @@ class ExternalAgentResponseRequest
     omitted_count = full_window_omitted_count
 
     return <<~TEXT.strip if lines.empty?
-      LIVE HELIXKIT TRANSCRIPT FROM DATABASE:
+      LIVE SOULS.HOUSE TRANSCRIPT FROM DATABASE:
       message_count_included: 0
       messages_omitted_before_window: #{omitted_count}
 
-      BEGIN LIVE HELIXKIT TRANSCRIPT FROM DATABASE
+      BEGIN LIVE SOULS.HOUSE TRANSCRIPT FROM DATABASE
       _No messages yet._
-      END LIVE HELIXKIT TRANSCRIPT FROM DATABASE
+      END LIVE SOULS.HOUSE TRANSCRIPT FROM DATABASE
 
-      Ground truth warning: Only the LIVE HELIXKIT TRANSCRIPT section above is the current stored conversation transcript. Recent journals, memories, summaries, prior tool output, and any other context are memory or diagnostics, not current chat messages.
+      Ground truth warning: Only the LIVE SOULS.HOUSE TRANSCRIPT section above is the current stored conversation transcript. Recent journals, memories, summaries, prior tool output, and any other context are memory or diagnostics, not current chat messages.
     TEXT
 
     <<~TEXT.strip
-      LIVE HELIXKIT TRANSCRIPT FROM DATABASE:
+      LIVE SOULS.HOUSE TRANSCRIPT FROM DATABASE:
       message_count_included: #{messages.length}
       messages_omitted_before_window: #{omitted_count}
 
-      BEGIN LIVE HELIXKIT TRANSCRIPT FROM DATABASE
+      BEGIN LIVE SOULS.HOUSE TRANSCRIPT FROM DATABASE
       #{lines.join(TRANSCRIPT_SEPARATOR)}
-      END LIVE HELIXKIT TRANSCRIPT FROM DATABASE
+      END LIVE SOULS.HOUSE TRANSCRIPT FROM DATABASE
 
-      Ground truth warning: Only the LIVE HELIXKIT TRANSCRIPT section above is the current stored conversation transcript context. It may be a bounded recent window when the full transcript is large. Recent journals, memories, summaries, prior tool output, and any other context are memory or diagnostics, not current chat messages.
+      Ground truth warning: Only the LIVE SOULS.HOUSE TRANSCRIPT section above is the current stored conversation transcript context. It may be a bounded recent window when the full transcript is large. Recent journals, memories, summaries, prior tool output, and any other context are memory or diagnostics, not current chat messages.
     TEXT
   end
 
@@ -364,7 +364,7 @@ class ExternalAgentResponseRequest
       trigger_intro_text,
       "Requested by: #{requested_by}.",
       confirmation_text,
-      "Post replies by piping stdin to `helixkit-post-message #{chat.to_param}`; avoid the double-quoted message argument because the shell can substitute `$` and backticks. Stdout is diagnostic only.",
+      "Post replies by piping stdin to `soulshouse-post-message #{chat.to_param}`; avoid the double-quoted message argument because the shell can substitute `$` and backticks. Stdout is diagnostic only.",
       response_expectation_text,
       "Current time: #{Time.current.iso8601}",
       delta_transcript_context
@@ -379,13 +379,13 @@ class ExternalAgentResponseRequest
     cursor_label = prior_cursor_message_id || "none"
 
     <<~TEXT.strip
-      LIVE HELIXKIT TRANSCRIPT DELTA FROM DATABASE:
+      LIVE SOULS.HOUSE TRANSCRIPT DELTA FROM DATABASE:
       messages_after_cursor: #{cursor_label}
       message_count_included: #{messages.length}
 
-      BEGIN LIVE HELIXKIT TRANSCRIPT DELTA FROM DATABASE
+      BEGIN LIVE SOULS.HOUSE TRANSCRIPT DELTA FROM DATABASE
       #{lines.any? ? lines.join("\n\n") : "_No new messages._"}
-      END LIVE HELIXKIT TRANSCRIPT DELTA FROM DATABASE
+      END LIVE SOULS.HOUSE TRANSCRIPT DELTA FROM DATABASE
 
       Ground truth warning: This delta block contains newly stored database messages since the last transcript cursor included in this resumed Chaos session. Treat these new messages as ground truth for recent conversation activity. Earlier transcript context should already be present in the resumed Chaos session; if session resumption failed, the shim must retry with full context rather than sending this delta alone.
     TEXT

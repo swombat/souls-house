@@ -178,7 +178,7 @@ class AgentTest < ActiveSupport::TestCase
     assert_includes agent.errors[:base], "Identity and runtime-managed fields are resident-owned and read-only in souls.house"
   end
 
-  test "external agents allow HelixKit-managed model changes" do
+  test "external agents allow souls.house-managed model changes" do
     agent = agents(:research_assistant)
     agent.update!(runtime: "external", uuid: SecureRandom.uuid_v7)
 
@@ -249,7 +249,7 @@ class AgentTest < ActiveSupport::TestCase
     assert_equal "openrouter/auto", agent.reload.model_id
   end
 
-  test "external agents allow HelixKit-managed reasoning effort changes" do
+  test "external agents allow souls.house-managed reasoning effort changes" do
     agent = agents(:research_assistant)
     agent.update!(runtime: "external", uuid: SecureRandom.uuid_v7)
 

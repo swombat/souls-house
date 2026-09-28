@@ -427,4 +427,4 @@ RubyLLM is actively developed and welcomes contributions. Check the GitHub repos
 
 ---
 
-*This documentation is part of the HelixKit project and provides guidance for integrating RubyLLM into Rails applications effectively.*
+*This documentation is part of the souls.house project and provides guidance for integrating RubyLLM into Rails applications effectively.*

@@ -1104,7 +1104,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_180000) do
     t.integer "resident_turn_limit", default: 50, null: false
     t.integer "safeguard_owner_notice_threshold", default: 1, null: false
     t.boolean "show_usage_in_chat", default: false, null: false
-    t.string "site_name", default: "HelixKit", null: false
+    t.string "site_name", default: "souls.house", null: false
     t.datetime "updated_at", null: false
   end
 

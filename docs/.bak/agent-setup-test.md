@@ -1,6 +1,8 @@
-# Agent Promotion: Local Test Runbook
+# Agent Promotion: Historical Local Test Runbook
 
-Use this to test the current per-agent GitHub repo promotion flow end to end.
+This runbook records the former HelixKit per-agent GitHub repo promotion flow.
+For the current souls.house hosted runtime, see [agent-runtime/README.md](../agent-runtime/README.md).
+The legacy names and commands below are retained as historical reference.
 
 ## Preconditions
 

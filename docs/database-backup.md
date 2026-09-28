@@ -1,6 +1,6 @@
 # Database Backup
 
-HelixKit includes automated daily backups to Amazon S3: each hosted Chaos
+souls.house includes automated daily backups to Amazon S3: each hosted Chaos
 agent's resident-data volumes, followed by a dump of the PostgreSQL database.
 Private runtime state containing Claude Code's live Anthropic subscription
 credentials is excluded.
@@ -20,7 +20,7 @@ The `FullBackupJob` runs daily at 4am and:
 In the scheduled nightly run, a failed agent snapshot is recorded and logged but
 does not stop the remaining agents or the database dump — restore only ever uses
 the latest *successful* snapshot, so the backup set stays consistent. Agent
-snapshots can be disabled globally with `HELIXKIT_AGENT_BACKUPS_ENABLED=false`
+snapshots can be disabled globally with `SOULSHOUSE_AGENT_BACKUPS_ENABLED=false`
 (the database dump still runs).
 
 Backup files are named with timestamps: `helix_kit_production_2025-01-08_04-00-00.sql.gz`
@@ -84,7 +84,7 @@ The task downloads and restores the latest PostgreSQL dump, resets local user
 passwords, then offers to replace the Docker volumes for every hosted agent with
 the exact successful Restic snapshot recorded in that dump. Agents that were
 running in production are started with the local runtime image and local
-HelixKit endpoint; agents that were offline remain restored but stopped.
+souls.house endpoint; agents that were offline remain restored but stopped.
 
 You can rerun only the agent-volume part after a database restore:
 

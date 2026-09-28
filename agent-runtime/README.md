@@ -252,13 +252,13 @@ Do not remove any of the above.
 Production should use immutable tags, for example:
 
 ```bash
-docker build -t registry.example.com/helixkit-agent-runtime:<git-sha> agent-runtime
+docker build -t registry.example.com/souls-house-agent-runtime:<git-sha> agent-runtime
 ```
 
 Then set:
 
 ```bash
-HELIXKIT_AGENT_IMAGE_DEFAULT=registry.example.com/helixkit-agent-runtime:<git-sha>
+SOULSHOUSE_AGENT_IMAGE_DEFAULT=registry.example.com/souls-house-agent-runtime:<git-sha>
 ```
 
 Each promoted agent stores the exact image tag in `agents.container_image`, so upgrades are explicit.

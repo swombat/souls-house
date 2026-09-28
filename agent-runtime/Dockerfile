@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
-# HelixKit agent runtime image.
+# souls.house agent runtime image.
 #
-# This image is built from the HelixKit monorepo and run by HelixKit's hosted
+# This image is built from the souls.house monorepo and run by souls.house's hosted
 # sandbox promotion flow. It contains chaos plus trigger_shim.py; per-agent
 # identity and state arrive through Docker volumes and environment variables.
 #
@@ -233,7 +233,7 @@ RUN ln -s /usr/local/bin/soulshouse-post-message /usr/local/bin/helixkit-post-me
     && ln -s /usr/local/bin/soulshouse-gws /usr/local/bin/helixkit-gws
 
 # Canonical mounted volumes for hosted agents. /home/agent/state is deliberately
-# outside every HelixKit-facing filesystem root and holds vendor credentials.
+# outside every souls.house-facing filesystem root and holds vendor credentials.
 VOLUME ["/home/agent/identity", "/home/agent/.chaos", "/home/agent/repo", "/home/agent/work", "/home/agent/state"]
 
 WORKDIR /home/agent

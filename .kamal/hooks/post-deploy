@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Kamal deploy updates the HelixKit app containers and the pre-deploy hook builds
+# Kamal deploy updates the souls.house app containers and the pre-deploy hook builds
 # helixkit-agent-runtime:latest on the Docker host. Hosted agent sandboxes are
 # sibling containers, not Kamal-managed app containers, so enqueue a delayed
 # reconciliation pass that recreates only stale sandboxes and preserves their

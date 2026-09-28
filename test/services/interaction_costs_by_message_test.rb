@@ -82,7 +82,7 @@ class InteractionCostsByMessageTest < ActiveSupport::TestCase
     assert_empty costs
   end
 
-  test "ignores interactions that do not post to HelixKit conversations" do
+  test "ignores interactions that do not post to souls.house conversations" do
     message = create_message!(at: @started_at + 10.seconds)
     create_interaction!(chat: nil, trigger_kind: "telegram", finished_at: @started_at + 20.seconds)
 

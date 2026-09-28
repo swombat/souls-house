@@ -52,7 +52,7 @@ module Services
     def revoke(_connection)
       # GitHub personal access tokens cannot be revoked through the ordinary
       # REST API by the application storing them. The user revokes the token
-      # from GitHub; HelixKit removes its encrypted local copy.
+      # from GitHub; souls.house removes its encrypted local copy.
       true
     end
 
@@ -64,7 +64,7 @@ module Services
       request["Accept"] = "application/vnd.github+json"
       request["Authorization"] = "Bearer #{token}"
       request["X-GitHub-Api-Version"] = "2022-11-28"
-      request["User-Agent"] = "HelixKit service connection"
+      request["User-Agent"] = "souls.house service connection"
       response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
 
       case response

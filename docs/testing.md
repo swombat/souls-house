@@ -1,6 +1,6 @@
 # Testing Strategy
 
-Helix Kit's test suite should protect the behavior that matters while staying cheap enough to run and maintain. The strategy is:
+souls.house's test suite should protect the behavior that matters while staying cheap enough to run and maintain. The strategy is:
 
 1. Thorough Rails tests for backend behavior and server-rendered contracts.
 2. Vitest only for focused frontend logic where it gives clear value.

@@ -110,7 +110,7 @@ SearXNG requires a `settings.yml` to enable the JSON API:
 
 ```yaml
 general:
-  instance_name: "HelixKit Search"
+  instance_name: "souls.house Search"
 
 search:
   formats:

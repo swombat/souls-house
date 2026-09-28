@@ -3,21 +3,21 @@
 trigger_shim.py — the HTTP-to-chaos-exec bridge.
 
 Runs inside each chaos-agent container. Listens on port 4000.
-HelixKit POSTs a trigger payload here; we shell out to `chaos exec`.
+souls.house POSTs a trigger payload here; we shell out to `chaos exec`.
 
 This is intentionally dumb: no business logic, no decision-making beyond
 "fresh session or resume". The only state it keeps is a sidecar cache mapping
-HelixKit session ids to chaos process ids — losable at any moment with zero
+souls.house session ids to chaos process ids — losable at any moment with zero
 correctness impact (loss means one fresh session, i.e. today's behaviour).
 
 Endpoints:
     GET  /health          — liveness check (no auth)
     POST /trigger         — invoke chaos with a prompt (bearer-token auth)
 
-Trigger payload (HelixKit ChaosTriggerClient shape):
+Trigger payload (souls.house ChaosTriggerClient shape):
     {
-      "session_id": "<agent-uuid>-<chat-id>",     # HelixKit's stable session key
-      "request": "HelixKit received a request...",# full prompt (always present)
+      "session_id": "<agent-uuid>-<chat-id>",       # souls.house's stable session key
+      "request": "souls.house received a request...",# full prompt (always present)
       "request_delta": "...",                     # optional slim prompt, used only on resume
        "persistent_session": true,                 # optional; enables resume behaviour
        "roll_session": true,                       # optional; force a fresh mapped session
@@ -56,7 +56,7 @@ without a sidecar mapping, but JSON output is enabled so usage is observable.
 Env vars (read at startup):
     AGENT_ID                  stable identifier for this agent
     AGENT_SLUG                optional human-readable identifier for logs
-    TRIGGER_BEARER_TOKEN      required; the bearer token HelixKit must send on /trigger
+    TRIGGER_BEARER_TOKEN      required; the bearer token souls.house must send on /trigger
     AGENT_DEFAULT_MODEL       default model name (e.g. "claude-haiku-4-5")
     AGENT_PROVIDER            chaos provider override (e.g. "anthropic")
     AGENT_REPO_PATH           agent repo path (default /home/agent/repo)
@@ -306,7 +306,7 @@ def trigger():
 
     payload = request.get_json(silent=True) or {}
     session_id = payload.get("session_id")
-    # `request` is the canonical field name (HelixKit ChaosTriggerClient). `prompt`
+    # `request` is the canonical field name (souls.house ChaosTriggerClient). `prompt`
     # is accepted as a backwards-compatible alias for hand-rolled clients.
     prompt = payload.get("request") or payload.get("prompt")
     request_delta = payload.get("request_delta")
@@ -1182,7 +1182,7 @@ def compatibility_usage_fields(usage):
 
 
 def aggregate_attempt_usage(first, second):
-    """Aggregate all Chaos invocations caused by one HelixKit trigger."""
+    """Aggregate all Chaos invocations caused by one souls.house trigger."""
     if not first:
         return second or {}
     if not second:
@@ -1720,7 +1720,7 @@ def _byte_length(text):
 
 # ----- helpers -----
 def _tail(s: str, n: int) -> str:
-    """Trim long stdout/stderr so HelixKit doesn't choke on huge payloads."""
+    """Trim long stdout/stderr so souls.house doesn't choke on huge payloads."""
     if not s:
         return ""
     if len(s) <= n:
@@ -1731,7 +1731,7 @@ def _tail(s: str, n: int) -> str:
 def build_prompt(request_text: str) -> str:
     """Attach identity, the live request, and memory to every Chaos turn.
 
-    Keep stable identity first, but place the current HelixKit trigger before
+    Keep stable identity first, but place the current souls.house trigger before
     diarized memory. The live request/transcript is ground truth for the current
     conversation; journals are continuity context and must not look like adjacent
     transcript.
@@ -1852,7 +1852,7 @@ def imported_runtime_context():
             f"Your full identity, instructions, wake and memory practices come from "
             f"{imported_home.root_env_name()}. "
             "You are concurrently resident on other hosts; use your own home's journal and "
-            "external memory tools, not house-memory or helixkit-append-journal. "
+            "external memory tools, not house-memory or soulshouse-append-journal. "
             "This runtime does not start the scheduled jobs your other hosts run. "
         )
     return (
@@ -1917,8 +1917,8 @@ def memory_context() -> str:
         "## Memory context — not current chat transcript",
         (
             "The following recent journals are diarized memory and continuity context. "
-            "They are not current HelixKit chat messages, not trigger payload, and not "
-            "the live transcript. If this turn includes a LIVE HELIXKIT TRANSCRIPT "
+            "They are not current souls.house chat messages, not trigger payload, and not "
+            "the live transcript. If this turn includes a LIVE SOULS.HOUSE TRANSCRIPT "
             "section, treat that section as the ground truth for the current conversation."
         ),
         journals,

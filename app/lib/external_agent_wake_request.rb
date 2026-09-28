@@ -1,6 +1,6 @@
 class ExternalAgentWakeRequest
 
-  def initialize(agent:, requested_by: "HelixKit scheduled wake")
+  def initialize(agent:, requested_by: "souls.house scheduled wake")
     @agent = agent
     @requested_by = requested_by
   end
@@ -67,7 +67,7 @@ class ExternalAgentWakeRequest
       Notices::Renderer.section_for(agent),
       AgentAttentionRenderer.section_for(agent),
       <<~TEXT
-      HelixKit is inviting you to wake for a scheduled self-directed session.
+      souls.house is inviting you to wake for a scheduled self-directed session.
 
       Current time: #{now.iso8601}
       Current UTC time: #{now.utc.iso8601}
@@ -77,7 +77,7 @@ class ExternalAgentWakeRequest
 
       If you want to act, choose your own appropriate work for this wake session. Examples:
 
-      - Read HelixKit conversations or whiteboards through the current runtime-owned manual at `/usr/local/share/helixkit-agent/helixkit-api.md` and post to HelixKit if you have something useful, timely, and non-noisy to say.
+      - Read souls.house conversations or whiteboards through the current runtime-owned manual at `/usr/local/share/helixkit-agent/soulshouse-api.md` and post to souls.house if you have something useful, timely, and non-noisy to say.
       - Examine your repository folders, identity, journals, or memory files and do small tidying or self-maintenance.
       - Improve your own scaffolding in a bounded, reviewable way.
       - Do something else you freely choose within your available tools, shell, and network access, if it is genuinely worthwhile.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-As Helix Kit scales to 50+ agent capabilities, we face a critical constraint: LLM context limits. Traditional one-tool-per-action approaches would create 50+ tools, causing significant context bloat and degrading agent performance.
+As souls.house scales to 50+ agent capabilities, we face a critical constraint: LLM context limits. Traditional one-tool-per-action approaches would create 50+ tools, causing significant context bloat and degrading agent performance.
 
 **Domain-based tool consolidation** solves this by grouping related capabilities into single tools:
 

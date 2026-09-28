@@ -14,7 +14,7 @@ class OrientNewAgentJob < ApplicationJob
     )
     result = ExternalAgentOrientationRequest.new(
       agent: agent,
-      requested_by: "HelixKit first-wake orientation",
+      requested_by: "souls.house first-wake orientation",
       context: :birth
     ).call
 
