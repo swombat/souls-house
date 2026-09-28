@@ -96,11 +96,12 @@ test.describe('long conversation synchronization', () => {
     await expect(page.getByText('History message 064', { exact: true })).toBeVisible();
     await expect(page.getByText('History message 000', { exact: true })).toHaveCount(0);
 
-    // Load both older pages and prove the cursor boundary has no gaps.
-    await page.getByRole('button', { name: 'Load earlier messages' }).click();
+    // Scroll to load both older pages and prove the cursor boundary has no gaps.
+    // Auto-pagination may remove the button while Playwright scrolls to click it.
+    await page.getByTestId('chat-messages').evaluate((element) => { element.scrollTop = 0; });
     await expect(page.getByText('History message 005', { exact: true })).toBeVisible();
     await expect(page.getByText('History message 034', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Load earlier messages' }).click();
+    await page.getByTestId('chat-messages').evaluate((element) => { element.scrollTop = 0; });
     await expect(page.getByText('History message 000', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Load earlier messages' })).toHaveCount(0);
 

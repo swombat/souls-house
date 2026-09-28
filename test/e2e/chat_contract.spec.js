@@ -65,6 +65,7 @@ test.describe('browser contracts', () => {
     const card = page.getByTestId('runtime-activity-card').filter({ hasText: 'E2E Researcher' });
     await expect(card).toBeVisible();
     await expect(card.locator('details')).toHaveAttribute('open', '');
+    await card.getByRole('button', { name: 'Show commands' }).click();
     await expect(card.getByText('grep -n runtime app/services/agent_dispatch.rb…')).toBeVisible();
     await request.post('/test/e2e/runtime_activity', {
       data: { chat_id: fixture.chat_id, runtime_run_id: run.runtime_run_id, complete: true },
@@ -80,6 +81,7 @@ test.describe('browser contracts', () => {
     await expect(card).toBeVisible();
     await expect(card.locator('details')).not.toHaveAttribute('open', '');
     await card.locator('summary').click();
+    await card.getByRole('button', { name: 'Show commands' }).click();
     await expect(card.getByText('Runtime started', { exact: true })).toBeVisible();
     await expect(card.getByText('grep -n runtime app/services/agent_dispatch.rb', { exact: true })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });

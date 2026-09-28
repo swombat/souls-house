@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/experimental-ct-svelte';
-import Navbar from '../../../app/frontend/lib/components/navigation/Navbar.svelte';
+import Navbar from '../../../app/frontend/lib/components/navigation/navbar.svelte';
 import { page } from '../../test-inertia-adapter.js';
 
 test.describe('Theme Persistence Tests', () => {
