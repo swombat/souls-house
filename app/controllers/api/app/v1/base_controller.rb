@@ -81,6 +81,19 @@ module Api
           nil
         end
 
+        # The web's audit record for the same action, tagged with the device.
+        def audit(action, auditable, **data)
+          AuditLog.create!(
+            user: current_user,
+            account: auditable.try(:chat)&.account,
+            action: action,
+            auditable: auditable,
+            data: data.merge(app_session_id: current_app_session.id),
+            ip_address: request.remote_ip,
+            user_agent: request.user_agent
+          )
+        end
+
         # One error shape. The request id is also in the X-Request-Id header.
         def render_error(status, code, message, details = {})
           render json: { error: { code: code, message: message, details: details, request_id: request.request_id } }, status: status

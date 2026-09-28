@@ -42,6 +42,7 @@ class Message < ApplicationRecord
   validates :role, inclusion: { in: %w[user assistant system tool] }
   validates :content, presence: true, unless: -> { role.in?(%w[assistant tool]) || skip_content_validation }
   validate :not_duplicate_of_last_message, on: :create
+  validate :submission_identity_unchanged, on: :update
 
   scope :sorted, -> { order(created_at: :asc) }
 
@@ -207,6 +208,14 @@ class Message < ApplicationRecord
 
   def refresh_chat_context_tokens
     chat.recalculate_context_tokens!
+  end
+
+  # A retry is judged against what was first submitted (ADR 0004), so the
+  # identity outlives every edit, discard and restore.
+  def submission_identity_unchanged
+    %w[client_message_id submission_digest].each do |attribute|
+      errors.add(attribute, "cannot change once sent") if attribute_changed?(attribute)
+    end
   end
 
   def not_duplicate_of_last_message

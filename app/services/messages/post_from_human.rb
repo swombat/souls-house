@@ -10,12 +10,20 @@ class Messages::PostFromHuman
     def invalid? = status == :invalid
   end
 
-  def initialize(chat:, user:, content:, files: nil, audio_signed_id: nil)
+  # What a retry is compared against (ADR 0004): written at create and never
+  # changed by edit, discard or restore. Versioned so attachments (step 4c)
+  # can join the payload without reinterpreting stored digests.
+  def self.submission_digest(content:)
+    "v1:" + Digest::SHA256.hexdigest({ content: content.to_s }.to_json)
+  end
+
+  def initialize(chat:, user:, content:, files: nil, audio_signed_id: nil, client_message_id: nil)
     @chat = chat
     @user = user
     @content = content
     @files = files
     @audio_signed_id = audio_signed_id
+    @client_message_id = client_message_id
   end
 
   # on_persisted runs after save and before any resident is woken, so the
@@ -23,6 +31,10 @@ class Messages::PostFromHuman
   # dispatches nothing (the order the web controller had before extraction).
   def call(on_persisted: nil)
     message = @chat.messages.build(content: @content, user: @user, role: "user")
+    if @client_message_id
+      message.client_message_id = @client_message_id
+      message.submission_digest = self.class.submission_digest(content: @content)
+    end
     message.attachments.attach(@files) if @files.present?
     attach_audio(message) if @audio_signed_id.present?
 
