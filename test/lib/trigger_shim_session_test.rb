@@ -108,10 +108,9 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
   test "runtime image includes the journald companion required for resume" do
     dockerfile = Rails.root.join("agent-runtime/Dockerfile").read
     entrypoint = Rails.root.join("agent-runtime/entrypoint.sh").read
-    antigravity_egress_patch =
-      Rails.root.join("agent-runtime/patches/chaos-antigravity-daily-cloudcode-egress.patch").read
-
-    assert_includes dockerfile, 'cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos_journald'
+    assert_includes dockerfile, "ARG CHAOS_BUILD_MODE=prebuilt"
+    assert_includes dockerfile, 'FROM chaos-${CHAOS_BUILD_MODE} AS builder'
+    assert_includes dockerfile, 'cargo build --release --locked --jobs "${CARGO_BUILD_JOBS}" --bin chaos --bin chaos_journald'
     assert_includes dockerfile, "COPY --from=builder /usr/local/bin/chaos_journald /usr/local/bin/chaos_journald"
     assert_includes dockerfile, "COPY docs/runtime-instructions.md /usr/local/share/helixkit-agent/runtime-instructions.md"
     assert_includes dockerfile, "COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md"
@@ -121,23 +120,9 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes dockerfile, "ARG CHAOS_HEAD"
     refute_match(/^ARG CHAOS_HEAD=[0-9a-f]{40}$/, dockerfile)
     assert_not_includes dockerfile, "chaos-clamp-image-tool-output.patch"
-    assert_includes dockerfile, "chaos-antigravity-empty-managed-config.patch"
-    assert_includes dockerfile, "git apply --check /tmp/chaos-antigravity-empty-managed-config.patch"
-    assert_includes dockerfile, "chaos-antigravity-daily-cloudcode-egress.patch"
-    assert_includes dockerfile, "git apply --check /tmp/chaos-antigravity-daily-cloudcode-egress.patch"
-    assert_includes dockerfile, "antigravity-daily-cloudcode-egress"
-    assert_includes dockerfile, "git apply --check /tmp/chaos-clamp-cached-catalog.patch"
-    assert_includes dockerfile, "git apply /tmp/chaos-clamp-cached-catalog.patch"
-    assert_includes dockerfile, "clamp-cached-catalog"
-    assert_includes dockerfile, "git apply --check /tmp/chaos-stop-hook-continuation-as-user.patch"
-    assert_includes dockerfile, "git apply /tmp/chaos-stop-hook-continuation-as-user.patch"
-    assert_includes dockerfile, "stop-hook-continuation-as-user"
-    continuation_patch = File.read(Rails.root.join("agent-runtime/patches/chaos-stop-hook-continuation-as-user.patch"))
-    assert_includes continuation_patch, 'role: "user".to_string()'
-    assert_includes continuation_patch, "-                                DeveloperInstructions::new(continuation_prompt).into();"
-    assert_includes antigravity_egress_patch, '"daily-cloudcode-pa.googleapis.com"'
-    assert_includes antigravity_egress_patch, '"www.googleapis.com"'
-    assert_includes antigravity_egress_patch, '"lh3.googleusercontent.com"'
+    # These fixes now live upstream, not in a local patch-and-rebuild layer.
+    assert_not_includes dockerfile, "git apply"
+    assert_includes dockerfile, 'LABEL house.souls.chaos-patches=""'
     # 1.1.22 makes denied native tool calls recoverable in print mode instead
     # of failing the whole clamped turn before it can choose the Chaos MCP bridge.
     assert_includes dockerfile, "ARG ANTIGRAVITY_VERSION=1.1.22"

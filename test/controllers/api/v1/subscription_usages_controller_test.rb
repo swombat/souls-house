@@ -7,7 +7,7 @@ module Api
       setup do
         @user = users(:confirmed_user)
         @agent = agents(:research_assistant)
-        @agent.update!(model_id: "openai/gpt-5")
+        @agent.update!(model_id: "openai/gpt-5", provider_auth_modes: { "openai" => "oauth_account" })
         @api_key = ApiKey.generate_for(@user, name: "Resident usage", agent: @agent)
       end
 
