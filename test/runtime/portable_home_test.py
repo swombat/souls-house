@@ -216,6 +216,37 @@ class ProfileTest(HomeFixture):
             self.assertEqual(imported_home.sync_script(root, manifest), self.mira / 'sync.py')
 
 
+class MiraManifestCompatibilityTest(unittest.TestCase):
+    """Mira's resident-home.json and .chaos/hooks.json as they exist today
+    (2026-09-28), copied field for field, with placeholder file contents."""
+
+    MANIFEST = {
+        "format": "souls-home/v1", "identity_id": "mira-tenner", "profile": "mira_v1",
+        "instructions": "instructions.md", "soul": "soul.md", "narrative": "self-narrative.md",
+        "hooks": ".chaos/hooks.json", "graph": "external",
+        "journal_reader": "shared/automation/journal_entries.py",
+    }
+
+    def test_her_current_manifest_validates_unchanged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            for key in ('instructions', 'soul', 'narrative', 'journal_reader'):
+                path = root / self.MANIFEST[key];path.parent.mkdir(parents=True, exist_ok=True);path.write_text('x')
+            (root / '.chaos').mkdir()
+            command = 'python3 "${MIRA_ROOT:-$HOME/dev/mira}"/shared/automation/%s'
+            hooks = {'hooks': {
+                'SessionStart': [{'matcher': '^startup$', 'hooks': [{'type': 'command', 'command': command % 'wake.py', 'timeout': 10}]}],
+                'BeforeTurn': [{'hooks': [{'type': 'command', 'command': command % 'before_turn.py', 'timeout': 5}]}],
+                'Stop': [{'hooks': [{'type': 'command', 'command': command % 'stop_trace.py', 'timeout': 60}]}],
+            }}
+            (root / '.chaos/hooks.json').write_text(json.dumps(hooks))
+            (root / 'resident-home.json').write_text(json.dumps(self.MANIFEST))
+            env = {'SOULSHOUSE_HOME_PROFILE': 'mira_v1', 'MIRA_ROOT': str(root), 'SOULSHOUSE_PORTABLE_HOME_ID': 'mira-tenner'}
+            with patch.dict(os.environ, env):
+                self.assertEqual(imported_home.validate(), (root, self.MANIFEST))
+                self.assertEqual(imported_home.sync_relative_path(self.MANIFEST), 'shared/automation/scripts/git_sync.py')
+
+
 class Completed:
     def __init__(self, returncode):
         self.returncode = returncode
