@@ -568,11 +568,14 @@ module Agents
       end
       return [] unless agent.imported_home?
 
-      [ "-e", "SOULSHOUSE_HOME_PROFILE=#{agent.home_profile}",
-        "-e", "SOULSHOUSE_PORTABLE_HOME_ID=#{agent.portable_home_id}",
-        "-e", "#{agent.imported_home_root_env}=#{IDENTITY_PATH}",
-        "-e", "AGENT_REPO_PATH=#{IDENTITY_PATH}",
-        "-e", "TZ=Europe/Madrid" ]
+      args = [ "-e", "SOULSHOUSE_HOME_PROFILE=#{agent.home_profile}",
+               "-e", "SOULSHOUSE_PORTABLE_HOME_ID=#{agent.portable_home_id}",
+               "-e", "#{agent.imported_home_root_env}=#{IDENTITY_PATH}",
+               "-e", "AGENT_REPO_PATH=#{IDENTITY_PATH}",
+               "-e", "TZ=Europe/Madrid" ]
+      # Default off. Only the Anthropic-subscription clamp combination reads it.
+      args += [ "-e", "SOULSHOUSE_IMPORTED_CLAMP_OMIT_FORCED_LOGIN=1" ] if Agents::Config.imported_clamp_omit_forced_login?
+      args
     end
 
     def provider_env_args

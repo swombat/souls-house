@@ -53,6 +53,11 @@ module Agents
       ActiveModel::Type::Boolean.new.cast(ENV.fetch("SOULSHOUSE_AGENT_COLD_START") { Rails.env.development? })
     end
 
+    # Default off. See agent-runtime/README.md, "Imported homes and forced login".
+    def imported_clamp_omit_forced_login?
+      ActiveModel::Type::Boolean.new.cast(ENV.fetch("SOULSHOUSE_IMPORTED_CLAMP_OMIT_FORCED_LOGIN", false))
+    end
+
     def restart_policy
       cold_start? ? "no" : "unless-stopped"
     end

@@ -696,6 +696,38 @@ def persistent_trigger(
 
 
 # ----- chaos invocation -----
+IMPORTED_CLAMP_OMIT_FORCED_LOGIN_ENV = "SOULSHOUSE_IMPORTED_CLAMP_OMIT_FORCED_LOGIN"
+
+
+def _env_flag(name, environ=None):
+    value = (os.environ if environ is None else environ).get(name, "")
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def imported_forced_login_method(provider, auth_mode, environ=None):
+    """Return Chaos's forced_login_method for an imported home, or None to omit it.
+
+    Current behaviour, pinned by tests: an OpenAI subscription gets "chatgpt";
+    every other imported combination gets "api". House residents never reach
+    this function and never receive the setting.
+
+    The one exception is off by default. With
+    SOULSHOUSE_IMPORTED_CLAMP_OMIT_FORCED_LOGIN=1, an imported home on an
+    Anthropic subscription (Claude Code clamp) runs without the setting. At the
+    pinned Chaos commit the setting is only read by enforce_login_restrictions,
+    which inspects the default (OpenAI) provider's stored login, never Claude
+    Code's credentials; see agent-runtime/README.md. Whether the combination
+    works end to end is unverified until a real clamp turn and a resumed turn
+    have run.
+    """
+    if auth_mode == "oauth_account" and provider == "openai":
+        return "chatgpt"
+    if (auth_mode == "oauth_account" and provider == "anthropic"
+            and _env_flag(IMPORTED_CLAMP_OMIT_FORCED_LOGIN_ENV, environ)):
+        return None
+    return "api"
+
+
 def run_chaos(
     model, timeout_secs, prompt_text, json_output,
     resume_id=None, provider=None, reasoning_effort=None, auth_mode="api_key",
@@ -730,9 +762,10 @@ def run_chaos(
     if imported_home.enabled():
         cwd, home = imported_home.validate()
         imported_home.require_runtime_trust(cwd, Path(env.get("CHAOS_HOME", CHAOS_HOME)))
-        login_method = "chatgpt" if auth_mode == "oauth_account" and selected_provider == "openai" else "api"
-        args += ["-c", f'model_instructions_file={json.dumps(str(cwd / home["instructions"]))}',
-                 "-c", f'forced_login_method="{login_method}"']
+        args += ["-c", f'model_instructions_file={json.dumps(str(cwd / home["instructions"]))}']
+        login_method = imported_forced_login_method(selected_provider, auth_mode)
+        if login_method is not None:
+            args += ["-c", f'forced_login_method="{login_method}"']
     else:
         cwd = AGENT_REPO_PATH if AGENT_REPO_PATH.exists() else Path.home()
     args += [
