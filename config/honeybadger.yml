@@ -25,5 +25,15 @@ development_environments:
 debug: false
 
 # Enable Honeybadger Insights
+# Honeybadger doesn't read Rails' filter_parameters. These are its defaults
+# plus the native app's cable ticket, which travels in Sec-WebSocket-Protocol.
+request:
+  filter_keys:
+  - password
+  - password_confirmation
+  - HTTP_AUTHORIZATION
+  - HTTP_SEC_WEBSOCKET_PROTOCOL
+  - ticket
+
 insights:
   enabled: true

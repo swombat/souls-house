@@ -69,6 +69,7 @@ class Account < ApplicationRecord
   before_validation :set_default_name, on: :create
   before_validation :generate_slug, on: :create
   before_destroy :mark_memberships_for_skip_check, prepend: true
+  after_update_commit :disconnect_members_app_cable, if: -> { saved_change_to_disabled_at? && disabled? }
 
   # Scopes
   scope :personal, -> { where(account_type: :personal) }
@@ -270,6 +271,12 @@ class Account < ApplicationRecord
   class NotAuthorized < StandardError; end
 
   private
+
+  # A disabled account leaves its members' confirmed accounts, so their
+  # native-app cable connections are dropped (issue #94 B, step 6).
+  def disconnect_members_app_cable
+    User.where(id: memberships.select(:user_id)).find_each { |user| AppSession.disconnect_cable_for(user) }
+  end
 
   def enforce_personal_account_limit
     if personal? && memberships.count > 1

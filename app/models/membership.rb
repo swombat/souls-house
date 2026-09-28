@@ -75,6 +75,7 @@ class Membership < ApplicationRecord
   after_create_commit :send_invitation_email, if: :invitation?
   after_create_commit :send_confirmation_email, unless: -> { skip_confirmation || invitation? }
   after_update_commit :track_invitation_acceptance, if: :became_confirmed?
+  after_commit :disconnect_app_cable, if: :lost_app_authority?
 
   # Scopes
   scope :owners, -> { where(role: "owner") }
@@ -176,6 +177,16 @@ class Membership < ApplicationRecord
   end
 
   private
+
+  # Losing confirmed membership ends the member's native-app authority here
+  # (issue #94 B, step 6); their cable connections are dropped after commit.
+  def lost_app_authority?
+    destroyed? || (saved_change_to_confirmed_at? && confirmed_at.nil?)
+  end
+
+  def disconnect_app_cable
+    AppSession.disconnect_cable_for(user)
+  end
 
   def auto_confirm_if_skip_confirmation
     self.confirmed_at = Time.current if skip_confirmation

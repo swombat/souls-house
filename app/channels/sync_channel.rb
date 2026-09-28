@@ -26,6 +26,10 @@ class SyncChannel < ApplicationCable::Channel
   def subscribed
     debug "📡 Attempting to subscribe to #{params[:model]}:#{params[:id]}"
 
+    # Native-app connections subscribe to AppSyncChannel, whose broadcasts
+    # carry no content; the web's streams do.
+    return reject_for_reason("app connections use AppSyncChannel") if current_app_session
+
     model_name = params[:model].to_s
     return reject_for_reason("params[:model] is not present") if model_name.blank?
     return reject_for_reason("params[:id] is not present") unless params[:id].present?

@@ -59,7 +59,7 @@ module Api
         end
 
         def find_conversation!(id)
-          Chat.kept.where(account_id: accessible_accounts.select(:id)).find(id)
+          Chat.app_accessible_to(current_user).find(id)
         end
 
         # Parses an integer query parameter. Renders a 422 and returns nil when

@@ -32,7 +32,23 @@ class AppSession < ApplicationRecord
       now = Time.current
       update!(revoked_at: now, revocation_reason: reason.to_s)
       access_tokens.where(revoked_at: nil).update_all(revoked_at: now)
+      ActiveRecord.after_all_transactions_commit { disconnect_cable(reconnect: false) }
     end
+  end
+
+  # Membership loss (Membership, Account) drops every app connection the user
+  # has open. The client reconnects with a fresh ticket, and its subscription
+  # to the conversation it lost is refused.
+  def self.disconnect_cable_for(user)
+    live.where(user: user).find_each(&:disconnect_cable)
+  end
+
+  # Closes this device's cable connections. Best effort: a lost disconnect is
+  # caught by AppSyncChannel's periodic recheck.
+  def disconnect_cable(reconnect: true)
+    ActionCable.server.remote_connections.where(current_user: user, current_app_session: self).disconnect(reconnect: reconnect)
+  rescue StandardError => error
+    Rails.logger.warn("app cable disconnect failed for app session #{id}: #{error.class}")
   end
 
   # After a refresh mints `token`, any other unrevoked token in the chain except

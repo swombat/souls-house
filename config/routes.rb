@@ -184,6 +184,7 @@ Rails.application.routes.draw do
     namespace :app do
       namespace :v1 do
         resource :session, only: [ :show, :destroy ]
+        resource :cable_ticket, only: :create
         resources :accounts, only: :index do
           resources :conversations, only: [ :index, :create ]
         end

@@ -75,6 +75,9 @@ class Chat < ApplicationRecord
   after_create_commit -> { GenerateTitleJob.perform_later(self) }, unless: :title?
 
   scope :latest, -> { order(updated_at: :desc) }
+  # The native app's authority (issue #94): current confirmed membership of an
+  # enabled account, with no site-admin widening. HTTP and cable share it.
+  scope :app_accessible_to, ->(user) { kept.where(account_id: user.confirmed_accounts.select(:id)) }
 
   # Create chat with optional initial message
   def self.create_with_message!(attributes, message_content: nil, user: nil, files: nil, agent_ids: nil, audio_signed_id: nil)
