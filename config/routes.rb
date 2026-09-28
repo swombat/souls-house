@@ -184,6 +184,13 @@ Rails.application.routes.draw do
     namespace :app do
       namespace :v1 do
         resource :session, only: [ :show, :destroy ]
+        resources :accounts, only: :index do
+          resources :conversations, only: :index
+        end
+        resources :conversations, only: [] do
+          resources :messages, only: :index
+          get :changes, to: "changes#index"
+        end
       end
     end
 

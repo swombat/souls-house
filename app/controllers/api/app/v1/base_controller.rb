@@ -9,7 +9,8 @@ module Api
 
         before_action :authenticate_app_token!
 
-        rescue_from ActiveRecord::RecordNotFound do
+        # Hashids::InputError: a malformed obfuscated id is a missing record, not a 500.
+        rescue_from ActiveRecord::RecordNotFound, Hashids::InputError do
           render_error :not_found, "not_found", "Not found"
         end
 
@@ -45,8 +46,44 @@ module Api
           token&.accessible? && token.acceptable?(:chat) && token.app_session.present? && !token.app_session.revoked?
         end
 
+        # Authority is the token's user intersected with *current* confirmed
+        # membership of the account the request names, checked on every request.
+        # An account or conversation outside that is 404, never 403, so the API
+        # doesn't confirm that it exists.
+        def accessible_accounts
+          current_user.confirmed_accounts
+        end
+
+        def find_account!(id)
+          accessible_accounts.find(id)
+        end
+
+        def find_conversation!(id)
+          Chat.kept.where(account_id: accessible_accounts.select(:id)).find(id)
+        end
+
+        # Parses an integer query parameter. Renders a 422 and returns nil when
+        # it is malformed or out of range, so callers can `or return`.
+        def bounded_integer(name, default:, min:, max: nil)
+          raw = params[name]
+          if raw.blank?
+            return default unless default == :required
+
+            render_error :unprocessable_entity, "invalid_parameter", "#{name} is required", { parameter: name.to_s }
+            return
+          end
+
+          value = Integer(raw.to_s, 10, exception: false)
+          return value if value && value >= min && (max.nil? || value <= max)
+
+          range = max ? "#{min}..#{max}" : ">= #{min}"
+          render_error :unprocessable_entity, "invalid_parameter", "#{name} must be an integer #{range}", { parameter: name.to_s }
+          nil
+        end
+
+        # One error shape. The request id is also in the X-Request-Id header.
         def render_error(status, code, message, details = {})
-          render json: { error: { code: code, message: message, details: details } }, status: status
+          render json: { error: { code: code, message: message, details: details, request_id: request.request_id } }, status: status
         end
 
       end
