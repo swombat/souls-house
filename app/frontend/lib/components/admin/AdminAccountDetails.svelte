@@ -17,9 +17,16 @@
   let teamName = $state(account.name || '');
   let newMemberEmail = $state('');
   let newMemberRole = $state('member');
+  const selectedAccountId = $derived(account.id);
 
   $effect(() => {
     teamName = account.name || '';
+  });
+
+  $effect(() => {
+    // Live sync replaces account props; only switching accounts should discard
+    // a membership draft. Successful submission clears it in onSuccess below.
+    selectedAccountId;
     newMemberEmail = '';
     newMemberRole = 'member';
   });
