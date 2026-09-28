@@ -63,11 +63,22 @@ class Agent < ApplicationRecord
     name model_id model_label active? paused? colour icon runtime health_state deprecated? unavailability_reason
   ].freeze
 
-  validates :home_profile, inclusion: { in: %w[house mira_v1] }
+  # "Imported" is a class of home profile: a reviewed private home cloned into
+  # the container. Each imported profile names the variable that carries its
+  # root. mira_v1 keeps MIRA_ROOT unchanged; portable_v1 is the neutral form.
+  IMPORTED_HOME_ROOT_ENV = {
+    "mira_v1" => "MIRA_ROOT",
+    "portable_v1" => "SOULSHOUSE_HOME_ROOT"
+  }.freeze
+  HOME_PROFILES = [ "house", *IMPORTED_HOME_ROOT_ENV.keys ].freeze
+
+  validates :home_profile, inclusion: { in: HOME_PROFILES }
   validates :portable_home_id, presence: true, if: :imported_home?
   validates :portable_home_id, uniqueness: true, allow_nil: true
 
-  def imported_home? = home_profile == "mira_v1"
+  def imported_home? = IMPORTED_HOME_ROOT_ENV.key?(home_profile)
+
+  def imported_home_root_env = IMPORTED_HOME_ROOT_ENV.fetch(home_profile)
 
   validates :name, presence: true,
                    length: { maximum: 100 },

@@ -108,6 +108,7 @@ TRIGGER_BEARER_TOKEN = os.environ.get("TRIGGER_BEARER_TOKEN", "")
 AGENT_DEFAULT_MODEL = os.environ.get("AGENT_DEFAULT_MODEL", "claude-haiku-4-5")
 AGENT_PROVIDER = os.environ.get("AGENT_PROVIDER", "anthropic")
 import imported_home
+import home_sync_loop
 
 AGENT_REPO_PATH = Path(os.environ.get("AGENT_REPO_PATH", "/home/agent/repo"))
 AGENT_IDENTITY_PATH = Path(os.environ.get("AGENT_IDENTITY_PATH", "/home/agent/identity"))
@@ -224,7 +225,12 @@ _subscription_usage_guard = threading.Lock()
 
 # ----- routes -----
 def health():
-    return jsonify({"status": "ok", "agent_id": AGENT_ID, "version": _chaos_version()})
+    body = {"status": "ok", "agent_id": AGENT_ID, "version": _chaos_version()}
+    if imported_home.enabled():
+        # Additive field only: liveness stays HTTP 200 so the house health job
+        # and container lifecycle behave exactly as before.
+        body["home_sync"] = home_sync_loop.health()
+    return jsonify(body)
 
 
 def trigger():
@@ -1686,12 +1692,25 @@ def identity_context() -> str:
 
 
 def imported_runtime_context():
+    if imported_home.profile() == "mira_v1":
+        # mira_v1's text is unchanged byte for byte; her sessions depend on it.
+        opening = (
+            "Your full identity, instructions, wake and memory practices come from MIRA_ROOT. "
+            "You are concurrently resident on other hosts; use your immutable journal helper "
+            "and existing external Mnemodyne client, not house-memory or helixkit-append-journal. "
+            "This runtime does not start your Dell-owned heartbeat/consolidation/Telegram jobs. "
+        )
+    else:
+        opening = (
+            f"Your full identity, instructions, wake and memory practices come from "
+            f"{imported_home.root_env_name()}. "
+            "You are concurrently resident on other hosts; use your own home's journal and "
+            "external memory tools, not house-memory or helixkit-append-journal. "
+            "This runtime does not start the scheduled jobs your other hosts run. "
+        )
     return (
         "## souls.house hosting context (not identity)\n"
-        "Your full identity, instructions, wake and memory practices come from MIRA_ROOT. "
-        "You are concurrently resident on other hosts; use your immutable journal helper "
-        "and existing external Mnemodyne client, not house-memory or helixkit-append-journal. "
-        "This runtime does not start your Dell-owned heartbeat/consolidation/Telegram jobs. "
+        + opening +
         "This conversation is a separate session, not a migration of another thread. "
         "Use the souls.house shell helpers and API reference at "
         "/usr/local/share/helixkit-agent/soulshouse-api.md. "

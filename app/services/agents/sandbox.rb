@@ -9,6 +9,7 @@ module Agents
     REPO_PATH = "/home/agent/repo"
     WORK_PATH = "/home/agent/work"
     STATE_PATH = "/home/agent/state"
+    IDENTITY_PATH = "/home/agent/identity"
     CHAOS_BUILT_IN_PROVIDER_IDS = %w[anthropic openai xai].freeze
     CHAOS_RUNTIME_PROVIDER_IDS = %w[gemini openrouter].freeze
     SUPPORTED_CHAOS_PROVIDER_IDS = (
@@ -449,13 +450,7 @@ module Agents
         "-e", "HELIXKIT_BEARER_TOKEN=#{agent.outbound_api_token}",
         "-e", "HELIXKIT_APP_URL=#{Agents::Config.internal_url}"
       ]
-      if agent.imported_home?
-        args += [ "-e", "SOULSHOUSE_HOME_PROFILE=mira_v1",
-                  "-e", "SOULSHOUSE_PORTABLE_HOME_ID=#{agent.portable_home_id}",
-                  "-e", "MIRA_ROOT=/home/agent/identity",
-                  "-e", "AGENT_REPO_PATH=/home/agent/identity",
-                  "-e", "TZ=Europe/Madrid" ]
-      end
+      args += home_profile_env_args
       args += provider_env_args
       args += [ "-p", "127.0.0.1::4000" ] if Agents::Config.publish_ports?
       args << agent.container_image
@@ -561,6 +556,23 @@ module Agents
 
     def agent_model
       self.class.chaos_model_for(agent)
+    end
+
+    # The resident's actual profile goes into the container, never a literal.
+    # mira_v1 produces exactly the arguments it always has.
+    # An unknown stored profile is refused here too, so a row that bypassed
+    # validation can never start as a house resident or as another profile.
+    def home_profile_env_args
+      unless Agent::HOME_PROFILES.include?(agent.home_profile)
+        raise SandboxError, "unknown resident home profile #{agent.home_profile.inspect}"
+      end
+      return [] unless agent.imported_home?
+
+      [ "-e", "SOULSHOUSE_HOME_PROFILE=#{agent.home_profile}",
+        "-e", "SOULSHOUSE_PORTABLE_HOME_ID=#{agent.portable_home_id}",
+        "-e", "#{agent.imported_home_root_env}=#{IDENTITY_PATH}",
+        "-e", "AGENT_REPO_PATH=#{IDENTITY_PATH}",
+        "-e", "TZ=Europe/Madrid" ]
     end
 
     def provider_env_args
