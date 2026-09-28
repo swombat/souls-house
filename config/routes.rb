@@ -176,8 +176,20 @@ Rails.application.routes.draw do
     resource :settings, only: [ :show, :update ]
   end
 
+  # Native-app sign-in (issue #94). No application-management UI.
+  use_doorkeeper do
+    skip_controllers :applications, :authorized_applications
+    controllers authorizations: "oauth/authorizations", tokens: "oauth/tokens"
+  end
+
   # JSON API for external clients (Claude Code, etc.)
   namespace :api do
+    namespace :app do
+      namespace :v1 do
+        resource :session, only: [ :show, :destroy ]
+      end
+    end
+
     namespace :v1 do
       get "house_inference/models", to: "house_inference#models"
       post "house_inference/chat/completions", to: "house_inference#create"

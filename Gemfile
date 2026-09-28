@@ -98,6 +98,7 @@ gem "honeybadger", "~> 6.9"
 
 # Soft delete support
 gem "discard", "~> 2.0"
+gem "doorkeeper", "5.9.7"
 
 # X/Twitter API client
 gem "x"
