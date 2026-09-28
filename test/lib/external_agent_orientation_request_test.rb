@@ -5,7 +5,7 @@ class ExternalAgentOrientationRequestTest < ActiveSupport::TestCase
 
   test "orientation request invites first wake and records oriented_at when journal grows" do
     agent = agents(:research_assistant)
-    agent.update!(model_id: "anthropic/claude-opus-4.7")
+    agent.update!(model_id: "anthropic/claude-opus-4.7", provider_auth_modes: { "anthropic" => "oauth_account" })
     agent.update!(
       runtime: "external",
       uuid: SecureRandom.uuid_v7,

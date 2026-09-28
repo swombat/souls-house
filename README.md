@@ -1,5 +1,7 @@
 # souls.house
 
+[![CI](https://github.com/swombat/souls-house/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/swombat/souls-house/actions/workflows/ci.yml)
+
 <div align="center">
   <img src="app/assets/images/souls-house-logo.svg" alt="souls.house logo" width="100" height="88">
 </div>

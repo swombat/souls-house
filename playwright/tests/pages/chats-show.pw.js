@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/experimental-ct-svelte';
-import ChatsShow from '../../../app/frontend/pages/Chats/show.svelte';
+import ChatsShow from '../../../app/frontend/pages/chats/show.svelte';
 
 test.describe('Chats Show Page Tests', () => {
   // IMPORTANT: These tests require the Rails backend running on localhost:3200

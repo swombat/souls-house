@@ -12,7 +12,8 @@ filtered to changed paths and failures are not allowed to pass silently.
 
 Each application job has a fresh PostgreSQL 17 service and isolated test instance.
 Ruby comes from `.ruby-version`; Bun comes from `package.json`. Dependencies use
-the committed lockfiles. Browser suites use the normal ownership-checked runners,
+the committed lockfiles. `config/environments/test.rb` uses public, test-only
+encryption keys; they must never be used for real data. Browser suites use the normal ownership-checked runners,
 which build assets and start/stop their own Rails backend. Failed browser runs
 retain reports, screenshots, traces and backend logs for seven days.
 
@@ -25,3 +26,27 @@ Optional real-Docker deployment/backup exercises are not part of this workflow.
 
 Checks report on commits and PRs; they do not themselves require a green result
 before merging. That is a separate repository branch-protection/ruleset policy.
+
+## Local checks
+
+Use the normal commands from an isolated checkout (see
+[multi-instance development](multi-instance-development.md)):
+
+```sh
+RAILS_ENV=test bin/rails db:prepare
+bin/rails test
+bun run test:unit --run
+bun run test
+bun run test:ct
+python3 -m unittest discover -s test -p '*_test.py'
+python3 -m unittest discover -s test/runtime -p '*_test.py'
+```
+
+Install libvips and FFmpeg as well as PostgreSQL and the pinned Ruby/Bun tools.
+The media tests actually decode images and extract video frames. Browser tests
+need `bunx playwright install --with-deps chromium` on Linux. Use a UTF-8 locale.
+Run Rails and browser suites sequentially in a checkout so their test-database
+ownership lock is respected. CI puts those suites on separate fresh machines.
+
+The workflow is a test gate, not a formatter or security audit. The repository's
+separate `bin/rubocop` and `bun run format:check` commands remain available.

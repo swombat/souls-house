@@ -16,11 +16,13 @@ class Services::OuraAdapterTest < ActiveSupport::TestCase
   end
 
   test "builds generic Oura authorization URL" do
-    url = @adapter.authorization_url(
-      @attempt,
-      state: "state-value",
-      redirect_uri: "https://example.test/service_authorizations/callback"
-    )
+    url = @adapter.stub(:client_id, "test-oura-client") do
+      @adapter.authorization_url(
+        @attempt,
+        state: "state-value",
+        redirect_uri: "https://example.test/service_authorizations/callback"
+      )
+    end
     query = Rack::Utils.parse_query(URI(url).query)
 
     assert_equal "cloud.ouraring.com", URI(url).host
