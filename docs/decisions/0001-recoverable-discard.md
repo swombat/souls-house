@@ -16,7 +16,7 @@ This supersedes the native-backend draft's body-erasure/attachment-purge proposa
 Ordinary product actions must be recoverable. Installing the `discard` gem does
 not establish compliance: each route, callback, dependent association and blob
 lifecycle must obey the policy. Lume's review at `5477941` found destructive web
-message deletion and a routed hard-delete chat action. He corrected his initial
+message deletion and a routed hard-delete chat action. They corrected their initial
 report: the conversation UI already uses discard/restore; no frontend caller of
 the hard-delete chat action was found. These are review findings, not a completed
 audit of all production paths.
@@ -28,6 +28,9 @@ audit of all production paths.
   actions, not destroyed. Preserve content and attachment files for authorised
   recovery. There is no ordinary UI/API purge or automatic purge of discarded
   product data.
+- Revoked and expired OAuth grant/token rows and `app_sessions` are retained;
+  Doorkeeper's `doorkeeper:db:cleanup` is not scheduled. Reuse detection depends on
+  retained rotation-revoked refresh-token records.
 - Permanent deletion is a separate, explicitly authorised administrative process.
   Its scope, irreversibility and effects on sync/idempotency must be explicit;
   admin status alone is not a reason to run it casually.
@@ -42,9 +45,9 @@ audit of all production paths.
 - Discarded content is hidden from ordinary authorised views, search, transcripts,
   resident context builders and attachment access. Recovery is a separate
   authorised operation; recoverable does not mean accessible to everyone.
-- Preserve parent/child discard provenance: restoring a conversation must not
-  restore a message independently discarded before it. Define and test the
-  actual recovery procedure rather than assuming `undiscard!` repairs everything.
+- Restoring a conversation does not itself undiscard individually discarded
+  messages. Define and test the recovery procedure without adding discard-actor,
+  re-discard history or audience-at-discard tracking.
 - Sync removal markers mean hidden/discarded, not physically erased. Restoration
   produces a new revision. Cursor or marker expiry never authorises content
   destruction. Original submission identities survive edit/discard/restore.
@@ -74,6 +77,8 @@ Before the message-discard slice ships:
 - State that discarding a message does not modify residents' already-authored
   journals/memory, existing exports or copies. Do not imply that residents forget
   something merely because the conversation no longer includes it.
-- Define restoration authority and whether someone joining after discard can see
-  restored content. This audience consequence is unresolved pending explicit
-  product clarification; include its answer and tests in the PR before shipping.
+- Restoration is limited to system administrators operating within the account;
+  ordinary users cannot restore messages. A restored message is visible to everyone
+  currently authorised to view its conversation, including people who joined after
+  it was discarded. Do not track or reconstruct the audience at discard time; include
+  the authority and current-audience behaviour in the PR tests before shipping.
