@@ -265,31 +265,48 @@ provider configuration and custody limitations are in `docs/mnemodyne.md` at the
 repository root. The Rails deployment supplies a private, authenticated embedding service; the
 runtime itself holds no embedding-provider credential.
 
-## Opt-in imported home pilot (`mira_v1`)
+## Opt-in imported homes (`mira_v1`, `portable_v1`)
 
-Stock residents keep `home_profile=house`. An administrator may register a
-reviewed existing home with `home_profile=mira_v1` and a unique
-`portable_home_id`, then seed the identity volume from that repository before
-provisioning. This pilot is not the new-resident/birth flow: leave
-`birth_committed_at` unset and disable scheduled house wakes. An empty imported
-volume fails provisioning instead of receiving an exported placeholder identity.
+Stock residents keep `home_profile=house`. "Imported" is a class of profile: an
+administrator may register a reviewed existing home with an imported profile
+and a unique `portable_home_id`, then seed the identity volume from that
+repository before provisioning. This is not the new-resident/birth flow: leave
+`birth_committed_at` unset and disable scheduled house wakes (that is a setting,
+not enforced by code). An empty imported volume fails provisioning instead of
+receiving an exported placeholder identity.
+
+| Profile | Root variable | Sync script when the manifest has no `sync` |
+|---|---|---|
+| `mira_v1` | `MIRA_ROOT` | `shared/automation/scripts/git_sync.py` (compatibility default) |
+| `portable_v1` | `SOULSHOUSE_HOME_ROOT` | none: the manifest must declare `sync` |
+
+Rails passes the resident's actual `home_profile` into the container
+(`SOULSHOUSE_HOME_PROFILE`) together with that profile's root variable, both
+pointing at the identity volume. `mira_v1` receives exactly the environment it
+always has. An unknown profile fails model validation, refuses `docker create`,
+stops the entrypoint (`imported_home.py --class` exits non-zero), and raises in
+the shim. It never falls back to the house path or to another profile.
 
 The home contains `resident-home.json` (`souls-home/v1`) with the matching
-`identity_id`, `profile=mira_v1`, `graph=external`, and relative file paths for
-`instructions`, `soul`, `narrative`, `hooks`, and `journal_reader`. Boot validates
-these paths and rejects missing files, escaping paths, mismatched identity and
-missing wake/reflex hooks. The profile sets `MIRA_ROOT` and the Chaos cwd to the
-identity volume, uses its instruction file and existing hooks, and skips stock
-journal injection/hook installation and house-vault provisioning. The host API
-instructions remain a separate prompt section. Per-chat resume stays unchanged.
+`identity_id`, a `profile` equal to the container's profile, `graph=external`,
+and relative file paths for `instructions`, `soul`, `narrative`, `hooks`, and
+`journal_reader`, plus optionally `sync`. Boot and every turn validate these
+paths and reject missing or empty files, paths escaping the home (including
+through symlinks), mismatched identity, and missing wake/reflex hooks. `sync`
+must also contain no `..` segment and be a Python file. The profile sets its
+root variable and the Chaos cwd to the identity volume, uses its instruction
+file and existing hooks, and skips stock journal injection/hook installation
+and house-vault provisioning. The host API instructions remain a separate prompt
+section; `mira_v1`'s text is unchanged. Per-chat resume stays unchanged.
 
 Install repo-scoped Git credentials and the external graph configuration through
 the private host-local state/config paths, never via committed files or command
 output. Configure Git identity and origin in the volume before launch. A bounded
-periodic sync worker runs every ten minutes; it does not start heartbeat,
-consolidation or Telegram jobs from the imported repository. Those stay on their
-existing hosts. The profile supports API-key authentication and OpenAI ChatGPT OAuth.
-Other subscription/clamp portability remains a separate pilot prerequisite.
+periodic sync worker (`home_sync_loop.py`) runs every ten minutes; it does not
+start heartbeat, consolidation or Telegram jobs from the imported repository.
+Those stay on their existing hosts. It runs the home's own sync script as
+`python3 <path>` with an argument list, never a shell string, with a five-minute
+timeout. `mira_v1`'s sync is unchanged unless her manifest declares `sync`.
 
 Build a separately tagged pilot image and select it only for the imported
 resident. The standard Kamal pre-deploy hook builds shared tags, and post-deploy
@@ -298,6 +315,41 @@ its isolated image explicitly. Preserve all existing resident images/containers.
 A database uniqueness constraint prevents two house residents claiming the same
 portable ID. Multi-account membership UI/authority is a subsequent phase, not
 implemented by this pilot.
+
+### Sync health
+
+Each attempt writes `/home/agent/state/home-sync/status.json` (override with
+`SOULSHOUSE_HOME_SYNC_STATUS`): `state` (`ok` or `error`), `last_attempt_at`,
+`last_success_at`, `last_error`, `consecutive_failures`, `script`. A missing or
+invalid script, a timeout, or a non-zero exit is `error` and is logged at
+ERROR level in the container log. `GET /health` on imported residents adds a
+`home_sync` object read from that file, with `state` reported as `stale` when
+the last success is more than three intervals old, and `unknown` before the first
+attempt. `/health` still returns HTTP 200 for liveness, so the house health job
+and container lifecycle are unaffected. Rails does not read `home_sync` yet:
+nothing in the app raises an alert on it. The resident's own hooks may read the
+status file.
+
+### Imported homes and forced login
+
+The profile supports API-key authentication and OpenAI ChatGPT OAuth, and passes
+Anthropic subscription (clamp) through the same path. The shim's
+`imported_forced_login_method()` chooses Chaos's `forced_login_method`:
+`"chatgpt"` for OpenAI OAuth, `"api"` for everything else, including Anthropic
+subscription clamp. House residents never receive the setting.
+
+At the pinned Chaos commit, `forced_login_method` is read on the `exec` path
+only by `enforce_login_restrictions` (`sys/kern/kern/src/auth/permissions.rs`,
+called from `sys/exec/fork/src/lib.rs` before the session starts). That check
+loads the stored login for the default provider, `openai`, or `CHAOS_API_KEY`
+from the environment. It never looks at Claude Code's credentials, and no clamp
+code reads the setting. So under Anthropic clamp, `"api"` is a no-op when that
+Chaos home holds no OpenAI login or an OpenAI API key, and it logs out and
+exits when it holds an OpenAI ChatGPT login. That is a reading of the source,
+not a run. `SOULSHOUSE_IMPORTED_CLAMP_OMIT_FORCED_LOGIN=1` on the Rails host
+(default off) passes a switch into imported containers that omits the setting
+for the Anthropic-subscription clamp combination only; every other combination
+is unchanged. Decide it with a real clamp turn and a resumed turn.
 
 ### Effective Chaos trust is part of import acceptance
 
@@ -312,6 +364,14 @@ row. This is a manual pilot setup step, not a generic import mechanism; do not
 copy another host's entire runtime database or blanket-trust parent directories.
 `require_runtime_trust` refuses a model turn if the expected trust receipt is
 missing. Revisit that check when upgrading Chaos storage.
+
+House residents get the same check only when the Rails host sets
+`SOULSHOUSE_REQUIRE_HOUSE_TRUST=1` (default off; containers must be recreated to
+pick it up). With it on, a house turn refuses to start unless Chaos trusts the
+workspace (`/home/agent/repo`) in the effective Chaos home. Between 2026-09-26
+and 2026-09-28 a settings migration dropped that trust and every house resident's
+hooks stopped without an error. Turning the guard on refuses turns for every
+untrusted house resident, so trust must be restored first.
 
 Keep MCP configuration host-local. Mira's `.mcp.json` is now ignored by her Git
 home; the Mac and Dell retain their existing local files, while the house has no
@@ -336,6 +396,13 @@ Chaos enforces that mismatch by logging out the account, not just rejecting a
 request. Fresh and resumed invocations are regression-tested. Authentication
 mode changes intentionally roll the session while preserving stored history
 and supplying the conversation window to the new session.
+
+### Container hostname
+
+Every resident container is created with `--hostname souls-house-<agent uuid>`.
+It is stable across recreates, distinct per resident, and cannot match a
+personal machine. It says where a process ran; run and session identifiers are
+unchanged. Existing containers pick it up at their next recreate.
 
 ### Upstream Chaos runtime
 
