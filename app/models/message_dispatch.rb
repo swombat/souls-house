@@ -46,6 +46,12 @@ class MessageDispatch < ApplicationRecord
   def pending? = status == "pending"
   def reserved? = status == "reserved"
 
+  # Past the horizon nothing new starts from this dispatch, whichever entry
+  # point (sweeper, retry, linked reply, job delivery) gets there first.
+  # Already-running work is not touched. On a reserved row, settled_at is the
+  # sweeper's record of that closure.
+  def recovery_closed? = settled_at.present? || accepted_at <= RECOVERY_HORIZON.ago
+
   # MessageDispatchJob's work. Idempotent: anything but a pending, unexpired,
   # still-valid dispatch returns without effect.
   def reserve!
@@ -84,6 +90,10 @@ class MessageDispatch < ApplicationRecord
   # dispatch caused (or continued) still start? Settles the dispatch if not.
   def deliverable!
     return false unless reserved?
+    if recovery_closed?
+      close_recovery_window!
+      return false
+    end
 
     reason = source_invalid_reason
     reason ||= "live_activity_disabled" unless AgentRuntimeInteraction.live_activity_enabled?
@@ -130,6 +140,7 @@ class MessageDispatch < ApplicationRecord
       return
     end
     return unless reserved?
+    return close_recovery! if recovery_closed?
 
     settle_expired_runs!
     runtime_interactions.where(dispatch_claimed_at: nil, finished_at: nil, execution_state: "queued")
@@ -150,15 +161,7 @@ class MessageDispatch < ApplicationRecord
     return settle_expired! if pending?
 
     settle_expired_runs!
-    with_lock do
-      next unless reserved? && settled_at.nil?
-
-      if unadvanced_ready_runs(0.seconds).any?
-        settle!("expired", "continuation_not_started_in_time")
-      else
-        update!(settled_at: Time.current)
-      end
-    end
+    with_lock { close_recovery_window! }
   end
 
   # What the author sees. A 200 retry means "accepted" and nothing more; this
@@ -177,6 +180,17 @@ class MessageDispatch < ApplicationRecord
 
   private
 
+  # The caller holds this row's lock.
+  def close_recovery_window!
+    return unless reserved? && settled_at.nil?
+
+    if unadvanced_ready_runs(0.seconds, owed: true).any?
+      settle!("expired", "continuation_not_started_in_time")
+    else
+      update!(settled_at: Time.current)
+    end
+  end
+
   def settle_expired!
     with_lock { settle!("expired", "not_started_in_time") if pending? && expires_at.past? }
   end
@@ -188,9 +202,11 @@ class MessageDispatch < ApplicationRecord
       .where("execution_deadline_at <= ?", Time.current).find_each(&:reconcile_activity!)
   end
 
-  def unadvanced_ready_runs(grace)
+  # owed: a continuation whose turn came, whether or not the window still
+  # lets it start. Closing the window uses that to record what never started.
+  def unadvanced_ready_runs(grace, owed: false)
     runtime_interactions.where(response_chain_advanced_at: nil).where.not(response_chain_agent_ids: [])
-      .where("updated_at <= ?", grace.ago).select(&:response_chain_ready?)
+      .where("updated_at <= ?", grace.ago).select { |run| owed ? run.response_chain_owed? : run.response_chain_ready? }
   end
 
   def safely_enqueue

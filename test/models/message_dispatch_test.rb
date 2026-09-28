@@ -233,6 +233,27 @@ class MessageDispatchTest < ActiveSupport::TestCase
     end
   end
 
+  test "a continuation reserved before the horizon cannot be claimed after it; the running first run is untouched" do
+    MessageDispatchJob.perform_now(@dispatch)
+    run = @dispatch.reload.runtime_interaction
+    assert run.claim_dispatch!
+    AllAgentsResponseJob.stub(:perform_later, nil) do
+      @chat.messages.create!(agent: @first, role: "assistant", content: "Linked reply", runtime_interaction: run)
+    end
+    AllAgentsResponseJob.perform_now(@chat, [ @second.id ], after_interaction_id: run.id)
+    successor = @dispatch.runtime_interactions.order(:id).last
+    assert_equal @second, successor.agent
+
+    travel MessageDispatch::RECOVERY_HORIZON + 1.minute do
+      assert_not successor.claim_dispatch!
+      assert_equal "cancelled", successor.reload.execution_state
+      assert_equal "reserved", @dispatch.reload.status
+      assert @dispatch.settled_at?
+      assert_equal "preparing", run.reload.execution_state
+      assert_nil run.finished_at
+    end
+  end
+
   test "one dispatch failing in the sweep does not stop the others" do
     other = Messages::PostFromHuman.new(chat: @chat, user: @user, content: "@Code Reviewer again").call.message.message_dispatch
     failing = @dispatch
