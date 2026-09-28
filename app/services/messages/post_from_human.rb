@@ -18,12 +18,16 @@ class Messages::PostFromHuman
     @audio_signed_id = audio_signed_id
   end
 
-  def call
+  # on_persisted runs after save and before any resident is woken, so the
+  # caller's audit exists even if dispatch raises, and a raising audit
+  # dispatches nothing (the order the web controller had before extraction).
+  def call(on_persisted: nil)
     message = @chat.messages.build(content: @content, user: @user, role: "user")
     message.attachments.attach(@files) if @files.present?
     attach_audio(message) if @audio_signed_id.present?
 
     if message.save
+      on_persisted&.call(message)
       @chat.trigger_mentioned_agents!(message.content) if @chat.manual_responses?
       Result.new(status: :created, message: message)
     elsif message.errors.added?(:base, :duplicate_message)

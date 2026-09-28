@@ -25,12 +25,10 @@ class MessagesController < ApplicationController
       content: message_params[:content],
       files: params[:files],
       audio_signed_id: params[:audio_signed_id]
-    ).call
+    ).call(on_persisted: ->(message) { audit("create_message", message, **message_params.to_h) })
     @message = result.message
 
     if result.created?
-      audit("create_message", @message, **message_params.to_h)
-
       respond_to do |format|
         format.html { redirect_to account_chat_path(@chat.account, @chat) }
         format.json { render json: @message, status: :created }

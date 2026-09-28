@@ -630,4 +630,39 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_not message.audio_source
   end
 
+  test "a saved message keeps its create audit when waking a mentioned resident raises" do
+    chat = mention_chat
+    AllAgentsResponseJob.stub(:perform_later, ->(*) { raise "synthetic enqueue failure" }) do
+      post account_chat_messages_path(@account, chat), params: { message: { content: "Hello @Grok" } }, as: :json
+    end
+
+    assert_response :unprocessable_entity
+    message = chat.messages.last
+    assert message.persisted?
+    assert AuditLog.where(action: "create_message", auditable: message).exists?
+  end
+
+  test "a failing create audit wakes no one" do
+    chat = mention_chat
+    dispatched = false
+    AuditLog.stub(:create!, ->(**) { raise "synthetic audit failure" }) do
+      AllAgentsResponseJob.stub(:perform_later, ->(*) { dispatched = true }) do
+        post account_chat_messages_path(@account, chat), params: { message: { content: "Hello @Grok" } }, as: :json
+      end
+    end
+
+    assert_response :unprocessable_entity
+    assert_not dispatched
+  end
+
+  private
+
+  def mention_chat
+    agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
+    chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
+    chat.agent_ids = [ agent.id ]
+    chat.save!
+    chat
+  end
+
 end

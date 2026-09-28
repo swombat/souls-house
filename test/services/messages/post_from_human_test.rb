@@ -58,6 +58,25 @@ class Messages::PostFromHumanTest < ActiveSupport::TestCase
     assert_not result.message.audio_recording.attached?
   end
 
+  test "on_persisted runs after save and before any resident is woken" do
+    seen = nil
+    result = Messages::PostFromHuman.new(chat: @group_chat, user: @user, content: "Hey @Grok").call(
+      on_persisted: ->(message) { seen = [ message.persisted?, enqueued_jobs.count { |j| j[:job] == AllAgentsResponseJob } ] }
+    )
+
+    assert result.created?
+    assert_equal [ true, 0 ], seen
+    assert_enqueued_jobs 1, only: AllAgentsResponseJob
+  end
+
+  test "on_persisted is not called for a duplicate" do
+    post("Hey @Grok")
+    called = false
+    Messages::PostFromHuman.new(chat: @group_chat, user: @user, content: "Hey @Grok").call(on_persisted: ->(*) { called = true })
+
+    assert_not called
+  end
+
   private
 
   def post(content)
