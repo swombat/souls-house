@@ -130,6 +130,27 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_chat_path(@account, @chat)
   end
 
+  test "a file with no caption is a message on the web too" do
+    file = fixture_file_upload("test_image.png", "image/png")
+
+    assert_difference "Message.count" do
+      post account_chat_messages_path(@account, @chat), params: {
+        message: { content: "" },
+        files: [ file ]
+      }
+    end
+
+    message = Message.last
+    assert_equal "", message.content.to_s
+    assert_equal [ "test_image.png" ], message.attachments.map { |f| f.filename.to_s }
+  end
+
+  test "an empty message with no file is still refused on the web" do
+    assert_no_difference "Message.count" do
+      post account_chat_messages_path(@account, @chat), params: { message: { content: "" } }
+    end
+  end
+
   test "should create message without files (backwards compatibility)" do
     assert_difference "Message.count" do
       post account_chat_messages_path(@account, @chat), params: {

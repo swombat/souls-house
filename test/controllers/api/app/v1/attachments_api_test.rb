@@ -188,6 +188,79 @@ class Api::App::V1::AttachmentsApiTest < ActionDispatch::IntegrationTest
     assert kept.reload.attachments.attached?
   end
 
+  # Review of 4c (Mira, PR #97): these three were her witnesses.
+  test "an identical retry still matches after ActiveStorage re-identifies the file's type" do
+    bytes = "%PDF-1.4\nminimal PDF bytes\n"
+    blob = declared_blob(filename: "document.bin", bytes: bytes)
+    blob.update!(content_type: "application/octet-stream")
+    blob.service.upload(blob.key, StringIO.new(bytes), checksum: blob.checksum)
+    send_message("retype-key-0001", "document", [ blob.signed_id ])
+    assert_response :created
+    assert_equal "application/pdf", blob.reload.content_type
+
+    send_message("retype-key-0001", "document", [ blob.signed_id ])
+    assert_response :ok
+  end
+
+  test "attachments keep submission order on reload, in history and changes" do
+    older = uploaded_blob(filename: "older.png")
+    newer = uploaded_blob(filename: "newer.png")
+    send_message("order-key-0001", "reverse upload order", [ newer.signed_id, older.signed_id ])
+    assert_response :created
+    expected = [ "newer.png", "older.png" ]
+    assert_equal expected, response.parsed_body.dig("message", "attachments").map { |a| a["filename"] }
+
+    get "/api/app/v1/conversations/#{@chat.to_param}/messages", headers: bearer(@tokens)
+    assert_equal expected, response.parsed_body["messages"].last["attachments"].map { |a| a["filename"] }
+
+    get "/api/app/v1/conversations/#{@chat.to_param}/changes", params: { since: 0 }, headers: bearer(@tokens)
+    changed = response.parsed_body["changes"].find { |m| m["attachments"].present? }
+    assert_equal expected, changed["attachments"].map { |a| a["filename"] }
+
+    send_message("order-key-0001", "reverse upload order", [ newer.signed_id, older.signed_id ])
+    assert_response :ok
+    assert_equal expected, response.parsed_body.dig("message", "attachments").map { |a| a["filename"] }
+  end
+
+  test "an upload claimed by an interleaved send is refused, and only one message holds it" do
+    blob = uploaded_blob
+    service = blob.service
+    original = service.method(:exist?)
+    interleaved = false
+    service.stub(:exist?, lambda { |key|
+      unless interleaved
+        interleaved = true
+        winner = Messages::PostFromHuman.new(chat: @chat, user: @user, content: "winner", files: [ blob ], client_message_id: "claim-winner-01").call
+        assert winner.created?
+      end
+      original.call(key)
+    }) do
+      assert_difference("Message.count", 1) do # the interleaved send only
+        send_message("claim-loser-001", "loser", [ blob.signed_id ])
+      end
+    end
+    assert_error :unprocessable_entity, "invalid_attachment"
+    assert_equal 1, blob.attachments.count
+  end
+
+  test "the same send interleaved with itself answers with the recorded acceptance" do
+    blob = uploaded_blob
+    service = blob.service
+    original = service.method(:exist?)
+    winner = nil
+    service.stub(:exist?, lambda { |key|
+      winner ||= Messages::PostFromHuman.new(chat: @chat, user: @user, content: "twin", files: [ ActiveStorage::Blob.find(blob.id) ], client_message_id: "claim-twin-0001").call
+      original.call(key)
+    }) do
+      assert_difference("Message.count", 1) do # the interleaved send only
+        send_message("claim-twin-0001", "twin", [ blob.signed_id ])
+      end
+    end
+    assert_response :ok
+    assert_equal winner.message.to_param, response.parsed_body.dig("message", "id")
+    assert_equal 1, blob.attachments.count
+  end
+
   private
 
   # The disk service's URL carries the blob key in a signed token.

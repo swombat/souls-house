@@ -94,11 +94,15 @@ module Api
 
         # download_path answers with a redirect to a short-lived storage URL
         # (attachments#show); fetch it with the bearer, follow without it.
+        # Files are in submission order: an app send records each file's
+        # position on its blob (PostFromHuman#claim_uploads); others go by
+        # attachment id, after any positioned file.
         def attachments(message)
           return [] unless message.attachments.attached?
 
           routes = Rails.application.routes.url_helpers
-          message.attachments.map do |file|
+          ordered = message.attachments.sort_by { |file| [ file.blob.metadata["position"] || Float::INFINITY, file.id ] }
+          ordered.map do |file|
             {
               id: file.id,
               filename: file.filename.to_s,

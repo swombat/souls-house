@@ -84,6 +84,14 @@ module Api
           elsif result.dispatch_unavailable?
             render_error :service_unavailable, "dispatch_unavailable",
                          "Residents cannot be woken right now; the message was not sent", { retryable: true }
+          elsif result.attachment_claimed?
+            # Another send took an upload between the check above and this
+            # one's acceptance. If it was this same send, that is its retry.
+            if (twin = find_submission(client_message_id))
+              return render_retry(twin, content, blobs)
+            end
+
+            render_error :unprocessable_entity, "invalid_attachment", "An attachment is not an upload for this conversation"
           elsif result.duplicate?
             # A concurrent twin that commits before this save is validated trips
             # the web's repeat guard (same content as the last message) before
