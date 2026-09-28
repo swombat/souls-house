@@ -342,4 +342,58 @@ class MessageDispatchTest < ActiveSupport::TestCase
     ENV["SOULSHOUSE_LIVE_ACTIVITY"] = previous
   end
 
+
+  # --- invoke variant (keyed-invoke extension) -------------------------------
+
+  test "the variants hold in the model and in the database: a mention has its message, an invoke its key and digest" do
+    now = Time.current
+    base = { chat: @chat, user: @user, accepted_at: now, expires_at: now + 1.minute }
+    assert_not MessageDispatch.new(base.merge(kind: "invoke", message: @message, client_invocation_id: "k-0000001", request_digest: "v1:x")).valid?
+    assert_not MessageDispatch.new(base.merge(kind: "invoke", client_invocation_id: "k-0000001")).valid?
+    assert_not MessageDispatch.new(base.merge(kind: "mention")).valid?
+    assert_not MessageDispatch.new(base.merge(kind: "other", client_invocation_id: "k-0000001", request_digest: "v1:x")).valid?
+
+    assert_raises(ActiveRecord::StatementInvalid) { @dispatch.update_columns(client_invocation_id: "k-0000001", request_digest: "v1:x") }
+  end
+
+  test "an invoke-all chain is swept like a mention's: past the horizon its unstarted continuation is recorded, nothing started" do
+    @message.message_dispatch.update!(status: "cancelled", reason: "test", settled_at: Time.current)
+    dispatch = MessageDispatch.invoke!(chat: @chat, user: @user, client_invocation_id: "invoke-00000001", agent: nil)
+    run = dispatch.runtime_interaction
+    assert_equal @chat.agents.order(:id).ids.drop(1), run.response_chain_agent_ids
+    run.claim_dispatch!
+    AllAgentsResponseJob.stub(:perform_later, nil) { run.finish_execution!("completed") }
+    clear_enqueued_jobs
+
+    travel MessageDispatch::RECOVERY_HORIZON + 1.minute do
+      assert_no_enqueued_jobs { MessageDispatchSweepJob.perform_now }
+      assert_equal [ "expired", "continuation_not_started_in_time" ], dispatch.reload.values_at(:status, :reason)
+    end
+  end
+
+  test "an invoke's continuation carries the dispatch and is gated by it" do
+    dispatch = MessageDispatch.invoke!(chat: @chat, user: @user, client_invocation_id: "invoke-00000001", agent: nil)
+    run = dispatch.runtime_interaction
+    run.claim_dispatch!
+    run.finish_execution!("completed")
+    perform_enqueued_jobs(only: AllAgentsResponseJob)
+    successor = dispatch.runtime_interactions.order(:id).last
+    assert_not_equal run, successor
+    assert_equal dispatch, successor.message_dispatch
+
+    memberships(:daniel_personal).update_columns(confirmed_at: nil)
+    assert_not successor.claim_dispatch!
+    assert_equal [ "cancelled", "author_not_member" ], dispatch.reload.values_at(:status, :reason)
+  end
+
+  test "an invoke that cannot reserve anything rolls back whole" do
+    @first.update!(active: false)
+    @second.update!(active: false)
+    assert_no_difference [ "MessageDispatch.count", "AgentRuntimeInteraction.count" ] do
+      assert_raises(Agent::RuntimeAvailability::Unavailable) do
+        MessageDispatch.invoke!(chat: @chat, user: @user, client_invocation_id: "invoke-00000001", agent: nil)
+      end
+    end
+  end
+
 end

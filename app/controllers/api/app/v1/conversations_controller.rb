@@ -56,21 +56,57 @@ module Api
         end
 
         # Asks one resident (agent_id) or all of them to respond now, as the
-        # web's trigger does. 202: the response arrives as messages and shows
-        # in activity. 409 while one is already responding.
+        # web's trigger does, keyed by client_invocation_id (#94 B,
+        # keyed-invoke extension). A new invocation is accepted and reserved in
+        # one transaction and answers 202 with its dispatch. The same key with
+        # the same request answers 202 with that invocation's recorded outcome,
+        # whatever it is now (reserved, running, finished, cancelled, expired);
+        # it never starts another run, which is how the app reads an
+        # invocation's status. The same key with a different request is 409.
+        #
+        # A retry is judged before anything a new invocation would need (live
+        # activity, eligibility, busy); account access is checked every time.
+        # A new invocation is 503 while live activity is off, 409 while a
+        # target is already responding (nothing is written), 409 with its
+        # availability code for a resident who can't run, 404 for a resident
+        # outside the conversation, and 422 when the conversation can't be
+        # invoked.
         def invoke
-          if params[:agent_id].present?
-            @chat.trigger_agent_response!(@chat.agents.find(params[:agent_id]))
-          else
-            @chat.trigger_all_agents_response!
+          client_invocation_id = params[:client_invocation_id].to_s
+          unless client_invocation_id.match?(CLIENT_CONVERSATION_ID_FORMAT)
+            return render_error(:unprocessable_entity, "invalid_parameter", "client_invocation_id must be 8-64 characters of A-Z, a-z, 0-9, _ or -", { parameter: "client_invocation_id" })
           end
-          head :accepted
-        rescue Chat::AlreadyResponding => e
-          render_error :conflict, "already_responding", e.message
-        rescue Agent::RuntimeAvailability::Unavailable => e
-          render_error :conflict, e.code, e.message
-        rescue ArgumentError => e
-          render_error :unprocessable_entity, "not_invokable", e.message
+          agent_id = requested_invoke_agent_id
+          digest = MessageDispatch.invocation_digest(agent_id)
+
+          existing = invocation(client_invocation_id)
+          return render_invocation_retry(existing, digest) if existing
+
+          unless AgentRuntimeInteraction.live_activity_enabled?
+            return render_error(:service_unavailable, "live_activity_unavailable",
+                                "Residents cannot be asked to respond right now; nothing was started", { retryable: true })
+          end
+          agent = agent_id && @chat.agents.find(agent_id)
+          check_invokable!(agent)
+
+          dispatch = MessageDispatch.invoke!(chat: @chat, user: current_user, client_invocation_id: client_invocation_id, agent: agent)
+          render json: { invocation: dispatch.as_app_json }, status: :accepted
+        rescue ActiveRecord::RecordNotUnique
+          # A concurrent request with the same key committed first.
+          existing = invocation(client_invocation_id) or raise
+          render_invocation_retry(existing, digest)
+        rescue Chat::AlreadyResponding, Agent::RuntimeAvailability::Unavailable, ArgumentError, MessageDispatch::InvocationRefused => e
+          # A same-key twin that committed while this request waited on the
+          # chat lock makes its own run look busy here: it is a retry.
+          if (existing = client_invocation_id.presence && invocation(client_invocation_id))
+            return render_invocation_retry(existing, digest)
+          end
+
+          case e
+          when Chat::AlreadyResponding then render_error :conflict, "already_responding", e.message
+          when Agent::RuntimeAvailability::Unavailable then render_error :conflict, e.code, e.message
+          else render_error :unprocessable_entity, "not_invokable", e.message
+          end
         end
 
         # The conversation's recent resident runs, oldest first.
@@ -101,6 +137,43 @@ module Api
           return agents if agents.size == agent_ids.size
 
           render_invalid_agent_ids
+        end
+
+        # The named resident as a database id, nil for everyone. An id that
+        # names no resident is 404, as a resident outside the conversation is.
+        def requested_invoke_agent_id
+          return nil if params[:agent_id].blank?
+
+          Integer(Agent.decode_id(params[:agent_id].to_s), exception: false) || raise(ActiveRecord::RecordNotFound)
+        rescue Hashids::InputError
+          raise ActiveRecord::RecordNotFound
+        end
+
+        def invocation(client_invocation_id)
+          MessageDispatch.find_by(kind: "invoke", chat: @chat, user: current_user, client_invocation_id: client_invocation_id)
+        end
+
+        # The web trigger's checks for a new request, except busy, which is
+        # decided under the chat lock where the run is reserved.
+        def check_invokable!(agent)
+          raise ArgumentError, "This chat does not support manual responses" unless @chat.manual_responses?
+          raise ArgumentError, "This conversation is archived or deleted" unless @chat.respondable?
+          if agent
+            agent.require_conversation_runtime!
+          else
+            raise ArgumentError, "No agents in this conversation" if @chat.agents.empty?
+            unless @chat.agents.any?(&:eligible_for_conversation?)
+              raise Agent::RuntimeAvailability::Unavailable.new("No available agents in this conversation", code: "no_available_agents")
+            end
+          end
+        end
+
+        def render_invocation_retry(dispatch, digest)
+          if dispatch.request_digest == digest
+            render json: { invocation: dispatch.as_app_json }, status: :accepted
+          else
+            render_error :conflict, "idempotency_conflict", "client_invocation_id was already used for a different request"
+          end
         end
 
         def render_invalid_agent_ids

@@ -10,10 +10,18 @@
 # guards one application-level dispatch per interaction. It is not an
 # exactly-once transport, and an unknown runtime outcome stays unknown.
 #
+# A native explicit invoke is the same thing with no source message (kind
+# "invoke", keyed by the app's client_invocation_id): reserved inline when it
+# is accepted, then claimed, continued and swept exactly like a mention wake.
+#
 # Lock order: this row is always taken before any interaction or chat lock.
 class MessageDispatch < ApplicationRecord
 
+  # Raised to roll back a new invocation that could not reserve anything.
+  class InvocationRefused < StandardError; end
+
   STATUSES = %w[pending reserved cancelled expired].freeze
+  KINDS = %w[mention invoke].freeze
   EXPIRY = 10.minutes
   # Recovery re-drives work this far back and no further. Past it, the sweeper
   # still records what became of the dispatch (close_recovery!) instead of
@@ -23,13 +31,20 @@ class MessageDispatch < ApplicationRecord
   # was lost.
   REDRIVE_GRACE = 30.seconds
 
-  belongs_to :message
+  belongs_to :message, optional: true
   belongs_to :chat
   belongs_to :user
   belongs_to :runtime_interaction, class_name: "AgentRuntimeInteraction", optional: true
   has_many :runtime_interactions, class_name: "AgentRuntimeInteraction", dependent: :nullify
 
   validates :status, inclusion: { in: STATUSES }
+  validates :kind, inclusion: { in: KINDS }
+  # The database's check constraint enforces the same variants; this is the
+  # readable failure.
+  validates :message, presence: true, if: :mention?
+  validates :message, absence: true, if: :invoke?
+  validates :client_invocation_id, :request_digest, presence: true, if: :invoke?
+  validates :client_invocation_id, :request_digest, absence: true, if: :mention?
 
   scope :recoverable, -> { where(accepted_at: RECOVERY_HORIZON.ago..) }
   # Reserved and still under recovery: a settled_at on a reserved row means
@@ -43,6 +58,52 @@ class MessageDispatch < ApplicationRecord
             accepted_at: now, expires_at: now + EXPIRY)
   end
 
+  # A native invoke, accepted and reserved in one primary transaction under
+  # the chat lock, so the targets it captures and the busy check it makes are
+  # the ones its reservation sees. Unlike a mention, busy is a refusal, not a
+  # skip: a resident already responding raises Chat::AlreadyResponding, and
+  # nothing is written. The caller has checked everything a new request needs
+  # except busy; the runtime check repeats inside reserve!.
+  #
+  # agent is one resident, or nil for everyone in the conversation, in id
+  # order at this moment. request_digest records what was asked ("all", not
+  # who that resolved to), so a retry after the residents change still
+  # matches and is never retargeted.
+  #
+  # The run's enqueue happens after the commit and can raise there. Whether
+  # the invocation was accepted is whether its row exists, not whether we
+  # raised; the sweeper re-drives an unclaimed run.
+  def self.invoke!(chat:, user:, client_invocation_id:, agent:)
+    dispatch = nil
+    transaction do
+      chat.lock!
+      targets = agent ? [ agent.id ] : chat.agents.order(:id).ids
+      if agent.nil?
+        busy = chat.agents.where(id: targets).order(:id).find { |a| a.eligible_for_conversation? && chat.agent_response_active?(a) }
+        raise Chat::AlreadyResponding, "#{busy.name} is already responding" if busy
+      end
+
+      now = Time.current
+      dispatch = create!(kind: "invoke", chat: chat, user: user, target_agent_ids: targets,
+                         client_invocation_id: client_invocation_id,
+                         request_digest: invocation_digest(agent&.id),
+                         accepted_at: now, expires_at: now + EXPIRY)
+      dispatch.reserve!
+    end
+    dispatch
+  rescue StandardError => e
+    raise unless dispatch&.id && exists?(dispatch.id)
+
+    Rails.logger.warn "[MessageDispatch] invocation #{dispatch.id} accepted; an after-commit step failed: #{e.class}: #{e.message}"
+    dispatch.reload
+  end
+
+  def self.invocation_digest(agent_id)
+    "v1:" + Digest::SHA256.hexdigest({ agent: agent_id || "all" }.to_json)
+  end
+
+  def mention? = kind == "mention"
+  def invoke? = kind == "invoke"
   def pending? = status == "pending"
   def reserved? = status == "reserved"
 
@@ -54,13 +115,19 @@ class MessageDispatch < ApplicationRecord
 
   # MessageDispatchJob's work. Idempotent: anything but a pending, unexpired,
   # still-valid dispatch returns without effect.
+  #
+  # An invoke only ever comes through here inline from invoke!, and never
+  # settles: whatever stops it reserving raises, so the whole request rolls
+  # back and nothing is recorded as accepted.
   def reserve!
     with_lock do
       next unless pending?
-      next settle!("expired", "not_started_in_time") if expires_at.past?
-      next settle!("cancelled", "live_activity_disabled") unless AgentRuntimeInteraction.live_activity_enabled?
-      if (reason = source_invalid_reason)
-        next settle!("cancelled", reason)
+      reason = "not_started_in_time" if expires_at.past?
+      reason ||= "live_activity_disabled" unless AgentRuntimeInteraction.live_activity_enabled?
+      reason ||= source_invalid_reason
+      if reason
+        raise InvocationRefused, reason if invoke?
+        next settle!(reason == "not_started_in_time" ? "expired" : "cancelled", reason)
       end
 
       busy = false
@@ -74,15 +141,24 @@ class MessageDispatch < ApplicationRecord
           update!(status: "reserved", runtime_interaction: interaction)
           break
         rescue Agent::RuntimeAvailability::Unavailable
+          # One named resident who can't run is the request's answer; in a
+          # round, they are skipped as the web's round skips them.
+          raise if invoke? && target_agent_ids.one?
           next
         rescue ArgumentError
-          # Already responding: this send's request for them is dropped, as
-          # the web has always dropped a mention of a busy resident.
+          # Already responding (or the conversation just became unavailable).
+          # An invoke refuses; a mention drops its request for them, as the
+          # web has always dropped a mention of a busy resident.
+          raise if invoke?
           busy = true
           next
         end
       end
-      settle!("cancelled", busy ? "target_busy" : "no_available_target") if pending?
+      next unless pending?
+      if invoke?
+        raise Agent::RuntimeAvailability::Unavailable.new("No available agents in this conversation", code: "no_available_agents")
+      end
+      settle!("cancelled", busy ? "target_busy" : "no_available_target")
     end
   end
 
@@ -168,6 +244,8 @@ class MessageDispatch < ApplicationRecord
   # is how they learn what became of the wake.
   def as_app_json
     {
+      kind: kind,
+      client_invocation_id: client_invocation_id,
       status: status,
       reason: reason,
       expires_at: expires_at.iso8601(6),
@@ -219,9 +297,13 @@ class MessageDispatch < ApplicationRecord
     update!(status: status, reason: reason, settled_at: Time.current)
   end
 
+  # An invoke has no message to discard; it stands while its conversation
+  # is respondable and its invoker is still a member.
   def source_invalid_reason
-    message.reload
-    return "discarded" if message.discarded?
+    if mention?
+      message.reload
+      return "discarded" if message.discarded?
+    end
     return "conversation_unavailable" unless chat.reload.respondable? && chat.manual_responses?
     return "author_not_member" unless user.confirmed_accounts.exists?(chat.account_id)
 

@@ -122,57 +122,212 @@ class Api::App::V1::ConversationApiTest < ActionDispatch::IntegrationTest
     assert_error :not_found, "not_found"
   end
 
-  # --- invoke ----------------------------------------------------------------
+  # --- invoke (keyed: #94 B, keyed-invoke extension) -------------------------
 
-  test "invoke of one resident is 202 and reserves its run" do
+  test "invoke of one resident is 202, records a keyed invocation and reserves its run" do
     chat = conversation_with(@agent, @other)
     assert_difference -> { chat.agent_runtime_interactions.count }, 1 do
       assert_enqueued_jobs 1, only: ManualAgentResponseJob do
-        post "/api/app/v1/conversations/#{chat.to_param}/invoke", params: { agent_id: @agent.to_param }, headers: bearer(@tokens)
+        invoke(chat, "invoke-00000001", @agent)
       end
     end
     assert_response :accepted
-    assert_equal @agent, chat.agent_runtime_interactions.last.agent
+    dispatch = MessageDispatch.find_by!(chat: chat, client_invocation_id: "invoke-00000001")
+    assert_equal [ "invoke", "reserved", nil, [ @agent.id ] ], [ dispatch.kind, dispatch.status, dispatch.message_id, dispatch.target_agent_ids ]
+    run = dispatch.runtime_interaction
+    assert_equal [ @agent, dispatch ], [ run.agent, run.message_dispatch ]
+    assert_operator run.execution_deadline_at, :<=, dispatch.expires_at
+    body = response.parsed_body["invocation"]
+    assert_equal [ "invoke", "invoke-00000001", "reserved" ], body.values_at("kind", "client_invocation_id", "status")
+    assert_equal [ run.run_id ], body["runs"].pluck("run_id")
   end
 
-  test "invoke of everyone is 202 and queues the round" do
+  test "invoke of everyone reserves the first resident with the rest as its chain, not an unkeyed job" do
     chat = conversation_with(@agent, @other)
-    assert_enqueued_with(job: AllAgentsResponseJob) do
-      post "/api/app/v1/conversations/#{chat.to_param}/invoke", headers: bearer(@tokens)
+    assert_no_enqueued_jobs only: AllAgentsResponseJob do
+      invoke(chat, "invoke-00000001")
     end
     assert_response :accepted
+    dispatch = MessageDispatch.find_by!(client_invocation_id: "invoke-00000001")
+    ordered = [ @agent, @other ].map(&:id).sort
+    assert_equal ordered, dispatch.target_agent_ids
+    assert_equal [ ordered.first, ordered.drop(1) ], [ dispatch.runtime_interaction.agent_id, dispatch.runtime_interaction.response_chain_agent_ids ]
   end
 
-  test "invoke while a resident is already responding is 409 and queues nothing" do
-    chat = conversation_with(@agent, @other)
-    chat.agent_runtime_interactions.create!(agent: @agent, trigger_kind: "conversation", started_at: 1.minute.ago)
-
-    assert_no_enqueued_jobs do
-      post "/api/app/v1/conversations/#{chat.to_param}/invoke", params: { agent_id: @agent.to_param }, headers: bearer(@tokens)
-      assert_error :conflict, "already_responding"
-      post "/api/app/v1/conversations/#{chat.to_param}/invoke", headers: bearer(@tokens)
-      assert_error :conflict, "already_responding"
+  test "invoke without a valid client_invocation_id is 422 and starts nothing" do
+    chat = conversation_with(@agent)
+    [ nil, "short", "has spaces in it" ].each do |key|
+      assert_no_difference -> { MessageDispatch.count } do
+        post "/api/app/v1/conversations/#{chat.to_param}/invoke", params: { client_invocation_id: key }.compact, headers: bearer(@tokens)
+      end
+      assert_error :unprocessable_entity, "invalid_parameter"
     end
   end
 
-  # The lock inside reserve! is where a concurrent invoke loses; it must be
-  # told apart the same way as the pre-check, or the loser would see 422.
-  test "a reservation lost to a concurrent run raises AlreadyResponding" do
+  test "the same key returns its own invocation while running and after it finishes, and never starts another run" do
     chat = conversation_with(@agent)
-    AgentRuntimeInteraction.reserve!(agent: @agent, chat: chat, enqueue: false)
-    assert_raises(Chat::AlreadyResponding) { AgentRuntimeInteraction.reserve!(agent: @agent, chat: chat, enqueue: false) }
+    invoke(chat, "invoke-00000001", @agent)
+    run = MessageDispatch.find_by!(client_invocation_id: "invoke-00000001").runtime_interaction
+    run.claim_dispatch!
+
+    assert_no_difference -> { AgentRuntimeInteraction.count } do
+      assert_no_enqueued_jobs only: ManualAgentResponseJob do
+        invoke(chat, "invoke-00000001", @agent)
+        assert_response :accepted
+        assert_equal [ [ run.run_id, "preparing" ] ], response.parsed_body.dig("invocation", "runs").map { |r| r.values_at("run_id", "status") }
+
+        run.reload.finish_execution!("completed")
+        invoke(chat, "invoke-00000001", @agent)
+        assert_response :accepted
+        assert_equal [ "completed" ], response.parsed_body.dig("invocation", "runs").pluck("status")
+      end
+    end
   end
 
-  test "invoke of an archived conversation is 422; of a resident outside it, 404" do
+  test "the same key with a different request is 409" do
+    chat = conversation_with(@agent, @other)
+    invoke(chat, "invoke-00000001", @agent)
+    assert_no_difference -> { AgentRuntimeInteraction.count } do
+      invoke(chat, "invoke-00000001", @other)
+      assert_error :conflict, "idempotency_conflict"
+      invoke(chat, "invoke-00000001")
+      assert_error :conflict, "idempotency_conflict"
+    end
+  end
+
+  # A retry is judged against what was asked, before anything a new
+  # invocation would need; only account access is re-checked.
+  test "a retry is answered from its record after the resident leaves, is deactivated, or live activity goes off" do
+    chat = conversation_with(@agent, @other)
+    invoke(chat, "invoke-00000001", @agent)
+    MessageDispatch.find_by!(client_invocation_id: "invoke-00000001").runtime_interaction.finish_execution!("completed")
+    invoke(chat, "invoke-00000002")
+    assert_response :accepted
+    chat.agent_ids = [ @other.id ]
+    @agent.update!(active: false)
+    ENV["SOULSHOUSE_LIVE_ACTIVITY"] = "0"
+
+    assert_no_difference -> { AgentRuntimeInteraction.count } do
+      invoke(chat, "invoke-00000001", @agent)
+      assert_response :accepted
+      invoke(chat, "invoke-00000002")
+      assert_response :accepted
+    end
+    assert_equal [ @agent.id, @other.id ].sort, MessageDispatch.find_by!(client_invocation_id: "invoke-00000002").target_agent_ids
+  ensure
+    ENV.delete("SOULSHOUSE_LIVE_ACTIVITY")
+  end
+
+  test "a new invocation while live activity is off is 503 and writes nothing" do
     chat = conversation_with(@agent)
-    post "/api/app/v1/conversations/#{chat.to_param}/invoke", params: { agent_id: @other.to_param }, headers: bearer(@tokens)
+    ENV["SOULSHOUSE_LIVE_ACTIVITY"] = "0"
+    assert_no_difference [ "MessageDispatch.count", "AgentRuntimeInteraction.count" ] do
+      assert_no_enqueued_jobs do
+        invoke(chat, "invoke-00000001", @agent)
+        assert_error :service_unavailable, "live_activity_unavailable"
+        assert response.parsed_body.dig("error", "details", "retryable")
+        invoke(chat, "invoke-00000002")
+        assert_error :service_unavailable, "live_activity_unavailable"
+      end
+    end
+  ensure
+    ENV.delete("SOULSHOUSE_LIVE_ACTIVITY")
+  end
+
+  test "invoke while a resident is already responding is 409, for one or all, and writes nothing" do
+    chat = conversation_with(@agent, @other)
+    chat.agent_runtime_interactions.create!(agent: @other, trigger_kind: "conversation", started_at: 1.minute.ago)
+
+    assert_no_difference -> { MessageDispatch.count } do
+      assert_no_enqueued_jobs do
+        invoke(chat, "invoke-00000001", @other)
+        assert_error :conflict, "already_responding"
+        invoke(chat, "invoke-00000002")
+        assert_error :conflict, "already_responding"
+      end
+    end
+  end
+
+  # Busy for everyone is decided under the chat lock with the reservation,
+  # not before it: a run that appears after the controller's checks still
+  # refuses the whole invocation.
+  test "a run that starts between the checks and the reservation refuses invoke-all with nothing written" do
+    chat = conversation_with(@agent, @other)
+    later = [ @agent, @other ].max_by(&:id)
+    original = chat.class.instance_method(:respondable?)
+    raced = false
+    Chat.define_method(:respondable?) do
+      result = original.bind_call(self)
+      unless raced
+        raced = true
+        agent_runtime_interactions.create!(agent: later, trigger_kind: "conversation", started_at: Time.current)
+      end
+      result
+    end
+    assert_no_difference -> { MessageDispatch.count } do
+      invoke(chat, "invoke-00000001")
+    end
+    assert_error :conflict, "already_responding"
+  ensure
+    Chat.define_method(:respondable?, original)
+  end
+
+  test "invoke of a resident outside the conversation is 404; of an archived one, 422; of one who can't run, 409 with why" do
+    chat = conversation_with(@agent)
+    invoke(chat, "invoke-00000001", @other)
+    assert_error :not_found, "not_found"
+    post "/api/app/v1/conversations/#{chat.to_param}/invoke", params: { client_invocation_id: "invoke-00000002", agent_id: "not-a-hashid" }, headers: bearer(@tokens)
     assert_error :not_found, "not_found"
 
+    @agent.update!(active: false)
+    invoke(chat, "invoke-00000003", @agent)
+    assert_error :conflict, "agent_inactive"
+    invoke(chat, "invoke-00000004")
+    assert_error :conflict, "no_available_agents"
+    @agent.update!(active: true)
+
     chat.archive!
-    assert_no_enqueued_jobs do
-      post "/api/app/v1/conversations/#{chat.to_param}/invoke", headers: bearer(@tokens)
+    assert_no_difference -> { MessageDispatch.count } do
+      invoke(chat, "invoke-00000005")
     end
     assert_error :unprocessable_entity, "not_invokable"
+  end
+
+  test "a runtime enqueue that fails after commit still answers 202; the sweeper re-drives the run and it is claimed once" do
+    chat = conversation_with(@agent)
+    ManualAgentResponseJob.stub(:perform_later, ->(*) { raise "queue unavailable" }) do
+      invoke(chat, "invoke-00000001", @agent)
+    end
+    assert_response :accepted
+    dispatch = MessageDispatch.find_by!(client_invocation_id: "invoke-00000001")
+    run = dispatch.runtime_interaction
+    assert_equal "reserved", dispatch.status
+
+    travel 31.seconds do
+      assert_enqueued_with(job: ManualAgentResponseJob, args: [ chat, @agent, { runtime_interaction_id: run.id } ]) do
+        MessageDispatchSweepJob.perform_now
+      end
+      assert_equal [ true, false ], [ run.reload.claim_dispatch!, run.reload.claim_dispatch! ]
+    end
+  end
+
+  test "an invocation from someone who has lost membership is cancelled at its claim" do
+    chat = conversation_with(@agent)
+    invoke(chat, "invoke-00000001", @agent)
+    dispatch = MessageDispatch.find_by!(client_invocation_id: "invoke-00000001")
+    Membership.where(user: @user, account: @account).update_all(confirmed_at: nil)
+
+    assert_not dispatch.runtime_interaction.claim_dispatch!
+    assert_equal [ "cancelled", "author_not_member" ], dispatch.reload.values_at(:status, :reason)
+  end
+
+  test "keys are per conversation and per person" do
+    first = conversation_with(@agent)
+    second = conversation_with(@agent)
+    invoke(first, "invoke-00000001", @agent)
+    invoke(second, "invoke-00000001", @agent)
+    assert_response :accepted
+    assert_equal 2, MessageDispatch.where(client_invocation_id: "invoke-00000001").count
   end
 
   # --- activity --------------------------------------------------------------
@@ -212,12 +367,18 @@ class Api::App::V1::ConversationApiTest < ActionDispatch::IntegrationTest
     get "/api/app/v1/conversations/#{chat.to_param}/activity", headers: bearer(@tokens)
     assert_error :not_found, "not_found"
     assert_no_enqueued_jobs do
-      post "/api/app/v1/conversations/#{chat.to_param}/invoke", headers: bearer(@tokens)
+      invoke(chat, "invoke-00000001")
     end
     assert_error :not_found, "not_found"
   end
 
   private
+
+  def invoke(chat, key, agent = nil)
+    params = { client_invocation_id: key }
+    params[:agent_id] = agent.to_param if agent
+    post "/api/app/v1/conversations/#{chat.to_param}/invoke", params: params, headers: bearer(@tokens)
+  end
 
   def create_conversation(client_conversation_id, agents, title: nil, extra: {})
     params = { client_conversation_id: client_conversation_id, agent_ids: agents.map(&:to_param) }

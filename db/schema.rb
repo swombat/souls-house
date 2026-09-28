@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_28_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_28_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -637,21 +637,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_160000) do
   create_table "message_dispatches", force: :cascade do |t|
     t.datetime "accepted_at", null: false
     t.bigint "chat_id", null: false
+    t.string "client_invocation_id"
     t.datetime "created_at", null: false
     t.datetime "expires_at", null: false
-    t.bigint "message_id", null: false
+    t.string "kind", default: "mention", null: false
+    t.bigint "message_id"
     t.string "reason"
+    t.string "request_digest"
     t.bigint "runtime_interaction_id"
     t.datetime "settled_at"
     t.string "status", default: "pending", null: false
     t.jsonb "target_agent_ids", default: [], null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.index ["chat_id", "user_id", "client_invocation_id"], name: "index_message_dispatches_on_invocation_identity", unique: true, where: "(client_invocation_id IS NOT NULL)"
     t.index ["chat_id"], name: "index_message_dispatches_on_chat_id"
     t.index ["message_id"], name: "index_message_dispatches_on_message_id", unique: true
     t.index ["runtime_interaction_id"], name: "index_message_dispatches_on_runtime_interaction_id"
     t.index ["status", "accepted_at"], name: "index_message_dispatches_on_status_and_accepted_at"
     t.index ["user_id"], name: "index_message_dispatches_on_user_id"
+    t.check_constraint "kind::text = 'mention'::text AND message_id IS NOT NULL AND client_invocation_id IS NULL AND request_digest IS NULL OR kind::text = 'invoke'::text AND message_id IS NULL AND client_invocation_id IS NOT NULL AND request_digest IS NOT NULL", name: "message_dispatches_kind_variant"
   end
 
   create_table "messages", force: :cascade do |t|
