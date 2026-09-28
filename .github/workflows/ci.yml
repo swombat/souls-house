@@ -65,6 +65,9 @@ jobs:
       - name: Rails tests
         if: matrix.suite == 'rails'
         run: bin/rails test
+      - name: Rails system tests
+        if: ${{ !cancelled() && matrix.suite == 'rails' }}
+        run: bin/rails test:system
       - name: Browser end-to-end tests
         if: matrix.suite == 'e2e'
         run: bun run test

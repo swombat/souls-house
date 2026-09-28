@@ -5,7 +5,7 @@ runs on every pull request, every push to `master` (including merges), and manua
 workflow dispatch. Standard Ubuntu runners are free for this public repository;
 no larger runners, self-hosted machines, or deployment jobs are used.
 
-The independent checks run the complete Rails suite, frontend Vitest suite,
+The independent checks run the complete Rails and Rails system suites, frontend Vitest suite,
 Playwright end-to-end suite, Playwright component suite, and Python runtime/build
 contract suites. A failure in one suite does not cancel the others. Tests are not
 filtered to changed paths and failures are not allowed to pass silently.
@@ -35,6 +35,7 @@ Use the normal commands from an isolated checkout (see
 ```sh
 RAILS_ENV=test bin/rails db:prepare
 bin/rails test
+bin/rails test:system
 bun run test:unit --run
 bun run test
 bun run test:ct
