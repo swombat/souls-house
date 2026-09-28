@@ -94,7 +94,7 @@ class Agent::RuntimeAvailabilityTest < ActiveSupport::TestCase
     assert_equal "agent_deprecated", notices.last.last[:reason]
     assert_raises(Agent::RuntimeAvailability::Unavailable) { chat.trigger_agent_response!(@agent) }
     assert_raises(Agent::RuntimeAvailability::Unavailable) { chat.trigger_all_agents_response! }
-    assert_no_enqueued_jobs { chat.trigger_mentioned_agents!("@#{@agent.name}") }
+    assert_empty chat.mentioned_agent_ids("@#{@agent.name}")
   end
 
   test "skipping a member advances the all agent chain" do

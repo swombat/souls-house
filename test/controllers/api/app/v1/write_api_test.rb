@@ -23,7 +23,7 @@ class Api::App::V1::WriteApiTest < ActionDispatch::IntegrationTest
   # --- create ----------------------------------------------------------------
 
   test "a first send is 201, wakes the residents it mentions, and is audited" do
-    assert_enqueued_with(job: AllAgentsResponseJob, args: [ @chat, [ @agent.id ] ]) do
+    assert_enqueued_jobs 1, only: MessageDispatchJob do
       send_message("key-00000001", "Hey @Grok, from the phone")
     end
     assert_response :created
@@ -32,6 +32,7 @@ class Api::App::V1::WriteApiTest < ActionDispatch::IntegrationTest
     assert_equal [ "user", @user, "Hey @Grok, from the phone", "key-00000001" ],
                  [ message.role, message.user, message.content, message.client_message_id ]
     assert_equal "key-00000001", body["client_message_id"]
+    assert_equal [ "pending", [] ], response.parsed_body["dispatch"].values_at("status", "runs")
     assert_equal @chat.reload.message_revision, body["revision"]
     audit = AuditLog.find_by!(action: "create_message", auditable: message)
     assert_equal @account, audit.account
@@ -43,7 +44,7 @@ class Api::App::V1::WriteApiTest < ActionDispatch::IntegrationTest
     first = response.parsed_body["message"]
 
     assert_no_difference -> { Message.count } do
-      assert_no_enqueued_jobs(only: AllAgentsResponseJob) { send_message("key-00000001", "Hey @Grok") }
+      assert_no_enqueued_jobs(only: MessageDispatchJob) { send_message("key-00000001", "Hey @Grok") }
     end
     assert_response :ok
     assert_equal first, response.parsed_body["message"]
@@ -81,7 +82,7 @@ class Api::App::V1::WriteApiTest < ActionDispatch::IntegrationTest
     assert_response :ok
 
     assert_no_difference -> { Message.count } do
-      assert_no_enqueued_jobs(only: AllAgentsResponseJob) { send_message("key-00000001", "Hey @Grok") }
+      assert_no_enqueued_jobs(only: MessageDispatchJob) { send_message("key-00000001", "Hey @Grok") }
     end
     assert_response :ok
     assert_equal({ "id" => id, "conversation_id" => @chat.to_param, "revision" => @chat.reload.message_revision, "discarded" => true },
@@ -144,6 +145,68 @@ class Api::App::V1::WriteApiTest < ActionDispatch::IntegrationTest
   test "losing a race to a twin on the unique index answers as a retry" do
     # A later message makes the repeat guard pass, so the insert reaches the index.
     assert_race_answered_as_retry(twin_content: "Hey @Grok", followed_by: "something after")
+  end
+
+  # --- the wake (#94 B, step 4b-ii) ---------------------------------------------
+
+  test "a mention while live activity is off is a structured 503 and nothing is written" do
+    with_live_activity_off do
+      assert_no_difference [ "Message.count", "MessageDispatch.count", "AuditLog.count" ] do
+        send_message("key-00000001", "Hey @Grok")
+      end
+      assert_error :service_unavailable, "dispatch_unavailable"
+      assert response.parsed_body.dig("error", "details", "retryable")
+
+      send_message("key-00000002", "no mention")
+      assert_response :created
+      assert_nil response.parsed_body["dispatch"]
+    end
+  end
+
+  test "a failure before commit is 503 send_failed, and the same key then creates afresh" do
+    MessageDispatch.stub(:accept!, ->(**) { raise "synthetic" }) do
+      assert_no_difference [ "Message.count", "MessageDispatch.count", "AuditLog.count" ] do
+        send_message("key-00000001", "Hey @Grok")
+      end
+    end
+    assert_error :service_unavailable, "send_failed"
+
+    send_message("key-00000001", "Hey @Grok")
+    assert_response :created
+  end
+
+  test "a failed enqueue after commit is still 201, and a later retry re-drives it without creating anything" do
+    MessageDispatchJob.stub(:perform_later, ->(*) { raise "queue down" }) do
+      send_message("key-00000001", "Hey @Grok")
+    end
+    assert_response :created
+    assert_equal "pending", response.parsed_body.dig("dispatch", "status")
+
+    travel 31.seconds do
+      assert_no_difference [ "Message.count", "MessageDispatch.count", "AuditLog.count" ] do
+        assert_enqueued_jobs(1, only: MessageDispatchJob) { send_message("key-00000001", "Hey @Grok") }
+      end
+    end
+    assert_response :ok
+  end
+
+  test "the author reads where the wake stands, including after discard" do
+    send_message("key-00000001", "Hey @Grok")
+    id = response.parsed_body.dig("message", "id")
+    get "/api/app/v1/conversations/#{@chat.to_param}/messages/#{id}/dispatch", headers: bearer(@tokens)
+    assert_response :ok
+    assert_equal "pending", response.parsed_body.dig("dispatch", "status")
+
+    delete "/api/app/v1/conversations/#{@chat.to_param}/messages/#{id}", headers: bearer(@tokens)
+    get "/api/app/v1/conversations/#{@chat.to_param}/messages/#{id}/dispatch", headers: bearer(@tokens)
+    assert_equal %w[cancelled discarded], response.parsed_body["dispatch"].values_at("status", "reason")
+  end
+
+  test "only the author may read a wake's status" do
+    other = users(:user_1)
+    message = @chat.messages.create!(role: "user", user: other, content: "someone else's")
+    get "/api/app/v1/conversations/#{@chat.to_param}/messages/#{message.to_param}/dispatch", headers: bearer(@tokens)
+    assert_error :forbidden, "forbidden"
   end
 
   # --- edit and delete -------------------------------------------------------
@@ -241,11 +304,19 @@ class Api::App::V1::WriteApiTest < ActionDispatch::IntegrationTest
     end
 
     Messages::PostFromHuman.stub(:new, racing_new) do
-      assert_no_enqueued_jobs(only: AllAgentsResponseJob) { send_message("key-00000001", twin_content) }
+      assert_no_enqueued_jobs(only: MessageDispatchJob) { send_message("key-00000001", twin_content) }
     end
     assert_response :ok
     assert_equal twin.to_param, response.parsed_body.dig("message", "id")
     assert_equal 1, chat.messages.where(client_message_id: "key-00000001").count
+  end
+
+  def with_live_activity_off
+    previous = ENV["SOULSHOUSE_LIVE_ACTIVITY"]
+    ENV["SOULSHOUSE_LIVE_ACTIVITY"] = "0"
+    yield
+  ensure
+    ENV["SOULSHOUSE_LIVE_ACTIVITY"] = previous
   end
 
   def assert_error(status, code)

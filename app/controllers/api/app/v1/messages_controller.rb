@@ -13,8 +13,8 @@ module Api
         CLIENT_MESSAGE_ID_FORMAT = /\A[A-Za-z0-9_-]{8,64}\z/
 
         before_action :set_conversation
-        before_action :set_message, only: [ :update, :destroy ]
-        before_action :authorize_message_modification, only: [ :update, :destroy ]
+        before_action :set_message, only: [ :update, :destroy, :dispatch_status ]
+        before_action :authorize_message_modification, only: [ :update, :destroy, :dispatch_status ]
 
         # Each page is the newest `limit` kept messages before `before`,
         # returned oldest first (chronological).
@@ -52,11 +52,23 @@ module Api
             return render_error(:unprocessable_entity, "conversation_not_respondable", "This conversation is archived and cannot receive new messages")
           end
 
-          result = Messages::PostFromHuman.new(chat: @chat, user: current_user, content: content, client_message_id: client_message_id)
-            .call(on_persisted: ->(message) { audit("create_message", message, content: content, client_message_id: client_message_id) })
+          result = begin
+            Messages::PostFromHuman.new(chat: @chat, user: current_user, content: content, client_message_id: client_message_id)
+              .call(on_persisted: ->(message) { audit("create_message", message, content: content, client_message_id: client_message_id) })
+          rescue ActiveRecord::RecordNotUnique
+            raise
+          rescue StandardError => e
+            # Acceptance is one transaction, so nothing of this send exists. A
+            # post-commit enqueue failure never reaches here (PostFromHuman).
+            Rails.logger.error "[Api::App::V1::Messages] send failed: #{e.class}: #{e.message}"
+            return render_error(:service_unavailable, "send_failed", "The message could not be sent; nothing was saved", { retryable: true })
+          end
 
           if result.created?
-            render json: { message: Presenter.message(result.message, viewer: current_user) }, status: :created
+            render json: sent(result.message), status: :created
+          elsif result.dispatch_unavailable?
+            render_error :service_unavailable, "dispatch_unavailable",
+                         "Residents cannot be woken right now; the message was not sent", { retryable: true }
           elsif result.duplicate?
             # A concurrent twin that commits before this save is validated trips
             # the web's repeat guard (same content as the last message) before
@@ -83,7 +95,7 @@ module Api
           end
 
           old_content = @message.content
-          if @message.update(content: content)
+          if @message.update_as_author(content: content)
             audit("update_message", @message, old_content: old_content, new_content: @message.content)
             render json: { message: Presenter.message(@message, viewer: current_user) }
           else
@@ -96,9 +108,17 @@ module Api
         def destroy
           unless @message.discarded?
             audit("delete_message", @message, content: @message.content)
-            @message.discard!
+            @message.discard_as_author!
           end
           render json: { message: Presenter.message(@message, viewer: current_user) }
+        end
+
+        # Where the wake a send asked for stands (#94 B, step 4b-ii). Dispatch
+        # changes take no message revision, so this is how the author observes
+        # pending becoming reserved, cancelled or expired. null when the send
+        # mentioned no one.
+        def dispatch_status
+          render json: { dispatch: @message.message_dispatch&.as_app_json }
         end
 
         private
@@ -107,10 +127,10 @@ module Api
           @chat = find_conversation!(params[:conversation_id])
         end
 
-        # Only delete may find an already-discarded message, so a repeat is a
-        # no-op; an edit of a discarded message is 404.
+        # Only delete (a repeat is a no-op) and dispatch status may find an
+        # already-discarded message; an edit of a discarded message is 404.
         def set_message
-          scope = action_name == "destroy" ? @chat.messages : @chat.messages.kept
+          scope = action_name.in?(%w[destroy dispatch_status]) ? @chat.messages : @chat.messages.kept
           @message = scope.find(params[:id])
         end
 
@@ -122,13 +142,20 @@ module Api
           render_error :forbidden, "forbidden", "Only the author can change this message"
         end
 
+        def sent(message)
+          { message: Presenter.message(message, viewer: current_user), dispatch: message.message_dispatch&.as_app_json }
+        end
+
         def find_submission(client_message_id)
           @chat.messages.find_by(user: current_user, client_message_id: client_message_id)
         end
 
         def render_retry(message, content)
           if message.submission_digest == Messages::PostFromHuman.submission_digest(content: content)
-            render json: { message: Presenter.message(message, viewer: current_user) }, status: :ok
+            # A retry re-drives this send's wake if an enqueue was lost; it
+            # never creates anything. 200 means accepted, nothing more.
+            message.message_dispatch&.redrive!
+            render json: sent(message), status: :ok
           else
             render_error :conflict, "idempotency_conflict", "client_message_id was already used for a different message",
                          { message_id: message.to_param }

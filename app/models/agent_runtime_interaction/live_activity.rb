@@ -10,6 +10,7 @@ module AgentRuntimeInteraction::LiveActivity
     has_many :agent_runtime_attempts, dependent: :destroy
     has_many :linked_messages, class_name: "Message", foreign_key: :runtime_interaction_id, dependent: :nullify
     attr_accessor :enqueue_dispatch
+    belongs_to :message_dispatch, optional: true
     after_create_commit :enqueue_live_dispatch, if: :enqueue_dispatch
   end
 
@@ -18,7 +19,9 @@ module AgentRuntimeInteraction::LiveActivity
       ENV.fetch("SOULSHOUSE_LIVE_ACTIVITY", "1") != "0"
     end
 
-    def reserve!(agent:, chat:, enqueue: false, response_chain_agent_ids: [])
+    # A deadline (a message dispatch's expiry) caps the preparation window, so
+    # a run reserved late cannot start later than its request allowed.
+    def reserve!(agent:, chat:, enqueue: false, response_chain_agent_ids: [], message_dispatch: nil, deadline: nil)
       chat.with_lock do
         raise ArgumentError, "Conversation unavailable" unless chat.respondable? && chat.manual_responses? && chat.agents.exists?(agent.id)
         agent.reload.require_conversation_runtime!
@@ -30,7 +33,8 @@ module AgentRuntimeInteraction::LiveActivity
           conversation_obfuscated_id: chat.to_param, requested_by: "souls.house",
           session_id: "#{agent.uuid}-#{chat.id}", started_at: Time.current,
           run_id: SecureRandom.uuid, execution_state: "queued",
-          execution_deadline_at: PREPARATION_WINDOW.from_now,
+          execution_deadline_at: [ PREPARATION_WINDOW.from_now, deadline ].compact.min,
+          message_dispatch: message_dispatch,
           narration_shared: agent.share_working_narration?,
           response_chain_agent_ids: response_chain_agent_ids,
           enqueue_dispatch: enqueue
@@ -43,7 +47,23 @@ module AgentRuntimeInteraction::LiveActivity
     run_id.present?
   end
 
+  # A run a human message asked for may start only while that request still
+  # stands: not discarded, author still a member, live activity still on.
+  # Checked here, under the dispatch lock, because anything can change while
+  # the run is queued. Once a claim wins, the run may reach the runtime and
+  # nothing here can recall it.
   def claim_dispatch!
+    return claim_dispatch_unchecked! unless message_dispatch
+
+    message_dispatch.with_lock do
+      next claim_dispatch_unchecked! if message_dispatch.deliverable!
+
+      with_lock { finish_execution!("cancelled") if dispatch_claimed_at.nil? }
+      false
+    end
+  end
+
+  def claim_dispatch_unchecked!
     with_lock do
       reconcile_activity!
       return false unless execution_state == "queued" && dispatch_claimed_at.nil?
@@ -144,7 +164,7 @@ module AgentRuntimeInteraction::LiveActivity
 
   private
 
-  private :prepare_activity_configuration!
+  private :prepare_activity_configuration!, :claim_dispatch_unchecked!
 
   def enqueue_live_dispatch
     ManualAgentResponseJob.perform_later(chat, agent, runtime_interaction_id: id)

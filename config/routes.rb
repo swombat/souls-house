@@ -188,7 +188,9 @@ Rails.application.routes.draw do
           resources :conversations, only: :index
         end
         resources :conversations, only: [] do
-          resources :messages, only: [ :index, :create, :update, :destroy ]
+          resources :messages, only: [ :index, :create, :update, :destroy ] do
+            get :dispatch, on: :member, action: :dispatch_status
+          end
           get :changes, to: "changes#index"
         end
       end

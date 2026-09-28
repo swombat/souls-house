@@ -8,6 +8,7 @@ class Messages::PostFromHuman
     def created? = status == :created
     def duplicate? = status == :duplicate
     def invalid? = status == :invalid
+    def dispatch_unavailable? = status == :dispatch_unavailable
   end
 
   # What a retry is compared against (ADR 0004): written at create and never
@@ -26,9 +27,15 @@ class Messages::PostFromHuman
     @client_message_id = client_message_id
   end
 
-  # on_persisted runs after save and before any resident is woken, so the
-  # caller's audit exists even if dispatch raises, and a raising audit
-  # dispatches nothing (the order the web controller had before extraction).
+  # Acceptance is one primary transaction: the message, the caller's audit
+  # (on_persisted) and, when residents are mentioned, the durable intent to
+  # wake them (MessageDispatch, #94 B step 4b-ii). If any of it raises, none
+  # of it exists and the error propagates. The wake is enqueued only after
+  # commit; if that enqueue fails the send is still accepted and the sweeper
+  # re-drives it.
+  #
+  # A send that needs a wake is refused before anything is written while live
+  # activity is off, since there is then no durable run to reserve.
   def call(on_persisted: nil)
     message = @chat.messages.build(content: @content, user: @user, role: "user")
     if @client_message_id
@@ -38,9 +45,22 @@ class Messages::PostFromHuman
     message.attachments.attach(@files) if @files.present?
     attach_audio(message) if @audio_signed_id.present?
 
-    if message.save
+    target_ids = @chat.mentioned_agent_ids(@content.to_s)
+    if target_ids.any? && !AgentRuntimeInteraction.live_activity_enabled?
+      return Result.new(status: :dispatch_unavailable, message: message)
+    end
+
+    dispatch = nil
+    saved = Message.transaction do
+      next false unless message.save
+
       on_persisted&.call(message)
-      @chat.trigger_mentioned_agents!(message.content) if @chat.manual_responses?
+      dispatch = MessageDispatch.accept!(message: message, target_agent_ids: target_ids) if target_ids.any?
+      true
+    end
+
+    if saved
+      enqueue(dispatch) if dispatch
       Result.new(status: :created, message: message)
     elsif message.errors.added?(:base, :duplicate_message)
       Result.new(status: :duplicate, message: message)
@@ -50,6 +70,12 @@ class Messages::PostFromHuman
   end
 
   private
+
+  def enqueue(dispatch)
+    MessageDispatchJob.perform_later(dispatch)
+  rescue StandardError => e
+    Rails.logger.warn "[PostFromHuman] dispatch #{dispatch.id} enqueue failed, left for the sweeper: #{e.class}: #{e.message}"
+  end
 
   def attach_audio(message)
     message.audio_recording.attach(@audio_signed_id)

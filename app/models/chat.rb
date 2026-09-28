@@ -262,18 +262,19 @@ class Chat < ApplicationRecord
     AllAgentsResponseJob.perform_later(self, agent_ids)
   end
 
-  def trigger_mentioned_agents!(content)
-    return if content.blank? || !manual_responses?
+  # The residents a human message asks for, in mention order: eligible and not
+  # already responding. Resolved once, when the message is accepted (#94 B,
+  # step 4b-ii); an edit never re-resolves them.
+  def mentioned_agent_ids(content)
+    return [] if content.blank? || !manual_responses?
 
-    mentioned_ids = agents.select { |agent|
+    agents.select { |agent|
       content.match?(/@#{Regexp.escape(agent.name)}\b/i)
     }.reject { |agent|
       !agent.eligible_for_conversation? || agent_response_active?(agent)
     }.sort_by { |agent|
       content.index(/@#{Regexp.escape(agent.name)}\b/i)
     }.map(&:id)
-
-    AllAgentsResponseJob.perform_later(self, mentioned_ids) if mentioned_ids.any?
   end
 
   def agent_response_active?(agent)

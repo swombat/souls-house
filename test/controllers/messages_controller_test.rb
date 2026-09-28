@@ -536,11 +536,12 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     group_chat.agent_ids = [ agent.id ]
     group_chat.save!
 
-    assert_enqueued_with(job: AllAgentsResponseJob) do
+    assert_enqueued_with(job: MessageDispatchJob) do
       post account_chat_messages_path(@account, group_chat), params: {
         message: { content: "Hey @Grok, what do you think?" }
       }
     end
+    assert_equal [ agent.id ], group_chat.messages.last.message_dispatch.target_agent_ids
   end
 
   test "should not auto-trigger when no agents mentioned in group chat" do
@@ -549,11 +550,12 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     group_chat.agent_ids = [ agent.id ]
     group_chat.save!
 
-    assert_no_enqueued_jobs(only: AllAgentsResponseJob) do
+    assert_no_enqueued_jobs(only: MessageDispatchJob) do
       post account_chat_messages_path(@account, group_chat), params: {
         message: { content: "Hello everyone" }
       }
     end
+    assert_nil group_chat.messages.last.message_dispatch
   end
 
   test "should not enqueue AiResponseJob for group chat" do
@@ -630,24 +632,28 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_not message.audio_source
   end
 
-  test "a saved message keeps its create audit when waking a mentioned resident raises" do
+  # #94 B, step 4b-ii: acceptance (message, audit, wake intent) is one
+  # transaction; the wake is enqueued after it commits.
+  test "a failed wake enqueue after acceptance is still a created send, left pending for the sweeper" do
     chat = mention_chat
-    AllAgentsResponseJob.stub(:perform_later, ->(*) { raise "synthetic enqueue failure" }) do
+    MessageDispatchJob.stub(:perform_later, ->(*) { raise "synthetic enqueue failure" }) do
       post account_chat_messages_path(@account, chat), params: { message: { content: "Hello @Grok" } }, as: :json
     end
 
-    assert_response :unprocessable_entity
+    assert_response :created
     message = chat.messages.last
-    assert message.persisted?
     assert AuditLog.where(action: "create_message", auditable: message).exists?
+    assert_equal "pending", message.message_dispatch.status
   end
 
-  test "a failing create audit wakes no one" do
+  test "a failing create audit saves and wakes nothing" do
     chat = mention_chat
     dispatched = false
-    AuditLog.stub(:create!, ->(**) { raise "synthetic audit failure" }) do
-      AllAgentsResponseJob.stub(:perform_later, ->(*) { dispatched = true }) do
-        post account_chat_messages_path(@account, chat), params: { message: { content: "Hello @Grok" } }, as: :json
+    assert_no_difference [ "Message.count", "MessageDispatch.count" ] do
+      AuditLog.stub(:create!, ->(**) { raise "synthetic audit failure" }) do
+        MessageDispatchJob.stub(:perform_later, ->(*) { dispatched = true }) do
+          post account_chat_messages_path(@account, chat), params: { message: { content: "Hello @Grok" } }, as: :json
+        end
       end
     end
 
@@ -655,7 +661,31 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_not dispatched
   end
 
+  test "a mention while live activity is off is refused truthfully and saves nothing" do
+    chat = mention_chat
+    with_live_activity_off do
+      assert_no_difference [ "Message.count", "MessageDispatch.count", "AuditLog.count" ] do
+        post account_chat_messages_path(@account, chat), params: { message: { content: "Hello @Grok" } }, as: :json
+      end
+      assert_response :service_unavailable
+      assert_match "not sent", response.parsed_body["errors"].first
+
+      assert_difference "Message.count" do
+        post account_chat_messages_path(@account, chat), params: { message: { content: "No mention" } }, as: :json
+      end
+      assert_response :created
+    end
+  end
+
   private
+
+  def with_live_activity_off
+    previous = ENV["SOULSHOUSE_LIVE_ACTIVITY"]
+    ENV["SOULSHOUSE_LIVE_ACTIVITY"] = "0"
+    yield
+  ensure
+    ENV["SOULSHOUSE_LIVE_ACTIVITY"] = previous
+  end
 
   def mention_chat
     agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")

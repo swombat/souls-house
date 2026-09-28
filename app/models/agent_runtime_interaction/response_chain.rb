@@ -18,6 +18,11 @@ module AgentRuntimeInteraction::ResponseChain
   def response_chain_ready?
     return false if response_chain_agent_ids.empty? || response_chain_advanced_at?
     return false unless chat&.respondable? && chat.manual_responses?
+    # A cancelled or expired request never advances, whatever its runs did.
+    return false if message_dispatch && !message_dispatch.reload.reserved?
+    # Nor does a run of it that never started: a cancellation (its deadline
+    # passed unclaimed, or its claim was refused) is not a turn taken.
+    return false if message_dispatch && execution_state == "cancelled"
 
     posted = linked_messages.where(role: "assistant", agent_id: agent_id, chat_id: chat_id).exists?
     return true if posted

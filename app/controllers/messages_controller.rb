@@ -33,6 +33,14 @@ class MessagesController < ApplicationController
         format.html { redirect_to account_chat_path(@chat.account, @chat) }
         format.json { render json: @message, status: :created }
       end
+    elsif result.dispatch_unavailable?
+      # Nothing was saved: a send that mentions residents needs a durable wake,
+      # and there is none to reserve while live activity is off (#94 B, 4b-ii).
+      notice = "Residents can't be woken right now, so your message was not sent. Please try again shortly."
+      respond_to do |format|
+        format.html { redirect_back_or_to account_chat_path(@chat.account, @chat), alert: notice }
+        format.json { render json: { errors: [ notice ], retryable: true }, status: :service_unavailable }
+      end
     elsif result.duplicate?
       # Duplicate message - just refresh the page silently
       respond_to do |format|
@@ -56,7 +64,7 @@ class MessagesController < ApplicationController
 
   def update
     old_content = @message.content
-    if @message.update(message_params)
+    if @message.update_as_author(message_params)
       audit(:update_message, @message, old_content: old_content, new_content: @message.content)
       head :ok
     else
@@ -69,7 +77,7 @@ class MessagesController < ApplicationController
   def destroy
     unless @message.discarded?
       audit(:delete_message, @message, content: @message.content)
-      @message.discard!
+      @message.discard_as_author!
     end
     head :ok
   end

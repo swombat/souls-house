@@ -34,6 +34,7 @@ class Message < ApplicationRecord
   belongs_to :agent, optional: true
   belongs_to :runtime_interaction, class_name: "AgentRuntimeInteraction", optional: true
   has_one :account, through: :chat
+  has_one :message_dispatch
 
   attr_accessor :skip_content_validation
 
@@ -192,6 +193,26 @@ class Message < ApplicationRecord
     editable_by?(Current.user)
   end
 
+  # A human edit or discard, serialized against this message's wake (#94 B,
+  # step 4b-ii) under the dispatch lock, so it lands wholly before or wholly
+  # after the wake is reserved or claimed. An edit cancels a wake that has not
+  # been reserved and never retargets it; a discard also cancels reserved,
+  # unclaimed runs.
+  def update_as_author(attributes)
+    with_dispatch_lock do
+      updated = update(attributes)
+      message_dispatch&.source_edited! if updated && saved_change_to_content?
+      updated
+    end
+  end
+
+  def discard_as_author!
+    with_dispatch_lock do
+      discard!
+      message_dispatch&.source_discarded!
+    end
+  end
+
   def deletable
     deletable_by?(Current.user)
   end
@@ -200,6 +221,10 @@ class Message < ApplicationRecord
 
   def human_message_in_group_chat?
     role == "user" && user_id.present? && chat.manual_responses?
+  end
+
+  def with_dispatch_lock(&block)
+    message_dispatch ? message_dispatch.with_lock(&block) : transaction(&block)
   end
 
   def reopen_all_agents_for_initiation
