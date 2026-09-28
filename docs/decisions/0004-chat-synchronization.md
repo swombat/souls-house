@@ -28,7 +28,12 @@ transaction after the client's cursor has passed it.
   the chat's latest revision. Define empty-page behaviour. Validate pagination
   under concurrent edits; neither moving rows nor a late snapshot may skip a
   change or overwrite newer state with older data.
-- The amended contract bootstraps with `changes?since=0`. Empty pages preserve
+- `since` is required, an integer in `0..9223372036854775807` (signed bigint).
+  Missing, malformed or out-of-range values return `422 invalid_parameter` in
+  the shared error envelope; never silently default a missing cursor to zero.
+  Bootstrap explicitly with
+  `GET /api/app/v1/conversations/:id/changes?since=0&limit=100`; subsequent pages
+  use the returned `next_since`, not `latest_revision`. Empty pages preserve
   the incoming cursor and return `has_more: false` plus `latest_revision`. Test
   multi-page bootstrap under concurrent mutation. A history
   page's maximum revision is not a full synchronization checkpoint. Absence from
