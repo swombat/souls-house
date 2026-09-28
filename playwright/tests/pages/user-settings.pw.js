@@ -11,7 +11,9 @@ test.describe('User Settings Tests', () => {
           email_address: 'test@example.com',
           first_name: 'Test',
           last_name: 'User',
+          chat_colour: null,
         },
+        timezones: [],
         current_account: {
           id: 1,
           name: "Test User's Account",
@@ -45,7 +47,9 @@ test.describe('User Settings Tests', () => {
           email_address: 'john.doe@example.com',
           first_name: 'John',
           last_name: 'Doe',
+          chat_colour: null,
         },
+        timezones: [],
         current_account: {
           id: 1,
           name: "John's Account",
@@ -73,6 +77,7 @@ test.describe('User Settings Tests', () => {
           email_address: 'test@example.com',
           first_name: 'Test',
           last_name: 'User',
+          chat_colour: null,
         },
         timezones: [],
         current_account: {
@@ -108,13 +113,19 @@ test.describe('User Settings Tests', () => {
       await expect(lastNameInput).toHaveValue('Name');
     });
 
-    test('should submit profile update form', async ({ mount }) => {
+    test('should submit profile update form', async ({ mount, page }) => {
+      const requests = [];
+      await page.route('**/user', async (route) => {
+        requests.push({ method: route.request().method(), data: route.request().postDataJSON() });
+        await route.fulfill({ status: 200, json: {} });
+      });
       const props = {
         user: {
           id: 1,
           email_address: 'test@example.com',
           first_name: 'Test',
           last_name: 'User',
+          chat_colour: null,
         },
         timezones: [],
         current_account: {
@@ -137,8 +148,11 @@ test.describe('User Settings Tests', () => {
       await expect(submitButton).toBeEnabled();
       await expect(submitButton).toContainText('Save Changes');
 
-      // Click to ensure no errors
       await submitButton.click();
+      await expect
+        .poll(() => requests)
+        .toEqual([{ method: 'PATCH', data: { user: { ...props.user, first_name: 'NewName', timezone: '' } } }]);
+      await expect(submitButton).toBeEnabled();
     });
   });
 
@@ -220,7 +234,12 @@ test.describe('User Settings Tests', () => {
       await expect(confirmPasswordInput).toHaveValue('newpass456');
     });
 
-    test('should submit password change form', async ({ mount }) => {
+    test('should submit password change form', async ({ mount, page }) => {
+      const requests = [];
+      await page.route('**/user/password', async (route) => {
+        requests.push({ method: route.request().method(), data: route.request().postDataJSON() });
+        await route.fulfill({ status: 200, json: {} });
+      });
       const props = {
         user: {
           id: 1,
@@ -241,8 +260,25 @@ test.describe('User Settings Tests', () => {
       const submitButton = component.locator('button[type="submit"]');
       await expect(submitButton).toBeEnabled();
 
-      // Click to ensure no errors
+      const destination = new URL('/', page.url()).href;
+      await page.route(destination, (route) =>
+        route.fulfill({ contentType: 'text/html', body: '<p>Password update destination</p>' })
+      );
       await submitButton.click();
+      await expect
+        .poll(() => requests)
+        .toEqual([
+          {
+            method: 'PATCH',
+            data: {
+              current_password: 'password123',
+              password: 'newpassword456',
+              password_confirmation: 'newpassword456',
+            },
+          },
+        ]);
+      await expect(page).toHaveURL(destination);
+      await expect(page.getByText('Password update destination')).toBeVisible();
     });
 
     test('should show user email on password page', async ({ mount }) => {
@@ -257,7 +293,8 @@ test.describe('User Settings Tests', () => {
 
       const component = await mount(UserEditPasswordPage, { props });
 
-      // The ChangePasswordForm component doesn't display the user's email
+      await expect(component.getByLabel('Email', { exact: true })).toHaveValue('specific@email.com');
+      await expect(component.getByLabel('Email', { exact: true })).toBeDisabled();
     });
   });
 });

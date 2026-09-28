@@ -116,8 +116,9 @@ test.describe('Theme Persistence Tests', () => {
       const component = await mount(Navbar);
 
       // Essential navbar elements should be present
-      await expect(component.getByText('HelixKit')).toBeVisible();
-      await expect(component.getByText('About')).toBeVisible();
+      const homeLink = component.locator('a[href="/"]');
+      await expect(homeLink).toBeVisible();
+      await expect(homeLink).toHaveAccessibleName(/souls\.house/);
       await expect(component.getByText('Toggle theme')).toBeVisible();
       await expect(component.getByText('Not Logged In')).toBeVisible();
     });

@@ -1,366 +1,197 @@
 import { test, expect } from '@playwright/experimental-ct-svelte';
 import ChatsShow from '../../../app/frontend/pages/chats/show.svelte';
 
+// These are the current serialized chat/message fields, not the old
+// content_html/ai_model_name contract. No live provider or resident is used.
+const chat = { id: 'chat-123', title: 'Test Conversation', respondable: true, manual_responses: true };
+const chats = [
+  { id: chat.id, title_or_default: chat.title, updated_at_short: 'Jan 15' },
+  { id: 'chat-456', title_or_default: 'Another Chat', updated_at_short: 'Jan 14' },
+];
+const props = { chat, chats, account: { id: 1 }, messages: [] };
+const message = (overrides = {}) => ({
+  id: 'msg-1',
+  role: 'user',
+  content: 'Hello, how are you?',
+  author_name: 'John Doe',
+  completed: true,
+  created_at: '2024-01-15T10:30:00Z',
+  ...overrides,
+});
+const composer = (component) => component.getByTestId('message-composer').getByRole('textbox');
+const sendButton = (component) => component.getByRole('button', { name: 'Send message', exact: true });
+const messagesUrl = '**/accounts/1/chats/chat-123/messages';
+
 test.describe('Chats Show Page Tests', () => {
-  // IMPORTANT: These tests require the Rails backend running on localhost:3200
-  // Run with: bun run test:integrated (automatically handles backend setup)
-
-  const mockChat = {
-    id: 'chat-123',
-    title: 'Test Conversation',
-    ai_model_name: 'GPT-4o Mini',
-  };
-
-  const mockAccount = { id: 1 };
-
-  const mockChats = [
-    {
-      id: 'chat-123',
-      title_or_default: 'Test Conversation',
-      updated_at_short: 'Jan 15',
-    },
-    {
-      id: 'chat-456',
-      title_or_default: 'Another Chat',
-      updated_at_short: 'Jan 14',
-    },
-  ];
-
-  test('should render empty chat with message input', async ({ mount }) => {
-    const component = await mount(ChatsShow, {
-      props: {
-        chat: mockChat,
-        chats: mockChats,
-        messages: [],
-        account: mockAccount,
-      },
-    });
-
-    // Check chat header
-    await expect(component).toContainText('Test Conversation');
-    await expect(component).toContainText('GPT-4o Mini');
-
-    // Check empty state message
+  test.use({ timezoneId: 'UTC' });
+  test('renders an empty respondable chat', async ({ mount }) => {
+    const component = await mount(ChatsShow, { props });
+    await expect(component).toContainText(chat.title);
     await expect(component).toContainText('Start the conversation by sending a message below');
-
-    // Check message input area
-    const messageInput = component.locator('textarea[placeholder="Type your message..."]');
-    await expect(messageInput).toBeVisible();
-    await expect(messageInput).toBeEnabled();
-
-    // Check send button
-    const sendButton = component.locator('button').last(); // Send button is the last button
-    await expect(sendButton).toBeVisible();
-    await expect(sendButton).toBeDisabled(); // Should be disabled when input is empty
+    await expect(composer(component)).toBeVisible();
+    await expect(composer(component)).toBeEnabled();
+    await expect(sendButton(component)).toBeDisabled();
+    await expect(component).not.toContainText('This conversation has been archived');
   });
 
-  test('should display messages correctly', async ({ mount }) => {
-    const mockMessages = [
-      {
-        id: 'msg-1',
-        role: 'user',
-        content_html: 'Hello, how are you?',
-        user_name: 'John Doe',
-        user_avatar_url: '/avatar.jpg',
-        completed: true,
-        error: null,
-        created_at: '2024-01-15T10:30:00Z',
-        created_at_formatted: '10:30 AM',
-      },
-      {
-        id: 'msg-2',
-        role: 'assistant',
-        content_html: "<p>I'm doing well, thank you!</p>",
-        user_name: null,
-        user_avatar_url: null,
-        completed: true,
-        error: null,
-        created_at: '2024-01-15T10:31:00Z',
-        created_at_formatted: '10:31 AM',
-      },
-    ];
-
+  test('displays user and assistant messages with timestamps', async ({ mount }) => {
     const component = await mount(ChatsShow, {
       props: {
-        chat: mockChat,
-        chats: mockChats,
-        messages: mockMessages,
-        account: mockAccount,
+        ...props,
+        messages: [
+          message(),
+          message({
+            id: 'msg-2',
+            role: 'assistant',
+            author_name: 'Test Assistant',
+            content: "I'm doing well, thank you!",
+            created_at: '2024-01-15T10:31:00Z',
+          }),
+        ],
       },
     });
-
-    // Should show messages
-    await expect(component).toContainText('Hello, how are you?');
-    await expect(component).toContainText("I'm doing well, thank you!");
-
-    // Should show timestamps
-    await expect(component).toContainText('10:30 AM');
-    await expect(component).toContainText('10:31 AM');
-
-    // Should not show empty state
-    await expect(component).not.toContainText('Start the conversation');
+    const list = component.getByTestId('chat-messages');
+    await expect(list).toContainText('Hello, how are you?');
+    await expect(list).toContainText("I'm doing well, thank you!");
+    await expect(list).toContainText('10:30 AM');
+    await expect(list).toContainText('10:31 AM');
+    await expect(list).not.toContainText('Start the conversation');
   });
 
-  test('should handle message input and send button state', async ({ mount }) => {
-    const component = await mount(ChatsShow, {
-      props: {
-        chat: mockChat,
-        chats: mockChats,
-        messages: [],
-        account: mockAccount,
-      },
-    });
-
-    const messageInput = component.locator('textarea[placeholder="Type your message..."]');
-    const sendButton = component.locator('button').last();
-
-    // Initially disabled
-    await expect(sendButton).toBeDisabled();
-
-    // Type message
-    await messageInput.fill('Test message');
-
-    // Should enable send button
-    await expect(sendButton).toBeEnabled();
-
-    // Clear input
-    await messageInput.fill('');
-
-    // Should disable again
-    await expect(sendButton).toBeDisabled();
-
-    // Test with whitespace only
-    await messageInput.fill('   ');
-    await expect(sendButton).toBeDisabled();
+  test('enables send only for nonblank input', async ({ mount }) => {
+    const component = await mount(ChatsShow, { props });
+    await expect(sendButton(component)).toBeDisabled();
+    await composer(component).fill('Test message');
+    await expect(sendButton(component)).toBeEnabled();
+    await composer(component).fill('');
+    await expect(sendButton(component)).toBeDisabled();
+    await composer(component).fill('   ');
+    await expect(sendButton(component)).toBeDisabled();
   });
 
-  test('should display failed message with retry button', async ({ mount }) => {
-    const failedMessages = [
-      {
-        id: 'msg-1',
-        role: 'user',
-        content_html: 'Test question',
-        completed: true,
-        error: null,
-        created_at_formatted: '10:30 AM',
-      },
-      {
-        id: 'msg-2',
-        role: 'assistant',
-        content_html: 'Partial response',
-        completed: false,
-        error: 'API timeout',
-        status: 'failed',
-        created_at_formatted: '10:31 AM',
-      },
-    ];
-
+  test('displays failed assistant response state', async ({ mount }) => {
     const component = await mount(ChatsShow, {
       props: {
-        chat: mockChat,
-        chats: mockChats,
-        messages: failedMessages,
-        account: mockAccount,
+        ...props,
+        messages: [message({ role: 'assistant', content: 'Partial response', status: 'failed', completed: false })],
       },
     });
-
-    // Should show error message
-    await expect(component).toContainText('Failed to generate response');
-
-    // Should show retry button
-    const retryButton = component.locator('button').filter({ hasText: /Retry/ });
-    await expect(retryButton).toBeVisible();
-    await expect(retryButton).toContainText('Retry');
-
-    // Should have retry icon (ArrowClockwise)
-    const retryIcon = retryButton.locator('svg');
-    await expect(retryIcon).toBeVisible();
+    await expect(component.getByTestId('chat-messages')).toContainText('Failed to generate response');
+    // There is no per-message Retry action in the current UI. The composer
+    // remains usable; failed-send recovery is exercised separately below.
+    await expect(composer(component)).toBeEnabled();
   });
 
-  test('should display pending message state', async ({ mount }) => {
-    const pendingMessages = [
-      {
-        id: 'msg-1',
-        role: 'user',
-        content_html: 'What is the weather?',
-        completed: true,
-        error: null,
-        created_at_formatted: '10:30 AM',
-      },
-      {
-        id: 'msg-2',
-        role: 'assistant',
-        content_html: '',
-        completed: false,
-        error: null,
-        status: 'pending',
-        created_at_formatted: '10:31 AM',
-      },
-    ];
-
+  test('displays a thinking indicator for an empty pending assistant message', async ({ mount }) => {
     const component = await mount(ChatsShow, {
       props: {
-        chat: mockChat,
-        chats: mockChats,
-        messages: pendingMessages,
-        account: mockAccount,
+        ...props,
+        messages: [
+          message(),
+          message({ id: 'msg-2', role: 'assistant', content: '', status: 'pending', completed: false }),
+        ],
       },
     });
-
-    // Should show thinking message
-    await expect(component).toContainText('Thinking...');
-
-    // Should show pending indicator (blue dot)
-    await expect(component.locator('span').filter({ hasText: '●' })).toBeVisible();
+    const list = component.getByTestId('chat-messages');
+    await expect(list.getByText('Thinking...', { exact: true })).toBeVisible();
+    await expect(list.locator('svg.animate-spin')).toBeVisible();
   });
 
-  test('should handle keyboard shortcuts', async ({ mount, page }) => {
-    const component = await mount(ChatsShow, {
-      props: {
-        chat: mockChat,
-        chats: mockChats,
-        messages: [],
-        account: mockAccount,
-      },
+  test('Shift+Enter inserts a newline and Enter submits once', async ({ mount, page }) => {
+    const requests = [];
+    await page.route(messagesUrl, async (route) => {
+      requests.push(route.request().postData());
+      await route.fulfill({ status: 200, json: { message: message({ content: 'Line 1\nLine 2' }) } });
     });
-
-    const messageInput = component.locator('textarea[placeholder="Type your message..."]');
-
-    // Type a message
-    await messageInput.fill('Test message');
-
-    // Test Enter key (should trigger send)
-    // Note: In component testing, we can't easily test form submission
-    // This would be better tested in E2E tests
-    await messageInput.press('Enter');
-
-    // Test Shift+Enter (should add new line, not send)
-    await messageInput.fill('Line 1');
-    await page.keyboard.press('Shift+Enter');
-    await messageInput.type('Line 2');
-
-    const inputValue = await messageInput.inputValue();
-    expect(inputValue).toContain('\n'); // Should contain newline
+    const component = await mount(ChatsShow, { props });
+    const input = composer(component);
+    await input.fill('Line 1');
+    await input.press('Shift+Enter');
+    await input.pressSequentially('Line 2');
+    await expect(input).toHaveValue('Line 1\nLine 2');
+    expect(requests).toHaveLength(0);
+    await input.press('Enter');
+    await expect(input).toHaveValue('');
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain('name="message[content]"');
+    expect(requests[0]).toMatch(/Line 1\r?\nLine 2/);
   });
 
-  test('should group messages by date', async ({ mount }) => {
-    const messagesWithDifferentDates = [
-      {
-        id: 'msg-1',
-        role: 'user',
-        content_html: 'Yesterday message',
-        completed: true,
-        created_at: '2024-01-14T10:30:00Z',
-        created_at_formatted: '10:30 AM',
-      },
-      {
-        id: 'msg-2',
-        role: 'user',
-        content_html: 'Today message',
-        completed: true,
-        created_at: '2024-01-15T10:30:00Z',
-        created_at_formatted: '10:30 AM',
-      },
-    ];
-
+  test('groups messages under separate dates', async ({ mount }) => {
     const component = await mount(ChatsShow, {
       props: {
-        chat: mockChat,
-        chats: mockChats,
-        messages: messagesWithDifferentDates,
-        account: mockAccount,
+        ...props,
+        messages: [
+          message({ content: 'Yesterday message', created_at: '2024-01-14T10:30:00Z' }),
+          message({ id: 'msg-2', content: 'Today message' }),
+        ],
       },
     });
-
-    // Should display both messages
-    await expect(component).toContainText('Yesterday message');
-    await expect(component).toContainText('Today message');
-
-    // Should show date separators (these are rendered as formatted dates)
-    // The exact format depends on the date formatting logic
-    await expect(component.locator('.border-t')).toHaveCount(4); // 2 date separators, each with 2 border elements
+    const list = component.getByTestId('chat-messages');
+    await expect(list).toContainText('Yesterday message');
+    await expect(list).toContainText('Today message');
+    await expect(list.getByText('Jan 14, 2024', { exact: true })).toBeVisible();
+    await expect(list.getByText('Jan 15, 2024', { exact: true })).toBeVisible();
   });
 
-  test('should display chat sidebar with active chat', async ({ mount }) => {
-    const component = await mount(ChatsShow, {
-      props: {
-        chat: mockChat,
-        chats: mockChats,
-        messages: [],
-        account: mockAccount,
-      },
-    });
-
-    // Should show chat list in sidebar
-    await expect(component).toContainText('Test Conversation');
-    await expect(component).toContainText('Another Chat');
+  test('displays the active chat and other chats in the sidebar', async ({ mount }) => {
+    const component = await mount(ChatsShow, { props });
+    const sidebar = component.getByRole('complementary');
+    await expect(sidebar).toContainText(chat.title);
+    await expect(sidebar).toContainText('Another Chat');
   });
 
-  test('should handle chat without title', async ({ mount }) => {
-    const chatWithoutTitle = {
-      ...mockChat,
-      title: null,
-    };
-
-    const component = await mount(ChatsShow, {
-      props: {
-        chat: chatWithoutTitle,
-        chats: mockChats,
-        messages: [],
-        account: mockAccount,
-      },
-    });
-
-    // Should show default title
+  test('displays a default title for an untitled chat', async ({ mount }) => {
+    const component = await mount(ChatsShow, { props: { ...props, chat: { ...chat, title: null } } });
     await expect(component).toContainText('New Chat');
   });
 
-  test('should render message content as HTML', async ({ mount }) => {
-    const htmlMessages = [
-      {
-        id: 'msg-1',
-        role: 'assistant',
-        content_html: '<p>This is <strong>bold</strong> text with <code>code</code>.</p>',
-        completed: true,
-        error: null,
-        created_at_formatted: '10:30 AM',
-      },
-    ];
-
+  test('renders assistant Markdown as formatted content', async ({ mount }) => {
     const component = await mount(ChatsShow, {
       props: {
-        chat: mockChat,
-        chats: mockChats,
-        messages: htmlMessages,
-        account: mockAccount,
+        ...props,
+        messages: [message({ role: 'assistant', content: 'This is **bold** text with `code`.' })],
       },
     });
-
-    // Should render HTML content properly
-    const messageContent = component.locator('.prose');
-    await expect(messageContent).toBeVisible();
-
-    // Check that HTML is rendered (bold and code elements)
-    await expect(component.locator('strong')).toContainText('bold');
-    await expect(component.locator('code')).toContainText('code');
+    const list = component.getByTestId('chat-messages');
+    await expect(list.locator('.prose')).toBeVisible();
+    await expect(list.locator('strong')).toHaveText('bold');
+    await expect(list.locator('code')).toHaveText('code');
   });
 
-  test('should handle disabled input during processing', async ({ mount }) => {
-    const component = await mount(ChatsShow, {
-      props: {
-        chat: mockChat,
-        chats: mockChats,
-        messages: [],
-        account: mockAccount,
-      },
+  test('disables input while sending and permits retry after a failed send', async ({ mount, page }) => {
+    let release;
+    let attempts = 0;
+    await page.route(messagesUrl, async (route) => {
+      attempts++;
+      if (attempts === 1) {
+        await new Promise((resolve) => (release = resolve));
+        await route.fulfill({ status: 422, json: { errors: ['Test send failure'] } });
+      } else {
+        await route.fulfill({ status: 200, json: { message: message({ content: 'Try again' }) } });
+      }
     });
+    const component = await mount(ChatsShow, { props });
+    await composer(component).fill('Try again');
+    await sendButton(component).click();
+    await expect(composer(component)).toBeDisabled();
+    await expect(sendButton(component)).toBeDisabled();
+    await expect.poll(() => typeof release).toBe('function');
+    release();
+    await expect(component).toContainText('Test send failure');
+    await expect(composer(component)).toBeEnabled();
+    await expect(composer(component)).toHaveValue('Try again');
+    await sendButton(component).click();
+    await expect(composer(component)).toHaveValue('');
+    expect(attempts).toBe(2);
+  });
 
-    const messageInput = component.locator('textarea[placeholder="Type your message..."]');
-
-    // Input should be enabled by default
-    await expect(messageInput).toBeEnabled();
-
-    // Note: Testing the disabled state during form submission would require
-    // simulating the form processing state, which is better tested in E2E tests
+  test('disables the composer for archived chats', async ({ mount }) => {
+    const component = await mount(ChatsShow, {
+      props: { ...props, chat: { ...chat, respondable: false, archived: true } },
+    });
+    await expect(component).toContainText('This conversation has been archived');
+    await expect(composer(component)).toBeDisabled();
+    await expect(sendButton(component)).toBeDisabled();
   });
 });

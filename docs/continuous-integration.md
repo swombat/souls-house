@@ -51,3 +51,18 @@ ownership lock is respected. CI puts those suites on separate fresh machines.
 
 The workflow is a test gate, not a formatter or security audit. The repository's
 separate `bin/rubocop` and `bun run format:check` commands remain available.
+
+### Component-test boundaries
+
+The component suite mounts the current pages using synthetic serialized props.
+Use `content` for Markdown messages, explicit `respondable`/`manual_responses`
+chat state, server-provided model choices, and nullable profile fields such as
+`chat_colour`. Shared Inertia page props must be set inside a browser-side
+harness, not by changing a store in the Node test process.
+
+The component Inertia adapter is not the full navigation client. Authentication
+integration tests still use the owned Rails backend; UI-only submission tests
+intercept specific endpoints to check payloads and pending/error recovery without
+calling providers. The separate E2E suite checks real authenticated persistence.
+Use accessible names or scoped test IDs rather than random placeholder text,
+positional SVG/button selectors, or retired product names.

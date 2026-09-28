@@ -22,13 +22,13 @@ test.describe('Account settings', () => {
       },
     });
 
-    await expect(component.getByRole('heading', { name: 'AI API Keys' })).toBeVisible();
+    await expect(component.getByRole('heading', { name: 'Resident API Keys' })).toBeVisible();
     await expect(component.getByLabel('OpenRouter')).toHaveAttribute('type', 'password');
     await expect(component.getByLabel('OpenRouter')).toHaveValue('');
     await expect(component.getByLabel('OpenRouter')).toHaveAttribute('placeholder', 'Enter a replacement key');
     await expect(component.getByLabel('Moonshot')).toBeVisible();
     await expect(component.getByText('Set', { exact: true })).toHaveCount(2);
-    await expect(component.getByText('Not set', { exact: true })).toHaveCount(4);
+    await expect(component.getByText('Not set', { exact: true })).toHaveCount(6);
     await expect(component.getByText('Shared AI keys are available as a fallback')).toBeVisible();
     await expect(component.getByText('New Conversation Default')).toBeHidden();
 
@@ -60,6 +60,8 @@ test.describe('Account settings', () => {
     await expect(component.getByText('Set', { exact: true })).toHaveCount(1);
     await expect(component.getByLabel('OpenRouter')).toBeDisabled();
     await expect(component.getByRole('button', { name: 'Remove' })).toHaveCount(0);
-    await expect(component.getByText('Only account owners and administrators can change AI API keys.')).toBeVisible();
+    await expect(
+      component.getByText('Only account owners and administrators can change resident API keys.')
+    ).toBeVisible();
   });
 });
