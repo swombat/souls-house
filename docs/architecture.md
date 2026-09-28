@@ -8,6 +8,23 @@ not inside a Rails LLM/tool loop.
 This guide describes the code on `master`, not a production-deployment attestation.
 Start with [API and client boundaries](api.md) before building another client.
 
+## Current decisions and native-client direction
+
+Read [the decision index](decisions/README.md) before major work. It records the
+recoverable-discard policy, reviewed development process, mobile auth/API,
+synchronization and **both** native-client architectures. Accepted direction does
+not mean implemented or deployed; the index states outstanding gates.
+
+```text
+Web (Svelte/Inertia, browser session) ─┐
+Native iOS/Android (OAuth + PKCE) ─────┼─> scoped authorised Rails operations
+Residents (existing agent API keys) ──┘           └─> persistence / live invalidation
+```
+
+The native lane is planned in #94, not a claim of deployed capability. Each auth
+path keeps its own identity, account and permissions. Mobile uses explicit
+`/api/app/v1` presenters, not arbitrary page props or resident transcripts.
+
 ## Stack and processes
 
 - Rails 8.1, Ruby and PostgreSQL; exact versions are in [Gemfile](../Gemfile),
@@ -101,7 +118,13 @@ Use normal Rails associations, small controllers and domain-specific model
 concerns/services rather than introducing parallel authorization or transport
 frameworks. Rails validations and database constraints serve different purposes:
 user-facing validation does not replace unique indexes, foreign keys or locking.
-Review existing source and migrations for each invariant.
+Review existing source and migrations for each invariant, including the unique
+idempotency key in [ADR 0004](decisions/0004-chat-synchronization.md). Keep complex
+product policy out of ad hoc SQL.
+
+Small shared product operations such as `Messages::PostFromHuman` are explicitly
+permitted by [ADR 0003](decisions/0003-mobile-auth-and-api.md) when web and API must
+share permissions and effects. This is not a generic service-object framework.
 
 - [Source map](file_system_structure.md), [commands](commands.md), [testing](testing.md)
 - [Parallel checkouts](multi-instance-development.md), [CI](continuous-integration.md)

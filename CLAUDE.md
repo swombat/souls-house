@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+Before major work, read `docs/architecture.md` and `docs/decisions/README.md`; follow the reviewed issue/PR and deployment gates in ADR 0002.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 🚨 CRITICAL DATABASE RULES - NEVER VIOLATE THESE 🚨
