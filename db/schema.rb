@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_28_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_28_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -504,6 +504,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_110000) do
     t.datetime "last_consolidated_at"
     t.bigint "last_consolidated_message_id"
     t.boolean "manual_responses", default: false, null: false
+    t.bigint "message_revision", default: 0, null: false
     t.string "model_id_string", default: "openrouter/auto", null: false
     t.string "prompt_timezone"
     t.text "summary"
@@ -635,8 +636,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_110000) do
     t.integer "cache_creation_tokens"
     t.integer "cached_tokens"
     t.bigint "chat_id", null: false
+    t.string "client_message_id"
     t.text "content"
     t.datetime "created_at", null: false
+    t.datetime "discarded_at"
     t.integer "envelope_prompt_bytes"
     t.integer "input_tokens"
     t.string "model_id_string"
@@ -648,11 +651,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_110000) do
     t.integer "prompt_layout_version"
     t.string "reasoning_skip_reason"
     t.jsonb "replay_payload"
+    t.bigint "revision", default: 0, null: false
     t.string "role", null: false
     t.bigint "runtime_interaction_id"
     t.integer "stable_prompt_bytes"
     t.string "stable_prompt_sha256"
     t.boolean "streaming", default: false, null: false
+    t.string "submission_digest"
     t.text "thinking_text"
     t.integer "thinking_tokens"
     t.bigint "tool_call_id"
@@ -664,7 +669,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_110000) do
     t.index ["agent_id"], name: "index_messages_on_agent_id"
     t.index ["ai_model_id"], name: "index_messages_on_ai_model_id"
     t.index ["chat_id", "created_at"], name: "index_messages_on_chat_id_and_created_at"
+    t.index ["chat_id", "revision"], name: "index_messages_on_chat_id_and_revision"
+    t.index ["chat_id", "user_id", "client_message_id"], name: "index_messages_on_client_message_identity", unique: true, where: "(client_message_id IS NOT NULL)"
     t.index ["chat_id"], name: "index_messages_on_chat_id"
+    t.index ["discarded_at"], name: "index_messages_on_discarded_at"
     t.index ["reasoning_skip_reason"], name: "index_messages_on_reasoning_skip_reason", where: "(reasoning_skip_reason IS NOT NULL)"
     t.index ["runtime_interaction_id"], name: "index_messages_on_runtime_interaction_id"
     t.index ["streaming"], name: "index_messages_on_streaming"
