@@ -57,6 +57,10 @@ Doorkeeper.configure do
   # Not part of the native-app contract; nothing should be able to probe tokens.
   allow_token_introspection false
 
+  # Header only (issue #94 review): a bearer in a URL or form body ends up in
+  # proxy and access logs outside Rails' parameter filtering.
+  access_token_methods :from_bearer_authorization
+
   base_controller "ActionController::Base"
 end
 

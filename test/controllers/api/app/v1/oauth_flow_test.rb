@@ -114,6 +114,20 @@ class Api::App::V1::OauthFlowTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "the code exchange needs the exact callback too" do
+    verifier = "v" * 50
+    code = authorize_code(challenge_for(verifier))
+    [ "#{CALLBACK}?extra=1", "#{CALLBACK}/x" ].each do |uri|
+      post "/oauth/token", params: { grant_type: "authorization_code", code: code, client_id: @client.uid,
+                                     redirect_uri: uri, code_verifier: verifier }
+      assert_response :bad_request, "#{uri.inspect} must be refused"
+      assert_equal "invalid_grant", response.parsed_body["error"]
+    end
+
+    exchange_code(code, verifier)
+    assert_response :success, "a refused attempt does not burn the code for the exact callback"
+  end
+
   test "a bad callback is refused before any login detour" do
     get "/oauth/authorize", params: authorize_params(challenge_for("v" * 50)).merge(redirect_uri: "https://evil.example/cb")
     assert_response :bad_request
@@ -202,14 +216,38 @@ class Api::App::V1::OauthFlowTest < ActionDispatch::IntegrationTest
     assert_equal [ row_for(t1), row_for(t3) ].map(&:id).sort, live_tokens(session).pluck(:id).sort
     get "/api/app/v1/session", headers: bearer(t2)
     assert_response :unauthorized
+    assert_not row_for(t1).reload.revoked?, "a rejected bearer must not end its parent's retry grace"
 
     use(t3)
+    assert row_for(t1).reload.revoked?, "first successful use of the new bearer retires its parent"
     assert_equal [ row_for(t3).id ], live_tokens(session).pluck(:id)
 
     # A client that kept the superseded child is indistinguishable from a thief.
     refresh_raw(t2)
     assert_equal "invalid_grant", response.parsed_body["error"]
     assert_equal "reuse_detected", session.reload.revocation_reason
+  end
+
+  test "a rejected superseded bearer leaves the parent retryable" do
+    t1 = sign_in_device
+    t2 = refresh(t1)
+    _lost = refresh(t1)
+    get "/api/app/v1/session", headers: bearer(t2)
+    assert_response :unauthorized
+    assert_not row_for(t1).reload.revoked?
+
+    use(refresh(t1))
+    assert_nil AppSession.last.revoked_at, "the retry is recovery, not reuse"
+  end
+
+  test "an expired bearer cannot retire its parent" do
+    t1 = sign_in_device
+    t2 = refresh(t1)
+    travel 16.minutes do
+      get "/api/app/v1/session", headers: bearer(t2)
+      assert_response :unauthorized
+    end
+    assert_not row_for(t1).reload.revoked?
   end
 
   test "case c: a lost refresh response can be retried with the old token" do
@@ -291,6 +329,17 @@ class Api::App::V1::OauthFlowTest < ActionDispatch::IntegrationTest
   end
 
   # --- /api/app/v1/session ---------------------------------------------------
+
+  test "bearer tokens are accepted only in the Authorization header" do
+    tokens = sign_in_device
+    %w[access_token bearer_token].each do |name|
+      get "/api/app/v1/session", params: { name => tokens["access_token"] }
+      assert_response :unauthorized, "#{name} in the query must be refused"
+      delete "/api/app/v1/session", params: { name => tokens["access_token"] }
+      assert_response :unauthorized, "#{name} in the body must be refused"
+    end
+    use(tokens)
+  end
 
   test "session show needs a bearer token" do
     get "/api/app/v1/session"
