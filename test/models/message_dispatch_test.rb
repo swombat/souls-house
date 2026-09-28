@@ -203,6 +203,69 @@ class MessageDispatchTest < ActiveSupport::TestCase
     assert_equal [ @second, @dispatch ], [ successor.agent, successor.message_dispatch ]
   end
 
+  test "past the recovery horizon an unstarted continuation is recorded, and nothing is started" do
+    MessageDispatchJob.perform_now(@dispatch)
+    run = @dispatch.reload.runtime_interaction
+    run.claim_dispatch!
+    AllAgentsResponseJob.stub(:perform_later, nil) { run.finish_execution!("completed") }
+    clear_enqueued_jobs
+
+    travel MessageDispatch::RECOVERY_HORIZON + 1.minute do
+      assert_no_enqueued_jobs { MessageDispatchSweepJob.perform_now }
+      assert_equal [ "expired", "continuation_not_started_in_time" ], [ @dispatch.reload.status, @dispatch.reason ]
+    end
+  end
+
+  test "past the recovery horizon a finished dispatch stays reserved with its recovery closed" do
+    MessageDispatchJob.perform_now(@dispatch)
+    run = @dispatch.reload.runtime_interaction
+    run.claim_dispatch!
+    AllAgentsResponseJob.stub(:perform_later, nil) { run.finish_execution!("completed") }
+    run.update_columns(response_chain_advanced_at: Time.current)
+
+    travel MessageDispatch::RECOVERY_HORIZON + 1.minute do
+      MessageDispatchSweepJob.perform_now
+      assert_equal "reserved", @dispatch.reload.status
+      assert @dispatch.settled_at?
+      assert_no_difference -> { @dispatch.reload.updated_at } do
+        MessageDispatchSweepJob.perform_now
+      end
+    end
+  end
+
+  test "one dispatch failing in the sweep does not stop the others" do
+    other = Messages::PostFromHuman.new(chat: @chat, user: @user, content: "@Code Reviewer again").call.message.message_dispatch
+    failing = @dispatch
+    original = MessageDispatch.instance_method(:redrive!)
+    MessageDispatch.define_method(:redrive!) do |**kw|
+      raise "row failure" if id == failing.id
+      original.bind_call(self, **kw)
+    end
+    travel 11.minutes do
+      MessageDispatchSweepJob.perform_now
+    end
+    assert_equal "expired", other.reload.status
+  ensure
+    MessageDispatch.define_method(:redrive!, original)
+  end
+
+  test "duplicate runtime job deliveries after completion reach the runtime once" do
+    @first.update!(uuid: SecureRandom.uuid, endpoint_url: "https://agent.example.com", trigger_bearer_token: "synthetic",
+                   health_state: "healthy", consecutive_health_failures: 0)
+    MessageDispatchJob.perform_now(@dispatch)
+    run = @dispatch.reload.runtime_interaction
+    runtime_calls = 0
+    sandbox = Object.new
+    sandbox.define_singleton_method(:with_runtime) { |&_| runtime_calls += 1 }
+
+    Agents::Sandbox.stub(:new, sandbox) do
+      ManualAgentResponseJob.perform_now(@chat, @first, runtime_interaction_id: run.id)
+      AllAgentsResponseJob.stub(:perform_later, nil) { run.reload.finish_execution!("completed") }
+      2.times { ManualAgentResponseJob.perform_now(@chat, @first, runtime_interaction_id: run.id) }
+    end
+    assert_equal 1, runtime_calls
+  end
+
   test "the sweeper never touches chains no dispatch started" do
     unrelated = AgentRuntimeInteraction.reserve!(agent: @first, chat: @chat, response_chain_agent_ids: [ @second.id ])
     AllAgentsResponseJob.stub(:perform_later, nil) { unrelated.finish_execution!("completed") }

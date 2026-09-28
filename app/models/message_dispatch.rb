@@ -15,8 +15,9 @@ class MessageDispatch < ApplicationRecord
 
   STATUSES = %w[pending reserved cancelled expired].freeze
   EXPIRY = 10.minutes
-  # Recovery looks back this far and no further, so it never wakes chains
-  # that were not created by a dispatch it is responsible for.
+  # Recovery re-drives work this far back and no further. Past it, the sweeper
+  # still records what became of the dispatch (close_recovery!) instead of
+  # leaving it pending or reserved; it just stops starting anything.
   RECOVERY_HORIZON = 6.hours
   # A fresh row's own enqueue gets this long before the sweeper assumes it
   # was lost.
@@ -31,6 +32,9 @@ class MessageDispatch < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
 
   scope :recoverable, -> { where(accepted_at: RECOVERY_HORIZON.ago..) }
+  # Reserved and still under recovery: a settled_at on a reserved row means
+  # the sweeper has closed its recovery window.
+  scope :recovery_open, -> { where(status: "reserved", settled_at: nil) }
 
   # Targets are resolved once, here, and never re-read from an edited body.
   def self.accept!(message:, target_agent_ids:)
@@ -115,24 +119,45 @@ class MessageDispatch < ApplicationRecord
   # pending, and, once reserved, every unclaimed interaction and every ready
   # but unadvanced continuation belonging to it. Every job here is safe to
   # deliver twice.
+  #
+  # An enqueue that fails here is logged and left for the next sweep, so
+  # recovery never turns an accepted send into an error.
   def redrive!(grace: REDRIVE_GRACE)
     reload
     if pending?
       return settle_expired! if expires_at.past?
-      MessageDispatchJob.perform_later(self) if accepted_at <= grace.ago
+      safely_enqueue { MessageDispatchJob.perform_later(self) } if accepted_at <= grace.ago
       return
     end
     return unless reserved?
 
+    settle_expired_runs!
     runtime_interactions.where(dispatch_claimed_at: nil, finished_at: nil, execution_state: "queued")
       .where("created_at <= ?", grace.ago).where("execution_deadline_at > ?", Time.current).find_each do |interaction|
-      ManualAgentResponseJob.perform_later(chat, interaction.agent, runtime_interaction_id: interaction.id)
+      safely_enqueue { ManualAgentResponseJob.perform_later(chat, interaction.agent, runtime_interaction_id: interaction.id) }
     end
-    runtime_interactions.where(response_chain_advanced_at: nil).where.not(response_chain_agent_ids: [])
-      .where("updated_at <= ?", grace.ago).find_each do |interaction|
-      next unless interaction.response_chain_ready?
+    unadvanced_ready_runs(grace).each do |interaction|
+      safely_enqueue { AllAgentsResponseJob.perform_later(chat, interaction.response_chain_agent_ids, after_interaction_id: interaction.id) }
+    end
+  end
 
-      AllAgentsResponseJob.perform_later(chat, interaction.response_chain_agent_ids, after_interaction_id: interaction.id)
+  # Past RECOVERY_HORIZON: stop re-driving and record the outcome. A pending
+  # dispatch is expired (redrive! does that at any age); a reserved one has
+  # its expired runs cancelled, and, if a continuation it owed never started,
+  # becomes expired with that reason. Otherwise it stays reserved, with
+  # settled_at marking recovery closed. Nothing is started or advanced here.
+  def close_recovery!
+    return settle_expired! if pending?
+
+    settle_expired_runs!
+    with_lock do
+      next unless reserved? && settled_at.nil?
+
+      if unadvanced_ready_runs(0.seconds).any?
+        settle!("expired", "continuation_not_started_in_time")
+      else
+        update!(settled_at: Time.current)
+      end
     end
   end
 
@@ -154,6 +179,24 @@ class MessageDispatch < ApplicationRecord
 
   def settle_expired!
     with_lock { settle!("expired", "not_started_in_time") if pending? && expires_at.past? }
+  end
+
+  # A reservation whose deadline passed unclaimed can never start; record it
+  # as cancelled rather than waiting for a job delivery that may never come.
+  def settle_expired_runs!
+    runtime_interactions.where(dispatch_claimed_at: nil, finished_at: nil, execution_state: "queued")
+      .where("execution_deadline_at <= ?", Time.current).find_each(&:reconcile_activity!)
+  end
+
+  def unadvanced_ready_runs(grace)
+    runtime_interactions.where(response_chain_advanced_at: nil).where.not(response_chain_agent_ids: [])
+      .where("updated_at <= ?", grace.ago).select(&:response_chain_ready?)
+  end
+
+  def safely_enqueue
+    yield
+  rescue StandardError => e
+    Rails.logger.warn "[MessageDispatch] #{id} re-drive enqueue failed, left for the next sweep: #{e.class}: #{e.message}"
   end
 
   def settle!(status, reason)

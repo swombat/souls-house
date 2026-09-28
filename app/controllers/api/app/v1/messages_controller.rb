@@ -58,8 +58,8 @@ module Api
           rescue ActiveRecord::RecordNotUnique
             raise
           rescue StandardError => e
-            # Acceptance is one transaction, so nothing of this send exists. A
-            # post-commit enqueue failure never reaches here (PostFromHuman).
+            # Acceptance is one transaction, so nothing of this send exists.
+            # Failures after its commit never reach here (PostFromHuman).
             Rails.logger.error "[Api::App::V1::Messages] send failed: #{e.class}: #{e.message}"
             return render_error(:service_unavailable, "send_failed", "The message could not be sent; nothing was saved", { retryable: true })
           end
@@ -153,8 +153,13 @@ module Api
         def render_retry(message, content)
           if message.submission_digest == Messages::PostFromHuman.submission_digest(content: content)
             # A retry re-drives this send's wake if an enqueue was lost; it
-            # never creates anything. 200 means accepted, nothing more.
-            message.message_dispatch&.redrive!
+            # never creates anything. 200 means accepted, nothing more, so a
+            # recovery that fails is left to the sweeper and still answers 200.
+            begin
+              message.message_dispatch&.redrive!
+            rescue StandardError => e
+              Rails.logger.warn "[Api::App::V1::Messages] retry redrive of message #{message.id} failed: #{e.class}: #{e.message}"
+            end
             render json: sent(message), status: :ok
           else
             render_error :conflict, "idempotency_conflict", "client_message_id was already used for a different message",

@@ -90,6 +90,18 @@ class Messages::PostFromHumanTest < ActiveSupport::TestCase
     assert_equal "pending", result.message.message_dispatch.status
   end
 
+  test "an after-commit callback failure leaves the send accepted, with its audit hook and dispatch" do
+    persisted = nil
+    result = ModerateMessageJob.stub(:perform_later, ->(*) { raise "moderation queue down" }) do
+      Messages::PostFromHuman.new(chat: @group_chat, user: @user, content: "Hey @Grok").call(on_persisted: ->(m) { persisted = m })
+    end
+
+    assert result.created?
+    assert_equal persisted, result.message
+    assert Message.exists?(result.message.id)
+    assert_equal "pending", result.message.message_dispatch.status
+  end
+
   test "a send needing a wake is refused before anything is written while live activity is off" do
     previous = ENV["SOULSHOUSE_LIVE_ACTIVITY"]
     ENV["SOULSHOUSE_LIVE_ACTIVITY"] = "0"

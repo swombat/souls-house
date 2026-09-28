@@ -68,6 +68,17 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_chat_path(@account, @chat)
   end
 
+  test "a failure after the send committed still reports it sent" do
+    assert_difference "Message.count", 1 do
+      ModerateMessageJob.stub(:perform_later, ->(*) { raise "moderation queue down" }) do
+        post account_chat_messages_path(@account, @chat), params: { message: { content: "Committed" } }
+      end
+    end
+
+    assert_redirected_to account_chat_path(@account, @chat)
+    assert_nil flash[:alert]
+  end
+
   test "should trigger AI response job when message is created" do
     perform_enqueued_jobs do
       post account_chat_messages_path(@account, @chat), params: {

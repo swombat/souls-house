@@ -29,10 +29,10 @@ class Messages::PostFromHuman
 
   # Acceptance is one primary transaction: the message, the caller's audit
   # (on_persisted) and, when residents are mentioned, the durable intent to
-  # wake them (MessageDispatch, #94 B step 4b-ii). If any of it raises, none
-  # of it exists and the error propagates. The wake is enqueued only after
-  # commit; if that enqueue fails the send is still accepted and the sweeper
-  # re-drives it.
+  # wake them (MessageDispatch, #94 B step 4b-ii). If any of it raises before
+  # commit, none of it exists and the error propagates. Anything that fails
+  # after commit (a model's after_commit callback, or the wake's enqueue)
+  # leaves the send accepted: it is logged, and the sweeper re-drives the wake.
   #
   # A send that needs a wake is refused before anything is written while live
   # activity is off, since there is then no durable run to reserve.
@@ -51,11 +51,22 @@ class Messages::PostFromHuman
     end
 
     dispatch = nil
-    saved = Message.transaction do
-      next false unless message.save
+    saved_id = nil
+    saved = begin
+      Message.transaction do
+        next false unless message.save
 
-      on_persisted&.call(message)
-      dispatch = MessageDispatch.accept!(message: message, target_agent_ids: target_ids) if target_ids.any?
+        on_persisted&.call(message)
+        dispatch = MessageDispatch.accept!(message: message, target_agent_ids: target_ids) if target_ids.any?
+        saved_id = message.id
+        true
+      end
+    rescue StandardError => e
+      # Commit callbacks run, and can raise, after the commit. Whether this
+      # send was accepted is whether its row exists, not whether we raised.
+      raise unless saved_id && Message.exists?(saved_id)
+
+      Rails.logger.warn "[PostFromHuman] message #{saved_id} accepted; an after-commit step failed: #{e.class}: #{e.message}"
       true
     end
 
