@@ -19,31 +19,23 @@ class MessagesController < ApplicationController
   end
 
   def create
-    @message = @chat.messages.build(
-      message_params.merge(user: Current.user, role: "user")
-    )
-    @message.attachments.attach(params[:files]) if params[:files].present?
+    result = Messages::PostFromHuman.new(
+      chat: @chat,
+      user: Current.user,
+      content: message_params[:content],
+      files: params[:files],
+      audio_signed_id: params[:audio_signed_id]
+    ).call
+    @message = result.message
 
-    if params[:audio_signed_id].present?
-      begin
-        @message.audio_recording.attach(params[:audio_signed_id])
-        @message.audio_source = true
-      rescue ActiveSupport::MessageVerifier::InvalidSignature
-        Rails.logger.warn "Invalid audio_signed_id for message in chat #{@chat.id}"
-      end
-    end
-
-    if @message.save
+    if result.created?
       audit("create_message", @message, **message_params.to_h)
-      if @chat.manual_responses?
-        @chat.trigger_mentioned_agents!(@message.content)
-      end
 
       respond_to do |format|
         format.html { redirect_to account_chat_path(@chat.account, @chat) }
         format.json { render json: @message, status: :created }
       end
-    elsif @message.errors.added?(:base, :duplicate_message)
+    elsif result.duplicate?
       # Duplicate message - just refresh the page silently
       respond_to do |format|
         format.html { redirect_to account_chat_path(@chat.account, @chat) }
