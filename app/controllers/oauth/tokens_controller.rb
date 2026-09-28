@@ -9,6 +9,10 @@ class Oauth::TokensController < Doorkeeper::TokensController
   rate_limit to: 30, within: 1.minute, only: :create,
              with: -> { render json: { error: "rate_limited" }, status: :too_many_requests }
 
+  # Exact callback at code exchange too: Doorkeeper's URIChecker would accept
+  # the grant's callback with a query string appended.
+  before_action :require_exact_redirect_uri, only: :create
+
   def create
     presented = refresh_grant? && Doorkeeper::AccessToken.by_refresh_token(params[:refresh_token].to_s)
     return super unless presented
@@ -41,6 +45,16 @@ class Oauth::TokensController < Doorkeeper::TokensController
   end
 
   private
+
+  def require_exact_redirect_uri
+    return unless params[:grant_type] == Doorkeeper::OAuth::AUTHORIZATION_CODE
+
+    grant = Doorkeeper::AccessGrant.by_token(params[:code].to_s)
+    return if grant.nil? || grant.redirect_uri == params[:redirect_uri].to_s
+
+    render json: { error: "invalid_grant", error_description: "The redirect URI does not match the one used for the grant." },
+           status: :bad_request
+  end
 
   def render_signed_out
     render json: { error: "invalid_grant", error_description: "This device has been signed out." }, status: :bad_request
