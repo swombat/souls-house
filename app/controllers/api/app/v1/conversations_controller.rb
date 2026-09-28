@@ -30,13 +30,17 @@ module Api
           unless title.nil? || title.is_a?(String)
             return render_error(:unprocessable_entity, "invalid_parameter", "title must be a string", { parameter: "title" })
           end
-          agents = selected_agents(account) or return
+          agent_ids = requested_agent_ids or return
           title = title.to_s.strip.presence
-          digest = creation_digest(agents, title)
+          digest = creation_digest(agent_ids, title)
 
+          # A retry is judged against what was originally submitted, not
+          # against who could join a new conversation today: a resident
+          # deactivated since must not turn a retry into a refusal.
           existing = account.chats.find_by(client_conversation_id: client_conversation_id)
           return render_retry(existing, digest) if existing
 
+          agents = eligible_agents(account, agent_ids) or return
           chat = Chat.transaction do
             Chat.create_with_message!(
               { account: account, title: title, manual_responses: true,
@@ -80,20 +84,32 @@ module Api
           @chat = find_conversation!(params[:id])
         end
 
-        def selected_agents(account)
+        # The submitted residents as database ids, sorted, or nil after a 422.
+        def requested_agent_ids
           ids = Array(params[:agent_ids]).map(&:to_s).reject(&:blank?).uniq
-          agents = account.agents.eligible_for_conversation.where(id: Agent.decode_id(ids)).to_a if ids.any?
-          return agents if agents.present? && agents.size == ids.size
+          decoded = ids.map { |id| Integer(Agent.decode_id(id), exception: false) }
+          return decoded.uniq.sort if ids.any? && decoded.none?(&:nil?)
 
-          render_error :unprocessable_entity, "invalid_parameter", "agent_ids must name residents of this account who can join a conversation", { parameter: "agent_ids" }
-          nil
+          render_invalid_agent_ids
         rescue Hashids::InputError
+          render_invalid_agent_ids
+        end
+
+        # Only a new conversation checks who may join one.
+        def eligible_agents(account, agent_ids)
+          agents = account.agents.eligible_for_conversation.where(id: agent_ids).to_a
+          return agents if agents.size == agent_ids.size
+
+          render_invalid_agent_ids
+        end
+
+        def render_invalid_agent_ids
           render_error :unprocessable_entity, "invalid_parameter", "agent_ids must name residents of this account who can join a conversation", { parameter: "agent_ids" }
           nil
         end
 
-        def creation_digest(agents, title)
-          "v1:" + Digest::SHA256.hexdigest({ agent_ids: agents.map(&:id).sort, title: title }.to_json)
+        def creation_digest(agent_ids, title)
+          "v1:" + Digest::SHA256.hexdigest({ agent_ids: agent_ids, title: title }.to_json)
         end
 
         # A conversation deleted since is gone for the retry as for any read.

@@ -64,6 +64,28 @@ class Api::App::V1::ConversationApiTest < ActionDispatch::IntegrationTest
     assert_equal id, response.parsed_body.dig("error", "details", "conversation_id")
   end
 
+  test "a retry still finds its conversation after a resident is deactivated or reprovisioned" do
+    create_conversation("conv-00000001", [ @agent, @other ], title: "Hi")
+    id = response.parsed_body.dig("conversation", "id")
+    @agent.update!(active: false)
+    @other.update!(runtime: "provisioning")
+
+    assert_no_difference -> { Chat.count } do
+      create_conversation("conv-00000001", [ @other, @agent ], title: "Hi")
+    end
+    assert_response :ok
+    assert_equal id, response.parsed_body.dig("conversation", "id")
+
+    # A different payload under the same identity is still a conflict, and a
+    # new identity still checks who can join a new conversation today.
+    create_conversation("conv-00000001", [ @agent ], title: "Hi")
+    assert_error :conflict, "idempotency_conflict"
+    assert_no_difference -> { Chat.count } do
+      create_conversation("conv-00000002", [ @agent, @other ], title: "Hi")
+    end
+    assert_error :unprocessable_entity, "invalid_parameter"
+  end
+
   test "a retry of a conversation deleted since is 404 and does not recreate it" do
     create_conversation("conv-00000001", [ @agent ])
     @account.chats.find(response.parsed_body.dig("conversation", "id")).discard!
