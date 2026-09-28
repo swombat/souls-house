@@ -40,8 +40,11 @@ module ApplicationCable
       end
     end
 
+    # Offering the ticket protocol at all selects ticket authentication, even
+    # with an empty value: an empty ticket is refused, never read as a cookie
+    # connection.
     def ticket_offered?
-      offered_ticket.present?
+      !offered_ticket.nil?
     end
 
     def offered_ticket

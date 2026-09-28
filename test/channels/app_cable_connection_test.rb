@@ -43,6 +43,13 @@ class AppCableConnectionTest < ActionCable::Connection::TestCase
     assert_reject_connection { connect headers: offering("forged") }
   end
 
+  test "an empty offered ticket never falls back to a valid cookie" do
+    session = @user.sessions.create!
+    cookies.signed[LocalInstance.current.cookie(:session_id)] = session.id
+
+    assert_reject_connection { connect headers: offering("") }
+  end
+
   test "the web's cookie connection is unchanged and carries no device session" do
     session = @user.sessions.create!
     cookies.signed[LocalInstance.current.cookie(:session_id)] = session.id
