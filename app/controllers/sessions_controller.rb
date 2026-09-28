@@ -53,8 +53,20 @@ class SessionsController < ApplicationController
 
     start_new_session_for user
     audit(:login, user)
-    redirect_to after_authentication_url, notice: "You have been signed in."
+    redirect_after_login
     true
+  end
+
+  # Native-app sign-in (/oauth/authorize) ends in a redirect to the app's
+  # callback, which the login form's Inertia request can't follow: hand the
+  # browser a full-page visit instead.
+  def redirect_after_login
+    url = after_authentication_url
+    if request.inertia? && URI(url).path == oauth_authorization_path
+      inertia_location url
+    else
+      redirect_to url, notice: "You have been signed in."
+    end
   end
 
   def redirect_with_authentication_error
