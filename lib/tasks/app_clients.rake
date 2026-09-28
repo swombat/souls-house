@@ -3,7 +3,10 @@
 namespace :app_clients do
   desc "Create or update the first-party native-app OAuth clients"
   task ensure: :environment do
-    host = ENV.fetch("APP_CLIENT_CALLBACK_HOST", "souls.house")
+    # This installation's own host, never a baked-in default: provisioning
+    # another installation's callback would silently break its sign-in.
+    host = ENV["APP_CLIENT_CALLBACK_HOST"].presence || ENV["SOULSHOUSE_DOMAIN"].presence ||
+      abort("Set APP_CLIENT_CALLBACK_HOST (or SOULSHOUSE_DOMAIN) to this installation's host")
     {
       "souls-house-android" => "Souls House for Android",
       "souls-house-ios" => "Souls House for iOS"
