@@ -46,7 +46,7 @@ test('narration stays visible while live commands and command history are expand
 test.each(['supported', 'unsupported', 'unknown', undefined])(
   'keeps commands compact when narration is %s and none has arrived',
   async (capability) => {
-    render(AgentRuntimeActivityCard, {
+    const { container } = render(AgentRuntimeActivityCard, {
       interaction: {
         ...withCommands,
         snapshot: { ...withCommands.snapshot, narration_capability: capability, commentary: null },
@@ -55,6 +55,10 @@ test.each(['supported', 'unsupported', 'unknown', undefined])(
     });
     expect(screen.queryByText('cat config/settings.yml…')).not.toBeInTheDocument();
     expect(screen.queryByText('git status · completed')).not.toBeInTheDocument();
+    const details = container.querySelector('details');
+    expect(details.open).toBe(false);
+    details.open = true;
+    await fireEvent(details, new Event('toggle'));
     await fireEvent.click(screen.getByRole('button', { name: 'Show commands', expanded: false }));
     expect(screen.getByText('cat config/settings.yml…')).toBeVisible();
     expect(screen.getByText('git status · completed')).toBeVisible();
@@ -83,7 +87,7 @@ test('received narration takes precedence over stale capability metadata', async
 });
 
 test('minimises on completion, remains present and can be expanded again', async () => {
-  const { container, rerender } = render(AgentRuntimeActivityCard, { interaction: base });
+  const { container, rerender } = render(AgentRuntimeActivityCard, { interaction: withCommands });
   const details = container.querySelector('details');
   expect(details.open).toBe(true);
   await rerender({
@@ -126,4 +130,23 @@ test('shows provider absence and lost reporting separately from execution failur
   expect(screen.getByText(/Live updates interrupted/)).toBeInTheDocument();
   expect(screen.getByText(/Narration isn't available/)).toBeInTheDocument();
   expect(screen.getByText('is working')).toBeInTheDocument();
+});
+
+test('only narration automatically expands a working card and preserves manual collapse on updates', async () => {
+  const { container, rerender } = render(AgentRuntimeActivityCard, { interaction: base });
+  const details = container.querySelector('details');
+  expect(details.open).toBe(false);
+  await rerender({ interaction: { ...base, snapshot: { operations: withCommands.snapshot.operations } } });
+  expect(details.open).toBe(false);
+  await rerender({ interaction: withCommands });
+  expect(details.open).toBe(true);
+  details.open = false;
+  await fireEvent(details, new Event('toggle'));
+  await rerender({ interaction: { ...withCommands, revision: 3 } });
+  expect(details.open).toBe(false);
+});
+
+test('historical narration does not expand a completed card', () => {
+  const { container } = render(AgentRuntimeActivityCard, { interaction: { ...withCommands, active: false } });
+  expect(container.querySelector('details').open).toBe(false);
 });

@@ -17,11 +17,11 @@ const run = {
 };
 const precedes = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
-test('active cards stay below speech, then move and collapse on completion without being recreated', async () => {
+test('narrated active cards stay below speech, then move and collapse on completion without being recreated', async () => {
   const { container, rerender } = render(ChatMessageList, {
     allMessages: messages,
     visibleMessages: messages,
-    runtimeInteractions: [run],
+    runtimeInteractions: [{ ...run, snapshot: { commentary: 'Checking the configuration.' } }],
   });
   const card = screen.getByTestId('runtime-activity-card');
   expect(precedes(screen.getByText('After completion'), card)).toBe(true);

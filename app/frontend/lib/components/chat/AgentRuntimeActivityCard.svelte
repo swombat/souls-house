@@ -3,7 +3,8 @@
   import { formatTime } from '$lib/utils';
 
   let { interaction } = $props();
-  let expanded = $state(Boolean(interaction.active));
+  let expanded = $state(false);
+  let hadNarration = $state(false);
   let wasActive = $state(Boolean(interaction.active));
   let now = $state(Date.now());
   const isActive = $derived(Boolean(interaction.active));
@@ -27,7 +28,9 @@
 
   $effect(() => {
     if (wasActive && !isActive) expanded = false;
+    else if (isActive && narrationReceived && !hadNarration) expanded = true;
     wasActive = isActive;
+    hadNarration = narrationReceived;
   });
 
   onMount(() => {
