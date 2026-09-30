@@ -34,7 +34,7 @@
   </div>
   <div class="flex items-center gap-2 w-full group">
     {#if chat.manual_responses && chat.participants_json?.length > 0}
-      <ChatParticipantAvatars participants={chat.participants_json} />
+      <ChatParticipantAvatars participants={chat.participants_json} workingAgentIds={chat.working_agent_ids} />
     {:else}
       <div class="text-xs text-muted-foreground flex-1/3 hidden group-hover:block">
         {chat.model_label}

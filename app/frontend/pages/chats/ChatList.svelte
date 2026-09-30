@@ -1,11 +1,17 @@
 <script>
   import { router, page } from '@inertiajs/svelte';
   import { newAccountChatPath } from '@/routes';
+  import { createDynamicSync } from '$lib/use-sync';
   import ChatSidebarEmptyState from '$lib/components/chat/ChatSidebarEmptyState.svelte';
   import ChatSidebarHeader from '$lib/components/chat/ChatSidebarHeader.svelte';
   import ChatSidebarItem from '$lib/components/chat/ChatSidebarItem.svelte';
 
   let { chats = [], activeChatId = null, accountId, isOpen = false, onClose = () => {} } = $props();
+
+  const updateSync = createDynamicSync();
+  $effect(() => {
+    updateSync({ [`Account:${accountId}`]: 'chats' });
+  });
 
   // Check if user can see deleted chats
   const canSeeDeleted = $derived($page.props.is_account_admin || $page.props.user?.site_admin);

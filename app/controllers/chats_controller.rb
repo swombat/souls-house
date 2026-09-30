@@ -8,7 +8,7 @@ class ChatsController < ApplicationController
     @chats = sidebar_chats
 
     render inertia: "chats/new", props: {
-      chats: Chat.cached_json_for(Array(@chats), as: :sidebar_json),
+      chats: Chat.sidebar_json_for(@chats),
       agents: available_agents(as: :list),
       account: current_account.as_json,
       show_usage_in_chat: Setting.instance.show_usage_in_chat,
@@ -20,7 +20,7 @@ class ChatsController < ApplicationController
     @chats = sidebar_chats
 
     render inertia: "chats/new", props: {
-      chats: Chat.cached_json_for(@chats, as: :sidebar_json),
+      chats: Chat.sidebar_json_for(@chats),
       account: current_account.as_json,
       agents: available_agents(as: :list),
       show_usage_in_chat: Setting.instance.show_usage_in_chat,
@@ -36,7 +36,7 @@ class ChatsController < ApplicationController
 
     if inertia_prop_requested?(:chats)
       chats = sidebar_chats
-      props[:chats] = Chat.cached_json_for(chats, as: :sidebar_json)
+      props[:chats] = Chat.sidebar_json_for(chats)
     end
 
     if inertia_prop_requested?(:messages)

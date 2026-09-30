@@ -422,7 +422,7 @@ class AgentRuntimeInteraction < ApplicationRecord
   end
 
   def broadcast_agent_runtime_interactions_refresh
-    return if live_activity? && previous_changes.keys.intersect?(%w[id finished_at execution_state]) == false
+    return if live_activity? && !destroyed? && previous_changes.keys.intersect?(%w[id finished_at execution_state]) == false
 
     ActionCable.server.broadcast(
       "Agent:#{agent.obfuscated_id}",
@@ -436,6 +436,10 @@ class AgentRuntimeInteraction < ApplicationRecord
     end
 
     if chat
+      ActionCable.server.broadcast(
+        "Account:#{chat.account.obfuscated_id}",
+        { action: "refresh", prop: "chats" }
+      )
       ActionCable.server.broadcast(
         "Chat:#{chat.obfuscated_id}",
         { action: "refresh", prop: "runtime_interactions" }

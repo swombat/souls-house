@@ -145,10 +145,24 @@ class Chat < ApplicationRecord
     entries.map { |_, key| cached[key] || missing[key] }
   end
 
+  # Run state must not be cached with chat content or touch/reorder the chat.
+  def self.sidebar_json_for(chats)
+    chats = chats.to_a
+    working = AgentRuntimeInteraction.active
+      .where(chat_id: chats.map(&:id))
+      .where("execution_state IS NULL OR execution_state NOT IN (?)", AgentRuntimeInteraction::TERMINAL_STATES)
+      .distinct.pluck(:chat_id, :agent_id).group_by(&:first)
+
+    cached_json_for(chats, as: :sidebar_json).zip(chats).map do |json, chat|
+      ids = (working[chat.id] || []).map { |_, id| Agent.encode_id(id) }
+      json.merge("working_agent_ids" => ids)
+    end
+  end
+
   def json_cache_key(as: nil)
     return cache_key_with_version unless as.present?
 
-    "#{cache_key_with_version}/json/#{as}"
+    "#{cache_key_with_version}/json/#{as}/v2"
   end
 
   def updated_at_formatted
@@ -205,6 +219,7 @@ class Chat < ApplicationRecord
     agents.each do |agent|
       participants << {
         type: "agent",
+        id: agent.to_param,
         name: agent.name,
         icon: agent.icon,
         colour: agent.colour
