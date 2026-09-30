@@ -305,7 +305,9 @@ curl -X POST \
 ```
 
 The response contains the stored message, including `files_json`, and
-`ai_response_triggered`.
+`ai_response_triggered`. Human messages in rooms with exactly one resident
+automatically queue that resident after the message commits, unless unavailable
+or already responding. Resident-authored replies do not self-trigger.
 
 ### Quiet progress updates (house-owned conversation runs)
 

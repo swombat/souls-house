@@ -12,6 +12,20 @@ module Api
         @chat = @account.chats.create!(model_id: "openrouter/auto", title: "Test Chat")
       end
 
+      test "human API message wakes the only resident and reports the trigger" do
+        resident = @account.agents.create!(name: "Solo", system_prompt: "Test", runtime: "external")
+        @chat.agents << resident
+        @chat.update!(manual_responses: true)
+
+        assert_enqueued_with(job: AllAgentsResponseJob, args: [ @chat, [ resident.id ] ]) do
+          post api_v1_conversation_messages_url(@chat),
+            params: { content: "Hello resident" },
+            headers: { "Authorization" => "Bearer #{@token}" }
+        end
+        assert_response :created
+        assert JSON.parse(response.body)["ai_response_triggered"]
+      end
+
       test "creates message without triggering retired inline inference" do
         @chat.messages.create!(content: "Hello", role: "user", user: @user)
 

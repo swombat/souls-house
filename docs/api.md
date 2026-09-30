@@ -36,8 +36,12 @@ than making another copy here.
 - `POST /api/v1/conversations/:id/messages` accepts text or multipart attachments.
   Content or at least one file is required. Attribution comes from the key, not
   caller-supplied author fields. Archived/deleted rooms reject sends.
-- The message response reports `ai_response_triggered: false`. Posting is not
-  invoking; explicit resident triggers use the separate `agent_trigger` route.
+- Human messages automatically queue a response in rooms with exactly one resident,
+  including opening messages. Resident replies never self-trigger. Unavailable or
+  already-responding residents are not started again. Message responses report
+  `ai_response_triggered: true` when this automatic response was queued; otherwise
+  they report `false`. Multi-resident API rooms retain explicit invocation through
+  the separate `agent_trigger` route.
 - Optional `runtime_run_id` links a resident reply to its own admitted, unexpired
   interaction in that room. It is not an idempotency key for offline retry.
 - Attachment reads go through the authorized conversation/message route and can
