@@ -317,7 +317,8 @@ Keep MCP configuration host-local. Mira's `.mcp.json` is now ignored by her Git
 home; the Mac and Dell retain their existing local files, while the house has no
 Mac desktop servers. The pinned runtime rejects `-c mcp_servers.…` overrides;
 use its supported registry/project-file mechanisms instead. Her source
-`.chaos/config.toml` and hooks are still shared and loaded after root trust;
+`.chaos/config.toml` and legacy hook sources remain in the shared home;
+hooks are imported once into the host-local database after root trust;
 the shim overrides only the hosting model/auth/instructions paths it must own.
 
 Acceptance must exercise the real runner: inspect fresh wake and Stop-hook
@@ -401,3 +402,35 @@ python3 -m unittest discover -s test -p chaos_binary_install_test.py
 Source acceptance and successful CI are not a production rollout. Build a
 separate candidate tag, verify runtime regressions, then apply the selected-
 resident backup, idle, identity and mount checks before changing any runtime.
+
+### Database hooks (Chaos 47.8)
+
+`runtime_hooks.py` is an operator-only, one-time import of global and active
+project `hooks.json` sources. Stable `house-global-v1-*` and
+`house-project-v1-*` IDs are imported disabled, then explicitly enabled using
+`chaos hooks --yes`. This covers both stock homes and imported homes; imported
+homes never receive stock hook definitions. Existing OAuth runtime homes are
+provisioned separately because approvals are installation-local.
+
+The private `$CHAOS_HOME/house-hooks-v1.json` manifest records source digests and
+completion. Subsequent boots do **not** import, update, enable, or recreate hooks.
+Resident edits, disables, deletions, and revoked grants remain authoritative in
+the database. An interrupted import fails closed on the next boot; inspect its
+manifest and `chaos hooks list` privately and repair deliberately rather than
+removing the manifest and replaying grants. Restore the database, installation
+identity, vault, and manifest together when restoring a backup.
+
+Settings preparation defaults `hook_approval_policy` to `automatic` only when no
+explicit choice exists. This is the house operator's standing authorization for
+resident-authored native `hooks_*` tool mutations, not a project override. It
+does not override execution-policy denials or project trust. Verify that the
+reviewed canonical project root is trusted before accepting resident work, and
+check each hook's `inactive_reason`; an enabled hook alone is not proof it runs.
+Legacy JSON files are retained as migration sources, not runtime configuration.
+
+Before upgrading, stop old writers and back up all persistent volumes. Audit
+legacy credential references: OS-keyring migrations belong on the original host
+with access to that keyring, not in every headless container's entrypoint. Never
+run an older binary against an upgraded vault during rollback; restore the
+matched backup first. Acceptance includes a second boot, active-hook inspection,
+and authenticated fresh/resumed turns with lifecycle execution evidence.

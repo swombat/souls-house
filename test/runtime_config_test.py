@@ -22,7 +22,7 @@ class RuntimeConfigTest(unittest.TestCase):
             calls = []
             def run(home, *args):
                 calls.append(args)
-                return json.dumps({'agent_compaction_control': 'disabled',
+                return json.dumps({'agent_compaction_control': 'disabled', 'hook_approval_policy': 'on-request',
                                    'model_providers': {'gemini': {'name': 'resident custom'}}}) if args == ('get',) else ''
             s.prepare(home, run)
             self.assertEqual(calls[:2], [('migrate', '--dry-run'), ('migrate',)])
@@ -39,6 +39,7 @@ class RuntimeConfigTest(unittest.TestCase):
                 return '{}' if args == ('get',) else ''
             s.prepare(Path(td), run)
             self.assertIn(('bootstrap', 'set', 'storage_url', 'env:CHAOS_STORAGE_URL'), calls)
+            self.assertIn(('set', 'hook_approval_policy', '"automatic"'), calls)
             self.assertNotIn('postgres://private', str(calls))
 
     def test_failure_does_not_expose_command_output(self):
