@@ -1,0 +1,140 @@
+<script>
+  import { router } from '@inertiajs/svelte';
+  import { Button } from '$lib/components/shadcn/button';
+  import { DropboxLogo, GithubLogo, GoogleLogo, Heartbeat } from 'phosphor-svelte';
+  import { serviceIconClass } from '$lib/service-presentation';
+  import { submitNativePost } from '$lib/integration-forms';
+  import ServiceAuthoritySelector from '$lib/components/service-authority-selector.svelte';
+  let { account, focusedService } = $props();
+  let selectedProfiles = $state({});
+  let authoritySelections = $state({});
+  let credentialValues = $state({});
+  function profileFor(service) {
+    return selectedProfiles[service.key] || service.access_profiles.find((profile) => profile.default)?.key;
+  }
+
+  function connect(service) {
+    const data = {
+      provider: service.key,
+      management_scope: 'personal',
+      access_profile: profileFor(service),
+    };
+    if (service.authority_groups.length > 0) {
+      data.authority_selection = JSON.stringify(authorityFor(service));
+      delete data.access_profile;
+    }
+    submitNativePost(`/accounts/${account.id}/service_authorizations`, data);
+  }
+
+  function authorityFor(service) {
+    return (
+      authoritySelections[service.key] ||
+      Object.fromEntries(service.authority_groups.map((group) => [group.key, group.default]))
+    );
+  }
+
+  function updateAuthority(service, selection) {
+    authoritySelections = { ...authoritySelections, [service.key]: selection };
+  }
+
+  function hasAuthority(service) {
+    return Object.values(authorityFor(service)).some((value) => value !== 'none');
+  }
+
+  function credentialsFor(service) {
+    return credentialValues[service.key] || {};
+  }
+
+  function updateCredential(service, field, value) {
+    credentialValues = {
+      ...credentialValues,
+      [service.key]: {
+        ...credentialsFor(service),
+        [field.key]: value,
+      },
+    };
+  }
+
+  function connectCredentials(service) {
+    router.post(`/accounts/${account.id}/service_connections`, {
+      provider: service.key,
+      management_scope: 'personal',
+      credentials: credentialsFor(service),
+    });
+  }
+</script>
+
+<div class="space-y-5 rounded-xl border bg-card p-6 shadow-sm">
+  <div class="flex items-center gap-4">
+    <div class={`flex size-12 items-center justify-center rounded-xl ${serviceIconClass(focusedService.key)}`}>
+      {#if focusedService.key === 'dropbox'}
+        <DropboxLogo size={26} weight="fill" />
+      {:else if focusedService.key === 'google_workspace'}
+        <GoogleLogo size={26} weight="bold" />
+      {:else if focusedService.key === 'github'}
+        <GithubLogo size={26} weight="fill" />
+      {:else}
+        <Heartbeat size={26} weight="fill" />
+      {/if}
+    </div>
+    <h2 class="text-xl font-semibold">{focusedService.name}</h2>
+  </div>
+
+  {#if focusedService.connection_method === 'credentials'}
+    <div class="space-y-4">
+      {#if focusedService.key === 'github'}
+        <div class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+          <a
+            href="https://github.com/settings/personal-access-tokens/new"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-medium text-primary underline underline-offset-4">
+            Create a fine-grained token on GitHub
+          </a>
+          with access to one repository and only the permissions it needs.
+        </div>
+      {/if}
+      {#each focusedService.credential_fields as field}
+        <label class="block space-y-1.5">
+          <span class="text-sm font-medium">{field.label}</span>
+          <input
+            type={field.type || 'text'}
+            value={credentialsFor(focusedService)[field.key] || ''}
+            placeholder={field.placeholder || ''}
+            autocomplete={field.type === 'password' ? 'off' : 'on'}
+            class="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            oninput={(event) => updateCredential(focusedService, field, event.currentTarget.value)} />
+          {#if field.help}<span class="block text-xs text-muted-foreground">{field.help}</span>{/if}
+        </label>
+      {/each}
+    </div>
+  {:else if focusedService.authority_groups.length > 0}
+    <ServiceAuthoritySelector
+      service={focusedService}
+      selection={authorityFor(focusedService)}
+      onchange={(selection) => updateAuthority(focusedService, selection)} />
+  {:else if focusedService.access_profiles.length > 1}
+    <select
+      class="w-full rounded-md border bg-background px-3 py-2 text-sm"
+      value={profileFor(focusedService)}
+      onchange={(event) =>
+        (selectedProfiles = { ...selectedProfiles, [focusedService.key]: event.currentTarget.value })}>
+      {#each focusedService.access_profiles as profile}
+        <option value={profile.key}>{profile.name}{profile.default ? ' — safest default' : ''}</option>
+      {/each}
+    </select>
+  {/if}
+
+  <div class="flex justify-end gap-3 border-t pt-4">
+    <Button variant="outline" href={`/accounts/${account.id}/personal_services`}>Cancel</Button>
+    <Button
+      type="button"
+      disabled={focusedService.authority_groups.length > 0 && !hasAuthority(focusedService)}
+      onclick={() =>
+        focusedService.connection_method === 'credentials'
+          ? connectCredentials(focusedService)
+          : connect(focusedService)}>
+      Connect {focusedService.name}
+    </Button>
+  </div>
+</div>

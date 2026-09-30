@@ -1,25 +1,23 @@
 <script>
+  import ActivityBars from '$lib/components/charts/activity-bars.svelte';
   let { title, days, series } = $props();
-  let maximum = $derived(Math.max(1, ...days.map((day) => series.reduce((sum, entry) => sum + day[entry.key], 0))));
+
+  const groups = $derived(
+    days.map((day) => ({
+      key: day.date,
+      bars: [
+        {
+          title: `${day.date}: ${series.map((s) => `${day[s.key]} ${s.label}`).join(', ')}`,
+          segments: series.map((s) => ({ value: day[s.key], colour: s.colour })),
+        },
+      ],
+    }))
+  );
 </script>
 
 <section class="rounded-lg border p-4 space-y-3">
   <h3 class="font-medium">{title}</h3>
-  <div
-    class="flex items-end gap-1 h-32"
-    role="img"
-    aria-label={`${title}, last 14 days. Exact counts in the table below.`}>
-    {#each days as day}
-      <div
-        class="flex h-full flex-1 flex-col justify-end"
-        title={`${day.date}: ${series.map((s) => `${day[s.key]} ${s.label}`).join(', ')}`}>
-        {#each series as entry}
-          <div class={entry.colour} style:height={`${(day[entry.key] / maximum) * 100}%`}></div>
-        {/each}
-        <div class="border-t border-muted-foreground/30"></div>
-      </div>
-    {/each}
-  </div>
+  <ActivityBars {groups} label={`${title}, last 14 days. Exact counts in the table below.`} />
   <div class="flex justify-between text-xs text-muted-foreground">
     <span>{days[0]?.date}</span><span>{days.at(-1)?.date}</span>
   </div>

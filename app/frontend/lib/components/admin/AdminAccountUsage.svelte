@@ -1,6 +1,10 @@
 <script>
+  import ActivityBars from '$lib/components/charts/activity-bars.svelte';
+  import AccountRecentConversations from '$lib/components/admin/account-recent-conversations.svelte';
+  import AccountRecentSessions from '$lib/components/admin/account-recent-sessions.svelte';
+  import AccountIntegrations from '$lib/components/admin/account-integrations.svelte';
   import { router } from '@inertiajs/svelte';
-  import { Badge } from '$lib/components/shadcn/badge';
+
   import { Button } from '$lib/components/shadcn/button';
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/shadcn/card';
   import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '$lib/components/shadcn/table';
@@ -11,6 +15,17 @@
   let refreshing = $state(false);
   const usage = $derived(account.usage);
   const maxActivity = $derived(Math.max(1, ...usage.activity.map((day) => day[metric])));
+  const activityGroups = $derived(
+    usage.activity.map((day) => ({
+      key: day.date,
+      bars: [
+        {
+          title: `${day.date}: ${day[metric]} ${metric}`,
+          segments: [{ value: day[metric], colour: 'rounded-t bg-primary/75 hover:bg-primary' }],
+        },
+      ],
+    }))
+  );
   const periodTotal = $derived(usage.activity.reduce((total, day) => total + day[metric], 0));
   const measuredAgents = $derived(
     usage.agents.filter(
@@ -52,15 +67,6 @@
         },
       }
     );
-  }
-
-  function sessionUrl(session) {
-    const query = new URLSearchParams({
-      session_id: session.session_id,
-      from: new Date(new Date(session.last_at).getTime() - 24 * 60 * 60 * 1000).toISOString(),
-      to: new Date(new Date(session.last_at).getTime() + 1000).toISOString(),
-    });
-    return `/admin/agents/${session.agent_id}/runtime?${query}`;
   }
 </script>
 
@@ -110,18 +116,11 @@
       <div class="mb-2 text-sm text-muted-foreground">
         Daily peak: {maxActivity === 1 && periodTotal === 0 ? 0 : maxActivity}
       </div>
-      <div
-        class="flex h-36 items-end gap-1 border-b"
-        role="img"
-        aria-label={`${metric} over the last 30 UTC days; daily peak ${periodTotal ? maxActivity : 0}`}>
-        {#each usage.activity as day}
-          <div
-            class="min-w-0 flex-1 rounded-t bg-primary/75 hover:bg-primary"
-            style:height={`${day[metric] ? Math.max(3, (day[metric] / maxActivity) * 100) : 0}%`}
-            title={`${day.date}: ${day[metric]} ${metric}`}>
-          </div>
-        {/each}
-      </div>
+      <ActivityBars
+        groups={activityGroups}
+        class="h-36 border-b"
+        minimumHeight={3}
+        label={`${metric} over the last 30 UTC days; daily peak ${periodTotal ? maxActivity : 0}`} />
       <div class="mt-2 flex justify-between text-xs text-muted-foreground">
         <span>{usage.activity[0]?.date}</span><span>{usage.activity.at(-1)?.date}</span>
       </div>
@@ -172,165 +171,7 @@
     </CardContent>
   </Card>
 
-  <Card>
-    <CardHeader
-      ><CardTitle>Integrations & AI access</CardTitle><CardDescription
-        >Connection metadata only—no tokens, keys or external content. An enabled grant may still be pending
-        provisioning.</CardDescription
-      ></CardHeader>
-    <CardContent class="space-y-5">
-      <div class="flex flex-wrap gap-2">
-        {#each usage.ai_providers.filter((provider) => provider.configured) as provider}<Badge variant="secondary"
-            >{provider.provider} API key configured</Badge>
-        {:else}<p class="text-sm text-muted-foreground">No account AI API keys configured.</p>{/each}
-        <Badge variant="outline">Shared AI fallback {account.use_system_ai_credentials ? 'enabled' : 'disabled'}</Badge>
-      </div>
-      <p class="text-xs text-muted-foreground">
-        Resident subscription authentication and Telegram bots are shown under each resident above.
-      </p>
-      <div class="overflow-x-auto">
-        <Table>
-          <TableHeader
-            ><TableRow
-              ><TableHead>Connection</TableHead><TableHead>Status</TableHead><TableHead>Scope</TableHead><TableHead
-                >Resident access enabled</TableHead
-              ></TableRow
-            ></TableHeader>
-          <TableBody>
-            {#each usage.integrations as integration}
-              <TableRow>
-                <TableCell
-                  ><div class="font-medium">{integration.label}</div>
-                  <div class="text-xs text-muted-foreground">{integration.provider}</div></TableCell>
-                <TableCell
-                  ><Badge variant={integration.status === 'connected' ? 'secondary' : 'outline'}
-                    >{integration.status}</Badge
-                  ></TableCell>
-                <TableCell
-                  >{integration.scope.replaceAll('_', ' ')}{#if integration.enabled_for_new_agents}<div
-                      class="text-xs text-muted-foreground">
-                      Default for new residents
-                    </div>{/if}</TableCell>
-                <TableCell>{integration.agents.join(', ') || 'None / account-level'}</TableCell>
-              </TableRow>
-            {:else}<TableRow
-                ><TableCell colspan={4} class="text-muted-foreground"
-                  >No account service integrations configured.</TableCell
-                ></TableRow
-              >{/each}
-          </TableBody>
-        </Table>
-      </div>
-    </CardContent>
-  </Card>
-
-  <Card>
-    <CardHeader
-      ><CardTitle>Last 10 runtime sessions</CardTitle><CardDescription
-        >Most recently active logical sessions, grouped per resident. A session can contain many trigger attempts. Open
-        one to inspect its recent runtime detail.</CardDescription
-      ></CardHeader>
-    <CardContent class="overflow-x-auto">
-      <Table>
-        <TableHeader
-          ><TableRow
-            ><TableHead>Resident / session</TableHead><TableHead>First observed</TableHead><TableHead
-              >Last active</TableHead
-            ><TableHead>Attempts</TableHead></TableRow
-          ></TableHeader>
-        <TableBody>
-          {#each usage.recent_sessions as session}
-            <TableRow
-              ><TableCell
-                ><a class="text-primary underline underline-offset-4" href={sessionUrl(session)}
-                  >{session.agent_name}</a>
-                <div class="max-w-56 truncate text-xs text-muted-foreground" title={session.session_id}>
-                  {session.session_id}
-                </div></TableCell
-              ><TableCell>{dateTime(session.first_at)}</TableCell><TableCell>{dateTime(session.last_at)}</TableCell
-              ><TableCell>{session.runs}</TableCell></TableRow>
-          {:else}<TableRow
-              ><TableCell colspan={4} class="text-muted-foreground"
-                >No runtime sessions recorded. Inline residents can have conversations without hosted runtime telemetry.</TableCell
-              ></TableRow
-            >{/each}
-        </TableBody>
-      </Table>
-    </CardContent>
-  </Card>
-
-  <Card>
-    <CardHeader
-      ><CardTitle>Last 10 conversations</CardTitle><CardDescription
-        >Most recently updated account conversations. Counts do not expose message contents. Failures are historical;
-        latest attempts below show their own timestamps.</CardDescription
-      ></CardHeader>
-    <CardContent class="overflow-x-auto">
-      <Table>
-        <TableHeader
-          ><TableRow
-            ><TableHead>Conversation</TableHead><TableHead>Residents</TableHead><TableHead>Messages & tokens</TableHead
-            ><TableHead>Response diagnostics</TableHead><TableHead>Updated</TableHead></TableRow
-          ></TableHeader>
-        <TableBody>
-          {#each usage.recent_conversations as chat}
-            <TableRow
-              ><TableCell
-                ><div class="font-medium">{chat.title}</div>
-                <div class="text-xs text-muted-foreground">
-                  {chat.id}{chat.discarded ? ' · Deleted' : chat.archived ? ' · Archived' : ''}
-                </div></TableCell
-              ><TableCell>{chat.agents.join(', ') || 'No residents'}</TableCell><TableCell>
-                <div>{chat.messages} messages · {chat.resident_replies} resident replies</div>
-                <div class="text-xs text-muted-foreground">
-                  Recent peak input: {chat.context_tokens?.toLocaleString() ?? '—'} tokens
-                </div>
-                <div class="text-xs text-muted-foreground">
-                  Message tokens: {chat.message_tokens?.input?.toLocaleString() ?? '—'} in / {chat.message_tokens?.output?.toLocaleString() ??
-                    '—'} out
-                </div>
-                <div class="text-xs text-muted-foreground">
-                  Runtime tokens: {chat.runtime_tokens?.input?.toLocaleString() ?? '—'} in / {chat.runtime_tokens?.output?.toLocaleString() ??
-                    '—'} out
-                </div>
-                <div class="text-xs text-muted-foreground">
-                  Recorded totals; may be partial. Sources overlap—do not add.
-                </div>
-              </TableCell><TableCell>
-                <div>
-                  {chat.response_attempts} attempts ·
-                  <span class:text-destructive={chat.failed_attempts > 0}
-                    >{chat.failed_attempts} failed (historical)</span>
-                </div>
-                {#each chat.latest_responses ?? [] as response}
-                  <div class="mt-2 text-xs">
-                    <a
-                      class="underline"
-                      href={`/admin/agents/${response.agent_id}/runtime?${new URLSearchParams({ session_id: response.session_id, from: new Date(new Date(response.started_at).getTime() - 60000).toISOString(), to: new Date(new Date(response.finished_at || response.started_at).getTime() + 60000).toISOString() })}`}
-                      >{response.agent_name}</a
-                    >:
-                    <span class:text-destructive={response.status === 'failed'}>{response.status}</span>
-                    · {response.auth_mode === 'oauth_account' ? 'OAuth' : 'API key'}
-                    {#if response.transport_status != null}
-                      · HTTP {response.transport_status}{/if}
-                    {#if response.returncode != null}
-                      · exit {response.returncode}{/if}
-                    <div class="text-muted-foreground">Latest attempt: {dateTime(response.started_at)}</div>
-                    {#if response.finished_at}<div class="text-muted-foreground">
-                        Finished: {dateTime(response.finished_at)}
-                      </div>{/if}
-                  </div>
-                {:else}<div class="text-xs text-muted-foreground">No recorded conversation attempts.</div>{/each}
-                <div class="mt-1 text-xs text-muted-foreground">
-                  Completed runs do not necessarily post a reply. Wakes and orientation are excluded.
-                </div>
-              </TableCell>
-              ><TableCell>{dateTime(chat.updated_at)}</TableCell></TableRow>
-          {:else}<TableRow
-              ><TableCell colspan={5} class="text-muted-foreground">No conversations yet.</TableCell></TableRow
-            >{/each}
-        </TableBody>
-      </Table>
-    </CardContent>
-  </Card>
+  <AccountIntegrations {account} />
+  <AccountRecentSessions {usage} />
+  <AccountRecentConversations {usage} />
 </section>
