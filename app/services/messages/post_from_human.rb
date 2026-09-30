@@ -46,7 +46,8 @@ class Messages::PostFromHuman
   # wake them (MessageDispatch, #94 B step 4b-ii). If any of it raises before
   # commit, none of it exists and the error propagates. Anything that fails
   # after commit (a model's after_commit callback, or the wake's enqueue)
-  # leaves the send accepted: it is logged, and the sweeper re-drives the wake.
+  # leaves the send accepted: it is logged, and the wake lapses to expired
+  # rather than being recovered (the person asks again).
   #
   # An app upload (a blob) belongs to one message only. Its claim is part of
   # the same transaction: the blobs are locked, and a send that finds one
@@ -138,7 +139,7 @@ class Messages::PostFromHuman
   def enqueue(dispatch)
     MessageDispatchJob.perform_later(dispatch)
   rescue StandardError => e
-    Rails.logger.warn "[PostFromHuman] dispatch #{dispatch.id} enqueue failed, left for the sweeper: #{e.class}: #{e.message}"
+    Rails.logger.warn "[PostFromHuman] dispatch #{dispatch.id} enqueue failed, wake will lapse: #{e.class}: #{e.message}"
   end
 
   def attach_audio(message)

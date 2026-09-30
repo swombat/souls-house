@@ -1,7 +1,8 @@
 # The durable intent to wake the residents a human message mentioned (#94 B,
 # step 4b-ii). It is written in the transaction that accepts the message, so
-# an accepted send cannot lose its wake to a failed enqueue: the queue is only
-# ever written after that commit, and the sweeper re-drives what it missed.
+# an accepted send's intent is never lost: the queue is only ever written after
+# that commit. A wake whose enqueue is lost is not recovered; the dispatch is
+# recorded as expired and the person asks again (consultation BjAPDe).
 #
 # Deduplication is the runtime interaction, not the queue. Reserving happens
 # under this row's lock and records the interaction in the same transaction,
@@ -29,13 +30,11 @@ class MessageDispatch < ApplicationRecord
   STATUSES = %w[pending reserved cancelled expired].freeze
   KINDS = %w[mention automatic invoke].freeze
   EXPIRY = 10.minutes
-  # Recovery re-drives work this far back and no further. Past it, the sweeper
-  # still records what became of the dispatch (close_recovery!) instead of
-  # leaving it pending or reserved; it just stops starting anything.
+  # The longest a dispatch's chain may keep starting links (each link starts
+  # from the previous one's normal hand-on, never from recovery), and the most
+  # a turn may wait queued for capacity. Past it nothing new starts, and the
+  # sweeper records what became of the dispatch (close_recovery!).
   RECOVERY_HORIZON = 6.hours
-  # A fresh row's own enqueue gets this long before the sweeper assumes it
-  # was lost.
-  REDRIVE_GRACE = 30.seconds
 
   belongs_to :message, optional: true
   belongs_to :chat
@@ -52,7 +51,6 @@ class MessageDispatch < ApplicationRecord
   validates :client_invocation_id, :request_digest, presence: true, if: :invoke?
   validates :client_invocation_id, :request_digest, absence: true, if: :from_message?
 
-  scope :recoverable, -> { where(accepted_at: RECOVERY_HORIZON.ago..) }
   # Reserved and still under recovery: a settled_at on a reserved row means
   # the sweeper has closed its recovery window.
   scope :recovery_open, -> { where(status: "reserved", settled_at: nil) }
@@ -78,7 +76,7 @@ class MessageDispatch < ApplicationRecord
   #
   # The run's enqueue happens after the commit and can raise there. Whether
   # the invocation was accepted is whether its row exists, not whether we
-  # raised; the sweeper re-drives an unclaimed run.
+  # raised; an unclaimed run is not re-driven, it lapses at its deadline.
   def self.invoke!(chat:, user:, client_invocation_id:, agent:)
     dispatch = nil
     transaction do
@@ -118,7 +116,7 @@ class MessageDispatch < ApplicationRecord
   def reserved? = status == "reserved"
 
   # Past the horizon nothing new starts from this dispatch, whichever entry
-  # point (sweeper, retry, linked reply, job delivery) gets there first.
+  # point (retry, linked reply, job delivery) gets there first.
   # Already-running work is not touched. On a reserved row, settled_at is the
   # sweeper's record of that closure.
   def recovery_closed? = settled_at.present? || accepted_at <= RECOVERY_HORIZON.ago
@@ -211,35 +209,25 @@ class MessageDispatch < ApplicationRecord
     settle!("cancelled", "discarded")
   end
 
-  # Re-drive whatever an enqueue may have lost: the dispatch itself while
-  # pending, and, once reserved, every unclaimed interaction and every ready
-  # but unadvanced continuation belonging to it. Every job here is safe to
-  # deliver twice.
-  #
-  # An enqueue that fails here is logged and left for the next sweep, so
-  # recovery never turns an accepted send into an error.
-  def redrive!(grace: REDRIVE_GRACE)
+  # The sweeper's work, and a native send retry's: record what became of
+  # lapsed work. It never starts, re-enqueues or advances anything. A wake
+  # whose enqueue was lost, a run nobody claimed, a chain step that never
+  # advanced: none is recovered; the person asks again (consultation BjAPDe:
+  # Daniel "just click again", Chris against a retry buffer). A pending
+  # dispatch past its expiry becomes expired; a reserved one has runs whose
+  # deadline passed unclaimed cancelled, and past RECOVERY_HORIZON its
+  # window is closed (close_recovery!).
+  def settle_lapsed!
     reload
-    if pending?
-      return settle_expired! if expires_at.past?
-      safely_enqueue { MessageDispatchJob.perform_later(self) } if accepted_at <= grace.ago
-      return
-    end
+    return settle_expired! if pending? && expires_at.past?
     return unless reserved?
     return close_recovery! if recovery_closed?
 
     settle_expired_runs!
-    runtime_interactions.where(dispatch_claimed_at: nil, finished_at: nil, execution_state: "queued")
-      .where("created_at <= ?", grace.ago).where("execution_deadline_at > ?", Time.current).find_each do |interaction|
-      safely_enqueue { ManualAgentResponseJob.perform_later(chat, interaction.agent, runtime_interaction_id: interaction.id) }
-    end
-    unadvanced_ready_runs(grace).each do |interaction|
-      safely_enqueue { AllAgentsResponseJob.perform_later(chat, interaction.response_chain_agent_ids, after_interaction_id: interaction.id) }
-    end
   end
 
-  # Past RECOVERY_HORIZON: stop re-driving and record the outcome. A pending
-  # dispatch is expired (redrive! does that at any age); a reserved one has
+  # Past RECOVERY_HORIZON: record the outcome. A pending dispatch is expired
+  # (settle_lapsed! does that at any age); a reserved one has
   # its expired runs cancelled, and, if a continuation it owed never started,
   # becomes expired with that reason. Otherwise it stays reserved, with
   # settled_at marking recovery closed. Nothing is started or advanced here.
@@ -272,7 +260,7 @@ class MessageDispatch < ApplicationRecord
   def close_recovery_window!
     return unless reserved? && settled_at.nil?
 
-    if unadvanced_ready_runs(0.seconds, owed: true).any?
+    if unadvanced_owed_runs.any?
       settle!("expired", "continuation_not_started_in_time")
     else
       update!(settled_at: Time.current)
@@ -290,17 +278,11 @@ class MessageDispatch < ApplicationRecord
       .where("execution_deadline_at <= ?", Time.current).find_each(&:reconcile_activity!)
   end
 
-  # owed: a continuation whose turn came, whether or not the window still
-  # lets it start. Closing the window uses that to record what never started.
-  def unadvanced_ready_runs(grace, owed: false)
+  # Continuations whose turn came but which never advanced. Closing the window
+  # uses this to record what never started.
+  def unadvanced_owed_runs
     runtime_interactions.where(response_chain_advanced_at: nil).where.not(response_chain_agent_ids: [])
-      .where("updated_at <= ?", grace.ago).select { |run| owed ? run.response_chain_owed? : run.response_chain_ready? }
-  end
-
-  def safely_enqueue
-    yield
-  rescue StandardError => e
-    Rails.logger.warn "[MessageDispatch] #{id} re-drive enqueue failed, left for the next sweep: #{e.class}: #{e.message}"
+      .select(&:response_chain_owed?)
   end
 
   def settle!(status, reason)

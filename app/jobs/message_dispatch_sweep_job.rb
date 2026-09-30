@@ -1,14 +1,14 @@
-# Every minute: re-drive dispatches whose enqueue may have been lost, record
-# expiry, and recover their runs and chain continuations (#94 B, step 4b-ii).
-# Re-driving is scoped to recent dispatches, so it never wakes a chain no
-# dispatch started. Recording outcomes is not: an expired dispatch or run is
-# settled however long the outage was. One row's failure never stops the rest.
+# Every minute: record what became of lapsed dispatches (#94 B, step 4b-ii).
+# It never starts, re-enqueues or advances anything: a lost wake is not
+# recovered, the person asks again (consultation BjAPDe). Pending dispatches
+# past expiry become expired; reserved ones have runs whose deadline passed
+# unclaimed cancelled, and past the horizon are closed. One row's failure
+# never stops the rest.
 class MessageDispatchSweepJob < ApplicationJob
 
   def perform
-    each_isolated(MessageDispatch.where(status: "pending").where(expires_at: ..Time.current), &:redrive!)
-    each_isolated(MessageDispatch.recoverable.where(status: %w[pending reserved]), &:redrive!)
-    each_isolated(MessageDispatch.recovery_open.where(accepted_at: ...MessageDispatch::RECOVERY_HORIZON.ago), &:close_recovery!)
+    each_isolated(MessageDispatch.where(status: "pending").where(expires_at: ..Time.current), &:settle_lapsed!)
+    each_isolated(MessageDispatch.recovery_open, &:settle_lapsed!)
   end
 
   private

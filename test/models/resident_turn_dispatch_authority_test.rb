@@ -194,3 +194,34 @@ class ResidentTurnDispatchAuthorityTest
   end
 
 end
+
+# Explicit retry instead of recovery (consultation BjAPDe, Mira's #97 review
+# of 997af28): asking again while an earlier turn's outcome is unknown must not
+# put a second turn for that session into the runtime.
+class ResidentTurnDispatchAuthorityTest
+
+  test "asking again while a turn's outcome is unknown cannot start a second turn in that session" do
+    turn = admitted_turn
+    turn.update!(state: "unknown")
+    # The conversational side may already look finished; only the runtime
+    # ledger proves the execution ended.
+    turn.agent_runtime_interaction.update_columns(finished_at: Time.current, execution_state: "completed")
+    Setting.instance.update!(resident_turn_limit: 2)
+
+    again = @chat.messages.create!(role: "user", user: @user, content: "Hello again")
+    interaction = again.message_dispatch.runtime_interaction
+    assert interaction.claim_dispatch!
+    assert_equal turn.session_id, interaction.session_id
+    assert_raises(ResidentTurn::SessionBusy) do
+      ResidentTurn.enqueue!(interaction, { session_id: interaction.session_id, request: "prompt" })
+    end
+
+    # And a turn for that session that is already queued is not admitted
+    # while the unknown one holds it, even with capacity free.
+    queued = ResidentTurn.create!(agent: @resident, agent_runtime_interaction: interaction, dispatch_id: SecureRandom.uuid,
+                                  session_id: turn.session_id, payload: "{}", completion_context: {})
+    assert_empty ResidentTurn.admit!
+    assert_equal "queued", queued.reload.state
+  end
+
+end

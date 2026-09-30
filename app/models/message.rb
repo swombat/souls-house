@@ -80,8 +80,8 @@ class Message < ApplicationRecord
   # from every entry point (web, app, API, opening message). With live
   # activity on, the wake is a durable "automatic" MessageDispatch written in
   # the transaction that accepts the message, so it is the same intent a
-  # mention writes: discard cancels it before claim, the sweeper re-drives a
-  # lost reservation, and the claim rechecks authority (#94 B). Rooms with
+  # mention writes: discard cancels it before claim, a lost reservation lapses
+  # to expired (no recovery; ask again), and the claim rechecks authority (#94 B). Rooms with
   # more residents keep explicit mentions; PostFromHuman skips mention
   # dispatch here so one send never makes two wakes.
   def accept_single_resident_dispatch
@@ -98,7 +98,7 @@ class Message < ApplicationRecord
 
   # Reserve after acceptance commits, inline, so the queued activity exists
   # before the send returns. A reservation that fails here leaves the
-  # dispatch pending for the sweeper; the send is still accepted.
+  # dispatch pending until it expires; the send is still accepted.
   #
   # With live activity off there is no durable run to reserve, so the room
   # keeps master's direct trigger. The two paths are exclusive: a dispatch is

@@ -95,7 +95,7 @@ class SendPathIntegrationTest < ActionDispatch::IntegrationTest
     assert_equal "automatic", dispatch.as_app_json[:kind]
   end
 
-  test "a failed inline reservation still accepts the send and leaves the wake for the sweeper" do
+  test "a failed inline reservation still accepts the send; the wake is not recovered, it lapses to expired" do
     user, chat, = solo_room(users(:user_1), accounts(:personal_account))
     web_login(user)
 
@@ -107,10 +107,12 @@ class SendPathIntegrationTest < ActionDispatch::IntegrationTest
     dispatch = chat.messages.last.message_dispatch
     assert_equal "pending", dispatch.status
 
-    travel MessageDispatch::REDRIVE_GRACE + 1.second do
-      assert_enqueued_jobs 1, only: MessageDispatchJob do
-        dispatch.redrive!
-      end
+    travel 31.seconds do
+      assert_no_enqueued_jobs { MessageDispatchSweepJob.perform_now }
+    end
+    travel MessageDispatch::EXPIRY + 1.minute do
+      MessageDispatchSweepJob.perform_now
+      assert_equal [ "expired", "not_started_in_time" ], dispatch.reload.values_at(:status, :reason)
     end
   end
 

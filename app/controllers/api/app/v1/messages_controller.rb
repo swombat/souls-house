@@ -200,13 +200,13 @@ module Api
 
         def render_retry(message, content, blobs)
           if message.submission_digest == Messages::PostFromHuman.submission_digest(content: content, blobs: blobs)
-            # A retry re-drives this send's wake if an enqueue was lost; it
-            # never creates anything. 200 means accepted, nothing more, so a
-            # recovery that fails is left to the sweeper and still answers 200.
+            # A retry never creates or re-drives anything: 200 means accepted,
+            # nothing more. It settles what already lapsed so the status it
+            # returns is current; a lost wake is asked for again explicitly.
             begin
-              message.message_dispatch&.redrive!
+              message.message_dispatch&.settle_lapsed!
             rescue StandardError => e
-              Rails.logger.warn "[Api::App::V1::Messages] retry redrive of message #{message.id} failed: #{e.class}: #{e.message}"
+              Rails.logger.warn "[Api::App::V1::Messages] retry settle of message #{message.id} failed: #{e.class}: #{e.message}"
             end
             render json: sent(message), status: :ok
           else

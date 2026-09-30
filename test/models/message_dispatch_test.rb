@@ -72,27 +72,30 @@ class MessageDispatchTest < ActiveSupport::TestCase
     end
   end
 
-  test "a lost dispatch enqueue is re-driven by the sweeper and reserves exactly one run" do
+  test "a lost dispatch enqueue is not re-driven: it stays pending, then is recorded expired" do
     travel 31.seconds do
-      assert_enqueued_jobs 1, only: MessageDispatchJob do
-        MessageDispatchSweepJob.perform_now
-      end
-      assert_difference "AgentRuntimeInteraction.count", 1 do
-        2.times { MessageDispatchJob.perform_now(@dispatch) }
-      end
+      assert_no_enqueued_jobs { MessageDispatchSweepJob.perform_now }
+      assert_equal "pending", @dispatch.reload.status
+    end
+    travel MessageDispatch::EXPIRY + 1.minute do
+      assert_no_enqueued_jobs { MessageDispatchSweepJob.perform_now }
+      assert_no_difference("AgentRuntimeInteraction.count") { MessageDispatchJob.perform_now(@dispatch) }
+      assert_equal [ "expired", "not_started_in_time" ], @dispatch.reload.values_at(:status, :reason)
     end
   end
 
-  test "a lost runtime enqueue after reservation is re-driven and claimed once" do
+  test "a lost runtime enqueue after reservation is not re-driven; the unclaimed run lapses at its deadline" do
     MessageDispatchJob.perform_now(@dispatch)
     run = @dispatch.reload.runtime_interaction
     clear_enqueued_jobs
 
     travel 31.seconds do
-      assert_enqueued_with(job: ManualAgentResponseJob, args: [ @chat, @first, { runtime_interaction_id: run.id } ]) do
-        MessageDispatchSweepJob.perform_now
-      end
-      assert_equal [ true, false ], [ run.reload.claim_dispatch!, run.reload.claim_dispatch! ]
+      assert_no_enqueued_jobs { MessageDispatchSweepJob.perform_now }
+    end
+    travel MessageDispatch::EXPIRY + 1.minute do
+      assert_no_enqueued_jobs { MessageDispatchSweepJob.perform_now }
+      assert_equal "cancelled", run.reload.execution_state
+      assert_not run.claim_dispatch!
     end
   end
 
@@ -180,7 +183,7 @@ class MessageDispatchTest < ActiveSupport::TestCase
     assert_equal "cancelled", run.reload.execution_state
   end
 
-  test "the chain carries the dispatch, and a lost continuation is recovered while the first run is still active" do
+  test "the chain carries the dispatch; a lost continuation is not recovered, and is recorded at the horizon" do
     MessageDispatchJob.perform_now(@dispatch)
     run = @dispatch.reload.runtime_interaction
     run.claim_dispatch!
@@ -192,9 +195,8 @@ class MessageDispatchTest < ActiveSupport::TestCase
     assert run.response_chain_ready?
 
     travel 31.seconds do
-      assert_enqueued_with(job: AllAgentsResponseJob, args: [ @chat, [ @second.id ], { after_interaction_id: run.id } ]) do
-        MessageDispatchSweepJob.perform_now
-      end
+      assert_no_enqueued_jobs { MessageDispatchSweepJob.perform_now }
+      # The normal hand-on still works, once, and carries the dispatch.
       assert_difference "AgentRuntimeInteraction.count", 1 do
         2.times { AllAgentsResponseJob.perform_now(@chat, [ @second.id ], after_interaction_id: run.id) }
       end
@@ -257,17 +259,17 @@ class MessageDispatchTest < ActiveSupport::TestCase
   test "one dispatch failing in the sweep does not stop the others" do
     other = Messages::PostFromHuman.new(chat: @chat, user: @user, content: "@Code Reviewer again").call.message.message_dispatch
     failing = @dispatch
-    original = MessageDispatch.instance_method(:redrive!)
-    MessageDispatch.define_method(:redrive!) do |**kw|
+    original = MessageDispatch.instance_method(:settle_lapsed!)
+    MessageDispatch.define_method(:settle_lapsed!) do
       raise "row failure" if id == failing.id
-      original.bind_call(self, **kw)
+      original.bind_call(self)
     end
     travel 11.minutes do
       MessageDispatchSweepJob.perform_now
     end
     assert_equal "expired", other.reload.status
   ensure
-    MessageDispatch.define_method(:redrive!, original)
+    MessageDispatch.define_method(:settle_lapsed!, original)
   end
 
   test "duplicate runtime job deliveries after completion reach the runtime once" do

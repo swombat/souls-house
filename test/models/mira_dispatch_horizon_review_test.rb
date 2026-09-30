@@ -11,7 +11,7 @@ class MessageDispatchTest
 
     travel MessageDispatch::RECOVERY_HORIZON + 1.minute do
       assert_no_enqueued_jobs only: AllAgentsResponseJob do
-        @dispatch.redrive!
+        @dispatch.settle_lapsed!
       end
       assert_equal [ "expired", "continuation_not_started_in_time" ], @dispatch.reload.values_at(:status, :reason)
     end

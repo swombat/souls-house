@@ -178,7 +178,7 @@ class Api::App::V1::WriteApiTest < ActionDispatch::IntegrationTest
     assert_response :created
   end
 
-  test "a failed enqueue after commit is still 201, and a later retry re-drives it without creating anything" do
+  test "a failed enqueue after commit is still 201, and a later retry creates and re-drives nothing" do
     MessageDispatchJob.stub(:perform_later, ->(*) { raise "queue down" }) do
       send_message("key-00000001", "Hey @Grok")
     end
@@ -187,7 +187,7 @@ class Api::App::V1::WriteApiTest < ActionDispatch::IntegrationTest
 
     travel 31.seconds do
       assert_no_difference [ "Message.count", "MessageDispatch.count", "AuditLog.count" ] do
-        assert_enqueued_jobs(1, only: MessageDispatchJob) { send_message("key-00000001", "Hey @Grok") }
+        assert_no_enqueued_jobs { send_message("key-00000001", "Hey @Grok") }
       end
     end
     assert_response :ok

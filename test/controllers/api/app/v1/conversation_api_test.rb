@@ -293,7 +293,7 @@ class Api::App::V1::ConversationApiTest < ActionDispatch::IntegrationTest
     assert_error :unprocessable_entity, "not_invokable"
   end
 
-  test "a runtime enqueue that fails after commit still answers 202; the sweeper re-drives the run and it is claimed once" do
+  test "a runtime enqueue that fails after commit still answers 202; the run is not re-driven and lapses at its deadline" do
     chat = conversation_with(@agent)
     ManualAgentResponseJob.stub(:perform_later, ->(*) { raise "queue unavailable" }) do
       invoke(chat, "invoke-00000001", @agent)
@@ -304,10 +304,15 @@ class Api::App::V1::ConversationApiTest < ActionDispatch::IntegrationTest
     assert_equal "reserved", dispatch.status
 
     travel 31.seconds do
-      assert_enqueued_with(job: ManualAgentResponseJob, args: [ chat, @agent, { runtime_interaction_id: run.id } ]) do
-        MessageDispatchSweepJob.perform_now
-      end
-      assert_equal [ true, false ], [ run.reload.claim_dispatch!, run.reload.claim_dispatch! ]
+      assert_no_enqueued_jobs { MessageDispatchSweepJob.perform_now }
+    end
+    travel MessageDispatch::EXPIRY + 1.minute do
+      MessageDispatchSweepJob.perform_now
+      assert_equal "cancelled", run.reload.execution_state
+      assert_not run.claim_dispatch!
+      # Asking again, explicitly, starts one fresh run.
+      assert_enqueued_jobs(1, only: ManualAgentResponseJob) { invoke(chat, "invoke-00000002", @agent) }
+      assert_response :accepted
     end
   end
 
