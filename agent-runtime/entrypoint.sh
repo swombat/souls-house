@@ -78,8 +78,9 @@ fi # one-time legacy sources
 cat > "$AGENT_HOME/.chaos/helixkit-hooks.md" <<'HOOKS_NOTE'
 # HelixKit hosted-agent hooks
 
-Hooks live in the Chaos database. `hooks_list`, `hooks_create`, `hooks_update`,
-`hooks_enable`, `hooks_disable`, and `hooks_remove` manage them headlessly under
+Hooks live in the Chaos database (`chaos://hooks`). `hooks_create`,
+`hooks_update`, `hooks_set_enabled`, `hooks_delete`, and `hooks_preview` manage
+them headlessly under
 this home's standing operator authorization. Disabling or deleting a hook lasts
 across restarts; the house does not silently re-enable it.
 
