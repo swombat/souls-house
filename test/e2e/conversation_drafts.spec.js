@@ -99,6 +99,25 @@ test.describe('conversation draft custody', () => {
     await context.close();
   });
 
+  test('multiline drafts send without a false conflict and preserve their exact text', async ({ page }) => {
+    const composer = page.getByTestId('message-composer');
+    const content = '  First line\n\nSecond line  \n';
+    await composer.locator('textarea').fill(content);
+    await expect(composer.getByRole('status')).toHaveText('Saved');
+    const sending = page.waitForResponse(
+      (response) => response.url().endsWith('/messages') && response.request().method() === 'POST'
+    );
+    await composer.getByRole('button', { name: 'Send message' }).click();
+    const response = await sending;
+    expect(response.status()).toBe(201);
+    expect((await response.json()).content).toBe(content);
+    await expect(composer.locator('textarea')).toHaveValue('');
+    await expect(composer.getByRole('alert')).toHaveCount(0);
+    await page.reload();
+    await expect(composer.getByRole('status')).toHaveText('Saved');
+    await expect(composer.locator('textarea')).toHaveValue('');
+  });
+
   test('failed send retains text and successful send does not erase newer typing', async ({ page }) => {
     const composer = page.getByTestId('message-composer');
     await composer.locator('textarea').fill('The message to send');

@@ -74,6 +74,35 @@ class Chats::DraftsControllerTest < ActionDispatch::IntegrationTest
     assert_response :conflict
   end
 
+  test "multipart line endings do not conflict with the saved multiline draft" do
+    content = "  First line\n\nSecond line  \n"
+    patch @path, params: { content: content, revision: 0 }, as: :json
+
+    assert_difference "Message.count", 1 do
+      post account_chat_messages_path(@account, @chat),
+        params: { message: { content: content.gsub("\n", "\r\n") }, draft_revision: 1 },
+        headers: { "Accept" => "application/json" }
+    end
+
+    assert_response :created
+    assert_equal content, @chat.messages.last.content
+    assert_equal({ "content" => "", "revision" => 2 }, response.parsed_body["draft"])
+  end
+
+  test "line ending tolerance does not accept stale revisions or changed whitespace" do
+    content = "First line\nSecond line "
+    patch @path, params: { content: content, revision: 0 }, as: :json
+
+    [ [ content.gsub("\n", "\r\n"), 0 ], [ content.strip, 1 ] ].each do |text, revision|
+      assert_no_difference "Message.count" do
+        post account_chat_messages_path(@account, @chat),
+          params: { message: { content: text }, draft_revision: revision }, as: :json
+      end
+      assert_response :conflict
+      assert_equal content, ConversationDraft.find_by!(chat: @chat, user: @user).content
+    end
+  end
+
   test "a tab belonging to a previous login cannot save or send as the replacement user" do
     headers = { "X-Draft-User" => users(:existing_user).to_param }
     patch @path, params: { content: "previous user's text", revision: 0 }, headers: headers, as: :json

@@ -34,7 +34,10 @@ class ConversationDraft < ApplicationRecord
   def send_message!(message, revision:)
     with_lock do
       check_revision!(revision)
-      raise Conflict.new(self) unless content == message.content.to_s
+      # Multipart forms encode line breaks as CRLF; JSON autosaves preserve LF.
+      # Compare text across that transport difference, then send the saved bytes.
+      raise Conflict.new(self) unless normalized_line_endings(content) == normalized_line_endings(message.content.to_s)
+      message.content = content
 
       if message.save
         update!(content: "", revision: self.revision + 1)
@@ -50,6 +53,10 @@ class ConversationDraft < ApplicationRecord
   end
 
   private
+
+  def normalized_line_endings(text)
+    text.gsub(/\r\n?/, "\n")
+  end
 
   def check_revision!(expected)
     unless expected.to_s.match?(/\A\d+\z/) && expected.to_s.to_i == revision
