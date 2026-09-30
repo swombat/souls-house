@@ -3,6 +3,32 @@ require "webmock/minitest"
 
 class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
 
+  test "asynchronous conversation returns queued and mints callback credentials only on admission" do
+    agent = agents(:research_assistant)
+    agent.update!(runtime: "external", uuid: SecureRandom.uuid, endpoint_url: "https://agent.example.com",
+      trigger_bearer_token: "synthetic", health_state: "healthy", consecutive_health_failures: 0)
+    chat = agent.account.chats.create!(title: "Async probe", manual_responses: true, agents: [ agent ])
+    sandbox = Object.new
+    sandbox.define_singleton_method(:with_runtime) { |&block| block.call }
+    ResidentTurn.stub(:enabled?, true) do
+      Agents::Sandbox.stub(:new, sandbox) do
+        assert_equal 202, ExternalAgentResponseRequest.new(agent: agent, chat: chat).call[:status]
+      end
+    end
+    interaction = chat.agent_runtime_interactions.last
+    assert_equal "queued", interaction.execution_state
+    assert_nil interaction.activity_token_digest
+    assert_nil interaction.finished_at
+    ResidentTurn.admit!
+    turn = interaction.resident_turn
+    turn.prepare!
+    token = JSON.parse(turn.payload).dig("activity", "token")
+    assert interaction.reload.valid_activity_token?(token)
+    turn.prepare!
+    assert_equal token, JSON.parse(turn.reload.payload).dig("activity", "token")
+    assert_not_requested :post, /agent\.example\.com/
+  end
+
   test "startup and connection failures release their reservation during the request" do
     agent = agents(:research_assistant)
     agent.update!(runtime: "external", uuid: SecureRandom.uuid, endpoint_url: "https://agent.example.com",

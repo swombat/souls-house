@@ -18,6 +18,7 @@ class OrientNewAgentJob < ApplicationJob
       context: :birth
     ).call
 
+    return if result[:status] == 202
     if result[:status].to_i.between?(200, 299)
       agent.update!(orientation_completed_at: Time.current)
     else

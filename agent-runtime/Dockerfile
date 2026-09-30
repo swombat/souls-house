@@ -185,6 +185,7 @@ COPY --from=builder /usr/local/bin/chaos_journald /usr/local/bin/chaos_journald
 RUN chaos --version && chaos_journald --help > /dev/null
 RUN mkdir -p /usr/local/share/helixkit-agent
 COPY --chown=agent:agent trigger_shim.py /home/agent/trigger_shim.py
+COPY --chown=agent:agent async_turns.py /home/agent/async_turns.py
 COPY --chown=agent:agent resident_memory_policy.py /home/agent/resident_memory_policy.py
 COPY resident_memory_policy.py /usr/local/share/helixkit-agent/resident_memory_policy.py
 COPY --chown=agent:agent runtime_activity.py /home/agent/runtime_activity.py

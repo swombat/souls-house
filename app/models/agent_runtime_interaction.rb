@@ -10,6 +10,7 @@ class AgentRuntimeInteraction < ApplicationRecord
 
   belongs_to :agent
   belongs_to :chat, optional: true
+  has_one :resident_turn, dependent: :destroy
   after_commit :broadcast_agent_runtime_interactions_refresh, on: [ :create, :update, :destroy ]
 
   validates :trigger_kind, presence: true
@@ -35,7 +36,7 @@ class AgentRuntimeInteraction < ApplicationRecord
       started_at: Time.current
     )
 
-    result = yield
+    result = yield interaction
     interaction.record_result!(result)
     result
   rescue StandardError => e
@@ -45,6 +46,10 @@ class AgentRuntimeInteraction < ApplicationRecord
 
   def record_result!(result = nil, from_callback: false, **fields)
     result ||= fields
+    if result[:status] == 202 && result.dig(:body, "status") == "queued"
+      update!(transport_status: 202)
+      return
+    end
     return if from_callback && transport_status.present? && runtime_status.in?(%w[ok error timeout already_running])
     body = (result[:body] || {}).deep_dup
     if live_activity? && !from_callback && !body["status"].in?(%w[ok error timeout already_running])
@@ -138,6 +143,10 @@ class AgentRuntimeInteraction < ApplicationRecord
   end
 
   def record_error!(error)
+    if ResidentTurn.pending.exists?(agent_runtime_interaction_id: id)
+      update!(error_class: error.class.name, error_message: error.message)
+      return
+    end
     if live_activity?
       with_lock do
         update!(error_class: error.class.name, error_message: error.message)

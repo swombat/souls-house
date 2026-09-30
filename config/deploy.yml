@@ -74,6 +74,7 @@ env:
     RAILS_SERVE_STATIC_FILES: true # Let Rails serve static files (since no external proxy in production)
     RAILS_LOG_TO_STDOUT: true # Log to STDOUT for Docker logging
     RAILS_ENV: production
+    SOULSHOUSE_ASYNC_TURNS: <%= ENV.fetch("SOULSHOUSE_ASYNC_TURNS", "0").inspect %> # Enable only after the runtime canary.
     SOULSHOUSE_AGENTS_NETWORK: kamal # Agent containers join Kamal's private Docker network.
     SOULSHOUSE_AGENT_IMAGE_DEFAULT: <%= house_agent_image %>
     SOULSHOUSE_AGENT_INTERNAL_URL: http://souls-house-web:3000 # Agent callbacks hit Rails over Docker DNS.

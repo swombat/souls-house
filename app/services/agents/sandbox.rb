@@ -64,6 +64,7 @@ module Agents
     end
 
     def active_turn?
+      return true if ResidentTurn.pending.where(agent: agent).exists?
       return false unless container_exists?
 
       result = docker_capture("exec", agent.container_name, "pgrep", "-f", "chaos exec")

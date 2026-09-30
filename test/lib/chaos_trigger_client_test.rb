@@ -3,6 +3,22 @@ require "webmock/minitest"
 
 class ChaosTriggerClientTest < ActiveSupport::TestCase
 
+  test "asynchronous producer queues durably without contacting the runtime" do
+    interaction = AgentRuntimeInteraction.create!(
+      agent: agents(:research_assistant), trigger_kind: "wake",
+      session_id: "async-test", started_at: Time.current
+    )
+    ResidentTurn.stub(:enabled?, true) do
+      result = ChaosTriggerClient.new("https://runtime.example.test", "synthetic").request_response(
+        conversation_id: nil, requested_by: "test", session_id: "async-test",
+        request: "private prompt", interaction: interaction
+      )
+      assert_equal 202, result[:status]
+      assert_equal "private prompt", JSON.parse(interaction.reload.resident_turn.payload)["request"]
+      assert_not_requested :post, /runtime\.example\.test/
+    end
+  end
+
   test "HTTP wait follows the configured runtime budget with reporting grace" do
     captured = nil
     connection = Object.new

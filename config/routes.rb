@@ -153,6 +153,8 @@ Rails.application.routes.draw do
   end
 
   namespace :admin do
+    patch "resident_turns/capacity", to: "resident_turns#update"
+    resources :resident_turns, only: [ :index, :destroy ]
     resources :runtime_sessions, only: :index, controller: "agent_runtime_sessions"
     resources :agents, only: [] do
       resource :runtime, only: :show, controller: "agent_runtime_sessions"

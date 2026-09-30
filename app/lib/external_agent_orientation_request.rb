@@ -37,8 +37,10 @@ class ExternalAgentOrientationRequest
       endpoint_url: endpoint_url,
       request_text: request,
       provider_auth_mode: auth_mode
-    ) do
+    ) do |interaction|
       ChaosTriggerClient.new(endpoint_url, agent.trigger_bearer_token).request_response(
+        interaction: interaction,
+        completion_context: { orientation_snapshot: before, orientation_context: context },
         conversation_id: nil,
         requested_by: requested_by,
         session_id: session_id,
@@ -52,6 +54,7 @@ class ExternalAgentOrientationRequest
       )
     end
 
+    return result.merge(oriented: false) if result[:status] == 202
     oriented = journal_status.grown_since?(before)
     agent.update!(oriented_at: Time.current) if oriented && agent.oriented_at.blank?
     result.merge(oriented: oriented, oriented_at: agent.reload.oriented_at&.iso8601)

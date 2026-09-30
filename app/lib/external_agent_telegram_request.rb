@@ -28,8 +28,10 @@ class ExternalAgentTelegramRequest
       request_text: request,
       last_included_message_id: last_message.id,
       provider_auth_mode: auth_mode
-    ) do
+    ) do |interaction|
       ChaosTriggerClient.new(endpoint_url, agent.trigger_bearer_token).request_response(
+        interaction: interaction,
+        completion_context: { telegram_subscription_id: subscription.id, safeguard_roll_id: pending_safeguard_detection&.id },
         conversation_id: subscription.to_param,
         requested_by: subscription.user.email_address,
         session_id: "#{agent.uuid}-telegram-#{subscription.id}",

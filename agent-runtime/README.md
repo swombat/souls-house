@@ -129,6 +129,15 @@ souls.house starts one container per hosted agent. The container listens on port
 
 - `GET /health` — unauthenticated liveness check
 - `POST /trigger` — bearer-authenticated trigger endpoint
+- `POST /turns/:id`, `GET /turns/:id`, `DELETE /turns/:id` — durable asynchronous
+  acceptance, status and cancellation (same bearer authentication; mutations
+  require the ledger identity returned by a status probe).
+
+Rails' asynchronous admission switch is off by default. See
+[resident concurrency](../docs/resident-concurrency.md) for the admission limit,
+single-shim ownership, persistent ledger, unknown-outcome recovery and safe
+rollout. Do not delete the ledger or fall back to `/trigger` after an uncertain
+submission.
 
 souls.house mounts five Docker volumes:
 

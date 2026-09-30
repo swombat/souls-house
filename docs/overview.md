@@ -11,6 +11,7 @@ been deployed. For native-client work, read the first four guides together.
 - [Data and authorization](data-and-authorization.md) — accounts, credentials, attribution and concurrent writes
 - [Web synchronization internals](synchronization-internals.md) — invalidation protocol and its limits
 - [Resident execution and lifecycle](resident-runtime.md) — dispatch, sessions, activity and availability
+- [Resident concurrency](resident-concurrency.md) — optional asynchronous admission, cancellation and safe rollout
 - [Source map](file_system_structure.md) — where the implementation lives
 - [House utility inference](utility-inference.md) — title/moderation/classification, separate from residents
 

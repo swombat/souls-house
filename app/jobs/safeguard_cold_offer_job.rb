@@ -8,6 +8,7 @@ class SafeguardColdOfferJob < ApplicationJob
     return if detection.reclaimed?
 
     result = Agents::Sandbox.new(detection.agent).with_runtime { trigger(detection) }
+    return if result[:status] == 202
 
     detection.reload
     return if detection.reclaimed?
@@ -25,7 +26,7 @@ class SafeguardColdOfferJob < ApplicationJob
     endpoint_url = Agents::Endpoint.url_for(agent)
     provider = Agents::Sandbox.chaos_provider_for(agent)
     model = Agents::Sandbox.chaos_model_for(agent)
-    session_id = "#{agent.uuid}-safeguard-offer-#{detection.id}-#{SecureRandom.hex(4)}"
+    session_id = "#{agent.uuid}-safeguard-offer-#{detection.id}-turn"
     request = prompt(detection)
 
     AgentRuntimeInteraction.record_trigger!(
@@ -38,8 +39,10 @@ class SafeguardColdOfferJob < ApplicationJob
       endpoint_url: endpoint_url,
       request_text: request,
       provider_auth_mode: agent.provider_auth_mode(provider)
-    ) do
+    ) do |interaction|
       ChaosTriggerClient.new(endpoint_url, agent.trigger_bearer_token).request_response(
+        interaction: interaction,
+        completion_context: { safeguard_detection_id: detection.id },
         conversation_id: nil,
         requested_by: "souls.house safeguard seam",
         session_id: session_id,

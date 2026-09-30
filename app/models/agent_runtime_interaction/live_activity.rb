@@ -85,6 +85,7 @@ module AgentRuntimeInteraction::LiveActivity
   end
 
   def reconcile_activity!
+    return if resident_turn.present? && !resident_turn.finished_at?
     return unless live_activity? && !execution_state.in?(TERMINAL_STATES) && execution_deadline_at&.past?
 
     with_lock do

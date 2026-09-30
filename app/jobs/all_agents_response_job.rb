@@ -21,7 +21,7 @@ class AllAgentsResponseJob < ApplicationJob
 
   def dispatch_next(chat, agent_ids)
     agent = chat.agents.find_by(id: agent_ids.first)
-    if agent && AgentRuntimeInteraction.live_activity_enabled?
+    if agent && (AgentRuntimeInteraction.live_activity_enabled? || ResidentTurn.enabled?)
       begin
         AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, enqueue: true,
           response_chain_agent_ids: agent_ids.drop(1))

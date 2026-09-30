@@ -78,6 +78,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -231,6 +232,70 @@ def health():
         # and container lifecycle behave exactly as before.
         body["home_sync"] = home_sync_loop.health()
     return jsonify(body)
+
+
+_turn_store = None
+_turn_store_lock = threading.Lock()
+
+
+def turn_store():
+    global _turn_store
+    with _turn_store_lock:
+        if _turn_store is None:
+            from async_turns import TurnStore
+            _turn_store = TurnStore(
+                os.environ.get("SOULSHOUSE_TURN_STORE", str(CHAOS_HOME / "house-turns")),
+                execute_async_turn,
+            )
+    return _turn_store
+
+
+def execute_async_turn(payload, cancel):
+    # The request context belongs to this thread, not the short-lived HTTP
+    # submission request. All invocation context remains thread-local.
+    with app.test_request_context("/trigger", json=payload,
+                                  headers={"Authorization": f"Bearer {TRIGGER_BEARER_TOKEN}"}):
+        _activity_context.cancel_event = cancel
+        try:
+            if cancel.is_set():
+                return {"status": 409, "body": {"status": "cancelled"}}
+            response = app.make_response(trigger())
+            return {"status": response.status_code, "body": response.get_json()}
+        finally:
+            _activity_context.cancel_event = None
+
+
+def async_turn(turn_id):
+    _require_shim_auth("/turns")
+    from async_turns import Conflict
+    try:
+        if request.method in ("POST", "DELETE") and request.headers.get("X-Resident-Ledger-ID") != turn_store().ledger_id:
+            return jsonify({"error": "ledger changed", "ledger_id": turn_store().ledger_id}), 409
+        if request.method == "POST":
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict):
+                return jsonify({"error": "JSON object required"}), 400
+            return jsonify(turn_store().submit(turn_id, payload)), 202
+        if request.method == "DELETE":
+            payload = request.get_json(silent=True)
+            if payload is not None and not isinstance(payload, dict):
+                return jsonify({"error": "JSON object required"}), 400
+            result = turn_store().cancel(turn_id, payload)
+        else:
+            result = turn_store().status(turn_id)
+        return (jsonify(result), 200) if result else (jsonify({"error": "not found", "ledger_id": turn_store().ledger_id}), 404)
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    except Conflict as error:
+        return jsonify({"error": str(error)}), 409
+
+
+def resolve_async_turn(turn_id):
+    _require_shim_auth("/turns")
+    if (request.get_json(silent=True) or {}).get("execution_stopped") is not True:
+        return jsonify({"error": "verified execution containment required"}), 400
+    result = turn_store().resolve(turn_id)
+    return (jsonify(result), 200) if result else (jsonify({"error": "not found"}), 404)
 
 
 def trigger():
@@ -751,6 +816,9 @@ def run_chaos(
     model, timeout_secs, prompt_text, json_output,
     resume_id=None, provider=None, reasoning_effort=None, auth_mode="api_key",
 ):
+    cancel = getattr(_activity_context, "cancel_event", None)
+    if cancel is not None and cancel.is_set():
+        raise subprocess.TimeoutExpired(cmd=CHAOS_BIN, timeout=0)
     # All invocations in a trigger (including a failed resume's fresh fallback)
     # share one elapsed-time budget. Never reset it when starting a subprocess.
     deadline = getattr(_activity_context, "turn_deadline", None)
@@ -831,7 +899,32 @@ def run_chaos(
         env["SOULSHOUSE_MEMORY_AGGREGATION"] = "1"
     reporter = getattr(_activity_context, "reporter", None)
     if reporter:
+        reporter.cancel_event = getattr(_activity_context, "cancel_event", None)
         return reporter.run(args, prompt_text, env, timeout_secs)
+    cancel = getattr(_activity_context, "cancel_event", None)
+    if cancel is not None:
+        # Non-conversation wakes have no activity reporter, but require the same
+        # process-group containment and cancellation acknowledgement.
+        with subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, text=True, env=env,
+                              start_new_session=True) as process:
+            expires = time.monotonic() + timeout_secs
+            first = True
+            try:
+                while True:
+                    if cancel.is_set() or time.monotonic() >= expires:
+                        raise subprocess.TimeoutExpired(args, timeout_secs)
+                    try:
+                        stdout, stderr = process.communicate(input=prompt_text if first else None, timeout=.5)
+                        return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
+                    except subprocess.TimeoutExpired:
+                        first = False
+            finally:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=5)
     return subprocess.run(
         args,
         input=prompt_text,
@@ -3041,6 +3134,8 @@ def _chaos_version() -> str:
 if app:
     app.get("/health")(health)
     app.post("/trigger")(trigger)
+    app.add_url_rule("/turns/<turn_id>", view_func=async_turn, methods=["POST", "GET", "DELETE"])
+    app.post("/turns/<turn_id>/resolve")(resolve_async_turn)
     app.get("/auth/capabilities")(auth_capabilities)
     app.get("/auth/usage")(auth_usage)
     app.post("/auth/start")(auth_start)

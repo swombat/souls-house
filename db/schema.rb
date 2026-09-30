@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_30_103000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_30_133000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -837,6 +837,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_103000) do
     t.index ["prompt_key"], name: "index_prompt_outputs_on_prompt_key"
   end
 
+  create_table "resident_turns", force: :cascade do |t|
+    t.datetime "admitted_at"
+    t.bigint "agent_id", null: false
+    t.bigint "agent_runtime_interaction_id", null: false
+    t.datetime "cancel_requested_at"
+    t.datetime "checked_at"
+    t.jsonb "completion_context", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "dispatch_id", null: false
+    t.datetime "finished_at"
+    t.string "ledger_id"
+    t.text "payload", null: false
+    t.datetime "poll_claimed_until"
+    t.datetime "prepared_at"
+    t.string "session_id", null: false
+    t.string "state", default: "queued", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_resident_turns_on_agent_id"
+    t.index ["agent_runtime_interaction_id"], name: "index_resident_turns_on_agent_runtime_interaction_id", unique: true
+    t.index ["dispatch_id"], name: "index_resident_turns_on_dispatch_id", unique: true
+    t.index ["session_id"], name: "one_admitted_resident_session", unique: true, where: "((state)::text = ANY ((ARRAY['starting'::character varying, 'running'::character varying, 'unknown'::character varying])::text[]))"
+    t.index ["state", "created_at"], name: "index_resident_turns_on_state_and_created_at"
+  end
+
   create_table "safeguard_classifier_failures", force: :cascade do |t|
     t.bigint "agent_id", null: false
     t.datetime "created_at", null: false
@@ -943,6 +967,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_103000) do
     t.boolean "allow_signups", default: true, null: false
     t.datetime "created_at", null: false
     t.integer "max_accounts", default: 30, null: false
+    t.integer "resident_turn_limit", default: 50, null: false
     t.integer "safeguard_owner_notice_threshold", default: 1, null: false
     t.boolean "show_usage_in_chat", default: false, null: false
     t.string "site_name", default: "HelixKit", null: false
@@ -1116,6 +1141,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_103000) do
   add_foreign_key "oura_integrations", "users"
   add_foreign_key "profiles", "users"
   add_foreign_key "prompt_outputs", "accounts"
+  add_foreign_key "resident_turns", "agent_runtime_interactions"
+  add_foreign_key "resident_turns", "agents"
   add_foreign_key "safeguard_classifier_failures", "agents"
   add_foreign_key "safeguard_detections", "agent_runtime_interactions", column: "reclaimed_by_interaction_id", on_delete: :nullify
   add_foreign_key "safeguard_detections", "agent_runtime_interactions", on_delete: :nullify
