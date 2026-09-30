@@ -12,7 +12,8 @@ class ExternalAgentOrientationRequestTest < ActiveSupport::TestCase
       endpoint_url: "https://agent.example.com",
       trigger_bearer_token: "tr_valid",
       health_state: "healthy",
-      consecutive_health_failures: 0
+      consecutive_health_failures: 0,
+      turn_timeout_minutes: 180
     )
     fake_journal_status = Object.new
     def fake_journal_status.snapshot = { "2026-05-28.md" => 100 }
@@ -23,7 +24,7 @@ class ExternalAgentOrientationRequestTest < ActiveSupport::TestCase
         body = JSON.parse(request.body)
         body.fetch("trigger_kind") == "orientation" &&
           body.fetch("model") == "claude-opus-4-7" &&
-          body.fetch("timeout_secs") == ExternalAgentOrientationRequest::ORIENTATION_TIMEOUT_SECS
+          body.fetch("timeout_secs") == 10800
       end
       .to_return(status: 200, body: { status: "ok", stdout: "oriented" }.to_json)
 

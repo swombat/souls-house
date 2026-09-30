@@ -42,11 +42,7 @@ test.describe('conversation draft custody', () => {
     await expect(composer.getByRole('status')).toHaveText('Saved');
     await composer.locator('textarea').fill('Carefully written comments\nwith another line');
     // Use an actual Inertia sidebar link, before the debounce needs to fire.
-    await page
-      .getByRole('complementary')
-      .locator(`a[href$="/accounts/${setup.account_param}/chats/${otherId}"]`)
-      .first()
-      .click();
+    await page.locator(`a[href$="/accounts/${setup.account_param}/chats/${otherId}"]`).first().click();
     await expect(page).toHaveURL(new RegExp(`${otherId}$`));
     await page.goBack();
     await expect(composer.locator('textarea')).toHaveValue('Carefully written comments\nwith another line');

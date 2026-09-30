@@ -20,6 +20,15 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
     assert @chat.agent_response_active?(@agent)
   end
 
+  test "execution deadline follows resident budget without doubling it for resume" do
+    freeze_time do
+      @agent.update!(turn_timeout_minutes: 1440)
+      @run.activity_configuration!
+      assert_equal 86430.seconds.from_now, @run.reload.execution_deadline_at
+      assert_operator @run.activity_token_expires_at, :>, @run.execution_deadline_at
+    end
+  end
+
   test "pre-send errors fail immediately while post-send errors remain uncertain" do
     [ Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH, SocketError, Net::OpenTimeout ].each do |klass|
       @run.update!(execution_state: "preparing", finished_at: nil)

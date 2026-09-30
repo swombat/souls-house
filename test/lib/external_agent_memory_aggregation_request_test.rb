@@ -11,7 +11,8 @@ class ExternalAgentMemoryAggregationRequestTest < ActiveSupport::TestCase
       endpoint_url: "https://agent.example.com",
       trigger_bearer_token: "tr_valid",
       health_state: "healthy",
-      consecutive_health_failures: 0
+      consecutive_health_failures: 0,
+      turn_timeout_minutes: 120
     )
 
     stub = stub_request(:post, "https://agent.example.com/trigger")
@@ -19,7 +20,7 @@ class ExternalAgentMemoryAggregationRequestTest < ActiveSupport::TestCase
         body = JSON.parse(request.body)
         body.fetch("trigger_kind") == "memory_aggregation_daily" &&
           body.fetch("memory_aggregation").slice("period", "target") == { "period" => "daily", "target" => "2026-05-29" } &&
-          body.fetch("timeout_secs") == ExternalAgentMemoryAggregationRequest::AGGREGATION_TIMEOUT_SECS &&
+          body.fetch("timeout_secs") == 7200 &&
           body.fetch("request").include?("daily memory aggregation for 2026-05-29") &&
           body.fetch("request").include?("~/identity/memory/weekly-journals/2026-05-25.md") &&
           body.fetch("request").include?("~/identity/self-narrative.md") &&

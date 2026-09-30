@@ -42,7 +42,8 @@ class ExternalAgentTelegramRequest
         model: Agents::Sandbox.chaos_model_for(agent),
         reasoning_effort: agent.reasoning_effort,
         auth_mode: auth_mode,
-        trigger_payload: trigger_payload
+        trigger_payload: trigger_payload,
+        runtime_timeout_secs: agent.runtime_timeout_secs
       )
     end
     acknowledge_safeguard_roll!(result)

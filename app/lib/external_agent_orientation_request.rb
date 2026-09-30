@@ -1,7 +1,5 @@
 class ExternalAgentOrientationRequest
 
-  ORIENTATION_TIMEOUT_SECS = 30.minutes.to_i
-
   def initialize(agent:, requested_by: "HelixKit orientation", context: :migration)
     @agent = agent
     @requested_by = requested_by
@@ -50,8 +48,7 @@ class ExternalAgentOrientationRequest
         model: Agents::Sandbox.chaos_model_for(agent),
         reasoning_effort: agent.reasoning_effort,
         auth_mode: auth_mode,
-        read_timeout: ORIENTATION_TIMEOUT_SECS + 30,
-        runtime_timeout_secs: ORIENTATION_TIMEOUT_SECS
+        runtime_timeout_secs: agent.runtime_timeout_secs
       )
     end
 

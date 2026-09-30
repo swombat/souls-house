@@ -375,6 +375,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_090000) do
     t.integer "thinking_budget", default: 10000
     t.boolean "thinking_enabled", default: false, null: false
     t.string "trigger_bearer_token"
+    t.integer "turn_timeout_minutes", default: 30, null: false
     t.datetime "updated_at", null: false
     t.uuid "uuid"
     t.string "voice_id"
@@ -389,6 +390,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_090000) do
     t.index ["sandbox_host"], name: "index_agents_on_sandbox_host"
     t.index ["telegram_webhook_token"], name: "index_agents_on_telegram_webhook_token", unique: true
     t.index ["uuid"], name: "index_agents_on_uuid", unique: true
+    t.check_constraint "turn_timeout_minutes >= 1 AND turn_timeout_minutes <= 1440", name: "agents_turn_timeout_minutes_range"
   end
 
   create_table "ai_models", force: :cascade do |t|
