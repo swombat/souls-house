@@ -41,7 +41,7 @@
       </div>
     {/if}
     <div class="text-xs text-muted-foreground flex-1/3 flex items-end justify-end hidden group-hover:block">
-      {chat.updated_at_short || shortDate(chat.updated_at)}
+      {shortDate(chat.activity_at)}
     </div>
     <div class="text-xs text-muted-foreground flex-1/3 flex items-end justify-end gap-2">
       {#if chat.context_tokens > 0}

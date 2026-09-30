@@ -25,7 +25,7 @@ class Chat < ApplicationRecord
   validates :agents, length: { minimum: 1, message: "must include at least one agent" }, if: :manual_responses?
 
   json_attributes :title_or_default, :model_id, :model_label, :ai_model_name, :updated_at_formatted,
-                  :updated_at_short, :message_count, :context_tokens, :cost_tokens, :reasoning_tokens, :web_access, :manual_responses,
+                  :updated_at_short, :activity_at, :message_count, :context_tokens, :cost_tokens, :reasoning_tokens, :web_access, :manual_responses,
                   :participants_json, :archived_at, :discarded_at, :archived, :discarded, :respondable, :agent_only, :summary do |hash, options|
     # For sidebar format, only include attributes used by the chat list UI.
     if options&.dig(:as) == :sidebar_json
@@ -35,6 +35,7 @@ class Chat < ApplicationRecord
         "title_or_default",
         "updated_at",
         "updated_at_short",
+        "activity_at",
         "message_count",
         "context_tokens",
         "manual_responses",
@@ -75,7 +76,11 @@ class Chat < ApplicationRecord
 
   after_create_commit -> { GenerateTitleJob.perform_later(self) }, unless: :title?
 
-  scope :latest, -> { order(updated_at: :desc) }
+  scope :latest, -> { order(Arel.sql("COALESCE(chats.last_message_at, chats.created_at) DESC"), id: :desc) }
+
+  def activity_at
+    last_message_at || created_at
+  end
 
   # Create chat with optional initial message
   def self.create_with_message!(attributes, message_content: nil, user: nil, files: nil, agent_ids: nil, audio_signed_id: nil)
@@ -162,7 +167,7 @@ class Chat < ApplicationRecord
   def json_cache_key(as: nil)
     return cache_key_with_version unless as.present?
 
-    "#{cache_key_with_version}/json/#{as}/v2"
+    "#{cache_key_with_version}/json/#{as}/v3"
   end
 
   def updated_at_formatted

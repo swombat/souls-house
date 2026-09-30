@@ -539,16 +539,16 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "should handle latest scope in index" do
-    # Create multiple chats with different update times
+    # Empty chats use creation time, not metadata update time.
     old_chat = @account.chats.create!(
       model_id: "gpt-4o",
       title: "Old Chat",
-      updated_at: 2.days.ago
+      created_at: 2.days.ago
     )
     new_chat = @account.chats.create!(
       model_id: "gpt-4o",
       title: "New Chat",
-      updated_at: 1.hour.ago
+      created_at: 1.hour.ago
     )
 
     get account_chats_path(@account)
@@ -562,8 +562,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_includes chat_ids, new_chat.id
     assert_includes chat_ids, @chat.id
     assert_includes chat_ids, old_chat.id
-    # Latest scope should order by updated_at desc
-    assert chats.first.updated_at >= chats.second.updated_at
+    assert chats.first.activity_at >= chats.second.activity_at
   end
 
   test "should create chat with file uploads" do

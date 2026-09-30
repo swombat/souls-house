@@ -193,17 +193,17 @@ class ChatFlowTest < ActionDispatch::IntegrationTest
     chat1 = @account.chats.create!(
       model_id: "gpt-4o",
       title: "First Chat",
-      updated_at: 1.hour.ago
+      created_at: 1.hour.ago
     )
     chat2 = @account.chats.create!(
       model_id: "claude-3.7-sonnet",
       title: "Second Chat",
-      updated_at: 2.hours.ago
+      created_at: 2.hours.ago
     )
     chat3 = @account.chats.create!(
       model_id: "gpt-4o-mini",
       title: "Third Chat",
-      updated_at: 30.minutes.ago  # Most recent
+      created_at: 30.minutes.ago  # Most recent
     )
 
     # Get chat list
@@ -214,7 +214,7 @@ class ChatFlowTest < ActionDispatch::IntegrationTest
     chats_from_db = @account.chats.latest.to_a
     assert_equal 3, chats_from_db.length
 
-    # Should be ordered by updated_at desc (most recent first)
+    # Empty chats use creation time until their first message.
     assert_equal chat3.id, chats_from_db[0].id
     assert_equal chat1.id, chats_from_db[1].id
     assert_equal chat2.id, chats_from_db[2].id

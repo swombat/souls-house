@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_30_093000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_30_103000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -492,6 +492,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_093000) do
     t.text "initiation_reason"
     t.datetime "last_consolidated_at"
     t.bigint "last_consolidated_message_id"
+    t.datetime "last_message_at"
     t.boolean "manual_responses", default: false, null: false
     t.string "model_id_string", default: "openrouter/auto", null: false
     t.string "prompt_timezone"

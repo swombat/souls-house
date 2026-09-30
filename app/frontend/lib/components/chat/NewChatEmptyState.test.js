@@ -5,12 +5,12 @@ test('offers the latest three active conversations in recency order', () => {
   render(NewChatEmptyState, {
     accountId: 'account',
     chats: [
-      { id: 'old', title: 'Old', updated_at: '2026-09-01' },
-      { id: 'second', title: 'Second', updated_at: '2026-09-23' },
-      { id: 'archived', title: 'Archived', archived: true, updated_at: '2026-09-26' },
-      { id: 'first', title: 'First', updated_at: '2026-09-24' },
-      { id: 'deleted', title: 'Deleted', discarded: true, updated_at: '2026-09-26' },
-      { id: 'third', title: 'Third', updated_at: '2026-09-22' },
+      { id: 'old', title: 'Renamed today', activity_at: '2026-09-01', updated_at: '2026-09-30' },
+      { id: 'second', title: 'Second', activity_at: '2026-09-23' },
+      { id: 'archived', title: 'Archived', archived: true, activity_at: '2026-09-26' },
+      { id: 'first', title: 'First', activity_at: '2026-09-24' },
+      { id: 'deleted', title: 'Deleted', discarded: true, activity_at: '2026-09-26' },
+      { id: 'third', title: 'Third', activity_at: '2026-09-22' },
     ],
   });
   const nav = screen.getByRole('navigation', { name: 'Recent conversations' });
@@ -31,7 +31,7 @@ test('omits the recent-conversation prompt when there are no active chats', () =
 test('shows fewer than three conversations and a fallback for untitled chats', () => {
   render(NewChatEmptyState, {
     accountId: 'account',
-    chats: [{ id: 'only', updated_at: '2026-09-25' }],
+    chats: [{ id: 'only', activity_at: '2026-09-25' }],
   });
   expect(screen.getAllByRole('link')).toHaveLength(1);
   expect(screen.getByRole('link')).toHaveTextContent('New Conversation');

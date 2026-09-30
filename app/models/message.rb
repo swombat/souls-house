@@ -55,10 +55,20 @@ class Message < ApplicationRecord
       .order(created_at: :desc)
   end
 
+  after_create :record_chat_message_time
   after_create :reopen_all_agents_for_initiation, if: :human_message_in_group_chat?
   after_create_commit :trigger_single_resident_response, if: :human_message_in_group_chat?
   after_create_commit :advance_runtime_response_chain
   after_save_commit :refresh_chat_context_tokens, if: -> { role == "assistant" && saved_change_to_input_tokens? }
+
+  def record_chat_message_time
+    chat.with_lock do
+      if chat.last_message_at.nil? || created_at > chat.last_message_at
+        chat.update!(last_message_at: created_at)
+      end
+    end
+  end
+  private :record_chat_message_time
 
   def trigger_single_resident_response
     chat.with_lock do
