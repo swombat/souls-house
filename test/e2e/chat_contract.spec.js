@@ -376,7 +376,7 @@ test.describe('browser contracts', () => {
     await expect(secondPage.getByText('Initial message from the primary user.')).toBeVisible();
 
     await secondPage.locator('main textarea').last().fill('Synced message from another browser.');
-    await secondPage.locator('main button').last().click();
+    await secondPage.getByRole('button', { name: 'Send message', exact: true }).click();
 
     await expect(page.getByText('Synced message from another browser.')).toBeVisible();
     await secondContext.close();

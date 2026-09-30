@@ -1,6 +1,8 @@
 class MessagesController < ApplicationController
 
   require_feature_enabled :chats
+  include DraftAuthorBinding
+  before_action :require_matching_draft_author, only: :create
   before_action :set_chat, only: [ :index, :create ]
   before_action :set_message, only: [ :update, :destroy ]
   before_action :require_respondable_chat, only: :create
@@ -33,7 +35,14 @@ class MessagesController < ApplicationController
       end
     end
 
-    if @message.save
+    draft = if params.key?(:draft_revision)
+      # Drafts never use the account administrator's widened browsing authority.
+      Current.user.confirmed_accounts.find(@chat.account_id)
+      ConversationDraft.for(chat: @chat, user: Current.user)
+    end
+    saved = draft ? draft.send_message!(@message, revision: params[:draft_revision]) : @message.save
+
+    if saved
       audit("create_message", @message, **message_params.to_h)
       if @chat.manual_responses?
         @chat.trigger_mentioned_agents!(@message.content)
@@ -41,7 +50,7 @@ class MessagesController < ApplicationController
 
       respond_to do |format|
         format.html { redirect_to account_chat_path(@chat.account, @chat) }
-        format.json { render json: @message, status: :created }
+        format.json { render json: @message.as_json.merge(draft ? { draft: draft.as_json } : {}), status: :created }
       end
     elsif @message.errors.added?(:base, :duplicate_message)
       # Duplicate message - just refresh the page silently
@@ -55,6 +64,8 @@ class MessagesController < ApplicationController
         format.json { render json: { errors: @message.errors.full_messages }, status: :unprocessable_entity }
       end
     end
+  rescue ConversationDraft::Conflict => e
+    render json: { errors: [ e.message ], draft: e.draft.as_json }, status: :conflict
   rescue StandardError => e
     error "Message creation failed: #{e.message}"
     error e.backtrace.join("\n")

@@ -26,6 +26,8 @@ been deployed. For native-client work, read the first four guides together.
 
 ## Feature references
 
+- [Private conversation drafts](conversation-drafts.md) — autosave, local recovery and cross-client revisions
+
 - [Message Markdown](message-markdown.md), [patch attachments](patch-attachments.md), [message grouping](progress-messages.md)
 - [Whiteboard update semantics](whiteboard-null-updates.md)
 - [Telegram safeguards](safeguards.md), [transcription fallback](telegram-transcription-fallback.md), [video notes](telegram-video-notes.md)

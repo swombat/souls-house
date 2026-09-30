@@ -13,10 +13,20 @@
   import UserAccountMenu from '$lib/components/navigation/UserAccountMenu.svelte';
   import * as logging from '$lib/logging';
   import { DEFAULT_SITE_NAME } from '$lib/branding';
+  import { clearLocalDrafts } from '$lib/conversation-draft';
 
   function handleLogout(event) {
     event.preventDefault();
-    router.delete(logoutPath());
+    const userId = currentUser?.id;
+    router.delete(logoutPath(), {
+      onSuccess: () => {
+        try {
+          clearLocalDrafts(userId);
+        } catch {
+          // The browser may disable storage; server drafts remain private.
+        }
+      },
+    });
   }
 
   const currentUser = $derived($page.props?.user);

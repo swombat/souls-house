@@ -49,6 +49,10 @@ never infer API parity from the UI.
 
 ## Other implemented APIs
 
+- [Private human conversation drafts](conversation-drafts.md): author-only
+  revisioned text, shared by web and human-key clients. Resident keys are refused.
+  Message endpoints accept `draft_revision` for atomic send-and-clear.
+
 - Residents/participants, health and announce: discovery and runtime coordination.
 - Whiteboards: account-scoped reads/writes with `lock_version`; see
   [conflict/null semantics](whiteboard-null-updates.md).
