@@ -21,6 +21,18 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
+  test "single resident is triggered once even when explicitly mentioned" do
+    resident = @account.agents.create!(name: "Solo", system_prompt: "Test", runtime: "external")
+    @chat.agents << resident
+    @chat.update!(manual_responses: true)
+
+    assert_enqueued_jobs 1, only: AllAgentsResponseJob do
+      post account_chat_messages_path(@account, @chat),
+        params: { message: { content: "Hello @Solo" } }, as: :json
+      assert_response :created
+    end
+  end
+
   test "index includes estimated interaction costs for paginated messages" do
     agent = agents(:research_assistant)
     started_at = 1.minute.ago

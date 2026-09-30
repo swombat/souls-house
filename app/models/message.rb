@@ -34,6 +34,7 @@ class Message < ApplicationRecord
   has_one :account, through: :chat
 
   attr_accessor :skip_content_validation
+  attr_reader :single_resident_response_triggered
 
   broadcasts_to :chat
 
@@ -55,8 +56,23 @@ class Message < ApplicationRecord
   end
 
   after_create :reopen_all_agents_for_initiation, if: :human_message_in_group_chat?
+  after_create_commit :trigger_single_resident_response, if: :human_message_in_group_chat?
   after_create_commit :advance_runtime_response_chain
   after_save_commit :refresh_chat_context_tokens, if: -> { role == "assistant" && saved_change_to_input_tokens? }
+
+  def trigger_single_resident_response
+    return unless chat.respondable?
+
+    residents = chat.agents.limit(2).to_a
+    return unless residents.one?
+
+    resident = residents.first
+    return unless resident.eligible_for_conversation?
+    return if chat.agent_response_active?(resident)
+
+    @single_resident_response_triggered = AllAgentsResponseJob.perform_later(chat, [ resident.id ]).present?
+  end
+  private :trigger_single_resident_response
 
   def advance_runtime_response_chain
     runtime_interaction&.advance_response_chain! if role == "assistant"

@@ -50,7 +50,7 @@ module Api
         render json: {
           message: message.as_json,
           draft: draft&.as_json,
-          ai_response_triggered: false
+          ai_response_triggered: !!message.single_resident_response_triggered
         }, status: :created
       rescue ConversationDraft::Conflict => error
         render json: { errors: [ error.message ], draft: error.draft.as_json }, status: :conflict
