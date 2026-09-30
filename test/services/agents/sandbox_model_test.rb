@@ -331,6 +331,7 @@ module Agents
       create_args, copy_args, start_args = calls
       assert_equal [ "docker", "create" ], create_args.first(2)
       assert_equal "no", create_args.fetch(create_args.index("--restart") + 1)
+      assert_equal "souls-house-#{agent.uuid}", create_args.fetch(create_args.index("--hostname") + 1)
       assert_not create_args.any? { |arg| arg.include?("type=bind") }
       assert_equal [ "docker", "cp" ], copy_args.first(2)
       assert_match %r{/helixkit-services-.*\.yml}, copy_args.fetch(2)

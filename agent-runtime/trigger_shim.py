@@ -108,6 +108,7 @@ TRIGGER_BEARER_TOKEN = os.environ.get("TRIGGER_BEARER_TOKEN", "")
 AGENT_DEFAULT_MODEL = os.environ.get("AGENT_DEFAULT_MODEL", "claude-haiku-4-5")
 AGENT_PROVIDER = os.environ.get("AGENT_PROVIDER", "anthropic")
 import imported_home
+import home_sync_loop
 
 AGENT_REPO_PATH = Path(os.environ.get("AGENT_REPO_PATH", "/home/agent/repo"))
 AGENT_IDENTITY_PATH = Path(os.environ.get("AGENT_IDENTITY_PATH", "/home/agent/identity"))
@@ -224,7 +225,12 @@ _subscription_usage_guard = threading.Lock()
 
 # ----- routes -----
 def health():
-    return jsonify({"status": "ok", "agent_id": AGENT_ID, "version": _chaos_version()})
+    body = {"status": "ok", "agent_id": AGENT_ID, "version": _chaos_version()}
+    if imported_home.enabled():
+        # Additive field only: liveness stays HTTP 200 so the house health job
+        # and container lifecycle behave exactly as before.
+        body["home_sync"] = home_sync_loop.health()
+    return jsonify(body)
 
 
 def trigger():
@@ -690,6 +696,57 @@ def persistent_trigger(
 
 
 # ----- chaos invocation -----
+IMPORTED_CLAMP_OMIT_FORCED_LOGIN_ENV = "SOULSHOUSE_IMPORTED_CLAMP_OMIT_FORCED_LOGIN"
+
+
+def _env_flag(name, environ=None):
+    value = (os.environ if environ is None else environ).get(name, "")
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def imported_forced_login_method(provider, auth_mode, environ=None):
+    """Return Chaos's forced_login_method for an imported home, or None to omit it.
+
+    Current behaviour, pinned by tests: an OpenAI subscription gets "chatgpt";
+    every other imported combination gets "api". House residents never reach
+    this function and never receive the setting.
+
+    The one exception is off by default. With
+    SOULSHOUSE_IMPORTED_CLAMP_OMIT_FORCED_LOGIN=1, an imported home on an
+    Anthropic subscription (Claude Code clamp) runs without the setting. At the
+    pinned Chaos commit the setting is only read by enforce_login_restrictions,
+    which inspects the default (OpenAI) provider's stored login, never Claude
+    Code's credentials; see agent-runtime/README.md. Whether the combination
+    works end to end is unverified until a real clamp turn and a resumed turn
+    have run.
+    """
+    if auth_mode == "oauth_account" and provider == "openai":
+        return "chatgpt"
+    if (auth_mode == "oauth_account" and provider == "anthropic"
+            and _env_flag(IMPORTED_CLAMP_OMIT_FORCED_LOGIN_ENV, environ)):
+        return None
+    return "api"
+
+
+REQUIRE_HOUSE_TRUST_ENV = "SOULSHOUSE_REQUIRE_HOUSE_TRUST"
+
+
+def house_trust_required(environ=None):
+    """Default off. When on, a house turn refuses to start unless Chaos trusts
+    the workspace, as imported homes already do. Between 2026-09-26 and
+    2026-09-28 a settings migration dropped trust and every house resident's
+    hooks stopped without any error."""
+    return _env_flag(REQUIRE_HOUSE_TRUST_ENV, environ)
+
+
+def require_house_trust(cwd, chaos_home):
+    imported_home.check_project_trust(
+        cwd, chaos_home,
+        "Review and trust the resident workspace in Chaos before a resident turn",
+        "Resident workspace is not trusted in Chaos; its memory hooks would not run",
+    )
+
+
 def run_chaos(
     model, timeout_secs, prompt_text, json_output,
     resume_id=None, provider=None, reasoning_effort=None, auth_mode="api_key",
@@ -724,11 +781,14 @@ def run_chaos(
     if imported_home.enabled():
         cwd, home = imported_home.validate()
         imported_home.require_runtime_trust(cwd, Path(env.get("CHAOS_HOME", CHAOS_HOME)))
-        login_method = "chatgpt" if auth_mode == "oauth_account" and selected_provider == "openai" else "api"
-        args += ["-c", f'model_instructions_file={json.dumps(str(cwd / home["instructions"]))}',
-                 "-c", f'forced_login_method="{login_method}"']
+        args += ["-c", f'model_instructions_file={json.dumps(str(cwd / home["instructions"]))}']
+        login_method = imported_forced_login_method(selected_provider, auth_mode)
+        if login_method is not None:
+            args += ["-c", f'forced_login_method="{login_method}"']
     else:
         cwd = AGENT_REPO_PATH if AGENT_REPO_PATH.exists() else Path.home()
+        if house_trust_required():
+            require_house_trust(cwd, Path(env.get("CHAOS_HOME", CHAOS_HOME)))
     args += [
         "--provider", provider or AGENT_PROVIDER,
         "-C", str(cwd),
@@ -1686,12 +1746,25 @@ def identity_context() -> str:
 
 
 def imported_runtime_context():
+    if imported_home.profile() == "mira_v1":
+        # mira_v1's text is unchanged byte for byte; her sessions depend on it.
+        opening = (
+            "Your full identity, instructions, wake and memory practices come from MIRA_ROOT. "
+            "You are concurrently resident on other hosts; use your immutable journal helper "
+            "and existing external Mnemodyne client, not house-memory or helixkit-append-journal. "
+            "This runtime does not start your Dell-owned heartbeat/consolidation/Telegram jobs. "
+        )
+    else:
+        opening = (
+            f"Your full identity, instructions, wake and memory practices come from "
+            f"{imported_home.root_env_name()}. "
+            "You are concurrently resident on other hosts; use your own home's journal and "
+            "external memory tools, not house-memory or helixkit-append-journal. "
+            "This runtime does not start the scheduled jobs your other hosts run. "
+        )
     return (
         "## souls.house hosting context (not identity)\n"
-        "Your full identity, instructions, wake and memory practices come from MIRA_ROOT. "
-        "You are concurrently resident on other hosts; use your immutable journal helper "
-        "and existing external Mnemodyne client, not house-memory or helixkit-append-journal. "
-        "This runtime does not start your Dell-owned heartbeat/consolidation/Telegram jobs. "
+        + opening +
         "This conversation is a separate session, not a migration of another thread. "
         "Use the souls.house shell helpers and API reference at "
         "/usr/local/share/helixkit-agent/soulshouse-api.md. "
