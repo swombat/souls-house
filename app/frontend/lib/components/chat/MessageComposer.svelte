@@ -217,21 +217,16 @@
       {/if}
     </button>
   </div>
-  <div class="mt-1 flex items-start justify-between gap-2 text-xs text-muted-foreground">
-    <div role="status">
-      {draftState.status}
-      {#if draftState.storageError}
-        <span class="text-destructive"> Local recovery unavailable—keep this page open until saved.</span>
-      {:else if draftState.localSaved && draftState.status.startsWith('Not synced')}
-        <span> Saved on this device.</span>
-      {/if}
-    </div>
-    {#if draftState.content && !submitting}
-      <button
-        class="shrink-0 underline"
-        onclick={() => {
-          if (confirm('Discard this draft?')) draft.edit('');
-        }}>Discard draft</button>
+  <div
+    role="status"
+    class={draftState.storageError || draftState.locked || draftState.status.startsWith('Not synced')
+      ? 'mt-1 text-xs text-muted-foreground'
+      : 'sr-only'}>
+    {draftState.status}
+    {#if draftState.storageError}
+      <span class="text-destructive"> Local recovery unavailable—keep this page open until saved.</span>
+    {:else if draftState.localSaved && draftState.status.startsWith('Not synced')}
+      <span> Saved on this device.</span>
     {/if}
   </div>
   {#if draftState.conflict}

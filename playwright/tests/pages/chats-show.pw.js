@@ -47,6 +47,36 @@ test.describe('Chats Show Page Tests', () => {
     await expect(component).not.toContainText('This conversation has been archived');
   });
 
+  test('keeps routine draft status out of the layout and clears by deleting text', async ({ mount, page }) => {
+    const component = await mount(ChatsShow, { props });
+    const status = component.getByTestId('message-composer').getByRole('status');
+    await expect(status).toHaveText('Saved');
+    await expect(status).toHaveClass('sr-only');
+    await expect(status).toHaveCSS('position', 'absolute');
+    await expect(status).toHaveCSS('height', '1px');
+    await composer(component).fill('A draft to delete');
+    await expect(status).toHaveClass('sr-only');
+    await expect(status).toHaveText('Saved');
+    await expect(component.getByRole('button', { name: 'Discard draft' })).toHaveCount(0);
+    const cleared = page.waitForRequest(
+      (request) =>
+        request.url().endsWith('/draft') && request.method() === 'PATCH' && request.postDataJSON().content === ''
+    );
+    await composer(component).fill('');
+    await cleared;
+    await expect(status).toHaveText('Saved');
+    await expect(sendButton(component)).toBeDisabled();
+  });
+
+  test('shows a warning when draft syncing fails', async ({ mount, page }) => {
+    await page.route('**/accounts/1/chats/chat-123/draft', (route) => route.abort());
+    const component = await mount(ChatsShow, { props });
+    const status = component.getByTestId('message-composer').getByRole('status');
+    await expect(status).toContainText('Not synced');
+    await expect(status).not.toHaveClass('sr-only');
+    await expect(status).toBeVisible();
+  });
+
   test('displays user and assistant messages with timestamps', async ({ mount }) => {
     const component = await mount(ChatsShow, {
       props: {
