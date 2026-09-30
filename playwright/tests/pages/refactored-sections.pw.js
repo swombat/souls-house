@@ -8,7 +8,7 @@ test('subscription code input belongs to the ceremony and completion selects sub
 }) => {
   let submitted;
   let status = 'awaiting_code';
-  await page.route('**/provider_subscription**', async (route) => {
+  await page.route(/\/provider_subscription(?:_usage|\/|\?|$)/, async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith('provider_subscription_usage')) {
       return route.fulfill({ json: { status: 'unknown' } });
