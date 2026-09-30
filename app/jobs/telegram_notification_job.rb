@@ -6,6 +6,9 @@ class TelegramNotificationJob < ApplicationJob
 
   def perform(subscription, message, chat)
     return if subscription.blocked?
+    # Checked at run (and retry) time: the row survives a discard now, so a
+    # queued job would otherwise send content the human already removed.
+    return if message.discarded? || chat.discarded?
 
     agent = subscription.agent
     return unless agent.telegram_configured?

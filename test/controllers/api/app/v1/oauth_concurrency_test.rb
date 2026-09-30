@@ -104,6 +104,27 @@ class Api::App::V1::OauthConcurrencyTest < ActionDispatch::IntegrationTest
     assert_empty live_tokens(@app_session)
   end
 
+  test "a bearer waiting on the family lock is rechecked after supersession" do
+    # Mira's forced interleaving from the #96 round-2 review.
+    t2 = refresh(@t1)
+    request_headers = bearer(t2)
+    reader = nil
+    t3 = nil
+    @app_session.with_lock do
+      reader = in_thread do
+        get "/api/app/v1/session", headers: request_headers
+        response.status
+      end
+      wait_for_blocked(1)
+      t3 = refresh(@t1)
+    end
+    assert_equal 401, reader.value
+    assert_not row_for(@t1).revoked?, "losing bearer must not retire parent"
+    assert_nil @app_session.reload.revoked_at
+    use(t3)
+    assert row_for(@t1).revoked?, "winning bearer must retire parent"
+  end
+
   private
 
   # A fresh integration session per thread, on its own connection.

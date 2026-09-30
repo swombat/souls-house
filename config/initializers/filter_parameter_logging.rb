@@ -4,8 +4,8 @@
 # Use this to limit dissemination of sensitive information.
 # See the ActiveSupport::ParameterFilter documentation for supported notations and behaviors.
 Rails.application.config.filter_parameters += [
-  :passw, :email, :secret, :token, :code_verifier, :_key, :crypt, :salt, :certificate, :otp, /\Acode\z/i, :ssn, :cvv, :cvc,
-  :activity, :events, /\Anote\z/, :rr_ms, :observed_at, :HTTP_AUTHORIZATION
+  :passw, :email, :secret, :token, :ticket, :code_verifier, :_key, :crypt, :salt, :certificate, :otp, /\Acode\z/i, :ssn, :cvv, :cvc,
+  :activity, :events, /\Anote\z/, :rr_ms, :observed_at, :HTTP_AUTHORIZATION, :HTTP_SEC_WEBSOCKET_PROTOCOL
 ]
 
 # SQL bind logging uses ActiveRecord::Base's application-wide inspection filter,

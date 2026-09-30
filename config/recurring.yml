@@ -10,10 +10,16 @@
 #     schedule: at 5am every day
 
 production:
+  message_dispatch_sweep:
+    class: MessageDispatchSweepJob
+    queue: default
+    schedule: every minute
+
   resident_turn_dispatch:
     class: ResidentTurnDispatchJob
     queue: resident_dispatch
     schedule: every 10 seconds
+
   mnemodyne_readiness:
     class: Mnemodyne::ProbeJob
     schedule: every 5 minutes

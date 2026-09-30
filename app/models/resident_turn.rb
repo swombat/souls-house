@@ -86,9 +86,35 @@ class ResidentTurn < ApplicationRecord
     if interaction.chat
       return false unless interaction.chat.respondable? && interaction.chat.agents.exists?(agent_id)
     end
+    return false unless dispatch_deliverable?
     subscription_id = completion_context["telegram_subscription_id"]
     return false if subscription_id && !TelegramSubscription.active.where(id: subscription_id, agent: agent).exists?
     true
+  end
+
+  # A turn a human message or native invoke caused (#94 B) may only enter
+  # the runtime while its dispatch still stands: not discarded, author still
+  # a member, live activity on, inside the six-hour no-new-starts boundary.
+  # The claim checked this, but a turn can wait a long time after it, so it
+  # is checked again at admission and at the first runtime submission.
+  # Settles the dispatch when it no longer stands. Lock order: turn, then
+  # dispatch (admission holds the turn lock here); nothing takes a dispatch
+  # lock and then a turn lock.
+  def dispatch_deliverable?
+    dispatch = agent_runtime_interaction.message_dispatch
+    dispatch.nil? || dispatch.with_lock { dispatch.deliverable! }
+  end
+
+  # The last pre-submission gate (#97 review): an admitted turn that has never
+  # reached the runtime and whose dispatch no longer stands is withdrawn
+  # through the normal cancellation path. The poll job then sends the runtime
+  # a cancellation for that dispatch id instead of a submission, so the ledger
+  # records it and capacity is released only by the runtime's answer, never
+  # by this local decision.
+  def withdraw_unless_deliverable!
+    return if cancel_requested_at? || dispatch_deliverable?
+
+    with_lock { update!(cancel_requested_at: Time.current) unless cancel_requested_at? || finished_at? }
   end
 
   def prepare!

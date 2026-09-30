@@ -1,5 +1,6 @@
 class Message < ApplicationRecord
 
+  include Discard::Model
   include Broadcastable
   include ObfuscatesId
   include JsonAttributes
@@ -9,6 +10,7 @@ class Message < ApplicationRecord
   include Message::Replayable
   include Message::Progress
   include Message::Streamable
+  include Message::Revisioned
 
   belongs_to :ai_model, optional: true
   belongs_to :parent_tool_call, class_name: "ToolCall", foreign_key: :tool_call_id, optional: true
@@ -32,6 +34,7 @@ class Message < ApplicationRecord
   belongs_to :agent, optional: true
   belongs_to :runtime_interaction, class_name: "AgentRuntimeInteraction", optional: true
   has_one :account, through: :chat
+  has_one :message_dispatch
 
   attr_accessor :skip_content_validation
   attr_reader :single_resident_response_triggered
@@ -41,6 +44,7 @@ class Message < ApplicationRecord
   validates :role, inclusion: { in: %w[user assistant system tool] }
   validates :content, presence: true, unless: -> { role.in?(%w[assistant tool]) || skip_content_validation }
   validate :not_duplicate_of_last_message, on: :create
+  validate :submission_identity_unchanged, on: :update
 
   scope :sorted, -> { order(created_at: :asc) }
 
@@ -49,6 +53,7 @@ class Message < ApplicationRecord
 
     joins(:chat)
       .where(chats: { account_id: account.id, discarded_at: nil })
+      .where(discarded_at: nil)
       .where("messages.content ILIKE ?", "%#{sanitize_sql_like(query)}%")
       .where(role: %w[user assistant])
       .includes(:chat, :user, :agent)
@@ -57,6 +62,7 @@ class Message < ApplicationRecord
 
   after_create :record_chat_message_time
   after_create :reopen_all_agents_for_initiation, if: :human_message_in_group_chat?
+  after_create :accept_single_resident_dispatch, if: :human_message_in_group_chat?
   after_create_commit :trigger_single_resident_response, if: :human_message_in_group_chat?
   after_create_commit :advance_runtime_response_chain
   after_save_commit :refresh_chat_context_tokens, if: -> { role == "assistant" && saved_change_to_input_tokens? }
@@ -70,19 +76,54 @@ class Message < ApplicationRecord
   end
   private :record_chat_message_time
 
+  # A human message in a room with exactly one resident wakes that resident,
+  # from every entry point (web, app, API, opening message). With live
+  # activity on, the wake is a durable "automatic" MessageDispatch written in
+  # the transaction that accepts the message, so it is the same intent a
+  # mention writes: discard cancels it before claim, a lost reservation lapses
+  # to expired (no recovery; ask again), and the claim rechecks authority (#94 B). Rooms with
+  # more residents keep explicit mentions; PostFromHuman skips mention
+  # dispatch here so one send never makes two wakes.
+  def accept_single_resident_dispatch
+    return unless AgentRuntimeInteraction.live_activity_enabled?
+
+    resident = chat.sole_resident
+    return unless resident && chat.respondable?
+    return unless resident.eligible_for_conversation?
+    return if chat.agent_response_active?(resident)
+
+    @single_resident_dispatch = MessageDispatch.accept!(message: self, target_agent_ids: [ resident.id ], kind: "automatic")
+  end
+  private :accept_single_resident_dispatch
+
+  # Reserve after acceptance commits, inline, so the queued activity exists
+  # before the send returns. A reservation that fails here leaves the
+  # dispatch pending until it expires; the send is still accepted.
+  #
+  # With live activity off there is no durable run to reserve, so the room
+  # keeps master's direct trigger. The two paths are exclusive: a dispatch is
+  # only written while live activity is on.
   def trigger_single_resident_response
+    if @single_resident_dispatch
+      @single_resident_dispatch.reserve!
+      @single_resident_response_triggered = @single_resident_dispatch.reserved?
+    elsif !AgentRuntimeInteraction.live_activity_enabled?
+      trigger_single_resident_directly
+    end
+  rescue StandardError => e
+    Rails.logger.warn "[Message] #{id} accepted; sole-resident wake not reserved: #{e.class}: #{e.message}"
+    @single_resident_response_triggered = false
+  end
+  private :trigger_single_resident_response
+
+  def trigger_single_resident_directly
     chat.with_lock do
       return unless chat.respondable?
 
-      residents = chat.agents.limit(2).to_a
-      return unless residents.one?
-
-      resident = residents.first
-      return unless resident.eligible_for_conversation?
+      resident = chat.sole_resident
+      return unless resident&.eligible_for_conversation?
       return if chat.agent_response_active?(resident)
 
-      # Persist the queued activity before the send returns, just like a manual
-      # trigger. Deferring reservation to another job leaves the page blind.
       @single_resident_response_triggered = chat.trigger_agent_response!(resident).present?
     end
   rescue Agent::RuntimeAvailability::Unavailable
@@ -90,7 +131,7 @@ class Message < ApplicationRecord
     # a failed send. Dispatch also rechecks availability before invoking it.
     @single_resident_response_triggered = false
   end
-  private :trigger_single_resident_response
+  private :trigger_single_resident_directly
 
   def advance_runtime_response_chain
     runtime_interaction&.advance_response_chain! if role == "assistant"
@@ -222,6 +263,26 @@ class Message < ApplicationRecord
     editable_by?(Current.user)
   end
 
+  # A human edit or discard, serialized against this message's wake (#94 B,
+  # step 4b-ii) under the dispatch lock, so it lands wholly before or wholly
+  # after the wake is reserved or claimed. An edit cancels a wake that has not
+  # been reserved and never retargets it; a discard also cancels reserved,
+  # unclaimed runs.
+  def update_as_author(attributes)
+    with_dispatch_lock do
+      updated = update(attributes)
+      message_dispatch&.source_edited! if updated && saved_change_to_content?
+      updated
+    end
+  end
+
+  def discard_as_author!
+    with_dispatch_lock do
+      discard!
+      message_dispatch&.source_discarded!
+    end
+  end
+
   def deletable
     deletable_by?(Current.user)
   end
@@ -232,6 +293,10 @@ class Message < ApplicationRecord
     role == "user" && user_id.present? && chat.manual_responses?
   end
 
+  def with_dispatch_lock(&block)
+    message_dispatch ? message_dispatch.with_lock(&block) : transaction(&block)
+  end
+
   def reopen_all_agents_for_initiation
     chat.chat_agents.closed_for_initiation.update_all(closed_for_initiation_at: nil)
   end
@@ -240,12 +305,20 @@ class Message < ApplicationRecord
     chat.recalculate_context_tokens!
   end
 
+  # A retry is judged against what was first submitted (ADR 0004), so the
+  # identity outlives every edit, discard and restore.
+  def submission_identity_unchanged
+    %w[client_message_id submission_digest].each do |attribute|
+      errors.add(attribute, "cannot change once sent") if attribute_changed?(attribute)
+    end
+  end
+
   def not_duplicate_of_last_message
     return if content.blank? || chat.nil?
 
     # Only check against persisted messages (exclude any unsaved records in the association)
     # Use reorder to override any default scope ordering
-    last_message = chat.messages.where.not(id: nil).reorder(created_at: :desc).first
+    last_message = chat.messages.kept.where.not(id: nil).reorder(created_at: :desc).first
     return if last_message.nil?
 
     if last_message.content == content

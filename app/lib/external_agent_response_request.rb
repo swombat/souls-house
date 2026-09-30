@@ -131,7 +131,7 @@ class ExternalAgentResponseRequest
   end
 
   def requesting_user
-    chat.messages.includes(:user).where(role: "user").order(created_at: :desc).first&.user
+    chat.messages.kept.includes(:user).where(role: "user").order(created_at: :desc).first&.user
   end
 
   def agent_unhealthy?
@@ -191,12 +191,12 @@ class ExternalAgentResponseRequest
   end
 
   def recent_human_message?
-    chat.messages.where(role: "user").where("created_at > ?", 12.hours.ago).exists?
+    chat.messages.kept.where(role: "user").where("created_at > ?", 12.hours.ago).exists?
   end
 
   def conversation_metadata
     agents = chat.agents.order(:name).pluck(:name)
-    humans = chat.messages.includes(:user).where(role: "user").filter_map { |message| message.user&.email_address }.uniq.sort
+    humans = chat.messages.kept.includes(:user).where(role: "user").filter_map { |message| message.user&.email_address }.uniq.sort
 
     <<~TEXT.strip
       Conversation metadata:
@@ -277,13 +277,13 @@ class ExternalAgentResponseRequest
   end
 
   def full_window_omitted_count
-    [ chat.messages.count - full_window_messages.length, 0 ].max
+    [ chat.messages.kept.count - full_window_messages.length, 0 ].max
   end
 
   def full_window_entries
     return @full_window_entries if defined?(@full_window_entries)
 
-    candidates = chat.messages
+    candidates = chat.messages.kept
       .includes(:user, :agent, attachments_attachments: :blob)
       .order(:created_at)
       .last(TRANSCRIPT_MESSAGE_LIMIT)
@@ -338,7 +338,7 @@ class ExternalAgentResponseRequest
     return @delta_messages if defined?(@delta_messages)
 
     @delta_messages = if prior_cursor_message_id
-      chat.messages
+      chat.messages.kept
         .includes(:user, :agent, attachments_attachments: :blob)
         .where("id > ?", prior_cursor_message_id)
         .order(:id)

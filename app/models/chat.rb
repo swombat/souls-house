@@ -77,6 +77,9 @@ class Chat < ApplicationRecord
   after_create_commit -> { GenerateTitleJob.perform_later(self) }, unless: :title?
 
   scope :latest, -> { order(Arel.sql("COALESCE(chats.last_message_at, chats.created_at) DESC"), id: :desc) }
+  # The native app's authority (issue #94): current confirmed membership of an
+  # enabled account, with no site-admin widening. HTTP and cable share it.
+  scope :app_accessible_to, ->(user) { kept.where(account_id: user.confirmed_accounts.select(:id)) }
 
   def activity_at
     last_message_at || created_at
@@ -179,14 +182,14 @@ class Chat < ApplicationRecord
   end
 
   def message_count
-    messages.count
+    messages.kept.count
   end
 
   # Returns paginated messages for display
   # Uses cursor-based pagination with before_id for efficient loading of older messages
   # Returns the most recent N messages that are older than before_id, in ascending order for display
   def messages_page(before_id: nil, limit: 30)
-    scope = messages.includes(:user, :agent, :runtime_interaction).with_attached_attachments.with_attached_audio_recording
+    scope = messages.kept.includes(:user, :agent, :runtime_interaction).with_attached_attachments.with_attached_audio_recording
     scope = scope.where("messages.id < ?", Message.decode_id(before_id)) if before_id.present?
     # Use reorder to replace the association ordering,
     # get the most recent messages by ordering by ID DESC, limit, then reverse for display
@@ -196,7 +199,7 @@ class Chat < ApplicationRecord
   # Worst-case input-token pressure across recent assistant turns. Cached on the row so the chats
   # sidebar can include it without N+1 queries; refreshed by Message after_save_commit.
   def recalculate_context_tokens!
-    value = messages.where(role: "assistant").reorder(created_at: :desc).limit(10).maximum(:input_tokens) || 0
+    value = messages.kept.where(role: "assistant").reorder(created_at: :desc).limit(10).maximum(:input_tokens) || 0
     return if value == context_tokens
     update_columns(context_tokens: value, updated_at: Time.current)
   end
@@ -232,7 +235,7 @@ class Chat < ApplicationRecord
     end
 
     # Add unique human participants from messages
-    messages.unscope(:order).where.not(user_id: nil).distinct.pluck(:user_id).each do |user_id|
+    messages.kept.unscope(:order).where.not(user_id: nil).distinct.pluck(:user_id).each do |user_id|
       user = User.find(user_id)
       participants << {
         type: "human",
@@ -250,12 +253,16 @@ class Chat < ApplicationRecord
     manual_responses?
   end
 
+  # An ArgumentError, so the web still treats it as a refused trigger; the app
+  # API tells it apart as a 409 (#94 B, step 4b-iii).
+  class AlreadyResponding < ArgumentError; end
+
   def trigger_agent_response!(agent)
     raise ArgumentError, "Resident not in this conversation" unless agents.include?(agent)
     agent.require_conversation_runtime!
     raise ArgumentError, "This chat does not support manual responses" unless manual_responses?
     raise ArgumentError, "This conversation is archived or deleted" unless respondable?
-    raise ArgumentError, "#{agent.name} is already responding" if agent_response_active?(agent)
+    raise AlreadyResponding, "#{agent.name} is already responding" if agent_response_active?(agent)
 
     if AgentRuntimeInteraction.live_activity_enabled?
       AgentRuntimeInteraction.reserve!(agent: agent, chat: self, enqueue: true)
@@ -275,7 +282,7 @@ class Chat < ApplicationRecord
       raise Agent::RuntimeAvailability::Unavailable.new("No available residents in this conversation", code: "no_available_agents")
     end
     active_agent = ordered_agents.find { |agent| agent.eligible_for_conversation? && agent_response_active?(agent) }
-    raise ArgumentError, "#{active_agent.name} is already responding" if active_agent
+    raise AlreadyResponding, "#{active_agent.name} is already responding" if active_agent
 
     agent_ids = ordered_agents.map(&:id)
 
@@ -283,18 +290,36 @@ class Chat < ApplicationRecord
     AllAgentsResponseJob.perform_later(self, agent_ids)
   end
 
-  def trigger_mentioned_agents!(content)
-    return if content.blank? || !manual_responses?
+  # The residents a human message asks for, in mention order: eligible and not
+  # already responding. Resolved once, when the message is accepted (#94 B,
+  # step 4b-ii); an edit never re-resolves them.
+  # The room's only resident, or nil when it has none or several.
+  def sole_resident
+    residents = agents.limit(2).to_a
+    residents.one? ? residents.first : nil
+  end
 
-    mentioned_ids = agents.select { |agent|
+  def mentioned_agent_ids(content)
+    return [] if content.blank? || !manual_responses?
+
+    agents.select { |agent|
       content.match?(/@#{Regexp.escape(agent.name)}\b/i)
     }.reject { |agent|
       !agent.eligible_for_conversation? || agent_response_active?(agent)
     }.sort_by { |agent|
       content.index(/@#{Regexp.escape(agent.name)}\b/i)
     }.map(&:id)
+  end
 
-    AllAgentsResponseJob.perform_later(self, mentioned_ids) if mentioned_ids.any?
+  # The conversation's recent runtime interactions, oldest first, with
+  # in-flight live runs reconciled first so a lost run doesn't show as
+  # working. Shared by the web activity panel and the app API.
+  def activity_timeline(limit: 20)
+    scope = agent_runtime_interactions.includes(:agent)
+    active = scope.where(finished_at: nil).where.not(run_id: nil).to_a
+    active.each(&:reconcile_activity!)
+    (active + scope.recent.limit(limit).to_a).uniq
+      .sort_by { |interaction| [ interaction.created_at, interaction.id ] }
   end
 
   def agent_response_active?(agent)

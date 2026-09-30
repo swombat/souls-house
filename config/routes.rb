@@ -187,6 +187,22 @@ Rails.application.routes.draw do
     namespace :app do
       namespace :v1 do
         resource :session, only: [ :show, :destroy ]
+        resource :cable_ticket, only: :create
+        resources :accounts, only: :index do
+          resources :conversations, only: [ :index, :create ]
+        end
+        resources :conversations, only: [] do
+          member do
+            post :invoke
+            get :activity
+          end
+          resources :messages, only: [ :index, :create, :update, :destroy ] do
+            get :dispatch, on: :member, action: :dispatch_status
+            resources :attachments, only: :show
+          end
+          resources :uploads, only: :create
+          get :changes, to: "changes#index"
+        end
       end
     end
 

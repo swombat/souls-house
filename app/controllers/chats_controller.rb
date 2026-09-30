@@ -41,7 +41,7 @@ class ChatsController < ApplicationController
 
     if inertia_prop_requested?(:messages)
       messages = @chat.messages_page
-      has_more = messages.any? && @chat.messages.where("id < ?", messages.first.id).exists?
+      has_more = messages.any? && @chat.messages.kept.where("id < ?", messages.first.id).exists?
       interaction_costs = InteractionCostsByMessage.new(chat: @chat, messages: messages).call
       props[:messages] = messages.map { |message| message_json(message, interaction_costs[message.id]) }
       props[:has_more_messages] = has_more
@@ -209,12 +209,7 @@ class ChatsController < ApplicationController
   end
 
   def runtime_interactions_for_timeline
-    scope = @chat.agent_runtime_interactions.includes(:agent)
-    active = scope.where(finished_at: nil).where.not(run_id: nil).to_a
-    active.each(&:reconcile_activity!)
-    (active + scope.recent.limit(20).to_a).uniq
-      .sort_by { |interaction| [ interaction.created_at, interaction.id ] }
-      .map(&:as_chat_activity_json)
+    @chat.activity_timeline.map(&:as_chat_activity_json)
   end
 
   def message_json(message, interaction_cost = nil)

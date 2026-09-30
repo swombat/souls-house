@@ -4,6 +4,7 @@ module Message::Progress
 
   included do
     before_destroy :preserve_progress_boundary
+    before_discard :preserve_progress_boundary
   end
 
   # Legacy JSON fields remain readable; neither controls grouping or delivery.
@@ -33,10 +34,14 @@ module Message::Progress
   # when the next linked resident post arrives only after the deletion. Keep the seam
   # on the preceding record; no deleted content or author needs to be retained.
   def preserve_progress_boundary
-    previous = chat.messages
+    previous = chat.messages.kept
       .where("created_at < :time OR (created_at = :time AND id < :id)", time: created_at, id: id)
       .reorder(created_at: :desc, id: :desc).first
-    previous.update_column(:progress_break_after, true) if previous&.role == "assistant" && previous.agent_id && previous.runtime_interaction_id
+    return unless previous&.role == "assistant" && previous.agent_id && previous.runtime_interaction_id
+
+    # The seam is client-visible, so it takes a revision like any other change,
+    # inside discard's transaction.
+    previous.update_columns_with_revision(progress_break_after: true)
   end
 
 end

@@ -62,6 +62,36 @@ own process group and waits for root exit before acknowledging cancellation.
 Detached processes outside that group, subagents, browsers, builds and external
 side effects are not covered by the top-level turn cap.
 
+A turn caused by a human message or a native invoke carries its
+`MessageDispatch`. Its claim happened within the dispatch's ten-minute initial
+window, but it can then wait queued for capacity. Admission therefore rechecks
+the dispatch before the turn is submitted: a discarded source message, an author
+who lost membership, live activity switched off, or a dispatch past its six-hour
+no-new-starts boundary cancels the queued turn instead of starting it. A turn
+already submitted to the runtime is not recalled; queueing or reservation alone
+is never execution.
+
+Nothing is recovered automatically (consultation BjAPDe: Daniel's "just click
+again", Chris's objection to a retry buffer). If a wake's enqueue is lost, a
+reserved run is never claimed, or a chain's hand-on to the next resident is
+lost, nothing re-sends it. The per-minute `MessageDispatchSweepJob` only
+records what lapsed: a pending dispatch past its ten-minute expiry becomes
+`expired`, an unclaimed run past its deadline is cancelled, and a dispatch past
+the six-hour boundary is closed (`continuation_not_started_in_time` if a chain
+step it owed never started). A native send retry settles status the same way
+and never re-drives. The person asks again.
+
+The remaining boundaries, stated narrowly: a first run must be claimed within
+ten minutes of acceptance; each later link of an "Ask all" chain is started
+only by the previous resident's normal hand-on, with no time limit of its own,
+and no new link starts after six hours from acceptance; admission rechecks the
+dispatch before a queued turn's first runtime submission. None of these
+bounds when a turn actually runs once submitted. A turn whose outcome is
+unknown keeps occupying capacity and blocks another turn for the same runtime
+session (enqueue refuses it as busy; admission skips that session). That is a
+per-session guard, not a guarantee that no other request for the resident
+exists elsewhere.
+
 Telegram refuses a second pending request for the same session with the existing
 busy response. Its job retries and rebuilds the message window after completion,
 instead of storing overlapping stale transcripts and executing them twice.

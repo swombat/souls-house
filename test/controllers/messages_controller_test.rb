@@ -80,6 +80,17 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_chat_path(@account, @chat)
   end
 
+  test "a failure after the send committed still reports it sent" do
+    assert_difference "Message.count", 1 do
+      ModerateMessageJob.stub(:perform_later, ->(*) { raise "moderation queue down" }) do
+        post account_chat_messages_path(@account, @chat), params: { message: { content: "Committed" } }
+      end
+    end
+
+    assert_redirected_to account_chat_path(@account, @chat)
+    assert_nil flash[:alert]
+  end
+
   test "should trigger AI response job when message is created" do
     perform_enqueued_jobs do
       post account_chat_messages_path(@account, @chat), params: {
@@ -129,6 +140,27 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_includes filenames, "test_document.pdf"
     assert_includes filenames, "test_audio.mp3"
     assert_redirected_to account_chat_path(@account, @chat)
+  end
+
+  test "a file with no caption is a message on the web too" do
+    file = fixture_file_upload("test_image.png", "image/png")
+
+    assert_difference "Message.count" do
+      post account_chat_messages_path(@account, @chat), params: {
+        message: { content: "" },
+        files: [ file ]
+      }
+    end
+
+    message = Message.last
+    assert_equal "", message.content.to_s
+    assert_equal [ "test_image.png" ], message.attachments.map { |f| f.filename.to_s }
+  end
+
+  test "an empty message with no file is still refused on the web" do
+    assert_no_difference "Message.count" do
+      post account_chat_messages_path(@account, @chat), params: { message: { content: "" } }
+    end
   end
 
   test "should create message without files (backwards compatibility)" do
@@ -378,21 +410,48 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
 
   # Delete Message feature tests
 
-  test "deletes message" do
+  test "deletes message by discarding it" do
     message = @chat.messages.create!(user: @user, role: "user", content: "To be deleted")
 
-    assert_difference "Message.count", -1 do
+    assert_no_difference "Message.count" do
+      assert_difference "Message.kept.count", -1 do
+        delete message_path(message), as: :json
+      end
+    end
+
+    assert_response :ok
+    assert message.reload.discarded?
+    assert_equal "To be deleted", message.content
+  end
+
+  test "deleting an already-deleted message is a no-op" do
+    message = @chat.messages.create!(user: @user, role: "user", content: "Twice")
+    delete message_path(message), as: :json
+    revision = message.reload.revision
+
+    assert_no_difference "AuditLog.count" do
       delete message_path(message), as: :json
     end
 
     assert_response :ok
+    assert_equal revision, message.reload.revision
+  end
+
+  test "a deleted message cannot be edited" do
+    message = @chat.messages.create!(user: @user, role: "user", content: "Gone")
+    message.discard!
+
+    patch message_path(message), params: { message: { content: "Back" } }, as: :json
+
+    assert_response :not_found
+    assert_equal "Gone", message.reload.content
   end
 
   test "can delete message even with subsequent messages" do
     message = @chat.messages.create!(user: @user, role: "user", content: "Original")
     @chat.messages.create!(role: "assistant", content: "Response")
 
-    assert_difference "Message.count", -1 do
+    assert_difference "Message.kept.count", -1 do
       delete message_path(message), as: :json
     end
 
@@ -404,7 +463,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     other_user.profile.update!(first_name: "Other", last_name: "User")
     message = @chat.messages.create!(user: other_user, role: "user", content: "Their message")
 
-    assert_no_difference "Message.count" do
+    assert_no_difference "Message.kept.count" do
       delete message_path(message), as: :json
     end
 
@@ -414,7 +473,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
   test "cannot delete assistant messages" do
     message = @chat.messages.create!(role: "assistant", content: "AI response")
 
-    assert_no_difference "Message.count" do
+    assert_no_difference "Message.kept.count" do
       delete message_path(message), as: :json
     end
 
@@ -428,7 +487,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     other_chat = other_account.chats.create!(model_id: "gpt-4o")
     other_message = other_chat.messages.create!(user: other_user, role: "user", content: "Their message")
 
-    assert_no_difference "Message.count" do
+    assert_no_difference "Message.kept.count" do
       delete message_path(other_message), as: :json
     end
 
@@ -506,7 +565,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     admin_user = users(:site_admin_user)
     post login_path, params: { email_address: admin_user.email_address, password: "password123" }
 
-    assert_difference "Message.count", -1 do
+    assert_difference "Message.kept.count", -1 do
       delete message_path(message), as: :json
     end
 
@@ -522,11 +581,12 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     group_chat.agent_ids = [ agent.id, other.id ]
     group_chat.save!
 
-    assert_enqueued_with(job: AllAgentsResponseJob) do
+    assert_enqueued_with(job: MessageDispatchJob) do
       post account_chat_messages_path(@account, group_chat), params: {
         message: { content: "Hey @Grok, what do you think?" }
       }
     end
+    assert_equal [ agent.id ], group_chat.messages.last.message_dispatch.target_agent_ids
   end
 
   test "should not auto-trigger when no agents mentioned in group chat" do
@@ -536,11 +596,12 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     group_chat.agent_ids = [ agent.id, other.id ]
     group_chat.save!
 
-    assert_no_enqueued_jobs(only: [ AllAgentsResponseJob, ManualAgentResponseJob ]) do
+    assert_no_enqueued_jobs(only: [ MessageDispatchJob, AllAgentsResponseJob, ManualAgentResponseJob ]) do
       post account_chat_messages_path(@account, group_chat), params: {
         message: { content: "Hello everyone" }
       }
     end
+    assert_nil group_chat.messages.last.message_dispatch
   end
 
   test "should not enqueue AiResponseJob for group chat" do
@@ -615,6 +676,71 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Message with bad audio", message.content
     assert_not message.audio_recording.attached?
     assert_not message.audio_source
+  end
+
+  # #94 B, step 4b-ii: acceptance (message, audit, wake intent) is one
+  # transaction; the wake is enqueued after it commits.
+  test "a failed wake enqueue after acceptance is still a created send, left pending for the sweeper" do
+    chat = mention_chat
+    MessageDispatchJob.stub(:perform_later, ->(*) { raise "synthetic enqueue failure" }) do
+      post account_chat_messages_path(@account, chat), params: { message: { content: "Hello @Grok" } }, as: :json
+    end
+
+    assert_response :created
+    message = chat.messages.last
+    assert AuditLog.where(action: "create_message", auditable: message).exists?
+    assert_equal "pending", message.message_dispatch.status
+  end
+
+  test "a failing create audit saves and wakes nothing" do
+    chat = mention_chat
+    dispatched = false
+    assert_no_difference [ "Message.count", "MessageDispatch.count" ] do
+      AuditLog.stub(:create!, ->(**) { raise "synthetic audit failure" }) do
+        MessageDispatchJob.stub(:perform_later, ->(*) { dispatched = true }) do
+          post account_chat_messages_path(@account, chat), params: { message: { content: "Hello @Grok" } }, as: :json
+        end
+      end
+    end
+
+    assert_response :unprocessable_entity
+    assert_not dispatched
+  end
+
+  test "a mention while live activity is off is refused truthfully and saves nothing" do
+    chat = mention_chat
+    with_live_activity_off do
+      assert_no_difference [ "Message.count", "MessageDispatch.count", "AuditLog.count" ] do
+        post account_chat_messages_path(@account, chat), params: { message: { content: "Hello @Grok" } }, as: :json
+      end
+      assert_response :service_unavailable
+      assert_match "not sent", response.parsed_body["errors"].first
+
+      assert_difference "Message.count" do
+        post account_chat_messages_path(@account, chat), params: { message: { content: "No mention" } }, as: :json
+      end
+      assert_response :created
+    end
+  end
+
+  private
+
+  def with_live_activity_off
+    previous = ENV["SOULSHOUSE_LIVE_ACTIVITY"]
+    ENV["SOULSHOUSE_LIVE_ACTIVITY"] = "0"
+    yield
+  ensure
+    ENV["SOULSHOUSE_LIVE_ACTIVITY"] = previous
+  end
+
+  def mention_chat
+    agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
+    # Two residents: with one, a human message wakes it automatically instead.
+    bystander = @account.agents.create!(name: "Bystander", system_prompt: "Test", runtime: "external")
+    chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
+    chat.agent_ids = [ agent.id, bystander.id ]
+    chat.save!
+    chat
   end
 
 end

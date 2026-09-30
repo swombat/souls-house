@@ -70,6 +70,7 @@ class Account < ApplicationRecord
   before_validation :set_default_name, on: :create
   before_validation :generate_slug, on: :create
   before_destroy :mark_memberships_for_skip_check, prepend: true
+  after_update_commit :disconnect_members_app_cable, if: -> { saved_change_to_disabled_at? && disabled? }
 
   ACCOUNT_LIMIT_MESSAGE = "This house has reached its account limit. New signups and accounts are temporarily closed."
 
@@ -273,6 +274,12 @@ class Account < ApplicationRecord
   class NotAuthorized < StandardError; end
 
   private
+
+  # A disabled account leaves its members' confirmed accounts, so their
+  # native-app cable connections are dropped (issue #94 B, step 6).
+  def disconnect_members_app_cable
+    User.where(id: memberships.select(:user_id)).find_each { |user| AppSession.disconnect_cable_for(user) }
+  end
 
   # Save validations and insertion share a transaction. Hold the settings row
   # lock until commit so concurrent signups cannot both take the last place.

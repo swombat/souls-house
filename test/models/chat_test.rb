@@ -586,62 +586,52 @@ test "Chat does not respond to :thinking_compatible_for? or :total_tokens" do
   refute chat.respond_to?(:total_tokens)
 end
 
-  # Auto-trigger mentioned agents tests
+  # Mention resolution tests (the wake itself is MessageDispatch, #94 B 4b-ii)
 
-  test "trigger_mentioned_agents! does nothing for non-group chat" do
+  test "mentioned_agent_ids finds no one for non-group chat" do
     chat = Chat.create!(account: @account, model_id: "openrouter/auto")
 
-    assert_no_enqueued_jobs(only: AllAgentsResponseJob) do
-      chat.trigger_mentioned_agents!("Hello Claude")
-    end
+    assert_empty chat.mentioned_agent_ids("Hello Claude")
   end
 
-  test "trigger_mentioned_agents! does nothing for blank content" do
+  test "mentioned_agent_ids finds no one for blank content" do
     agent = @account.agents.create!(name: "Claude", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent.id ]
     chat.save!
 
-    assert_no_enqueued_jobs(only: AllAgentsResponseJob) do
-      chat.trigger_mentioned_agents!("")
-      chat.trigger_mentioned_agents!(nil)
-    end
+    assert_empty chat.mentioned_agent_ids("")
+    assert_empty chat.mentioned_agent_ids(nil)
   end
 
-  test "trigger_mentioned_agents! enqueues job for @mentioned agent" do
+  test "mentioned_agent_ids finds an @mentioned agent" do
     agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent.id ]
     chat.save!
 
-    assert_enqueued_with(job: AllAgentsResponseJob, args: [ chat, [ agent.id ] ]) do
-      chat.trigger_mentioned_agents!("Hey @Grok, what do you think?")
-    end
+    assert_equal [ agent.id ], chat.mentioned_agent_ids("Hey @Grok, what do you think?")
   end
 
-  test "trigger_mentioned_agents! does not trigger without @ prefix" do
+  test "mentioned_agent_ids needs the @ prefix" do
     agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent.id ]
     chat.save!
 
-    assert_no_enqueued_jobs(only: AllAgentsResponseJob) do
-      chat.trigger_mentioned_agents!("Hey Grok, what do you think?")
-    end
+    assert_empty chat.mentioned_agent_ids("Hey Grok, what do you think?")
   end
 
-  test "trigger_mentioned_agents! uses word boundaries after @" do
+  test "mentioned_agent_ids uses word boundaries after @" do
     agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent.id ]
     chat.save!
 
-    assert_no_enqueued_jobs(only: AllAgentsResponseJob) do
-      chat.trigger_mentioned_agents!("I'm @groking this concept")
-    end
+    assert_empty chat.mentioned_agent_ids("I'm @groking this concept")
   end
 
-  test "trigger_mentioned_agents! detects multiple @mentioned agents and excludes unmentioned" do
+  test "mentioned_agent_ids detects multiple @mentioned agents and excludes unmentioned" do
     agent1 = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     agent2 = @account.agents.create!(name: "Claude", system_prompt: "Test", runtime: "external")
     agent3 = @account.agents.create!(name: "Wing", system_prompt: "Test", runtime: "external")
@@ -649,49 +639,35 @@ end
     chat.agent_ids = [ agent1.id, agent2.id, agent3.id ]
     chat.save!
 
-    assert_enqueued_with(job: AllAgentsResponseJob) do
-      chat.trigger_mentioned_agents!("Hey @Grok and @Claude, what do you think?")
-    end
-
-    job = enqueued_jobs.find { |j| j["job_class"] == "AllAgentsResponseJob" }
-    mentioned_ids = job["arguments"].last
-    assert_includes mentioned_ids, agent1.id
-    assert_includes mentioned_ids, agent2.id
-    assert_not_includes mentioned_ids, agent3.id
+    assert_equal [ agent1.id, agent2.id ], chat.mentioned_agent_ids("Hey @Grok and @Claude, what do you think?")
   end
 
-  test "trigger_mentioned_agents! only matches agents in this chat" do
+  test "mentioned_agent_ids only matches agents in this chat" do
     agent_in_chat = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     @account.agents.create!(name: "Claude", system_prompt: "Test")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent_in_chat.id ]
     chat.save!
 
-    assert_enqueued_with(job: AllAgentsResponseJob, args: [ chat, [ agent_in_chat.id ] ]) do
-      chat.trigger_mentioned_agents!("Hey @Grok and @Claude")
-    end
+    assert_equal [ agent_in_chat.id ], chat.mentioned_agent_ids("Hey @Grok and @Claude")
   end
 
-  test "trigger_mentioned_agents! handles names with special regex characters" do
+  test "mentioned_agent_ids handles names with special regex characters" do
     agent = @account.agents.create!(name: "C++Bot", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent.id ]
     chat.save!
 
-    assert_enqueued_with(job: AllAgentsResponseJob, args: [ chat, [ agent.id ] ]) do
-      chat.trigger_mentioned_agents!("Hey @C++Bot, help me")
-    end
+    assert_equal [ agent.id ], chat.mentioned_agent_ids("Hey @C++Bot, help me")
   end
 
-  test "trigger_mentioned_agents! works with multi-word agent names" do
+  test "mentioned_agent_ids works with multi-word agent names" do
     agent = @account.agents.create!(name: "GPT Test Agent", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
     chat.agent_ids = [ agent.id ]
     chat.save!
 
-    assert_enqueued_with(job: AllAgentsResponseJob, args: [ chat, [ agent.id ] ]) do
-      chat.trigger_mentioned_agents!("Hey @GPT Test Agent, can you please respond?")
-    end
+    assert_equal [ agent.id ], chat.mentioned_agent_ids("Hey @GPT Test Agent, can you please respond?")
   end
 
 end

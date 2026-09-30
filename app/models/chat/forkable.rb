@@ -16,10 +16,10 @@ module Chat::Forkable
 
       copied_messages = {}
       copied_tool_calls = {}
-      messages.includes(:user, :agent, :tool_calls, attachments_attachments: :blob).order(:created_at).each do |message|
+      messages.kept.includes(:user, :agent, :tool_calls, attachments_attachments: :blob).order(:created_at).each do |message|
         copied_messages[message.id] = copy_message_to_fork(message, forked, copied_tool_calls)
       end
-      messages.where.not(tool_call_id: nil).each do |message|
+      messages.kept.where.not(tool_call_id: nil).each do |message|
         copied_messages.fetch(message.id).update!(parent_tool_call: copied_tool_calls[message.tool_call_id])
       end
 

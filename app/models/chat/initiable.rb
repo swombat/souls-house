@@ -8,6 +8,8 @@ module Chat::Initiable
     scope :initiated, -> { where.not(initiated_by_agent_id: nil) }
     scope :awaiting_human_response, -> {
       initiated.where.not(
+        # Deliberately unscoped: a discarded reply still happened, and
+        # forgetting it would reopen the room against the initiation cap.
         id: Message.where(role: "user").where.not(user_id: nil).select(:chat_id)
       )
     }

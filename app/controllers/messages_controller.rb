@@ -10,7 +10,7 @@ class MessagesController < ApplicationController
 
   def index
     @messages = @chat.messages_page(before_id: params[:before_id])
-    @has_more = @messages.any? && @chat.messages.where("id < ?", @messages.first.id).exists?
+    @has_more = @messages.any? && @chat.messages.kept.where("id < ?", @messages.first.id).exists?
     interaction_costs = InteractionCostsByMessage.new(chat: @chat, messages: @messages).call
 
     render json: {
@@ -21,38 +21,39 @@ class MessagesController < ApplicationController
   end
 
   def create
-    @message = @chat.messages.build(
-      message_params.merge(user: Current.user, role: "user")
-    )
-    @message.attachments.attach(params[:files]) if params[:files].present?
-
-    if params[:audio_signed_id].present?
-      begin
-        @message.audio_recording.attach(params[:audio_signed_id])
-        @message.audio_source = true
-      rescue ActiveSupport::MessageVerifier::InvalidSignature
-        Rails.logger.warn "Invalid audio_signed_id for message in chat #{@chat.id}"
-      end
-    end
-
     draft = if params.key?(:draft_revision)
       # Drafts never use the account administrator's widened browsing authority.
       Current.user.confirmed_accounts.find(@chat.account_id)
       ConversationDraft.for(chat: @chat, user: Current.user)
     end
-    saved = draft ? draft.send_message!(@message, revision: params[:draft_revision]) : @message.save
 
-    if saved
-      audit("create_message", @message, **message_params.to_h)
-      if @chat.manual_responses? && @chat.agents.count > 1
-        @chat.trigger_mentioned_agents!(@message.content)
-      end
+    # One acceptance transaction: the message, its audit, the draft's clear and
+    # any wake. A stale draft raises Conflict before anything is written.
+    result = Messages::PostFromHuman.new(
+      chat: @chat,
+      user: Current.user,
+      content: message_params[:content],
+      files: params[:files],
+      audio_signed_id: params[:audio_signed_id],
+      draft: draft,
+      draft_revision: params[:draft_revision]
+    ).call(on_persisted: ->(message) { audit("create_message", message, **message_params.to_h) })
+    @message = result.message
 
+    if result.created?
       respond_to do |format|
         format.html { redirect_to account_chat_path(@chat.account, @chat) }
         format.json { render json: @message.as_json.merge(draft ? { draft: draft.as_json } : {}), status: :created }
       end
-    elsif @message.errors.added?(:base, :duplicate_message)
+    elsif result.dispatch_unavailable?
+      # Nothing was saved: a send that mentions residents needs a durable wake,
+      # and there is none to reserve while live activity is off (#94 B, 4b-ii).
+      notice = "Residents can't be woken right now, so your message was not sent. Please try again shortly."
+      respond_to do |format|
+        format.html { redirect_back_or_to account_chat_path(@chat.account, @chat), alert: notice }
+        format.json { render json: { errors: [ notice ], retryable: true }, status: :service_unavailable }
+      end
+    elsif result.duplicate?
       # Duplicate message - just refresh the page silently
       respond_to do |format|
         format.html { redirect_to account_chat_path(@chat.account, @chat) }
@@ -77,7 +78,7 @@ class MessagesController < ApplicationController
 
   def update
     old_content = @message.content
-    if @message.update(message_params)
+    if @message.update_as_author(message_params)
       audit(:update_message, @message, old_content: old_content, new_content: @message.content)
       head :ok
     else
@@ -85,9 +86,13 @@ class MessagesController < ApplicationController
     end
   end
 
+  # Delete is discard (#92): the row and its content stay, hidden from every
+  # transcript and restorable by an admin. Repeating it is a no-op.
   def destroy
-    audit(:delete_message, @message, content: @message.content)
-    @message.destroy!
+    unless @message.discarded?
+      audit(:delete_message, @message, content: @message.content)
+      @message.discard_as_author!
+    end
     head :ok
   end
 
@@ -98,7 +103,8 @@ class MessagesController < ApplicationController
   end
 
   def set_message
-    @message = Message.find(params[:id])
+    # Only delete may find an already-discarded message, so a repeat is a no-op.
+    @message = (action_name == "destroy" ? Message : Message.kept).find(params[:id])
     @chat = if Current.user.site_admin
       Chat.find(@message.chat_id)
     else

@@ -15,9 +15,22 @@ module AgentRuntimeInteraction::ResponseChain
     AllAgentsResponseJob.perform_later(chat, response_chain_agent_ids, after_interaction_id: id)
   end
 
+  # Owed, and the dispatch that started the chain still allows new starts.
   def response_chain_ready?
+    return false unless response_chain_owed?
+
+    !(message_dispatch && message_dispatch.recovery_closed?)
+  end
+
+  # Its turn came: the next resident is due, whether or not it may still start.
+  def response_chain_owed?
     return false if response_chain_agent_ids.empty? || response_chain_advanced_at?
     return false unless chat&.respondable? && chat.manual_responses?
+    # A cancelled or expired request never advances, whatever its runs did.
+    return false if message_dispatch && !message_dispatch.reload.reserved?
+    # Nor does a run of it that never started: a cancellation (its deadline
+    # passed unclaimed, or its claim was refused) is not a turn taken.
+    return false if message_dispatch && execution_state == "cancelled"
 
     posted = linked_messages.where(role: "assistant", agent_id: agent_id, chat_id: chat_id).exists?
     return true if posted
