@@ -33,6 +33,9 @@ class ResidentTurnPollJob < ApplicationJob
         turn.record_check!(state: "unknown", diagnostic: "Accepted execution missing from runtime ledger")
         return
       end
+      # Admission is not submission: authority can lapse between the two.
+      turn.withdraw_unless_deliverable!
+      turn.reload
       turn.prepare!
       response = if turn.cancel_requested_at?
         client.cancel_turn(turn.dispatch_id, payload: JSON.parse(turn.payload), ledger_id: turn.ledger_id)

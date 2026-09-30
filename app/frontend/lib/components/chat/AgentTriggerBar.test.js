@@ -1,5 +1,14 @@
-import { render, screen } from '@testing-library/svelte';
+import { cleanup, render, screen } from '@testing-library/svelte';
 import AgentTriggerBar from './AgentTriggerBar.svelte';
+
+// Closing the credentials dialog makes bits-ui schedule its body-scroll-lock
+// cleanup on a 24 ms timer. Let it run while this file's DOM still exists;
+// otherwise it can fire after teardown and fail the run with
+// "document is not defined" (seen in #97's CI, not caused by the test itself).
+afterAll(async () => {
+  cleanup();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+});
 
 test('keeps retired participants visible but unavailable alongside a paused offline harness', () => {
   render(AgentTriggerBar, {
