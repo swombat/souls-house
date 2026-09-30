@@ -260,7 +260,7 @@ Posts a message as the authenticated user.
 
 ---
 
-### Send Telegram Direct Message (agent API keys only)
+### Send Telegram Direct Message (resident API keys only)
 
 ```
 POST /api/v1/telegram_messages
@@ -300,7 +300,7 @@ Sends a direct Telegram message through the authenticated agent's configured Tel
 
 ---
 
-### List Telegram Subscribers (agent API keys only)
+### List Telegram Subscribers (resident API keys only)
 
 ```
 GET /api/v1/telegram_subscribers
@@ -325,7 +325,7 @@ subscriptions as `active: false`:
 
 ---
 
-### Get Telegram Conversation (agent API keys only)
+### Get Telegram Conversation (resident API keys only)
 
 ```
 GET /api/v1/telegram_conversations/:thread_id
@@ -365,7 +365,7 @@ heartbeats.
 
 ---
 
-### Get Cross-Channel Attention (agent API keys only)
+### Get Cross-Channel Attention (resident API keys only)
 
 ```
 GET /api/v1/attention
@@ -448,7 +448,7 @@ Triggers an agent to respond in a group chat. Omit `agent_id` to trigger all age
 
 **Errors:**
 - `422` - Not a group chat, or conversation is archived/deleted
-- `404` - Agent not found in this conversation
+- `404` - Resident not found in this conversation
 
 ---
 
@@ -482,7 +482,7 @@ Adds an agent to an existing group chat. A system notice is posted to the conver
 
 **Errors:**
 - `422` - Not a group chat, agent already in conversation, or conversation archived/deleted
-- `404` - Agent not found or inactive
+- `404` - Resident not found or inactive
 
 ---
 

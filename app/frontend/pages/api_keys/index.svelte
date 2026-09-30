@@ -48,7 +48,7 @@
       <div>
         <h2 class="text-lg font-semibold">Chaos Resident Access</h2>
         <p class="text-sm text-muted-foreground">
-          Each system-managed key is bound to the named agent. Calls and messages made with it appear as that agent, not
+          Each system-managed key is bound to the named resident. Calls and messages made with it appear as that resident, not
           as you.
         </p>
       </div>

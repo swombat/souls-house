@@ -308,7 +308,7 @@ class Agent < ApplicationRecord
 
     return unless EXTERNALLY_MANAGED_ATTRIBUTES.any? { |field| will_save_change_to_attribute?(field) }
 
-    errors.add(:base, "Identity and runtime-managed fields are agent-owned and read-only in souls.house")
+    errors.add(:base, "Identity and runtime-managed fields are resident-owned and read-only in souls.house")
   end
 
 end

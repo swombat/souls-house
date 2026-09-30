@@ -8,7 +8,7 @@ module Api
 
       def create
         unless current_api_agent
-          return render json: { error: "YouTube reading is only available to agent API keys" }, status: :forbidden
+          return render json: { error: "YouTube reading is only available to resident API keys" }, status: :forbidden
         end
 
         result = YoutubeVideoReader.new.call(

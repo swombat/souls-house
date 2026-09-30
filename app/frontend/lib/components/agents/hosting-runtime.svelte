@@ -46,7 +46,7 @@
   {#if agent.deprecated}
     <div class="space-y-3">
       <p class="text-sm text-muted-foreground">
-        Deprecated — this agent has no supported harness and cannot respond. Its history and identity records remain
+        Deprecated — this resident has no supported harness and cannot respond. Its history and identity records remain
         available.
       </p>
     </div>

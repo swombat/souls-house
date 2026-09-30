@@ -33,7 +33,7 @@ class Agents::RuntimeChecksController < ApplicationController
 
   def send_orientation
     unless @agent.external? && @agent.health_state == "healthy"
-      render json: { error: "Agent must be healthy and externally hosted before orientation" }, status: :unprocessable_entity
+      render json: { error: "Resident must be healthy and externally hosted before orientation" }, status: :unprocessable_entity
       return
     end
 

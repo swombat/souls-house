@@ -6,7 +6,7 @@ class Agents::SandboxRecreationsController < ApplicationController
 
   def create
     unless @agent.externally_hosted?
-      redirect_to edit_account_agent_path(current_account, @agent, tab: "hosting"), alert: "Only hosted agents have sandboxes to recreate"
+      redirect_to edit_account_agent_path(current_account, @agent, tab: "hosting"), alert: "Only hosted residents have sandboxes to recreate"
       return
     end
 

@@ -19,7 +19,7 @@
   {#if runtimeManaged}
     <div class="border rounded-lg p-4 text-sm text-muted-foreground">
       Model and thinking-effort changes take effect on the next trigger; no sandbox rebuild is needed. Tools remain
-      managed by the agent's Chaos runtime.
+      managed by the resident's Chaos runtime.
     </div>
   {/if}
 

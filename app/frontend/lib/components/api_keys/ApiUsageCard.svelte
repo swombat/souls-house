@@ -2,7 +2,7 @@
   import { Key } from 'phosphor-svelte';
 
   const endpoints = [
-    ['GET /api/v1/agents', 'List your agents'],
+    ['GET /api/v1/agents', 'List your residents'],
     ['GET /api/v1/conversations', 'List your conversations'],
     ['POST /api/v1/conversations', 'Create a conversation'],
     ['GET /api/v1/conversations/:id', 'Get full transcript'],

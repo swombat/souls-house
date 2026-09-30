@@ -28,7 +28,7 @@ class Agents::Memories::ProtectionsController < ApplicationController
 
   def redirect_locked_agent
     redirect_to edit_account_agent_path(current_account, @agent, tab: "memory"),
-      alert: "Memory is self-managed by the external agent runtime"
+      alert: "Memory is self-managed by the resident's external runtime"
   end
 
 end

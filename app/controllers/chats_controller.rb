@@ -68,13 +68,13 @@ class ChatsController < ApplicationController
 
   def create
     unless available_agents_scope.exists?
-      redirect_to agent_creation_path, alert: "Create an agent before starting a conversation"
+      redirect_to agent_creation_path, alert: "Create a resident before starting a conversation"
       return
     end
 
     agents = selected_agents
     if agents.empty?
-      redirect_to new_account_chat_path(current_account), alert: "Select at least one agent"
+      redirect_to new_account_chat_path(current_account), alert: "Select at least one resident"
       return
     end
 
@@ -89,7 +89,7 @@ class ChatsController < ApplicationController
     audit("create_chat", @chat, **chat_create_params.to_h)
     redirect_to account_chat_path(current_account, @chat)
   rescue ActiveRecord::RecordNotFound
-    redirect_to new_account_chat_path(current_account), alert: "Select valid agents from this account"
+    redirect_to new_account_chat_path(current_account), alert: "Select valid residents from this account"
   end
 
   def update
@@ -187,7 +187,7 @@ class ChatsController < ApplicationController
   def require_available_agents
     return if available_agents_scope.exists?
 
-    redirect_to agent_creation_path, alert: "Create an agent before starting a conversation"
+    redirect_to agent_creation_path, alert: "Create a resident before starting a conversation"
   end
 
   def agent_creation_path

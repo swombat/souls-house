@@ -26,7 +26,7 @@ module Api
 
       def announce
         unless @agent.hosted?
-          return render json: { error: "Agent is deprecated", code: "agent_deprecated" }, status: :conflict
+          return render json: { error: "Resident is deprecated", code: "agent_deprecated" }, status: :conflict
         end
 
         @agent.update!(

@@ -15,7 +15,7 @@
     </p>
     <Button onclick={onCreate}>
       <Plus class="mr-2 size-4" />
-      Create Your First Agent
+      Create Your First Resident
     </Button>
   </CardContent>
 </Card>

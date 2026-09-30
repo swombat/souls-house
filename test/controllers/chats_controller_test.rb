@@ -67,7 +67,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     get account_chats_path(@account)
 
     assert_redirected_to account_agents_path(@account, create: true)
-    assert_equal "Create an agent before starting a conversation", flash[:alert]
+    assert_equal "Create a resident before starting a conversation", flash[:alert]
   end
 
   test "new redirects to agent creation when no active agents exist" do
@@ -76,7 +76,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     get new_account_chat_path(@account)
 
     assert_redirected_to account_agents_path(@account, create: true)
-    assert_equal "Create an agent before starting a conversation", flash[:alert]
+    assert_equal "Create a resident before starting a conversation", flash[:alert]
   end
 
   test "should show chat" do
@@ -376,7 +376,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to new_account_chat_path(@account)
-    assert_equal "Select at least one agent", flash[:alert]
+    assert_equal "Select at least one resident", flash[:alert]
   end
 
   test "should not create chat with an agent from another account" do
@@ -387,7 +387,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to new_account_chat_path(@account)
-    assert_equal "Select valid agents from this account", flash[:alert]
+    assert_equal "Select valid residents from this account", flash[:alert]
   end
 
   test "should destroy chat" do

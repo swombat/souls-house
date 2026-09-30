@@ -11,8 +11,8 @@ class Admin::JobsController < ApplicationController
     },
     "hosted_agent_runtime_reconcile" => {
       job_class: HostedAgentRuntimeReconcileJob,
-      name: "Reconcile Hosted Agent Runtime",
-      description: "Recreates hosted agent sandbox containers whose runtime image is stale, preserving identity and Chaos volumes."
+      name: "Reconcile Hosted Resident Runtime",
+      description: "Recreates hosted resident sandbox containers whose runtime image is stale, preserving identity and Chaos volumes."
     }
   }.freeze
 

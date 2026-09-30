@@ -49,7 +49,7 @@
         {#if availableAgents.length > 0}
           <DropdownMenu.Item onclick={onAssignAgent}>
             <Robot size={16} class="mr-2" weight="duotone" />
-            Assign to Agent
+            Assign to Resident
           </DropdownMenu.Item>
         {/if}
         <DropdownMenu.Separator />
@@ -57,7 +57,7 @@
       {#if chat.manual_responses && addableAgents.length > 0}
         <DropdownMenu.Item onclick={onAddAgent}>
           <Robot size={16} class="mr-2" weight="duotone" />
-          Add Agent
+          Add Resident
         </DropdownMenu.Item>
       {/if}
 

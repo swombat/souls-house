@@ -16,7 +16,7 @@
   }
 
   function disconnect() {
-    if (confirm('Disconnect GitHub? Commit data will no longer be shared with agents.')) {
+    if (confirm('Disconnect GitHub? Commit data will no longer be shared with residents.')) {
       router.delete('/github_integration');
     }
   }

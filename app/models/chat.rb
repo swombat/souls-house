@@ -22,7 +22,7 @@ class Chat < ApplicationRecord
   has_many :chat_agents, dependent: :destroy
   has_many :agents, through: :chat_agents
   has_many :agent_runtime_interactions, dependent: :nullify
-  validates :agents, length: { minimum: 1, message: "must include at least one agent" }, if: :manual_responses?
+  validates :agents, length: { minimum: 1, message: "must include at least one resident" }, if: :manual_responses?
 
   json_attributes :title_or_default, :model_id, :model_label, :ai_model_name, :updated_at_formatted,
                   :updated_at_short, :activity_at, :message_count, :context_tokens, :cost_tokens, :reasoning_tokens, :web_access, :manual_responses,
@@ -251,7 +251,7 @@ class Chat < ApplicationRecord
   end
 
   def trigger_agent_response!(agent)
-    raise ArgumentError, "Agent not in this conversation" unless agents.include?(agent)
+    raise ArgumentError, "Resident not in this conversation" unless agents.include?(agent)
     agent.require_conversation_runtime!
     raise ArgumentError, "This chat does not support manual responses" unless manual_responses?
     raise ArgumentError, "This conversation is archived or deleted" unless respondable?
@@ -266,13 +266,13 @@ class Chat < ApplicationRecord
 
   def trigger_all_agents_response!
     raise ArgumentError, "This chat does not support manual responses" unless manual_responses?
-    raise ArgumentError, "No agents in this conversation" if agents.empty?
+    raise ArgumentError, "No residents in this conversation" if agents.empty?
     raise ArgumentError, "This conversation is archived or deleted" unless respondable?
 
     # Get agent IDs in a consistent order
     ordered_agents = agents.order(:id).to_a
     unless ordered_agents.any?(&:eligible_for_conversation?)
-      raise Agent::RuntimeAvailability::Unavailable.new("No available agents in this conversation", code: "no_available_agents")
+      raise Agent::RuntimeAvailability::Unavailable.new("No available residents in this conversation", code: "no_available_agents")
     end
     active_agent = ordered_agents.find { |agent| agent.eligible_for_conversation? && agent_response_active?(agent) }
     raise ArgumentError, "#{active_agent.name} is already responding" if active_agent

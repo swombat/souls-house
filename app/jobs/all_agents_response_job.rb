@@ -31,7 +31,7 @@ class AllAgentsResponseJob < ApplicationJob
         agent = nil
       rescue ArgumentError
         ActionCable.server.broadcast("Chat:#{chat.to_param}", {
-          action: "error", message: "Agent chain stopped: resident is already responding or the conversation is unavailable."
+          action: "error", message: "Resident chain stopped: resident is already responding or the conversation is unavailable."
         })
         return
       end
@@ -40,7 +40,7 @@ class AllAgentsResponseJob < ApplicationJob
     if result.is_a?(Hash) && (result[:status] == 0 || result[:status] == 409 || result[:execution_unconfirmed])
       ActionCable.server.broadcast("Chat:#{chat.to_param}", {
         action: "error",
-        message: "Agent chain stopped: execution could not be confirmed. Remaining residents were not started."
+        message: "Resident chain stopped: execution could not be confirmed. Remaining residents were not started."
       })
       return
     end

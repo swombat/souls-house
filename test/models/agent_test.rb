@@ -175,7 +175,7 @@ class AgentTest < ActiveSupport::TestCase
     assert_equal "Externally Renamed", agent.reload.name
 
     assert_not agent.update(thinking_enabled: true)
-    assert_includes agent.errors[:base], "Identity and runtime-managed fields are agent-owned and read-only in souls.house"
+    assert_includes agent.errors[:base], "Identity and runtime-managed fields are resident-owned and read-only in souls.house"
   end
 
   test "external agents allow HelixKit-managed model changes" do
@@ -263,7 +263,7 @@ class AgentTest < ActiveSupport::TestCase
     agent.update!(runtime: "provisioning", birth_committed_at: Time.current)
 
     assert_not agent.update(system_prompt: "Replacement beginning")
-    assert_includes agent.errors[:base], "Identity and runtime-managed fields are agent-owned and read-only in souls.house"
+    assert_includes agent.errors[:base], "Identity and runtime-managed fields are resident-owned and read-only in souls.house"
     assert_equal "Committed beginning", agent.reload.system_prompt
 
     assert agent.update(name: "New display label", colour: "emerald")

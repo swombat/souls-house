@@ -7,7 +7,7 @@ module Api
         chat = current_api_account.chats.find(params[:conversation_id])
 
         unless chat.group_chat?
-          return render json: { error: "Agent triggers are only available for group chats" }, status: :unprocessable_entity
+          return render json: { error: "Resident triggers are only available for group chats" }, status: :unprocessable_entity
         end
 
         unless chat.respondable?
@@ -17,7 +17,7 @@ module Api
         if params[:agent_id].present?
           agent = chat.agents.find_by(id: Agent.decode_id(params[:agent_id]))
           unless agent
-            return render json: { error: "Agent not found in this conversation" }, status: :not_found
+            return render json: { error: "Resident not found in this conversation" }, status: :not_found
           end
           chat.trigger_agent_response!(agent)
           render json: { triggered: [ { id: agent.to_param, name: agent.name } ] }
