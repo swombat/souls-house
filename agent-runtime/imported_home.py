@@ -96,6 +96,34 @@ def sync_script(root, manifest, selected=None):
     return path
 
 
+def home_state_path(root, relative, key):
+    """Resolve a manifest path to a file the resident writes, inside root.
+
+    Unlike home_file, the file need not exist yet. Symlinks in the existing
+    part of the path are followed before the containment check.
+    """
+    root = Path(root).resolve()
+    if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
+        raise ValueError(f'home path for {key} must be relative')
+    if '..' in Path(relative).parts:
+        raise ValueError(f'home path for {key} must not traverse with ..')
+    path = (root / relative).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as error:
+        raise ValueError(f'home path for {key} escapes the imported home') from error
+    if path == root or path.is_dir():
+        raise ValueError(f'home path for {key} must name a file')
+    return path
+
+
+def sync_status_path(root, manifest):
+    """The resident's own sync status file, or None when the manifest declares none."""
+    if 'sync_status' not in manifest:
+        return None
+    return home_state_path(root, manifest['sync_status'], 'sync_status')
+
+
 def validate(root=None):
     selected = profile()
     if selected == HOUSE_PROFILE:
@@ -115,6 +143,8 @@ def validate(root=None):
         # with no compatibility default must declare one. mira_v1's default is
         # checked by the sync loop instead, so her turns do not change.
         sync_script(root, manifest, selected)
+    if 'sync_status' in manifest:
+        sync_status_path(root, manifest)
     hooks = json.loads((root / manifest['hooks']).read_text()).get('hooks', {})
     if not all(name in hooks for name in ('SessionStart', 'BeforeTurn', 'Stop')):
         raise ValueError('imported home requires its own wake and memory hooks')

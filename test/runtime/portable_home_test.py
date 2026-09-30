@@ -23,7 +23,10 @@ shim = importlib.util.module_from_spec(spec);sys.modules[spec.name] = shim;spec.
 MIRA_HOSTING_CONTEXT_SHA256 = 'a2a7c7b575d13dfd5034649f21881cd2c6110974bcd54ed7a3ffda5d9d91a2a2'
 
 
-def make_home(root, profile, identity, sync=None):
+LUME_SYNC_STATUS = 'automation/state/home-sync/status.json'
+
+
+def make_home(root, profile, identity, sync=None, sync_status=None):
     manifest = {'format': 'souls-home/v1', 'profile': profile, 'identity_id': identity, 'graph': 'external'}
     for key in ('instructions', 'soul', 'narrative', 'journal_reader'):
         manifest[key] = key + '.md'
@@ -33,6 +36,8 @@ def make_home(root, profile, identity, sync=None):
     (root / '.chaos/hooks.json').write_text(json.dumps({'hooks': {k: [{}] for k in ('SessionStart', 'BeforeTurn', 'Stop')}}))
     if sync is not None:
         manifest['sync'] = sync
+    if sync_status is not None:
+        manifest['sync_status'] = sync_status
     (root / 'resident-home.json').write_text(json.dumps(manifest))
     return manifest
 
@@ -49,7 +54,8 @@ class HomeFixture(unittest.TestCase):
         (self.mira / 'shared/automation/scripts/git_sync.py').write_text('print("mira sync")\n')
         (self.lume / 'automation/scripts').mkdir(parents=True)
         (self.lume / 'automation/scripts/home_sync.py').write_text('print("lume sync")\n')
-        make_home(self.lume, 'portable_v1', 'test-lume', sync='automation/scripts/home_sync.py')
+        make_home(self.lume, 'portable_v1', 'test-lume', sync='automation/scripts/home_sync.py',
+                  sync_status=LUME_SYNC_STATUS)
 
     def env(self, **values):
         base = {'SOULSHOUSE_HOME_PROFILE': None, 'MIRA_ROOT': None, 'SOULSHOUSE_HOME_ROOT': None,
@@ -227,19 +233,25 @@ class MiraManifestCompatibilityTest(unittest.TestCase):
         "journal_reader": "shared/automation/journal_entries.py",
     }
 
+    @staticmethod
+    def hooks():
+        command = 'python3 "${MIRA_ROOT:-$HOME/dev/mira}"/shared/automation/%s'
+        return {'hooks': {
+            'SessionStart': [{'matcher': '^startup$', 'hooks': [{'type': 'command', 'command': command % 'wake.py',
+                                                                 'timeout': 10, 'statusMessage': "Loading Mira's wake context"}]}],
+            'BeforeTurn': [{'hooks': [{'type': 'command', 'command': command % 'before_turn.py',
+                                       'timeout': 5, 'statusMessage': "Checking Mira's before-turn context"}]}],
+            'Stop': [{'hooks': [{'type': 'command', 'command': command % 'stop_trace.py',
+                                 'timeout': 60, 'statusMessage': "Inviting Mira's journal reflex"}]}],
+        }}
+
     def test_her_current_manifest_validates_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp).resolve()
             for key in ('instructions', 'soul', 'narrative', 'journal_reader'):
                 path = root / self.MANIFEST[key];path.parent.mkdir(parents=True, exist_ok=True);path.write_text('x')
             (root / '.chaos').mkdir()
-            command = 'python3 "${MIRA_ROOT:-$HOME/dev/mira}"/shared/automation/%s'
-            hooks = {'hooks': {
-                'SessionStart': [{'matcher': '^startup$', 'hooks': [{'type': 'command', 'command': command % 'wake.py', 'timeout': 10}]}],
-                'BeforeTurn': [{'hooks': [{'type': 'command', 'command': command % 'before_turn.py', 'timeout': 5}]}],
-                'Stop': [{'hooks': [{'type': 'command', 'command': command % 'stop_trace.py', 'timeout': 60}]}],
-            }}
-            (root / '.chaos/hooks.json').write_text(json.dumps(hooks))
+            (root / '.chaos/hooks.json').write_text(json.dumps(self.hooks()))
             (root / 'resident-home.json').write_text(json.dumps(self.MANIFEST))
             env = {'SOULSHOUSE_HOME_PROFILE': 'mira_v1', 'MIRA_ROOT': str(root), 'SOULSHOUSE_PORTABLE_HOME_ID': 'mira-tenner'}
             with patch.dict(os.environ, env):
@@ -252,15 +264,43 @@ class Completed:
         self.returncode = returncode
 
 
+def local_now():
+    # home_sync.py's now_iso(): local time, seconds, with offset.
+    from datetime import datetime
+    return datetime.now().astimezone().isoformat(timespec='seconds')
+
+
+def writes_status(status_file, status, code, **fields):
+    """A fake sync run that writes its own status file the way home_sync.py does."""
+    def runner(*args, **kwargs):
+        previous = {}
+        if status_file.exists():
+            previous = json.loads(status_file.read_text())
+        state = dict(previous) if status == 'busy' else {
+            'last_success_at': previous.get('last_success_at'),
+            'consecutive_failures': previous.get('consecutive_failures', 0) + 1}
+        state.update(status=status, checked_at=local_now(), **fields)
+        if status == 'ok':
+            state.update(last_success_at=state['checked_at'], consecutive_failures=0)
+        status_file.parent.mkdir(parents=True, exist_ok=True)
+        status_file.write_text(json.dumps(state))
+        return Completed(code)
+    return runner
+
+
 class SyncLoopTest(HomeFixture):
     def setUp(self):
         super().setUp()
         self.status = Path(self.tmp.name) / 'state/home-sync/status.json'
 
+    def ok(self):
+        return writes_status(self.lume / LUME_SYNC_STATUS, 'ok', 0)
+
     def test_success_runs_argv_without_shell_and_records_ok(self):
         calls = []
+        succeed = self.ok()
         def runner(args, **kwargs):
-            calls.append((args, kwargs));return Completed(0)
+            calls.append((args, kwargs));return succeed()
         with self.lume_env():
             status = home_sync_loop.run_once(runner=runner, path=self.status)
         args, kwargs = calls[0]
@@ -301,13 +341,13 @@ class SyncLoopTest(HomeFixture):
         status = self.assert_failure(runner, 'timed out')
         self.assertEqual(status['consecutive_failures'], 2)
         with self.lume_env():
-            status = home_sync_loop.run_once(runner=lambda *a, **k: Completed(0), path=self.status)
+            status = home_sync_loop.run_once(runner=self.ok(), path=self.status)
         self.assertEqual((status['state'], status['consecutive_failures']), ('ok', 0))
 
     def test_stopped_loop_reads_as_stale(self):
         from datetime import datetime, timedelta, timezone
         with self.lume_env():
-            home_sync_loop.run_once(runner=lambda *a, **k: Completed(0), path=self.status)
+            home_sync_loop.run_once(runner=self.ok(), path=self.status)
         later = datetime.now(timezone.utc) + timedelta(hours=1)
         self.assertEqual(home_sync_loop.health(self.status, now=later)['state'], 'stale')
         self.assertEqual(home_sync_loop.health(Path(self.tmp.name) / 'absent.json')['state'], 'unknown')
@@ -323,6 +363,165 @@ class SyncLoopTest(HomeFixture):
         with self.env(), patch.object(shim, 'jsonify', side_effect=lambda body: body), \
                 patch.object(shim, '_chaos_version', return_value='test'):
             self.assertNotIn('home_sync', shim.health())
+
+
+
+class SyncConfirmationTest(HomeFixture):
+    """Mira's review of PR 106: invoking the script is not a confirmed sync.
+    A skip, or a clean exit nobody can confirm, preserves the last real success
+    and the failure count."""
+
+    T0 = '2026-09-29T08:00:00+00:00'
+
+    def setUp(self):
+        super().setUp()
+        self.status = Path(self.tmp.name) / 'state/home-sync/status.json'
+        self.lume_status = self.lume / LUME_SYNC_STATUS
+
+    def seed(self, **fields):
+        base = {'state': 'ok', 'last_success_at': self.T0, 'consecutive_failures': 0}
+        base.update(fields)
+        home_sync_loop.write_status(base, self.status)
+
+    def run_lume(self, runner):
+        with self.lume_env(), _quiet():
+            return home_sync_loop.run_once(runner=runner, path=self.status)
+
+    def run_mira(self, runner):
+        with self.mira_env(), _quiet():
+            return home_sync_loop.run_once(runner=runner, path=self.status)
+
+    # --- Mira: git_sync.py exits 0 when another sync holds the lock ----------
+    def test_mira_lock_held_skip_after_failure_preserves_last_success(self):
+        self.seed()
+        failed = self.run_mira(lambda *a, **k: Completed(1))
+        self.assertEqual((failed['state'], failed['consecutive_failures']), ('error', 1))
+        skipped = self.run_mira(lambda *a, **k: Completed(0))  # lock held: exit 0, nothing done
+        self.assertEqual(skipped['last_success_at'], self.T0)
+        self.assertEqual(skipped['consecutive_failures'], 1)
+        self.assertEqual(skipped['state'], 'error')
+        self.assertEqual(skipped['last_outcome'], 'unconfirmed')
+        self.assertEqual(skipped['last_error'], 'sync exited with status 1')
+        self.assertEqual(home_sync_loop.health(self.status)['state'], 'error')
+
+    def test_mira_clean_exit_alone_is_never_evidence_of_success(self):
+        status = self.run_mira(lambda *a, **k: Completed(0))
+        self.assertEqual((status['state'], status['last_success_at']), ('unconfirmed', None))
+        self.assertEqual(status['confirmed_by'], 'exit_code')
+        status = self.run_mira(lambda *a, **k: Completed(0))
+        self.assertEqual((status['state'], status['last_success_at'], status['consecutive_failures']),
+                         ('unconfirmed', None, 0))
+
+    def test_mira_with_a_declared_status_file_confirms_and_skips(self):
+        manifest = json.loads((self.mira / 'resident-home.json').read_text())
+        manifest['sync_status'] = 'shared/automation/state/sync.json'
+        (self.mira / 'resident-home.json').write_text(json.dumps(manifest))
+        own = self.mira / 'shared/automation/state/sync.json'
+        first = self.run_mira(writes_status(own, 'ok', 0))
+        self.assertEqual(first['state'], 'ok')
+        self.run_mira(writes_status(own, 'failed', 1, reason='push rejected'))
+        skipped = self.run_mira(writes_status(own, 'busy', 0))
+        self.assertEqual(skipped['last_success_at'], first['last_success_at'])
+        self.assertEqual((skipped['state'], skipped['consecutive_failures'], skipped['last_outcome']),
+                         ('error', 1, 'skipped'))
+
+    # --- Lume: home_sync.py exits 75 when the lock is held -------------------
+    def test_lume_exit_75_after_failure_is_neither_error_nor_success(self):
+        first = self.run_lume(writes_status(self.lume_status, 'ok', 0))
+        self.assertEqual((first['state'], first['confirmed_by']), ('ok', 'status_file'))
+        failed = self.run_lume(writes_status(self.lume_status, 'failed', 1, reason='merge conflict: x'))
+        self.assertEqual((failed['state'], failed['consecutive_failures']), ('error', 1))
+        self.assertIn('merge conflict: x', failed['last_error'])
+        busy = self.run_lume(writes_status(self.lume_status, 'busy', 75))
+        self.assertEqual(busy['last_success_at'], first['last_success_at'])
+        self.assertEqual((busy['state'], busy['consecutive_failures'], busy['last_outcome']), ('error', 1, 'skipped'))
+        self.assertEqual(busy['last_exit_code'], 75)
+        again = self.run_lume(writes_status(self.lume_status, 'ok', 0))
+        self.assertEqual((again['state'], again['consecutive_failures'], again['last_error']), ('ok', 0, None))
+
+    def test_lume_exit_75_after_success_keeps_success_and_does_not_advance_it(self):
+        self.seed()
+        busy = self.run_lume(writes_status(self.lume_status, 'busy', 75))
+        self.assertEqual((busy['state'], busy['last_success_at'], busy['consecutive_failures']), ('ok', self.T0, 0))
+        self.assertIn('last_skip_at', busy)
+
+    def test_exit_75_is_a_skip_even_without_a_fresh_status_file(self):
+        self.seed(state='error', consecutive_failures=2, last_error='old')
+        busy = self.run_lume(lambda *a, **k: Completed(75))
+        self.assertEqual((busy['state'], busy['consecutive_failures'], busy['last_success_at'], busy['last_outcome']),
+                         ('error', 2, self.T0, 'skipped'))
+
+    def test_repeated_skips_read_as_stale_once_the_last_success_is_old(self):
+        from datetime import datetime, timedelta, timezone
+        self.seed()
+        self.run_lume(writes_status(self.lume_status, 'busy', 75))
+        later = datetime.fromisoformat(self.T0) + timedelta(seconds=4 * home_sync_loop.SYNC_INTERVAL_SECS)
+        self.assertEqual(home_sync_loop.health(self.status, now=later)['state'], 'stale')
+
+    # --- the status file must come from this run and agree with the exit ----
+    def test_an_old_status_file_does_not_confirm_a_new_run(self):
+        self.lume_status.parent.mkdir(parents=True)
+        self.lume_status.write_text(json.dumps({'status': 'ok', 'checked_at': '2026-09-01T00:00:00+02:00',
+                                                'last_success_at': '2026-09-01T00:00:00+02:00'}))
+        status = self.run_lume(lambda *a, **k: Completed(0))
+        self.assertEqual((status['state'], status['last_success_at'], status['confirmed_by']),
+                         ('unconfirmed', None, 'exit_code'))
+        self.assertIn('not written by this run', status['note'])
+
+    def test_a_naive_timestamp_does_not_confirm(self):
+        from datetime import datetime
+        self.lume_status.parent.mkdir(parents=True)
+        def runner(*a, **k):
+            self.lume_status.write_text(json.dumps({'status': 'ok', 'checked_at': datetime.now().isoformat()}))
+            return Completed(0)
+        self.assertEqual(self.run_lume(runner)['state'], 'unconfirmed')
+
+    def test_status_that_contradicts_the_exit_code_is_a_failure(self):
+        for reported, code, words in (('ok', 1, 'contradicts'), ('busy', 1, 'contradicts'),
+                                      ('ok', 75, 'contradicts'), ('mystery', 0, 'not recognised')):
+            with self.subTest(reported=reported, code=code):
+                status = self.run_lume(writes_status(self.lume_status, reported, code))
+                self.assertEqual(status['state'], 'error')
+                self.assertIn(words, status['last_error'])
+
+    def test_refused_is_a_failure(self):
+        status = self.run_lume(writes_status(self.lume_status, 'refused', 1, reason='detached HEAD'))
+        self.assertEqual((status['state'], status['consecutive_failures']), ('error', 1))
+        self.assertIn('refused', status['last_error'])
+
+    def test_resident_success_time_is_normalised_to_utc(self):
+        from datetime import datetime, timezone
+        status = self.run_lume(writes_status(self.lume_status, 'ok', 0))
+        self.assertEqual(datetime.fromisoformat(status['last_success_at']).utcoffset().total_seconds(), 0)
+
+    # --- the declared status path is validated like every other home path --
+    def test_sync_status_path_is_validated(self):
+        (self.outside / 'status.json').write_text('{}')
+        (self.lume / 'link').symlink_to(self.outside)
+        (self.lume / 'adir').mkdir()
+        for bad in ('/tmp/status.json', '../outside/status.json', 'automation/../../outside/x.json',
+                    'link/status.json', 'adir', '', 7):
+            with self.subTest(bad=bad):
+                manifest = json.loads((self.lume / 'resident-home.json').read_text())
+                manifest['sync_status'] = bad
+                (self.lume / 'resident-home.json').write_text(json.dumps(manifest))
+                with self.lume_env(), self.assertRaises(ValueError):
+                    imported_home.validate()
+                with self.assertRaises(ValueError):
+                    imported_home.sync_status_path(self.lume, manifest)
+
+    def test_status_path_may_not_exist_yet(self):
+        with self.lume_env():
+            root, manifest = imported_home.validate()
+        self.assertEqual(imported_home.sync_status_path(root, manifest), self.lume / LUME_SYNC_STATUS)
+        self.assertIsNone(imported_home.sync_status_path(root, {}))
+
+
+class _quiet:
+    def __enter__(self):
+        logging.disable(logging.CRITICAL)
+    def __exit__(self, *exc):
+        logging.disable(logging.NOTSET)
 
 
 if __name__ == '__main__':

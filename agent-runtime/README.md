@@ -290,10 +290,12 @@ the shim. It never falls back to the house path or to another profile.
 The home contains `resident-home.json` (`souls-home/v1`) with the matching
 `identity_id`, a `profile` equal to the container's profile, `graph=external`,
 and relative file paths for `instructions`, `soul`, `narrative`, `hooks`, and
-`journal_reader`, plus optionally `sync`. Boot and every turn validate these
-paths and reject missing or empty files, paths escaping the home (including
-through symlinks), mismatched identity, and missing wake/reflex hooks. `sync`
-must also contain no `..` segment and be a Python file. The profile sets its
+`journal_reader`, plus optionally `sync` and `sync_status`. Boot and every turn
+validate these paths and reject missing or empty files, paths escaping the home
+(including through symlinks), mismatched identity, and missing wake/reflex
+hooks. `sync` must also contain no `..` segment and be a Python file.
+`sync_status` names the file the sync script writes about itself; it follows
+the same containment rules but need not exist yet. The profile sets its
 root variable and the Chaos cwd to the identity volume, uses its instruction
 file and existing hooks, and skips stock journal injection/hook installation
 and house-vault provisioning. The host API instructions remain a separate prompt
@@ -318,13 +320,53 @@ implemented by this pilot.
 
 ### Sync health
 
+Running the sync script is not the same as a confirmed sync. A script may exit
+0 because another sync held its lock and it did nothing; recording that as a
+success would turn a skip into fresh evidence that the home is in sync.
+
 Each attempt writes `/home/agent/state/home-sync/status.json` (override with
-`SOULSHOUSE_HOME_SYNC_STATUS`): `state` (`ok` or `error`), `last_attempt_at`,
-`last_success_at`, `last_error`, `consecutive_failures`, `script`. A missing or
-invalid script, a timeout, or a non-zero exit is `error` and is logged at
-ERROR level in the container log. `GET /health` on imported residents adds a
-`home_sync` object read from that file, with `state` reported as `stale` when
-the last success is more than three intervals old, and `unknown` before the first
+`SOULSHOUSE_HOME_SYNC_STATUS`) with `state`, `last_outcome`, `last_attempt_at`,
+`last_exit_code`, `confirmed_by`, `last_success_at`, `consecutive_failures`,
+`last_error` and `script`. `last_outcome` is what this attempt did:
+
+| `last_outcome` | Meaning | `last_success_at` | `consecutive_failures` |
+|---|---|---|---|
+| `ok` | confirmed success | set to the confirmed time | reset to 0 |
+| `error` | failure, logged at ERROR | kept | +1 |
+| `skipped` | the script did nothing (lock held) | kept | kept |
+| `unconfirmed` | clean exit, but nothing confirms a sync happened | kept | kept |
+
+`state` is the last confirmed state: `ok` or `error` from the last attempt that
+was one of those, and `skipped`/`unconfirmed` only before any confirmed result.
+A skip after a failure therefore still reads `error`, with the failure's
+`last_error` and count.
+
+How an attempt is classified, in order:
+
+1. **The resident's own status file**, when the manifest declares `sync_status`.
+   It counts only if this attempt wrote it: its `checked_at` must be a
+   timezone-qualified ISO time no earlier than the start of the attempt. Its
+   `status` is read as `ok` (success, only with exit 0; `last_success_at` is
+   taken from the file, else its `checked_at`), `busy` (skip, with exit 0 or 75),
+   or `failed`/`refused` (failure, with the file's `reason`). An unrecognised
+   status, or one that contradicts the exit code, is a failure.
+2. **The exit code**, when no status file is declared or it was not written by
+   this attempt (`note` says so): 75 (`EX_TEMPFAIL`, lock held) is `skipped`,
+   any other non-zero exit is `error`, and 0 is `unconfirmed`.
+3. A missing or invalid script, or a timeout, is `error` without running or
+   reading anything else.
+
+Lume's `automation/scripts/home_sync.py` implements the file contract at
+`automation/state/home-sync/status.json` and exits 0 ok, 1 failed or refused, 75
+busy, 124 deadline. `mira_v1` declares no `sync_status` today, so her clean exits
+record `unconfirmed` and never advance `last_success_at`; her failures still
+count. Declaring `sync_status` in her manifest, pointing at a file her script
+writes in this format, is her choice and changes nothing else.
+
+`GET /health` on imported residents adds a `home_sync` object read from the
+wrapper's file, with `state` reported as `stale` when it is `ok` but the last
+confirmed success is more than three intervals old (the loop stopped, or every
+attempt since was a skip or unconfirmed), and `unknown` before the first
 attempt. `/health` still returns HTTP 200 for liveness, so the house health job
 and container lifecycle are unaffected. Rails does not read `home_sync` yet:
 nothing in the app raises an alert on it. The resident's own hooks may read the
