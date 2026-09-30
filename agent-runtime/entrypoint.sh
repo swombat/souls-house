@@ -126,6 +126,12 @@ chown -R 1000:1000 "$AGENT_REPO_PATH" "$AGENT_HOME/work" "$AGENT_HOME/state" "$A
 fi # stock memory installation
 
 # Includes imported homes; never overwrite their own hook definitions.
+# Before the one-time import, an imported home's manifest must name the file
+# Chaos imports, that file must be importable, and the global source must hold
+# no stock house hooks. After the import this check is a no-op.
+if [ "$HOME_CLASS" = "imported" ]; then
+    gosu agent python3 /home/agent/imported_home.py --hook-import-check
+fi
 gosu agent python3 /usr/local/share/helixkit-agent/runtime_hooks.py
 
 # A portable home gets only its sync worker, never its host-owned scheduled jobs.

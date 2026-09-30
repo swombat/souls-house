@@ -151,6 +151,60 @@ def validate(root=None):
     return root, manifest
 
 
+# Chaos 47.8 no longer reads hooks.json at runtime. runtime_hooks.py imports
+# <AGENT_REPO_PATH>/.chaos/hooks.json (project) and $CHAOS_HOME/hooks.json
+# (global) once, into the database, and never again. These mirror the strict
+# legacy schema at the pinned commit (share/dtrace/src/engine/config.rs,
+# sys/kern/kern/src/hooks.rs validate_definition) so a home that Chaos would
+# reject fails here with a readable reason instead of an opaque provisioning error.
+HOOK_MIGRATION_MANIFEST = 'house-hooks-v1.json'
+HOOK_EVENTS = ('SessionStart', 'BeforeTurn', 'Stop')
+HOOK_HANDLER_KEYS = {'type', 'command', 'timeout', 'timeoutSec', 'async', 'statusMessage'}
+STOCK_HOOK_MARKERS = ('_helixkit_managed', 'hosted-agent-stop-journal-reflex:')
+
+
+def check_hooks_importable(data):
+    if not isinstance(data, dict) or set(data) - {'hooks'}:
+        raise ValueError('imported hooks file may only contain "hooks"')
+    events = data.get('hooks', {})
+    if not isinstance(events, dict) or set(events) - set(HOOK_EVENTS):
+        raise ValueError(f'imported hooks may only use {", ".join(HOOK_EVENTS)}')
+    for event, groups in events.items():
+        for group in groups:
+            if not isinstance(group, dict) or set(group) - {'matcher', 'hooks'}:
+                raise ValueError(f'{event} hook group has unsupported fields')
+            if event == 'Stop' and group.get('matcher') is not None:
+                raise ValueError('Stop hooks do not support matchers')
+            for handler in group.get('hooks', []):
+                if not isinstance(handler, dict) or handler.get('type') != 'command':
+                    raise ValueError(f'{event} hooks must be command hooks')
+                if set(handler) - HOOK_HANDLER_KEYS:
+                    raise ValueError(f'{event} command hook has unsupported fields')
+                command = handler.get('command')
+                if not isinstance(command, str) or not command.strip() or len(command) > 16384:
+                    raise ValueError(f'{event} hook command must be 1..16384 characters')
+                timeout = handler.get('timeout', handler.get('timeoutSec'))
+                if timeout is not None and not (isinstance(timeout, int) and 1 <= timeout <= 600):
+                    raise ValueError(f'{event} hook timeout must be 1..600 seconds')
+
+
+def check_hook_import_source(root, manifest, chaos_home):
+    """Before the one-time database import only: the file the manifest names is
+    the file Chaos will import, it is importable, and no stock house hooks sit
+    in the global source that would be imported alongside it."""
+    root, chaos_home = Path(root).resolve(), Path(chaos_home)
+    if (chaos_home / HOOK_MIGRATION_MANIFEST).exists():
+        return 'already imported'
+    hooks = home_file(root, manifest.get('hooks'), 'hooks')
+    if hooks != root / '.chaos' / 'hooks.json':
+        raise ValueError('imported home hooks must be .chaos/hooks.json, the file Chaos imports')
+    check_hooks_importable(json.loads(hooks.read_text()))
+    global_source = chaos_home / 'hooks.json'
+    if global_source.exists() and any(marker in global_source.read_text() for marker in STOCK_HOOK_MARKERS):
+        raise ValueError('stock house hooks found in the global Chaos hooks file of an imported home')
+    return 'ready to import'
+
+
 def check_project_trust(root, chaos_home, unreadable_message, untrusted_message):
     # The pinned Chaos runtime keeps project trust here, not in config.toml.
     # Without it the project's config *and hooks* are silently disabled.
@@ -179,6 +233,11 @@ def main(argv):
         return 0
     if argv[1:] == ['--root']:
         print(home_root())
+        return 0
+    if argv[1:] == ['--hook-import-check']:
+        root, manifest = validate()
+        chaos_home = os.environ.get('CHAOS_HOME') or '/home/agent/.chaos'
+        print(f'imported home hooks: {check_hook_import_source(root, manifest, chaos_home)}')
         return 0
     if enabled():
         validate()

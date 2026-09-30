@@ -372,6 +372,33 @@ and container lifecycle are unaffected. Rails does not read `home_sync` yet:
 nothing in the app raises an alert on it. The resident's own hooks may read the
 status file.
 
+### Imported homes and database hooks
+
+Chaos 47.8 never reads `hooks.json` at runtime. `runtime_hooks.py` imports the
+imported home's `<root>/.chaos/hooks.json` (project scope) and any
+`$CHAOS_HOME/hooks.json` (global scope) once, enables them, and records the
+import in `$CHAOS_HOME/house-hooks-v1.json`. It runs for `mira_v1` and
+`portable_v1` identically; stock hook files are never written into an imported
+home. Before that first import, the entrypoint runs
+`imported_home.py --hook-import-check`, which refuses to continue when the
+manifest's `hooks` is not `.chaos/hooks.json`, when that file uses a shape the
+pinned Chaos import rejects (keys other than `hooks`, events other than
+`SessionStart`/`BeforeTurn`/`Stop`, non-command handlers, unknown handler
+fields, a `Stop` matcher, a timeout outside 1..600), or when the global source
+holds stock house hooks. After the import the check does nothing.
+
+Two consequences for homes synced from other hosts:
+
+- Edits to `.chaos/hooks.json` that arrive by sync after the first import do
+  **not** reach the house. The database is authoritative; change hooks there
+  (`hooks_*` tools under the standing `hook_approval_policy`) or deliberately
+  re-provision.
+- Turn validation still checks that `.chaos/hooks.json` names all three events,
+  but that is the import source, not the running configuration. A hook disabled
+  in the database passes validation. The trust guard below still refuses turns
+  when the root is untrusted, which is also the condition under which Chaos
+  marks project hooks inactive (`project is not trusted`).
+
 ### Imported homes and forced login
 
 The profile supports API-key authentication and OpenAI ChatGPT OAuth, and passes
@@ -405,7 +432,14 @@ the verified pinned schema in a transaction, refusing an existing `untrusted`
 row. This is a manual pilot setup step, not a generic import mechanism; do not
 copy another host's entire runtime database or blanket-trust parent directories.
 `require_runtime_trust` refuses a model turn if the expected trust receipt is
-missing. Revisit that check when upgrading Chaos storage.
+missing. Revisit that check when upgrading Chaos storage. At Chaos
+`36ad4abb` (47.8) the table and query are unchanged, and project-scoped database
+hooks are resolved against the same table (`sys/kern/kern/src/hooks.rs`, keyed
+by the git root of the cwd). When the home root is its own git root, as both
+imported homes are, a passing check also means Chaos will not mark the home's
+imported hooks `project is not trusted`. The check reads only `chaos.sqlite`: a
+home whose `storage_url` points at `CHAOS_STORAGE_URL` (PostgreSQL) is refused,
+as unreadable or untrusted, never silently passed.
 
 House residents get the same check only when the Rails host sets
 `SOULSHOUSE_REQUIRE_HOUSE_TRUST=1` (default off; containers must be recreated to

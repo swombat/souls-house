@@ -524,5 +524,85 @@ class _quiet:
         logging.disable(logging.NOTSET)
 
 
+class HookImportCheckTest(HomeFixture):
+    """Chaos 47.8 imports <root>/.chaos/hooks.json into its database once and
+    never reads it again. Before that import, the file the manifest names must
+    be the file Chaos imports, and must be importable."""
+
+    def setUp(self):
+        super().setUp()
+        self.chaos = Path(self.tmp.name) / 'chaos-home';self.chaos.mkdir()
+        self.hooks = MiraManifestCompatibilityTest.hooks()
+
+    def check(self, hooks=None, manifest=None):
+        if hooks is not None:
+            (self.lume / '.chaos/hooks.json').write_text(json.dumps(hooks))
+        manifest = manifest or json.loads((self.lume / 'resident-home.json').read_text())
+        return imported_home.check_hook_import_source(self.lume, manifest, self.chaos)
+
+    def test_mira_current_hooks_are_importable(self):
+        self.assertEqual(self.check(self.hooks), 'ready to import')
+
+    def test_after_the_import_the_check_is_a_no_op(self):
+        (self.chaos / 'house-hooks-v1.json').write_text('{}')
+        self.assertEqual(self.check({'hooks': {'UserPromptSubmit': []}}), 'already imported')
+
+    def test_manifest_must_name_the_file_chaos_imports(self):
+        (self.lume / 'other.json').write_text(json.dumps(self.hooks))
+        manifest = json.loads((self.lume / 'resident-home.json').read_text())
+        manifest['hooks'] = 'other.json'
+        with self.assertRaisesRegex(ValueError, 'the file Chaos imports'):
+            self.check(manifest=manifest)
+
+    def test_shapes_chaos_would_reject_fail_here_with_a_reason(self):
+        command = {'type': 'command', 'command': 'true'}
+        bad = {
+            'extra top-level key': {'hooks': {}, 'version': 1},
+            'unknown event': {'hooks': {'UserPromptSubmit': [{'hooks': [command]}]}},
+            'stop matcher': {'hooks': {'Stop': [{'matcher': 'x', 'hooks': [command]}]}},
+            'prompt handler': {'hooks': {'Stop': [{'hooks': [{'type': 'prompt'}]}]}},
+            'unknown handler field': {'hooks': {'Stop': [{'hooks': [dict(command, shell='bash')]}]}},
+            'blank command': {'hooks': {'Stop': [{'hooks': [dict(command, command=' ')]}]}},
+            'zero timeout': {'hooks': {'Stop': [{'hooks': [dict(command, timeout=0)]}]}},
+            'long timeout': {'hooks': {'Stop': [{'hooks': [dict(command, timeout=601)]}]}},
+            'unknown group field': {'hooks': {'Stop': [{'hooks': [command], 'when': 'x'}]}},
+        }
+        for name, hooks in bad.items():
+            with self.subTest(name):
+                with self.assertRaises(ValueError):
+                    self.check(hooks)
+
+    def test_stock_house_hooks_in_the_global_source_are_refused(self):
+        self.check(self.hooks)
+        (self.chaos / 'hooks.json').write_text(json.dumps({'_helixkit_managed': 'hosted-agent-stop-journal-reflex:v2', 'hooks': {}}))
+        with self.assertRaisesRegex(ValueError, 'stock house hooks'):
+            self.check()
+        (self.chaos / 'hooks.json').write_text(json.dumps({'hooks': {}}))
+        self.assertEqual(self.check(), 'ready to import')
+
+    def test_cli_runs_validation_then_the_import_check(self):
+        (self.lume / '.chaos/hooks.json').write_text(json.dumps(self.hooks))
+        env = {'SOULSHOUSE_HOME_PROFILE': 'portable_v1', 'SOULSHOUSE_HOME_ROOT': str(self.lume),
+               'SOULSHOUSE_PORTABLE_HOME_ID': 'test-lume', 'CHAOS_HOME': str(self.chaos)}
+        run = lambda: subprocess.run([sys.executable, str(RUNTIME / 'imported_home.py'), '--hook-import-check'],
+                                     env={**os.environ, **env}, capture_output=True, text=True)
+        self.assertEqual(run().stdout.strip(), 'imported home hooks: ready to import')
+        (self.lume / '.chaos/hooks.json').write_text(json.dumps({'hooks': {'SessionStart': [], 'BeforeTurn': [],
+                                                                           'Stop': [], 'Notification': []}}))
+        result = run()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('may only use', result.stderr)
+
+    def test_entrypoint_imports_hooks_the_same_way_for_every_imported_profile(self):
+        text = (RUNTIME / 'entrypoint.sh').read_text()
+        check = text.index('imported_home.py --hook-import-check')
+        provision = text.index('gosu agent python3 /usr/local/share/helixkit-agent/runtime_hooks.py')
+        self.assertLess(check, provision)
+        self.assertLess(text.index('fi # stock memory installation'), provision)
+        self.assertNotIn('mira_v1', text[check - 400:provision + 80])
+        self.assertIn('if [ "$HOME_CLASS" = "imported" ]; then\n    gosu agent python3 /home/agent/imported_home.py --hook-import-check',
+                      text)
+
+
 if __name__ == '__main__':
     unittest.main()
