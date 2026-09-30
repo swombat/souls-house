@@ -1,0 +1,90 @@
+require 'net/http'
+
+module HouseInference
+  class Gateway
+
+    URL = URI('https://openrouter.ai/api/v1/chat/completions')
+
+    def initialize(agent:, input:)
+      @agent, @input = agent, input
+    end
+
+    def call
+      offering = Offering.find(@input['model'])
+      unless offering && @agent.model_id == @input['model']
+        raise Error.new('Only the resident’s selected house model is allowed.', status: 403)
+      end
+      raise Error.new('House inference has not been configured by the operator.') unless Offering.configured?
+      grant = HouseInferenceGrant.find_by(agent: @agent)
+      raise Error.new('This resident has no house allowance.', status: 403) unless grant
+      body = Request.build(@input, offering)
+      call = grant.reserve!(offering, @input['model'], agent_id: @agent.id)
+      buffer = +''
+      usage = nil
+      upstream_id = nil
+      completed = false
+      streaming = @input['stream'] == true
+      total_bytes = 0
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 180
+      request = Net::HTTP::Post.new(URL)
+      request['Authorization'] = "Bearer #{Offering.key}"
+      request['Content-Type'] = 'application/json'
+      request.body = JSON.generate(body)
+      http = Net::HTTP.new(URL.host, URL.port)
+      http.use_ssl = true
+      http.open_timeout = 10
+      http.read_timeout = 120
+      http.write_timeout = 30
+      http.max_retries = 0
+      # A retry is a new admitted call, never a hidden repeat of a billed POST.
+      http.request(request) do |response|
+        unless response.is_a?(Net::HTTPSuccess)
+          raise Error.new('The pinned house provider could not complete this request. No personal credentials were used.', status: 502)
+        end
+        response.read_body do |chunk|
+          if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+            raise Error.new('The house provider exceeded the call time limit.', status: 502)
+          end
+          total_bytes += chunk.bytesize
+          raise Error.new('Provider response exceeded the safety limit.', status: 502) if total_bytes > 8.megabytes
+          buffer << chunk
+          next unless streaming
+          while (line = buffer.slice!(/\A.*?\n/m))
+            next unless line.start_with?('data:')
+            data = line.delete_prefix('data:').strip
+            if data == '[DONE]'
+              completed = true
+              next
+            end
+            event = JSON.parse(data)
+            raise Error.new('The house provider returned an invalid stream event.', status: 502) unless event.is_a?(Hash)
+            raise Error.new('The house provider interrupted this response.', status: 502) if event['error']
+            upstream_id ||= event['id']
+            usage = event['usage'] if event['usage'].is_a?(Hash)
+            event['model'] = @input['model'] if event.key?('model')
+            yield "data: #{JSON.generate(event)}\n\n"
+          end
+        end
+      end
+      unless streaming
+        result = JSON.parse(buffer)
+        unless result.is_a?(Hash) && result['choices'].is_a?(Array) && !result['error']
+          raise Error.new('The house provider returned an invalid completion.', status: 502)
+        end
+        usage, upstream_id = result['usage'], result['id']
+        result['model'] = @input['model']
+        completed = true
+      end
+      raise Error.new('The house provider response ended unexpectedly.', status: 502) unless completed
+      call.settle!(usage, upstream_id: upstream_id)
+      yield "data: [DONE]\n\n" if streaming
+      result
+    rescue JSON::ParserError, IOError, SystemCallError, Timeout::Error
+      # Do not log upstream bodies, requests, credentials or exception messages.
+      raise Error.new('House inference was interrupted. The call’s safety charge is retained pending reconciliation.', status: 502)
+    ensure
+      call&.settle!(nil, upstream_id: upstream_id)
+    end
+
+  end
+end

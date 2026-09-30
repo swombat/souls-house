@@ -20,6 +20,8 @@ class User < ApplicationRecord
           class_name: "Membership"
   has_one :personal_account, through: :personal_membership, source: :account
 
+  has_one :house_inference_grant, dependent: :restrict_with_error
+
   # API keys for external access
   has_many :api_keys, dependent: :destroy
   has_many :conversation_drafts, dependent: :destroy

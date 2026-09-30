@@ -12,6 +12,22 @@ module Agents
       Account::AI_PROVIDERS.each_key { |provider| @agent.account.public_send("#{provider}_api_key=", nil) }
     end
 
+    test "house route needs no personal key and never falls through on exhaustion" do
+      @agent.save!
+      @agent.update!(model_id: HouseInference::Offering::MODEL_ID)
+      grant = HouseInferenceGrant.assign!(@agent, users(:user_1))
+      HouseInference::Offering.stub(:configured?, true) do
+        assert InferenceAvailability.available?(@agent)
+        assert_equal({ provider: "house", model: @agent.model_id }, Sandbox.chaos_selection_for(@agent))
+        assert_empty Sandbox.new(@agent).send(:provider_env_args)
+        grant.house_inference_calls.create!(month: HouseInference::Offering.month, model_id: @agent.model_id,
+          provider_route: "fireworks/us", charge_usd: 10, status: "settled")
+        @agent.account.openrouter_api_key = "must-not-be-used"
+        assert_not InferenceAvailability.available?(@agent)
+        assert_equal "house", Sandbox.chaos_provider_for(@agent)
+      end
+    end
+
     test "no credentials and unrelated provider keys cannot fund the selected model" do
       assert_not InferenceAvailability.available?(@agent)
       @agent.account.anthropic_api_key = "test-anthropic"

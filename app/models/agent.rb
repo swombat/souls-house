@@ -21,6 +21,7 @@ class Agent < ApplicationRecord
   end
 
   belongs_to :account
+  has_one :house_inference_grant, dependent: :nullify
   has_one :memory_vault, class_name: "Mnemodyne::Vault", dependent: :restrict_with_error, inverse_of: :agent
   belongs_to :outbound_api_key, class_name: "ApiKey", optional: true
   has_many :chat_agents, dependent: :destroy
@@ -166,6 +167,8 @@ class Agent < ApplicationRecord
   end
 
   def model_label
+    return HouseInference::Offering.find(model_id).fetch(:label) if HouseInference::Offering.find(model_id)
+
     Chat::MODELS.find { |m| m[:model_id] == model_id }&.dig(:label) || model_id
   end
 

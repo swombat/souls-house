@@ -200,7 +200,12 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
 
     assert_includes entrypoint, "gosu agent python3 /usr/local/share/helixkit-agent/runtime_settings.py"
     Agents::Sandbox::CHAOS_RUNTIME_PROVIDER_IDS.each do |provider|
-      assert_includes settings, %Q("#{provider}":)
+      if provider == "house"
+        assert_includes settings, '"model_providers.house"'
+        assert_includes settings, '"env_key": "SOULSHOUSE_BEARER_TOKEN"'
+      else
+        assert_includes settings, %Q("#{provider}":)
+      end
     end
     assert_includes settings, "https://generativelanguage.googleapis.com/v1beta/openai"
     assert_includes settings, "https://openrouter.ai/api/v1"

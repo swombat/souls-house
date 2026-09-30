@@ -1,4 +1,5 @@
 <script>
+  import HouseAllowance from '$lib/components/agents/house-allowance.svelte';
   import { CardHeader, CardTitle, CardDescription, CardContent } from '$lib/components/shadcn/card';
   import { siteName } from '$lib/branding';
 
@@ -22,6 +23,8 @@
       silently.
     </p>
   </div>
+
+  <HouseAllowance {selectedModel} />
 
   <div class="flex items-start justify-between gap-4 rounded-lg border p-4">
     <div>

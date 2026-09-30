@@ -16,6 +16,20 @@ class Chats::AgentTriggersControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
+  test "house exhaustion stops Ask All without a missing credentials dialog or paid fallback" do
+    @agent.update!(model_id: HouseInference::Offering::MODEL_ID)
+    grant = HouseInferenceGrant.assign!(@agent, @user)
+    grant.house_inference_calls.create!(month: HouseInference::Offering.month, model_id: @agent.model_id,
+      provider_route: "fireworks/us", charge_usd: 10, status: "settled")
+    HouseInference::Offering.stub(:configured?, true) do
+      assert_no_enqueued_jobs do
+        post account_chat_agent_trigger_path(@account, @chat), as: :json
+      end
+    end
+    assert_response :payment_required
+    assert_equal "house_allowance_exhausted", response.parsed_body["code"]
+  end
+
   test "create triggers specific agent when agent_id provided" do
     assert_enqueued_with(job: ManualAgentResponseJob, args: ->(args) {
       args == [ @chat, @agent, { runtime_interaction_id: @chat.agent_runtime_interactions.order(:id).last.id } ]

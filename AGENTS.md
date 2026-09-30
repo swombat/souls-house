@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+Before major work, read `docs/architecture.md` and `docs/decisions/README.md`; follow the reviewed issue/PR and deployment gates in ADR 0002.
+
 ## Project Structure & Module Organization
 Helix Kit couples Rails 8 and Svelte 5 through Inertia. Domain models live in `app/models`, controllers in `app/controllers`, and jobs in `app/jobs`. Frontend primitives and patterns stay under `app/frontend`, with styles in `app/frontend/styles`. Configuration belongs inside `config`, and `docs/overview.md` points to current architectural guides. Historical plans and reviews are in `docs/.bak/` and are not implementation instructions; `docs/proposals/` is explicitly unimplemented discussion.
 
@@ -27,7 +29,12 @@ Minitest lives in `test/`; mirror Rails naming such as `accounts_controller_test
 Use short, imperative commit subjects (<72 chars) like `Add chats index pagination`, grouping related work. Reference issues in the body when useful. PRs need a problem summary, UI screenshots when visuals change, and explicit notes on migrations or secrets. Run `bin/rubocop`, `bun run format:check`, `bin/rails test`, and `bun run test` before requesting review.
 
 ## Branch Policy
-Work directly on the mainline `master` branch by default. Do not create, switch to, publish, or use temporary feature branches or worktrees unless the user explicitly instructs you to. Before committing or pushing, verify that the current branch is `master`.
+For major work, follow ADR 0002: an issue approved by the other author, a dedicated
+PR branch, then reciprocal review of the PR head before merge into `master`.
+Daniel explicitly authorised this process on 2026-09-28; it supersedes the former
+mainline-only rule for these changes. Verify your branch and scope before every
+commit/push. Do not commit implementation directly to `master` to bypass review,
+and do not create worktrees or unrelated branches without authorisation.
 
 ## Parallel Local Development
 Independent clones named `souls-house-1` through `souls-house-9` are supported.

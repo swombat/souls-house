@@ -1,11 +1,18 @@
 <script>
+  import HouseAllowance from '$lib/components/agents/house-allowance.svelte';
   import { Label } from '$lib/components/shadcn/label';
   import * as Select from '$lib/components/shadcn/select/index.js';
   import { findModel } from '$lib/agent-models';
   import AgentModelSelect from '$lib/components/agents/AgentModelSelect.svelte';
   import { siteName } from '$lib/branding';
 
-  let { form, groupedModels = {}, selectedModel = $bindable(), runtimeManaged = false } = $props();
+  let {
+    form,
+    groupedModels = {},
+    selectedModel = $bindable(),
+    runtimeManaged = false,
+    houseAllowance = null,
+  } = $props();
 
   let reasoning = $derived(findModel(groupedModels, selectedModel)?.reasoning || null);
   let effortOptions = $derived(
@@ -43,6 +50,8 @@
       </p>
     </div>
     <AgentModelSelect {groupedModels} bind:value={selectedModel} />
+    <HouseAllowance {selectedModel} allowance={houseAllowance} />
+    {#if $form.errors?.model_id}<p class="text-sm text-destructive">{$form.errors.model_id}</p>{/if}
   </div>
 
   {#if reasoning}

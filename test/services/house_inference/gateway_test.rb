@@ -1,0 +1,74 @@
+require 'test_helper'
+
+class HouseInference::GatewayTest < ActiveSupport::TestCase
+
+  setup do
+    @agent = agents(:research_assistant)
+    @agent.update!(model_id: HouseInference::Offering::MODEL_ID)
+    @grant = HouseInferenceGrant.assign!(@agent, users(:user_1))
+    @input = { 'model' => @agent.model_id, 'stream' => true, 'messages' => [ { 'role' => 'user', 'content' => 'hello' } ] }
+  end
+
+  def upstream(chunks, status: '200')
+    response = Net::HTTPResponse::CODE_TO_OBJ.fetch(status).new('1.1', status, 'test')
+    response.define_singleton_method(:read_body) { |&block| chunks.each(&block) }
+    http = Object.new
+    %w[use_ssl open_timeout read_timeout write_timeout max_retries].each do |name|
+      http.define_singleton_method("#{name}=") { |_| }
+    end
+    http.define_singleton_method(:request) do |request, &block|
+      raise 'missing upstream bearer' unless request['Authorization'] == 'Bearer test-house-only'
+      block.call(response)
+    end
+    HouseInference::Offering.stub(:key, 'test-house-only') do
+      Net::HTTP.stub(:new, http) { yield }
+    end
+  end
+
+  test 'structured nonstreaming completions use the same ledger' do
+    @input['stream'] = false
+    @input['response_format'] = { 'type' => 'json_object' }
+    result = nil
+    upstream([ JSON.generate({ 'id' => 'gen-json', 'choices' => [ { 'message' => { 'role' => 'assistant', 'content' => '{}' } } ], 'usage' => { 'cost' => 0.005 } }) ]) do
+      result = HouseInference::Gateway.new(agent: @agent, input: @input).call
+    end
+    assert_equal '{}', result.dig('choices', 0, 'message', 'content')
+    assert_equal BigDecimal('0.005'), @grant.spent
+  end
+
+  test 'streams split SSE tool and usage frames and settles actual cost' do
+    chunks = [ "data: {\"id\":\"gen-1\",\"model\":\"deepseek/deepseek-v4.1-flash\",\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n",
+      "data: {\"usage\":{\"cost\":0.", "002}}\n\ndata: [DONE]\n\n" ]
+    output = +''
+    upstream(chunks) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |chunk| output << chunk } }
+    assert_includes output, @agent.model_id
+    assert_includes output, '[DONE]'
+    assert_equal BigDecimal('0.002'), @grant.spent
+    assert_equal 'settled', @grant.house_inference_calls.last.status
+  end
+
+  test 'truncated stream disconnect and provider failure retain bounded charge' do
+    upstream([ "data: {}\n\n" ]) do
+      assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
+    end
+    assert_equal BigDecimal('0.75'), @grant.spent
+    upstream([], status: '503') do
+      assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
+    end
+    assert_equal BigDecimal('1.5'), @grant.spent
+    upstream([ "data: {}\n\n" ]) do
+      assert_raises(HouseInference::Error) do
+        HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| raise IOError }
+      end
+    end
+    assert_equal BigDecimal('2.25'), @grant.spent
+    assert_not @grant.house_inference_calls.where(status: 'pending').exists?
+  end
+
+  test 'arbitrary model fails before a call is reserved' do
+    @input['model'] = 'expensive/other-model'
+    assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
+    assert_equal 0, @grant.house_inference_calls.count
+  end
+
+end

@@ -55,6 +55,7 @@ class AgentsController < ApplicationController
 
     render inertia: "agents/edit", props: {
       agent: @agent.as_json,
+      house_allowance: HouseInferenceGrant.find_by(agent: @agent)&.presentation,
       telegram_deep_link: @agent.telegram_configured? ? @agent.telegram_deep_link_for(Current.user) : nil,
       telegram_subscriber_count: @agent.telegram_subscriptions.active.count,
       memories: memories_for_display,
@@ -83,13 +84,15 @@ class AgentsController < ApplicationController
     attrs = agent_params
     model_changed = attrs.key?(:model_id) && attrs[:model_id] != @agent.model_id
 
-    if @agent.update(attrs)
-      audit("update_agent", @agent, **agent_audit_data(attrs))
-      redirect_to account_agents_path(current_account), notice: update_notice(model_changed)
-    else
-      redirect_to edit_account_agent_path(current_account, @agent),
-                  inertia: { errors: @agent.errors.to_hash }
+    HouseInferenceGrant.synchronize do
+      @agent.update!(attrs)
+      HouseInferenceGrant.assign!(@agent, Current.user)
     end
+    audit("update_agent", @agent, **agent_audit_data(attrs))
+    redirect_to account_agents_path(current_account), notice: update_notice(model_changed)
+  rescue ActiveRecord::RecordInvalid => e
+    redirect_to edit_account_agent_path(current_account, @agent),
+                inertia: { errors: e.record.errors.to_hash }
   end
 
   def destroy
@@ -152,7 +155,7 @@ class AgentsController < ApplicationController
   end
 
   def grouped_models
-    Chat::MODELS.group_by { |m| m[:group] || "Other" }.transform_values do |models|
+    (Chat::MODELS + HouseInference::Offering.models).group_by { |m| m[:group] || "Other" }.transform_values do |models|
       models.map do |m|
         reasoning = Chat.reasoning_effort_config(m[:model_id])
         {
