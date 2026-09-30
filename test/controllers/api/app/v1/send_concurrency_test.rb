@@ -20,7 +20,10 @@ class Api::App::V1::SendConcurrencyTest < ActionDispatch::IntegrationTest
     @tokens = sign_in_device
     @agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     @chat = @account.chats.new(model_id: "openrouter/auto", title: "Race", manual_responses: true)
-    @chat.agent_ids = [ @agent.id ]
+    # A second resident keeps this a mention room: with one resident, a human
+    # message wakes it automatically and a mention is not a separate wake.
+    @bystander = @account.agents.create!(name: "Bystander", system_prompt: "Test", runtime: "external")
+    @chat.agent_ids = [ @agent.id, @bystander.id ]
     @chat.save!
   end
 

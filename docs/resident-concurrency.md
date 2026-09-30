@@ -62,6 +62,15 @@ own process group and waits for root exit before acknowledging cancellation.
 Detached processes outside that group, subagents, browsers, builds and external
 side effects are not covered by the top-level turn cap.
 
+A turn caused by a human message or a native invoke carries its
+`MessageDispatch`. Its claim happened within the dispatch's ten-minute initial
+window, but it can then wait queued for capacity. Admission therefore rechecks
+the dispatch before the turn is submitted: a discarded source message, an author
+who lost membership, live activity switched off, or a dispatch past its six-hour
+no-new-starts boundary cancels the queued turn instead of starting it. A turn
+already submitted to the runtime is not recalled; queueing or reservation alone
+is never execution.
+
 Telegram refuses a second pending request for the same session with the existing
 busy response. Its job retries and rebuilds the message window after completion,
 instead of storing overlapping stale transcripts and executing them twice.

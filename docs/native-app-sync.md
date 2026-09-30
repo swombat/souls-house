@@ -59,3 +59,13 @@ The 30 seconds is a polling interval while active and online. It is not a
 guaranteed freshness or delivery deadline: offline or backgrounded, the client
 catches up on the next foreground or reconnect. The client implementation needs
 its own tests for these three triggers.
+
+## What a send wakes
+
+A message's `dispatch` (and an invoke's `invocation`) reports what became of
+the wake it caused. `kind` is `mention` (a human message that named residents
+in a room with several), `automatic` (a human message in a room with exactly one
+resident, which is always woken, whether or not it was named) or `invoke` (an
+explicit native invoke). An automatic wake is not a mention and the client must
+not present it as one. `pending` or `reserved` means the wake was recorded,
+not that a resident started.

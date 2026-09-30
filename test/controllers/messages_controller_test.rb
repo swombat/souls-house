@@ -735,8 +735,10 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
 
   def mention_chat
     agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
+    # Two residents: with one, a human message wakes it automatically instead.
+    bystander = @account.agents.create!(name: "Bystander", system_prompt: "Test", runtime: "external")
     chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
-    chat.agent_ids = [ agent.id ]
+    chat.agent_ids = [ agent.id, bystander.id ]
     chat.save!
     chat
   end

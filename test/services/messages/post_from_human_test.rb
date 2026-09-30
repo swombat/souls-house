@@ -9,7 +9,10 @@ class Messages::PostFromHumanTest < ActiveSupport::TestCase
     @account = accounts(:personal_account)
     @agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     @group_chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
-    @group_chat.agent_ids = [ @agent.id ]
+    # A second resident keeps this a mention room: with one resident, a human
+    # message wakes it automatically and a mention is not a separate wake.
+    @bystander = @account.agents.create!(name: "Bystander", system_prompt: "Test", runtime: "external")
+    @group_chat.agent_ids = [ @agent.id, @bystander.id ]
     @group_chat.save!
   end
 
