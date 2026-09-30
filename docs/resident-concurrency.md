@@ -71,18 +71,6 @@ no-new-starts boundary cancels the queued turn instead of starting it. A turn
 already submitted to the runtime is not recalled; queueing or reservation alone
 is never execution.
 
-There is no delayed recovery of missed wakes (consultation BjAPDe: Daniel's
-"just click again", Chris's objection to a six-hour retry buffer). The
-per-minute `MessageDispatchSweepJob` re-drives lost work only within ten
-minutes of the event it recovers: the send, for a first wake, or the previous
-resident's linked reply or finish, for the next link of a chain. Past that the
-dispatch is recorded `expired` / `continuation_not_started_in_time` straight
-away, nothing new starts, and the person asks again. A turn whose outcome is
-unknown still holds its slot, so asking again cannot start a second run for
-that resident while it does. The six-hour boundary is not recovery: it caps how long
-one dispatch's chain may keep starting links (and how long a turn may wait for
-capacity), each link still starting within ten minutes of its predecessor.
-
 Telegram refuses a second pending request for the same session with the existing
 busy response. Its job retries and rebuilds the message window after completion,
 instead of storing overlapping stale transcripts and executing them twice.

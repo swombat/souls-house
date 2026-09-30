@@ -16,26 +16,10 @@ module AgentRuntimeInteraction::ResponseChain
   end
 
   # Owed, and the dispatch that started the chain still allows new starts.
-  # A dispatch's next resident starts within MessageDispatch::RECOVERY_WINDOW
-  # of becoming due, or not at all: a missed step dies and the person asks
-  # again (Daniel and Chris, consultation BjAPDe). Chains no dispatch started
-  # keep master's behaviour.
   def response_chain_ready?
     return false unless response_chain_owed?
-    return false if message_dispatch && response_chain_missed?
 
     !(message_dispatch && message_dispatch.recovery_closed?)
-  end
-
-  # When the next resident became due: this run's linked reply, or its finish,
-  # whichever came first.
-  def response_chain_owed_since
-    replied_at = linked_messages.where(role: "assistant", agent_id: agent_id, chat_id: chat_id).minimum(:created_at)
-    [ replied_at, finished_at ].compact.min || updated_at
-  end
-
-  def response_chain_missed?
-    response_chain_owed_since <= MessageDispatch::RECOVERY_WINDOW.ago
   end
 
   # Its turn came: the next resident is due, whether or not it may still start.
