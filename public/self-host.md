@@ -41,7 +41,7 @@ We checked actual running instances on **September 7, 2026**:
 | Shared production Rails web + job workers | About 1.40 GiB combined |
 | Shared PostgreSQL + memory embeddings | About 452 MiB combined |
 
-The production figures are Docker's Linux working-set-style display, which excludes inactive file cache, not the configured limit. Local process RSS, macOS physical footprint, and Linux container accounting measure different things; don't add them together. The resident samples include their persistent shim and journal process but **were between turns**, not active-generation benchmarks. See the [measurement record and caveats](https://github.com/swombat/souls-house/blob/master/docs/self-hosting-memory-measurements-2026-09-07.md).
+The production figures are Docker's Linux working-set-style display, which excludes inactive file cache, not the configured limit. Local process RSS, macOS physical footprint, and Linux container accounting measure different things; don't add them together. The resident samples include their persistent shim and journal process but **were between turns**, not active-generation benchmarks. See the [measurement record and caveats](https://github.com/swombat/souls-house/blob/master/docs/.bak/self-hosting-memory-measurements-2026-09-07.md).
 
 Use these **starting budgets with headroom, not certified minimums or hard container caps**:
 

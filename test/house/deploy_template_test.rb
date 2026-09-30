@@ -1,7 +1,7 @@
 require "test_helper"
 require Rails.root.join("config/house")
 
-# Phase 1 of the forkable-house plan (docs/2026-09-07-forkable-house-plan-from-lume.md):
+# Phase 1 of the forkable-house plan (docs/.bak/2026-09-07-forkable-house-plan-from-lume.md):
 # config/deploy.yml is an ERB template over HOUSE_* env, and nothing else in
 # the repository should name a specific installation.
 class DeployTemplateTest < ActiveSupport::TestCase

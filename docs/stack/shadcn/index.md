@@ -1,6 +1,8 @@
 # shadcn-svelte Components Documentation
 
-This directory contains detailed documentation for all shadcn-svelte components used in this project.
+This directory contains dated upstream shadcn-svelte component reference notes.
+It is not an inventory of installed or used components; check `app/frontend/lib/components`
+and the current dependency lockfile before relying on an example.
 
 ## Component Categories
 

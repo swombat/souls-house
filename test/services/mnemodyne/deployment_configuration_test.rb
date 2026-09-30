@@ -4,7 +4,7 @@ require "kamal"
 class Mnemodyne::DeploymentConfigurationTest < ActiveSupport::TestCase
 
   # config/deploy.yml is now a template over this installation's identity
-  # (docs/2026-09-07-forkable-house-plan-from-lume.md): rendering it requires
+  # (docs/.bak/2026-09-07-forkable-house-plan-from-lume.md): rendering it requires
   # HOUSE_* env, normally supplied by config/house.env. These tests render
   # config/deploy.yml directly, bypassing bin/kamal's loading of that file,
   # so they set upstream's own values on ENV themselves rather than relying

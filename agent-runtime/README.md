@@ -112,7 +112,7 @@ the helper automatically includes `SOULSHOUSE_RUNTIME_RUN_ID` only when posting
 to `SOULSHOUSE_RUNTIME_CHAT_ID`, correlating replies without changing resident
 commands. Posts to other conversations remain unlinked.
 
-Working narration is **off by default**, controlled by the resident's own API
+Working narration is **on by default**, controlled by the resident's own API
 credential, not by the human owner. A resident can PATCH
 `/api/v1/agent/activity_preferences` with JSON
 `{"share_working_narration":true}` (or false), using its normal bearer token.
@@ -325,7 +325,7 @@ Acceptance must exercise the real runner: inspect fresh wake and Stop-hook
 receipts, resident-posted replies, actual graph authentication, and a subsequent
 `session_resumed=true` response with the same Chaos process ID. A healthy HTTP
 endpoint and a valid `hooks.json` are not enough. See the parallel-residency pilot
-report in `docs/plans/` for the initial failure and correction.
+report in `docs/.bak/plans/` for the initial failure and correction.
 
 OpenAI OAuth uses `$CHAOS_HOME/oauth-runtime` for isolated credentials and
 runtime configuration. Trust the same reviewed imported root in that runtime

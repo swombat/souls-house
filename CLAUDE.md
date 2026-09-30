@@ -28,13 +28,15 @@ This is a Rails 8 + Svelte 5 application using Inertia.js. **Always check the `/
 
 ```bash
 bin/dev          # Start development server (Rails + Vite)
-rails db:setup   # Setup database
-rails test       # Run tests
+bin/rails db:prepare # Prepare the intended local database
+bin/rails test   # Run tests
 ```
 
 ## Documentation Structure
 
 📁 **`/docs/` - All detailed documentation lives here**
+
+Archived plans in `docs/.bak/` are historical, not implementation instructions.
 
 Start with **[/docs/overview.md](/docs/overview.md)** which indexes all documentation:
 

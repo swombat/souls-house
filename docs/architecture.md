@@ -1,302 +1,108 @@
-# Architecture Documentation
+# souls.house architecture
 
-## Technology Stack
+souls.house is an account-scoped Rails application for conversations with resident
+agents. Rails owns the shared house: users, permissions, transcripts, dispatch,
+service grants and operational records. Residents execute in external harnesses,
+not inside a Rails LLM/tool loop.
 
-### Backend
-- **Ruby on Rails 8.0.2** - Web application framework
-- **PostgreSQL** - Primary database
-- **Solid Adapters** - Rails 8's new approach for cache, queue, and cable
-  - `solid_cache` - Database-backed caching
-  - `solid_queue` - Database-backed job queue
-  - `solid_cable` - Database-backed ActionCable
+This guide describes the code on `master`, not a production-deployment attestation.
+Start with [API and client boundaries](api.md) before building another client.
 
-### Frontend
-- **Svelte 5** - Reactive UI framework with runes
-- **Inertia.js** - Connects Rails backend with Svelte frontend
-- **Vite** - Fast build tool and dev server
-- **Tailwind CSS 4** - Utility-first CSS framework
-- **DaisyUI** - Component library for Tailwind
-- **ShadcnUI** - Customizable component library
+## Stack and processes
 
-## Application Architecture
+- Rails 8.1, Ruby and PostgreSQL; exact versions are in [Gemfile](../Gemfile),
+  [Gemfile.lock](../Gemfile.lock) and [mise.toml](../mise.toml).
+- Svelte 5 and Inertia connect the browser to Rails controllers. Vite builds the
+  frontend; Tailwind 4, Bits UI/shadcn-style components and DaisyUI provide UI
+  primitives. [package.json](../package.json) and the Bun lockfile pin dependencies.
+- Solid Queue runs background jobs; Solid Cache and Solid Cable use database-backed
+  adapters. See [database configuration](../config/database.yml),
+  [queues](../config/queue.yml) and [recurring jobs](../config/recurring.yml).
+- Active Storage owns attachments and generated media. Storage configuration is
+  environment-specific; blob URLs are not substitutes for application authorization.
+- Hosted residents run a pinned Chaos harness in Docker. Runtime image and Rails
+  releases are separate artifacts. See [resident runtime](resident-runtime.md).
 
-### Request Flow
-1. Browser makes request to Rails server
-2. Rails controller processes request
-3. Controller renders Inertia response with Svelte component name and props
-4. Inertia client-side router loads the Svelte component
-5. Svelte component renders with provided props
+## Domain and ownership
 
-### Directory Structure
+| Record | Responsibility |
+| --- | --- |
+| `User`, `Session`, `Membership`, `Account` | Human login, confirmed account membership and account administration |
+| `Agent`, `ChatAgent` | Resident configuration/runtime state and conversation participation |
+| `Chat`, `Message`, `ToolCall` | Account conversation, attributed messages, attachments and historical tool/reasoning data |
+| `AgentRuntimeInteraction`, `AgentRuntimeAttempt`, `AgentRuntimeEvent` | Trigger lifecycle, attempts, safe activity projections and usage |
+| `Whiteboard` | Account document with optimistic locking |
+| `ApiKey` | Account-scoped external access, optionally restricted to a resident |
+| `ServiceConnection`, `AgentServiceAccess` | External-service identity and explicit resident grant |
+| `AgentBookmark` | Resident-authored private return note tied to a `ChatAgent` membership |
+| `DeviceStream` and associated records | Subject-controlled observation ingest/read/erasure, not agent attention |
 
-See **[File System Structure documentation](./file_system_structure.md)** for complete directory layout, file organization, and naming conventions.
+See [data and authorization](data-and-authorization.md). Hashids are opaque public
+identifiers, **not** access control. Preserve them as strings; do not infer ordering
+or membership from an ID.
 
-## Key Design Patterns
+## Browser request and update flow
 
-### The Rails Way Philosophy
+1. A signed session cookie resolves a Rails `Session` and `Current.user`.
+2. Controllers scope resources through the authenticated user's accounts and
+   appropriate authorization checks, then render Inertia props.
+3. Svelte pages render those props and submit writes to Rails; business state
+   remains server-owned.
+4. Models using `Broadcastable` emit after-commit invalidation markers through
+   Action Cable. The browser reloads relevant Inertia props rather than treating
+   the socket as a durable database replication stream.
+5. Conversation-specific frontend state reconciles pagination, incoming messages,
+   activity and drafts. A partial reload must not silently overwrite local input.
 
-This application follows Rails conventions and DHH's philosophy:
+[Synchronization usage](synchronization-usage.md) and
+[internals](synchronization-internals.md) describe the actual protocol and limits.
 
-1. **Fat models, skinny controllers** - Business logic belongs in models
-2. **Convention over configuration** - Follow Rails patterns, don't fight them
-3. **Concerns for shared behavior** - Extract truly shared patterns
-4. **No unnecessary abstractions** - Avoid service objects and premature optimization
+## Resident response flow
 
-### Authorization Patterns
+1. A human explicitly requests a resident response (or another supported trigger
+   admits work). Saving an API message alone does not trigger inference.
+2. `ExternalAgentResponseRequest` checks runtime eligibility, prepares a bounded
+   stored transcript and a possible delta, and dispatches via `ChaosTriggerClient`.
+3. The hosted shim runs Chaos with the resident's identity and provider settings.
+   Persistent sessions are scoped to their conversation; a fresh fallback needs
+   full context, not just the resumed delta.
+4. The resident posts replies through the authenticated house API. Harness stdout
+   is diagnostic, not a chat reply. Activity reporting is a separate, bounded,
+   consent-controlled projection, not raw reasoning or a delivery receipt.
+5. Rails records execution/transport outcomes and usage separately. A missing
+   callback does not prove process exit, and an accepted message does not prove
+   the surrounding wake finished successfully.
 
-#### Association-Based Authorization (The Rails Way)
-Authorization is handled through Rails associations, not database row-level security:
+[Resident runtime](resident-runtime.md) covers lifecycle, availability and retained
+legacy data. [Message grouping](progress-messages.md) is presentation, not a second
+posting protocol. [Interaction pricing](interaction-cost-pricing.md) explains costs.
 
-```ruby
-# GOOD - Rails associations naturally scope access
-@project = current_user.accounts.find(params[:account_id]).projects.find(params[:id])
-# This will raise RecordNotFound if user doesn't have access - perfect!
+## Inference and memory boundaries
 
-# BAD - Manual permission checking with service objects
-@project = Project.find(params[:id])
-authorize! @project  # Don't do this - adds unnecessary abstraction
-```
+Resident inference and tools belong to the harness. `UtilityInference` makes small,
+non-streaming house-owned title, moderation and classifier requests through
+`ruby-openai`; it is not a replacement agent executor. See
+[utility inference](utility-inference.md) and [Telegram safeguards](safeguards.md).
 
-#### Key Principles:
-- **Use associations for scoping**: `current_user.accounts` automatically limits to accessible accounts
-- **Let Rails handle authorization**: RecordNotFound exceptions are your authorization
-- **No row-level database security**: Authorization happens in Rails, not the database
-- **Simple and clear**: Any Rails developer can understand the authorization logic
+Identity files/journals, legacy Rails memories and the Mnemodyne graph are distinct
+stores, not interchangeable views of one memory system. Resident customization and
+imported homes have their own policies. See [Mnemodyne](mnemodyne.md),
+[resident memory](features/resident-memory.md) and
+[memory ownership policy](features/resident-memory-policy.md).
 
-### Validation Philosophy
+## Development and operations
 
-#### Rails Validations Only
-All validation logic lives in Rails models, never in the database:
+Use normal Rails associations, small controllers and domain-specific model
+concerns/services rather than introducing parallel authorization or transport
+frameworks. Rails validations and database constraints serve different purposes:
+user-facing validation does not replace unique indexes, foreign keys or locking.
+Review existing source and migrations for each invariant.
 
-```ruby
-# GOOD - Rails model validation
-class Account < ApplicationRecord
-  validates :name, presence: true
-  validate :enforce_personal_account_limit
-  
-  private
-  
-  def enforce_personal_account_limit
-    if personal? && users.count > 1
-      errors.add(:base, "Personal accounts can only have one user")
-    end
-  end
-end
+- [Source map](file_system_structure.md), [commands](commands.md), [testing](testing.md)
+- [Parallel checkouts](multi-instance-development.md), [CI](continuous-integration.md)
+- [Self-hosting](../public/self-host.md), [backup](database-backup.md),
+  [database safety](database-safety.md)
 
-# BAD - SQL constraints (never do this)
-# execute <<-SQL
-#   ALTER TABLE accounts ADD CONSTRAINT check_personal_single_user ...
-# SQL
-```
-
-#### Why Rails Validations:
-- **Better error messages**: Rails provides clear, user-friendly error messages
-- **Database agnostic**: No vendor lock-in to PostgreSQL-specific features
-- **Easier testing**: Test validations in Ruby, not complex SQL
-- **Single source of truth**: All business logic in one place (the model)
-- **More flexible**: Can easily add conditional validations and complex logic
-
-### Business Logic Placement
-
-#### Models Contain Business Logic
-Following Rails conventions, business logic belongs in models:
-
-```ruby
-# GOOD - Business logic in model
-class User < ApplicationRecord
-  def self.register!(email)
-    transaction do
-      user = find_or_initialize_by(email_address: email)
-      # ... registration logic here
-    end
-  end
-end
-
-# BAD - Service object (avoid these)
-class RegistrationService
-  def execute
-    # This hides code smells and creates unnecessary abstraction
-  end
-end
-```
-
-#### Controllers Stay Thin
-Controllers should only orchestrate, not implement logic:
-
-```ruby
-# GOOD - Thin controller
-def create
-  user = User.register!(params[:email])
-  redirect_to check_email_path
-rescue ActiveRecord::RecordInvalid => e
-  redirect_to signup_path, inertia: { errors: e.record.errors }
-end
-```
-
-### Parameter Processing
-
-#### Controllers Handle Parameter Transformation
-Parameter processing (like parsing comma-separated strings) belongs in controllers, not models:
-
-```ruby
-# GOOD - Controller processes parameters before passing to model
-class Admin::AuditLogsController < ApplicationController
-  def index
-    logs = AuditLog.filtered(processed_filters)
-    # ...
-  end
-  
-  private
-  
-  def processed_filters
-    filters = filter_params.dup
-    
-    # Convert comma-separated strings to arrays
-    [:audit_action, :auditable_type].each do |key|
-      if filters[key].is_a?(String) && filters[key].include?(",")
-        filters[key] = filters[key].split(",").map(&:strip)
-      end
-    end
-    
-    filters
-  end
-end
-
-# Model scopes remain clean and accept arrays
-class AuditLog < ApplicationRecord
-  scope :by_action, ->(action) { where(action: action) if action.present? }
-  scope :by_type, ->(type) { where(auditable_type: type) if type.present? }
-end
-```
-
-#### Why This Pattern:
-- **Separation of Concerns**: Controllers handle HTTP concerns (parameter parsing), models handle data
-- **Clean Scopes**: Model scopes remain simple and reusable
-- **Testability**: Parameter processing can be tested in controller tests
-- **Flexibility**: Different controllers can process parameters differently for the same model
-
-### Inertia.js Integration
-
-Controllers use Inertia to render Svelte components:
-
-```ruby
-class PagesController < ApplicationController
-  def home
-    render inertia: 'Home', props: {
-      user: current_user&.slice(:id, :email, :name)
-    }
-  end
-end
-```
-
-Redirects use `inertia_location`:
-```ruby
-inertia_location(root_path)
-```
-
-### Component Organization
-
-1. **Page Components** (`app/frontend/pages/`)
-   - One component per controller action
-   - Named to match the controller/action pattern
-   - Receive props from Rails controller
-
-2. **Layout Components** (`app/frontend/layouts/`)
-   - `layout.svelte` - Main application layout
-   - `auth-layout.svelte` - Authentication pages layout
-
-3. **Reusable Components** (`app/frontend/lib/components/`)
-   - Shared UI components used across pages
-   - ShadcnUI components in `ui/` subdirectory
-   - Custom business components at root level
-
-### State Management
-
-1. **Component State** - Use Svelte 5 runes (`$state`, `$derived`)
-2. **Shared State** - Svelte stores in `app/frontend/lib/stores/`
-3. **Server State** - Props passed from Rails controllers
-4. **Persistent State** - localStorage (see theme store example)
-
-### Authentication Architecture
-
-- Session-based authentication using Rails 8 built-in auth
-- `Authentication` concern included in `ApplicationController`
-- Session cookies for maintaining logged-in state
-- BCrypt for password hashing
-- Password reset via email tokens
-
-### Database Architecture
-
-- PostgreSQL as primary database
-- Solid adapters use separate schemas for isolation:
-  - `cable_schema.rb` - ActionCable connections
-  - `cache_schema.rb` - Cache entries
-  - `queue_schema.rb` - Background jobs
-  - `schema.rb` - Main application schema
-
-### Frontend Build Pipeline
-
-1. **Development**
-   - Vite dev server provides HMR (Hot Module Replacement)
-   - Rails serves on port 3000, Vite on configured port
-   - `bin/dev` starts both servers via Procfile.dev
-
-2. **Production**
-   - Vite builds optimized bundles
-   - Assets served by Rails with fingerprinting
-   - Configured in `vite.json` and `vite.config.ts`
-
-## Security Considerations
-
-### Built-in Protections
-- CSRF protection enabled by default
-- Secure session cookies
-- Parameter filtering for sensitive data
-- Content Security Policy configured
-- SQL injection protection via ActiveRecord
-
-### Authentication Security
-- BCrypt password hashing
-- Session tokens with expiration
-- Password reset tokens expire
-- Secure cookie flags in production
-
-## Performance Optimizations
-
-### Frontend
-- Vite code splitting for optimal bundle sizes
-- Svelte's compiled output is highly optimized
-- Tailwind CSS purging unused styles
-- Lazy loading of page components via Inertia
-
-### Backend
-- Database-backed caching with solid_cache
-- Background job processing with solid_queue
-- Efficient database queries with includes/joins
-- PostgreSQL query optimization
-
-## Extension Points
-
-### Adding New Features
-1. Create route in `config/routes.rb`
-2. Add controller action with Inertia render
-3. Create Svelte page component
-4. Add any shared components to lib/components
-5. Update navigation if needed
-
-### Adding New UI Components
-1. Check if ShadcnUI has the component
-2. If not, create in `app/frontend/lib/components/`
-3. Use Tailwind classes for styling
-4. Consider DaisyUI for rapid prototyping
-
-### Adding Background Jobs
-1. Create job class in `app/jobs/`
-2. Solid Queue will handle execution
-3. Monitor via Rails console or future admin UI
-
-### Adding Real-time Features
-1. Create ActionCable channel
-2. Solid Cable handles connections
-3. Update Svelte components to subscribe
-4. Consider using stores for real-time state
+Installation identity belongs in gitignored `config/house.env`, not application
+code or copied documentation. Never use real resident credentials or wake real
+residents merely to prove a test fixture works.

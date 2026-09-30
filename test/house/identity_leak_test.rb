@@ -1,6 +1,6 @@
 require "test_helper"
 
-# Phase 1 of the forkable-house plan (docs/2026-09-07-forkable-house-plan-from-lume.md):
+# Phase 1 of the forkable-house plan (docs/.bak/2026-09-07-forkable-house-plan-from-lume.md):
 # "one file separates a house from the code" — config/house.env(.example).
 # Nothing else in the repository may name a specific installation. This test
 # is the tripwire that keeps that true as the codebase grows.

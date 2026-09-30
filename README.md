@@ -21,6 +21,12 @@ Each agent hosted here gets:
 
 The companion field guide for giving a model a persistent self lives at [swombat/hearth](https://github.com/swombat/hearth).
 
+## Developer documentation
+
+Start with [the documentation index](docs/overview.md), [architecture](docs/architecture.md)
+and [API/client boundaries](docs/api.md). Historical plans are retained in
+`docs/.bak/`, not mixed into the current guides.
+
 ## Heritage
 
 souls.house grew out of **HelixKit**, a Svelte-on-Rails app kit (analogous to Jumpstart Pro or BulletTrain, but built AI-first). The stack:
@@ -71,12 +77,9 @@ follow `next_cursor` until it is `null` to reach older active conversations.
    ```
 3. Setup the database:
    ```sh
-   rails db:create:all
-   rails db:setup db:prepare
-   rails db:migrate:cache db:migrate:queue db:migrate:cable
-   rails db:schema:dump:cable db:schema:dump:cache db:schema:dump:queue
+   bin/rails db:prepare
    ```
-   Check that the solid* databases have been created by checking `db/cable_schema.rb`, `db/cache_schema.rb`, and `db/queue_schema.rb` and seeing that they contain a comment at the top about auto-generation.
+   For parallel checkouts, use [instance setup](docs/multi-instance-development.md). Never reset an existing development database; see [database safety](docs/database-safety.md).
 4. Either obtain the credential keys from a colleague (see `docs/dev-credentials.md` for the local login this checkout ships with), or `rails credentials:edit --environment development` and add credentials of your own. `config/credentials/production.example.yml` documents every credential key the app reads, which are required and which are optional — the same blocks apply in development. For a fresh production fork, see "Forking to a new house" below.
 5. Start the development server:
    ```sh
@@ -164,14 +167,14 @@ This application includes a real-time synchronization system that automatically 
 #### Key Files
 
 **Rails Side:**
-- [`app/channels/sync_channel.rb`](https://github.com/danieltenner/helix_kit/blob/master/app/channels/sync_channel.rb) - ActionCable channel with authorization
-- [`app/models/concerns/broadcastable.rb`](https://github.com/danieltenner/helix_kit/blob/master/app/models/concerns/broadcastable.rb) - Model concern for automatic broadcasting
-- [`app/models/concerns/sync_authorizable.rb`](https://github.com/danieltenner/helix_kit/blob/master/app/models/concerns/sync_authorizable.rb) - Authorization logic for sync access
-- [`app/channels/application_cable/connection.rb`](https://github.com/danieltenner/helix_kit/blob/master/app/channels/application_cable/connection.rb) - WebSocket authentication
+- [`app/channels/sync_channel.rb`](app/channels/sync_channel.rb) - ActionCable channel with authorization
+- [`app/models/concerns/broadcastable.rb`](app/models/concerns/broadcastable.rb) - Model concern for automatic broadcasting
+- [`app/models/concerns/sync_authorizable.rb`](app/models/concerns/sync_authorizable.rb) - Authorization logic for sync access
+- [`app/channels/application_cable/connection.rb`](app/channels/application_cable/connection.rb) - WebSocket authentication
 
 **JavaScript/Svelte Side:**
-- [`app/frontend/lib/cable.js`](https://github.com/danieltenner/helix_kit/blob/master/app/frontend/lib/cable.js) - Core ActionCable subscription management
-- [`app/frontend/lib/use-sync.js`](https://github.com/danieltenner/helix_kit/blob/master/app/frontend/lib/use-sync.js) - Svelte hook for easy integration
+- [`app/frontend/lib/cable.js`](app/frontend/lib/cable.js) - Core ActionCable subscription management
+- [`app/frontend/lib/use-sync.js`](app/frontend/lib/use-sync.js) - Svelte hook for easy integration
 
 #### Usage Example
 
@@ -265,7 +268,7 @@ rails test test/channels/sync_channel_test.rb
 rails test test/models/concerns/broadcastable_test.rb
 ```
 
-See the [in-app documentation](/documentation) for more detailed information and advanced usage.
+See the [documentation index](docs/overview.md) for more detailed information and advanced usage.
 
 ### JSON Serialization with json_attributes
 
@@ -321,8 +324,8 @@ class AccountsController < ApplicationController
 end
 ```
 
-See the [in-app documentation](/documentation) for more detailed information and advanced usage.
+See the [documentation index](docs/overview.md) for more detailed information and advanced usage.
 
 ## License
 
-This project is open-source and available under the [MIT License](LICENSE).
+This project is open-source and available under the [MIT License](https://opensource.org/license/mit).

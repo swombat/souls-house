@@ -9,8 +9,8 @@ override.**
 
 **September 6, 2026: reviewed, authorized, deployed and verified for all nine
 hosted residents.** Actual release evidence and artifact
-digest: `docs/reviews/260906-mnemodyne-release.md`. Sign-off and non-blocking follow-ups:
-`docs/reviews/260906-mnemodyne-launch-readiness.md`.
+digest: `docs/.bak/reviews/260906-mnemodyne-release.md`. Sign-off and non-blocking follow-ups:
+`docs/.bak/reviews/260906-mnemodyne-launch-readiness.md`.
 
 ## Reproduce locally
 

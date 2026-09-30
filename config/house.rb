@@ -2,7 +2,7 @@
 
 # House — the identity layer that turns this checkout into a specific
 # installation. See config/house.env.example and
-# docs/2026-09-07-forkable-house-plan-from-lume.md.
+# public/self-host.md.
 #
 # Deliberately dependency-free (no Rails, no dotenv gem): both bin/kamal and
 # bin/house need to load config/house.env before Bundler has necessarily
