@@ -29,9 +29,16 @@ class MessageDispatch < ApplicationRecord
   STATUSES = %w[pending reserved cancelled expired].freeze
   KINDS = %w[mention automatic invoke].freeze
   EXPIRY = 10.minutes
-  # Recovery re-drives work this far back and no further. Past it, the sweeper
-  # still records what became of the dispatch (close_recovery!) instead of
-  # leaving it pending or reserved; it just stops starting anything.
+  # Missed work is re-driven only this soon after the event it recovers: the
+  # send, for a first wake (EXPIRY), or the previous resident becoming done,
+  # for the next link in a chain. Past that it is recorded as not started and
+  # the person asks again. There is no delayed recovery.
+  RECOVERY_WINDOW = 10.minutes
+  # The longest a dispatch's chain may keep starting new turns (including a
+  # turn waiting for a free slot). Not recovery: each link still starts within
+  # RECOVERY_WINDOW of its predecessor. Past it, the sweeper still records
+  # what became of the dispatch (close_recovery!) instead of leaving it
+  # pending or reserved; it just stops starting anything.
   RECOVERY_HORIZON = 6.hours
   # A fresh row's own enqueue gets this long before the sweeper assumes it
   # was lost.
@@ -229,6 +236,8 @@ class MessageDispatch < ApplicationRecord
     return close_recovery! if recovery_closed?
 
     settle_expired_runs!
+    return close_missed_continuation! if missed_continuation?
+
     runtime_interactions.where(dispatch_claimed_at: nil, finished_at: nil, execution_state: "queued")
       .where("created_at <= ?", grace.ago).where("execution_deadline_at > ?", Time.current).find_each do |interaction|
       safely_enqueue { ManualAgentResponseJob.perform_later(chat, interaction.agent, runtime_interaction_id: interaction.id) }
@@ -281,6 +290,19 @@ class MessageDispatch < ApplicationRecord
 
   def settle_expired!
     with_lock { settle!("expired", "not_started_in_time") if pending? && expires_at.past? }
+  end
+
+  # A chain step that came due and was not started within RECOVERY_WINDOW is
+  # over: record it now rather than at the horizon. Already-running work is
+  # untouched; this only stops new starts.
+  def missed_continuation?
+    unadvanced_ready_runs(0.seconds, owed: true).any?(&:response_chain_missed?)
+  end
+
+  def close_missed_continuation!
+    with_lock do
+      settle!("expired", "continuation_not_started_in_time") if reserved? && settled_at.nil? && missed_continuation?
+    end
   end
 
   # A reservation whose deadline passed unclaimed can never start; record it
