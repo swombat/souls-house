@@ -172,6 +172,42 @@ test.describe('browser contracts', () => {
     await cleanupRun(request, setup.run_id);
   });
 
+  test('missing resident credentials open setup dialog for single and all triggers', async ({
+    page,
+    request,
+  }, testInfo) => {
+    await login(page, setup.primary_user, setup.password);
+    const response = await request.post('/test/e2e/conversation_fixture', {
+      data: { account_id: setup.account_id, count: 1 },
+    });
+    const fixture = await response.json();
+    await page.goto(`/accounts/${setup.account_id}/chats/${fixture.chat_id}`);
+    const rejected = page.waitForResponse(
+      (res) => res.url().includes('/agent_trigger') && res.request().method() === 'POST'
+    );
+    await page.getByRole('button', { name: 'E2E Researcher', exact: true }).click();
+    expect((await rejected).status()).toBe(422);
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('Set up resident credentials');
+    await expect(dialog).toContainText('Edit the resident and set up credentials');
+    await expect(dialog.getByRole('link', { name: 'Edit E2E Researcher' })).toHaveAttribute(
+      'href',
+      setup.agents[0].edit_url
+    );
+    await expect(dialog.getByRole('link', { name: 'Edit E2E Critic' })).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('missing-credentials-desktop.png') });
+    await dialog.getByRole('button', { name: 'Not now' }).click();
+    await expect(page.getByRole('button', { name: 'E2E Researcher', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Ask All', exact: true }).click();
+    await expect(dialog.getByRole('link', { name: 'Edit E2E Researcher' })).toBeVisible();
+    await expect(dialog.getByRole('link', { name: 'Edit E2E Critic' })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(dialog.getByRole('link', { name: 'Edit E2E Researcher' })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('missing-credentials-mobile.png') });
+    await dialog.getByRole('link', { name: 'Edit E2E Researcher' }).click();
+    await expect(page).toHaveURL(new RegExp(setup.agents[0].edit_url + '$'));
+  });
+
   test('user can log in, create a multi-agent chat, and see deterministic thinking output', async ({
     page,
     request,

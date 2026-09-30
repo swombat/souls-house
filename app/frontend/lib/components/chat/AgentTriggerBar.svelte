@@ -1,10 +1,10 @@
 <script>
-  import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Spinner, UsersThree } from 'phosphor-svelte';
-  import { accountChatAgentTriggerPath } from '@/routes';
+  import { accountChatAgentTriggerPath, editAccountAgentPath } from '@/routes';
   import { agentIconFor } from '$lib/agent-icons';
   import AgentUsageName from '$lib/components/chat/AgentUsageName.svelte';
+  import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { onDestroy } from 'svelte';
 
   let {
@@ -22,6 +22,34 @@
   let waitingForResponse = $state(false);
   let responseMarkerAtTrigger = $state(null);
   let timeoutId = null;
+  let errorOpen = $state(false);
+  let triggerError = $state('');
+  let missingCredentials = $state([]);
+
+  async function submitTrigger(body) {
+    try {
+      const response = await fetch(accountChatAgentTriggerPath(accountId, chatId), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
+        },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        missingCredentials = data.code === 'missing_credentials' ? data.agents || [] : [];
+        throw new Error(data.error || 'Could not ask the resident. Please try again.');
+      }
+      onTrigger?.();
+    } catch (error) {
+      clearWaitingState();
+      triggerError = error.message;
+      errorOpen = true;
+    }
+  }
 
   function clearWaitingState() {
     waitingForResponse = false;
@@ -64,18 +92,8 @@
     triggeringAgent = agent.id;
     beginWaiting();
 
-    router.post(
-      accountChatAgentTriggerPath(accountId, chatId),
-      { agent_id: agent.id },
-      {
-        onSuccess: () => {
-          onTrigger?.();
-        },
-        onError: () => {
-          clearWaitingState();
-        },
-      }
-    );
+    missingCredentials = [];
+    void submitTrigger({ agent_id: agent.id });
   }
 
   function triggerAllAgents() {
@@ -83,18 +101,8 @@
     triggeringAll = true;
     beginWaiting();
 
-    router.post(
-      accountChatAgentTriggerPath(accountId, chatId),
-      {},
-      {
-        onSuccess: () => {
-          onTrigger?.();
-        },
-        onError: () => {
-          clearWaitingState();
-        },
-      }
-    );
+    missingCredentials = [];
+    void submitTrigger({});
   }
 
   const isTriggering = $derived(triggeringAgent !== null || triggeringAll || waitingForResponse);
@@ -156,3 +164,19 @@
     </div>
   </div>
 {/if}
+
+<Dialog.Root bind:open={errorOpen}>
+  <Dialog.Content class="max-w-md">
+    <Dialog.Header>
+      <Dialog.Title
+        >{missingCredentials.length ? 'Set up resident credentials' : 'Unable to ask resident'}</Dialog.Title>
+      <Dialog.Description>{triggerError}</Dialog.Description>
+    </Dialog.Header>
+    {#each missingCredentials as agent (agent.id)}
+      <a class="text-primary underline" href={editAccountAgentPath(accountId, agent.id)}>Edit {agent.name}</a>
+    {/each}
+    <Dialog.Footer>
+      <Button variant="outline" onclick={() => (errorOpen = false)}>Not now</Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>

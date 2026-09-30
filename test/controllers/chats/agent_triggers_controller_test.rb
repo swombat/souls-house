@@ -5,6 +5,7 @@ class Chats::AgentTriggersControllerTest < ActionDispatch::IntegrationTest
   setup do
     @user = users(:user_1)
     @account = accounts(:personal_account)
+    @account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router")
     @agent = @account.agents.create!(name: "Test Agent", system_prompt: "You are a test agent", runtime: "external")
     @chat = create_group_chat(@account, agent_ids: [ @agent.id ])
 
@@ -81,6 +82,31 @@ class Chats::AgentTriggersControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :unprocessable_entity
     assert_equal "#{@agent.name} is already responding", response.parsed_body["error"]
+  end
+
+  test "missing credentials returns setup details without reserving or enqueueing a wake" do
+    @account.update!(openrouter_api_key: nil)
+    assert_no_difference "AgentRuntimeInteraction.count" do
+      assert_no_enqueued_jobs do
+        post account_chat_agent_trigger_path(@account, @chat), params: { agent_id: @agent.to_param }, as: :json
+      end
+    end
+    assert_response :unprocessable_entity
+    assert_equal "missing_credentials", response.parsed_body["code"]
+    assert_equal [ { "id" => @agent.to_param, "name" => @agent.name } ], response.parsed_body["agents"]
+    assert_not response.body.include?("test-only-router")
+  end
+
+  test "ask all checks every eligible resident before enqueueing any" do
+    @account.update!(openrouter_api_key: nil)
+    ready = @account.agents.create!(name: "Connected", runtime: "external", model_id: "openai/gpt-6-sol",
+      provider_auth_modes: { openai: "oauth_account" }, provider_connections: { openai: { status: "connected" } })
+    @chat.agents << ready
+    assert_no_enqueued_jobs do
+      post account_chat_agent_trigger_path(@account, @chat), as: :json
+    end
+    assert_response :unprocessable_entity
+    assert_equal [ @agent.to_param ], response.parsed_body["agents"].pluck("id")
   end
 
   test "requires authentication" do
