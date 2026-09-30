@@ -92,6 +92,7 @@ Rails.application.routes.draw do
         post :transcription, to: "chats/transcriptions#create"
       end
       scope module: :chats do
+        resource :draft, only: [ :show, :update ]
         resource :archive, only: [ :create, :destroy ]
         resource :discard, only: [ :create, :destroy ]
         resource :fork, only: :create
@@ -152,6 +153,8 @@ Rails.application.routes.draw do
   end
 
   namespace :admin do
+    patch "resident_turns/capacity", to: "resident_turns#update"
+    resources :resident_turns, only: [ :index, :destroy ]
     resources :runtime_sessions, only: :index, controller: "agent_runtime_sessions"
     resources :agents, only: [] do
       resource :runtime, only: :show, controller: "agent_runtime_sessions"
@@ -224,6 +227,7 @@ Rails.application.routes.draw do
       post "agents/:uuid/announce", to: "agents#announce", as: :agent_announce
       get "agents/:uuid/health", to: "agents#health", as: :agent_health
       resources :conversations, only: [ :index, :show, :create ] do
+        resource :draft, only: [ :show, :update ]
         resource :bookmark, only: [ :show, :update, :destroy ], controller: "agent_bookmarks"
         resources :messages, only: :create do
           resources :attachments, only: :show

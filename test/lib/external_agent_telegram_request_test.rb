@@ -35,11 +35,27 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
     assert_not_requested :post, "https://agent.example.com/trigger"
   end
 
+  test "asynchronous Telegram waits for completion before advancing its cursor" do
+    ResidentTurn.stub(:enabled?, true) do
+      first = ExternalAgentTelegramRequest.new(agent: @agent, subscription: @subscription, telegram_message: @message).call
+      assert_equal 202, first[:status]
+      duplicate = ExternalAgentTelegramRequest.new(agent: @agent, subscription: @subscription, telegram_message: @message).call
+      assert_equal 409, duplicate[:status]
+      assert_equal 1, ResidentTurn.pending.count
+      turn = ResidentTurn.pending.first
+      turn.finish!({ "status" => 200, "body" => { "status" => "ok" } })
+      after_completion = ExternalAgentTelegramRequest.new(agent: @agent, subscription: @subscription, telegram_message: @message).call
+      assert_equal 204, after_completion[:status]
+    end
+  end
+
   test "sends Telegram metadata and grounded transcript to the external trigger" do
+    @agent.update!(turn_timeout_minutes: 1440)
     stub = stub_request(:post, "https://agent.example.com/trigger")
       .with do |request|
         body = JSON.parse(request.body)
-        body["trigger_kind"] == "telegram" &&
+        body["timeout_secs"] == 86400 &&
+          body["trigger_kind"] == "telegram" &&
           body["channel"] == "telegram" &&
           body["thread_id"] == @subscription.to_param &&
           body["history_cursor"] == @message.to_param &&

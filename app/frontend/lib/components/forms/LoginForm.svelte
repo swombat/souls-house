@@ -2,7 +2,7 @@
   import Form from './Form.svelte';
   import Input from '$lib/components/shadcn/input/input.svelte';
   import Label from '$lib/components/shadcn/label/label.svelte';
-  import { Link } from '@inertiajs/svelte';
+  import { Link, page } from '@inertiajs/svelte';
   import { loginPath, signupPath, newPasswordPath } from '@/routes';
 
   let { onCancel, onSuccess } = $props();
@@ -39,7 +39,11 @@
   </div>
 
   <div class="text-center text-sm">
-    Don't have an account?
-    <Link href={signupPath()} class="underline">Sign up</Link>
+    {#if $page.props?.site_settings?.allow_signups !== false}
+      Don't have an account?
+      <Link href={signupPath()} class="underline">Sign up</Link>
+    {:else}
+      New signups are currently closed.
+    {/if}
   </div>
 </Form>

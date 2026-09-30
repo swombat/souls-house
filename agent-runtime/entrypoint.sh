@@ -6,11 +6,15 @@
 set -e
 
 AGENT_HOME=/home/agent
-AGENT_REPO_PATH="${AGENT_REPO_PATH:-$AGENT_HOME/repo}"
-if [ "${SOULSHOUSE_HOME_PROFILE:-house}" = "mira_v1" ]; then
+export AGENT_REPO_PATH="${AGENT_REPO_PATH:-$AGENT_HOME/repo}"
+# "imported" is a class of home profile (mira_v1, portable_v1). An unknown
+# profile makes imported_home.py exit non-zero, which stops this script under
+# `set -e`: it never falls back to the house path or to another profile.
+HOME_CLASS="$(python3 /home/agent/imported_home.py --class)"
+if [ "$HOME_CLASS" = "imported" ]; then
     python3 /home/agent/imported_home.py
     # Imported hooks belong to the reviewed home; never overlay house defaults.
-    test "$AGENT_REPO_PATH" = "$MIRA_ROOT"
+    test "$AGENT_REPO_PATH" = "$(python3 /home/agent/imported_home.py --root)"
 fi
 
 # External-service credentials are runtime-supplied hosting context. The source
@@ -37,8 +41,8 @@ done
 # Stop blocks once after a turn, inviting authored memory or "no shape".
 # The hook scripts live in identity so they
 # is visible in the hosting filesystem browser. hooks.json is installed into the
-# active repo's .chaos directory, where Chaos discovers project hooks.
-if [ "${SOULSHOUSE_HOME_PROFILE:-house}" != "mira_v1" ]; then
+# active repo's .chaos directory as a one-time database import source.
+if [ "$HOME_CLASS" != "imported" ]; then
     mkdir -p "$AGENT_HOME/identity/automation" \
              "$AGENT_HOME/identity/memory/daily-journals" \
              "$AGENT_HOME/identity/memory/automation/state"
@@ -57,7 +61,7 @@ chown -R 1000:1000 "$CHAOS_HOME"
 gosu agent python3 /usr/local/share/helixkit-agent/runtime_settings.py
 
 # Imported homes retain their own hooks and instructions. Stock path is unchanged.
-if [ "${SOULSHOUSE_HOME_PROFILE:-house}" != "mira_v1" ]; then
+if [ "$HOME_CLASS" != "imported" ]; then
 # Refresh pristine hooks, but preserve resident edits and stage new stock for review.
 python3 /usr/local/share/helixkit-agent/install_memory_scripts.py \
     /usr/local/share/helixkit-agent "$AGENT_HOME/identity/automation"
@@ -65,24 +69,28 @@ install_hooks_json() {
     target="$1"
     python3 /usr/local/share/helixkit-agent/install_memory_hooks.py "$target"
 }
-# Chaos reads hooks from both global and project config. Install managed hooks
-# only into the active project (`-C`) so it fires once per turn. If an earlier
-# HelixKit image wrote the same managed hook into ~/.chaos/hooks.json, remove it.
-install_hooks_json "$AGENT_REPO_PATH/.chaos/hooks.json"
+# Prepare legacy sources only before the first DB migration. Afterward the
+# database is authoritative, including resident edits, removals and revocations.
+if [ ! -f "$CHAOS_HOME/house-hooks-v1.json" ]; then
+if [ ! -f "$AGENT_REPO_PATH/.chaos/hooks.json" ]; then
+    install_hooks_json "$AGENT_REPO_PATH/.chaos/hooks.json"
+fi
 if [ -f "$AGENT_HOME/.chaos/hooks.json" ] && grep -q "hosted-agent-stop-journal-reflex:" "$AGENT_HOME/.chaos/hooks.json"; then
     python3 /usr/local/share/helixkit-agent/install_memory_hooks.py "$AGENT_HOME/.chaos/hooks.json" --remove
 fi
+fi # one-time legacy sources
 cat > "$AGENT_HOME/.chaos/helixkit-hooks.md" <<'HOOKS_NOTE'
 # HelixKit hosted-agent hooks
 
-The managed BeforeTurn recall and Stop memory-formation hooks are installed at:
+Hooks live in the Chaos database (`chaos://hooks`). `hooks_create`,
+`hooks_update`, `hooks_set_enabled`, `hooks_delete`, and `hooks_preview` manage
+them headlessly under
+this home's standing operator authorization. Disabling or deleting a hook lasts
+across restarts; the house does not silently re-enable it.
 
-`/home/agent/repo/.chaos/hooks.json`
-
-Chaos may read both global (`~/.chaos`) and project (`-C .../.chaos`) hooks, so
-HelixKit does not install a second copy here. Keeping only one active hook avoids
-duplicate reflexes. Your other hooks are preserved. `house-memory guide`
-explains the memory practice; no-shape remains a valid Stop response.
+Legacy project/global `hooks.json` files are one-time import sources, not active
+configuration. The private `house-hooks-v1.json` manifest records provisioning.
+`house-memory guide` explains memory practice; no-shape is a valid Stop response.
 
 Resident-modified hook scripts stay active across boots. Pending stock updates
 are listed in `identity/automation/HOUSE-HOOK-UPDATES.md`, with `.upstream`
@@ -117,8 +125,17 @@ chown -R 1000:1000 "$AGENT_REPO_PATH" "$AGENT_HOME/work" "$AGENT_HOME/state" "$A
 
 fi # stock memory installation
 
+# Includes imported homes; never overwrite their own hook definitions.
+# Before the one-time import, an imported home's manifest must name the file
+# Chaos imports, that file must be importable, and the global source must hold
+# no stock house hooks. After the import this check is a no-op.
+if [ "$HOME_CLASS" = "imported" ]; then
+    gosu agent python3 /home/agent/imported_home.py --hook-import-check
+fi
+gosu agent python3 /usr/local/share/helixkit-agent/runtime_hooks.py
+
 # A portable home gets only its sync worker, never its host-owned scheduled jobs.
-if [ "${SOULSHOUSE_HOME_PROFILE:-house}" = "mira_v1" ]; then
+if [ "$HOME_CLASS" = "imported" ]; then
     gosu agent python3 /home/agent/home_sync_loop.py &
 fi
 
@@ -170,7 +187,7 @@ done
 # Optional local guardrail if the identity volume is itself a git working tree.
 # The hosted path does not require git, but agents may initialize it for local
 # history. Protect soul.md from accidental commits unless explicitly allowed.
-if [ "${SOULSHOUSE_HOME_PROFILE:-house}" != "mira_v1" ] && [ -d "$AGENT_HOME/identity/.git/hooks" ]; then
+if [ "$HOME_CLASS" != "imported" ] && [ -d "$AGENT_HOME/identity/.git/hooks" ]; then
     cat > "$AGENT_HOME/identity/.git/hooks/pre-commit" <<'HOOK'
 #!/bin/sh
 set -e

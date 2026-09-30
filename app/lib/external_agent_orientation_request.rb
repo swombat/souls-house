@@ -1,7 +1,5 @@
 class ExternalAgentOrientationRequest
 
-  ORIENTATION_TIMEOUT_SECS = 30.minutes.to_i
-
   def initialize(agent:, requested_by: "HelixKit orientation", context: :migration)
     @agent = agent
     @requested_by = requested_by
@@ -39,8 +37,10 @@ class ExternalAgentOrientationRequest
       endpoint_url: endpoint_url,
       request_text: request,
       provider_auth_mode: auth_mode
-    ) do
+    ) do |interaction|
       ChaosTriggerClient.new(endpoint_url, agent.trigger_bearer_token).request_response(
+        interaction: interaction,
+        completion_context: { orientation_snapshot: before, orientation_context: context },
         conversation_id: nil,
         requested_by: requested_by,
         session_id: session_id,
@@ -50,11 +50,11 @@ class ExternalAgentOrientationRequest
         model: Agents::Sandbox.chaos_model_for(agent),
         reasoning_effort: agent.reasoning_effort,
         auth_mode: auth_mode,
-        read_timeout: ORIENTATION_TIMEOUT_SECS + 30,
-        runtime_timeout_secs: ORIENTATION_TIMEOUT_SECS
+        runtime_timeout_secs: agent.runtime_timeout_secs
       )
     end
 
+    return result.merge(oriented: false) if result[:status] == 202
     oriented = journal_status.grown_since?(before)
     agent.update!(oriented_at: Time.current) if oriented && agent.oriented_at.blank?
     result.merge(oriented: oriented, oriented_at: agent.reload.oriented_at&.iso8601)

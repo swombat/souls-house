@@ -5,8 +5,10 @@ require "json"
 require "pathname"
 
 ROOT = Pathname.pwd
-REQUIREMENTS_DIR = ROOT.join("docs/requirements")
-PLANS_DIR = ROOT.join("docs/plans")
+REQUIREMENTS_DIRS = [
+  ROOT.join("docs/proposals/requirements"),
+  ROOT.join("docs/.bak/requirements")
+].freeze
 
 REVIEW_SUFFIX_PATTERNS = [
   /-dhh-feedback\b/,
@@ -56,6 +58,8 @@ def parse_family(stem)
 end
 
 def list_files(dir)
+  return [] unless dir.directory?
+
   Dir.children(dir).sort.map { |entry| dir.join(entry) }.select(&:file?).reject { |path| hidden_or_store?(path) }
 end
 
@@ -71,12 +75,14 @@ def exact_file_candidates(argument)
 end
 
 def resolve_requirements(argument)
-  direct_matches = exact_file_candidates(argument).select { |path| path.to_s.include?("/docs/requirements/") || path.dirname == REQUIREMENTS_DIR }
+  direct_matches = exact_file_candidates(argument).select { |path| REQUIREMENTS_DIRS.include?(path.dirname) }
   return direct_matches.first if direct_matches.one?
   return direct_matches.first if direct_matches.any?
 
   stem = File.basename(argument.to_s).sub(/\.[^.]+\z/, "")
-  available = list_files(REQUIREMENTS_DIR).reject { |path| review_artifact?(path) }
+  available = REQUIREMENTS_DIRS.flat_map { |dir| list_files(dir) }.reject { |path| review_artifact?(path) }
+  # An active proposal supersedes an archived requirement with the same name.
+  available = available.uniq { |path| path.basename.to_s }
 
   exact_stem_matches = available.select do |path|
     file_stem = basename_without_extension(path)
@@ -134,7 +140,7 @@ def resolve_plans(requirement_path)
   family = parsed_requirement[:family]
   requirement_slug = parsed_requirement[:slug]
 
-  all_family_files = list_files(PLANS_DIR).select do |path|
+  all_family_files = list_files(requirement_path.dirname.parent.join("plans")).select do |path|
     file_parsed = parse_family(basename_without_extension(path))
     file_parsed && file_parsed[:family] == family
   end
@@ -163,8 +169,8 @@ end
 argument = ARGV.join(" ").strip
 usage! if argument.empty?
 
-unless REQUIREMENTS_DIR.directory? && PLANS_DIR.directory?
-  warn "Expected docs/requirements and docs/plans to exist under #{ROOT}"
+unless REQUIREMENTS_DIRS.any?(&:directory?)
+  warn "Expected current proposals or archived requirements under #{ROOT}/docs"
   exit 1
 end
 

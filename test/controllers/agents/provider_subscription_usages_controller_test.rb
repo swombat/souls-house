@@ -8,6 +8,7 @@ class Agents::ProviderSubscriptionUsagesControllerTest < ActionDispatch::Integra
     @agent = agents(:other_account_agent)
     @agent.update!(
       model_id: "openai/gpt-5",
+      provider_auth_modes: { "openai" => "oauth_account" },
       runtime: "external",
       health_state: "healthy",
       trigger_bearer_token: "trigger-secret",

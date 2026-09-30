@@ -10,7 +10,7 @@ class ChaosTriggerClient
     @trigger_bearer_token = trigger_bearer_token
   end
 
-  def request_response(conversation_id:, requested_by:, session_id:, request:, trigger_kind: "conversation", provider: nil, model: nil, reasoning_effort: nil, auth_mode: nil, request_delta: nil, persistent_session: false, session_policy: nil, trigger_payload: nil, activity: nil, read_timeout: DEFAULT_READ_TIMEOUT_SECS, runtime_timeout_secs: DEFAULT_RUNTIME_TIMEOUT_SECS)
+  def request_response(conversation_id:, requested_by:, session_id:, request:, trigger_kind: "conversation", provider: nil, model: nil, reasoning_effort: nil, auth_mode: nil, request_delta: nil, persistent_session: false, session_policy: nil, trigger_payload: nil, activity: nil, read_timeout: nil, runtime_timeout_secs: DEFAULT_RUNTIME_TIMEOUT_SECS, interaction: nil, completion_context: {})
     raise ArgumentError, "endpoint_url is missing" if endpoint_url.blank?
     raise ArgumentError, "trigger bearer token is missing" if trigger_bearer_token.blank?
 
@@ -37,8 +37,14 @@ class ChaosTriggerClient
       body[:session_policy] = session_policy if session_policy.present?
     end
     body[:activity] = activity if activity
+    if ResidentTurn.enabled?
+      raise ArgumentError, "asynchronous turns require an interaction" unless interaction
+      turn = ResidentTurn.enqueue!(interaction, body, completion_context: completion_context)
+      return { status: 202, body: { "status" => "queued", "dispatch_id" => turn.dispatch_id } }
+    end
     http_request.body = body.to_json
 
+    read_timeout ||= (runtime_timeout_secs || DEFAULT_RUNTIME_TIMEOUT_SECS) + 30
     response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https", open_timeout: 5, read_timeout: read_timeout) do |http|
       http.request(http_request)
     end
@@ -47,11 +53,41 @@ class ChaosTriggerClient
       status: response.code.to_i,
       body: parse_body(response.body)
     }
+  rescue ResidentTurn::SessionBusy
+    { status: 409, body: { "status" => "already_running" } }
+  end
+
+  def submit_turn(id, payload, ledger_id:)
+    turn_request(Net::HTTP::Post, id, payload, ledger_id: ledger_id)
+  end
+
+  def turn_status(id)
+    turn_request(Net::HTTP::Get, id)
+  end
+
+  def cancel_turn(id, ledger_id:, payload: nil)
+    turn_request(Net::HTTP::Delete, id, payload, ledger_id: ledger_id)
+  end
+
+  def resolve_turn(id)
+    turn_request(Net::HTTP::Post, id, { execution_stopped: true }, suffix: "/resolve")
   end
 
   private
 
   attr_reader :endpoint_url, :trigger_bearer_token
+
+  def turn_request(method, id, payload = nil, suffix: "", ledger_id: nil)
+    raise ArgumentError, "invalid dispatch id" unless id.match?(/\A[0-9a-f-]{36}\z/)
+    uri = URI("#{endpoint_url.to_s.delete_suffix('/')}/turns/#{id}#{suffix}")
+    request = method.new(uri)
+    request["Authorization"] = "Bearer #{trigger_bearer_token}"
+    request["Content-Type"] = "application/json"
+    request["X-Resident-Ledger-ID"] = ledger_id if ledger_id
+    request.body = payload.to_json if payload
+    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https", open_timeout: 3, read_timeout: 5) { |http| http.request(request) }
+    { status: response.code.to_i, body: parse_body(response.body) }
+  end
 
   def parse_body(body)
     JSON.parse(body)

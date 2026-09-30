@@ -6,7 +6,7 @@ class Chats::AgentAssignmentsController < ApplicationController
   def create
     if @chat.manual_responses?
       redirect_back_or_to account_chat_path(current_account, @chat),
-        alert: "This chat is already assigned to an agent"
+        alert: "This chat is already assigned to a resident"
       return
     end
 

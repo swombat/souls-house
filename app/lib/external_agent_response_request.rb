@@ -14,7 +14,7 @@ class ExternalAgentResponseRequest
 
   def call
     agent.reload.require_conversation_runtime!
-    if AgentRuntimeInteraction.live_activity_enabled? || @interaction
+    if AgentRuntimeInteraction.live_activity_enabled? || ResidentTurn.enabled? || @interaction
       @interaction ||= AgentRuntimeInteraction.reserve!(agent: agent, chat: chat)
       return { status: 409, body: { "status" => "already_running" } } unless @interaction.claim_dispatch!
     end
@@ -70,7 +70,9 @@ class ExternalAgentResponseRequest
         model: Agents::Sandbox.chaos_model_for(agent),
         reasoning_effort: agent.reasoning_effort,
         auth_mode: auth_mode,
-        activity: @interaction&.activity_configuration!
+        activity: (@interaction&.activity_configuration! unless ResidentTurn.enabled?),
+        interaction: @interaction,
+        runtime_timeout_secs: agent.runtime_timeout_secs
       )
     }
     result = if @interaction

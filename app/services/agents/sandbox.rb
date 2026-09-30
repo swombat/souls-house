@@ -9,6 +9,7 @@ module Agents
     REPO_PATH = "/home/agent/repo"
     WORK_PATH = "/home/agent/work"
     STATE_PATH = "/home/agent/state"
+    IDENTITY_PATH = "/home/agent/identity"
     CHAOS_BUILT_IN_PROVIDER_IDS = %w[anthropic openai xai].freeze
     CHAOS_RUNTIME_PROVIDER_IDS = %w[gemini openrouter].freeze
     SUPPORTED_CHAOS_PROVIDER_IDS = (
@@ -63,6 +64,7 @@ module Agents
     end
 
     def active_turn?
+      return true if ResidentTurn.pending.where(agent: agent).exists?
       return false unless container_exists?
 
       result = docker_capture("exec", agent.container_name, "pgrep", "-f", "chaos exec")
@@ -426,6 +428,7 @@ module Agents
       args = [
         "docker", "create",
         "--name", agent.container_name,
+        "--hostname", Agents::Resources.new(agent).hostname,
         *Agents::Resources.new(agent).labels,
         "--network", Agents::Config.network,
         "--restart", Agents::Config.restart_policy,
@@ -449,13 +452,8 @@ module Agents
         "-e", "HELIXKIT_BEARER_TOKEN=#{agent.outbound_api_token}",
         "-e", "HELIXKIT_APP_URL=#{Agents::Config.internal_url}"
       ]
-      if agent.imported_home?
-        args += [ "-e", "SOULSHOUSE_HOME_PROFILE=mira_v1",
-                  "-e", "SOULSHOUSE_PORTABLE_HOME_ID=#{agent.portable_home_id}",
-                  "-e", "MIRA_ROOT=/home/agent/identity",
-                  "-e", "AGENT_REPO_PATH=/home/agent/identity",
-                  "-e", "TZ=Europe/Madrid" ]
-      end
+      args += home_profile_env_args
+      args += house_trust_env_args
       args += provider_env_args
       args += [ "-p", "127.0.0.1::4000" ] if Agents::Config.publish_ports?
       args << agent.container_image
@@ -539,7 +537,7 @@ module Agents
         }
       end
 
-      selection = ResolvesProvider.resolve_provider(agent.model_id.to_s)
+      selection = ResolvesProvider.resolve_provider(agent.model_id.to_s, account: agent.account)
       {
         provider: CHAOS_PROVIDER_IDS.fetch(selection.fetch(:provider)),
         model: selection.fetch(:model_id)
@@ -561,6 +559,33 @@ module Agents
 
     def agent_model
       self.class.chaos_model_for(agent)
+    end
+
+    # The resident's actual profile goes into the container, never a literal.
+    # mira_v1 produces exactly the arguments it always has.
+    # An unknown stored profile is refused here too, so a row that bypassed
+    # validation can never start as a house resident or as another profile.
+    def home_profile_env_args
+      unless Agent::HOME_PROFILES.include?(agent.home_profile)
+        raise SandboxError, "unknown resident home profile #{agent.home_profile.inspect}"
+      end
+      return [] unless agent.imported_home?
+
+      args = [ "-e", "SOULSHOUSE_HOME_PROFILE=#{agent.home_profile}",
+               "-e", "SOULSHOUSE_PORTABLE_HOME_ID=#{agent.portable_home_id}",
+               "-e", "#{agent.imported_home_root_env}=#{IDENTITY_PATH}",
+               "-e", "AGENT_REPO_PATH=#{IDENTITY_PATH}",
+               "-e", "TZ=Europe/Madrid" ]
+      # Default off. Only the Anthropic-subscription clamp combination reads it.
+      args += [ "-e", "SOULSHOUSE_IMPORTED_CLAMP_OMIT_FORCED_LOGIN=1" ] if Agents::Config.imported_clamp_omit_forced_login?
+      args
+    end
+
+    # Default off; adds nothing to docker create unless the host enables it.
+    def house_trust_env_args
+      return [] if agent.imported_home? || !Agents::Config.require_house_trust?
+
+      [ "-e", "SOULSHOUSE_REQUIRE_HOUSE_TRUST=1" ]
     end
 
     def provider_env_args

@@ -37,14 +37,23 @@ module Api
           return render json: { errors: [ "Content or at least one file is required" ] }, status: :unprocessable_entity
         end
 
-        unless message.save
+        draft = if params.key?(:draft_revision)
+          return head :forbidden if current_api_agent
+          current_api_user.confirmed_accounts.find(current_api_account.id)
+          ConversationDraft.for(chat: chat, user: current_api_user)
+        end
+        saved = draft ? draft.send_message!(message, revision: params[:draft_revision]) : message.save
+        unless saved
           return render json: { errors: message.errors.full_messages }, status: :unprocessable_entity
         end
 
         render json: {
           message: message.as_json,
-          ai_response_triggered: false
+          draft: draft&.as_json,
+          ai_response_triggered: !!message.single_resident_response_triggered
         }, status: :created
+      rescue ConversationDraft::Conflict => error
+        render json: { errors: [ error.message ], draft: error.draft.as_json }, status: :conflict
       end
 
       private

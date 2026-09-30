@@ -62,6 +62,7 @@ class Account < ApplicationRecord
   # Validations (Rails-only, no SQL constraints!)
   validates :name, presence: true
   validates :account_type, presence: true
+  validate :enforce_site_account_limit, on: :create
   validate :enforce_personal_account_limit, if: :personal?
   validate :can_invite_members, if: -> { memberships.any?(&:invitation?) }
 
@@ -70,6 +71,8 @@ class Account < ApplicationRecord
   before_validation :generate_slug, on: :create
   before_destroy :mark_memberships_for_skip_check, prepend: true
   after_update_commit :disconnect_members_app_cable, if: -> { saved_change_to_disabled_at? && disabled? }
+
+  ACCOUNT_LIMIT_MESSAGE = "This house has reached its account limit. New signups and accounts are temporarily closed."
 
   # Scopes
   scope :personal, -> { where(account_type: :personal) }
@@ -276,6 +279,15 @@ class Account < ApplicationRecord
   # native-app cable connections are dropped (issue #94 B, step 6).
   def disconnect_members_app_cable
     User.where(id: memberships.select(:user_id)).find_each { |user| AppSession.disconnect_cable_for(user) }
+  end
+
+  # Save validations and insertion share a transaction. Hold the settings row
+  # lock until commit so concurrent signups cannot both take the last place.
+  def enforce_site_account_limit
+    setting = Setting.instance
+    setting.with_lock do
+      errors.add(:base, ACCOUNT_LIMIT_MESSAGE) unless setting.account_creation_allowed?
+    end
   end
 
   def enforce_personal_account_limit

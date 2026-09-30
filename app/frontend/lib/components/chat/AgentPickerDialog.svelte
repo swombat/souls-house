@@ -40,9 +40,9 @@
       <Select.Root type="single" value={selectedAgentId} onValueChange={(value) => (selectedAgentId = value)}>
         <Select.Trigger class="w-full">
           {#if selectedAgentId}
-            {agents.find((a) => a.id === selectedAgentId)?.name ?? 'Select an agent'}
+            {agents.find((a) => a.id === selectedAgentId)?.name ?? 'Select a resident'}
           {:else}
-            Select an agent
+            Select a resident
           {/if}
         </Select.Trigger>
         <Select.Content sideOffset={4} class="max-h-60">

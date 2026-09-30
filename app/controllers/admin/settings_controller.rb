@@ -30,6 +30,7 @@ class Admin::SettingsController < ApplicationController
     params.require(:setting).permit(
       :site_name,
       :allow_signups,
+      :max_accounts,
       :allow_chats,
       :allow_agents,
       :show_usage_in_chat,

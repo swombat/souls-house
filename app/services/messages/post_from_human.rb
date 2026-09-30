@@ -28,8 +28,12 @@ class Messages::PostFromHuman
     "v2:" + Digest::SHA256.hexdigest({ content: content.to_s, attachments: files }.to_json)
   end
 
-  def initialize(chat:, user:, content:, files: nil, audio_signed_id: nil, client_message_id: nil)
+  # draft: the author's ConversationDraft and the revision the client sent.
+  # Only the web sends one; a native send never clears a web draft.
+  def initialize(chat:, user:, content:, files: nil, audio_signed_id: nil, client_message_id: nil, draft: nil, draft_revision: nil)
     @chat = chat
+    @draft = draft
+    @draft_revision = draft_revision
     @user = user
     @content = content
     @files = files
@@ -63,7 +67,9 @@ class Messages::PostFromHuman
     end
     attach_audio(message) if @audio_signed_id.present?
 
-    target_ids = @chat.mentioned_agent_ids(@content.to_s)
+    # A room with one resident wakes it automatically (Message writes that
+    # dispatch), so a mention there would be a second wake.
+    target_ids = @chat.sole_resident ? [] : @chat.mentioned_agent_ids(@content.to_s)
     if target_ids.any? && !AgentRuntimeInteraction.live_activity_enabled?
       return Result.new(status: :dispatch_unavailable, message: message)
     end
@@ -75,7 +81,7 @@ class Messages::PostFromHuman
       Message.transaction do
         next claimed = false unless claim_uploads
 
-        next false unless message.save
+        next false unless @draft ? @draft.accept_send!(message, revision: @draft_revision) { message.save } : message.save
 
         on_persisted&.call(message)
         dispatch = MessageDispatch.accept!(message: message, target_agent_ids: target_ids) if target_ids.any?

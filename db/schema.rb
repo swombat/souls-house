@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_28_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_30_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -377,6 +377,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_180000) do
     t.integer "thinking_budget", default: 10000
     t.boolean "thinking_enabled", default: false, null: false
     t.string "trigger_bearer_token"
+    t.integer "turn_timeout_minutes", default: 30, null: false
     t.datetime "updated_at", null: false
     t.uuid "uuid"
     t.string "voice_id"
@@ -391,6 +392,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_180000) do
     t.index ["sandbox_host"], name: "index_agents_on_sandbox_host"
     t.index ["telegram_webhook_token"], name: "index_agents_on_telegram_webhook_token", unique: true
     t.index ["uuid"], name: "index_agents_on_uuid", unique: true
+    t.check_constraint "turn_timeout_minutes >= 1 AND turn_timeout_minutes <= 1440", name: "agents_turn_timeout_minutes_range"
   end
 
   create_table "ai_models", force: :cascade do |t|
@@ -517,6 +519,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_180000) do
     t.text "initiation_reason"
     t.datetime "last_consolidated_at"
     t.bigint "last_consolidated_message_id"
+    t.datetime "last_message_at"
     t.boolean "manual_responses", default: false, null: false
     t.bigint "message_revision", default: 0, null: false
     t.string "model_id_string", default: "openrouter/auto", null: false
@@ -556,6 +559,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_180000) do
     t.index ["chat_id", "boundary_message_id"], name: "idx_on_chat_id_boundary_message_id_cb11697831", unique: true
     t.index ["chat_id", "created_at"], name: "index_conversation_compactions_on_chat_id_and_created_at"
     t.index ["chat_id"], name: "index_conversation_compactions_on_chat_id"
+  end
+
+  create_table "conversation_drafts", force: :cascade do |t|
+    t.bigint "chat_id", null: false
+    t.text "content", default: "", null: false
+    t.datetime "created_at", null: false
+    t.bigint "revision", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["chat_id", "user_id"], name: "index_conversation_drafts_on_chat_id_and_user_id", unique: true
+    t.index ["chat_id"], name: "index_conversation_drafts_on_chat_id"
+    t.index ["user_id"], name: "index_conversation_drafts_on_user_id"
   end
 
   create_table "device_stream_batches", force: :cascade do |t|
@@ -666,7 +681,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_180000) do
     t.index ["runtime_interaction_id"], name: "index_message_dispatches_on_runtime_interaction_id"
     t.index ["status", "accepted_at"], name: "index_message_dispatches_on_status_and_accepted_at"
     t.index ["user_id"], name: "index_message_dispatches_on_user_id"
-    t.check_constraint "kind::text = 'mention'::text AND message_id IS NOT NULL AND client_invocation_id IS NULL AND request_digest IS NULL OR kind::text = 'invoke'::text AND message_id IS NULL AND client_invocation_id IS NOT NULL AND request_digest IS NOT NULL", name: "message_dispatches_kind_variant"
+    t.check_constraint "(kind::text = ANY (ARRAY['mention'::character varying, 'automatic'::character varying]::text[])) AND message_id IS NOT NULL AND client_invocation_id IS NULL AND request_digest IS NULL OR kind::text = 'invoke'::text AND message_id IS NULL AND client_invocation_id IS NOT NULL AND request_digest IS NOT NULL", name: "message_dispatches_kind_variant"
   end
 
   create_table "messages", force: :cascade do |t|
@@ -931,6 +946,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_180000) do
     t.index ["prompt_key"], name: "index_prompt_outputs_on_prompt_key"
   end
 
+  create_table "resident_turns", force: :cascade do |t|
+    t.datetime "admitted_at"
+    t.bigint "agent_id", null: false
+    t.bigint "agent_runtime_interaction_id", null: false
+    t.datetime "cancel_requested_at"
+    t.datetime "checked_at"
+    t.jsonb "completion_context", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "dispatch_id", null: false
+    t.datetime "finished_at"
+    t.string "ledger_id"
+    t.text "payload", null: false
+    t.datetime "poll_claimed_until"
+    t.datetime "prepared_at"
+    t.string "session_id", null: false
+    t.string "state", default: "queued", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_resident_turns_on_agent_id"
+    t.index ["agent_runtime_interaction_id"], name: "index_resident_turns_on_agent_runtime_interaction_id", unique: true
+    t.index ["dispatch_id"], name: "index_resident_turns_on_dispatch_id", unique: true
+    t.index ["session_id"], name: "one_admitted_resident_session", unique: true, where: "((state)::text = ANY ((ARRAY['starting'::character varying, 'running'::character varying, 'unknown'::character varying])::text[]))"
+    t.index ["state", "created_at"], name: "index_resident_turns_on_state_and_created_at"
+  end
+
   create_table "safeguard_classifier_failures", force: :cascade do |t|
     t.bigint "agent_id", null: false
     t.datetime "created_at", null: false
@@ -1036,6 +1075,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_180000) do
     t.boolean "allow_chats", default: true, null: false
     t.boolean "allow_signups", default: true, null: false
     t.datetime "created_at", null: false
+    t.integer "max_accounts", default: 30, null: false
+    t.integer "resident_turn_limit", default: 50, null: false
     t.integer "safeguard_owner_notice_threshold", default: 1, null: false
     t.boolean "show_usage_in_chat", default: false, null: false
     t.string "site_name", default: "HelixKit", null: false
@@ -1182,6 +1223,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_180000) do
   add_foreign_key "chats", "ai_models"
   add_foreign_key "chats", "whiteboards", column: "active_whiteboard_id"
   add_foreign_key "conversation_compactions", "chats"
+  add_foreign_key "conversation_drafts", "chats"
+  add_foreign_key "conversation_drafts", "users"
   add_foreign_key "device_stream_batches", "device_stream_sessions"
   add_foreign_key "device_stream_credentials", "device_streams"
   add_foreign_key "device_stream_sessions", "device_streams"
@@ -1220,6 +1263,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_180000) do
   add_foreign_key "oura_integrations", "users"
   add_foreign_key "profiles", "users"
   add_foreign_key "prompt_outputs", "accounts"
+  add_foreign_key "resident_turns", "agent_runtime_interactions"
+  add_foreign_key "resident_turns", "agents"
   add_foreign_key "safeguard_classifier_failures", "agents"
   add_foreign_key "safeguard_detections", "agent_runtime_interactions", column: "reclaimed_by_interaction_id", on_delete: :nullify
   add_foreign_key "safeguard_detections", "agent_runtime_interactions", on_delete: :nullify

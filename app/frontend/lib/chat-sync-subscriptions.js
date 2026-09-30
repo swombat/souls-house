@@ -1,6 +1,5 @@
 export function buildChatSubscriptions({ account, chat }) {
   const subscriptions = {};
-  subscriptions[`Account:${account.id}:chats`] = 'chats';
 
   if (chat) {
     subscriptions[`Chat:${chat.id}`] = ['chat', 'messages', 'runtime_interactions', 'cost_breakdown'];

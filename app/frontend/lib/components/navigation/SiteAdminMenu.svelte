@@ -29,6 +29,10 @@
       <Pulse class="mr-2 size-4" />
       <span>Resident Sessions</span>
     </DropdownMenu.Item>
+    <DropdownMenu.Item onclick={() => router.visit('/admin/resident_turns')}>
+      <Pulse class="mr-2 size-4" />
+      <span>Resident Concurrency</span>
+    </DropdownMenu.Item>
     <DropdownMenu.Item onclick={() => router.visit('/admin/jobs')}>
       <Play class="mr-2 size-4" />
       <span>Background Jobs</span>

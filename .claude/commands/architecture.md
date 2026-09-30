@@ -20,13 +20,13 @@ Once you are happy with the basic requirements, decide whether it requires docum
 
 Use the Application Architect sub-agent to create a first iteration of the spec. Pass it the documentation it needs as well as the requirements.
 
-Chances are that the first iteration of the spec will be bloated and overly complex. That's okay, that's what the application architect tends to do. It's a first draft. It should end up in a file named `YYMMDD-XXa-spec-headline.md` in the /docs/plans/ folder.
+Chances are that the first iteration of the spec will be bloated and overly complex. That's okay, that's what the application architect tends to do. It's a first draft. It should end up in a file named `YYMMDD-XXa-spec-headline.md` in the /docs/proposals/plans/ folder.
 
-So for example, if the requirements document is `/docs/requirements/250906-01-ruby-llm.md`, the first iteration of the spec should be called `/docs/plans/250906-01a-ruby-llm.md`.
+So for example, if the requirements document is `/docs/proposals/requirements/YYMMDD-01-feature.md`, the first iteration of the spec should be called `/docs/proposals/plans/YYMMDD-01a-feature.md`.
 
 ### 4. Refine the spec
 
-Pass the first iteration of the spec to the DHH Code Reviewer sub-agent to refine it. Require the dhh-code-reviewer to write all its comments in a file named `YYMMDD-XXz-spec-headline-dhh-feedback.md` in the /docs/plans/ folder. So for example, if the requirements document is `/docs/requirements/250906-01-ruby-llm.md`, the first iteration of the spec should be called `/docs/plans/250906-01a-ruby-llm.md`, and the dhh-code-reviewer's comments should be written to `/docs/plans/250906-01a-ruby-llm-dhh-feedback.md`.
+Pass the first iteration of the spec to the DHH Code Reviewer sub-agent to refine it. Require the dhh-code-reviewer to write all its comments in a file named `YYMMDD-XXz-spec-headline-dhh-feedback.md` in the /docs/proposals/plans/ folder. So for example, if the requirements document is `/docs/proposals/requirements/YYMMDD-01-feature.md`, the first iteration of the spec should be called `/docs/proposals/plans/YYMMDD-01a-feature.md`, and the dhh-code-reviewer's comments should be written to `/docs/proposals/plans/YYMMDD-01a-feature-dhh-feedback.md`.
 
 Check whether the DHH Code Reviewer actually saved its comments in the specified file. If it didn't, save whatever it returned to you in the specified file.
 
@@ -34,7 +34,7 @@ Check whether the DHH Code Reviewer actually saved its comments in the specified
 
 Take the first iteration of the spec, the relevant documentation, the requirements and the DHH Code Reviewer's comments, and pass those as context to the Appliction Architect sub-agent to create a second iteration of the spec, applying DHH's feedback.
 
-The second iteration of the spec should be called `YYMMDD-XXb-spec-headline.md` in the /docs/plans/ folder. So for example, if the requirements document is `/docs/requirements/250906-01-ruby-llm.md`, the first iteration of the spec should be called `/docs/plans/250906-01a-ruby-llm.md`, and the dhh-code-reviewer's comments should be written to `/docs/plans/250906-01a-ruby-llm-dhh-feedback.md`, the second iteration of the spec should be called `/docs/plans/250906-01b-ruby-llm.md`.
+The second iteration of the spec should be called `YYMMDD-XXb-spec-headline.md` in the /docs/proposals/plans/ folder. So for example, if the requirements document is `/docs/proposals/requirements/YYMMDD-01-feature.md`, the first iteration of the spec should be called `/docs/proposals/plans/YYMMDD-01a-feature.md`, and the dhh-code-reviewer's comments should be written to `/docs/proposals/plans/YYMMDD-01a-feature-dhh-feedback.md`, the second iteration of the spec should be called `/docs/proposals/plans/YYMMDD-01b-feature.md`.
 
 ### 6. Refine the spec again
 

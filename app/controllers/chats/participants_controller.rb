@@ -6,7 +6,7 @@ class Chats::ParticipantsController < ApplicationController
   def create
     unless @chat.group_chat?
       redirect_back_or_to account_chat_path(current_account, @chat),
-        alert: "Can only add agents to group chats"
+        alert: "Can only add residents to group chats"
       return
     end
 

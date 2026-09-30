@@ -1,6 +1,8 @@
 """Prepare database-backed Chaos settings before any resident/service starts.
 
 The rollout operator must stop old writers and snapshot existing volumes first.
+Legacy OS-keyring credentials must be migrated by the operator on their original
+host; do not call migrate-secrets unconditionally in headless containers.
 Never print settings, command output, or credentials into container logs.
 """
 import json
@@ -46,6 +48,8 @@ def prepare(home, run=command):
     current = json.loads(run(home, "get"))
     if "agent_compaction_control" not in current:
         run(home, "set", "agent_compaction_control", json.dumps(DEFAULTS["agent_compaction_control"]))
+    if "hook_approval_policy" not in current:
+        run(home, "set", "hook_approval_policy", json.dumps("automatic"))
     providers = current.get("model_providers", {})
     for name, value in DEFAULTS["model_providers"].items():
         if name not in providers:

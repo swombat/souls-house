@@ -17,6 +17,25 @@ spec.loader.exec_module(module)
 
 
 class ReporterTest(unittest.TestCase):
+    def test_fast_cancellation_polling_does_not_increase_heartbeat_traffic(self):
+        self.reporter.cancel_event = threading.Event()
+        self.reporter.run([sys.executable, "-c", "import time; time.sleep(1.1)"], "", {}, 5)
+        self.reporter.finish(({"status": "ok"}, 200))
+        self.assertFalse(any(event["type"] == "heartbeat" for event in self.events()))
+
+    def test_cancellation_terminates_the_supervised_process_without_model_output(self):
+        cancel = threading.Event()
+        self.reporter.cancel_event = cancel
+        timer = threading.Timer(.1, cancel.set)
+        timer.start()
+        before = time.monotonic()
+        try:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.reporter.run([sys.executable, "-c", "import time; time.sleep(30)"], "", {}, 30)
+            self.assertLess(time.monotonic() - before, 3)
+        finally:
+            timer.join()
+
     def setUp(self):
         self.packets = []
         self.status = 200

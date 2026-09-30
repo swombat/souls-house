@@ -12,6 +12,7 @@ class Chat < ApplicationRecord
 
   belongs_to :ai_model, optional: true
   has_many :messages, -> { order(created_at: :asc) }, dependent: :destroy
+  has_many :conversation_drafts, dependent: :destroy
   include Chat::ModelSelection
   include Chat::Summarizable
 
@@ -21,10 +22,10 @@ class Chat < ApplicationRecord
   has_many :chat_agents, dependent: :destroy
   has_many :agents, through: :chat_agents
   has_many :agent_runtime_interactions, dependent: :nullify
-  validates :agents, length: { minimum: 1, message: "must include at least one agent" }, if: :manual_responses?
+  validates :agents, length: { minimum: 1, message: "must include at least one resident" }, if: :manual_responses?
 
   json_attributes :title_or_default, :model_id, :model_label, :ai_model_name, :updated_at_formatted,
-                  :updated_at_short, :message_count, :context_tokens, :cost_tokens, :reasoning_tokens, :web_access, :manual_responses,
+                  :updated_at_short, :activity_at, :message_count, :context_tokens, :cost_tokens, :reasoning_tokens, :web_access, :manual_responses,
                   :participants_json, :archived_at, :discarded_at, :archived, :discarded, :respondable, :agent_only, :summary do |hash, options|
     # For sidebar format, only include attributes used by the chat list UI.
     if options&.dig(:as) == :sidebar_json
@@ -34,6 +35,7 @@ class Chat < ApplicationRecord
         "title_or_default",
         "updated_at",
         "updated_at_short",
+        "activity_at",
         "message_count",
         "context_tokens",
         "manual_responses",
@@ -74,10 +76,14 @@ class Chat < ApplicationRecord
 
   after_create_commit -> { GenerateTitleJob.perform_later(self) }, unless: :title?
 
-  scope :latest, -> { order(updated_at: :desc) }
+  scope :latest, -> { order(Arel.sql("COALESCE(chats.last_message_at, chats.created_at) DESC"), id: :desc) }
   # The native app's authority (issue #94): current confirmed membership of an
   # enabled account, with no site-admin widening. HTTP and cable share it.
   scope :app_accessible_to, ->(user) { kept.where(account_id: user.confirmed_accounts.select(:id)) }
+
+  def activity_at
+    last_message_at || created_at
+  end
 
   # Create chat with optional initial message
   def self.create_with_message!(attributes, message_content: nil, user: nil, files: nil, agent_ids: nil, audio_signed_id: nil)
@@ -147,10 +153,24 @@ class Chat < ApplicationRecord
     entries.map { |_, key| cached[key] || missing[key] }
   end
 
+  # Run state must not be cached with chat content or touch/reorder the chat.
+  def self.sidebar_json_for(chats)
+    chats = chats.to_a
+    working = AgentRuntimeInteraction.active
+      .where(chat_id: chats.map(&:id))
+      .where("execution_state IS NULL OR execution_state NOT IN (?)", AgentRuntimeInteraction::TERMINAL_STATES)
+      .distinct.pluck(:chat_id, :agent_id).group_by(&:first)
+
+    cached_json_for(chats, as: :sidebar_json).zip(chats).map do |json, chat|
+      ids = (working[chat.id] || []).map { |_, id| Agent.encode_id(id) }
+      json.merge("working_agent_ids" => ids)
+    end
+  end
+
   def json_cache_key(as: nil)
     return cache_key_with_version unless as.present?
 
-    "#{cache_key_with_version}/json/#{as}"
+    "#{cache_key_with_version}/json/#{as}/v3"
   end
 
   def updated_at_formatted
@@ -207,6 +227,7 @@ class Chat < ApplicationRecord
     agents.each do |agent|
       participants << {
         type: "agent",
+        id: agent.to_param,
         name: agent.name,
         icon: agent.icon,
         colour: agent.colour
@@ -237,7 +258,7 @@ class Chat < ApplicationRecord
   class AlreadyResponding < ArgumentError; end
 
   def trigger_agent_response!(agent)
-    raise ArgumentError, "Agent not in this conversation" unless agents.include?(agent)
+    raise ArgumentError, "Resident not in this conversation" unless agents.include?(agent)
     agent.require_conversation_runtime!
     raise ArgumentError, "This chat does not support manual responses" unless manual_responses?
     raise ArgumentError, "This conversation is archived or deleted" unless respondable?
@@ -252,13 +273,13 @@ class Chat < ApplicationRecord
 
   def trigger_all_agents_response!
     raise ArgumentError, "This chat does not support manual responses" unless manual_responses?
-    raise ArgumentError, "No agents in this conversation" if agents.empty?
+    raise ArgumentError, "No residents in this conversation" if agents.empty?
     raise ArgumentError, "This conversation is archived or deleted" unless respondable?
 
     # Get agent IDs in a consistent order
     ordered_agents = agents.order(:id).to_a
     unless ordered_agents.any?(&:eligible_for_conversation?)
-      raise Agent::RuntimeAvailability::Unavailable.new("No available agents in this conversation", code: "no_available_agents")
+      raise Agent::RuntimeAvailability::Unavailable.new("No available residents in this conversation", code: "no_available_agents")
     end
     active_agent = ordered_agents.find { |agent| agent.eligible_for_conversation? && agent_response_active?(agent) }
     raise AlreadyResponding, "#{active_agent.name} is already responding" if active_agent
@@ -272,6 +293,12 @@ class Chat < ApplicationRecord
   # The residents a human message asks for, in mention order: eligible and not
   # already responding. Resolved once, when the message is accepted (#94 B,
   # step 4b-ii); an edit never re-resolves them.
+  # The room's only resident, or nil when it has none or several.
+  def sole_resident
+    residents = agents.limit(2).to_a
+    residents.one? ? residents.first : nil
+  end
+
   def mentioned_agent_ids(content)
     return [] if content.blank? || !manual_responses?
 

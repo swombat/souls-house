@@ -34,7 +34,7 @@ class AllAgentsResponseJob < ApplicationJob
 
   def dispatch_next(chat, agent_ids, dispatch = nil)
     agent = chat.agents.find_by(id: agent_ids.first)
-    if agent && AgentRuntimeInteraction.live_activity_enabled?
+    if agent && (AgentRuntimeInteraction.live_activity_enabled? || ResidentTurn.enabled?)
       begin
         AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, enqueue: true,
           response_chain_agent_ids: agent_ids.drop(1), message_dispatch: dispatch)
@@ -44,7 +44,7 @@ class AllAgentsResponseJob < ApplicationJob
         agent = nil
       rescue ArgumentError
         ActionCable.server.broadcast("Chat:#{chat.to_param}", {
-          action: "error", message: "Agent chain stopped: resident is already responding or the conversation is unavailable."
+          action: "error", message: "Resident chain stopped: resident is already responding or the conversation is unavailable."
         })
         return
       end
@@ -58,7 +58,7 @@ class AllAgentsResponseJob < ApplicationJob
     if result.is_a?(Hash) && (result[:status] == 0 || result[:status] == 409 || result[:execution_unconfirmed])
       ActionCable.server.broadcast("Chat:#{chat.to_param}", {
         action: "error",
-        message: "Agent chain stopped: execution could not be confirmed. Remaining residents were not started."
+        message: "Resident chain stopped: execution could not be confirmed. Remaining residents were not started."
       })
       return
     end

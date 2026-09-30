@@ -2,6 +2,24 @@ require "test_helper"
 
 class AgentTest < ActiveSupport::TestCase
 
+  test "turn timeout defaults to thirty minutes and accepts up to one day" do
+    agent = agents(:research_assistant)
+    assert_equal 30, agent.turn_timeout_minutes
+    assert_equal 1800, agent.runtime_timeout_secs
+    assert_equal 30, agent.as_json["turn_timeout_minutes"]
+
+    [ 1, 30, 1440 ].each do |minutes|
+      agent.turn_timeout_minutes = minutes
+      assert agent.valid?, agent.errors.full_messages.to_sentence
+      assert_equal minutes * 60, agent.runtime_timeout_secs
+    end
+    [ nil, 0, -1, 1441, 1.5, "invalid" ].each do |minutes|
+      agent.turn_timeout_minutes = minutes
+      assert_not agent.valid?
+      assert agent.errors[:turn_timeout_minutes].present?
+    end
+  end
+
   setup do
     @account = accounts(:personal_account)
   end
@@ -157,7 +175,7 @@ class AgentTest < ActiveSupport::TestCase
     assert_equal "Externally Renamed", agent.reload.name
 
     assert_not agent.update(thinking_enabled: true)
-    assert_includes agent.errors[:base], "Identity and runtime-managed fields are agent-owned and read-only in souls.house"
+    assert_includes agent.errors[:base], "Identity and runtime-managed fields are resident-owned and read-only in souls.house"
   end
 
   test "external agents allow HelixKit-managed model changes" do
@@ -245,7 +263,7 @@ class AgentTest < ActiveSupport::TestCase
     agent.update!(runtime: "provisioning", birth_committed_at: Time.current)
 
     assert_not agent.update(system_prompt: "Replacement beginning")
-    assert_includes agent.errors[:base], "Identity and runtime-managed fields are agent-owned and read-only in souls.house"
+    assert_includes agent.errors[:base], "Identity and runtime-managed fields are resident-owned and read-only in souls.house"
     assert_equal "Committed beginning", agent.reload.system_prompt
 
     assert agent.update(name: "New display label", colour: "emerald")

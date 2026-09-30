@@ -212,15 +212,19 @@ class Reporter:
         for thread in readers:
             thread.start()
         expires = time.monotonic() + timeout
+        last_heartbeat = time.monotonic()
         try:
             while proc.poll() is None:
                 remaining = expires - time.monotonic()
-                if remaining <= 0:
+                cancel = getattr(self, "cancel_event", None)
+                if remaining <= 0 or (cancel is not None and cancel.is_set()):
                     raise subprocess.TimeoutExpired(args, timeout)
                 try:
-                    proc.wait(timeout=min(10, remaining))
+                    proc.wait(timeout=min(.5 if cancel is not None else 10, remaining))
                 except subprocess.TimeoutExpired:
-                    self.emit("heartbeat")
+                    if time.monotonic() - last_heartbeat >= 10:
+                        self.emit("heartbeat")
+                        last_heartbeat = time.monotonic()
         except subprocess.TimeoutExpired:
             try:
                 os.killpg(proc.pid, signal.SIGKILL)

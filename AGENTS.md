@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Helix Kit couples Rails 8 and Svelte 5 through Inertia. Domain models live in `app/models`, controllers in `app/controllers`, and jobs in `app/jobs`. Frontend primitives and patterns stay under `app/frontend`, with styles in `app/frontend/styles`. Configuration belongs inside `config`, and `docs/overview.md` points to deeper architectural guides.
+Helix Kit couples Rails 8 and Svelte 5 through Inertia. Domain models live in `app/models`, controllers in `app/controllers`, and jobs in `app/jobs`. Frontend primitives and patterns stay under `app/frontend`, with styles in `app/frontend/styles`. Configuration belongs inside `config`, and `docs/overview.md` points to current architectural guides. Historical plans and reviews are in `docs/.bak/` and are not implementation instructions; `docs/proposals/` is explicitly unimplemented discussion.
 
 ## Build, Test, and Development Commands
 Run `bin/dev` to launch Rails, Vite, and the Solid* services on http://localhost:3100. Keep schemas up to date with `bin/rails db:prepare` and migrate via `bin/rails db:migrate && bin/rails db:schema:dump`. Frontend tooling runs through Bun: `bun install`, `bun run test:unit` (Vitest), `bun run test` (Playwright E2E). Use `bin/rails test` or narrow scope, e.g. `bin/rails test test/models/user_test.rb`.
@@ -10,6 +10,12 @@ Run `bin/dev` to launch Rails, Vite, and the Solid* services on http://localhost
 Write as though you are DHH shipping code into Rails core: choose the boring, conventional solution, prefer readability over cleverness, and rely on Rails helpers before building abstractions. Ruby follows RuboCop (`bin/rubocop`), two-space indent, snake_case methods, PascalCase classes. Keep models lean; push orchestration into POROs under `app/lib` or concerns. Svelte components use kebab-case filenames (`user-menu.svelte`), camelCase props, and Tailwind utility classes; format with `bun run format` / `bun run format:check`.
 
 ## DHH Mode Checklist
+
+For Svelte boundaries and file-size thresholds, follow `docs/frontend-components.md`:
+review components/layouts above 200 lines and pages above 300; ceilings are 300
+and 500 respectively. Run `bun run check:svelte-size`. Reuse is not required for
+a coherent section to become a component; keep Inertia pages as pages.
+
 1. Ask “How would Rails solve this today?” before adding gems or custom JS.
 2. Pretend future maintainers are Rails core reviewers—ship code they would merge.
 3. If a solution feels clever, rewrite it straighter and document any intentional divergence from convention.

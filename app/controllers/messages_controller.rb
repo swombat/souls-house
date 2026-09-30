@@ -1,6 +1,8 @@
 class MessagesController < ApplicationController
 
   require_feature_enabled :chats
+  include DraftAuthorBinding
+  before_action :require_matching_draft_author, only: :create
   before_action :set_chat, only: [ :index, :create ]
   before_action :set_message, only: [ :update, :destroy ]
   before_action :require_respondable_chat, only: :create
@@ -19,19 +21,29 @@ class MessagesController < ApplicationController
   end
 
   def create
+    draft = if params.key?(:draft_revision)
+      # Drafts never use the account administrator's widened browsing authority.
+      Current.user.confirmed_accounts.find(@chat.account_id)
+      ConversationDraft.for(chat: @chat, user: Current.user)
+    end
+
+    # One acceptance transaction: the message, its audit, the draft's clear and
+    # any wake. A stale draft raises Conflict before anything is written.
     result = Messages::PostFromHuman.new(
       chat: @chat,
       user: Current.user,
       content: message_params[:content],
       files: params[:files],
-      audio_signed_id: params[:audio_signed_id]
+      audio_signed_id: params[:audio_signed_id],
+      draft: draft,
+      draft_revision: params[:draft_revision]
     ).call(on_persisted: ->(message) { audit("create_message", message, **message_params.to_h) })
     @message = result.message
 
     if result.created?
       respond_to do |format|
         format.html { redirect_to account_chat_path(@chat.account, @chat) }
-        format.json { render json: @message, status: :created }
+        format.json { render json: @message.as_json.merge(draft ? { draft: draft.as_json } : {}), status: :created }
       end
     elsif result.dispatch_unavailable?
       # Nothing was saved: a send that mentions residents needs a durable wake,
@@ -53,6 +65,8 @@ class MessagesController < ApplicationController
         format.json { render json: { errors: @message.errors.full_messages }, status: :unprocessable_entity }
       end
     end
+  rescue ConversationDraft::Conflict => e
+    render json: { errors: [ e.message ], draft: e.draft.as_json }, status: :conflict
   rescue StandardError => e
     error "Message creation failed: #{e.message}"
     error e.backtrace.join("\n")

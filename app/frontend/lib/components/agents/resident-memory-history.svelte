@@ -1,0 +1,161 @@
+<script>
+  import { onMount } from 'svelte';
+  let { historyUrl } = $props();
+  const kinds = [
+    { key: 'journals', label: 'Journals' },
+    { key: 'day_summaries', label: 'Day summaries' },
+    { key: 'week_summaries', label: 'Week summaries' },
+    { key: 'month_summaries', label: 'Month summaries' },
+    { key: 'nodes', label: 'Nodes' },
+  ];
+  const itemBackgrounds = {
+    journals: 'bg-blue-50/50 dark:bg-blue-950/15',
+    day_summaries: 'bg-blue-100/60 dark:bg-blue-950/35',
+    week_summaries: 'bg-blue-200/60 dark:bg-blue-900/40',
+    month_summaries: 'bg-blue-300/60 dark:bg-blue-800/45',
+    nodes: 'bg-orange-50 dark:bg-orange-950/25',
+  };
+  let selected = $state(kinds.map((kind) => kind.key));
+  let history = $state(null);
+  let historyError = $state(null);
+  let loading = $state(false);
+  let cursors = $state([null]);
+  let page = $state(0);
+  let controller;
+
+  async function getJson(url, signal) {
+    const response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+    if (!response.ok)
+      throw new Error(response.status === 403 ? 'Access denied.' : 'Could not load memory. Please retry.');
+    return response.json();
+  }
+
+  async function loadHistory(targetPage = 0, cursor = null) {
+    if (!historyUrl) return;
+    controller?.abort();
+    const request = new AbortController();
+    controller = request;
+    loading = true;
+    historyError = null;
+    // Never leave old-filter contents visible under newly checked labels.
+    history = null;
+    const query = new URLSearchParams({ kinds: selected.join(',') });
+    if (cursor) query.set('cursor', cursor);
+    try {
+      const data = await getJson(`${historyUrl}?${query}`, request.signal);
+      if (request.signal.aborted) return;
+      history = data;
+      page = targetPage;
+      cursors = [...cursors.slice(0, targetPage), cursor];
+    } catch (error) {
+      if (error.name !== 'AbortError') historyError = error.message;
+    } finally {
+      if (controller === request) loading = false;
+    }
+  }
+
+  function toggle(key, checked) {
+    selected = checked ? [...selected, key] : selected.filter((kind) => kind !== key);
+    cursors = [null];
+    page = 0;
+    loadHistory();
+  }
+
+  onMount(() => {
+    loadHistory();
+    return () => {
+      controller?.abort();
+    };
+  });
+</script>
+
+<section class="space-y-4" aria-label="Memory history">
+  <div>
+    <h3 class="text-lg font-semibold">Memory history</h3>
+    <p class="text-sm text-muted-foreground">
+      Site admins only · 50 items per page, newest first. Nodes use creation time; journals use dated headings (local
+      time as written), summaries use the period they describe. Day summaries appear above that day’s entries. Files do
+      not retain per-entry insertion times.
+    </p>
+  </div>
+  <fieldset class="flex flex-wrap gap-4">
+    <legend class="mb-2 text-sm font-medium">Include</legend>
+    {#each kinds as kind}<label class="flex items-center gap-2 text-sm"
+        ><input
+          type="checkbox"
+          checked={selected.includes(kind.key)}
+          onchange={(event) => toggle(kind.key, event.currentTarget.checked)} />{kind.label}</label
+      >{/each}
+  </fieldset>
+  {#if loading}<p role="status">Loading memory history…</p>{/if}
+  {#if historyError}<p role="alert">{historyError}</p>
+    <button type="button" class="underline" onclick={() => loadHistory()}>Retry from newest</button>{/if}
+  {#if history}
+    {#if ['unavailable', 'partial'].includes(history.archive_status)}<p
+        role="status"
+        class="text-sm text-amber-700 dark:text-amber-400">
+        Journal archive {history.archive_status}; this list may be incomplete. Available graph nodes are still shown.
+      </p>{/if}
+    {#if history.items.length === 0}<p class="text-sm text-muted-foreground">
+        {selected.length ? 'No matching memory items.' : 'Select at least one item type.'}
+      </p>{/if}
+    <ol class="space-y-4">
+      {#each history.items as item (item.id)}
+        <li class={`rounded-lg border p-4 space-y-3 break-words ${itemBackgrounds[item.kind] || ''}`}>
+          <div class="text-xs text-muted-foreground">
+            {kinds.find((kind) => kind.key === item.kind)?.label} · {item.occurred_at.slice(0, 16).replace('T', ' ')} · {item.timestamp_basis}
+          </div>
+          <h4 class="font-medium">{item.title}</h4>
+          {#if item.kind === 'nodes'}
+            <div class="text-xs text-muted-foreground">
+              {item.node.node_type} · {item.node.is_dormant ? 'Dormant' : 'Active'} · Charge {item.node.charge}
+            </div>
+            {#if item.node.description}<p class="whitespace-pre-wrap">{item.node.description}</p>{/if}
+            <div class="text-sm">
+              <h5 class="font-medium">Pointers</h5>
+              {#if item.node.source_uris?.length}<ul>
+                  {#each item.node.source_uris as pointer}<li class="font-mono text-xs break-all">
+                      {pointer}
+                    </li>{/each}
+                </ul>{:else}<p class="text-muted-foreground">No source pointer</p>{/if}
+            </div>
+            <details class="text-sm">
+              <summary class="cursor-pointer">Connections ({item.edge_count})</summary>
+              <ul class="space-y-2 mt-2">
+                {#each item.edges as edge}<li>
+                    <span>{edge.source.content}</span> <span class="font-medium">→ {edge.edge_type} →</span>
+                    <span>{edge.target.content}</span><span class="text-xs text-muted-foreground">
+                      (weight {edge.weight})</span>
+                  </li>{/each}
+              </ul>
+              {#if item.edges_truncated}<p>Showing the newest 200 connections.</p>{/if}
+            </details>
+          {:else}
+            <p class="font-mono text-xs text-muted-foreground">memory/{item.path}</p>
+            {#if item.body}<pre class="whitespace-pre-wrap break-words font-sans text-sm">{item.body}</pre>{/if}
+            {#if item.body_status !== 'complete'}<p class="text-sm text-amber-700 dark:text-amber-400">
+                {item.body_status === 'changed'
+                  ? 'File changed since measurement. Reopen this tab after two minutes to refresh.'
+                  : item.body_status === 'truncated'
+                    ? 'Entry exceeds the display limit; showing the first 64 KiB.'
+                    : 'Entry contents are unavailable.'}
+              </p>{/if}
+          {/if}
+        </li>
+      {/each}
+    </ol>
+    <nav class="flex items-center gap-4 text-sm" aria-label="Memory history pages">
+      <button
+        type="button"
+        class="underline disabled:opacity-40"
+        disabled={page === 0 || loading}
+        onclick={() => loadHistory(page - 1, cursors[page - 1])}>Newer</button>
+      <span>Page {page + 1}</span>
+      <button
+        type="button"
+        class="underline disabled:opacity-40"
+        disabled={!history.next_cursor || loading}
+        onclick={() => loadHistory(page + 1, history.next_cursor)}>Older</button>
+    </nav>
+  {/if}
+</section>

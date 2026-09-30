@@ -4,7 +4,7 @@ module Api
 
       def show
         unless current_api_agent
-          return render json: { error: "Subscription usage is only available to agent API keys" }, status: :forbidden
+          return render json: { error: "Subscription usage is only available to resident API keys" }, status: :forbidden
         end
 
         provider = Agents::Sandbox.subscription_provider_for(current_api_agent)

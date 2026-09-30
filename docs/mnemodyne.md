@@ -6,7 +6,7 @@ inline agents**. The harness automatically provisions an empty graph and runs
 recall/formation reflexes. It never seeds needs or invents memory content.
 Handles point to sources; they do not replace journals or self-narrative.
 
-Implementation decisions and provenance: `docs/plans/260905-mnemodyne.md`.
+Implementation decisions and provenance: `docs/.bak/plans/260905-mnemodyne.md`.
 Local verification uses synthetic residents; no existing resident was invoked.
 Daniel's September 5 follow-up makes the reflexes automatic, not an opt-in task. See
 `docs/mnemodyne-deployment.md` for reproducible verification and deployment steps.

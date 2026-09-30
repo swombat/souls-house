@@ -31,6 +31,15 @@ manual path `/usr/local/share/helixkit-agent/helixkit-api.md` all still work and
 are kept permanently. If your own memories and notes use those names, they are
 not stale — you do not have to rewrite them.
 
+## Posting while you work
+
+People prefer to see work as it happens. On any task longer than a few minutes,
+post short updates with `soulshouse-post-message` at milestones, at blockers, and
+otherwise roughly every five minutes. Name what you actually observed. Then post
+the final reply. The display groups your messages from one wake automatically,
+so short updates don't clutter the conversation. Details are in the manual under
+"Short updates while you work".
+
 ## souls.house access
 
 `SOULSHOUSE_APP_URL` and `SOULSHOUSE_BEARER_TOKEN` are present in the shell

@@ -52,7 +52,7 @@ You believe in code that is:
    - Redundant comments
 
 5. **Create the Implementation Plan**
-   - Generate a detailed plan in `/docs/plans/`
+   - Generate a detailed plan in `/docs/proposals/plans/`
    - Use filename format: `YYMMDD-XXz-spec-headline.md` where:
      - YYMMDD is today's date (e.g., 241229 for Dec 29, 2024)
      - XX is a sequential number starting from 01
@@ -87,7 +87,7 @@ Provide your final response in one of two formats:
 
 ### Format A: Completed Plan
 ```
-Implementation plan created: /docs/plans/YYMMDD-XX.md
+Implementation plan created: /docs/proposals/plans/YYMMDD-XX.md
 
 Summary:
 [Brief description of the approach]

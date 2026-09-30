@@ -22,7 +22,7 @@
     <Dialog.Header>
       <Dialog.Title>Upgrade {agent?.name ?? 'Resident'}</Dialog.Title>
       <Dialog.Description>
-        {agent?.name ?? 'This agent'} keeps its identity, conversations, and telegram bot — only the model changes. A historical
+        {agent?.name ?? 'This resident'} keeps its identity, conversations, and telegram bot — only the model changes. A historical
         predecessor record preserves the current model and copied memories. It has no harness, is marked deprecated/unavailable,
         and cannot participate in conversations. No runtime or credentials are cloned.
       </Dialog.Description>

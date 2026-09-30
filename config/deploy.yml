@@ -7,16 +7,14 @@
 # config/house.env (gitignored; config/house.env.example is the committed
 # starting point). `bin/kamal` loads that file automatically.
 #
-# See docs/2026-09-07-forkable-house-plan-from-lume.md and
-# public/self-host.md.
+# See public/self-host.md.
 
 <%
   house_missing = %w[HOUSE_DOMAIN HOUSE_HOST].reject { |key| ENV[key] && !ENV[key].strip.empty? }
   unless house_missing.empty?
     raise "No house configured (missing #{house_missing.join(", ")}). Copy " \
       "config/house.env.example to config/house.env and fill it in — bin/kamal " \
-      "loads it automatically. See docs/2026-09-07-forkable-house-plan-from-lume.md " \
-      "and public/self-host.md."
+      "loads it automatically. See public/self-host.md."
   end
 
   house = lambda do |key|
@@ -24,7 +22,7 @@
     if value.nil? || value.strip.empty?
       raise "House value #{key} is required but not set. Copy " \
         "config/house.env.example to config/house.env and fill it in — see " \
-        "docs/2026-09-07-forkable-house-plan-from-lume.md and public/self-host.md."
+        "public/self-host.md."
     end
     value
   end
@@ -76,6 +74,7 @@ env:
     RAILS_SERVE_STATIC_FILES: true # Let Rails serve static files (since no external proxy in production)
     RAILS_LOG_TO_STDOUT: true # Log to STDOUT for Docker logging
     RAILS_ENV: production
+    SOULSHOUSE_ASYNC_TURNS: <%= ENV.fetch("SOULSHOUSE_ASYNC_TURNS", "0").inspect %> # Enable only after the runtime canary.
     SOULSHOUSE_AGENTS_NETWORK: kamal # Agent containers join Kamal's private Docker network.
     SOULSHOUSE_AGENT_IMAGE_DEFAULT: <%= house_agent_image %>
     SOULSHOUSE_AGENT_INTERNAL_URL: http://souls-house-web:3000 # Agent callbacks hit Rails over Docker DNS.

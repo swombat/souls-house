@@ -114,7 +114,7 @@ class Agents::HostingDiagnosticsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to edit_account_agent_path(@account, @agent, tab: "hosting")
-    assert_match "Only hosted agents", flash[:alert]
+    assert_match "Only hosted residents", flash[:alert]
   end
 
 end

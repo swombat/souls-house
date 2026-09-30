@@ -3,10 +3,16 @@
   import { formatTime } from '$lib/utils';
 
   let { interaction } = $props();
-  let expanded = $state(Boolean(interaction.active));
+  let expanded = $state(false);
+  let hadNarration = $state(false);
   let wasActive = $state(Boolean(interaction.active));
   let now = $state(Date.now());
   const isActive = $derived(Boolean(interaction.active));
+  const backgroundClass = $derived(
+    interaction.agent_colour
+      ? `bg-${interaction.agent_colour}-100 dark:bg-${interaction.agent_colour}-900`
+      : 'bg-muted/20'
+  );
   const snapshot = $derived(interaction.snapshot || {});
   const operations = $derived(Object.values(snapshot.operations || {}));
   let commandsExpanded = $state(false);
@@ -14,10 +20,6 @@
     Boolean(snapshot.commentary) ||
       (interaction.events || []).some((event) => event.type === 'commentary.completed' && event.data?.text)
   );
-  const narrationAvailable = $derived(
-    interaction.narration_shared !== false && (snapshot.narration_capability === 'supported' || narrationReceived)
-  );
-  const showCommands = $derived(!narrationAvailable || commandsExpanded);
   const duration = $derived(
     isActive && interaction.started_at
       ? Math.max(0, now - new Date(interaction.started_at).getTime())
@@ -31,7 +33,9 @@
 
   $effect(() => {
     if (wasActive && !isActive) expanded = false;
+    else if (isActive && narrationReceived && !hadNarration) expanded = true;
     wasActive = isActive;
+    hadNarration = narrationReceived;
   });
 
   onMount(() => {
@@ -55,7 +59,7 @@
 <div class="flex justify-start" data-testid="runtime-activity-card" data-run-id={interaction.run_id || interaction.id}>
   <details
     bind:open={expanded}
-    class="w-full max-w-[90%] md:max-w-[75%] rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20">
+    class="w-full max-w-[90%] md:max-w-[75%] rounded-lg border border-dashed border-muted-foreground/30 {backgroundClass}">
     <summary class="cursor-pointer px-4 py-3 text-sm select-none">
       <span class="font-medium">{interaction.agent_name}</span>
       <span class="text-muted-foreground"> {interaction.status_label}</span>
@@ -81,16 +85,14 @@
           Contact was lost. Execution was not confirmed stopped; check before requesting the same work again.
         </p>
       {/if}
-      {#if narrationAvailable}
-        <button
-          type="button"
-          class="text-xs underline underline-offset-4"
-          aria-expanded={commandsExpanded}
-          onclick={() => (commandsExpanded = !commandsExpanded)}>
-          {commandsExpanded ? 'Hide commands' : 'Show commands'}
-        </button>
-      {/if}
-      {#if showCommands && operations.length && isActive}
+      <button
+        type="button"
+        class="text-xs underline underline-offset-4"
+        aria-expanded={commandsExpanded}
+        onclick={() => (commandsExpanded = !commandsExpanded)}>
+        {commandsExpanded ? 'Hide commands' : 'Show commands'}
+      </button>
+      {#if commandsExpanded && operations.length && isActive}
         <ul class="space-y-1">
           {#each operations as operation}
             <li class="break-words">{operation.label}…</li>
@@ -117,7 +119,7 @@
         {#each interaction.events || [] as event (event.id)}
           {#if event.type === 'commentary.completed' && event.data?.text}
             <li class="whitespace-pre-wrap">{event.data.text}</li>
-          {:else if eventLabel(event) && (showCommands || event.type === 'warning')}
+          {:else if eventLabel(event) && (commandsExpanded || event.type === 'warning')}
             <li class="break-words">{eventLabel(event)}</li>
           {/if}
         {/each}

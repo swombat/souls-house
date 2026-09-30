@@ -7,6 +7,62 @@ require "tmpdir"
 # script. Mirrors the harness style of trigger_shim_prompt_test.rb.
 class TriggerShimSessionTest < ActiveSupport::TestCase
 
+  test "Antigravity inherits the remaining turn budget on fresh and resumed runs only" do
+    out = run_shim_python(<<~PY)
+      import types
+      calls = []
+      mod.subprocess.run = lambda *args, **kwargs: calls.append(kwargs)
+      mod.time.monotonic = lambda: 100
+      mod._activity_context.turn_deadline = 86500
+      for resume in (None, "synthetic-session"):
+          mod.run_chaos("gemini-3.8-flash", 86400, "hello", True,
+                        provider="gemini", auth_mode="oauth_account", resume_id=resume)
+          assert calls[-1]["env"]["CHAOS_AGY_PRINT_TIMEOUT_SECONDS"] == "86365"
+          assert calls[-1]["timeout"] == 86400
+      mod.time.monotonic = lambda: 86500 - 120
+      mod.run_chaos("gemini-3.8-flash", 86400, "fallback", True,
+                    provider="gemini", auth_mode="oauth_account")
+      assert calls[-1]["timeout"] == 120
+      assert calls[-1]["env"]["CHAOS_AGY_PRINT_TIMEOUT_SECONDS"] == "85"
+      for provider, auth in (("gemini", "api_key"), ("openai", "api_key"), ("anthropic", "oauth_account")):
+          mod.run_chaos("synthetic", 86400, "hello", True, provider=provider, auth_mode=auth)
+          assert "CHAOS_AGY_PRINT_TIMEOUT_SECONDS" not in calls[-1]["env"]
+      mod.time.monotonic = lambda: 86501
+      count = len(calls)
+      try:
+          mod.run_chaos("synthetic", 86400, "late fallback", True)
+          raise AssertionError("expired turn was allowed to start")
+      except mod.subprocess.TimeoutExpired:
+          pass
+      assert len(calls) == count
+      print(json.dumps(True))
+    PY
+    assert_equal true, JSON.parse(out)
+  end
+
+  test "trigger validates timeout and clears its invocation-local deadline" do
+    out = run_shim_python(<<~PY)
+      import types
+      mod.graph_memory_notice = lambda payload: None
+      mod.time.monotonic = lambda: 100
+      def capture(*args, **kwargs):
+          assert mod._activity_context.turn_deadline == 86500
+          return {"status": "ok"}
+      mod.legacy_trigger = capture
+      payload = {"session_id": "test", "request": "hello", "timeout_secs": 86400}
+      mod.request = types.SimpleNamespace(
+          headers={"Authorization": "Bearer tr_test"},
+          get_json=lambda silent=True: payload)
+      assert mod.trigger() == {"status": "ok"}
+      assert mod._activity_context.turn_deadline is None
+      for invalid in (0, -1, 86401, True, 1.5, "86400", None):
+          payload["timeout_secs"] = invalid
+          assert mod.trigger()[1] == 400
+      print(json.dumps(True))
+    PY
+    assert_equal true, JSON.parse(out)
+  end
+
   test "concurrent session registration is atomic and excludes itself" do
     out = run_shim_python(<<~PY)
       import concurrent.futures, threading
@@ -108,10 +164,9 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
   test "runtime image includes the journald companion required for resume" do
     dockerfile = Rails.root.join("agent-runtime/Dockerfile").read
     entrypoint = Rails.root.join("agent-runtime/entrypoint.sh").read
-    antigravity_egress_patch =
-      Rails.root.join("agent-runtime/patches/chaos-antigravity-daily-cloudcode-egress.patch").read
-
-    assert_includes dockerfile, 'cargo build --release --jobs "${CARGO_BUILD_JOBS}" --bin chaos_journald'
+    assert_includes dockerfile, "ARG CHAOS_BUILD_MODE=prebuilt"
+    assert_includes dockerfile, 'FROM chaos-${CHAOS_BUILD_MODE} AS builder'
+    assert_includes dockerfile, 'cargo build --release --locked --jobs "${CARGO_BUILD_JOBS}" --bin chaos --bin chaos_journald'
     assert_includes dockerfile, "COPY --from=builder /usr/local/bin/chaos_journald /usr/local/bin/chaos_journald"
     assert_includes dockerfile, "COPY docs/runtime-instructions.md /usr/local/share/helixkit-agent/runtime-instructions.md"
     assert_includes dockerfile, "COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md"
@@ -121,23 +176,9 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_includes dockerfile, "ARG CHAOS_HEAD"
     refute_match(/^ARG CHAOS_HEAD=[0-9a-f]{40}$/, dockerfile)
     assert_not_includes dockerfile, "chaos-clamp-image-tool-output.patch"
-    assert_includes dockerfile, "chaos-antigravity-empty-managed-config.patch"
-    assert_includes dockerfile, "git apply --check /tmp/chaos-antigravity-empty-managed-config.patch"
-    assert_includes dockerfile, "chaos-antigravity-daily-cloudcode-egress.patch"
-    assert_includes dockerfile, "git apply --check /tmp/chaos-antigravity-daily-cloudcode-egress.patch"
-    assert_includes dockerfile, "antigravity-daily-cloudcode-egress"
-    assert_includes dockerfile, "git apply --check /tmp/chaos-clamp-cached-catalog.patch"
-    assert_includes dockerfile, "git apply /tmp/chaos-clamp-cached-catalog.patch"
-    assert_includes dockerfile, "clamp-cached-catalog"
-    assert_includes dockerfile, "git apply --check /tmp/chaos-stop-hook-continuation-as-user.patch"
-    assert_includes dockerfile, "git apply /tmp/chaos-stop-hook-continuation-as-user.patch"
-    assert_includes dockerfile, "stop-hook-continuation-as-user"
-    continuation_patch = File.read(Rails.root.join("agent-runtime/patches/chaos-stop-hook-continuation-as-user.patch"))
-    assert_includes continuation_patch, 'role: "user".to_string()'
-    assert_includes continuation_patch, "-                                DeveloperInstructions::new(continuation_prompt).into();"
-    assert_includes antigravity_egress_patch, '"daily-cloudcode-pa.googleapis.com"'
-    assert_includes antigravity_egress_patch, '"www.googleapis.com"'
-    assert_includes antigravity_egress_patch, '"lh3.googleusercontent.com"'
+    # These fixes now live upstream, not in a local patch-and-rebuild layer.
+    assert_not_includes dockerfile, "git apply"
+    assert_includes dockerfile, 'LABEL house.souls.chaos-patches=""'
     # 1.1.22 makes denied native tool calls recoverable in print mode instead
     # of failing the whole clamped turn before it can choose the Chaos MCP bridge.
     assert_includes dockerfile, "ARG ANTIGRAVITY_VERSION=1.1.22"

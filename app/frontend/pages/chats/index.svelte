@@ -19,9 +19,7 @@
   });
 
   function createNewChat() {
-    if ($createChatForm?.data?.chat) {
-      $createChatForm.data.chat.model_id = selectedModel;
-    }
+    $createChatForm.chat.model_id = selectedModel;
     $createChatForm.post(accountChatsPath(account.id));
   }
 
@@ -82,14 +80,13 @@
                 New Chat
               </Card.Title>
               <Select.Root
+                type="single"
                 value={selectedModel}
                 onValueChange={(value) => {
                   selectedModel = value;
-                  if ($createChatForm?.data?.chat) {
-                    $createChatForm.data.chat.model_id = value;
-                  }
+                  $createChatForm.chat.model_id = value;
                 }}>
-                <Select.Trigger class="w-48" id="model-select">
+                <Select.Trigger class="w-48" id="model-select" aria-label="Select AI model">
                   {selectedModelLabel()}
                 </Select.Trigger>
                 <Select.Content sideOffset={4}>

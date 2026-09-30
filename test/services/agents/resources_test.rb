@@ -21,6 +21,27 @@ module Agents
       assert_equal "chaos-home-test-resident-uuid", resources.first.volumes[:chaos]
     end
 
+    test "hostname is stable, per resident, valid, and never a personal machine name" do
+      uuid = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"
+      first = Resources.new(Struct.new(:uuid, :container_name).new(uuid, nil), instance: configuration(0)).hostname
+      again = Resources.new(Struct.new(:uuid, :container_name).new(uuid, "hk-agent-#{uuid}"), instance: configuration(0)).hostname
+      other = Resources.new(Struct.new(:uuid, :container_name).new("0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5c", nil), instance: configuration(0)).hostname
+      assert_equal "souls-house-#{uuid}", first
+      assert_equal first, again
+      assert_not_equal first, other
+      assert_operator first.length, :<=, 63
+      assert_match(/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/, first)
+      assert_not_includes %w[danbook omarchidell localhost], first
+      assert_equal "souls-house-abcdef", Resources.new(Struct.new(:uuid, :container_name).new("ABCDEF", nil), instance: configuration(0)).hostname
+    end
+
+    test "an identifier that cannot form a hostname is refused" do
+      [ "has_underscore", "trailing-", "x" * 60 ].each do |uuid|
+        resources = Resources.new(Struct.new(:uuid, :container_name).new(uuid, nil), instance: configuration(0))
+        assert_raises(ArgumentError, uuid) { resources.hostname }
+      end
+    end
+
     test "stored foreign names are rejected before any Docker access" do
       agent = resident
       agent.container_name = Resources.new(agent, instance: configuration(1)).container

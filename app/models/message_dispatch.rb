@@ -14,6 +14,12 @@
 # "invoke", keyed by the app's client_invocation_id): reserved inline when it
 # is accepted, then claimed, continued and swept exactly like a mention wake.
 #
+# The automatic wake of a room's sole resident (kind "automatic") is a
+# mention's lifecycle without the mention: written by Message when a human
+# message is accepted, from any entry point (web, app, API, opening message),
+# and reserved inline after commit so the queued activity is visible before
+# the send returns. It is never presented as an explicit mention.
+#
 # Lock order: this row is always taken before any interaction or chat lock.
 class MessageDispatch < ApplicationRecord
 
@@ -21,7 +27,7 @@ class MessageDispatch < ApplicationRecord
   class InvocationRefused < StandardError; end
 
   STATUSES = %w[pending reserved cancelled expired].freeze
-  KINDS = %w[mention invoke].freeze
+  KINDS = %w[mention automatic invoke].freeze
   EXPIRY = 10.minutes
   # Recovery re-drives work this far back and no further. Past it, the sweeper
   # still records what became of the dispatch (close_recovery!) instead of
@@ -41,10 +47,10 @@ class MessageDispatch < ApplicationRecord
   validates :kind, inclusion: { in: KINDS }
   # The database's check constraint enforces the same variants; this is the
   # readable failure.
-  validates :message, presence: true, if: :mention?
+  validates :message, presence: true, if: :from_message?
   validates :message, absence: true, if: :invoke?
   validates :client_invocation_id, :request_digest, presence: true, if: :invoke?
-  validates :client_invocation_id, :request_digest, absence: true, if: :mention?
+  validates :client_invocation_id, :request_digest, absence: true, if: :from_message?
 
   scope :recoverable, -> { where(accepted_at: RECOVERY_HORIZON.ago..) }
   # Reserved and still under recovery: a settled_at on a reserved row means
@@ -52,9 +58,9 @@ class MessageDispatch < ApplicationRecord
   scope :recovery_open, -> { where(status: "reserved", settled_at: nil) }
 
   # Targets are resolved once, here, and never re-read from an edited body.
-  def self.accept!(message:, target_agent_ids:)
+  def self.accept!(message:, target_agent_ids:, kind: "mention")
     now = Time.current
-    create!(message: message, chat: message.chat, user: message.user, target_agent_ids: target_agent_ids,
+    create!(kind: kind, message: message, chat: message.chat, user: message.user, target_agent_ids: target_agent_ids,
             accepted_at: now, expires_at: now + EXPIRY)
   end
 
@@ -103,6 +109,10 @@ class MessageDispatch < ApplicationRecord
   end
 
   def mention? = kind == "mention"
+  def automatic? = kind == "automatic"
+  # Caused by a human message, so bound to it: discard cancels, edit while
+  # pending cancels, and it is swept like a mention.
+  def from_message? = mention? || automatic?
   def invoke? = kind == "invoke"
   def pending? = status == "pending"
   def reserved? = status == "reserved"
@@ -300,7 +310,7 @@ class MessageDispatch < ApplicationRecord
   # An invoke has no message to discard; it stands while its conversation
   # is respondable and its invoker is still a member.
   def source_invalid_reason
-    if mention?
+    if from_message?
       message.reload
       return "discarded" if message.discarded?
     end

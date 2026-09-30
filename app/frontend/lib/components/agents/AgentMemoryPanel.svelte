@@ -49,7 +49,7 @@
 
   {#if locked}
     <div class="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
-      To change this agent's memory, edit the hosted filesystem or let the external agent update itself.
+      To change this resident's memory, edit the hosted filesystem or let the externally hosted resident update itself.
     </div>
   {:else if showNewMemoryForm}
     <AgentNewMemoryForm oncreate={createMemory} oncancel={() => (showNewMemoryForm = false)} />

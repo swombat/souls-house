@@ -34,8 +34,9 @@ class ExternalAgentWakeRequest
       endpoint_url: endpoint_url,
       request_text: request,
       provider_auth_mode: auth_mode
-    ) do
+    ) do |interaction|
       ChaosTriggerClient.new(endpoint_url, agent.trigger_bearer_token).request_response(
+        interaction: interaction,
         conversation_id: nil,
         requested_by: requested_by,
         session_id: session_id,
@@ -46,7 +47,8 @@ class ExternalAgentWakeRequest
         provider: provider,
         model: Agents::Sandbox.chaos_model_for(agent),
         reasoning_effort: agent.reasoning_effort,
-        auth_mode: auth_mode
+        auth_mode: auth_mode,
+        runtime_timeout_secs: agent.runtime_timeout_secs
       )
     end
   end

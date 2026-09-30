@@ -64,7 +64,11 @@ test.describe('browser contracts', () => {
     const run = await started.json();
     const card = page.getByTestId('runtime-activity-card').filter({ hasText: 'E2E Researcher' });
     await expect(card).toBeVisible();
+    // Tool activity without shared narration stays collapsed until requested.
+    await expect(card.locator('details')).not.toHaveAttribute('open', '');
+    await card.locator('summary').click();
     await expect(card.locator('details')).toHaveAttribute('open', '');
+    await card.getByRole('button', { name: 'Show commands' }).click();
     await expect(card.getByText('grep -n runtime app/services/agent_dispatch.rb…')).toBeVisible();
     await request.post('/test/e2e/runtime_activity', {
       data: { chat_id: fixture.chat_id, runtime_run_id: run.runtime_run_id, complete: true },
@@ -80,6 +84,7 @@ test.describe('browser contracts', () => {
     await expect(card).toBeVisible();
     await expect(card.locator('details')).not.toHaveAttribute('open', '');
     await card.locator('summary').click();
+    await card.getByRole('button', { name: 'Show commands' }).click();
     await expect(card.getByText('Runtime started', { exact: true })).toBeVisible();
     await expect(card.getByText('grep -n runtime app/services/agent_dispatch.rb', { exact: true })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
@@ -165,6 +170,42 @@ test.describe('browser contracts', () => {
 
   test.afterEach(async ({ request }) => {
     await cleanupRun(request, setup.run_id);
+  });
+
+  test('missing resident credentials open setup dialog for single and all triggers', async ({
+    page,
+    request,
+  }, testInfo) => {
+    await login(page, setup.primary_user, setup.password);
+    const response = await request.post('/test/e2e/conversation_fixture', {
+      data: { account_id: setup.account_id, count: 1 },
+    });
+    const fixture = await response.json();
+    await page.goto(`/accounts/${setup.account_id}/chats/${fixture.chat_id}`);
+    const rejected = page.waitForResponse(
+      (res) => res.url().includes('/agent_trigger') && res.request().method() === 'POST'
+    );
+    await page.getByRole('button', { name: 'E2E Researcher', exact: true }).click();
+    expect((await rejected).status()).toBe(422);
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('Set up resident credentials');
+    await expect(dialog).toContainText('Edit the resident and set up credentials');
+    await expect(dialog.getByRole('link', { name: 'Edit E2E Researcher' })).toHaveAttribute(
+      'href',
+      setup.agents[0].edit_url
+    );
+    await expect(dialog.getByRole('link', { name: 'Edit E2E Critic' })).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath('missing-credentials-desktop.png') });
+    await dialog.getByRole('button', { name: 'Not now' }).click();
+    await expect(page.getByRole('button', { name: 'E2E Researcher', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Ask All', exact: true }).click();
+    await expect(dialog.getByRole('link', { name: 'Edit E2E Researcher' })).toBeVisible();
+    await expect(dialog.getByRole('link', { name: 'Edit E2E Critic' })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(dialog.getByRole('link', { name: 'Edit E2E Researcher' })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('missing-credentials-mobile.png') });
+    await dialog.getByRole('link', { name: 'Edit E2E Researcher' }).click();
+    await expect(page).toHaveURL(new RegExp(setup.agents[0].edit_url + '$'));
   });
 
   test('user can log in, create a multi-agent chat, and see deterministic thinking output', async ({
@@ -335,7 +376,7 @@ test.describe('browser contracts', () => {
     await expect(secondPage.getByText('Initial message from the primary user.')).toBeVisible();
 
     await secondPage.locator('main textarea').last().fill('Synced message from another browser.');
-    await secondPage.locator('main button').last().click();
+    await secondPage.getByRole('button', { name: 'Send message', exact: true }).click();
 
     await expect(page.getByText('Synced message from another browser.')).toBeVisible();
     await secondContext.close();

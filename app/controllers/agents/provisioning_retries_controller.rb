@@ -4,7 +4,7 @@ class Agents::ProvisioningRetriesController < ApplicationController
 
   def create
     unless @agent.born_hosted? && @agent.provisioning?
-      redirect_to onboarding_account_agent_path(current_account, @agent), alert: "This agent is not waiting for provisioning"
+      redirect_to onboarding_account_agent_path(current_account, @agent), alert: "This resident is not waiting for provisioning"
       return
     end
 

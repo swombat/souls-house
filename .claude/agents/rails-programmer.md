@@ -16,7 +16,7 @@ When invoked, you must follow these steps:
 
 1. **Review the specification and context** - Read any provided documentation, specs, or requirements carefully. If docs are referenced but not provided, use Read to fetch them.
 
-2. **Create or update a plan.md file** - Follow the detailed implementation plan in `/docs/plans/YYMMDD-XX.md`, passed in by the master agent, that breaks down the work into specific tasks. Mark completed tasks with markdown checkboxes (`- [x]`) as you progress.
+2. **Create or update a plan.md file** - Follow the detailed implementation plan in `/docs/proposals/plans/YYMMDD-XX.md`, passed in by the master agent, that breaks down the work into specific tasks. Mark completed tasks with markdown checkboxes (`- [x]`) as you progress.
 
 3. **Implement following Rails conventions**:
    - Put business logic in models (fat models, skinny controllers)

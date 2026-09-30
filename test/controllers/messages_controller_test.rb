@@ -21,6 +21,18 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
+  test "single resident is triggered once even when explicitly mentioned" do
+    resident = @account.agents.create!(name: "Solo", system_prompt: "Test", runtime: "external")
+    @chat.agents << resident
+    @chat.update!(manual_responses: true)
+
+    assert_enqueued_jobs 1, only: [ AllAgentsResponseJob, ManualAgentResponseJob ] do
+      post account_chat_messages_path(@account, @chat),
+        params: { message: { content: "Hello @Solo" } }, as: :json
+      assert_response :created
+    end
+  end
+
   test "index includes estimated interaction costs for paginated messages" do
     agent = agents(:research_assistant)
     started_at = 1.minute.ago
@@ -565,7 +577,8 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
   test "should auto-trigger mentioned agents in group chat" do
     agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     group_chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
-    group_chat.agent_ids = [ agent.id ]
+    other = @account.agents.create!(name: "Other", system_prompt: "Test", runtime: "external")
+    group_chat.agent_ids = [ agent.id, other.id ]
     group_chat.save!
 
     assert_enqueued_with(job: MessageDispatchJob) do
@@ -577,12 +590,13 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "should not auto-trigger when no agents mentioned in group chat" do
-    agent = @account.agents.create!(name: "Grok", system_prompt: "Test")
+    agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     group_chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
-    group_chat.agent_ids = [ agent.id ]
+    other = @account.agents.create!(name: "Other", system_prompt: "Test", runtime: "external")
+    group_chat.agent_ids = [ agent.id, other.id ]
     group_chat.save!
 
-    assert_no_enqueued_jobs(only: MessageDispatchJob) do
+    assert_no_enqueued_jobs(only: [ MessageDispatchJob, AllAgentsResponseJob, ManualAgentResponseJob ]) do
       post account_chat_messages_path(@account, group_chat), params: {
         message: { content: "Hello everyone" }
       }

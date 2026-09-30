@@ -10,8 +10,8 @@ module Api
       PHOTO_FALLBACK_EXCLUSIONS = [ "blocked", "chat not found" ].freeze
 
       def create
-        return render json: { error: "Telegram messaging is only available to agent API keys" }, status: :forbidden unless current_api_agent
-        return render json: { error: "Telegram is not configured for this agent" }, status: :unprocessable_entity unless current_api_agent.telegram_configured?
+        return render json: { error: "Telegram messaging is only available to resident API keys" }, status: :forbidden unless current_api_agent
+        return render json: { error: "Telegram is not configured for this resident" }, status: :unprocessable_entity unless current_api_agent.telegram_configured?
 
         text = params[:text].to_s.strip
         media = params[:media]
@@ -24,7 +24,7 @@ module Api
         return render json: { error: "media is too large (max 50 MB)" }, status: :unprocessable_entity if media.present? && media.size > MAX_MEDIA_SIZE
 
         subscriptions = target_subscriptions
-        return render json: { error: "No matching active Telegram subscribers for this agent" }, status: :not_found if subscriptions.empty?
+        return render json: { error: "No matching active Telegram subscribers for this resident" }, status: :not_found if subscriptions.empty?
 
         content_type = detected_content_type(media) if media.present?
         media_kind = media_kind_for(media, content_type) if media.present?

@@ -1,6 +1,6 @@
 require "test_helper"
 
-# Phase 1 of the forkable-house plan (docs/2026-09-07-forkable-house-plan-from-lume.md):
+# Phase 1 of the forkable-house plan (docs/.bak/2026-09-07-forkable-house-plan-from-lume.md):
 # the values that name *this* installation come from SOULSHOUSE_* env vars,
 # defaulting to today's upstream behaviour when unset.
 class IdentityEnvTest < ActiveSupport::TestCase

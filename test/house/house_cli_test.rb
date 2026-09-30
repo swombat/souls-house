@@ -2,7 +2,7 @@ require "test_helper"
 require Rails.root.join("config/house")
 require Rails.root.join("lib/house/cli")
 
-# Phase 2 of the forkable-house plan (docs/2026-09-07-forkable-house-plan-from-lume.md):
+# Phase 2 of the forkable-house plan (docs/.bak/2026-09-07-forkable-house-plan-from-lume.md):
 # bin/house's subcommands (init, doctor, release-embeddings) exercised
 # against temp directories — never this checkout's real config/house.env or
 # a real host.

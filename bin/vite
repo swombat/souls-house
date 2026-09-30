@@ -8,11 +8,6 @@
 # this file is here to facilitate running it.
 #
 
-require_relative "../config/local_instance"
-require_relative "../config/instance_toolchain"
-LocalInstance::Toolchain.bun!(LocalInstance::ROOT)
-LocalInstance.current.configure!
-
 ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
 
 bundle_binstub = File.expand_path("bundle", __dir__)
@@ -28,5 +23,10 @@ end
 
 require "rubygems"
 require "bundler/setup"
+
+require_relative "../config/local_instance"
+require_relative "../config/instance_toolchain"
+LocalInstance::Toolchain.bun!(LocalInstance::ROOT)
+LocalInstance.current.configure!
 
 load Gem.bin_path("vite_ruby", "vite")

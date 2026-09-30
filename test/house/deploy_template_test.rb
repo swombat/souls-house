@@ -1,7 +1,7 @@
 require "test_helper"
 require Rails.root.join("config/house")
 
-# Phase 1 of the forkable-house plan (docs/2026-09-07-forkable-house-plan-from-lume.md):
+# Phase 1 of the forkable-house plan (docs/.bak/2026-09-07-forkable-house-plan-from-lume.md):
 # config/deploy.yml is an ERB template over HOUSE_* env, and nothing else in
 # the repository should name a specific installation.
 class DeployTemplateTest < ActiveSupport::TestCase
@@ -42,6 +42,15 @@ class DeployTemplateTest < ActiveSupport::TestCase
       builder = YAML.safe_load(render_deploy_yml).fetch("builder")
       assert_not builder.key?("local")
       assert_not builder.key?("remote")
+    end
+  end
+
+  test "asynchronous admission is off by default and forwarded only when enabled" do
+    [ nil, "1" ].each do |value|
+      with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST, "SOULSHOUSE_ASYNC_TURNS" => value)) do
+        runtime = YAML.safe_load(render_deploy_yml).fetch("env").fetch("clear")
+        assert_equal value || "0", runtime.fetch("SOULSHOUSE_ASYNC_TURNS")
+      end
     end
   end
 

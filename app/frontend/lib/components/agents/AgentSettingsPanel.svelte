@@ -19,9 +19,29 @@
   {#if runtimeManaged}
     <div class="border rounded-lg p-4 text-sm text-muted-foreground">
       Model and thinking-effort changes take effect on the next trigger; no sandbox rebuild is needed. Tools remain
-      managed by the agent's Chaos runtime.
+      managed by the resident's Chaos runtime.
     </div>
   {/if}
+
+  <div class="space-y-2">
+    <Label for="turn_timeout_minutes">Turn timeout (minutes)</Label>
+    <Input
+      id="turn_timeout_minutes"
+      type="number"
+      min={1}
+      max={1440}
+      step={1}
+      bind:value={$form.agent.turn_timeout_minutes}
+      disabled={!runtimeManaged} />
+    <p class="text-sm text-muted-foreground">
+      Maximum elapsed time for one turn, including tool use. Default: 30 minutes; maximum: 1440 minutes (24 hours).
+      Applies to conversation turns, Telegram turns, wakes, orientation and memory work—not the lifetime of a
+      conversation. Changes take effect on the next trigger.
+    </p>
+    {#if $form.errors?.turn_timeout_minutes}
+      <p class="text-sm text-destructive">{$form.errors.turn_timeout_minutes}</p>
+    {/if}
+  </div>
 
   <div class="space-y-4">
     <div>

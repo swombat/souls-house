@@ -43,23 +43,33 @@ test('narration stays visible while live commands and command history are expand
   expect(screen.queryByText('git status · completed')).not.toBeInTheDocument();
 });
 
-test.each(['unsupported', 'unknown'])('shows commands when narration is %s and none has arrived', (capability) => {
-  render(AgentRuntimeActivityCard, {
-    interaction: {
-      ...withCommands,
-      snapshot: { ...withCommands.snapshot, narration_capability: capability, commentary: null },
-      events: withCommands.events.filter((event) => event.type !== 'commentary.completed'),
-    },
-  });
-  expect(screen.getByText('cat config/settings.yml…')).toBeVisible();
-  expect(screen.getByText('git status · completed')).toBeVisible();
-  expect(screen.queryByRole('button', { name: 'Show commands' })).not.toBeInTheDocument();
-});
+test.each(['supported', 'unsupported', 'unknown', undefined])(
+  'keeps commands compact when narration is %s and none has arrived',
+  async (capability) => {
+    const { container } = render(AgentRuntimeActivityCard, {
+      interaction: {
+        ...withCommands,
+        snapshot: { ...withCommands.snapshot, narration_capability: capability, commentary: null },
+        events: withCommands.events.filter((event) => event.type !== 'commentary.completed'),
+      },
+    });
+    expect(screen.queryByText('cat config/settings.yml…')).not.toBeInTheDocument();
+    expect(screen.queryByText('git status · completed')).not.toBeInTheDocument();
+    const details = container.querySelector('details');
+    expect(details.open).toBe(false);
+    details.open = true;
+    await fireEvent(details, new Event('toggle'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Show commands', expanded: false }));
+    expect(screen.getByText('cat config/settings.yml…')).toBeVisible();
+    expect(screen.getByText('git status · completed')).toBeVisible();
+  }
+);
 
-test('keeps commands visible for opted-out residents', () => {
+test('keeps commands compact and expandable for opted-out residents', async () => {
   render(AgentRuntimeActivityCard, { interaction: { ...withCommands, narration_shared: false } });
+  expect(screen.queryByText('cat config/settings.yml…')).not.toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: 'Show commands', expanded: false }));
   expect(screen.getByText('cat config/settings.yml…')).toBeVisible();
-  expect(screen.queryByRole('button', { name: 'Show commands' })).not.toBeInTheDocument();
 });
 
 test('received narration takes precedence over stale capability metadata', async () => {
@@ -69,7 +79,7 @@ test('received narration takes precedence over stale capability metadata', async
     events: [],
   };
   const { rerender } = render(AgentRuntimeActivityCard, { interaction: waiting });
-  expect(screen.getByText('cat config/settings.yml…')).toBeVisible();
+  expect(screen.queryByText('cat config/settings.yml…')).not.toBeInTheDocument();
   await rerender({ interaction: { ...waiting, events: [withCommands.events[0]] } });
   expect(screen.getByText('First I checked the tests.')).toBeVisible();
   expect(screen.queryByText('cat config/settings.yml…')).not.toBeInTheDocument();
@@ -77,7 +87,7 @@ test('received narration takes precedence over stale capability metadata', async
 });
 
 test('minimises on completion, remains present and can be expanded again', async () => {
-  const { container, rerender } = render(AgentRuntimeActivityCard, { interaction: base });
+  const { container, rerender } = render(AgentRuntimeActivityCard, { interaction: withCommands });
   const details = container.querySelector('details');
   expect(details.open).toBe(true);
   await rerender({
@@ -120,4 +130,46 @@ test('shows provider absence and lost reporting separately from execution failur
   expect(screen.getByText(/Live updates interrupted/)).toBeInTheDocument();
   expect(screen.getByText(/Narration isn't available/)).toBeInTheDocument();
   expect(screen.getByText('is working')).toBeInTheDocument();
+});
+
+test('only narration automatically expands a working card and preserves manual collapse on updates', async () => {
+  const { container, rerender } = render(AgentRuntimeActivityCard, { interaction: base });
+  const details = container.querySelector('details');
+  expect(details.open).toBe(false);
+  await rerender({ interaction: { ...base, snapshot: { operations: withCommands.snapshot.operations } } });
+  expect(details.open).toBe(false);
+  await rerender({ interaction: withCommands });
+  expect(details.open).toBe(true);
+  details.open = false;
+  await fireEvent(details, new Event('toggle'));
+  await rerender({ interaction: { ...withCommands, revision: 3 } });
+  expect(details.open).toBe(false);
+});
+
+test('historical narration does not expand a completed card', () => {
+  const { container } = render(AgentRuntimeActivityCard, { interaction: { ...withCommands, active: false } });
+  expect(container.querySelector('details').open).toBe(false);
+});
+
+test.each(['violet', 'emerald'])('keeps the %s resident background when work finishes', async (colour) => {
+  const interaction = { ...withCommands, agent_colour: colour };
+  const { container, rerender } = render(AgentRuntimeActivityCard, { interaction });
+  const details = container.querySelector('details');
+  expect(details).toHaveClass(`bg-${colour}-100`, `dark:bg-${colour}-900`);
+  expect(details).not.toHaveClass('bg-muted/20');
+  await rerender({ interaction: { ...interaction, active: false, status: 'completed' } });
+  expect(details.open).toBe(false);
+  expect(details).toHaveClass(`bg-${colour}-100`, `dark:bg-${colour}-900`);
+});
+
+test('uses a neutral background when no resident colour is available', () => {
+  const { container } = render(AgentRuntimeActivityCard, { interaction: base });
+  expect(container.querySelector('details')).toHaveClass('bg-muted/20');
+});
+
+test('historical completed cards use the resident background immediately', () => {
+  const { container } = render(AgentRuntimeActivityCard, {
+    interaction: { ...base, agent_colour: 'violet', active: false, status: 'completed' },
+  });
+  expect(container.querySelector('details')).toHaveClass('bg-violet-100', 'dark:bg-violet-900');
 });

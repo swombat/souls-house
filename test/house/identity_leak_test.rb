@@ -1,6 +1,6 @@
 require "test_helper"
 
-# Phase 1 of the forkable-house plan (docs/2026-09-07-forkable-house-plan-from-lume.md):
+# Phase 1 of the forkable-house plan (docs/.bak/2026-09-07-forkable-house-plan-from-lume.md):
 # "one file separates a house from the code" — config/house.env(.example).
 # Nothing else in the repository may name a specific installation. This test
 # is the tripwire that keeps that true as the codebase grows.
@@ -72,6 +72,7 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/frontend/lib/components/navigation/Footer.svelte" => "footer copy",
     "app/frontend/pages/safeguard-responses.svelte" => "public safeguard-explanation page copy",
     "app/frontend/pages/self-host.svelte" => "self-host page copy",
+    "app/frontend/lib/components/home/self-host-helper-guide.svelte" => "extracted self-host guide copy",
     "app/frontend/pages/self-host-technical.svelte" => "self-host page copy",
     "app/frontend/pages/home.svelte" => "marketing page copy",
     "app/frontend/pages/privacy.svelte" => "privacy page copy",

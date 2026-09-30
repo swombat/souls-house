@@ -3,7 +3,7 @@ require "test_helper"
 class Admin::AgentProviderSubscriptionUsagesControllerTest < ActionDispatch::IntegrationTest
   setup do
     @agent = agents(:other_account_agent)
-    @agent.update!(model_id: "openai/gpt-5", runtime: "external")
+    @agent.update!(model_id: "openai/gpt-5", runtime: "external", provider_auth_modes: { "openai" => "oauth_account" })
   end
 
   test "site admins can read usage without account membership" do

@@ -1,79 +1,63 @@
-# Documentation Overview
+# souls.house documentation
 
-This directory contains detailed documentation for the Helix Kit Rails application. Start here to understand the project structure and find the information you need.
+Start here for how the application **works now**. Guides describe repository
+behaviour; a merged change is not evidence that a particular installation has
+been deployed. For native-client work, read the first four guides together.
 
-## Quick Start
+## Architecture and client contracts
 
-1. **Development Setup**: Run `bin/dev` to start the development server (Rails on port 3000, Vite for frontend assets)
-2. **Database Setup**: Run `rails db:setup` to create and seed the database
-3. **Run Tests**: Use `rails test`, `bun run test`, and `bun run test:unit` to run the test suite before declaring changes complete.
-4. **Dev Credentials**: See [dev-credentials.md](./dev-credentials.md) for local development login details
+- [Architecture](architecture.md) — Rails, web frontend, resident execution and storage boundaries
+- [APIs and client boundaries](api.md) — existing interfaces and explicit native-client gaps
+- [Data and authorization](data-and-authorization.md) — accounts, credentials, attribution and concurrent writes
+- [Web synchronization internals](synchronization-internals.md) — invalidation protocol and its limits
+- [Resident execution and lifecycle](resident-runtime.md) — dispatch, sessions, activity and availability
+- [Resident concurrency](resident-concurrency.md) — optional asynchronous admission, cancellation and safe rollout
+- [Source map](file_system_structure.md) — where the implementation lives
+- [House utility inference](utility-inference.md) — title/moderation/classification, separate from residents
 
-## Documentation Index
+## Development and testing
 
-### Core Documentation
+- [Commands](commands.md) and [database safety](database-safety.md)
+- [Independent local instances](multi-instance-development.md)
+- [Testing strategy](testing.md), [browser testing](playwright-testing.md) and [CI](continuous-integration.md)
+- [Formatting](formatting.md), [forms](forms.md), [JSON attributes](json-attributes.md)
+- [Frontend component boundaries and size thresholds](frontend-components.md)
+- [Web synchronization usage](synchronization-usage.md), [resource-oriented controllers](restful-resource-design.md)
+- [Icons](icons.md), [icon catalogue](icons-all.md), [DaisyUI guidance](daisyui-reference.md)
+- [Dependency references](stack/README.md) — dated upstream notes, not application architecture
 
-- **[Architecture](./architecture.md)** - Application architecture, technology stack, and design patterns
-- **[File System Structure](./file_system_structure.md)** - Complete directory structure and file organization for Rails and Svelte
-- **[Testing](./testing.md)** - Testing strategy, frameworks, and best practices
-- **[Commands](./commands.md)** - Complete list of development, testing, and deployment commands
+## Feature references
 
-### Feature Documentation
+- [Private conversation drafts](conversation-drafts.md) — autosave, local recovery and cross-client revisions
 
-- **[Resident progress messages](./progress-messages.md)** - Quiet public updates grouped by wake, elapsed dividers, lifecycle and delivery
+- [Message Markdown](message-markdown.md), [patch attachments](patch-attachments.md), [message grouping](progress-messages.md)
+- [Whiteboard update semantics](whiteboard-null-updates.md)
+- [Telegram safeguards](safeguards.md), [transcription fallback](telegram-transcription-fallback.md), [video notes](telegram-video-notes.md)
+- [Device observation streams](device-streams.md)
+- [Google Workspace integration](google-workspace-integration.md)
+- [Mnemodyne](mnemodyne.md), [resident Memory tab](features/resident-memory.md), [resident memory policy](features/resident-memory-policy.md)
+- [Voice selection](how-to-choose-your-voice.md) and [voice samples](voice-samples/README.md)
+- [Account usage](admin-account-usage.md) and [interaction pricing](interaction-cost-pricing.md)
 
-- **[Authentication](./authentication.md)** - User authentication system details
-- **[Runtime retirement and utility inference](./plans/260905-01b-rubyllm-removal-implementation-checkpoint.md)** - Harness-only agents, ruby-openai utilities, and deployment gates
-  - [Agentic Workflows](./ruby-llm/agentic-workflows.md) - Building advanced AI agent systems
-  - [Model Registry](./ruby-llm/model-registry.md) - Model discovery and management across 500+ AI models
-  - [Polymorphic Tools](./polymorphic-tools.md) - Domain-based tool consolidation pattern for scaling to 50+ capabilities
-- **[Frontend](./frontend.md)** - Svelte, Inertia.js, and component organization
-- **[Database](./database.md)** - PostgreSQL setup and Solid adapters configuration
-- **[Database Backup](./database-backup.md)** - Automated daily backups to S3
-- **[Icons](./icons.md)** - Comprehensive Phosphor Icons reference with 1500+ searchable icons
-- **[JSON Attributes](./json-attributes.md)** - Declarative JSON serialization with automatic ID obfuscation
-- **[Real-time Synchronization Usage](./synchronization-usage.md)** - How to use the real-time sync system to update Svelte components when Rails models change
-- **[Real-time Synchronization Internals](./synchronization-internals.md)** - ⚠️ ONLY consult if explicitly asked to debug sync issues. Contains deep implementation details.
+## Operations and resident-facing manuals
 
-### Tech Stack Documentation
+- [Self-hosting and deployment](../public/self-host.md) — installation identity, credentials and operator checks
+- [Database and resident backup](database-backup.md)
+- [Mnemodyne deployment](mnemodyne-deployment.md)
+- [Legacy inline-runtime retirement](operations/inline-runtime-retirement.md) — only for installations still needing the reviewed transition
+- [Runtime build and upgrade contract](../agent-runtime/README.md)
+- [Resident API and helper manual](../agent-runtime/docs/soulshouse-api.md)
+- [External-client API manual](../public/ai/api.md)
 
-Important: those are summarise of the documentation with reference to a URL. When details of a specific feature are needed, use the fetcher sub-agent to fetch the entire documentation,
+## Documentation policy
 
-- **[Inertia Rails](./stack/inertia-rails.md)** - Summary of Inertia.js Rails adapter capabilities and features
-- **[Svelte 5](./stack/svelte-5.md)** - Summary of Svelte 5 capabilities and features
-- **[Pay Gem](./stack/pay-overview.md)** - Payment processing with Stripe, Paddle, and other processors
-  - [Installation](./stack/pay/installation.md) - Setup and configuration
-  - [Configuration](./stack/pay/configuration.md) - Credentials and settings
-  - [Customers](./stack/pay/customers.md) - Customer management
-  - [Payment Methods](./stack/pay/payment-methods.md) - Payment method handling
-  - [Charges](./stack/pay/charges.md) - One-time payments
-  - [Subscriptions](./stack/pay/subscriptions.md) - Recurring billing
-  - [Webhooks](./stack/pay/webhooks.md) - Event handling
-  - [Testing](./stack/pay/testing.md) - Testing with fake processor
-  - [Stripe Integration](./stack/pay/stripe.md) - Stripe-specific features
-  - [Paddle Billing](./stack/pay/paddle-billing.md) - Paddle Billing integration
+Keep current behaviour, constraints and operational procedures here. Link to
+source/tests and canonical runtime manuals instead of copying large snapshots.
+Distinguish implemented code from a proposal and verified deployment from intent.
 
-## Project Overview
-
-Helix Kit is a Rails 8 starter template that combines:
-- **Backend**: Ruby on Rails 8 with PostgreSQL
-- **Frontend**: Svelte 5 with Inertia.js for SPA-like experience
-- **Styling**: Tailwind CSS with DaisyUI and ShadcnUI components
-- **Authentication**: Built-in Rails 8 authentication system
-- **Build Tools**: Vite for fast frontend builds
-
-## Key Directories
-
-See **[File System Structure](./file_system_structure.md)** for complete directory layout and organization.
-
-## Getting Help
-
-- Check the specific documentation files for detailed information
-- Review the README.md for installation instructions
-- Look at existing code patterns in the codebase for examples
-
-## Browser Testing
-
-Separate from the Playwright Component Testing described in `docs/testing.md`, the `agent-browser` skill should be used to test changes in a real browser before telling the user the change is complete.
-
-Invoke it with `/agent-browser`. See `docs/playwright-testing.md` for more information.
+[Proposals](proposals/README.md) are explicitly unimplemented discussion material.
+[`.bak/`](.bak/README.md) is a temporary tracked shelf for old plans, requirements,
+reviews and superseded references. It is not current documentation or a backlog
+cancellation; historical authorship and bytes are retained until a later removal.
+Do not use archived commands as setup instructions. Before deleting the archive,
+resolve any still-needed decisions/procedures and remaining provenance links.

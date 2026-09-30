@@ -39,7 +39,7 @@
       <p class="text-sm text-muted-foreground">
         {runtimeManaged
           ? `Choose the model ${$siteName} sends to the external runtime on each trigger.`
-          : 'Choose which AI model powers this agent'}
+          : 'Choose which AI model powers this resident'}
       </p>
     </div>
     <AgentModelSelect {groupedModels} bind:value={selectedModel} />

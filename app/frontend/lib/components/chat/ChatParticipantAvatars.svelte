@@ -2,18 +2,33 @@
   import { agentIconFor } from '$lib/agent-icons';
   import { initialsFor } from '$lib/chat-display';
 
-  let { participants = [] } = $props();
+  let { participants = [], workingAgentIds = [] } = $props();
+
+  // Keep active residents visible even in conversations with more than seven participants.
+  const visibleParticipants = $derived(
+    [
+      ...participants.filter((p) => p.type === 'agent' && workingAgentIds.includes(p.id)),
+      ...participants.filter((p) => !(p.type === 'agent' && workingAgentIds.includes(p.id))),
+    ].slice(0, Math.max(7, workingAgentIds.length))
+  );
 </script>
 
-<div class="flex items-center -space-x-1 opacity-20 group-hover:opacity-100 transition-opacity">
-  {#each participants.slice(0, 7) as participant, i (participant.name + i)}
+<div class="participants flex items-center -space-x-1">
+  {#each visibleParticipants as participant, i (participant.id || participant.name + i)}
     {#if participant.type === 'agent'}
       {@const IconComponent = agentIconFor(participant.icon)}
+      {@const working = workingAgentIds.includes(participant.id)}
       <div
-        class="w-5 h-5 rounded-full flex items-center justify-center border border-background {participant.colour
+        class:working
+        class="participant relative w-5 h-5 rounded-full flex items-center justify-center border border-background {participant.colour
           ? `bg-${participant.colour}-100 dark:bg-${participant.colour}-900`
           : 'bg-muted'}"
-        title={participant.name}>
+        role="img"
+        aria-label={working ? `${participant.name} is working` : participant.name}
+        title={working ? `${participant.name} is working` : participant.name}>
+        {#if working}
+          <span class="working-ring" aria-hidden="true"></span>
+        {/if}
         <IconComponent
           size={10}
           weight="duotone"
@@ -37,11 +52,51 @@
       </div>
     {/if}
   {/each}
-  {#if participants.length > 7}
+  {#if participants.length > visibleParticipants.length}
     <div
       class="w-5 h-5 rounded-full flex items-center justify-center border border-background bg-muted text-[8px] font-medium text-muted-foreground"
-      title="{participants.length - 7} more participants">
+      title="{participants.length - visibleParticipants.length} more participants">
       ...
     </div>
   {/if}
 </div>
+
+<style>
+  .participants > :global(*) {
+    opacity: 0.2;
+    transition: opacity 150ms;
+  }
+
+  :global(.group:hover) .participants > :global(*),
+  .participants > .working {
+    opacity: 1;
+  }
+
+  .working {
+    z-index: 1;
+  }
+
+  .working-ring {
+    position: absolute;
+    inset: -3px;
+    border: 2px solid var(--color-primary);
+    border-right-color: transparent;
+    border-bottom-color: transparent;
+    border-radius: 50%;
+    animation: working-orbit 1s linear infinite;
+    pointer-events: none;
+  }
+
+  @keyframes working-orbit {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .working-ring {
+      animation: none;
+      border-color: var(--color-primary);
+    }
+  }
+</style>

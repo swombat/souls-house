@@ -53,11 +53,11 @@ export function subscribeToModel(model, id, props) {
     {
       connected() {
         logging.debug(`Sync connected: ${model}:${id}`);
-        if (model === 'Chat') {
+        if (model === 'Chat' || model === 'Account') {
           // Broadcasts are not replayed. Catch up changes missed before the
           // subscription or during a disconnect, without needing another change.
           reloadProps(props);
-          window.dispatchEvent(new CustomEvent('runtime-activity-refresh'));
+          if (model === 'Chat') window.dispatchEvent(new CustomEvent('runtime-activity-refresh'));
         }
       },
 

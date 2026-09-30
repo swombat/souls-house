@@ -11,7 +11,9 @@ module TestSupport
     def setup
       run_id = params.fetch(:run_id)
       cleanup_run(run_id)
-      Setting.instance.update!(allow_agents: true, allow_chats: true)
+      # Parallel browser fixtures create several synthetic accounts each. Admission
+      # policy is tested separately, after the ordinary browser project finishes.
+      Setting.instance.update!(allow_agents: true, allow_chats: true, max_accounts: 1000)
 
       primary_user = create_user!("e2e-#{run_id}-primary@example.com")
       secondary_user = create_user!("e2e-#{run_id}-secondary@example.com")
@@ -138,10 +140,10 @@ module TestSupport
     # while keeping the fixture cheap and repeatable.
     def conversation_fixture
       account = Account.find(params.fetch(:account_id))
-      count = params.fetch(:count, 65).to_i.clamp(1, 200)
+      count = params.fetch(:count, 65).to_i.clamp(0, 200)
       prefix = params.fetch(:prefix, "History message").to_s.first(80)
       user = account.users.order(:id).first!
-      agents = account.agents.active.order(:id).first(2)
+      agents = account.agents.active.order(:id).first(params.fetch(:resident_count, 2).to_i.clamp(1, 2))
 
       chat = account.chats.new(
         model_id: "openrouter/auto",
@@ -173,8 +175,8 @@ module TestSupport
       render json: {
         chat_id: chat.to_param,
         message_count: messages.length,
-        first_message: messages.first.content,
-        last_message: messages.last.content
+        first_message: messages.first&.content,
+        last_message: messages.last&.content
       }
     end
 

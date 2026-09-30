@@ -8,7 +8,7 @@ require_relative "doctor"
 require_relative "release_embeddings"
 
 # House::Cli — bin/house's subcommands. See config/house.env.example and
-# docs/2026-09-07-forkable-house-plan-from-lume.md. Loadable on its own
+# public/self-host.md. Loadable on its own
 # (without executing anything) so it can be required from tests; bin/house
 # is the thin executable wrapper.
 class House::Cli
@@ -169,7 +169,7 @@ class House::Cli
           release-runtime [SHA_TAG] [--dry-run]
                                       Build the hosted-agent runtime image
 
-        See docs/2026-09-07-forkable-house-plan-from-lume.md.
+        See public/self-host.md.
       USAGE
     end
 

@@ -15,6 +15,11 @@ production:
     queue: default
     schedule: every minute
 
+  resident_turn_dispatch:
+    class: ResidentTurnDispatchJob
+    queue: resident_dispatch
+    schedule: every 10 seconds
+
   mnemodyne_readiness:
     class: Mnemodyne::ProbeJob
     schedule: every 5 minutes

@@ -1,9 +1,12 @@
 import { test, expect } from '@playwright/experimental-ct-svelte';
-import ChatsIndex from '../../../app/frontend/pages/Chats/index.svelte';
+import ChatsIndex from '../../../app/frontend/pages/chats/index.svelte';
 
 test.describe('Chats Index Page Tests', () => {
-  // IMPORTANT: These tests require the Rails backend running on localhost:3200
-  // Run with: bun run test:integrated (automatically handles backend setup)
+  // Run through bun run test:ct for an ownership-checked test backend.
+  const models = [
+    { model_id: 'test/small', label: 'Test Small' },
+    { model_id: 'test/large', label: 'Test Large' },
+  ];
 
   test('should render empty state with new chat form', async ({ mount }) => {
     const component = await mount(ChatsIndex, {
@@ -16,11 +19,11 @@ test.describe('Chats Index Page Tests', () => {
     // Check welcome message and icon
     await expect(component).toContainText('Start a conversation');
     await expect(component).toContainText('Choose an AI model and begin chatting');
-    await expect(component.locator('svg')).toBeVisible(); // MessageCircle icon
+    await expect(component.getByRole('main').locator('svg:visible').first()).toBeVisible();
 
     // Check new chat form elements
     await expect(component).toContainText('New Chat');
-    await expect(component).toContainText('Select AI Model');
+    await expect(component.getByRole('button', { name: 'Select AI model' })).toBeVisible();
 
     // Check model selector
     const modelSelect = component.locator('[id="model-select"]');
@@ -62,11 +65,19 @@ test.describe('Chats Index Page Tests', () => {
     await expect(component).toContainText('Another Conversation');
   });
 
-  test('should handle model selection', async ({ mount }) => {
+  test('should submit the selected server-provided model', async ({ mount, page }) => {
+    // Component boundary: capture the payload without creating a real chat or
+    // calling an AI provider. End-to-end tests cover authenticated persistence.
+    const requests = [];
+    await page.route('**/accounts/1/chats', async (route) => {
+      requests.push(route.request().postDataJSON());
+      await route.fulfill({ status: 200, json: {} });
+    });
     const component = await mount(ChatsIndex, {
       props: {
         chats: [],
         account: { id: 1 },
+        models,
       },
     });
 
@@ -76,19 +87,24 @@ test.describe('Chats Index Page Tests', () => {
     await modelSelect.click();
 
     // Should show model options
-    await expect(component).toContainText('GPT-4o Mini');
-    await expect(component).toContainText('GPT-4o');
-    await expect(component).toContainText('Claude 3.5 Sonnet');
-    await expect(component).toContainText('Claude 3.5 Haiku');
+    await expect(page.getByRole('option', { name: 'Test Small', exact: true })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'Test Large', exact: true })).toBeVisible();
 
     // Select a different model
-    await component.locator('[data-value="gpt-4o"]').click();
+    await page.getByRole('option', { name: 'Test Large', exact: true }).click();
 
     // Verify selection
-    await expect(modelSelect).toContainText('GPT-4o');
+    await expect(modelSelect).toContainText('Test Large');
+    await component.getByRole('button', { name: 'Start New Chat' }).click();
+    await expect.poll(() => requests).toEqual([{ chat: { model_id: 'test/large' } }]);
   });
 
-  test('should enable/disable create button based on processing state', async ({ mount }) => {
+  test('should enable/disable create button based on processing state', async ({ mount, page }) => {
+    let release;
+    await page.route('**/accounts/1/chats', async (route) => {
+      await new Promise((resolve) => (release = resolve));
+      await route.fulfill({ status: 200, json: {} });
+    });
     const component = await mount(ChatsIndex, {
       props: {
         chats: [],
@@ -96,7 +112,7 @@ test.describe('Chats Index Page Tests', () => {
       },
     });
 
-    const startButton = component.locator('button').filter({ hasText: /Start New Chat/ });
+    const startButton = component.getByRole('button', { name: 'Start New Chat' });
 
     // Button should be enabled by default
     await expect(startButton).toBeEnabled();
@@ -104,9 +120,11 @@ test.describe('Chats Index Page Tests', () => {
     // Button text should show "Start New Chat" when not processing
     await expect(startButton).toContainText('Start New Chat');
 
-    // When processing is true, button should show different text
-    // Note: This would require modifying the component state, which isn't
-    // easily testable in component tests. This is better tested in E2E.
+    await startButton.click();
+    await expect(component.getByRole('button', { name: 'Creating...' })).toBeDisabled();
+    await expect.poll(() => typeof release).toBe('function');
+    release();
+    await expect(startButton).toBeEnabled();
   });
 
   test('should have proper accessibility attributes', async ({ mount }) => {
@@ -117,14 +135,10 @@ test.describe('Chats Index Page Tests', () => {
       },
     });
 
-    // Model select should have proper label
-    const modelLabel = component.locator('label[for="model-select"]');
-    await expect(modelLabel).toBeVisible();
-    await expect(modelLabel).toContainText('Select AI Model');
-
-    // Select should have proper id
-    const modelSelect = component.locator('[id="model-select"]');
+    // The compact selector must retain a stable accessible name after selection.
+    const modelSelect = component.getByRole('button', { name: 'Select AI model' });
     await expect(modelSelect).toBeVisible();
+    await expect(modelSelect).toHaveAttribute('aria-haspopup', 'listbox');
 
     // Button should be properly accessible
     const startButton = component.locator('button').filter({ hasText: /Start New Chat/ });
@@ -158,11 +172,11 @@ test.describe('Chats Index Page Tests', () => {
     await expect(component).toContainText('New Chat');
 
     // Should have Sparkle icon (check for SVG elements)
-    const sparkleIcon = component.locator('svg').nth(1); // Second SVG (first is MessageCircle)
+    const sparkleIcon = component.getByRole('heading', { name: 'New Chat', exact: true }).locator('svg');
     await expect(sparkleIcon).toBeVisible();
 
     // Card should contain form elements
-    await expect(component.locator('label')).toContainText('Select AI Model');
+    await expect(component.getByRole('button', { name: 'Select AI model' })).toBeVisible();
     await expect(component.locator('[id="model-select"]')).toBeVisible();
     await expect(component.locator('button').filter({ hasText: /Start New Chat/ })).toBeVisible();
   });

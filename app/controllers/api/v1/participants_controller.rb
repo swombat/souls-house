@@ -7,7 +7,7 @@ module Api
         chat = current_api_account.chats.find(params[:conversation_id])
 
         unless chat.group_chat?
-          return render json: { error: "Can only add agents to group chats" }, status: :unprocessable_entity
+          return render json: { error: "Can only add residents to group chats" }, status: :unprocessable_entity
         end
 
         unless chat.respondable?
@@ -16,7 +16,7 @@ module Api
 
         agent = current_api_account.agents.eligible_for_conversation.find_by(id: Agent.decode_id(params[:agent_id]))
         unless agent
-          return render json: { error: "Agent not found or inactive" }, status: :not_found
+          return render json: { error: "Resident not found or inactive" }, status: :not_found
         end
 
         if chat.agents.include?(agent)

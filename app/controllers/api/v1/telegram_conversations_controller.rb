@@ -24,7 +24,7 @@ module Api
       private
 
       def render_agent_key_required
-        render json: { error: "Telegram conversations are only available to agent API keys" }, status: :forbidden
+        render json: { error: "Telegram conversations are only available to resident API keys" }, status: :forbidden
       end
 
       def subscriber_json(subscription)

@@ -3,6 +3,37 @@ require "webmock/minitest"
 
 class ChaosTriggerClientTest < ActiveSupport::TestCase
 
+  test "asynchronous producer queues durably without contacting the runtime" do
+    interaction = AgentRuntimeInteraction.create!(
+      agent: agents(:research_assistant), trigger_kind: "wake",
+      session_id: "async-test", started_at: Time.current
+    )
+    ResidentTurn.stub(:enabled?, true) do
+      result = ChaosTriggerClient.new("https://runtime.example.test", "synthetic").request_response(
+        conversation_id: nil, requested_by: "test", session_id: "async-test",
+        request: "private prompt", interaction: interaction
+      )
+      assert_equal 202, result[:status]
+      assert_equal "private prompt", JSON.parse(interaction.reload.resident_turn.payload)["request"]
+      assert_not_requested :post, /runtime\.example\.test/
+    end
+  end
+
+  test "HTTP wait follows the configured runtime budget with reporting grace" do
+    captured = nil
+    connection = Object.new
+    response = Struct.new(:code, :body).new("200", '{"status":"ok"}')
+    connection.define_singleton_method(:request) { |_| response }
+    start = ->(*args, **options, &block) { captured = options; block.call(connection) }
+    Net::HTTP.stub(:start, start) do
+      ChaosTriggerClient.new("https://agent.example.com", "synthetic").request_response(
+        conversation_id: nil, requested_by: "test", session_id: "test", request: "hello",
+        runtime_timeout_secs: 86400
+      )
+    end
+    assert_equal 86430, captured[:read_timeout]
+  end
+
   test "sends optional provider, model, reasoning effort, and auth mode in trigger payload" do
     stub = stub_request(:post, "https://agent.example.com/trigger")
       .with do |request|

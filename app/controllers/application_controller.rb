@@ -101,7 +101,8 @@ class ApplicationController < ActionController::Base
     {
       site_name: settings.site_name,
       logo_url: settings.logo.attached? ? url_for(settings.logo) : nil,
-      allow_signups: settings.allow_signups,
+      allow_signups: settings.allow_signups && settings.account_creation_allowed?,
+      allow_account_creation: settings.account_creation_allowed?,
       allow_chats: settings.allow_chats,
       allow_agents: settings.allow_agents
     }

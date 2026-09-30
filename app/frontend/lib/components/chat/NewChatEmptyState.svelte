@@ -6,7 +6,7 @@
   const recentChats = $derived(
     chats
       .filter((chat) => !chat.archived && !chat.discarded)
-      .toSorted((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+      .toSorted((a, b) => new Date(b.activity_at) - new Date(a.activity_at))
       .slice(0, 3)
   );
 </script>

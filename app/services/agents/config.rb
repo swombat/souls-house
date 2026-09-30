@@ -53,6 +53,17 @@ module Agents
       ActiveModel::Type::Boolean.new.cast(ENV.fetch("SOULSHOUSE_AGENT_COLD_START") { Rails.env.development? })
     end
 
+    # Default off. See agent-runtime/README.md, "Imported homes and forced login".
+    def imported_clamp_omit_forced_login?
+      ActiveModel::Type::Boolean.new.cast(ENV.fetch("SOULSHOUSE_IMPORTED_CLAMP_OMIT_FORCED_LOGIN", false))
+    end
+
+    # Default off. When on, house residents refuse a turn unless Chaos trusts
+    # their workspace. Turning it on is a decision for the house maintainers.
+    def require_house_trust?
+      ActiveModel::Type::Boolean.new.cast(ENV.fetch("SOULSHOUSE_REQUIRE_HOUSE_TRUST", false))
+    end
+
     def restart_policy
       cold_start? ? "no" : "unless-stopped"
     end

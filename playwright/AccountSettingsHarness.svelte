@@ -1,6 +1,6 @@
 <script>
   import { page } from '@inertiajs/svelte';
-  import AccountEditPage from '../app/frontend/pages/accounts/edit.svelte';
+  import AccountApiKeysPage from '../app/frontend/pages/accounts/agent_api_keys.svelte';
 
   let { account, ai_api_keys_configured = {}, can_manage_ai_credentials = false } = $props();
 
@@ -11,10 +11,10 @@
       can_manage_ai_credentials,
       flash: {},
     },
-    component: 'accounts/edit',
-    url: `/accounts/${account.id}/edit`,
+    component: 'accounts/agent_api_keys',
+    url: `/accounts/${account.id}/agent_api_keys`,
     version: 'test',
   });
 </script>
 
-<AccountEditPage />
+<AccountApiKeysPage />

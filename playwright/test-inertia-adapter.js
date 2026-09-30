@@ -4,9 +4,12 @@ import Link from './MockLink.svelte';
 // Export the Link component for tests
 export { Link };
 
-// IMPORTANT: This is NOT a mock! This adapter makes REAL HTTP requests to the Rails backend.
-// NEVER mock the backend in tests - all tests must hit the real Rails API.
-// Run tests with: bun run test:integrated (which starts Rails automatically)
+// This is a component-test adapter, not Inertia's navigation implementation.
+// It sends HTTP requests by default (e.g. the authentication integration tests).
+// UI contract tests may intercept their own endpoints with page.route to assert
+// payloads and pending/error states without creating real chats or calling AI.
+// Full authenticated navigation/persistence belongs in test/e2e.
+// Run with bun run test:ct to start the ownership-checked Rails backend.
 export const useForm = (initialData = {}) => {
   // Create the reactive store with form data
   const store = writable({

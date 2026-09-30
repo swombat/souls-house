@@ -9,12 +9,14 @@ class ServiceAuthorizationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "starts Dropbox authorization with PKCE and no confidential credentials" do
-    assert_difference "ServiceAuthorizationAttempt.count", 1 do
-      post account_service_authorizations_path(@account), params: {
-        provider: "dropbox",
-        management_scope: "personal",
-        access_profile: "full_sharing"
-      }
+    Rails.application.stub(:credentials, { dropbox: { app_key: "test-dropbox-client" } }) do
+      assert_difference "ServiceAuthorizationAttempt.count", 1 do
+        post account_service_authorizations_path(@account), params: {
+          provider: "dropbox",
+          management_scope: "personal",
+          access_profile: "full_sharing"
+        }
+      end
     end
 
     assert_response :redirect
@@ -227,11 +229,13 @@ class ServiceAuthorizationsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "starts Oura authorization through the generic service callback" do
-    post account_service_authorizations_path(@account), params: {
-      provider: "oura",
-      management_scope: "personal",
-      access_profile: "health_read"
-    }
+    Rails.application.stub(:credentials, { oura: { client_id: "test-oura-client" } }) do
+      post account_service_authorizations_path(@account), params: {
+        provider: "oura",
+        management_scope: "personal",
+        access_profile: "health_read"
+      }
+    end
 
     assert_response :redirect
     uri = URI(response.location)

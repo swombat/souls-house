@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+jobs:
+  application:
+    name: ${{ matrix.suite }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [rails, e2e, components]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      RAILS_ENV: test
+      SOULSHOUSE_INSTANCE: '1'
+      PGHOST: 127.0.0.1
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PARALLEL_WORKERS: '2'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libpq-dev libvips libyaml-dev ffmpeg
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - name: Install Chromium
+        if: matrix.suite != 'rails'
+        run: bunx playwright install --with-deps chromium
+      - name: Prepare test database
+        run: bin/rails db:prepare
+      - name: Build test assets
+        if: matrix.suite == 'rails'
+        run: bin/vite build --mode test
+      - name: Rails tests
+        if: matrix.suite == 'rails'
+        run: bin/rails test
+      - name: Rails system tests
+        if: ${{ !cancelled() && matrix.suite == 'rails' }}
+        run: bin/rails test:system
+      - name: Browser end-to-end tests
+        if: matrix.suite == 'e2e'
+        run: bun run test
+      - name: Browser component tests
+        if: matrix.suite == 'components'
+        run: bun run test:ct
+      - name: Preserve browser failure reports
+        if: failure() && matrix.suite != 'rails'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.suite }}-failure-reports
+          path: |
+            playwright-report/
+            test-results/
+            log/playwright-*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  frontend:
+    name: Frontend unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run test:unit --run
+      - run: bun run check:svelte-size
+
+  runtime:
+    name: Python runtime tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Runtime and build contracts
+        # Exercise the real synthetic HTTP protocol rather than skip it on CI.
+        run: |
+          python3 -m pip install 'Flask==3.1.2'
+          python3 -m unittest discover -s test -p '*_test.py'
+      - name: Resident runtime contracts
+        if: ${{ !cancelled() }}
+        run: python3 -m unittest discover -s test/runtime -p '*_test.py'

@@ -1,6 +1,7 @@
 <script>
   import AgentTriggerBar from '$lib/components/chat/AgentTriggerBar.svelte';
   import MessageComposer from '$lib/components/chat/MessageComposer.svelte';
+  import { page } from '@inertiajs/svelte';
 
   let {
     chat,
@@ -42,13 +43,16 @@
   </div>
 {/if}
 
-<MessageComposer
-  {accountId}
-  chatId={chat?.id}
-  disabled={!chat?.respondable}
-  manualResponses={chat?.manual_responses}
-  {fileUploadConfig}
-  onsent={onSent}
-  onwaiting={onWaiting}
-  onerror={onError}
-  onagentprompt={onAgentPrompt} />
+{#key `${$page.props.user?.id}:${accountId}:${chat?.id}`}
+  <MessageComposer
+    userId={$page.props.user?.id}
+    {accountId}
+    chatId={chat?.id}
+    disabled={!chat?.respondable}
+    manualResponses={chat?.manual_responses}
+    {fileUploadConfig}
+    onsent={onSent}
+    onwaiting={onWaiting}
+    onerror={onError}
+    onagentprompt={onAgentPrompt} />
+{/key}

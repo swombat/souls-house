@@ -13,6 +13,13 @@ class Agent < ApplicationRecord
   include Agent::RuntimeAvailability
   include Agent::SessionPolicy
 
+  validates :turn_timeout_minutes,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 1440 }
+
+  def runtime_timeout_secs
+    turn_timeout_minutes.minutes.to_i
+  end
+
   belongs_to :account
   has_one :memory_vault, class_name: "Mnemodyne::Vault", dependent: :restrict_with_error, inverse_of: :agent
   belongs_to :outbound_api_key, class_name: "ApiKey", optional: true
@@ -56,11 +63,22 @@ class Agent < ApplicationRecord
     name model_id model_label active? paused? colour icon runtime health_state deprecated? unavailability_reason
   ].freeze
 
-  validates :home_profile, inclusion: { in: %w[house mira_v1] }
+  # "Imported" is a class of home profile: a reviewed private home cloned into
+  # the container. Each imported profile names the variable that carries its
+  # root. mira_v1 keeps MIRA_ROOT unchanged; portable_v1 is the neutral form.
+  IMPORTED_HOME_ROOT_ENV = {
+    "mira_v1" => "MIRA_ROOT",
+    "portable_v1" => "SOULSHOUSE_HOME_ROOT"
+  }.freeze
+  HOME_PROFILES = [ "house", *IMPORTED_HOME_ROOT_ENV.keys ].freeze
+
+  validates :home_profile, inclusion: { in: HOME_PROFILES }
   validates :portable_home_id, presence: true, if: :imported_home?
   validates :portable_home_id, uniqueness: true, allow_nil: true
 
-  def imported_home? = home_profile == "mira_v1"
+  def imported_home? = IMPORTED_HOME_ROOT_ENV.key?(home_profile)
+
+  def imported_home_root_env = IMPORTED_HOME_ROOT_ENV.fetch(home_profile)
 
   validates :name, presence: true,
                    length: { maximum: 100 },
@@ -122,7 +140,7 @@ class Agent < ApplicationRecord
                    :orientation_last_error, :orientation_last_error_at, :oriented_at,
                    :persistent_session?, :persistent_wake_session?, :scheduled_wakes_enabled?,
                        :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
-                       :session_context_budget_tokens,
+                       :session_context_budget_tokens, :turn_timeout_minutes,
                   except: SENSITIVE_JSON_ATTRIBUTES do |hash, options|
     # Keep credentials out even if a caller supplies runtime serialization options
     # that would otherwise override the configured `except` list.
@@ -290,7 +308,7 @@ class Agent < ApplicationRecord
 
     return unless EXTERNALLY_MANAGED_ATTRIBUTES.any? { |field| will_save_change_to_attribute?(field) }
 
-    errors.add(:base, "Identity and runtime-managed fields are agent-owned and read-only in souls.house")
+    errors.add(:base, "Identity and runtime-managed fields are resident-owned and read-only in souls.house")
   end
 
 end
