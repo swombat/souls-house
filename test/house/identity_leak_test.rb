@@ -72,6 +72,7 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/frontend/lib/components/navigation/Footer.svelte" => "footer copy",
     "app/frontend/pages/safeguard-responses.svelte" => "public safeguard-explanation page copy",
     "app/frontend/pages/self-host.svelte" => "self-host page copy",
+    "app/frontend/lib/components/home/self-host-helper-guide.svelte" => "extracted self-host guide copy",
     "app/frontend/pages/self-host-technical.svelte" => "self-host page copy",
     "app/frontend/pages/home.svelte" => "marketing page copy",
     "app/frontend/pages/privacy.svelte" => "privacy page copy",
