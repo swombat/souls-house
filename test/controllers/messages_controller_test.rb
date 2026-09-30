@@ -26,7 +26,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     @chat.agents << resident
     @chat.update!(manual_responses: true)
 
-    assert_enqueued_jobs 1, only: AllAgentsResponseJob do
+    assert_enqueued_jobs 1, only: [ AllAgentsResponseJob, ManualAgentResponseJob ] do
       post account_chat_messages_path(@account, @chat),
         params: { message: { content: "Hello @Solo" } }, as: :json
       assert_response :created
@@ -518,7 +518,8 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
   test "should auto-trigger mentioned agents in group chat" do
     agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     group_chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
-    group_chat.agent_ids = [ agent.id ]
+    other = @account.agents.create!(name: "Other", system_prompt: "Test", runtime: "external")
+    group_chat.agent_ids = [ agent.id, other.id ]
     group_chat.save!
 
     assert_enqueued_with(job: AllAgentsResponseJob) do
@@ -529,12 +530,13 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "should not auto-trigger when no agents mentioned in group chat" do
-    agent = @account.agents.create!(name: "Grok", system_prompt: "Test")
+    agent = @account.agents.create!(name: "Grok", system_prompt: "Test", runtime: "external")
     group_chat = @account.chats.new(model_id: "openrouter/auto", manual_responses: true)
-    group_chat.agent_ids = [ agent.id ]
+    other = @account.agents.create!(name: "Other", system_prompt: "Test", runtime: "external")
+    group_chat.agent_ids = [ agent.id, other.id ]
     group_chat.save!
 
-    assert_no_enqueued_jobs(only: AllAgentsResponseJob) do
+    assert_no_enqueued_jobs(only: [ AllAgentsResponseJob, ManualAgentResponseJob ]) do
       post account_chat_messages_path(@account, group_chat), params: {
         message: { content: "Hello everyone" }
       }
