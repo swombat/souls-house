@@ -158,6 +158,7 @@
         <SiteAdminMenu />
       {/if}
       <UserAccountMenu
+        allowAccountCreation={siteSettings?.allow_account_creation !== false}
         {currentUser}
         {currentAccount}
         {accounts}

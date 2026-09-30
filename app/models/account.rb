@@ -62,6 +62,7 @@ class Account < ApplicationRecord
   # Validations (Rails-only, no SQL constraints!)
   validates :name, presence: true
   validates :account_type, presence: true
+  validate :enforce_site_account_limit, on: :create
   validate :enforce_personal_account_limit, if: :personal?
   validate :can_invite_members, if: -> { memberships.any?(&:invitation?) }
 
@@ -69,6 +70,8 @@ class Account < ApplicationRecord
   before_validation :set_default_name, on: :create
   before_validation :generate_slug, on: :create
   before_destroy :mark_memberships_for_skip_check, prepend: true
+
+  ACCOUNT_LIMIT_MESSAGE = "This house has reached its account limit. New signups and accounts are temporarily closed."
 
   # Scopes
   scope :personal, -> { where(account_type: :personal) }
@@ -270,6 +273,15 @@ class Account < ApplicationRecord
   class NotAuthorized < StandardError; end
 
   private
+
+  # Save validations and insertion share a transaction. Hold the settings row
+  # lock until commit so concurrent signups cannot both take the last place.
+  def enforce_site_account_limit
+    setting = Setting.instance
+    setting.with_lock do
+      errors.add(:base, ACCOUNT_LIMIT_MESSAGE) unless setting.account_creation_allowed?
+    end
+  end
 
   def enforce_personal_account_limit
     if personal? && memberships.count > 1

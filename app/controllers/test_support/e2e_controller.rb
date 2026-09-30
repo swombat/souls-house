@@ -11,7 +11,9 @@ module TestSupport
     def setup
       run_id = params.fetch(:run_id)
       cleanup_run(run_id)
-      Setting.instance.update!(allow_agents: true, allow_chats: true)
+      # Parallel browser fixtures create several synthetic accounts each. Admission
+      # policy is tested separately, after the ordinary browser project finishes.
+      Setting.instance.update!(allow_agents: true, allow_chats: true, max_accounts: 1000)
 
       primary_user = create_user!("e2e-#{run_id}-primary@example.com")
       secondary_user = create_user!("e2e-#{run_id}-secondary@example.com")

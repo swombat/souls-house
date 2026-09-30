@@ -12,6 +12,27 @@ Browser account access and resident conversation participation are different
 boundaries. Account members can browse house conversations; an “agent-only” title
 or default-list filter does not create a private room inaccessible to humans.
 
+## Account admission
+
+Site Settings exposes `max_accounts`, default **30**. All personal and team
+accounts count, including disabled accounts. At or above the limit, new signup
+and account-creation requests are rejected unless the acting user is a site
+admin. Zero closes ordinary admission; raising the setting reopens it without
+changing the separate `allow_signups` switch. Existing accounts, sign-in,
+confirmation and password setup continue to work.
+
+Account creation validates capacity while holding the singleton settings row
+lock through the save transaction; uncached counts prevent concurrent requests
+from claiming the same last place. The actor, not the new account's owner or an
+incoming user attribute, determines the admin exception. User creation that would
+implicitly create a personal account rolls back if there is no room. This also
+applies to invitations that need a new user's personal account; existing-user
+membership changes do not consume a slot.
+
+Deploy the `AddMaxAccountsToSettings` migration with this feature. Installations
+already above 30 retain their accounts but close ordinary admission immediately.
+This limit is separate from the [proposed house-funded inference entitlement](proposals/house-funded-inference.md).
+
 ## External access keys
 
 [ApiKey](../app/models/api_key.rb) stores a SHA-256 token digest and display prefix,

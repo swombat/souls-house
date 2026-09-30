@@ -38,6 +38,7 @@
     currentAccount = null,
     accounts = [],
     hasWhiteboards = false,
+    allowAccountCreation = true,
     currentTheme = 'system',
     onThemeChange = () => {},
     onLogout = () => {},
@@ -79,7 +80,7 @@
               </DropdownMenu.Item>
             {/each}
             <DropdownMenu.Separator />
-            <DropdownMenu.Item onclick={() => router.visit(newAccountPath())}>
+            <DropdownMenu.Item disabled={!allowAccountCreation} onclick={() => router.visit(newAccountPath())}>
               <Plus class="mr-2 size-4" />
               <span>New Account</span>
             </DropdownMenu.Item>
@@ -146,7 +147,7 @@
           <span>Account Settings</span>
         </DropdownMenu.Item>
       {/if}
-      <DropdownMenu.Item onclick={() => router.visit(newAccountPath())}>
+      <DropdownMenu.Item disabled={!allowAccountCreation} onclick={() => router.visit(newAccountPath())}>
         <Plus class="mr-2 size-4" />
         <span>New Account</span>
       </DropdownMenu.Item>

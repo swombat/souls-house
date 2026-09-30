@@ -24,6 +24,7 @@
     const formData = new FormData();
     formData.append('setting[site_name]', form.site_name);
     formData.append('setting[allow_signups]', form.allow_signups);
+    formData.append('setting[max_accounts]', form.max_accounts ?? 30);
     formData.append('setting[allow_chats]', form.allow_chats);
     formData.append('setting[allow_agents]', form.allow_agents);
     formData.append('setting[show_usage_in_chat]', form.show_usage_in_chat);
@@ -68,6 +69,22 @@
         onLogoChange={handleLogoChange}
         onRemoveLogo={handleRemoveLogo} />
       <FeatureToggleSettingsCard {form} />
+
+      <div class="rounded-lg border p-6 space-y-2">
+        <label for="max_accounts" class="font-medium">Maximum accounts</label>
+        <input
+          id="max_accounts"
+          class="block h-10 w-28 rounded-md border bg-background px-3"
+          type="number"
+          min="0"
+          step="1"
+          required
+          bind:value={form.max_accounts} />
+        <p class="text-sm text-muted-foreground">
+          Counts all personal and team accounts, including disabled accounts. At the limit, new signups and account
+          creation close for everyone except site admins. Existing accounts keep working. Set 0 to close admission.
+        </p>
+      </div>
 
       <div class="rounded-lg border bg-card p-6">
         <h2 class="text-lg font-semibold">Safeguard notices</h2>

@@ -21,6 +21,13 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: '**/account_capacity.spec.js',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'admission',
+      testMatch: '**/account_capacity.spec.js',
+      dependencies: ['chromium'],
       use: { ...devices['Desktop Chrome'] },
     },
   ],

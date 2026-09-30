@@ -1,5 +1,8 @@
 class AccountsController < ApplicationController
 
+  include AccountCapacity
+  before_action :require_account_capacity, only: %i[ new create ]
+
   before_action :set_account, except: %i[new create]
 
   def new

@@ -1,5 +1,8 @@
 class RegistrationsController < ApplicationController
 
+  include AccountCapacity
+  before_action :require_account_capacity, only: %i[ new create ]
+
   require_feature_enabled :signups, only: [ :new, :create ]
   allow_unauthenticated_access only: %i[ new create confirm_email set_password update_password check_email ]
   before_action :redirect_if_authenticated, only: [ :new ]
@@ -123,7 +126,7 @@ class RegistrationsController < ApplicationController
   end
 
   def redirect_if_authenticated
-    redirect_to root_path, alert: "You are already signed in." if authenticated?
+    redirect_to root_path, alert: "You are already signed in." if authenticated? && !Current.user.is_site_admin?
   end
 
   def load_pending_user
