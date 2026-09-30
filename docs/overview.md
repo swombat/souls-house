@@ -20,6 +20,7 @@ been deployed. For native-client work, read the first four guides together.
 - [Independent local instances](multi-instance-development.md)
 - [Testing strategy](testing.md), [browser testing](playwright-testing.md) and [CI](continuous-integration.md)
 - [Formatting](formatting.md), [forms](forms.md), [JSON attributes](json-attributes.md)
+- [Frontend component boundaries and size thresholds](frontend-components.md)
 - [Web synchronization usage](synchronization-usage.md), [resource-oriented controllers](restful-resource-design.md)
 - [Icons](icons.md), [icon catalogue](icons-all.md), [DaisyUI guidance](daisyui-reference.md)
 - [Dependency references](stack/README.md) — dated upstream notes, not application architecture

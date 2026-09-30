@@ -1,4 +1,5 @@
 <script>
+  import ActivityBars from '$lib/components/charts/activity-bars.svelte';
   let { days = [] } = $props();
   const charts = [
     {
@@ -25,26 +26,25 @@
 
 <div class="space-y-3 mb-4">
   {#each charts as chart}
-    {@const maximum = Math.max(1, ...days.map((day) => total(day, chart.series)))}
+    {@const groups = days.map((day) => ({
+      key: day.date,
+      bars: [
+        {
+          title: `${day.date}: ${chart.series.map(([key, label]) => `${label} ${day[key] || 0}`).join(' · ')}`,
+          segments: chart.series.map(([key, label, colour]) => ({ value: day[key] || 0, colour })),
+        },
+      ],
+    }))}
     <div>
       <div class="flex items-center justify-between text-[10px] text-muted-foreground mb-1" title={chart.note}>
         <span class="font-medium">{chart.label} · {days.reduce((sum, day) => sum + total(day, chart.series), 0)}</span>
         <span>14 days · UTC</span>
       </div>
-      <div
-        class="flex items-end gap-1 h-9 border-b"
-        role="img"
-        aria-label={`${chart.label} over the last 14 days. ${chart.note}`}>
-        {#each days as day}
-          <div
-            class="flex-1 h-full flex flex-col justify-end bg-muted/30 rounded-t-sm overflow-hidden"
-            title={`${day.date}: ${chart.series.map(([key, label]) => `${label} ${day[key] || 0}`).join(' · ')}`}>
-            {#each chart.series as [key, label, colour]}
-              <div class={colour} style:height={`${((day[key] || 0) / maximum) * 100}%`}></div>
-            {/each}
-          </div>
-        {/each}
-      </div>
+      <ActivityBars
+        {groups}
+        class="h-9 border-b"
+        barClass="bg-muted/30 rounded-t-sm overflow-hidden"
+        label={`${chart.label} over the last 14 days. ${chart.note}`} />
       <div class="flex flex-wrap gap-x-2 gap-y-0.5 mt-1 text-[9px] text-muted-foreground">
         {#each chart.series as [key, label, colour]}
           {#if key !== 'other' || days.some((day) => day.other > 0)}

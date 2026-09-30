@@ -99,6 +99,7 @@ jobs:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - run: bun run test:unit --run
+      - run: bun run check:svelte-size
 
   runtime:
     name: Python runtime tests

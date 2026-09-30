@@ -44,7 +44,7 @@ class MessagesController < ApplicationController
 
     if saved
       audit("create_message", @message, **message_params.to_h)
-      if @chat.manual_responses?
+      if @chat.manual_responses? && @chat.agents.count > 1
         @chat.trigger_mentioned_agents!(@message.content)
       end
 

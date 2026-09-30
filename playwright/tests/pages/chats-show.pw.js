@@ -24,6 +24,19 @@ const messagesUrl = '**/accounts/1/chats/chat-123/messages';
 
 test.describe('Chats Show Page Tests', () => {
   test.use({ timezoneId: 'UTC' });
+  test.beforeEach(async ({ page }) => {
+    // The composer now saves a versioned draft before sending. Keep this HTTP
+    // contract explicit; persistence/concurrency use the real backend in E2E.
+    let draft = { content: '', revision: 0 };
+    await page.route('**/accounts/1/chats/chat-123/draft', async (route) => {
+      if (route.request().method() === 'PATCH') {
+        const body = route.request().postDataJSON();
+        expect(body.revision).toBe(draft.revision);
+        draft = { content: body.content, revision: draft.revision + 1 };
+      }
+      await route.fulfill({ json: { draft } });
+    });
+  });
   test('renders an empty respondable chat', async ({ mount }) => {
     const component = await mount(ChatsShow, { props });
     await expect(component).toContainText(chat.title);
@@ -101,7 +114,10 @@ test.describe('Chats Show Page Tests', () => {
     const requests = [];
     await page.route(messagesUrl, async (route) => {
       requests.push(route.request().postData());
-      await route.fulfill({ status: 200, json: { message: message({ content: 'Line 1\nLine 2' }) } });
+      await route.fulfill({
+        status: 200,
+        json: { message: message({ content: 'Line 1\nLine 2' }), draft: { content: '', revision: 2 } },
+      });
     });
     const component = await mount(ChatsShow, { props });
     const input = composer(component);
@@ -159,7 +175,7 @@ test.describe('Chats Show Page Tests', () => {
     await expect(list.locator('code')).toHaveText('code');
   });
 
-  test('disables input while sending and permits retry after a failed send', async ({ mount, page }) => {
+  test('prevents duplicate sends while leaving the draft editable and permits retry', async ({ mount, page }) => {
     let release;
     let attempts = 0;
     await page.route(messagesUrl, async (route) => {
@@ -168,13 +184,16 @@ test.describe('Chats Show Page Tests', () => {
         await new Promise((resolve) => (release = resolve));
         await route.fulfill({ status: 422, json: { errors: ['Test send failure'] } });
       } else {
-        await route.fulfill({ status: 200, json: { message: message({ content: 'Try again' }) } });
+        await route.fulfill({
+          status: 200,
+          json: { message: message({ content: 'Try again' }), draft: { content: '', revision: 2 } },
+        });
       }
     });
     const component = await mount(ChatsShow, { props });
     await composer(component).fill('Try again');
     await sendButton(component).click();
-    await expect(composer(component)).toBeDisabled();
+    await expect(composer(component)).toBeEnabled();
     await expect(sendButton(component)).toBeDisabled();
     await expect.poll(() => typeof release).toBe('function');
     release();

@@ -59,8 +59,11 @@ or membership from an ID.
 
 ## Resident response flow
 
-1. A human explicitly requests a resident response (or another supported trigger
-   admits work). Saving an API message alone does not trigger inference.
+1. A human explicitly requests a resident response, mentions one in the web UI,
+   or posts in a room with exactly one resident. Single-resident auto-response
+   runs after the human message commits (web and API, including opening messages);
+   it skips unavailable or already-responding residents. Resident replies do not
+   self-trigger. Other supported triggers can also admit work.
 2. `ExternalAgentResponseRequest` checks runtime eligibility, prepares a bounded
    stored transcript and a possible delta, and dispatches via `ChaosTriggerClient`.
 3. The hosted shim runs Chaos with the resident's identity and provider settings.
