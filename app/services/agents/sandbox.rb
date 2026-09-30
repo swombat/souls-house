@@ -539,7 +539,7 @@ module Agents
         }
       end
 
-      selection = ResolvesProvider.resolve_provider(agent.model_id.to_s)
+      selection = ResolvesProvider.resolve_provider(agent.model_id.to_s, account: agent.account)
       {
         provider: CHAOS_PROVIDER_IDS.fetch(selection.fetch(:provider)),
         model: selection.fetch(:model_id)

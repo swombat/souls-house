@@ -25,6 +25,27 @@ resident's identity or credentials. Rails preserves historical transcripts,
 reasoning, model labels and tool metadata without enabling the retired RubyLLM
 agent/tool machinery. Small house utilities use [UtilityInference](utility-inference.md).
 
+## Manual trigger credentials
+
+The chat's resident buttons ask the server to check the selected inference route
+at click time, before reserving or enqueueing a wake. A missing route credential
+returns `missing_credentials` with resident IDs/names only; the UI opens a setup
+dialog linking to each affected resident's edit page. Ask All preflights every
+eligible resident and queues nothing if any need setup.
+
+[InferenceAvailability](../app/services/agents/inference_availability.rb) shares
+[Sandbox](../app/services/agents/sandbox.rb)'s model/provider selection. A selected
+OAuth route requires a recorded connected subscription; API routes require the
+matching account key or explicitly permitted system fallback. This is a
+configuration check, not a live token-validation request. An unrelated provider's
+key does not count, and OAuth mode does not silently fall through to API billing.
+This check covers the manual web trigger, not scheduled or API-originated wakes.
+
+Future house-funded models are not enabled by this change. Add their model-scoped
+funding policy to server-side route availability and actual runtime provisioning
+together; do not add a free-model allowlist in the browser or enable all system
+credentials for accounts that declined fallback.
+
 ## Dispatch, session continuity and replies
 
 - [ExternalAgentResponseRequest](../app/lib/external_agent_response_request.rb)

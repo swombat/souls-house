@@ -98,10 +98,14 @@ test.describe('long conversation synchronization', () => {
 
     // Scroll to load both older pages and prove the cursor boundary has no gaps.
     // Auto-pagination may remove the button while Playwright scrolls to click it.
-    await page.getByTestId('chat-messages').evaluate((element) => { element.scrollTop = 0; });
+    await page.getByTestId('chat-messages').evaluate((element) => {
+      element.scrollTop = 0;
+    });
     await expect(page.getByText('History message 005', { exact: true })).toBeVisible();
     await expect(page.getByText('History message 034', { exact: true })).toBeVisible();
-    await page.getByTestId('chat-messages').evaluate((element) => { element.scrollTop = 0; });
+    await page.getByTestId('chat-messages').evaluate((element) => {
+      element.scrollTop = 0;
+    });
     await expect(page.getByText('History message 000', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Load earlier messages' })).toHaveCount(0);
 
@@ -162,7 +166,10 @@ test.describe('long conversation synchronization', () => {
       page.locator('main textarea').last().fill('Message from primary window'),
       secondPage.locator('main textarea').last().fill('Message from secondary window'),
     ]);
-    await Promise.all([page.locator('main button').last().click(), secondPage.locator('main button').last().click()]);
+    await Promise.all([
+      page.getByRole('button', { name: 'Send message', exact: true }).click(),
+      secondPage.getByRole('button', { name: 'Send message', exact: true }).click(),
+    ]);
 
     for (const window of [page, secondPage]) {
       await expect(window.getByText('Message from primary window', { exact: true })).toHaveCount(1);

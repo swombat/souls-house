@@ -9,8 +9,10 @@ class Chats::AgentTriggersController < ApplicationController
   def create
     if params[:agent_id].present?
       agent = @chat.agents.find(params[:agent_id])
+      return if credentials_missing?([ agent ])
       @chat.trigger_agent_response!(agent)
     else
+      return if credentials_missing?(@chat.agents)
       @chat.trigger_all_agents_response!
     end
 
@@ -26,6 +28,26 @@ class Chats::AgentTriggersController < ApplicationController
           status: e.is_a?(Agent::RuntimeAvailability::Unavailable) ? :conflict : :unprocessable_entity
       end
     end
+  end
+
+  private
+
+  def credentials_missing?(agents)
+    missing = agents.select { |agent| agent.eligible_for_conversation? && !Agents::InferenceAvailability.available?(agent) }
+    return false if missing.empty?
+
+    message = "Edit the resident and set up credentials before asking them to respond."
+    respond_to do |format|
+      format.html { redirect_to account_chat_path(current_account, @chat), alert: message }
+      format.json do
+        render json: {
+          error: message,
+          code: "missing_credentials",
+          agents: missing.map { |agent| { id: agent.to_param, name: agent.name } }
+        }, status: :unprocessable_entity
+      end
+    end
+    true
   end
 
 end

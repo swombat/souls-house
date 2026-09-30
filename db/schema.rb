@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_27_083000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_30_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -527,6 +527,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_083000) do
     t.index ["chat_id", "boundary_message_id"], name: "idx_on_chat_id_boundary_message_id_cb11697831", unique: true
     t.index ["chat_id", "created_at"], name: "index_conversation_compactions_on_chat_id_and_created_at"
     t.index ["chat_id"], name: "index_conversation_compactions_on_chat_id"
+  end
+
+  create_table "conversation_drafts", force: :cascade do |t|
+    t.bigint "chat_id", null: false
+    t.text "content", default: "", null: false
+    t.datetime "created_at", null: false
+    t.bigint "revision", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["chat_id", "user_id"], name: "index_conversation_drafts_on_chat_id_and_user_id", unique: true
+    t.index ["chat_id"], name: "index_conversation_drafts_on_chat_id"
+    t.index ["user_id"], name: "index_conversation_drafts_on_user_id"
   end
 
   create_table "device_stream_batches", force: :cascade do |t|
@@ -1069,6 +1081,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_27_083000) do
   add_foreign_key "chats", "ai_models"
   add_foreign_key "chats", "whiteboards", column: "active_whiteboard_id"
   add_foreign_key "conversation_compactions", "chats"
+  add_foreign_key "conversation_drafts", "chats"
+  add_foreign_key "conversation_drafts", "users"
   add_foreign_key "device_stream_batches", "device_stream_sessions"
   add_foreign_key "device_stream_credentials", "device_streams"
   add_foreign_key "device_stream_sessions", "device_streams"
