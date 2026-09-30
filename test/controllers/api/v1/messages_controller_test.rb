@@ -17,13 +17,14 @@ module Api
         @chat.agents << resident
         @chat.update!(manual_responses: true)
 
-        assert_enqueued_with(job: AllAgentsResponseJob, args: [ @chat, [ resident.id ] ]) do
+        assert_enqueued_jobs 1, only: ManualAgentResponseJob do
           post api_v1_conversation_messages_url(@chat),
             params: { content: "Hello resident" },
             headers: { "Authorization" => "Bearer #{@token}" }
         end
         assert_response :created
         assert JSON.parse(response.body)["ai_response_triggered"]
+        assert_equal "queued", @chat.agent_runtime_interactions.sole.execution_state
       end
 
       test "creates message without triggering retired inline inference" do

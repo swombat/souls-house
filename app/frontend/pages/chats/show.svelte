@@ -83,6 +83,7 @@
 
   function sent(message) {
     history.append(message);
+    window.dispatchEvent(new CustomEvent('runtime-activity-refresh'));
     if (!chat.manual_responses) response.refreshMessages();
     history.scrollToBottom();
   }

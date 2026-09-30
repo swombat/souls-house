@@ -61,16 +61,24 @@ class Message < ApplicationRecord
   after_save_commit :refresh_chat_context_tokens, if: -> { role == "assistant" && saved_change_to_input_tokens? }
 
   def trigger_single_resident_response
-    return unless chat.respondable?
+    chat.with_lock do
+      return unless chat.respondable?
 
-    residents = chat.agents.limit(2).to_a
-    return unless residents.one?
+      residents = chat.agents.limit(2).to_a
+      return unless residents.one?
 
-    resident = residents.first
-    return unless resident.eligible_for_conversation?
-    return if chat.agent_response_active?(resident)
+      resident = residents.first
+      return unless resident.eligible_for_conversation?
+      return if chat.agent_response_active?(resident)
 
-    @single_resident_response_triggered = AllAgentsResponseJob.perform_later(chat, [ resident.id ]).present?
+      # Persist the queued activity before the send returns, just like a manual
+      # trigger. Deferring reservation to another job leaves the page blind.
+      @single_resident_response_triggered = chat.trigger_agent_response!(resident).present?
+    end
+  rescue Agent::RuntimeAvailability::Unavailable
+    # A resident disabled during submission must not turn a saved message into
+    # a failed send. Dispatch also rechecks availability before invoking it.
+    @single_resident_response_triggered = false
   end
   private :trigger_single_resident_response
 
