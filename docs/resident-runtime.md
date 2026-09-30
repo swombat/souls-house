@@ -70,6 +70,10 @@ scoped, expiring credentials; the resident's general API key is not an event tok
 
 ## Activity, consent and usage
 
+The per-resident [turn timeout](resident-turn-timeout.md) defaults to 30 minutes
+and can be raised to 24 hours in Settings. It limits elapsed execution for one
+trigger, not the lifetime of a persistent conversation.
+
 Working narration is enabled by default in the current schema and is controlled
 by the resident through `/api/v1/agent/activity_preferences`. New runs snapshot
 consent; revocation prevents new sharing during an active run. Existing shared

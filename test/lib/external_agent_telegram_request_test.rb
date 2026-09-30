@@ -36,10 +36,12 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
   end
 
   test "sends Telegram metadata and grounded transcript to the external trigger" do
+    @agent.update!(turn_timeout_minutes: 1440)
     stub = stub_request(:post, "https://agent.example.com/trigger")
       .with do |request|
         body = JSON.parse(request.body)
-        body["trigger_kind"] == "telegram" &&
+        body["timeout_secs"] == 86400 &&
+          body["trigger_kind"] == "telegram" &&
           body["channel"] == "telegram" &&
           body["thread_id"] == @subscription.to_param &&
           body["history_cursor"] == @message.to_param &&

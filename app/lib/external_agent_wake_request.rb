@@ -46,7 +46,8 @@ class ExternalAgentWakeRequest
         provider: provider,
         model: Agents::Sandbox.chaos_model_for(agent),
         reasoning_effort: agent.reasoning_effort,
-        auth_mode: auth_mode
+        auth_mode: auth_mode,
+        runtime_timeout_secs: agent.runtime_timeout_secs
       )
     end
   end

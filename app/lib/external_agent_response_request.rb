@@ -70,7 +70,8 @@ class ExternalAgentResponseRequest
         model: Agents::Sandbox.chaos_model_for(agent),
         reasoning_effort: agent.reasoning_effort,
         auth_mode: auth_mode,
-        activity: @interaction&.activity_configuration!
+        activity: @interaction&.activity_configuration!,
+        runtime_timeout_secs: agent.runtime_timeout_secs
       )
     }
     result = if @interaction

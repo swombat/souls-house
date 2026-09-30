@@ -19,6 +19,16 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
+  test "turn timeout is editable and rejects values outside one minute to one day" do
+    @agent.update_columns(runtime: "external")
+    patch account_agent_path(@account, @agent), params: { agent: { turn_timeout_minutes: 1440 } }
+    assert_redirected_to account_agents_path(@account)
+    assert_equal 1440, @agent.reload.turn_timeout_minutes
+
+    patch account_agent_path(@account, @agent), params: { agent: { turn_timeout_minutes: 1441 } }
+    assert_equal 1440, @agent.reload.turn_timeout_minutes
+  end
+
   test "edit lazily exposes memory summary endpoint but not admin history" do
     Agents::MemoryArchive.stub(:new, ->(*) { flunk "Edit must not scan archives" }) do
       get edit_account_agent_path(@account, @agent), params: { tab: "memory" }

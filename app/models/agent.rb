@@ -13,6 +13,13 @@ class Agent < ApplicationRecord
   include Agent::RuntimeAvailability
   include Agent::SessionPolicy
 
+  validates :turn_timeout_minutes,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 1440 }
+
+  def runtime_timeout_secs
+    turn_timeout_minutes.minutes.to_i
+  end
+
   belongs_to :account
   has_one :memory_vault, class_name: "Mnemodyne::Vault", dependent: :restrict_with_error, inverse_of: :agent
   belongs_to :outbound_api_key, class_name: "ApiKey", optional: true
@@ -122,7 +129,7 @@ class Agent < ApplicationRecord
                    :orientation_last_error, :orientation_last_error_at, :oriented_at,
                    :persistent_session?, :persistent_wake_session?, :scheduled_wakes_enabled?,
                        :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
-                       :session_context_budget_tokens,
+                       :session_context_budget_tokens, :turn_timeout_minutes,
                   except: SENSITIVE_JSON_ATTRIBUTES do |hash, options|
     # Keep credentials out even if a caller supplies runtime serialization options
     # that would otherwise override the configured `except` list.

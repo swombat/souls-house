@@ -247,7 +247,9 @@ def trigger():
     model = payload.get("model", AGENT_DEFAULT_MODEL)
     reasoning_effort = payload.get("reasoning_effort")
     auth_mode = payload.get("auth_mode", "api_key")
-    timeout_secs = int(payload.get("timeout_secs") or CHAOS_TIMEOUT_SECS)
+    timeout_secs = payload.get("timeout_secs", CHAOS_TIMEOUT_SECS)
+    if isinstance(timeout_secs, bool) or not isinstance(timeout_secs, int) or not 1 <= timeout_secs <= 86400:
+        return jsonify({"error": "timeout_secs must be an integer between 1 and 86400"}), 400
     conversation_id = payload.get("conversation_id")
     requested_by = payload.get("requested_by")
 
@@ -299,6 +301,7 @@ def trigger():
         except (ValueError, KeyError, TypeError):
             log.warning("invalid activity configuration; running without reports")
     _activity_context.reporter = reporter
+    _activity_context.turn_deadline = time.monotonic() + timeout_secs
     try:
         # Invocation-local: never mutate os.environ or share this across sessions.
         _activity_context.memory_aggregation = bool(aggregation_context(payload))
@@ -336,6 +339,7 @@ def trigger():
         if reporter:
             reporter.disabled = True
         _activity_context.reporter = None
+        _activity_context.turn_deadline = None
         _activity_context.memory_aggregation = False
         _unregister_running_session(session_id)
         session_lock.release()
@@ -690,6 +694,16 @@ def run_chaos(
     model, timeout_secs, prompt_text, json_output,
     resume_id=None, provider=None, reasoning_effort=None, auth_mode="api_key",
 ):
+    # All invocations in a trigger (including a failed resume's fresh fallback)
+    # share one elapsed-time budget. Never reset it when starting a subprocess.
+    deadline = getattr(_activity_context, "turn_deadline", None)
+    if deadline is not None:
+        timeout_secs = min(timeout_secs, deadline - time.monotonic())
+    reporter = getattr(_activity_context, "reporter", None)
+    if reporter:
+        timeout_secs = min(timeout_secs, reporter.deadline - time.time())
+    if timeout_secs <= 0:
+        raise subprocess.TimeoutExpired(cmd=CHAOS_BIN, timeout=0)
     selected_provider = provider or AGENT_PROVIDER
     env = os.environ.copy()
     if auth_mode == "oauth_account":
@@ -740,6 +754,9 @@ def run_chaos(
         # Antigravity uses the same Chaos-owned MCP bridge as Claude Code, but
         # selects Google's official agy subprocess as the clamp transport.
         args += ["-c", "clamp=true", "-c", "clamp_backend=antigravity"]
+        # agy's default is only five minutes. Leave room for Chaos's 30-second
+        # transport grace and reporting before the outer turn deadline.
+        env["CHAOS_AGY_PRINT_TIMEOUT_SECONDS"] = str(max(1, int(timeout_secs) - 35))
     if reasoning_effort:
         args += ["-c", f'model_reasoning_effort="{reasoning_effort}"']
     if resume_id:

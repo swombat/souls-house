@@ -61,8 +61,8 @@ module AgentRuntimeInteraction::LiveActivity
     raise ArgumentError, "Runtime preparation expired" unless execution_state == "preparing" && execution_deadline_at&.future?
 
     token = SecureRandom.hex(32)
-    # A persistent trigger can make one resumed and one fresh invocation.
-    deadline = (2 * ChaosTriggerClient::DEFAULT_RUNTIME_TIMEOUT_SECS + 60).seconds.from_now
+    # Resume and fresh fallback share one turn budget, with reporting grace.
+    deadline = (agent.runtime_timeout_secs + 30).seconds.from_now
     update!(
       execution_deadline_at: deadline,
       activity_token_digest: Digest::SHA256.hexdigest(token),

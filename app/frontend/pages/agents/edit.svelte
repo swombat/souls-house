@@ -146,6 +146,7 @@
       session_idle_timeout_minutes: agent.session_idle_timeout_minutes ?? 45,
       session_max_age_minutes: agent.session_max_age_minutes ?? 240,
       session_context_budget_tokens: agent.session_context_budget_tokens ?? 300000,
+      turn_timeout_minutes: agent.turn_timeout_minutes ?? 30,
     },
   });
 

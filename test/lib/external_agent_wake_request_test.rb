@@ -56,12 +56,14 @@ class ExternalAgentWakeRequestTest < ActiveSupport::TestCase
       health_state: "healthy",
       consecutive_health_failures: 0,
       persistent_wake_session: true,
-      session_idle_timeout_minutes: 30
+      session_idle_timeout_minutes: 30,
+      turn_timeout_minutes: 1440
     )
     stub = stub_request(:post, "https://agent.example.com/trigger")
       .with do |request|
         body = JSON.parse(request.body)
-        body["persistent_session"] == true &&
+        body["timeout_secs"] == 86400 &&
+          body["persistent_session"] == true &&
           body.dig("session_policy", "idle_timeout_secs") == 1800 &&
           body.dig("session_policy", "max_age_secs") == 14_400
       end

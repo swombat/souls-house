@@ -3,6 +3,21 @@ require "webmock/minitest"
 
 class ChaosTriggerClientTest < ActiveSupport::TestCase
 
+  test "HTTP wait follows the configured runtime budget with reporting grace" do
+    captured = nil
+    connection = Object.new
+    response = Struct.new(:code, :body).new("200", '{"status":"ok"}')
+    connection.define_singleton_method(:request) { |_| response }
+    start = ->(*args, **options, &block) { captured = options; block.call(connection) }
+    Net::HTTP.stub(:start, start) do
+      ChaosTriggerClient.new("https://agent.example.com", "synthetic").request_response(
+        conversation_id: nil, requested_by: "test", session_id: "test", request: "hello",
+        runtime_timeout_secs: 86400
+      )
+    end
+    assert_equal 86430, captured[:read_timeout]
+  end
+
   test "sends optional provider, model, reasoning effort, and auth mode in trigger payload" do
     stub = stub_request(:post, "https://agent.example.com/trigger")
       .with do |request|

@@ -1,6 +1,5 @@
 class ExternalAgentMemoryAggregationRequest
 
-  AGGREGATION_TIMEOUT_SECS = 30.minutes.to_i
   PERIODS = %w[daily weekly monthly].freeze
 
   def initialize(agent:, period:, target:, requested_by: "HelixKit memory aggregation")
@@ -53,8 +52,7 @@ class ExternalAgentMemoryAggregationRequest
         model: Agents::Sandbox.chaos_model_for(agent),
         reasoning_effort: agent.reasoning_effort,
         auth_mode: auth_mode,
-        read_timeout: AGGREGATION_TIMEOUT_SECS + 30,
-        runtime_timeout_secs: AGGREGATION_TIMEOUT_SECS
+        runtime_timeout_secs: agent.runtime_timeout_secs
       )
     end
   end

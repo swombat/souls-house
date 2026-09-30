@@ -211,9 +211,11 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
       endpoint_url: "https://agent.example.com",
       trigger_bearer_token: "tr_valid",
       health_state: "healthy",
-      consecutive_health_failures: 0
+      consecutive_health_failures: 0,
+      turn_timeout_minutes: 1440
     )
     stub_request(:post, "https://agent.example.com/trigger")
+      .with { |request| JSON.parse(request.body).fetch("timeout_secs") == 86400 }
       .to_return(
         status: 200,
         body: {
