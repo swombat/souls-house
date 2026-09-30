@@ -150,3 +150,26 @@ test('historical narration does not expand a completed card', () => {
   const { container } = render(AgentRuntimeActivityCard, { interaction: { ...withCommands, active: false } });
   expect(container.querySelector('details').open).toBe(false);
 });
+
+test.each(['violet', 'emerald'])('keeps the %s resident background when work finishes', async (colour) => {
+  const interaction = { ...withCommands, agent_colour: colour };
+  const { container, rerender } = render(AgentRuntimeActivityCard, { interaction });
+  const details = container.querySelector('details');
+  expect(details).toHaveClass(`bg-${colour}-100`, `dark:bg-${colour}-900`);
+  expect(details).not.toHaveClass('bg-muted/20');
+  await rerender({ interaction: { ...interaction, active: false, status: 'completed' } });
+  expect(details.open).toBe(false);
+  expect(details).toHaveClass(`bg-${colour}-100`, `dark:bg-${colour}-900`);
+});
+
+test('uses a neutral background when no resident colour is available', () => {
+  const { container } = render(AgentRuntimeActivityCard, { interaction: base });
+  expect(container.querySelector('details')).toHaveClass('bg-muted/20');
+});
+
+test('historical completed cards use the resident background immediately', () => {
+  const { container } = render(AgentRuntimeActivityCard, {
+    interaction: { ...base, agent_colour: 'violet', active: false, status: 'completed' },
+  });
+  expect(container.querySelector('details')).toHaveClass('bg-violet-100', 'dark:bg-violet-900');
+});

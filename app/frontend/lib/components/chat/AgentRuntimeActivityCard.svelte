@@ -8,6 +8,11 @@
   let wasActive = $state(Boolean(interaction.active));
   let now = $state(Date.now());
   const isActive = $derived(Boolean(interaction.active));
+  const backgroundClass = $derived(
+    interaction.agent_colour
+      ? `bg-${interaction.agent_colour}-100 dark:bg-${interaction.agent_colour}-900`
+      : 'bg-muted/20'
+  );
   const snapshot = $derived(interaction.snapshot || {});
   const operations = $derived(Object.values(snapshot.operations || {}));
   let commandsExpanded = $state(false);
@@ -54,7 +59,7 @@
 <div class="flex justify-start" data-testid="runtime-activity-card" data-run-id={interaction.run_id || interaction.id}>
   <details
     bind:open={expanded}
-    class="w-full max-w-[90%] md:max-w-[75%] rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20">
+    class="w-full max-w-[90%] md:max-w-[75%] rounded-lg border border-dashed border-muted-foreground/30 {backgroundClass}">
     <summary class="cursor-pointer px-4 py-3 text-sm select-none">
       <span class="font-medium">{interaction.agent_name}</span>
       <span class="text-muted-foreground"> {interaction.status_label}</span>
