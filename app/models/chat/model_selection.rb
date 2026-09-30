@@ -539,6 +539,7 @@ module Chat::ModelSelection
     },
 
     # DeepSeek
+    { model_id: "deepseek/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash", group: "DeepSeek" },
     { model_id: "deepseek/deepseek-chat", label: "DeepSeek Chat", group: "DeepSeek" },
     { model_id: "deepseek/deepseek-v3.2", label: "DeepSeek V3.2", group: "DeepSeek" },
     { model_id: "deepseek/deepseek-v4-pro-0813", label: "DeepSeek V4 Pro 0813", group: "DeepSeek", thinking: { supported: true } },

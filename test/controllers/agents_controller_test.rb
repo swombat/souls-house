@@ -19,6 +19,34 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
+  test "birth claims funding atomically and a second birth creates no resident key or job" do
+    attrs = { name: "House birth", system_prompt: "Synthetic seed", model_id: HouseInference::Offering::MODEL_ID }
+    assert_difference [ "Agent.count", "ApiKey.count", "HouseInferenceGrant.count" ], 1 do
+      assert_enqueued_with(job: ProvisionAgentJob) do
+        post account_agents_path(@account), params: { agent: attrs }
+      end
+    end
+    assert_no_difference [ "Agent.count", "ApiKey.count", "HouseInferenceGrant.count" ] do
+      assert_no_enqueued_jobs do
+        post account_agents_path(@account), params: { agent: attrs.merge(name: "Second house birth") }
+      end
+    end
+    assert_redirected_to new_account_agent_path(@account)
+  end
+
+  test "house funding is an explicit model choice and a second resident rolls back" do
+    patch account_agent_path(@account, @agent), params: { agent: { model_id: HouseInference::Offering::MODEL_ID } }
+    assert_redirected_to account_agents_path(@account)
+    assert_equal @agent.id, HouseInferenceGrant.find_by!(user: @user).agent_id
+    other = agents(:code_reviewer)
+    previous = other.model_id
+    patch account_agent_path(@account, other), params: { agent: { model_id: HouseInference::Offering::MODEL_ID } }
+    assert_redirected_to edit_account_agent_path(@account, other)
+    assert_equal previous, other.reload.model_id
+    get edit_account_agent_path(@account, @agent)
+    assert_equal 10.0, inertia_shared_props.dig("house_allowance", "remaining_usd")
+  end
+
   test "turn timeout is editable and rejects values outside one minute to one day" do
     @agent.update_columns(runtime: "external")
     patch account_agent_path(@account, @agent), params: { agent: { turn_timeout_minutes: 1440 } }

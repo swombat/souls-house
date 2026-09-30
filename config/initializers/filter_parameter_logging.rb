@@ -14,3 +14,6 @@ Rails.application.config.filter_parameters += [
 Rails.application.config.filter_parameters += [
   /\A(?:content|description|source_uris|metadata|result|embedding|query|receipt)\z/
 ]
+
+# Inference bodies contain private resident conversations and tool definitions.
+Rails.application.config.filter_parameters += [ /\A(?:messages|tools|reasoning|tool_choice|response_format)\z/ ]

@@ -15,6 +15,24 @@ spec.loader.exec_module(s)
 
 
 class RuntimeConfigTest(unittest.TestCase):
+    def setUp(self):
+        self.env = patch.dict(os.environ, {"SOULSHOUSE_APP_URL": "", "HELIXKIT_APP_URL": ""})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def test_house_provider_uses_scoped_resident_bearer_not_upstream_key(self):
+        with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {"SOULSHOUSE_APP_URL": "http://house.test"}):
+            calls = []
+            def run(home, *args):
+                calls.append(args)
+                return '{}' if args == ('get',) else ''
+            s.prepare(Path(td), run)
+            settings = json.loads(next(a[2] for a in calls if a[:2] == ('set', 'model_providers.house')))
+            self.assertEqual(settings['base_url'], 'http://house.test/api/v1/house_inference')
+            self.assertEqual(settings['env_key'], 'SOULSHOUSE_BEARER_TOKEN')
+            self.assertEqual(settings['wire_api'], 'chat_completions')
+            self.assertNotIn('HOUSE_INFERENCE_OPENROUTER_API_KEY', str(calls))
+
     def test_missing_defaults_only_and_boot_order(self):
         with tempfile.TemporaryDirectory() as td:
             home = Path(td)
@@ -75,7 +93,7 @@ class RealRuntimeConfigTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
-        self.env = patch.dict(os.environ, {'CHAOS_BIN':os.environ['CHAOS_TEST_BIN']})
+        self.env = patch.dict(os.environ, {'CHAOS_BIN':os.environ['CHAOS_TEST_BIN'], 'SOULSHOUSE_APP_URL': '', 'HELIXKIT_APP_URL': ''})
         self.env.start();self.addCleanup(self.env.stop)
 
     def read(self):

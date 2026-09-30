@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_30_133000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_30_173000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -609,6 +609,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_133000) do
     t.index ["account_id"], name: "index_github_integrations_on_account_id", unique: true
   end
 
+  create_table "house_inference_calls", force: :cascade do |t|
+    t.decimal "charge_usd", precision: 14, scale: 8, null: false
+    t.datetime "created_at", null: false
+    t.bigint "house_inference_grant_id", null: false
+    t.string "model_id", null: false
+    t.date "month", null: false
+    t.string "provider_route", null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.string "upstream_id"
+    t.index ["house_inference_grant_id", "month"], name: "index_house_calls_on_grant_month"
+    t.index ["house_inference_grant_id"], name: "index_house_inference_calls_on_house_inference_grant_id"
+    t.index ["month"], name: "index_house_inference_calls_on_month"
+    t.check_constraint "charge_usd >= 0::numeric", name: "house_calls_nonnegative_charge"
+  end
+
+  create_table "house_inference_grants", force: :cascade do |t|
+    t.bigint "agent_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["agent_id"], name: "index_house_inference_grants_on_agent_id", unique: true
+    t.index ["user_id"], name: "index_house_inference_grants_on_user_id", unique: true
+  end
+
   create_table "memberships", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "confirmation_sent_at"
@@ -1118,6 +1143,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_133000) do
   add_foreign_key "device_streams", "accounts"
   add_foreign_key "device_streams", "users", column: "subject_user_id"
   add_foreign_key "github_integrations", "accounts"
+  add_foreign_key "house_inference_calls", "house_inference_grants"
+  add_foreign_key "house_inference_grants", "agents"
+  add_foreign_key "house_inference_grants", "users"
   add_foreign_key "memberships", "accounts"
   add_foreign_key "memberships", "users"
   add_foreign_key "memberships", "users", column: "invited_by_id"

@@ -54,6 +54,13 @@ def prepare(home, run=command):
     for name, value in DEFAULTS["model_providers"].items():
         if name not in providers:
             run(home, "set", f"model_providers.{name}", json.dumps(value))
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    if app_url:
+        # Scoped resident bearer only. The house upstream key never enters a home.
+        run(home, "set", "model_providers.house", json.dumps({
+            "name": "On the house", "base_url": app_url.rstrip("/") + "/api/v1/house_inference",
+            "env_key": "SOULSHOUSE_BEARER_TOKEN", "wire_api": "chat_completions",
+        }))
     run(home, "doctor")
 
 

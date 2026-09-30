@@ -22,6 +22,7 @@
 
   let {
     agent,
+    house_allowance: houseAllowance = null,
     telegram_deep_link: telegramDeepLink = null,
     telegram_subscriber_count: telegramSubscriberCount = 0,
     grouped_models = {},
@@ -177,7 +178,12 @@
             colourOptions={colour_options}
             iconOptions={icon_options} />
         {:else if activeTab === 'settings'}
-          <AgentSettingsPanel {form} groupedModels={grouped_models} {runtimeManaged} bind:selectedModel />
+          <AgentSettingsPanel
+            {houseAllowance}
+            {form}
+            groupedModels={grouped_models}
+            {runtimeManaged}
+            bind:selectedModel />
         {:else if activeTab === 'integrations'}
           <AgentIntegrationsPanel
             {form}

@@ -11,7 +11,7 @@ module Agents
     STATE_PATH = "/home/agent/state"
     IDENTITY_PATH = "/home/agent/identity"
     CHAOS_BUILT_IN_PROVIDER_IDS = %w[anthropic openai xai].freeze
-    CHAOS_RUNTIME_PROVIDER_IDS = %w[gemini openrouter].freeze
+    CHAOS_RUNTIME_PROVIDER_IDS = %w[gemini openrouter house].freeze
     SUPPORTED_CHAOS_PROVIDER_IDS = (
       CHAOS_BUILT_IN_PROVIDER_IDS + CHAOS_RUNTIME_PROVIDER_IDS
     ).freeze
@@ -529,6 +529,10 @@ module Agents
     end
 
     def self.chaos_selection_for(agent)
+      if HouseInference::Offering.find(agent.model_id)
+        return { provider: "house", model: agent.model_id }
+      end
+
       subscription_provider = subscription_provider_for(agent)
       if subscription_provider && agent.provider_auth_mode(subscription_provider) == "oauth_account"
         return {
@@ -589,6 +593,8 @@ module Agents
     end
 
     def provider_env_args
+      return [] if HouseInference::Offering.find(agent.model_id)
+
       agent.account.ai_provider_keys.filter_map do |name, value|
         value.present? ? [ "-e", "#{name}=#{value}" ] : nil
       end.flatten

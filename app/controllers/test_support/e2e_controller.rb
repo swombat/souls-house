@@ -288,6 +288,9 @@ module TestSupport
         end
       end
 
+      grants = HouseInferenceGrant.where(user: users)
+      HouseInferenceCall.where(house_inference_grant: grants).delete_all
+      grants.delete_all
       agent_ids = accounts.joins(:agents).select("agents.id")
       Agent.where(id: agent_ids).update_all(outbound_api_key_id: nil, outbound_api_token: nil)
       ApiKey.where(agent_id: agent_ids).destroy_all

@@ -179,6 +179,8 @@ Rails.application.routes.draw do
   # JSON API for external clients (Claude Code, etc.)
   namespace :api do
     namespace :v1 do
+      get "house_inference/models", to: "house_inference#models"
+      post "house_inference/chat/completions", to: "house_inference#create"
       post "streams/:stream_key/samples", to: "stream_samples#create"
       get "streams/:stream_key/latest", to: "streams#latest"
       post "runtime_runs/:run_id/events", to: "runtime_events#create"

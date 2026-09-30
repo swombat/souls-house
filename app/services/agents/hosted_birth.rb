@@ -23,10 +23,11 @@ module Agents
         provisioning_started_at: now
       )
 
-      Agents::HostedProvisioning.new(agent: agent, user: creator).prepare!(
-        started_at: now
-      )
-      ProvisionAgentJob.perform_later(agent.id)
+      HouseInferenceGrant.synchronize do
+        Agents::HostedProvisioning.new(agent: agent, user: creator).prepare!(started_at: now)
+        HouseInferenceGrant.assign!(agent, creator)
+        ProvisionAgentJob.perform_later(agent.id)
+      end
       agent
     end
 

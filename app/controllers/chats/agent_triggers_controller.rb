@@ -9,10 +9,10 @@ class Chats::AgentTriggersController < ApplicationController
   def create
     if params[:agent_id].present?
       agent = @chat.agents.find(params[:agent_id])
-      return if credentials_missing?([ agent ])
+      return if inference_unavailable?([ agent ])
       @chat.trigger_agent_response!(agent)
     else
-      return if credentials_missing?(@chat.agents)
+      return if inference_unavailable?(@chat.agents)
       @chat.trigger_all_agents_response!
     end
 
@@ -32,8 +32,21 @@ class Chats::AgentTriggersController < ApplicationController
 
   private
 
-  def credentials_missing?(agents)
-    missing = agents.select { |agent| agent.eligible_for_conversation? && !Agents::InferenceAvailability.available?(agent) }
+  def inference_unavailable?(agents)
+    agents.each do |agent|
+      next unless agent.eligible_for_conversation? && HouseInference::Offering.find(agent.model_id)
+      error = Agents::InferenceAvailability.house_error(agent)
+      next unless error
+      respond_to do |format|
+        format.html { redirect_to account_chat_path(current_account, @chat), alert: error.message }
+        format.json { render json: { error: error.message, code: error.code }, status: error.status }
+      end
+      return true
+    end
+
+    missing = agents.select do |agent|
+      agent.eligible_for_conversation? && !HouseInference::Offering.find(agent.model_id) && !Agents::InferenceAvailability.available?(agent)
+    end
     return false if missing.empty?
 
     message = "Edit the resident and set up credentials before asking them to respond."

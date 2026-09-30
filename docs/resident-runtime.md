@@ -41,10 +41,9 @@ configuration check, not a live token-validation request. An unrelated provider'
 key does not count, and OAuth mode does not silently fall through to API billing.
 This check covers the manual web trigger, not scheduled or API-originated wakes.
 
-Future house-funded models are not enabled by this change. Add their model-scoped
-funding policy to server-side route availability and actual runtime provisioning
-together; do not add a free-model allowlist in the browser or enable all system
-credentials for accounts that declined fallback.
+[House-funded inference](house-funded-inference.md) adds an explicit funded route,
+shared user entitlement and per-call gateway. Exhaustion and missing operator
+configuration are separate from the personal-credential setup dialog.
 
 ## Dispatch, session continuity and replies
 
