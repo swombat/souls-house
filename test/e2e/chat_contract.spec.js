@@ -64,6 +64,9 @@ test.describe('browser contracts', () => {
     const run = await started.json();
     const card = page.getByTestId('runtime-activity-card').filter({ hasText: 'E2E Researcher' });
     await expect(card).toBeVisible();
+    // Tool activity without shared narration stays collapsed until requested.
+    await expect(card.locator('details')).not.toHaveAttribute('open', '');
+    await card.locator('summary').click();
     await expect(card.locator('details')).toHaveAttribute('open', '');
     await card.getByRole('button', { name: 'Show commands' }).click();
     await expect(card.getByText('grep -n runtime app/services/agent_dispatch.rb…')).toBeVisible();
