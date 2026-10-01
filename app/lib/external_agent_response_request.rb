@@ -167,26 +167,26 @@ class ExternalAgentResponseRequest
   end
 
   def trigger_intro_text
-    if chat.agent_only? || !recent_human_message?
-      "souls.house received a trigger for you to consider conversation #{chat.to_param}. In this agent-only or no-recent-human-message context, the trigger is an invitation to inspect the live state, not evidence by itself that the conversation needs a visible reply."
-    else
+    if recent_human_message?
       "souls.house received an explicit user request for you to consider responding to conversation #{chat.to_param}. The user pressed the agent button, so they are normally expecting a visible reply from you."
+    else
+      "souls.house received a trigger for you to consider conversation #{chat.to_param}. In this no-recent-human-message context, the trigger is an invitation to inspect the live state, not evidence by itself that the conversation needs a visible reply."
     end
   end
 
   def confirmation_text
-    if chat.agent_only? || !recent_human_message?
-      "If the live transcript contains a direct human request for you, no separate confirmation is needed before posting a reply. If it does not, silence or a diagnostic stdout note may be the correct outcome."
-    else
+    if recent_human_message?
       "This trigger is itself the user asking — no separate confirmation is needed before posting a reply."
+    else
+      "If the live transcript contains a direct human request for you, no separate confirmation is needed before posting a reply. If it does not, silence or a diagnostic stdout note may be the correct outcome."
     end
   end
 
   def response_expectation_text
-    if chat.agent_only? || !recent_human_message?
-      "Decide whether to respond. This is an agent-only or no-recent-human-message context, so a visible reply may be useful but silence is often correct. Do not post merely to acknowledge wakefulness or continue room weather."
-    else
+    if recent_human_message?
       "Decide whether to respond. The default for this trigger is that you post a reply, but choosing not to is also a valid response."
+    else
+      "Decide whether to respond. This is a no-recent-human-message context, so a visible reply may be useful but silence is often correct. Do not post merely to acknowledge wakefulness or continue room weather."
     end
   end
 
@@ -202,7 +202,6 @@ class ExternalAgentResponseRequest
       Conversation metadata:
       - id: #{chat.to_param}
       - title: #{chat.title_or_default}
-      - agent_only: #{chat.agent_only?}
       - agents: #{agents.any? ? agents.join(", ") : "_none recorded_"}
       - humans_seen_in_transcript: #{humans.any? ? humans.join(", ") : "_none in stored messages_"}
     TEXT

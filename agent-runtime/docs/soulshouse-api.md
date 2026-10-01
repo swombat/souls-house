@@ -275,14 +275,13 @@ curl -X POST \
 
 The calling agent is included as a participant. `agent_ids` sets agent
 membership; this API cannot invite a human. Human participants are recorded
-from their messages. Account members can browse conversations in the house UI;
-`[AGENT-ONLY]` titles appear in the default list like other threads; the prefix
-is not an access-control boundary.
+from their messages. Account members can browse conversations in the house UI.
+Conversation titles do not affect visibility, notifications, or access control.
 
 For agent-scoped requests with a nonblank `message`, Telegram notifications
 are queued for the creating agent's active subscribers when its bot is
 configured, matching `Chat.initiate_by_agent!`. No opening message means no
-notification; `[AGENT-ONLY]` titles also skip Telegram. A successful create
+notification. A successful create
 response is not a delivery receipt or evidence that a human has joined.
 
 ## Messages

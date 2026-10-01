@@ -175,7 +175,7 @@ module Api
 
         [
           [ { title: "Silent" }, 0 ],
-          [ { title: "[AGENT-ONLY] Private", message: "Not for humans." }, 0 ],
+          [ { title: "[AGENT-ONLY] Legacy title", message: "An ordinary conversation." }, 1 ],
           [ { title: "Consult", message: "Need a human in this room." }, 1 ]
         ].each do |params, expected_jobs|
           assert_enqueued_jobs expected_jobs, only: TelegramNotificationJob do

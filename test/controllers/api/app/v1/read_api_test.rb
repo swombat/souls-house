@@ -33,19 +33,21 @@ class Api::App::V1::ReadApiTest < ActionDispatch::IntegrationTest
 
   # --- conversations ---------------------------------------------------------
 
-  test "conversations lists kept human-visible chats, active before archived" do
-    archived = @account.chats.create!(model_id: "openrouter/auto", title: "Old")
+  test "conversations lists kept chats regardless of title, active before archived" do
+    archived = @account.chats.create!(model_id: "openrouter/auto", title: "[AGENT-ONLY] Old")
     archived.update!(archived_at: Time.current)
-    @account.chats.create!(model_id: "openrouter/auto", title: "Gone").discard!
-    @account.chats.create!(model_id: "openrouter/auto", title: "#{Chat::AGENT_ONLY_PREFIX} backstage")
+    @account.chats.create!(model_id: "openrouter/auto", title: "[AGENT-ONLY] Gone").discard!
+    accounts(:regular_user_account).chats.create!(model_id: "openrouter/auto", title: "[AGENT-ONLY] Other account")
+    legacy = @account.chats.create!(model_id: "openrouter/auto", title: "[AGENT-ONLY] backstage")
 
     get "/api/app/v1/accounts/#{@account.to_param}/conversations", headers: bearer(@tokens)
     assert_response :success
     convs = response.parsed_body["conversations"]
-    assert_equal [ @chat.to_param, archived.to_param ], convs.map { |c| c["id"] }
+    assert_equal [ @chat.to_param, legacy.to_param ].sort, convs[0...-1].map { |c| c["id"] }.sort
+    assert_equal archived.to_param, convs.last["id"]
     assert_equal false, convs.first["archived"]
     assert_equal true, convs.last["archived"]
-    assert_equal @chat.reload.message_revision, convs.first["latest_revision"]
+    assert_equal @chat.reload.message_revision, convs.find { |c| c["id"] == @chat.to_param }["latest_revision"]
   end
 
   test "another user's account is 404, not 403" do

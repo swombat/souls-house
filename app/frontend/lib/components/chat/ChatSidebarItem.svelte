@@ -3,7 +3,7 @@
   import { accountChatPath } from '@/routes';
   import { shortDate } from '$lib/chat-display';
   import ChatParticipantAvatars from '$lib/components/chat/ChatParticipantAvatars.svelte';
-  import { Archive, ChatText, Robot, Spinner, Trash } from 'phosphor-svelte';
+  import { Archive, ChatText, Spinner, Trash } from 'phosphor-svelte';
 
   let { chat, accountId, activeChatId = null } = $props();
 </script>
@@ -18,9 +18,6 @@
     class="font-medium text-sm truncate flex items-center gap-2 {chat.discarded
       ? 'line-through text-red-600 dark:text-red-400'
       : ''}">
-    {#if chat.agent_only}
-      <Robot size={12} class="text-blue-500 flex-shrink-0" />
-    {/if}
     {#if chat.archived && !chat.discarded}
       <Archive size={12} class="text-muted-foreground flex-shrink-0" />
     {/if}

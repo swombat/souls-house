@@ -165,7 +165,6 @@ module TelegramNotifiable
 
   def notify_subscribers!(message, chat)
     return unless telegram_configured?
-    return if chat.agent_only?
 
     telegram_subscriptions.active.each do |subscription|
       TelegramNotificationJob.perform_later(subscription, message, chat)

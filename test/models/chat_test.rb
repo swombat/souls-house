@@ -12,6 +12,15 @@ class ChatTest < ActiveSupport::TestCase
     @account.update!(use_system_ai_credentials: true)
   end
 
+  test "legacy title prefixes do not add a conversation type to serialization" do
+    chat = accounts(:personal_account).chats.create!(title: "[AGENT-ONLY] Legacy title")
+
+    [ chat.as_json, chat.as_json(as: :sidebar_json) ].each do |json|
+      assert_equal "[AGENT-ONLY] Legacy title", json["title"]
+      refute json.key?("agent_only")
+    end
+  end
+
   test "belongs to account" do
     chat = Chat.create!(account: @account)
     assert_equal @account, chat.account
