@@ -86,7 +86,6 @@ class ExternalAgentOrientationRequestTest < ActiveSupport::TestCase
     assert_includes text, "Your configured model has changed"
     assert_includes text, "fresh orientation wake"
     assert_includes text, "Nothing needs to be performed"
-    assert_includes text, "first wake in souls.house"
     refute_includes text, "migrated from souls.house"
     refute_includes text, "first wake"
   end
