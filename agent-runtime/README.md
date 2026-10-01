@@ -50,6 +50,32 @@ also advances fleet `latest` tags, so do not use it while holding other resident
 back. Set only selected residents' `container_image` to the verified candidate;
 keep busy/held residents on their original images.
 
+For the opt-in Mira development image, build the existing toolchain recipe
+**on top of** the candidate; do not copy a hand-picked list of runtime files into
+an older image. Keep PostgreSQL at the major used by the persistent development
+cluster (currently 17):
+
+```sh
+# Set these to separate, verified candidate tags.
+docker build --build-arg MIRA_BASE_IMAGE="$CANDIDATE_IMAGE" \
+  -f agent-runtime/Dockerfile.mira-dev -t "$MIRA_CANDIDATE_IMAGE" agent-runtime
+```
+
+Blocking new work requires more than `paused`: conversation eligibility uses
+`active`, while scheduled wakes use both flags. Record both original values,
+temporarily set `active: false, paused: true`, then check pending turns, active
+interactions and runtime processes before stopping. Restore the recorded flags
+only after health checks; do not activate a previously dormant resident. This
+is not cancellation of already admitted work. Account credential refresh and
+runtime reconcile jobs can also recreate containers; coordinate them before a
+snapshot and keep the old process stopped for its entire duration.
+
+A stock/Mira canary does not establish that a portable home's project-scoped
+hooks work. Preserve its Chaos volume (settings, hook authorization and session
+state) in the paired rollback snapshot, and obtain that resident's first-turn
+and resumed-turn witness before accepting their upgrade. Existing hook
+revocations remain authoritative; do not reimport hooks to make a test pass.
+
 Run real migration/repeated-boot tests with a built candidate:
 
 ```sh
