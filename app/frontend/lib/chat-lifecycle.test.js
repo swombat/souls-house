@@ -1,3 +1,4 @@
+import { tick } from 'svelte';
 import { render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { router } from '@inertiajs/svelte';
@@ -74,4 +75,34 @@ test('unmount aborts an outstanding history request', async () => {
   expect(signal.aborted).toBe(true);
   resolve({ ok: true, json: async () => ({ messages: [], has_more: false }) });
   await pending;
+});
+
+test('entry snaps without paginating, including reused-page navigation', async () => {
+  const view = render(Harness, { chat: { id: 'first' }, messages: [message('first')] });
+  await tick();
+  expect(HTMLElement.prototype.scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: 'instant' });
+  const element = view.component.history.container;
+  Object.defineProperties(element, {
+    scrollHeight: { configurable: true, value: 5000 },
+    clientHeight: { configurable: true, value: 500 },
+  });
+  element.scrollTo = vi.fn(({ top, behavior }) => {
+    // Model the opening scroll events: smooth animation starts near the top.
+    element.scrollTop = behavior === 'smooth' ? 10 : top - element.clientHeight;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await view.rerender({ chat: { id: 'second' }, messages: [message('second')] });
+  expect(element.scrollTo).toHaveBeenLastCalledWith({ top: 5000, behavior: 'instant' });
+  expect(fetch).not.toHaveBeenCalled();
+  element.dispatchEvent(new Event('wheel'));
+  element.scrollTop = 1000;
+  element.scrollTo.mockClear();
+  await view.rerender({ chat: { id: 'second' }, messages: [message('second'), message('new')] });
+  expect(element.scrollTo).not.toHaveBeenCalled();
+  expect(element.scrollTop).toBe(1000);
+  // Explicit sending retains its separate scroll behavior.
+  fetch.mockResolvedValue({ ok: true, json: async () => ({ messages: [], has_more: false }) });
+  view.component.history.scrollToBottom();
+  await tick();
+  expect(element.scrollTo).toHaveBeenLastCalledWith({ top: 5000, behavior: 'smooth' });
 });
