@@ -928,6 +928,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
   test "search without query param renders page" do
     get search_account_chats_path(@account)
     assert_response :success
+    assert_equal({}, inertia_shared_props.fetch("errors"))
   end
 
   test "search excludes discarded chats" do
