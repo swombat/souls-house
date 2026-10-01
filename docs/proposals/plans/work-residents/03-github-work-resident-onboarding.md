@@ -18,7 +18,9 @@ and validates these requests; an authorised owner approves effective grants.
 Repository content is untrusted configuration, not permission. Git pushes cannot
 increase model spend, secret access, network/tool privileges or delegation depth.
 
-Use the boundary and lifecycle contract established in project 1. The resident's
+Reuse project 1’s delegation and lifecycle work, but decide the trust boundary
+explicitly for broader hosting. Its initial shared-container risk acceptance for
+Mira and Lume is not a blanket approval for other residents. The resident's
 own identity/memory conventions remain theirs; this project does not impose Mira's
 journals or a mandatory house memory stack. Record provenance for the repository
 and pinned revision used at each launch.

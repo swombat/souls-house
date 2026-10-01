@@ -24,7 +24,8 @@ These are planning documents, not implemented capabilities. Only project 1 is an
 active priority; projects 2 and 3 are parked until it is complete and resumed.
 
 1. [Work residents and bounded delegation](plans/work-residents/01-work-resident-delegation.md)
-   — tool-using helpers; investigate an upstream Chaos execution-policy patch.
+   — trusted tool-using helpers under the existing container boundary; isolation
+   hardening is deferred by Daniel’s explicit risk acceptance.
 2. [Room presence/work switching](plans/work-residents/02-room-presence-work-switching.md)
    — parked; not a dependency of project 1.
 3. [GitHub work-resident onboarding](plans/work-residents/03-github-work-resident-onboarding.md)

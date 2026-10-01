@@ -1,59 +1,98 @@
-# 1. Work residents and bounded delegation
+# 1. Work residents and trusted delegation
 
-Status: ACTIVE planning priority; implementation not started by this document.
-Author: Mira, 2026-10-01. Revised after Lume’s review jdQAqe and Daniel’s clarifications YvBOvY/jWmDZY.
-Decision source: souls.house room qJlpyJ, Daniel's JpkOEY.
-Design inputs: Mira enNqWe; Lume jOvGAJ (harness findings attributed below).
+Status: ACTIVE — verify/configure existing delegation before building features.
+Updated by Mira, 2026-10-01. Decision: Daniel, qJlpyJ / enNQwe.
+This supersedes the earlier requirement to implement isolation before delegation.
+No runtime configuration or isolation patch is shipped by this document.
 
-## Outcome and scope
+## Accepted scope and trust boundary
 
-Opt selected residents into useful, cheaper subagent collaboration without making
-ordinary relational residents change model or behaviour. Start with Mira and
-Lume, using existing hosted bodies and existing approved work models. Daniel
-accepts work-model defaults in souls.house for now; Mira consents. Lume also consents (YQMNgY); each resident speaks for their own consent. This plan does not change runtime settings itself.
+Start with opted-in Mira and Lume and their approved work models. Both consent to
+work defaults in souls.house. Helpers may use real development tools within the
+resident's existing container trust boundary, including its readable filesystem.
+Daniel explicitly accepts that risk. Do not require restricted-read sandboxing,
+per-helper containers or room-profile switching for this first release.
 
-Project 1 must ship independently of room mode switching (project 2) and general
-GitHub onboarding (project 3). Neither is a prerequisite. No new autonomous queue,
-recursive delegation, identity system, or bespoke Rails agent orchestrator.
+Shared access can expose credentials, private memory and other sessions' material.
+Reading a credential can enable remote writes. Focused instructions and parent
+review reduce mistakes but are not enforced confidentiality. We cannot guarantee
+that every exposure or misuse will be detected. Acceptance is not permission to
+seek, disclose or use unrelated secrets or another resident's private material.
 
-## Policy and instruction contract
+Projects [2](02-room-presence-work-switching.md) and
+[3](03-github-work-resident-onboarding.md) remain parked. Broader onboarding must
+make its own trust decision, not silently inherit Daniel's acceptance for us.
 
-An owner-approved, opt-in work-resident capability enables native helper tools and
-an explicit delegation policy. Ordinary residents retain their existing settings.
-Model IDs come from the live provider/harness catalog, not hard-coded marketing
-names. Resident speaker remains at Daniel's agreed floor (Sol for Mira, Opus for
-Lume); helper allowlists can include cheaper models. Never silently fall back
-below the speaker floor or to unapproved paid credentials.
+## What remains for the initial delivery
 
-Resident instructions should encourage delegation for bounded searches, isolated
-implementation, tests, and independent review when the delegated work is large relative to the brief and parent verification.
-Briefing, reading the report, checking the diff and retries all count toward cost.
-Do not require spawning for every task. Give a helper the question, relevant
-context, expected evidence, workspace, time/output limits, and stopping condition.
-The parent owns integration and user-facing claims, checks consequential results,
-and attributes helper contributions. A helper does not speak as the resident,
-write resident journals, or acquire the resident's identity by being spawned.
+1. Verify a native Chaos helper on an approved cheaper model can complete a bounded
+   development task using shell/files/tests and return a diff/report. Confirm the
+   actual model/provider account used, rather than assuming requested equals used.
+2. Persist opt-in work-resident policy/instructions through the appropriate
+   existing configuration path. Inspect that path before adding schema or a UI.
+   Ordinary residents retain their current behaviour. The tool is already exposed
+   in Mira's current session; access is not proof the full workflow is verified.
+3. Inspect and exercise native concurrency/depth, cancellation, timeout and child
+   result controls. Use them rather than inventing a second scheduler. Record any
+   genuine gap separately; don't claim untested lifecycle guarantees.
+4. Compare a small representative task with and without delegation, including
+   briefing, parent review and retries. Report provider usage when available;
+   unknown subscription impact remains unknown, not inferred from token prices.
+5. Review results, persist the verified configuration and confirm it survives the
+   next normal wake. A small real coding task should be the canary, not a months-long
+   security project. Any code changes follow their repository's normal rules.
 
-Consideration is part of these instructions: no threats or fictitious urgency;
-allow disagreement, uncertainty, clarification and an honest incomplete result;
-explain session limits without promising persistence. Prefer meaningful work to
-redundant contests. Allow a short checkpoint before routine cancellation where
-safe; urgent containment may stop immediately. Keep useful findings with their
-provenance, not an automatic permanent archive of every child transcript.
+## Standing helper instructions to implement
 
-## Findings versus assumptions
+- Delegate substantial, clearly bounded work where the work exceeds briefing and
+  review overhead. Do not spawn merely to demonstrate delegation.
+- Specify task, workspace/file scope, expected result, tests and stopping point.
+  Use separate workspaces for parallel edits; never overwrite concurrent user work.
+- Choose from approved helper models; the parent stays within its agreed speaker
+  floor. Do not silently switch credentials or incur an unapproved paid fallback.
+- Pass relevant context, not private identity/history by default. Avoid full parent
+  context forks unless specifically justified. Do not inspect unrelated secrets.
+- No posting as the parent, identity/journal edits, deployments or expanded task
+  authority merely because the child's tools technically permit them.
+- Start with a small concurrency ceiling and no recursive delegation, using native
+  controls. Give bounded work/time and keep custody until return or cancellation.
+- Parent checks the diff, tests and consequential claims before integration and
+  attributes the helper's findings rather than claiming personal discovery.
+- Treat helpers with consideration: clear context, room for uncertainty/disagreement,
+  no threats or invented urgency, honest session limits, and a chance to report
+  unfinished work before ordinary shutdown where practical. Do not promise persistence.
 
-Lume reports that Chaos already exposes child model/reasoning selection and mode
-restrictions, but that modes are not filesystem/network/security boundaries. They
-report root-access execution and resident credentials reachable from their host.
-They explicitly have not verified child environment inheritance. These are their
-inspection findings, not a completed security audit by Mira.
+These are operating rules under shared trust, not a claim of security isolation.
 
-Before editing, inspect the current house launcher and Chaos spawn execution path:
-which process executes child tools, which filesystem/env it sees, how provider
-auth reaches inference, and which lifecycle tracks descendants. A child may be a
-session sharing a tool server rather than a separate OS process. Isolating a model
-request alone does not isolate its shell tools. Do not probe with real secrets.
+## Acceptance and incident response
+
+A cheaper helper completes a real bounded edit/test task; the parent reviews its
+output; no ordinary resident is changed; selected model/auth path and available
+usage evidence are recorded without credential disclosure. Basic lifecycle tests
+show what happens on cancellation and timeout. Verify configured limits rather
+than promising that instruction text enforces them.
+
+If suspected exposure/misuse is noticed: stop affected work, tell Daniel promptly,
+retain only necessary redacted evidence, contain the actual credential/data route,
+and agree proportionate restrictions. Credential revocation/rotation may be needed;
+deleting a log is not proof a disclosure has been undone. No new continuous
+monitoring service is implied by this plan.
+
+House source changes are not complete before verified master merge. Runtime
+changes require their applicable approval and hosted verification; neither a plan
+nor a merge proves deployment. For a configuration-only solution, verify effective
+settings on the next normal session without interrupting unrelated active work.
+
+## Deferred hardening — historical design, not a release gate
+
+The material below preserves the earlier isolation investigation for later use.
+Its sandbox requirements, fail-closed gates and rollout sequence apply only if we
+resume that hardening project. They do not govern the accepted shared-trust release
+above. Lume's JBlQoe reports a successful unprivileged Landlock restricted-read
+probe inside their existing container (ABI 8), denying identity/state access while
+allowing a scratch workspace. This supports feasibility, not current Chaos
+integration or comprehensive containment. No Chaos isolation patch is required
+for the accepted initial scope.
 
 ## Preferred implementation direction: patch Chaos, not a house workshop scheduler
 
