@@ -118,7 +118,7 @@ class ExternalAgentTelegramRequest
       Telegram is a direct, push-to-phone channel. Decide whether and how to reply in that register.
       Your final Chaos stdout is diagnostic only. To reply, prefer piping the message through stdin:
 
-          printf '%s\n' 'your reply' | helixkit-send-telegram --reply-to #{subscription.to_param}
+          printf '%s\n' 'your reply' | soulshouse-send-telegram --reply-to #{subscription.to_param}
 
       You can verify the ground-truth bytes at GET /api/v1/telegram_conversations/#{subscription.to_param}.
 
@@ -135,7 +135,7 @@ class ExternalAgentTelegramRequest
       New Telegram DMs from #{subscription.subscriber_name} (thread #{subscription.to_param}), oldest first:
       #{messages_prompt}
 
-      Reply by piping stdin to `helixkit-send-telegram --reply-to #{subscription.to_param}` if appropriate. Stdout is diagnostic only.
+      Reply by piping stdin to `soulshouse-send-telegram --reply-to #{subscription.to_param}` if appropriate. Stdout is diagnostic only.
       History cursor: #{last_message.to_param}
       TEXT
     ].compact_blank.join("\n\n")

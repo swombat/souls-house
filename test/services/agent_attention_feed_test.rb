@@ -144,12 +144,12 @@ class AgentAttentionFeedTest < ActiveSupport::TestCase
     assert_equal "helixkit", result.dig(:items, 0, :channel)
   end
 
-  test "preserves Telegram items when HelixKit collection fails" do
+  test "preserves Telegram items when souls.house collection fails" do
     subscription = create_subscription
     subscription.telegram_messages.create!(role: "user", text: "Still visible", sent_at: Time.current)
     feed = AgentAttentionFeed.new(@agent)
 
-    result = feed.stub(:helixkit_items, -> { raise "HelixKit failed" }) { feed.call }
+    result = feed.stub(:helixkit_items, -> { raise "souls.house failed" }) { feed.call }
 
     assert_equal({ helixkit: "failed", telegram: "ok" }, result[:checked])
     assert_equal 1, result.dig(:counts, :total)

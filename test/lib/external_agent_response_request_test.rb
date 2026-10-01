@@ -75,14 +75,14 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     text = request.send(:request_text)
 
     assert_includes text, "SOULSHOUSE_BEARER_TOKEN"
-    assert_includes text, "helixkit-post-message"
-    assert_includes text, "/usr/local/share/helixkit-agent/helixkit-api.md"
+    assert_includes text, "soulshouse-post-message"
+    assert_includes text, "/usr/local/share/helixkit-agent/soulshouse-api.md"
     assert_includes text, "Prefer piping the message through stdin"
     assert_includes text, "Do not put prose containing `$`, backticks"
     assert_includes text, "explicit user request"
     assert_includes text, "normally expecting a visible reply"
     assert_includes text, "final answer in this Chaos runtime is diagnostic stdout only"
-    assert_includes text, "must post it to HelixKit yourself before exiting"
+    assert_includes text, "must post it to souls.house yourself before exiting"
     assert_includes text, "no separate confirmation is needed"
     assert_includes text, "default for this trigger is that you post a reply"
     assert_includes text, "choosing not to is also a valid response"
@@ -93,11 +93,11 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes text, "Conversation metadata"
     assert_includes text, "title: External prompt"
     assert_includes text, "agent_only: false"
-    assert_includes text, "LIVE HELIXKIT TRANSCRIPT FROM DATABASE"
+    assert_includes text, "LIVE SOULS.HOUSE TRANSCRIPT FROM DATABASE"
     assert_includes text, "message_count_included: 1"
-    assert_includes text, "BEGIN LIVE HELIXKIT TRANSCRIPT FROM DATABASE"
-    assert_includes text, "END LIVE HELIXKIT TRANSCRIPT FROM DATABASE"
-    assert_includes text, "Only the LIVE HELIXKIT TRANSCRIPT section above is the current stored conversation transcript"
+    assert_includes text, "BEGIN LIVE SOULS.HOUSE TRANSCRIPT FROM DATABASE"
+    assert_includes text, "END LIVE SOULS.HOUSE TRANSCRIPT FROM DATABASE"
+    assert_includes text, "Only the LIVE SOULS.HOUSE TRANSCRIPT section above is the current stored conversation transcript"
     assert_includes text, "Can you see this transcript?"
     refute_includes text, "Cross-room attention"
 
@@ -399,14 +399,14 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     request = ExternalAgentResponseRequest.new(agent: agent, chat: chat)
     delta = request.send(:request_delta_text)
 
-    assert_includes delta, "LIVE HELIXKIT TRANSCRIPT DELTA FROM DATABASE"
+    assert_includes delta, "LIVE SOULS.HOUSE TRANSCRIPT DELTA FROM DATABASE"
     assert_includes delta, "messages_after_cursor: #{first.id}"
     assert_includes delta, "message_count_included: 1"
     assert_includes delta, "Second message"
     refute_includes delta, "First message"
     assert_includes delta, "Treat these new messages as ground truth for recent conversation activity"
     assert_includes delta, "Current time:"
-    refute_includes delta, "must post it to HelixKit yourself before exiting"
+    refute_includes delta, "must post it to souls.house yourself before exiting"
     refute_includes delta, "Cross-room attention"
     assert_equal second.id, request.send(:computed_last_included_message_id)
   end

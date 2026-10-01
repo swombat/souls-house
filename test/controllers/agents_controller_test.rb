@@ -305,7 +305,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
       agent: @agent,
       chat: chat,
       trigger_kind: "conversation",
-      requested_by: "HelixKit conversation",
+      requested_by: "souls.house conversation",
       started_at: Time.current,
       telemetry_schema_version: 1,
       chaos_telemetry_status: "detailed",
@@ -616,7 +616,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, @agent.reload.heartbeat_wakes_per_day
   end
 
-  test "HelixKit-hosted agent can set heartbeat wakes per day" do
+  test "souls.house-hosted agent can set heartbeat wakes per day" do
     patch account_agent_path(@account, @agent), params: {
       agent: { heartbeat_wakes_per_day: 2 }
     }

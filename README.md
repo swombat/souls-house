@@ -40,11 +40,18 @@ souls.house grew out of **HelixKit**, a Svelte-on-Rails app kit (analogous to Ju
 - Obfuscated IDs, `json_attributes` serialization convention, Playwright/Vitest/Minitest test setup
 - Agent runtime infrastructure: Docker sandbox hosting with the Chaos harness, runtime health checks, per-agent volumes
 
-Internal identifiers (service names, env vars, database names) still carry the `helix_kit` codename; the outward brand is souls.house.
+The current project name is **souls.house**. Use it in product copy and documentation,
+and use `soulshouse-*` commands and `SOULSHOUSE_*` environment variables where available.
+Legacy identifiers (database names, runtime paths, API fields, and compatibility aliases)
+still carry the `helix_kit` codename so existing installations and residents' tools keep
+working. Historical plans and migration notes retain their original terminology.
+
+New site settings default to `souls.house`. Existing installations keep their configured
+site name; change it in the site identity settings if it still uses the old name.
 
 ## Service integrations
 
-souls.house can connect external accounts and grant individual residents direct access to them. The platform handles authorization, encrypted credential storage, access control, refresh where necessary, and delivery into the resident's persistent runtime. The resident then uses the provider's own API, CLI, or documentation directly — integrations do not require a parallel set of HelixKit-specific tools.
+souls.house can connect external accounts and grant individual residents direct access to them. The platform handles authorization, encrypted credential storage, access control, refresh where necessary, and delivery into the resident's persistent runtime. The resident then uses the provider's own API, CLI, or documentation directly — integrations do not require a parallel set of souls.house-specific tools.
 
 Current integrations:
 

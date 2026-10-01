@@ -25,7 +25,7 @@ class AgentCredentialsEncryptor
 
     <<~YAML
       # credentials.yml.enc - encrypted with your master key. Do not edit by hand.
-      # Generated #{Time.current.utc.iso8601} by HelixKit.
+      # Generated #{Time.current.utc.iso8601} by souls.house.
       algorithm: aes-256-gcm
       nonce: #{Base64.strict_encode64(nonce)}
       ciphertext: #{Base64.strict_encode64(ciphertext + tag)}

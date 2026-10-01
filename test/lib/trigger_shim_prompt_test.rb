@@ -28,7 +28,8 @@ class TriggerShimPromptTest < ActiveSupport::TestCase
       assert_includes prompt, "not recency-limited"
       assert_includes prompt, "next_cursor"
       assert_operator prompt.index("REQUEST"), :<, prompt.index("## Memory context — not current chat transcript")
-      assert_includes prompt, "They are not current HelixKit chat messages, not trigger payload, and not the live transcript"
+      assert_includes prompt, "They are not current souls.house chat messages, not trigger payload, and not the live transcript"
+      assert_includes prompt, "LIVE SOULS.HOUSE TRANSCRIPT"
       assert_includes prompt, "## Your recent journal entries"
       assert_includes prompt, "Today I woke here."
       assert_includes prompt, "## 09:00 — Previous title"

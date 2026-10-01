@@ -161,8 +161,8 @@ module Services
       authority_groups: GOOGLE_AUTHORITY_GROUPS,
       base_scopes: GOOGLE_IDENTITY,
       runtime_notes: [
-        "Use helixkit-gws to call Gmail, Calendar, Drive, Docs, Sheets, Slides, and Meet through gws.",
-        "Run helixkit-gws --help or helixkit-gws <service> --help to inspect available commands.",
+        "Use soulshouse-gws to call Gmail, Calendar, Drive, Docs, Sheets, Slides, and Meet through gws.",
+        "Run soulshouse-gws --help or soulshouse-gws <service> --help to inspect available commands.",
         "The helper obtains a current short-lived token without exposing the refresh token."
       ],
       adapter_class: "Services::GoogleWorkspaceAdapter"

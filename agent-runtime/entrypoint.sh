@@ -80,7 +80,7 @@ if [ -f "$AGENT_HOME/.chaos/hooks.json" ] && grep -q "hosted-agent-stop-journal-
 fi
 fi # one-time legacy sources
 cat > "$AGENT_HOME/.chaos/helixkit-hooks.md" <<'HOOKS_NOTE'
-# HelixKit hosted-agent hooks
+# souls.house hosted-agent hooks
 
 Hooks live in the Chaos database (`chaos://hooks`). `hooks_create`,
 `hooks_update`, `hooks_set_enabled`, `hooks_delete`, and `hooks_preview` manage

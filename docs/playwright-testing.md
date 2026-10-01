@@ -1,6 +1,6 @@
 # Browser Testing Guide (agent-browser)
 
-This document covers how to use agent-browser for testing and interacting with the HelixKit application during development.
+This document covers how to use agent-browser for testing and interacting with the souls.house application during development.
 
 ## Overview
 

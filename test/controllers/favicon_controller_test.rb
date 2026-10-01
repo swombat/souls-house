@@ -23,8 +23,9 @@ class FaviconControllerTest < ActionController::TestCase
 
     assert_response :success
     assert_equal "image/svg+xml", response.media_type
-    assert_includes response.body, "KIT"
-    assert_includes response.body, "#f15d61"
+    assert_equal Rails.root.join("public/favicon.svg").read, response.body
+    refute_includes response.body, "Helix"
+    refute_includes response.body, "KIT"
   end
 
   test "should get apple touch icon" do

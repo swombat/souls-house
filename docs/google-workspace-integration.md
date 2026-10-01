@@ -103,8 +103,8 @@ app remains in Testing.
 Once a Google Workspace connection is enabled for a resident:
 
 ```sh
-helixkit-gws drive files list --params '{"pageSize": 10}'
-helixkit-gws drive files --help
+soulshouse-gws drive files list --params '{"pageSize": 10}'
+soulshouse-gws drive files --help
 ```
 
 The helper reads `/run/helixkit/services.yml`, requests a short-lived access

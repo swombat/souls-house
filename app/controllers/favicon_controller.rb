@@ -21,14 +21,14 @@ class FaviconController < ApplicationController
 
   private
 
-  # Keep SVG and raster sources separate so we can change the badge treatment
+  # Keep SVG and raster sources separate so we can change the logo treatment
   # by output type without rewriting the controller flow again.
   def svg_favicon_source_path
-    Rails.root.join("app", "assets", "images", "favicon-kit.svg")
+    Rails.root.join("public", "favicon.svg")
   end
 
   def raster_favicon_source_path
-    Rails.root.join("app", "assets", "images", "favicon-kit.svg")
+    Rails.root.join("public", "favicon.svg")
   end
 
   def send_svg_favicon

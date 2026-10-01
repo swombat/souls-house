@@ -40,8 +40,8 @@ class ExternalAgentOrientationRequestTest < ActiveSupport::TestCase
     assert_equal "orientation", interaction.trigger_kind
     assert_includes interaction.request_text, "orientation wake"
     assert_includes interaction.request_text, "first daily-journal entry"
-    assert_includes interaction.request_text, "helixkit-append-journal"
-    assert_includes interaction.request_text, "/usr/local/share/helixkit-agent/helixkit-api.md"
+    assert_includes interaction.request_text, "soulshouse-append-journal"
+    assert_includes interaction.request_text, "/usr/local/share/helixkit-agent/soulshouse-api.md"
   end
 
   test "orientation does not mark oriented when no journal grows" do
@@ -86,7 +86,7 @@ class ExternalAgentOrientationRequestTest < ActiveSupport::TestCase
     assert_includes text, "Your configured model has changed"
     assert_includes text, "fresh orientation wake"
     assert_includes text, "Nothing needs to be performed"
-    refute_includes text, "migrated from HelixKit"
+    refute_includes text, "migrated from souls.house"
     refute_includes text, "first wake"
   end
 

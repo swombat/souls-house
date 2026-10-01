@@ -77,7 +77,7 @@ class ChatUsageReportTest < ActiveSupport::TestCase
     @chat.messages.create!(
       role: "assistant",
       agent: @agent,
-      content: "Posted through the HelixKit API",
+      content: "Posted through the souls.house API",
       model_id_string: "claude-fable-5",
       input_tokens: 200,
       output_tokens: 20

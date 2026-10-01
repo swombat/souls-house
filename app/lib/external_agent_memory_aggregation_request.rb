@@ -2,7 +2,7 @@ class ExternalAgentMemoryAggregationRequest
 
   PERIODS = %w[daily weekly monthly].freeze
 
-  def initialize(agent:, period:, target:, requested_by: "HelixKit memory aggregation")
+  def initialize(agent:, period:, target:, requested_by: "souls.house memory aggregation")
     @agent = agent
     @period = period.to_s
     @target = target.to_s
@@ -70,7 +70,7 @@ class ExternalAgentMemoryAggregationRequest
     [
       Notices::Renderer.section_for(agent),
       <<~TEXT
-      HelixKit is inviting you to run a #{period} memory aggregation for #{target}.
+      souls.house is inviting you to run a #{period} memory aggregation for #{target}.
 
       This is a scaffolded continuity invitation, not a Rails-authored summary task. Wake as yourself, with your own identity and judgment. Read the relevant journal and aggregation files from your hosted filesystem, then decide what, if anything, should be integrated.
 
