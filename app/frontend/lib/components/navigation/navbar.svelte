@@ -14,6 +14,13 @@
   import * as logging from '$lib/logging';
   import { DEFAULT_SITE_NAME } from '$lib/branding';
   import { clearLocalDrafts } from '$lib/conversation-draft';
+  import { createDynamicSync } from '$lib/use-sync';
+
+  const updateAttentionSync = createDynamicSync();
+  $effect(() => {
+    const id = $page.props?.user?.id;
+    updateAttentionSync(id ? { [`ReplyAttention:${id}`]: 'reply_attention' } : {});
+  });
 
   function handleLogout(event) {
     event.preventDefault();
@@ -158,6 +165,7 @@
         <SiteAdminMenu />
       {/if}
       <UserAccountMenu
+        replyAttention={$page.props?.reply_attention || {}}
         allowAccountCreation={siteSettings?.allow_account_creation !== false}
         {currentUser}
         {currentAccount}

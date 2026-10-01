@@ -32,11 +32,13 @@
     accountWhiteboardsPath,
   } from '@/routes';
   import Avatar from '$lib/components/Avatar.svelte';
+  import ReplyAttentionBadge from './ReplyAttentionBadge.svelte';
 
   let {
     currentUser,
     currentAccount = null,
     accounts = [],
+    replyAttention = {},
     hasWhiteboards = false,
     allowAccountCreation = true,
     currentTheme = 'system',
@@ -57,6 +59,7 @@
     {:else}
       <span class="text-xs font-normal text-muted-foreground hidden md:inline"> Account </span>
     {/if}
+    <ReplyAttentionBadge count={replyAttention.total} />
   </DropdownMenu.Trigger>
   <DropdownMenu.Content class="w-56" align="end">
     <DropdownMenu.Group>
@@ -69,6 +72,7 @@
                 {currentAccount?.name}
               </div>
             </div>
+            <span class="ml-auto"><ReplyAttentionBadge count={replyAttention.total} /></span>
           </DropdownMenu.SubTrigger>
           <DropdownMenu.SubContent>
             {#each accounts as account}
@@ -77,6 +81,7 @@
                 class={account.id === currentAccount?.id ? 'bg-accent' : ''}>
                 <Check class="mr-2 size-4 {account.id === currentAccount?.id ? 'opacity-100' : 'opacity-0'}" />
                 <span class="truncate">{account.name}</span>
+                <span class="ml-auto pl-2"><ReplyAttentionBadge count={replyAttention.accounts?.[account.id]} /></span>
               </DropdownMenu.Item>
             {/each}
             <DropdownMenu.Separator />

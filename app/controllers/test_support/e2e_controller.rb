@@ -96,6 +96,11 @@ module TestSupport
           content_type: "image/png"
         )
       end
+      if params[:reply_attention_email]
+        user = chat.account.users.find_by!(email_address: params[:reply_attention_email])
+        chat.with_lock { ReplyExpectation.record!(message: message, user: user, score: 0.99) }
+        message.update_column(:reply_attention_pending, false)
+      end
 
       render json: { message_id: message.to_param }
     end

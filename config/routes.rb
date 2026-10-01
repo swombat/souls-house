@@ -92,6 +92,7 @@ Rails.application.routes.draw do
         post :transcription, to: "chats/transcriptions#create"
       end
       scope module: :chats do
+        resource :reply_dismissal, only: :create
         resource :draft, only: [ :show, :update ]
         resource :archive, only: [ :create, :destroy ]
         resource :discard, only: [ :create, :destroy ]

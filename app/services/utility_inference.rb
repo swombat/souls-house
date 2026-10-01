@@ -25,6 +25,40 @@ class UtilityInference
     )
   end
 
+  # Jev is a typed decision model, not a chat-completion model.
+  def self.decide(state:, questions:)
+    payload = { model: "typesafe/jev-1.13", state: state, questions: questions }.to_json
+    validate_input!(payload)
+    key = Account.system_ai_api_key(:openrouter)
+    raise MissingCredentials, "Utility inference credentials unavailable" if key.blank? || key.start_with?("<")
+
+    response = Faraday.post("https://openrouter.ai/api/alpha/decisions") do |request|
+      request.headers["Authorization"] = "Bearer #{key}"
+      request.headers["Content-Type"] = "application/json"
+      request.options.timeout = REQUEST_TIMEOUT
+      request.options.open_timeout = REQUEST_TIMEOUT
+      request.body = payload
+    end
+    raise InvalidResponse, "Decision provider returned HTTP #{response.status}" unless response.success?
+
+    result = JSON.parse(response.body)
+    raise InvalidResponse, "Invalid decision response" unless result.is_a?(Hash)
+    answers = result.fetch("answers")
+    unless answers.is_a?(Hash) && answers.keys.sort == questions.keys.sort
+      raise InvalidResponse, "Decision answer keys do not match questions"
+    end
+    answers.transform_values do |answer|
+      score = answer.is_a?(Hash) && answer["noul"]
+      unless answer.is_a?(Hash) && answer["type"] == "noul" && score.is_a?(Numeric) && score.finite? && score.between?(0, 1)
+        raise InvalidResponse, "Invalid decision probability"
+      end
+      score
+    end
+  rescue Faraday::Error, JSON::ParserError, KeyError => error
+    # Never include transport exception text: it can contain request bodies/keys.
+    raise InvalidResponse, "Decision request failed (#{error.class})"
+  end
+
   def self.moderate(content)
     validate_input!(content)
     response = client(key: Account.system_ai_api_key(:openai)).moderations(
