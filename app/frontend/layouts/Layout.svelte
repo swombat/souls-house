@@ -37,7 +37,7 @@
 <div
   use:chatViewport={!showFooter}
   class:chat-viewport={!showFooter}
-  class="flex flex-col bg-bg {showFooter ? 'min-h-dvh' : 'overflow-hidden'}">
+  class="flex flex-col bg-background {showFooter ? 'min-h-dvh' : 'overflow-hidden'}">
   <div class="shrink-0"><Navbar /></div>
   <main class={showFooter ? 'flex-1' : 'flex min-h-0 flex-1 flex-col'}>{@render children?.()}</main>
   {#if showFooter}
