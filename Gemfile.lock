@@ -393,7 +393,7 @@ GEM
       rexml (~> 3.2, >= 3.2.5)
       rubyzip (>= 1.2.2, < 4.0)
       websocket (~> 1.0)
-    solid_cable (3.0.11)
+    solid_cable (3.0.12)
       actioncable (>= 7.2)
       activejob (>= 7.2)
       activerecord (>= 7.2)
@@ -506,7 +506,7 @@ DEPENDENCIES
   ruby-openai
   ruby-vips (~> 2.3.0)
   selenium-webdriver
-  solid_cable
+  solid_cable (~> 3.0, >= 3.0.12)
   solid_cache
   solid_queue (~> 1.7.0)
   thruster
