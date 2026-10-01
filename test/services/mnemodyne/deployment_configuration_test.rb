@@ -20,7 +20,8 @@ class Mnemodyne::DeploymentConfigurationTest < ActiveSupport::TestCase
     "HOUSE_AGENT_IMAGE" => "helixkit-agent-runtime:latest",
     "HOUSE_STORAGE" => "s3",
     "HOUSE_SITE_NAME" => "souls.house",
-    "HOUSE_TRANSITION_ALIASES" => "helix-kit-web"
+    "HOUSE_TRANSITION_ALIASES" => "helix-kit-web",
+    "SOULSHOUSE_ASYNC_TURNS" => "0"
   }.freeze
 
   test "deployment validates with synthetic secrets and private inference wiring" do
@@ -58,7 +59,7 @@ class Mnemodyne::DeploymentConfigurationTest < ActiveSupport::TestCase
         error = assert_raises(RuntimeError) do
           ERB.new(File.read(Rails.root.join("config/deploy.yml"))).result_with_hash({})
         end
-        assert_includes error.message, "Set MNEMODYNE_EMBEDDING_IMAGE_DIGEST"
+        assert_includes error.message, "Set HOUSE_EMBEDDINGS_DIGEST"
         assert_includes error.message, "sha256:"
       end
     end
