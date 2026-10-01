@@ -1,0 +1,29 @@
+{
+  "changes": [
+    {
+      "id": "msg_future",
+      "conversation_id": "conv_demo",
+      "revision": 8,
+      "discarded": false,
+      "role": "future_role",
+      "author": {
+        "type": "FutureAuthor",
+        "id": "user_demo",
+        "name": "Example Human"
+      },
+      "content": "Unknown roles must not grant authority.",
+      "completed": true,
+      "attachments": [],
+      "client_message_id": "11111111-2222-4333-8444-555555555555",
+      "created_at": "2026-10-01T12:00:00.123456Z",
+      "updated_at": "2026-10-01T12:00:01.123456Z",
+      "future_field": {
+        "version": 2
+      }
+    }
+  ],
+  "next_since": 8,
+  "has_more": false,
+  "latest_revision": 8,
+  "future_envelope": true
+}

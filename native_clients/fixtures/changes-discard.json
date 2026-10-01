@@ -1,0 +1,31 @@
+{
+  "changes": [
+    {
+      "id": "msg_alpha",
+      "conversation_id": "conv_demo",
+      "revision": 7,
+      "discarded": true
+    },
+    {
+      "id": "msg_beta",
+      "conversation_id": "conv_demo",
+      "revision": 9,
+      "discarded": false,
+      "role": "assistant",
+      "author": {
+        "type": "agent",
+        "id": "resident_demo",
+        "name": "Example Resident"
+      },
+      "content": "A revised complete reply.",
+      "completed": true,
+      "attachments": [],
+      "client_message_id": null,
+      "created_at": "2026-10-01T12:00:00.123456Z",
+      "updated_at": "2026-10-01T12:00:02.123456Z"
+    }
+  ],
+  "next_since": 9,
+  "has_more": false,
+  "latest_revision": 9
+}

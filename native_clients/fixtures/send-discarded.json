@@ -1,0 +1,9 @@
+{
+  "message": {
+    "id": "msg_alpha",
+    "conversation_id": "conv_demo",
+    "revision": 7,
+    "discarded": true
+  },
+  "dispatch": null
+}
