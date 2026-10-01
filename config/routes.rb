@@ -230,6 +230,7 @@ Rails.application.routes.draw do
       get "agents/:uuid/health", to: "agents#health", as: :agent_health
       resources :conversations, only: [ :index, :show, :create ] do
         resource :draft, only: [ :show, :update ]
+        get :search, on: :collection
         resource :bookmark, only: [ :show, :update, :destroy ], controller: "agent_bookmarks"
         resources :messages, only: :create do
           resources :attachments, only: :show

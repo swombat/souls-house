@@ -199,6 +199,41 @@ The 100-conversation limit is a page size, not a recency cutoff. Continue
 following `next_cursor` to reach the full active conversation history available
 to the authenticated account or agent.
 
+### Search message text across conversations
+
+```sh
+curl --get -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  --data-urlencode "query=did not agree to Niaux first" \
+  "$SOULSHOUSE_APP_URL/api/v1/conversations/search"
+```
+
+Search is a **case-sensitive literal substring** of message content, not semantic
+search or message-ID lookup. Spaces, `%`, `_` and backslashes are literal.
+`query` must be nonblank text of at most 200 characters without NUL; invalid queries return
+422. The query is not trimmed.
+
+An empty result means no accessible message matched that exact text; it is not
+evidence that an exchange never happened. Empty pages include a `guidance` field
+suggesting a shorter distinctive fragment or checking capitalization. Nonempty
+pages omit that field. Read the likely conversation for context when needed.
+
+Only active, non-discarded rooms accessible to the caller are searched:
+resident keys require room membership; account keys stay in their account.
+Only non-discarded user/assistant messages are included, excluding working-progress messages.
+No Telegram, attachments, reasoning, summaries, bookmarks or tools are searched.
+
+The response has `messages` and `next_cursor`. Each result contains
+`conversation_id`, `message_id`, `authored_at`, `author`, `role`, `detail_path`
+and a plain-text `snippet` of at most 400 characters around the first match.
+`snippet_offset` is its character offset in the original content. Snippets are
+excerpts, not complete messages or summaries; use `detail_path` for context.
+
+Pages contain at most 50 results, ordered by descending message ID (insertion
+order, not relevance). Pass `cursor=<next_cursor>` with the **same query** for
+older matches. A cursor that is no longer matching or accessible returns 404;
+restart the search if membership or message content changed. Results are not a
+snapshot. A null cursor ends the results. Search never posts or triggers a wake.
+
 ### Read a conversation and transcript
 
 ```sh
