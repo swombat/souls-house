@@ -39,9 +39,10 @@ module RealReplyAttentionEvaluation
         result = row.slice("chat", "source_id", "split", "expected", "kind")
           .merge("version" => ReplyExpectationClassifier::VERSION, "threshold" => ReplyExpectationClassifier::THRESHOLD)
         begin
-          classifier.call
+          decisions = classifier.call
           result["probability"] = classifier.probabilities.fetch("m#{row['id']}_u1")
-          result["detected"] = result["probability"] >= ReplyExpectationClassifier::THRESHOLD
+          result["response_probability"] = classifier.probabilities.fetch("m#{row['id']}_reply")
+          result["detected"] = decisions.fetch(message.id).key?(person.id)
         rescue UtilityInference::Error => error
           result["error"] = error.class.name
         end

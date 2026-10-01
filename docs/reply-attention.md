@@ -6,9 +6,13 @@ This document describes the PR, not a deployment attestation.
 
 New conversational activity is classified by Jev's typed OpenRouter Decisions
 API (`typesafe/jev-1.13`), using the house's system OpenRouter key. One atomic
-question per message/eligible human, batched across a burst, identifies requests
-for a reply. People merely mentioned, quoted requests, negation and rhetorical
-questions are explicitly negative criteria. Residents are not recipients.
+response-needed question per message plus one recipient question per eligible
+human are batched across a burst. Both scores must reach 0.50; the lower score
+is stored (a decision score, not a calibrated joint probability). Context resolves
+implicit addressees; neither the last human nor a mention automatically owns the
+request. Quoted/rhetorical questions and status reports are excluded. Residents
+are not recipients. The v2 candidate remains in a draft PR: its real-message
+integration replay still misses one request, so this is not quality certification.
 Existing messages are not swept or backfilled. An explicit content edit is new
 activity; telemetry updates, streaming fragments, tools and marked progress
 messages do not enqueue classification.
@@ -50,8 +54,8 @@ query-plan check, not a production latency promise.
 
 `scripts/evaluate-reply-attention.rb` sends 30 invented messages, six batches,
 with synthetic Daniel/Ioan identities and no database transcripts. It is
-explicit opt-in, never run by the test suite. Threshold 0.85 remains a provisional
-conservative choice, not calibrated probability or general accuracy.
+explicit opt-in, never run by the test suite. The following are **historical v1**
+results at threshold 0.85, not current v2 validation.
 
 Observed: **0/16 false opens; 1/14 missed requests**. The negative-form direct
 question scored 0.79 and was missed. Keep that limitation rather than selecting
@@ -113,3 +117,10 @@ No transcript rewriting, resident runtime change or deployment is part of the PR
 The [2026-10-01 real-message evaluation](evaluations/reply-attention-2026-10-01.md)
 did not meet the quality target. It supersedes any interpretation of the synthetic
 smoke test as merge-ready classifier validation. PR #118 remains unmerged.
+
+## Split-question candidate and model comparison
+
+The [Nexus routing comparison](evaluations/reply-attention-routing-2026-10-01.md)
+compares revised Jev questions with a Jev + GPT-6 Luna (low effort) prototype,
+then separately replays the actual v2 application adapter. No Luna call is added
+to production. The candidate still awaits better validation and review.

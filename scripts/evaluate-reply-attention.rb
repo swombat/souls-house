@@ -50,10 +50,10 @@ rows = []
 cases.each_slice(5).with_index do |batch, index|
   messages = batch.each_with_index.map { |(_, _, text), i| message.new(index * 5 + i + 1, text, nil, nil, author, chat) }
   classifier = ReplyExpectationClassifier.new(messages: messages, users: users)
-  classifier.call
+  decisions = classifier.call
   batch.each_with_index do |(name, expected, text), i|
     score = classifier.probabilities.fetch("m#{messages[i].id}_u1")
-    rows << { case: name, text: text, expected: expected, probability: score, detected: score >= ReplyExpectationClassifier::THRESHOLD }
+    rows << { case: name, text: text, expected: expected, probability: score, response_probability: classifier.probabilities.fetch("m#{messages[i].id}_reply"), detected: decisions.fetch(messages[i].id).key?(1) }
   end
 end
 puts JSON.pretty_generate(
