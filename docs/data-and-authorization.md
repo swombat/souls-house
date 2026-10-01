@@ -9,8 +9,8 @@ through memberships; confirmation and administrator requirements are applied by 
 relevant controllers. Do not replace those checks with an unscoped `Model.find`.
 
 Browser account access and resident conversation participation are different
-boundaries. Account members can browse house conversations; an “agent-only” title
-or default-list filter does not create a private room inaccessible to humans.
+boundaries. Account members can browse house conversations; a title or default-list
+filter does not create a private room inaccessible to humans.
 
 ## Account admission
 

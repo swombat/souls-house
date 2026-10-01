@@ -382,7 +382,7 @@ test.describe('browser contracts', () => {
     await secondContext.close();
   });
 
-  test('new conversations remain agent-only without an account conversation-mode setting', async ({ page }) => {
+  test('new conversations remain resident-backed without an account conversation-mode setting', async ({ page }) => {
     await login(page, setup.primary_user, setup.password);
     await page.goto(`/accounts/${setup.account_id}/edit`);
     await expect(page.getByRole('heading', { name: 'Edit Account' })).toBeVisible();

@@ -92,7 +92,7 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes text, "explain your reason briefly on stdout"
     assert_includes text, "Conversation metadata"
     assert_includes text, "title: External prompt"
-    assert_includes text, "agent_only: false"
+    refute_includes text, "agent_only:"
     assert_includes text, "LIVE SOULS.HOUSE TRANSCRIPT FROM DATABASE"
     assert_includes text, "message_count_included: 1"
     assert_includes text, "BEGIN LIVE SOULS.HOUSE TRANSCRIPT FROM DATABASE"
@@ -112,21 +112,31 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     refute_includes text, "asking you to act"
   end
 
-  test "agent-only trigger softens expectation to post" do
+  test "quiet guidance depends on human recency rather than legacy title prefixes" do
     agent = agents(:research_assistant)
-    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "[AGENT-ONLY] Quiet room")
-    chat.agents << agent
-    chat.messages.create!(role: "assistant", agent: agent, content: "Room quiet.")
+    [ "Quiet room", "[AGENT-ONLY] Quiet room" ].each do |title|
+      chat = agent.account.chats.create!(model_id: "openrouter/auto", title: title)
+      chat.agents << agent
+      chat.messages.create!(role: "user", content: "An old request", created_at: 13.hours.ago)
+      chat.messages.create!(role: "assistant", agent: agent, content: "Room quiet.")
 
-    text = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:request_text)
+      text = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:request_text)
 
-    assert_includes text, "agent_only: true"
-    assert_includes text, "the trigger is an invitation to inspect the live state"
-    assert_includes text, "If the live transcript contains a direct human request for you"
-    assert_includes text, "a visible reply may be useful but silence is often correct"
-    assert_includes text, "Do not post merely to acknowledge wakefulness or continue room weather"
-    refute_includes text, "normally expecting a visible reply"
-    refute_includes text, "The default for this trigger is that you post a reply"
+      refute_includes text, "agent_only:"
+      assert_includes text, "the trigger is an invitation to inspect the live state"
+      assert_includes text, "If the live transcript contains a direct human request for you"
+      assert_includes text, "a visible reply may be useful but silence is often correct"
+      assert_includes text, "Do not post merely to acknowledge wakefulness or continue room weather"
+      refute_includes text, "normally expecting a visible reply"
+      refute_includes text, "The default for this trigger is that you post a reply"
+
+      chat.messages.create!(role: "user", content: "A current request")
+      text = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:request_text)
+      assert_includes text, "normally expecting a visible reply"
+      assert_includes text, "The default for this trigger is that you post a reply"
+      assert_includes text, "choosing not to is also a valid response"
+      refute_includes text, "agent_only:"
+    end
   end
 
   test "trigger transcript exposes authenticated attachment download paths" do

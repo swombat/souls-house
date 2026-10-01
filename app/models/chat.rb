@@ -5,7 +5,6 @@ class Chat < ApplicationRecord
   include ObfuscatesId
   include SyncAuthorizable
   include JsonAttributes
-  include Chat::AgentOnly
   include Chat::Archivable
   include Chat::Forkable
   include Chat::Initiable
@@ -26,7 +25,7 @@ class Chat < ApplicationRecord
 
   json_attributes :title_or_default, :model_id, :model_label, :ai_model_name, :updated_at_formatted,
                   :updated_at_short, :activity_at, :message_count, :context_tokens, :cost_tokens, :reasoning_tokens, :web_access, :manual_responses,
-                  :participants_json, :archived_at, :discarded_at, :archived, :discarded, :respondable, :agent_only, :summary do |hash, options|
+                  :participants_json, :archived_at, :discarded_at, :archived, :discarded, :respondable, :summary do |hash, options|
     # For sidebar format, only include attributes used by the chat list UI.
     if options&.dig(:as) == :sidebar_json
       hash.slice!(
@@ -41,8 +40,7 @@ class Chat < ApplicationRecord
         "manual_responses",
         "participants_json",
         "archived",
-        "discarded",
-        "agent_only"
+        "discarded"
       )
     end
     hash

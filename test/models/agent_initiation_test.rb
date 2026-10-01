@@ -156,62 +156,14 @@ class AgentInitiationTest < ActiveSupport::TestCase
     assert_equal 2, Agent::INITIATION_CAP
   end
 
-  test "AGENT_ONLY_INITIATION_CAP constant is defined" do
-    assert_equal 2, Agent::AGENT_ONLY_INITIATION_CAP
-  end
+  test "pending initiation query treats legacy prefixes as ordinary titles" do
+    chat = Chat.initiate_by_agent!(
+      @agent,
+      topic: "[AGENT-ONLY] Legacy title",
+      message: "Test message"
+    )
 
-  test "RECENTLY_INITIATED_WINDOW constant is defined" do
-    assert_equal 48.hours, Agent::RECENTLY_INITIATED_WINDOW
-  end
-
-  # Agent-only cap tests
-
-  test "at_agent_only_initiation_cap? returns false when no agent-only initiations" do
-    refute @agent.at_agent_only_initiation_cap?
-  end
-
-  test "at_agent_only_initiation_cap? returns true when at limit" do
-    Agent::AGENT_ONLY_INITIATION_CAP.times do |i|
-      Chat.initiate_by_agent!(
-        @agent,
-        topic: "#{Chat::AGENT_ONLY_PREFIX} Topic #{i}",
-        message: "Test message"
-      )
-    end
-
-    assert @agent.at_agent_only_initiation_cap?
-  end
-
-  test "at_agent_only_initiation_cap? ignores initiations older than 48 hours" do
-    travel_to 49.hours.ago do
-      Agent::AGENT_ONLY_INITIATION_CAP.times do |i|
-        Chat.initiate_by_agent!(
-          @agent,
-          topic: "#{Chat::AGENT_ONLY_PREFIX} Old Topic #{i}",
-          message: "Test message"
-        )
-      end
-    end
-
-    refute @agent.at_agent_only_initiation_cap?
-  end
-
-  test "agent-only chats do not count against human initiation cap" do
-    Agent::AGENT_ONLY_INITIATION_CAP.times do |i|
-      Chat.initiate_by_agent!(
-        @agent,
-        topic: "#{Chat::AGENT_ONLY_PREFIX} Topic #{i}",
-        message: "Test message"
-      )
-    end
-
-    refute @agent.at_initiation_cap?
-  end
-
-  test "human chats do not count against agent-only initiation cap" do
-    Agent::INITIATION_CAP.times { create_pending_initiation(@agent) }
-
-    refute @agent.at_agent_only_initiation_cap?
+    assert_includes @agent.pending_initiated_conversations, chat
   end
 
   # Closed-for-initiation tests

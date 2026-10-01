@@ -23,7 +23,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test "sidebar includes resident-only threads for members and site admins by default" do
+  test "sidebar includes legacy-prefixed threads for members and site admins by default" do
     resident_chat = @account.chats.create!(title: "[AGENT-ONLY] Old resident thread")
     archived_chat = @account.chats.create!(title: "[AGENT-ONLY] Archived", archived_at: Time.current)
     deleted_chat = @account.chats.create!(title: "[AGENT-ONLY] Deleted", discarded_at: Time.current)
