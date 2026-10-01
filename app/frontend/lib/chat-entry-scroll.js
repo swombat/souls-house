@@ -24,13 +24,18 @@ export function pinConversationEntry(container, duration = 2000) {
   }
 
   function readerScrolled() {
-    // Our own instant jump also emits scroll. A different position releases
-    // the pin (including keyboard/scrollbar/assistive navigation).
-    if (container.scrollTop !== lastTop) release();
+    // Our jump, the timeline follower and browser anchoring can all scroll.
+    // Keep following if still at the bottom; only movement away releases.
+    if (container.scrollTop === lastTop) return;
+    if (container.scrollHeight - container.clientHeight - container.scrollTop <= 2) {
+      lastTop = container.scrollTop;
+    } else {
+      release();
+    }
   }
 
   snap();
-  if (content) observer.observe(content);
+  if (content) observer.observe(content, { box: 'border-box' });
   observer.observe(container);
   inputs.forEach((event) => container.addEventListener(event, release, { passive: true }));
   container.addEventListener('scroll', readerScrolled);

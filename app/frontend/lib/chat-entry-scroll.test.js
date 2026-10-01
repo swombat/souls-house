@@ -31,7 +31,7 @@ afterEach(() => {
 test('snaps instantly, follows late content/viewport layout, and ignores its own scroll event', () => {
   const release = pinConversationEntry(container);
   expect(container.scrollTo).toHaveBeenLastCalledWith({ top: 2000, behavior: 'instant' });
-  expect(observer.observe).toHaveBeenCalledWith(container.firstElementChild);
+  expect(observer.observe).toHaveBeenCalledWith(container.firstElementChild, { box: 'border-box' });
   expect(observer.observe).toHaveBeenCalledWith(container);
   container.dispatchEvent(new Event('scroll'));
   height = 3000;
@@ -57,4 +57,15 @@ test('the pin expires and explicit cleanup prevents queued observer callbacks', 
   expect(container.scrollTo).toHaveBeenCalledTimes(1);
   release();
   expect(vi.getTimerCount()).toBe(0);
+});
+
+test('another bottom-following scroll does not release later layout following', () => {
+  const release = pinConversationEntry(container);
+  height = 2500;
+  container.scrollTop = 2000;
+  container.dispatchEvent(new Event('scroll'));
+  height = 3000;
+  resized();
+  expect(container.scrollTop).toBe(2500);
+  release();
 });

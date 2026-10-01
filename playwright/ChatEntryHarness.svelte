@@ -1,7 +1,15 @@
 <script>
   import { createChatHistory } from '../app/frontend/lib/chat-history.svelte';
-  let { id = 'first', count = 100 } = $props();
-  let messages = $derived(Array.from({ length: count }, (_, i) => ({ id: `${id}-${i}`, content: `Message ${i}` })));
+  import ChatMessageList from '../app/frontend/lib/components/chat/ChatMessageList.svelte';
+  let { id = 'first', count = 30 } = $props();
+  let messages = $derived(
+    Array.from({ length: count }, (_, i) => ({
+      id: `${id}-${i}`,
+      content: `Message ${i}`,
+      role: 'user',
+      created_at: '2026-10-01T07:00:00Z',
+    }))
+  );
   const history = createChatHistory(() => ({
     chat: { id },
     account: { id: 'account' },
@@ -12,14 +20,15 @@
   }));
 </script>
 
-<div
-  data-testid="history"
-  bind:this={history.container}
-  onscroll={history.handleScroll}
-  style="height: 400px; overflow: auto; scroll-behavior: smooth;">
-  <div data-testid="content">
-    {#each history.messages as message (message.id)}
-      <p style="height: 50px; margin: 0;">{message.content}</p>
-    {/each}
-  </div>
+<div style="height: 400px; display: flex; flex-direction: column;">
+  <ChatMessageList
+    bind:messagesContainer={history.container}
+    allMessages={history.messages}
+    visibleMessages={history.messages}
+    chat={{ id }}
+    hasMore={history.hasMore}
+    oldestId={history.oldestId}
+    loadingMore={history.loading}
+    handleScroll={history.handleScroll}
+    loadMoreMessages={history.loadMore} />
 </div>
