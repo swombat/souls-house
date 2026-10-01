@@ -59,7 +59,7 @@
 <div class="flex justify-start" data-testid="runtime-activity-card" data-run-id={interaction.run_id || interaction.id}>
   <details
     bind:open={expanded}
-    class="w-full max-w-[90%] md:max-w-[75%] rounded-lg border border-dashed border-muted-foreground/30 {backgroundClass}">
+    class="w-fit min-w-0 [overflow-wrap:anywhere] max-w-[90%] md:max-w-[75%] rounded-lg border border-dashed border-muted-foreground/30 {backgroundClass}">
     <summary class="cursor-pointer px-4 py-3 text-sm select-none">
       <span class="font-medium">{interaction.agent_name}</span>
       <span class="text-muted-foreground"> {interaction.status_label}</span>
