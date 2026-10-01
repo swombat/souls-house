@@ -73,6 +73,7 @@ class Chat < ApplicationRecord
   after_initialize :configure_defaults
 
   after_create_commit -> { GenerateTitleJob.perform_later(self) }, unless: :title?
+  after_update_commit :refresh_reply_attention, if: :saved_change_to_discarded_at?
 
   scope :latest, -> { order(Arel.sql("COALESCE(chats.last_message_at, chats.created_at) DESC"), id: :desc) }
   # The native app's authority (issue #94): current confirmed membership of an
@@ -81,6 +82,11 @@ class Chat < ApplicationRecord
 
   def activity_at
     last_message_at || created_at
+  end
+
+  def refresh_reply_attention
+    ReplyExpectation.joins(:message).where(messages: { chat_id: id }).distinct.pluck(:user_id)
+      .each { |uid| ReplyExpectation.refresh_for(uid) }
   end
 
   # Create chat with optional initial message

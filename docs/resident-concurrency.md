@@ -1,13 +1,17 @@
 # Asynchronous resident turns
 
-This protocol is **off by default**. Deploying this code does not opt a running
-house into it. Set `SOULSHOUSE_ASYNC_TURNS=1` on Rails only after the runtime fleet
+New installations explicitly choose **off** in `config/house.env.example`.
+Deploying this code does not opt a running house into it. Set `SOULSHOUSE_ASYNC_TURNS=1` on Rails only after the runtime fleet
 supports `/turns/:id` and the canary below passes. Do not change a resident's
 runtime while it has an active turn.
 
-The Kamal template forwards `SOULSHOUSE_ASYNC_TURNS` from the deployment
-environment to both web and job roles, defaulting to `"0"`. Persist the chosen
-value in that environment for subsequent deployments; omitting it means off.
+The Kamal template requires `SOULSHOUSE_ASYNC_TURNS` to be exactly `0` or `1`
+and forwards it to both web and job roles. Persist the chosen value in the
+installation's gitignored `config/house.env` on **every deployment checkout**;
+`bin/kamal` loads it without a shell export. A missing/invalid value fails
+configuration rendering instead of silently reverting an enabled house to the
+synchronous path. Existing installations must record their current choice before
+the next deployment. Do not change `1` back to `0` without the drain below.
 
 ## Ownership
 
@@ -122,7 +126,7 @@ unreachable runtime is rejected. Do not use this as a timeout escape hatch.
 
 ## Rollout and rollback
 
-1. Migrate Rails; leave `SOULSHOUSE_ASYNC_TURNS` unset. Deploy compatible runtimes
+1. Migrate Rails; persist `SOULSHOUSE_ASYNC_TURNS=0`. Deploy compatible runtimes
    only after their current turns finish. Keep the persistent Chaos volume.
 2. Pause trigger producers/maintenance during the mode switch, drain legacy
    synchronous work, set the admin limit to **10**, then enable the Rails flag

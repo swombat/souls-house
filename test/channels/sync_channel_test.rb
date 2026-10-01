@@ -70,4 +70,17 @@ class SyncChannelTest < ActionCable::Channel::TestCase
     assert subscription.rejected?
   end
 
+  test "reply attention stream is private to its human even for administrators" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "ReplyAttention", id: @user.to_param
+    assert subscription.confirmed?
+    assert_has_stream "ReplyAttention:#{@user.to_param}"
+  end
+
+  test "administrators cannot subscribe to another humans reply attention" do
+    stub_connection current_user: @admin, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "ReplyAttention", id: @user.to_param
+    assert subscription.rejected?
+  end
+
 end

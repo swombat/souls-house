@@ -1,0 +1,20 @@
+#!/bin/sh
+# Build tools only receive named non-secret settings, never the caller's environment.
+set -eu
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+: "${SWIFT_BIN:?Set SWIFT_BIN to the installed Swift executable}"
+: "${GRADLE_BIN:?Set GRADLE_BIN to the installed Gradle executable}"
+: "${JAVA_HOME:?Set JAVA_HOME to the installed JDK}"
+clean_path="$JAVA_HOME/bin:$(dirname "$SWIFT_BIN"):$(dirname "$GRADLE_BIN"):/usr/local/bin:/usr/bin:/bin"
+(
+  cd "$root/ios"
+  env -i HOME="$HOME" PATH="$clean_path" LANG=C.UTF-8 \
+    LD_LIBRARY_PATH="${SWIFT_LIBRARY_PATH:-}" \
+    "$SWIFT_BIN" test --build-system native --jobs 2
+)
+(
+  cd "$root/android"
+  env -i HOME="$HOME" PATH="$clean_path" LANG=C.UTF-8 \
+    JAVA_HOME="$JAVA_HOME" GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}" \
+    "$GRADLE_BIN" --no-daemon --max-workers=2 test
+)

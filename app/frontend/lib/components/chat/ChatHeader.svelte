@@ -126,6 +126,16 @@
     }
   }
 
+  function dismissReplyRequest() {
+    const through = allMessages?.at(-1)?.id;
+    if (!chat || !through) return;
+    router.post(
+      `/accounts/${account.id}/chats/${chat.id}/reply_dismissal`,
+      { through_message_id: through },
+      { preserveScroll: true, preserveState: true }
+    );
+  }
+
   function deleteChat() {
     if (!chat) return;
     if (!chat.discarded && !confirm('Are you sure you want to delete this conversation?')) return;
@@ -170,6 +180,8 @@
     </div>
 
     <ChatActionsMenu
+      replyRequested={($page.props?.reply_attention?.chats?.[chat?.id] || 0) > 0}
+      onDismissReply={dismissReplyRequest}
       {chat}
       {availableAgents}
       {addableAgents}

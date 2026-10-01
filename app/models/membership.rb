@@ -76,6 +76,7 @@ class Membership < ApplicationRecord
   after_create_commit :send_confirmation_email, unless: -> { skip_confirmation || invitation? }
   after_update_commit :track_invitation_acceptance, if: :became_confirmed?
   after_commit :disconnect_app_cable, if: :lost_app_authority?
+  after_commit -> { ReplyExpectation.refresh_for(user_id) }
 
   # Scopes
   scope :owners, -> { where(role: "owner") }

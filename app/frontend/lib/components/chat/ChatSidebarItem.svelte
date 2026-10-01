@@ -4,6 +4,7 @@
   import { shortDate } from '$lib/chat-display';
   import ChatParticipantAvatars from '$lib/components/chat/ChatParticipantAvatars.svelte';
   import { Archive, ChatText, Spinner, Trash } from 'phosphor-svelte';
+  import ReplyAttentionEye from './ReplyAttentionEye.svelte';
 
   let { chat, accountId, activeChatId = null } = $props();
 </script>
@@ -25,6 +26,7 @@
       <Trash size={12} class="text-red-500 flex-shrink-0" />
     {/if}
     <span class="truncate">{chat.title_or_default || chat.title || 'New Chat'}</span>
+    <ReplyAttentionEye chatId={chat.id} />
     {#if !chat.title && chat.message_count > 0}
       <Spinner size={12} class="animate-spin text-muted-foreground flex-shrink-0" />
     {/if}

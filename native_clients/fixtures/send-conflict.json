@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "idempotency_conflict",
+    "message": "client_message_id was already used for a different message",
+    "details": {
+      "message_id": "msg_alpha"
+    },
+    "request_id": "synthetic-request"
+  }
+}

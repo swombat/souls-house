@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_30_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_01_122000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -746,9 +746,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_180000) do
     t.integer "transcript_prompt_bytes"
     t.datetime "updated_at", null: false
     t.bigint "user_id"
+    t.boolean "reply_attention_pending", default: false, null: false
     t.index ["agent_id"], name: "index_messages_on_agent_id"
     t.index ["ai_model_id"], name: "index_messages_on_ai_model_id"
     t.index ["chat_id", "created_at"], name: "index_messages_on_chat_id_and_created_at"
+    t.index ["chat_id", "id"], name: "index_messages_pending_reply_attention", where: "reply_attention_pending"
     t.index ["chat_id", "revision"], name: "index_messages_on_chat_id_and_revision"
     t.index ["chat_id", "user_id", "client_message_id"], name: "index_messages_on_client_message_identity", unique: true, where: "(client_message_id IS NOT NULL)"
     t.index ["chat_id"], name: "index_messages_on_chat_id"
@@ -969,6 +971,34 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_180000) do
     t.index ["account_id"], name: "index_prompt_outputs_on_account_id"
     t.index ["created_at"], name: "index_prompt_outputs_on_created_at"
     t.index ["prompt_key"], name: "index_prompt_outputs_on_prompt_key"
+  end
+
+  create_table "reply_dismissals", force: :cascade do |t|
+    t.bigint "chat_id", null: false
+    t.bigint "user_id", null: false
+    t.bigint "through_message_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["chat_id", "user_id"], name: "index_reply_dismissals_on_chat_id_and_user_id", unique: true
+    t.index ["chat_id"], name: "index_reply_dismissals_on_chat_id"
+    t.index ["user_id"], name: "index_reply_dismissals_on_user_id"
+  end
+
+  create_table "reply_expectations", force: :cascade do |t|
+    t.bigint "message_id", null: false
+    t.bigint "user_id", null: false
+    t.bigint "answered_by_message_id"
+    t.integer "state", default: 0, null: false
+    t.float "score", null: false
+    t.string "classifier_version", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["answered_by_message_id"], name: "index_reply_expectations_on_answered_by_message_id"
+    t.index ["message_id", "user_id"], name: "index_reply_expectations_on_message_id_and_user_id", unique: true
+    t.index ["message_id"], name: "index_reply_expectations_on_message_id"
+    t.index ["user_id"], name: "index_open_reply_expectations_on_user", where: "(state = 0)"
+    t.index ["user_id"], name: "index_reply_expectations_on_user_id"
+    t.check_constraint "state = ANY (ARRAY[0, 1, 2])", name: "reply_expectation_state"
   end
 
   create_table "resident_turns", force: :cascade do |t|
@@ -1291,6 +1321,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_180000) do
   add_foreign_key "oura_integrations", "users"
   add_foreign_key "profiles", "users"
   add_foreign_key "prompt_outputs", "accounts"
+  add_foreign_key "reply_dismissals", "chats", on_delete: :cascade
+  add_foreign_key "reply_dismissals", "users", on_delete: :cascade
+  add_foreign_key "reply_expectations", "messages", column: "answered_by_message_id", on_delete: :nullify
+  add_foreign_key "reply_expectations", "messages", on_delete: :cascade
+  add_foreign_key "reply_expectations", "users", on_delete: :cascade
   add_foreign_key "resident_turns", "agent_runtime_interactions"
   add_foreign_key "resident_turns", "agents"
   add_foreign_key "safeguard_classifier_failures", "agents"

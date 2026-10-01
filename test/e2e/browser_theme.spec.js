@@ -18,7 +18,10 @@ test('browser colour follows system changes on the login page', async ({ page })
   await expectTheme(page, 'dark');
 });
 
-test('browser colour follows saved theme, live selection, reload and navigation', async ({ page, request }) => {
+test('browser colour follows saved theme, live selection, reload and navigation', async ({
+  page,
+  request,
+}, testInfo) => {
   let setup;
   try {
     const response = await request.post('/test/e2e/setup', {
@@ -61,10 +64,20 @@ test('browser colour follows saved theme, live selection, reload and navigation'
     await page.getByRole('menuitem', { name: 'Change Password', exact: true }).click();
     await expect(page).toHaveURL(/password/);
     await expectTheme(page, 'dark');
+    // Chat uses a fixed viewport shell, so its transparent navbar cannot rely
+    // on the body painting behind it. Exercise dark app + light OS as well.
+    await page.goto(`/accounts/${setup.account_id}/chats`);
+    await expectTheme(page, 'dark');
+    const shell = page.locator('.chat-viewport');
+    const darkBackground = await page.locator('body').evaluate((body) => getComputedStyle(body).backgroundColor);
+    await expect(shell).toHaveCSS('background-color', darkBackground);
+    await page.screenshot({ path: testInfo.outputPath('dark-chat-navbar.png') });
     await selectTheme('System');
     await expectTheme(page, 'light');
+    await expect(shell).toHaveCSS('background-color', 'oklch(1 0 0)');
     await page.emulateMedia({ colorScheme: 'dark' });
     await expectTheme(page, 'dark');
+    await expect(shell).toHaveCSS('background-color', darkBackground);
   } finally {
     if (setup) await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
   }

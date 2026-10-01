@@ -1,0 +1,24 @@
+{
+  "messages": [
+    {
+      "id": "msg_alpha",
+      "conversation_id": "conv_demo",
+      "revision": 2,
+      "discarded": false,
+      "role": "user",
+      "author": {
+        "type": "human",
+        "id": "user_demo",
+        "name": "Example Human"
+      },
+      "content": "Hello, native clients.",
+      "completed": true,
+      "attachments": [],
+      "client_message_id": "11111111-2222-4333-8444-555555555555",
+      "created_at": "2026-10-01T12:00:00.123456Z",
+      "updated_at": "2026-10-01T12:00:01.123456Z"
+    }
+  ],
+  "has_more": false,
+  "oldest_id": "msg_alpha"
+}
