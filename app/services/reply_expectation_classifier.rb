@@ -33,7 +33,7 @@ class ReplyExpectationClassifier
     context = first.chat.messages.kept.where(role: %w[user assistant]).where("id < ?", first.id)
       .reorder(id: :desc).limit(4).reverse.map { |m| describe(m, limit: 1_200) }
     state = {
-      people: @users.map { |u| { id: u.id, name: u.full_name, email: u.email_address } },
+      people: @users.map { |u| { id: u.id, name: u.full_name } },
       context: context,
       messages: @messages.map { |m| describe(m, limit: nil) }
     }

@@ -34,8 +34,8 @@ cases = [
   [ "not_ioan", true, "Not Ioan this time — Daniel, could you decide?" ]
 ]
 
-person = Struct.new(:id, :full_name, :email_address)
-users = [ person.new(1, "Daniel", "daniel@example.invalid"), person.new(2, "Ioan", "ioan@example.invalid") ]
+person = Struct.new(:id, :full_name)
+users = [ person.new(1, "Daniel"), person.new(2, "Ioan") ]
 empty_context = Class.new do
   def kept = self
   def where(*) = self
