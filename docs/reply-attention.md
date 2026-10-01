@@ -4,15 +4,22 @@ Proposal/review: [#116](https://github.com/swombat/souls-house/issues/116).
 Lume approved implementation in conversation nJdpqJ, message eNKLVY.
 This document describes the PR, not a deployment attestation.
 
-New conversational activity is classified by Jev's typed OpenRouter Decisions
-API (`typesafe/jev-1.13`), using the house's system OpenRouter key. One atomic
-response-needed question per message plus one recipient question per eligible
-human are batched across a burst. Both scores must reach 0.50; the lower score
-is stored (a decision score, not a calibrated joint probability). Context resolves
-implicit addressees; neither the last human nor a mention automatically owns the
-request. Quoted/rhetorical questions and status reports are excluded. Residents
-are not recipients. The v2 candidate remains in a draft PR: its real-message
-integration replay still misses one request, so this is not quality certification.
+New conversational activity uses the house's system OpenRouter key. Jev's typed
+Decisions API (`typesafe/jev-1.13`) answers one response-needed question per
+message, batched across a burst. Scores at least 0.50 reach a second, batched
+structured call to `openai/gpt-6-luna` with reasoning effort `low` to resolve
+recipient IDs. Luna sees eligible humans and room residents; Rails then filters
+to eligible non-author humans. Triggering-human metadata, where available, is
+context, never an assignment. No account-member email metadata is sent to either
+provider; addresses written in conversation content are not redacted.
+
+Uncertain routing means no verdict: preserve existing rows and clear pending
+until another content edit, without an inference loop. Certain negatives remove
+only open inferred rows, never answered or dismissed ones. Invalid provider
+responses are errors, not negatives. The Jev gate score is stored alongside both
+model IDs and Luna's requested effort; it is not a recipient confidence score.
+The v3 candidate remains in a draft PR awaiting review of the integrated adapter
+and its small fresh real-message check, not a claim of 99% reliability.
 Existing messages are not swept or backfilled. An explicit content edit is new
 activity; telemetry updates, streaming fragments, tools and marked progress
 messages do not enqueue classification.
@@ -55,7 +62,7 @@ query-plan check, not a production latency promise.
 `scripts/evaluate-reply-attention.rb` sends 30 invented messages, six batches,
 with synthetic Daniel/Ioan identities and no database transcripts. It is
 explicit opt-in, never run by the test suite. The following are **historical v1**
-results at threshold 0.85, not current v2 validation.
+results at threshold 0.85, not current v3 validation.
 
 Observed: **0/16 false opens; 1/14 missed requests**. The negative-form direct
 question scored 0.79 and was missed. Keep that limitation rather than selecting
@@ -101,7 +108,7 @@ they do not establish classifier quality.
 ## Operational limits
 
 The shared inference boundary caps payloads at 32,000 characters, with 20-second
-timeouts. The classifier bounds context and eligible humans (30), and jobs take
+timeouts. The classifier bounds context and eligible humans (30) and the combined human/resident roster (60), and jobs take
 at most eight pending messages. Over-budget batches split before transmission.
 A single oversized input is logged and skipped until a content edit, preserving
 existing expectations rather than treating failure as a negative result. It does
@@ -122,5 +129,10 @@ smoke test as merge-ready classifier validation. PR #118 remains unmerged.
 
 The [Nexus routing comparison](evaluations/reply-attention-routing-2026-10-01.md)
 compares revised Jev questions with a Jev + GPT-6 Luna (low effort) prototype,
-then separately replays the actual v2 application adapter. No Luna call is added
-to production. The candidate still awaits better validation and review.
+then separately replays the actual v2 application adapter. The
+[integrated v3 fresh check](evaluations/reply-attention-v3-2026-10-01.md) tests the
+now-wired Jev → Luna adapter. It caught 2/2 human asks with 0/17 false alerts;
+that is too small to establish the requested 99% reliability. The later batched
+synthetic regression still has one group-question false alert and one
+negative-question miss. Review and a
+quality-gate decision remain outstanding; no deployment is implied.

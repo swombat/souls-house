@@ -59,6 +59,22 @@ class UtilityInference
     raise InvalidResponse, "Decision request failed (#{error.class})"
   end
 
+  def self.structured(model:, effort:, system:, state:, schema:)
+    parameters = {
+      model: model, reasoning: { effort: effort }, max_tokens: 2_000,
+      messages: [ { role: "system", content: system }, { role: "user", content: state.to_json } ],
+      response_format: { type: "json_schema", json_schema: { name: "reply_recipients", strict: true, schema: schema } }
+    }
+    validate_input!(parameters.to_json)
+    response = client(key: Account.system_ai_api_key(:openrouter), openrouter: true).chat(parameters: parameters)
+    content = response.is_a?(Hash) && response.dig("choices", 0, "message", "content")
+    raise InvalidResponse, "Empty structured response" unless content.is_a?(String) && content.present?
+
+    JSON.parse(content)
+  rescue Faraday::Error, JSON::ParserError, TypeError => error
+    raise InvalidResponse, "Structured request failed (#{error.class})"
+  end
+
   def self.moderate(content)
     validate_input!(content)
     response = client(key: Account.system_ai_api_key(:openai)).moderations(

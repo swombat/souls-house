@@ -14,7 +14,7 @@ class ClassifyReplyExpectationsJob < ApplicationJob
     users = chat.account.users.joins(:memberships).where(memberships: { account_id: chat.account_id })
       .merge(Membership.confirmed).distinct.includes(:profile).to_a
     results = classify(eligible, users)
-    oversized_ids = eligible.map(&:id) - results.keys
+    skipped_ids = eligible.map(&:id) - results.keys
 
     chat.with_lock do
       return if chat.discarded? || chat.account.reload.disabled?
@@ -22,9 +22,10 @@ class ClassifyReplyExpectationsJob < ApplicationJob
         message.reload
         next unless fingerprints[message.id] == [ message.content, message.streaming, message.progress_message, message.discarded_at ]
         next unless message.reply_attention_pending?
-        if oversized_ids.include?(message.id)
-          # This is an explicit skipped input, not a negative verdict. Preserve
-          # any existing expectation; a later content edit can try again.
+        if skipped_ids.include?(message.id)
+          # Oversized input or an uncertain recipient is not a negative verdict.
+          # Preserve existing expectations, clear pending, and do not requeue.
+          # A later content edit can try again.
           message.update_columns(reply_attention_pending: false)
           next
         end
@@ -37,7 +38,7 @@ class ClassifyReplyExpectationsJob < ApplicationJob
         message.update_columns(reply_attention_pending: false)
       end
     end
-    if chat.messages.kept.where(reply_attention_pending: true).where.not(id: oversized_ids).exists?
+    if chat.messages.kept.where(reply_attention_pending: true).where.not(id: skipped_ids).exists?
       self.class.set(wait: 3.seconds).perform_later(chat_id)
     end
   end

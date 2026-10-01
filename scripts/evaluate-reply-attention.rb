@@ -43,17 +43,16 @@ empty_context = Class.new do
   def limit(*) = self
   def reverse = []
 end.new
-chat = Struct.new(:messages).new(empty_context)
-author = Struct.new(:name).new("Fable")
-message = Struct.new(:id, :content, :user_id, :user, :agent, :chat)
+author = Struct.new(:name, :id).new("Fable", 1)
+chat = Struct.new(:messages, :agents).new(empty_context, [ author ])
+message = Struct.new(:id, :content, :user_id, :user, :agent, :chat, :chat_id, :runtime_interaction)
 rows = []
 cases.each_slice(5).with_index do |batch, index|
   messages = batch.each_with_index.map { |(_, _, text), i| message.new(index * 5 + i + 1, text, nil, nil, author, chat) }
   classifier = ReplyExpectationClassifier.new(messages: messages, users: users)
   decisions = classifier.call
   batch.each_with_index do |(name, expected, text), i|
-    score = classifier.probabilities.fetch("m#{messages[i].id}_u1")
-    rows << { case: name, text: text, expected: expected, probability: score, response_probability: classifier.probabilities.fetch("m#{messages[i].id}_reply"), detected: decisions.fetch(messages[i].id).key?(1) }
+    rows << { case: name, text: text, expected: expected, response_probability: classifier.probabilities.fetch("m#{messages[i].id}_reply"), uncertain: !decisions.key?(messages[i].id), detected: decisions.fetch(messages[i].id, {}).key?(1) }
   end
 end
 puts JSON.pretty_generate(
