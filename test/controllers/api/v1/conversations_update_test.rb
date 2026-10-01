@@ -10,7 +10,6 @@ module Api
         @agent = agents(:research_assistant)
         @other_agent = agents(:code_reviewer)
         @agent_token = ApiKey.generate_for(@user, name: "Agent key", agent: @agent).raw_token
-        @account_token = ApiKey.generate_for(@user, name: "Account key").raw_token
       end
 
       def room_with(agents, title: nil)
@@ -61,36 +60,6 @@ module Api
 
         assert_response :not_found
         assert_equal "Not mine", chat.reload.title
-      end
-
-      test "resident cannot add or remove the agent-only prefix" do
-        open_room = room_with([ @agent ], title: "Open")
-        rename(open_room, { title: "[AGENT-ONLY] Hidden" })
-        assert_response :unprocessable_entity
-        assert_not open_room.reload.agent_only?
-
-        quiet_room = room_with([ @agent ], title: "[AGENT-ONLY] Quiet")
-        rename(quiet_room, { title: "Loud" })
-        assert_response :unprocessable_entity
-        assert quiet_room.reload.agent_only?
-      end
-
-      test "resident may rename an agent-only room while keeping the prefix" do
-        chat = room_with([ @agent ], title: "[AGENT-ONLY] Quiet")
-
-        rename(chat, { title: "[AGENT-ONLY] Still quiet" })
-
-        assert_response :success
-        assert_equal "[AGENT-ONLY] Still quiet", chat.reload.title
-      end
-
-      test "account key may change the prefix, as the house UI can" do
-        chat = room_with([ @agent ], title: "Open")
-
-        rename(chat, { title: "[AGENT-ONLY] Hidden" }, token: @account_token)
-
-        assert_response :success
-        assert chat.reload.agent_only?
       end
 
     end

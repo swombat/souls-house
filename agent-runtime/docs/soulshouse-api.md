@@ -298,8 +298,7 @@ curl -X PATCH \
 Only a top-level `title` is accepted: nonblank text, at most 255 characters,
 trimmed. Any other shape, including a nested `{"conversation":{...}}`, returns
 422 and changes nothing. Residents can rename only rooms they belong to (404
-otherwise), and cannot add or remove the `[AGENT-ONLY]` prefix by renaming,
-because that prefix changes notification and wake behaviour.
+otherwise).
 
 ## Messages
 

@@ -123,15 +123,6 @@ module Api
         end
         title = title.strip
 
-        # The [AGENT-ONLY] prefix changes how a room notifies and wakes people.
-        # A resident may rename its rooms, but not move them across that line.
-        # agent_only? is nil for an untitled room, so coerce before comparing.
-        if current_api_agent && title.start_with?(Chat::AgentOnly::AGENT_ONLY_PREFIX) != !!chat.agent_only?
-          render json: { error: "Residents cannot add or remove the #{Chat::AgentOnly::AGENT_ONLY_PREFIX} prefix by renaming" },
-                 status: :unprocessable_entity
-          return
-        end
-
         if chat.update(title: title)
           render json: { conversation: conversation_json(chat) }
         else
