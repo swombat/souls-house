@@ -107,3 +107,9 @@ expected.” No scheduled historical recovery sweep is installed.
 
 Rollback feature code to stop classification/UI, retaining additive records.
 No transcript rewriting, resident runtime change or deployment is part of the PR.
+
+## Real-message evaluation gate
+
+The [2026-10-01 real-message evaluation](evaluations/reply-attention-2026-10-01.md)
+did not meet the quality target. It supersedes any interpretation of the synthetic
+smoke test as merge-ready classifier validation. PR #118 remains unmerged.

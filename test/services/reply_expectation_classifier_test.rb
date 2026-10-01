@@ -23,4 +23,13 @@ class ReplyExpectationClassifierTest < ActiveSupport::TestCase
     end
   end
 
+  test "accepts the configured threshold boundary" do
+    user = users(:user_1)
+    chat = accounts(:personal_account).chats.create!(title: "Threshold")
+    message = chat.messages.create!(role: "assistant", content: "Could you confirm?")
+    UtilityInference.stub :decide, ->(state:, questions:) { questions.transform_values { 0.85 } } do
+      assert_equal({ message.id => { user.id => 0.85 } }, ReplyExpectationClassifier.new(messages: [ message ], users: [ user ]).call)
+    end
+  end
+
 end
