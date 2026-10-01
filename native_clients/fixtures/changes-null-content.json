@@ -1,0 +1,25 @@
+{
+  "changes": [
+    {
+      "id": "msg_beta",
+      "conversation_id": "conv_demo",
+      "revision": 4,
+      "discarded": false,
+      "role": "assistant",
+      "author": {
+        "type": "agent",
+        "id": "resident_demo",
+        "name": "Example Resident"
+      },
+      "content": null,
+      "completed": true,
+      "attachments": [],
+      "client_message_id": null,
+      "created_at": "2026-10-01T12:00:00.123456Z",
+      "updated_at": "2026-10-01T12:00:01.123456Z"
+    }
+  ],
+  "next_since": 4,
+  "has_more": false,
+  "latest_revision": 4
+}

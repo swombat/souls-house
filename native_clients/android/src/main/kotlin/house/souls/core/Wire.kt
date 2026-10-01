@@ -69,7 +69,7 @@ object Wire {
         val author = root.getValue("author").jsonObject
         return Message(
             id, conversationId, revision, false, role,
-            root.string("content"), root.boolean("completed"),
+            root.getValue("content").let { if (it is JsonNull) null else root.string("content") }, root.boolean("completed"),
             root["client_message_id"]?.takeUnless { it is JsonNull }?.let {
                 require(it is JsonPrimitive && it.isString)
                 it.content

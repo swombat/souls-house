@@ -22,3 +22,6 @@ Applying `history-stale` after the discard must not resurrect `msg_alpha`.
 `changes-unknown` exercises additive fields and unknown enum-like values.
 `send-discarded` is an accepted retry, not a reason to restore its old content.
 Missing history rows are never removal markers. IDs are opaque strings.
+
+`changes-null-content` represents a permitted nullable message body (schema and
+model allow it for assistant/tool rows); synchronization must advance past it.

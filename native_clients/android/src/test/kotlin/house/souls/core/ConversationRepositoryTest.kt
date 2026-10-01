@@ -304,4 +304,16 @@ class ConversationRepositoryTest {
         assertFailsWith<IllegalArgumentException> { repo.applyHistory(listOf(message(0))) }
         assertTrue(repo.state.value.messages.isEmpty())
     }
+    @Test fun `nullable content does not poison reconciliation`() = runTest {
+        val transport = Transport()
+        transport.fetch = { since -> if (since == 0L) page("changes-null-content") else page("changes-discard") }
+        val repo = repository(transport)
+        repo.reconcile()
+        assertEquals(4, repo.state.value.cursor)
+        assertNull(repo.state.value.messages.getValue("msg_beta").content)
+        repo.reconcile()
+        assertEquals(9, repo.state.value.cursor)
+        assertEquals("A revised complete reply.", repo.state.value.messages.getValue("msg_beta").content)
+    }
+
 }

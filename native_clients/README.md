@@ -68,3 +68,19 @@ cross-origin attachment credential stripping need adapter-level security tests.
 Signing/distribution, real device interruption recovery and push are separate
 acceptance gates. Push follows usable chat. No token-entry or resident-key login
 bypass is an acceptable shortcut.
+
+## Review follow-ups before platform delivery
+
+The HTTP adapters must distinguish ambiguous delivery from terminal
+`409 idempotency_conflict`: preserve the submission for inspection, mark it
+conflicted and stop offering retry. That terminal core/UI state is **not yet
+implemented**; the present fake transport only throws and leaves entries pending.
+Do not wire an automatic retry worker to this prototype.
+
+Durable stores must record a submission sequence and return pending entries in
+submission order, not UUID order. The Swift fake currently sorts UUIDs; Kotlin's
+fake preserves insertion order but its interface does not yet guarantee it.
+Neither prototype automatically replays a queue. Resolve this contract before
+adding restart replay in SwiftData/Room. Reconciliation after accepted sends is
+still driven by the next invalidation/repair trigger on both platforms (Kotlin
+also marks the snapshot dirty); acceptance alone never advances the cursor.

@@ -263,3 +263,14 @@ private func core(_ transport: FakeTransport, store: any OutboxStore = InMemoryO
     }
     #expect(try await repository.snapshot().pending.count == 1)
 }
+
+@Test func nullableContentDoesNotPoisonReconciliation() async throws {
+    let transport = FakeTransport(pages: [try fixture("changes-null-content"), try fixture("changes-discard")])
+    let subject = core(transport)
+    try await subject.invalidate()
+    var state = try await subject.snapshot()
+    #expect(state.cursor == 4 && state.messages["msg_beta"]?.content == nil)
+    try await subject.invalidate()
+    state = try await subject.snapshot()
+    #expect(state.cursor == 9 && state.messages["msg_beta"]?.content == "A revised complete reply.")
+}

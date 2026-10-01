@@ -72,7 +72,7 @@ public struct Message: Decodable, Sendable, Equatable {
         } else {
             role = try c.decode(String.self, forKey: .role)
             author = try c.decode(Author.self, forKey: .author)
-            content = try c.decode(String.self, forKey: .content)
+            content = try c.decodeIfPresent(String.self, forKey: .content)
             completed = try c.decode(Bool.self, forKey: .completed)
             attachments = try c.decode([Attachment].self, forKey: .attachments)
             clientMessageID = try c.decodeIfPresent(String.self, forKey: .clientMessageID)
