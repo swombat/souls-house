@@ -98,7 +98,7 @@ gem "hashids"
 
 gem "ruby-openai"
 
-gem "pagy", "~> 43.6.1"
+gem "pagy", "~> 43.6.3"
 
 gem "active_storage_validations"
 
