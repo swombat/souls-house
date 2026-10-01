@@ -11,6 +11,7 @@ class Message < ApplicationRecord
   include Message::Progress
   include Message::Streamable
   include Message::Revisioned
+  include Message::ReplyAttention
 
   belongs_to :ai_model, optional: true
   belongs_to :parent_tool_call, class_name: "ToolCall", foreign_key: :tool_call_id, optional: true

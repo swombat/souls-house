@@ -1,6 +1,7 @@
 <script>
   import { Link } from '@inertiajs/svelte';
   import { accountChatPath } from '@/routes';
+  import ReplyAttentionEye from './ReplyAttentionEye.svelte';
 
   let { chats = [], accountId } = $props();
   const recentChats = $derived(
@@ -25,6 +26,7 @@
                 href={accountChatPath(accountId, chat.id)}
                 class="block rounded-md border border-border px-3 py-3 text-foreground hover:bg-accent break-words">
                 {chat.title_or_default || chat.title || 'New Conversation'}
+                <ReplyAttentionEye chatId={chat.id} />
               </Link>
             </li>
           {/each}

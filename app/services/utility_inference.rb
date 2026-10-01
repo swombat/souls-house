@@ -25,6 +25,56 @@ class UtilityInference
     )
   end
 
+  # Jev is a typed decision model, not a chat-completion model.
+  def self.decide(state:, questions:)
+    payload = { model: "typesafe/jev-1.13", state: state, questions: questions }.to_json
+    validate_input!(payload)
+    key = Account.system_ai_api_key(:openrouter)
+    raise MissingCredentials, "Utility inference credentials unavailable" if key.blank? || key.start_with?("<")
+
+    response = Faraday.post("https://openrouter.ai/api/alpha/decisions") do |request|
+      request.headers["Authorization"] = "Bearer #{key}"
+      request.headers["Content-Type"] = "application/json"
+      request.options.timeout = REQUEST_TIMEOUT
+      request.options.open_timeout = REQUEST_TIMEOUT
+      request.body = payload
+    end
+    raise InvalidResponse, "Decision provider returned HTTP #{response.status}" unless response.success?
+
+    result = JSON.parse(response.body)
+    raise InvalidResponse, "Invalid decision response" unless result.is_a?(Hash)
+    answers = result.fetch("answers")
+    unless answers.is_a?(Hash) && answers.keys.sort == questions.keys.sort
+      raise InvalidResponse, "Decision answer keys do not match questions"
+    end
+    answers.transform_values do |answer|
+      score = answer.is_a?(Hash) && answer["noul"]
+      unless answer.is_a?(Hash) && answer["type"] == "noul" && score.is_a?(Numeric) && score.finite? && score.between?(0, 1)
+        raise InvalidResponse, "Invalid decision probability"
+      end
+      score
+    end
+  rescue Faraday::Error, JSON::ParserError, KeyError => error
+    # Never include transport exception text: it can contain request bodies/keys.
+    raise InvalidResponse, "Decision request failed (#{error.class})"
+  end
+
+  def self.structured(model:, effort:, system:, state:, schema:)
+    parameters = {
+      model: model, reasoning: { effort: effort }, max_tokens: 2_000,
+      messages: [ { role: "system", content: system }, { role: "user", content: state.to_json } ],
+      response_format: { type: "json_schema", json_schema: { name: "reply_recipients", strict: true, schema: schema } }
+    }
+    validate_input!(parameters.to_json)
+    response = client(key: Account.system_ai_api_key(:openrouter), openrouter: true).chat(parameters: parameters)
+    content = response.is_a?(Hash) && response.dig("choices", 0, "message", "content")
+    raise InvalidResponse, "Empty structured response" unless content.is_a?(String) && content.present?
+
+    JSON.parse(content)
+  rescue Faraday::Error, JSON::ParserError, TypeError => error
+    raise InvalidResponse, "Structured request failed (#{error.class})"
+  end
+
   def self.moderate(content)
     validate_input!(content)
     response = client(key: Account.system_ai_api_key(:openai)).moderations(

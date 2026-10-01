@@ -114,4 +114,38 @@ class UtilityInferenceTest < ActiveSupport::TestCase
     client.verify
   end
 
+  test "structured calls pin model effort schema and use only the house key" do
+    captured = {}
+    fake = Object.new
+    fake.define_singleton_method(:chat) do |parameters:|
+      captured[:parameters] = parameters
+      { "choices" => [ { "message" => { "content" => '{"decisions":[]}' } } ] }
+    end
+    Account.stub :system_ai_api_key, ->(provider) { assert_equal :openrouter, provider; "site-key" } do
+      OpenAI::Client.stub :new, ->(**options) { captured[:options] = options; fake } do
+        assert_equal({ "decisions" => [] }, UtilityInference.structured(model: ReplyRecipientResolver::MODEL,
+          effort: ReplyRecipientResolver::EFFORT, system: "Route", state: {}, schema: { type: "object" }))
+      end
+    end
+    assert_equal "site-key", captured[:options][:access_token]
+    assert_equal false, captured[:options][:log_errors]
+    assert_equal "openai/gpt-6-luna", captured[:parameters][:model]
+    assert_equal({ effort: "low" }, captured[:parameters][:reasoning])
+    assert_equal 2_000, captured[:parameters][:max_tokens]
+    assert_equal true, captured[:parameters].dig(:response_format, :json_schema, :strict)
+  end
+
+  test "structured malformed output is an error without exposing provider text" do
+    fake = Object.new
+    fake.define_singleton_method(:chat) { |**| { "choices" => [ { "message" => { "content" => "private provider text" } } ] } }
+    Account.stub :system_ai_api_key, "site-key" do
+      OpenAI::Client.stub :new, fake do
+        error = assert_raises(UtilityInference::InvalidResponse) do
+          UtilityInference.structured(model: "example", effort: "low", system: "Route", state: {}, schema: {})
+        end
+        refute_includes error.message, "private provider text"
+      end
+    end
+  end
+
 end

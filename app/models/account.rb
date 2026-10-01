@@ -71,6 +71,7 @@ class Account < ApplicationRecord
   before_validation :generate_slug, on: :create
   before_destroy :mark_memberships_for_skip_check, prepend: true
   after_update_commit :disconnect_members_app_cable, if: -> { saved_change_to_disabled_at? && disabled? }
+  after_update_commit -> { users.ids.each { |id| ReplyExpectation.refresh_for(id) } }, if: :saved_change_to_disabled_at?
 
   ACCOUNT_LIMIT_MESSAGE = "This house has reached its account limit. New signups and accounts are temporarily closed."
 

@@ -11,6 +11,7 @@
     Trash,
     ArrowCounterClockwise,
     ChartBar,
+    EyeSlash,
   } from 'phosphor-svelte';
 
   let {
@@ -31,16 +32,26 @@
     onArchive = () => {},
     onDelete = () => {},
     onModerateAll = () => {},
+    onDismissReply = () => {},
+    replyRequested = false,
   } = $props();
 </script>
 
 {#if chat}
   <DropdownMenu.Root>
     <DropdownMenu.Trigger
+      aria-label="Conversation actions"
       class="inline-flex items-center justify-center h-8 w-8 rounded-md text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
       <DotsThreeVertical size={20} weight="bold" />
     </DropdownMenu.Trigger>
     <DropdownMenu.Content align="end" class="w-48">
+      {#if replyRequested}
+        <DropdownMenu.Item onclick={onDismissReply}>
+          <EyeSlash size={16} class="mr-2" />
+          Dismiss request to respond
+        </DropdownMenu.Item>
+        <DropdownMenu.Separator />
+      {/if}
       {#if !chat.manual_responses}
         <DropdownMenu.CheckboxItem checked={chat.web_access} onCheckedChange={onToggleWebAccess}>
           <Globe size={16} class="mr-2" weight="duotone" />

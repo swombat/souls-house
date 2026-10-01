@@ -1,6 +1,10 @@
 class SyncChannel < ApplicationCable::Channel
 
   ALLOWED_MODELS = {
+    "ReplyAttention" => {
+      model: User,
+      collections: []
+    },
     "Account" => {
       model: Account,
       collections: %w[agents chats whiteboards],
@@ -51,7 +55,8 @@ class SyncChannel < ApplicationCable::Channel
     @model = model_config[:model].find_by_obfuscated_id(record_id)
     return reject_for_reason("model is not present") unless @model
 
-    return reject_for_reason("model is not accessible by current_user") unless @model.accessible_by?(current_user)
+    accessible = model_name == "ReplyAttention" ? @model.id == current_user.id : @model.accessible_by?(current_user)
+    return reject_for_reason("model is not accessible by current_user") unless accessible
 
     if collection_name
       setup_collection_subscription(model_name, model_config, collection_name)
