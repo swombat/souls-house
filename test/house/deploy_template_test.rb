@@ -45,11 +45,21 @@ class DeployTemplateTest < ActiveSupport::TestCase
     end
   end
 
-  test "asynchronous admission is off by default and forwarded only when enabled" do
-    [ nil, "1" ].each do |value|
+  test "asynchronous admission forwards the explicit installation choice" do
+    [ "0", "1" ].each do |value|
       with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST, "SOULSHOUSE_ASYNC_TURNS" => value)) do
         runtime = YAML.safe_load(render_deploy_yml).fetch("env").fetch("clear")
-        assert_equal value || "0", runtime.fetch("SOULSHOUSE_ASYNC_TURNS")
+        assert_equal value, runtime.fetch("SOULSHOUSE_ASYNC_TURNS")
+      end
+    end
+  end
+
+  test "missing or invalid asynchronous admission choice fails deployment" do
+    [ nil, "", "true", "false", "2", " 1 " ].each do |value|
+      with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST, "SOULSHOUSE_ASYNC_TURNS" => value)) do
+        error = assert_raises(RuntimeError) { render_deploy_yml }
+        assert_includes error.message, "SOULSHOUSE_ASYNC_TURNS"
+        assert_includes error.message, "config/house.env"
       end
     end
   end
