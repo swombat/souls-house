@@ -1,7 +1,18 @@
 source "https://rubygems.org"
 
-# Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
-gem "rails", "~> 8.1.3"
+# Use only the Rails components the app needs, without Action Mailbox or Action Text.
+rails_version = "~> 8.1.4"
+gem "actioncable", rails_version
+gem "actionmailer", rails_version
+gem "actionpack", rails_version
+gem "actionview", rails_version
+gem "activejob", rails_version
+gem "activemodel", rails_version
+gem "activerecord", rails_version
+gem "activestorage", rails_version
+gem "activesupport", rails_version
+gem "railties", rails_version
+
 # Expose application version and environment information.
 gem "rails_app_version", "~> 1.5"
 # Use pg as the database for Active Record
@@ -64,7 +75,6 @@ end
 group :development do
   # Use console on exceptions pages [https://github.com/rails/web-console]
   gem "web-console"
-  gem "chrome_devtools_rails"
 end
 
 group :test do
