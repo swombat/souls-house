@@ -1,4 +1,4 @@
-import { onDestroy, onMount, tick, untrack } from 'svelte';
+import { onDestroy, tick, untrack } from 'svelte';
 import { accountChatMessagesPath } from '@/routes';
 import {
   combinePaginatedMessages,
@@ -12,6 +12,7 @@ import {
   removeMessageFromCollections,
 } from './chat-message-collections';
 import * as logging from './logging';
+import { pinConversationEntry } from './chat-entry-scroll';
 
 // The Inertia window and paginated history have one reconciliation owner.
 export function createChatHistory(context) {
@@ -23,6 +24,7 @@ export function createChatHistory(context) {
   let previousRecent = [];
   let chatId;
   let request;
+  let releaseEntry;
   const messages = $derived(combinePaginatedMessages(older, context().recent));
 
   $effect(() => {
@@ -54,12 +56,30 @@ export function createChatHistory(context) {
     });
   });
 
-  onMount(() => {
-    scrollToBottom();
+  const entryChatId = $derived(context().chat.id);
+
+  // Inertia can reuse this page for another chat without mounting it again.
+  $effect(() => {
+    const id = entryChatId;
+    const element = container;
+    if (!element) return;
+    let cancelled = false;
+    let release;
+    tick().then(() => {
+      if (!cancelled && context().chat.id === id) {
+        release = pinConversationEntry(element);
+        releaseEntry = release;
+      }
+    });
+    return () => {
+      cancelled = true;
+      release?.();
+    };
   });
   onDestroy(() => request?.abort());
 
   function scrollToBottom() {
+    releaseEntry?.();
     tick().then(() => {
       container?.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
     });
@@ -108,6 +128,7 @@ export function createChatHistory(context) {
   function handleScroll() {
     if (
       container &&
+      container.scrollTop + container.clientHeight < container.scrollHeight - 1 &&
       shouldLoadMoreMessages({ scrollTop: container.scrollTop, hasMore, loadingMore: loading, oldestId })
     ) {
       loadMore();

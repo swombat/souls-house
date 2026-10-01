@@ -66,108 +66,110 @@
   bind:this={messagesContainer}
   onscroll={handleScroll}
   data-testid="chat-messages"
-  class="flex-1 min-h-0 overflow-y-auto px-3 md:px-6 py-4 space-y-4">
-  {#if loadingMore}
-    <div class="flex justify-center py-4">
-      <Spinner size={24} class="animate-spin text-muted-foreground" />
-    </div>
-  {:else if hasMore && oldestId}
-    <div class="flex justify-center py-2">
-      <button onclick={loadMoreMessages} class="text-sm text-muted-foreground hover:text-foreground">
-        Load earlier messages
-      </button>
-    </div>
-  {/if}
-
-  {#if !Array.isArray(timelineItems) || timelineItems.length === 0}
-    <div class="flex items-center justify-center h-full">
-      <div class="text-center text-muted-foreground">
-        <p>Start the conversation by sending a message below.</p>
+  class="flex-1 min-h-0 overflow-y-auto px-3 md:px-6 py-4">
+  <div class="space-y-4" class:h-full={timelineItems.length === 0} data-chat-content>
+    {#if loadingMore}
+      <div class="flex justify-center py-4">
+        <Spinner size={24} class="animate-spin text-muted-foreground" />
       </div>
-    </div>
-  {:else}
-    {#each timelineItems as item, index (item.id)}
-      {#if shouldShowTimelineTimestamp(index)}
-        <div class="flex items-center gap-4 my-6">
-          <div class="flex-1 border-t border-border"></div>
-          <div class="px-3 py-1 bg-muted rounded-full text-xs font-medium text-muted-foreground">
-            {timelineTimestampLabel(index)}
-          </div>
-          <div class="flex-1 border-t border-border"></div>
-        </div>
-      {/if}
-
-      {#if item.type === 'message'}
-        {@const message = item.message}
-        <MessageBubble
-          {message}
-          progressMessages={item.group.runKey ? item.group.messages : []}
-          progressContinued={item.group.continued}
-          isLastVisible={index === timelineItems.length - 1}
-          isGroupChat={chat?.manual_responses}
-          {showMessageTelemetry}
-          streamingThinking={streamingThinking[message.id] || ''}
-          sectionThinking={streamingThinking}
-          {shikiTheme}
-          onedit={startEditingMessage}
-          ondelete={deleteMessage}
-          onimagelightbox={openImageLightbox}
-          onvoice={requestVoice} />
-      {:else if item.type === 'runtime_interaction'}
-        <AgentRuntimeActivityCard interaction={item.interaction} />
-      {/if}
-    {/each}
-
-    <!-- Thinking bubble when last message is hidden (tool call or empty assistant) - only shown when not showing all messages -->
-    {#if !showAllMessages && lastMessageIsHiddenThinking}
-      {@const lastMessage = allMessages[allMessages.length - 1]}
-      <div class="flex justify-start">
-        <div class="max-w-[85%] md:max-w-[70%]">
-          <Card.Root>
-            <Card.Content class="p-4">
-              <div class="flex items-center gap-2 text-muted-foreground">
-                <Spinner size={16} class="animate-spin" />
-                <span class="text-sm">{lastMessage?.tool_status || 'Thinking...'}</span>
-              </div>
-            </Card.Content>
-          </Card.Root>
-        </div>
+    {:else if hasMore && oldestId}
+      <div class="flex justify-center py-2">
+        <button onclick={loadMoreMessages} class="text-sm text-muted-foreground hover:text-foreground">
+          Load earlier messages
+        </button>
       </div>
     {/if}
 
-    <!-- Sending message placeholder (show while waiting for assistant response) -->
-    {#if shouldShowSendingPlaceholder}
-      <div class="flex justify-start">
-        <div class="max-w-[85%] md:max-w-[70%]">
-          <Card.Root>
-            <Card.Content class="p-4">
-              {#if isTimedOut}
-                <div class="text-red-600 text-sm mb-2">
-                  It appears there might have been an error while sending the message.
-                </div>
-              {:else}
+    {#if !Array.isArray(timelineItems) || timelineItems.length === 0}
+      <div class="flex items-center justify-center h-full">
+        <div class="text-center text-muted-foreground">
+          <p>Start the conversation by sending a message below.</p>
+        </div>
+      </div>
+    {:else}
+      {#each timelineItems as item, index (item.id)}
+        {#if shouldShowTimelineTimestamp(index)}
+          <div class="flex items-center gap-4 my-6">
+            <div class="flex-1 border-t border-border"></div>
+            <div class="px-3 py-1 bg-muted rounded-full text-xs font-medium text-muted-foreground">
+              {timelineTimestampLabel(index)}
+            </div>
+            <div class="flex-1 border-t border-border"></div>
+          </div>
+        {/if}
+
+        {#if item.type === 'message'}
+          {@const message = item.message}
+          <MessageBubble
+            {message}
+            progressMessages={item.group.runKey ? item.group.messages : []}
+            progressContinued={item.group.continued}
+            isLastVisible={index === timelineItems.length - 1}
+            isGroupChat={chat?.manual_responses}
+            {showMessageTelemetry}
+            streamingThinking={streamingThinking[message.id] || ''}
+            sectionThinking={streamingThinking}
+            {shikiTheme}
+            onedit={startEditingMessage}
+            ondelete={deleteMessage}
+            onimagelightbox={openImageLightbox}
+            onvoice={requestVoice} />
+        {:else if item.type === 'runtime_interaction'}
+          <AgentRuntimeActivityCard interaction={item.interaction} />
+        {/if}
+      {/each}
+
+      <!-- Thinking bubble when last message is hidden (tool call or empty assistant) - only shown when not showing all messages -->
+      {#if !showAllMessages && lastMessageIsHiddenThinking}
+        {@const lastMessage = allMessages[allMessages.length - 1]}
+        <div class="flex justify-start">
+          <div class="max-w-[85%] md:max-w-[70%]">
+            <Card.Root>
+              <Card.Content class="p-4">
                 <div class="flex items-center gap-2 text-muted-foreground">
                   <Spinner size={16} class="animate-spin" />
-                  <span class="text-sm">Sending message...</span>
+                  <span class="text-sm">{lastMessage?.tool_status || 'Thinking...'}</span>
                 </div>
-              {/if}
-            </Card.Content>
-          </Card.Root>
+              </Card.Content>
+            </Card.Root>
+          </div>
         </div>
-      </div>
-    {/if}
+      {/if}
 
-    <!-- Agent prompt for group chats after sending a message -->
-    {#if showAgentPrompt && chat?.manual_responses}
-      <div class="flex justify-start" transition:fade={{ duration: 200 }}>
-        <div class="max-w-[85%] md:max-w-[70%]">
-          <Card.Root class="border-dashed border-2 border-muted-foreground/30 bg-muted/20">
-            <Card.Content class="p-4">
-              <div class="text-muted-foreground text-sm">Please select a resident to respond</div>
-            </Card.Content>
-          </Card.Root>
+      <!-- Sending message placeholder (show while waiting for assistant response) -->
+      {#if shouldShowSendingPlaceholder}
+        <div class="flex justify-start">
+          <div class="max-w-[85%] md:max-w-[70%]">
+            <Card.Root>
+              <Card.Content class="p-4">
+                {#if isTimedOut}
+                  <div class="text-red-600 text-sm mb-2">
+                    It appears there might have been an error while sending the message.
+                  </div>
+                {:else}
+                  <div class="flex items-center gap-2 text-muted-foreground">
+                    <Spinner size={16} class="animate-spin" />
+                    <span class="text-sm">Sending message...</span>
+                  </div>
+                {/if}
+              </Card.Content>
+            </Card.Root>
+          </div>
         </div>
-      </div>
+      {/if}
+
+      <!-- Agent prompt for group chats after sending a message -->
+      {#if showAgentPrompt && chat?.manual_responses}
+        <div class="flex justify-start" transition:fade={{ duration: 200 }}>
+          <div class="max-w-[85%] md:max-w-[70%]">
+            <Card.Root class="border-dashed border-2 border-muted-foreground/30 bg-muted/20">
+              <Card.Content class="p-4">
+                <div class="text-muted-foreground text-sm">Please select a resident to respond</div>
+              </Card.Content>
+            </Card.Root>
+          </div>
+        </div>
+      {/if}
     {/if}
-  {/if}
+  </div>
 </div>

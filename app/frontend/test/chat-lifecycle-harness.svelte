@@ -13,7 +13,7 @@
   export const response = createChatResponse(() => ({ chat, messages: history.messages }));
 </script>
 
-<div bind:this={history.container}>
+<div bind:this={history.container} onscroll={history.handleScroll}>
   {#each history.messages as message (message.id)}
     <p>{message.content}</p>
   {/each}

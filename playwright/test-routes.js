@@ -17,3 +17,4 @@ export default {
   passwordPath,
   passwordsPath,
 };
+export { accountChatMessagesPath } from '../app/frontend/routes';
