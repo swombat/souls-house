@@ -133,11 +133,6 @@ class ChatsController < ApplicationController
       chats = base_scope.kept
     end
 
-    # Filter out agent-only chats unless site admin has toggled them on
-    unless params[:show_agent_only].present? && Current.user&.site_admin
-      chats = chats.not_agent_only
-    end
-
     if params[:show_deleted].present? && can_manage_account?
       chats.latest
     else

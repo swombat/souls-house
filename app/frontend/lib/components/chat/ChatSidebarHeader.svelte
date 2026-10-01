@@ -1,17 +1,8 @@
 <script>
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { Plus, Robot, Trash, X } from 'phosphor-svelte';
+  import { Plus, Trash, X } from 'phosphor-svelte';
 
-  let {
-    canSeeDeleted = false,
-    canSeeAgentOnly = false,
-    showDeleted = false,
-    showAgentOnly = false,
-    onCreate,
-    onClose,
-    onToggleDeleted,
-    onToggleAgentOnly,
-  } = $props();
+  let { canSeeDeleted = false, showDeleted = false, onCreate, onClose, onToggleDeleted } = $props();
 </script>
 
 <header class="p-4 border-b border-border bg-muted/30">
@@ -26,32 +17,18 @@
       </Button>
     </div>
   </div>
-  {#if canSeeDeleted || canSeeAgentOnly}
+  {#if canSeeDeleted}
     <div class="flex items-center gap-3">
-      {#if canSeeDeleted}
-        <label
-          class="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer hover:opacity-80 transition-opacity">
-          <input
-            type="checkbox"
-            checked={showDeleted}
-            onchange={onToggleDeleted}
-            class="w-3 h-3 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 focus:ring-1 transition-colors cursor-pointer" />
-          <Trash size={12} />
-          <span>Deleted</span>
-        </label>
-      {/if}
-      {#if canSeeAgentOnly}
-        <label
-          class="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer hover:opacity-80 transition-opacity">
-          <input
-            type="checkbox"
-            checked={showAgentOnly}
-            onchange={onToggleAgentOnly}
-            class="w-3 h-3 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 focus:ring-1 transition-colors cursor-pointer" />
-          <Robot size={12} />
-          <span>Resident-Only</span>
-        </label>
-      {/if}
+      <label
+        class="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer hover:opacity-80 transition-opacity">
+        <input
+          type="checkbox"
+          checked={showDeleted}
+          onchange={onToggleDeleted}
+          class="w-3 h-3 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 focus:ring-1 transition-colors cursor-pointer" />
+        <Trash size={12} />
+        <span>Deleted</span>
+      </label>
     </div>
   {/if}
 </header>

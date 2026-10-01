@@ -23,6 +23,26 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "sidebar includes resident-only threads for members and site admins by default" do
+    resident_chat = @account.chats.create!(title: "[AGENT-ONLY] Old resident thread")
+    archived_chat = @account.chats.create!(title: "[AGENT-ONLY] Archived", archived_at: Time.current)
+    deleted_chat = @account.chats.create!(title: "[AGENT-ONLY] Deleted", discarded_at: Time.current)
+    other_chat = accounts(:team_account).chats.create!(title: "[AGENT-ONLY] Other account")
+
+    [ false, true ].each do |site_admin|
+      @user.update!(is_site_admin: site_admin)
+      [ account_chats_path(@account), new_account_chat_path(@account), account_chat_path(@account, @chat) ].each do |path|
+        get path
+        assert_response :success
+        ids = inertia_shared_props.fetch("chats").pluck("id")
+        assert_includes ids, resident_chat.to_param
+        assert_includes ids, archived_chat.to_param
+        assert_not_includes ids, deleted_chat.to_param
+        assert_not_includes ids, other_chat.to_param
+      end
+    end
+  end
+
   test "should get new" do
     get new_account_chat_path(@account)
     assert_response :success
