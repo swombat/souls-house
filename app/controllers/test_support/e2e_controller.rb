@@ -33,6 +33,11 @@ module TestSupport
         create_agent!(account, "E2E Inactive Fork", "gray", active: false)
       ]
       agents.each { |agent| agent.update_columns(runtime: "deprecated") } if params[:deprecated]
+      if params[:missing_resident_credentials]
+        account.update!(use_system_ai_credentials: false)
+        agents.first.update!(health_state: "healthy", birth_committed_at: Time.current,
+          orientation_last_error: "Synthetic raw provider exception", orientation_last_error_at: Time.current)
+      end
       if params[:costs].in?(%w[mixed unpriced])
         2.times do
           AgentRuntimeInteraction.create!(agent: agents.second, trigger_kind: "wake", started_at: Time.current,

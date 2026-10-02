@@ -86,6 +86,56 @@ class SingleResidentResponseTest < ActiveSupport::TestCase
     end
   end
 
+  test "missing credentials preserve the hello without dispatch or runtime work" do
+    @account.update!(use_system_ai_credentials: false, openrouter_api_key: nil)
+    assert_no_difference [ "MessageDispatch.count", "AgentRuntimeInteraction.count" ] do
+      assert_no_enqueued_jobs only: [ AllAgentsResponseJob, ManualAgentResponseJob ] do
+        message = post_human
+        assert message.persisted?
+        assert_not message.single_resident_response_triggered
+      end
+    end
+    assert_equal Agents::InferenceAvailability::MISSING_CREDENTIALS_MESSAGE, @resident.inference_setup_message
+    assert_equal @resident.inference_setup_message, @resident.as_json(as: :list)["inference_setup_message"]
+  end
+
+  test "missing credentials also block the direct fallback" do
+    @account.update!(use_system_ai_credentials: false, openrouter_api_key: nil)
+    AgentRuntimeInteraction.stub :live_activity_enabled?, false do
+      assert_no_enqueued_jobs(only: [ AllAgentsResponseJob, ManualAgentResponseJob ]) { post_human }
+    end
+  end
+
+  test "configured credentials clear the setup notice and allow the next hello" do
+    @account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router")
+    assert_nil @resident.inference_setup_message
+    assert_enqueued_jobs(1, only: ManualAgentResponseJob) { post_human }
+  end
+
+  test "an unfunded house route does not automatically wake" do
+    @resident.update!(model_id: HouseInference::Offering::MODEL_ID)
+    assert_no_enqueued_jobs(only: [ AllAgentsResponseJob, ManualAgentResponseJob ]) { post_human }
+    assert_match "allowance", @resident.inference_setup_message
+  end
+
+  test "a funded house model wakes without personal credentials" do
+    @account.update!(use_system_ai_credentials: false)
+    @resident.update!(model_id: HouseInference::Offering::MODEL_ID)
+    HouseInferenceGrant.create!(agent: @resident, user: @user)
+    HouseInference::Offering.stub :configured?, true do
+      assert_nil @resident.inference_setup_message
+      assert_enqueued_jobs(1, only: ManualAgentResponseJob) { post_human }
+    end
+  end
+
+  test "a connected OAuth resident wakes without an API key" do
+    @account.update!(use_system_ai_credentials: false)
+    @resident.update!(model_id: "openai/gpt-6-sol", provider_auth_modes: { openai: "oauth_account" },
+      provider_connections: { openai: { status: "connected" } })
+    assert_nil @resident.inference_setup_message
+    assert_enqueued_jobs(1, only: ManualAgentResponseJob) { post_human }
+  end
+
   private
 
   def post_human

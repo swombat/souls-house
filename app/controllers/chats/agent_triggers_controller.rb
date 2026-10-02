@@ -49,7 +49,7 @@ class Chats::AgentTriggersController < ApplicationController
     end
     return false if missing.empty?
 
-    message = "Edit the resident and set up credentials before asking them to respond."
+    message = Agents::InferenceAvailability::MISSING_CREDENTIALS_MESSAGE
     respond_to do |format|
       format.html { redirect_to account_chat_path(current_account, @chat), alert: message }
       format.json do

@@ -10,7 +10,7 @@ module Agents
 
     def create!
       now = Time.current
-      agent = account.agents.new(attributes)
+      agent = account.agents.new({ model_id: HouseInference::Offering::MODEL_ID }.merge(attributes))
       if agent.system_prompt.blank? && !open_beginning
         agent.errors.add(:system_prompt, "can't be blank unless you explicitly choose an open beginning")
         raise ActiveRecord::RecordInvalid, agent

@@ -117,6 +117,12 @@
 
 {#if agents.length > 0}
   <div class="border-t border-border px-3 md:px-6 py-3 bg-muted/20">
+    {#each agents.filter((agent) => agent.inference_setup_message) as agent (agent.id)}
+      <p role="status" class="mb-3 text-sm text-muted-foreground">
+        {agent.name}: {agent.inference_setup_message}
+        <a class="text-primary underline" href={editAccountAgentPath(accountId, agent.id)}>Edit {agent.name}</a>
+      </p>
+    {/each}
     <div class="flex items-center gap-2 flex-wrap">
       <span class="text-xs text-muted-foreground mr-2 hidden md:inline">Ask resident:</span>
       {#each agents as agent (agent.id)}

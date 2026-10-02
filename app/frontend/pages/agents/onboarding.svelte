@@ -156,13 +156,21 @@
             {retryingProvisioning ? 'Retrying…' : 'Try setup again'}
           </Button>
         </div>
+      {:else if runtimeReady && agent.inference_setup_message}
+        <div role="status" class="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+          <p class="font-medium">Their first wake needs attention</p>
+          <p class="mt-1 text-sm text-muted-foreground">{agent.inference_setup_message}</p>
+          <a class="mt-3 inline-block text-primary underline" href={editAccountAgentPath(account.id, agent.id)}>
+            Edit {agent.name}
+          </a>
+        </div>
       {:else if runtimeReady && orientationFailed}
         <div class="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
           <p class="font-medium">Their first wake did not complete</p>
           <p class="mt-1 text-sm text-muted-foreground">
             The runtime is online. You can retry orientation or begin a conversation without waiting for it.
           </p>
-          <p class="mt-3 break-words font-mono text-xs text-muted-foreground">{agent.orientation_last_error}</p>
+
           <Button class="mt-4" variant="outline" onclick={retryOrientation} disabled={retryingOrientation}>
             {retryingOrientation ? 'Queueing…' : 'Try orientation again'}
           </Button>

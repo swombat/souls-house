@@ -151,9 +151,27 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal @account.to_param, inertia_shared_props.dig("account", "id")
+    assert_equal HouseInference::Offering::MODEL_ID, inertia_shared_props.fetch("default_model_id")
+    house_models = inertia_shared_props.fetch("grouped_models").fetch("On the house")
+    assert_includes house_models.pluck("model_id"), inertia_shared_props.fetch("default_model_id")
     top_models = inertia_shared_props.fetch("grouped_models").fetch("Top Models")
     assert_includes top_models.pluck("model_id"), "openai/gpt-6-astra"
     assert_includes top_models.pluck("model_id"), "google/gemini-3.8-flash"
+  end
+
+  test "birth without a model defaults to house inference" do
+    assert_difference [ "Agent.count", "ApiKey.count", "HouseInferenceGrant.count" ], 1 do
+      assert_enqueued_with(job: ProvisionAgentJob) do
+        post account_agents_path(@account), params: {
+          agent: { name: "Default house birth", system_prompt: "Synthetic seed" }
+        }
+      end
+    end
+
+    agent = Agent.last
+    assert_equal HouseInference::Offering::MODEL_ID, agent.model_id
+    assert_equal agent.id, HouseInferenceGrant.find_by!(user: @user).agent_id
+    assert_redirected_to onboarding_account_agent_path(@account, agent)
   end
 
   test "should create born-hosted agent" do
@@ -171,6 +189,8 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     end
 
     agent = Agent.last
+    assert_equal "openrouter/auto", agent.model_id
+    assert_nil HouseInferenceGrant.find_by(agent: agent)
     assert_equal "Created Test Agent", agent.name
     assert_equal @account, agent.account
     assert_equal "provisioning", agent.runtime

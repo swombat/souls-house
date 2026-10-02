@@ -13,16 +13,15 @@
   import { Alert, AlertDescription, AlertTitle } from '$lib/components/shadcn/alert';
   import { ArrowLeft, ArrowRight, Check } from 'phosphor-svelte';
 
-  import { firstModelId } from '$lib/agent-models';
   import { accountAgentsPath } from '@/routes';
 
-  let { grouped_models = {}, colour_options = [], icon_options = [], account } = $props();
+  let { grouped_models = {}, default_model_id, colour_options = [], icon_options = [], account } = $props();
 
   const draftKey = `helixkit:agent-birth-draft:${account.id}`;
   const steps = ['Beginning', 'Appearance', 'Soul seed', 'Runtime', 'Review'];
 
   let step = $state(0);
-  let selectedModel = $state(firstModelId(grouped_models));
+  let selectedModel = $state(default_model_id);
   let openBeginning = $state(false);
   let acknowledged = $state(false);
   let draftReady = $state(false);
@@ -31,7 +30,7 @@
     agent: {
       name: '',
       system_prompt: '',
-      model_id: firstModelId(grouped_models),
+      model_id: default_model_id,
       colour: null,
       icon: null,
       scheduled_wakes_enabled: true,
@@ -62,7 +61,7 @@
         $form.agent.colour = draft.colour || null;
         $form.agent.icon = draft.icon || null;
         $form.agent.scheduled_wakes_enabled = draft.scheduled_wakes_enabled ?? true;
-        selectedModel = draft.model_id || firstModelId(grouped_models);
+        selectedModel = draft.model_id || default_model_id;
         openBeginning = draft.open_beginning === true;
         $form.agent.open_beginning = openBeginning;
         step = Math.min(Math.max(draft.step || 0, 0), steps.length - 1);

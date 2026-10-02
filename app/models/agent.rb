@@ -16,6 +16,10 @@ class Agent < ApplicationRecord
   validates :turn_timeout_minutes,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 1440 }
 
+  def inference_setup_message
+    Agents::InferenceAvailability.setup_message(self) if eligible_for_conversation?
+  end
+
   def runtime_timeout_secs
     turn_timeout_minutes.minutes.to_i
   end
@@ -61,7 +65,7 @@ class Agent < ApplicationRecord
     telegram_bot_token telegram_webhook_token trigger_bearer_token
   ].freeze
   LIST_JSON_ATTRIBUTES = %i[
-    name model_id model_label active? paused? colour icon runtime health_state deprecated? unavailability_reason
+    name model_id model_label active? paused? colour icon runtime health_state deprecated? unavailability_reason inference_setup_message
   ].freeze
 
   # "Imported" is a class of home profile: a reviewed private home cloned into
@@ -131,7 +135,7 @@ class Agent < ApplicationRecord
                   :memories_count, :memory_token_summary, :thinking_enabled, :thinking_budget,
                   :reasoning_effort,
                   :telegram_bot_username, :telegram_configured?,
-                  :voiced?, :voice_id, :runtime, :deprecated?, :unavailability_reason, :endpoint_url, :last_announced_at,
+                  :voiced?, :voice_id, :runtime, :deprecated?, :unavailability_reason, :inference_setup_message, :endpoint_url, :last_announced_at,
                    :last_health_check_at, :health_state, :consecutive_health_failures,
                    :github_repo_url, :github_repo_owner, :github_repo_name,
                    :github_deploy_key_id, :container_name, :sandbox_host, :container_image,

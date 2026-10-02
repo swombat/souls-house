@@ -3,6 +3,14 @@ module Agents
   # House funding is an explicit route, separate from personal credentials.
   class InferenceAvailability
 
+    MISSING_CREDENTIALS_MESSAGE = "Edit the resident and set up credentials before asking them to respond.".freeze
+
+    def self.setup_message(agent)
+      return house_error(agent)&.message if HouseInference::Offering.find(agent.model_id)
+
+      MISSING_CREDENTIALS_MESSAGE unless available?(agent)
+    end
+
     def self.available?(agent)
       return house_error(agent).nil? if HouseInference::Offering.find(agent.model_id)
 
