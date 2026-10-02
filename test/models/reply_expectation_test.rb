@@ -48,7 +48,7 @@ class ReplyExpectationTest < ActiveSupport::TestCase
     assert_equal newer.id, ReplyDismissal.find_by!(chat: @chat, user: @user).through_message_id
   end
 
-  test "summary counts messages across confirmed accounts and scopes thread counts to current account" do
+  test "summary counts threads across confirmed accounts and scopes thread counts to current account" do
     other_chat = accounts(:team_account).chats.create!(title: "Another account")
     other_ask = other_chat.messages.create!(role: "assistant", content: "Test User, please reply")
     record(@ask)
@@ -58,6 +58,31 @@ class ReplyExpectationTest < ActiveSupport::TestCase
     assert_equal({ @chat.to_param => 1 }, summary[:chats])
     assert_equal 1, summary[:accounts][other_chat.account.to_param]
     assert_equal 0, ReplyExpectation.summary_for(users(:existing_user), account: @chat.account)[:total]
+  end
+
+  test "account and total badges count distinct threads rather than repeated requests" do
+    record(@ask)
+    3.times do |i|
+      record(@chat.messages.create!(role: "assistant", content: "Another request #{i}"))
+    end
+    assert_equal 1, summary[:total]
+    assert_equal 1, summary[:accounts][@chat.account.to_param]
+    assert_equal 4, summary[:chats][@chat.to_param]
+
+    second_chat = @chat.account.chats.create!(title: "Second thread")
+    record(second_chat.messages.create!(role: "assistant", content: "Another thread"))
+    other_chat = accounts(:team_account).chats.create!(title: "Other account")
+    2.times { |i| record(other_chat.messages.create!(role: "assistant", content: "Other request #{i}")) }
+    assert_equal 3, summary[:total]
+    assert_equal({ @chat.account.to_param => 2, other_chat.account.to_param => 1 }, summary[:accounts])
+    assert_equal({ @chat.to_param => 4, second_chat.to_param => 1 }, summary[:chats])
+
+    ReplyDismissal.dismiss!(chat: @chat, user: @user, through: @chat.messages.order(:id).last)
+    assert_equal 2, summary[:total]
+    assert_equal 1, summary[:accounts][@chat.account.to_param]
+    second_chat.messages.create!(role: "user", user: @user, content: "Replied")
+    assert_equal 1, summary[:total]
+    assert_not summary[:accounts].key?(@chat.account.to_param)
   end
 
   test "access revocation and source discard remove counts including for site admin" do

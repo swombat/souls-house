@@ -19,7 +19,7 @@ class DirectReplyAttentionTest < ActiveSupport::TestCase
         assert_equal 1.0, expectation.score
       end
     end
-    assert_equal 2, ReplyExpectation.summary_for(@user, account: @chat.account)[:total]
+    assert_equal 1, ReplyExpectation.summary_for(@user, account: @chat.account)[:total]
   end
 
   test "a model negative or abstention cannot erase a direct tag" do

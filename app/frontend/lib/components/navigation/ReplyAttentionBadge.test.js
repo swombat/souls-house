@@ -6,7 +6,7 @@ test('empty counts are invisible; positive counts are labelled and visually boun
   const { rerender, container } = render(ReplyAttentionBadge, { count: 0 });
   expect(container.textContent.trim()).toBe('');
   await rerender({ count: 1 });
-  expect(screen.getByLabelText('1 message requests your response')).toHaveTextContent('1');
+  expect(screen.getByLabelText('1 thread requests your response')).toHaveTextContent('1');
   await rerender({ count: 123 });
-  expect(screen.getByLabelText('123 messages request your response')).toHaveTextContent('99+');
+  expect(screen.getByLabelText('123 threads request your response')).toHaveTextContent('99+');
 });

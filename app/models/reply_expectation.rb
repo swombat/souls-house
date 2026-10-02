@@ -24,10 +24,10 @@ class ReplyExpectation < ApplicationRecord
     by_account = Hash.new(0)
     by_chat = {}
     counts.each do |(aid, cid), count|
-      by_account[accounts.fetch(aid).to_param] += count
+      by_account[accounts.fetch(aid).to_param] += 1
       by_chat[chats.fetch(cid).to_param] = count if chats.key?(cid)
     end
-    { total: counts.values.sum, accounts: by_account, chats: by_chat }
+    { total: counts.size, accounts: by_account, chats: by_chat }
   end
 
   # Call only while holding the chat's write lock. All inference paths use this

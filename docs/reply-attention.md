@@ -43,8 +43,9 @@ Existing messages are not swept or backfilled. An explicit content edit is new
 activity; telemetry updates, streaming fragments, tools and marked progress
 messages do not enqueue classification.
 
-The top-right account menu shows the total number of open message-level requests
-for the current human, then per-account counts. A red eye marks affected threads.
+The top-right account menu shows the total number of threads with open requests
+for the current human, then per-account thread counts. Multiple tags or inferred
+requests in one thread count once in these badges. A red eye marks affected threads.
 Reading does not clear it. Posting a reply mechanically clears prior requests;
 “I'll look later” counts as a reply, not semantic completion. The conversation
 menu can dismiss through the latest displayed message, without clearing newer

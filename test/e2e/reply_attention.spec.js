@@ -31,15 +31,18 @@ for (const directTag of [false, true]) {
         ? '@TagReader — tagging you, as asked.'
         : 'Could you choose a date for our synthetic meeting?';
       await ask(firstMessage);
+      for (let i = 1; i < 4; i++) {
+        await ask(`${firstMessage} Follow-up ${i}.`);
+      }
       const accountMenu = page.getByRole('button', { name: 'User account menu' });
-      await expect(accountMenu.getByLabel('1 message requests your response')).toBeVisible();
+      await expect(accountMenu.getByLabel('1 thread requests your response')).toBeVisible();
       await accountMenu.click();
       await page
         .getByRole('menuitem')
         .filter({ hasText: /^Account/ })
         .hover();
       const targetAccount = page.getByRole('menuitem').filter({ hasText: `E2E ${setup.run_id} Team` });
-      await expect(targetAccount.getByLabel('1 message requests your response')).toBeVisible();
+      await expect(targetAccount.getByLabel('1 thread requests your response')).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath('reply-attention-accounts.png') });
       await targetAccount.click();
       const thread = page.locator(`aside a[href$="/chats/${chatId}"]`);
@@ -54,7 +57,7 @@ for (const directTag of [false, true]) {
       await page.screenshot({ path: testInfo.outputPath('reply-attention-dismiss.png') });
       await page.getByRole('menuitem', { name: 'Dismiss request to respond' }).click();
       await expect(thread.getByLabel('Your response is requested')).toHaveCount(0);
-      await expect(accountMenu.getByLabel('1 message requests your response')).toHaveCount(0);
+      await expect(accountMenu.getByLabel('1 thread requests your response')).toHaveCount(0);
       await ask(
         directTag
           ? '@TagReader Example — another deliberate tag.'
@@ -66,7 +69,7 @@ for (const directTag of [false, true]) {
       await composer.locator('textarea').fill("I'll look tonight");
       await composer.getByRole('button', { name: 'Send message', exact: true }).click();
       await expect(thread.getByLabel('Your response is requested')).toHaveCount(0);
-      await expect(accountMenu.getByLabel('1 message requests your response')).toHaveCount(0);
+      await expect(accountMenu.getByLabel('1 thread requests your response')).toHaveCount(0);
     } finally {
       await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
     }
