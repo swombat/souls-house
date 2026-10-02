@@ -24,6 +24,7 @@ module TestSupport
       account = Account.create!(name: "E2E #{run_id} Team", account_type: :team)
       account.add_user!(primary_user, role: "owner", skip_confirmation: true)
       account.add_user!(secondary_user, role: "member", skip_confirmation: true)
+      account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router") if params[:resident_credentials]
       account.whiteboards.create!(name: "E2E Whiteboard", content: "# E2E Whiteboard")
 
       agents = [
@@ -33,6 +34,11 @@ module TestSupport
         create_agent!(account, "E2E Inactive Fork", "gray", active: false)
       ]
       agents.each { |agent| agent.update_columns(runtime: "deprecated") } if params[:deprecated]
+      if params[:missing_resident_credentials]
+        account.update!(use_system_ai_credentials: false)
+        agents.first.update!(health_state: "healthy", birth_committed_at: Time.current,
+          orientation_last_error: "Synthetic raw provider exception", orientation_last_error_at: Time.current)
+      end
       if params[:costs].in?(%w[mixed unpriced])
         2.times do
           AgentRuntimeInteraction.create!(agent: agents.second, trigger_kind: "wake", started_at: Time.current,
@@ -46,6 +52,14 @@ module TestSupport
             usage_complete: true, uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 0,
             cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000)
         end
+      end
+      if params[:busy_house_orientation]
+        resident = agents.first
+        resident.update!(model_id: HouseInference::Offering::MODEL_ID, health_state: "healthy",
+          birth_committed_at: Time.current, orientation_requested_at: Time.current)
+        grant = HouseInferenceGrant.create!(agent: resident, user: primary_user)
+        grant.house_inference_calls.create!(month: HouseInference::Offering.month,
+          model_id: resident.model_id, provider_route: "fireworks/us", charge_usd: 0.75)
       end
       if params[:resident_dashboard]
         resident = agents.first

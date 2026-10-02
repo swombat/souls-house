@@ -25,7 +25,8 @@ begin
   system("bin/rails", "db:prepare", exception: true)
   system("bin/rails", "db:fixtures:load", exception: true) if mode != "e2e"
   system("bin/vite", "build", "--mode", "test", "--force", exception: true)
-  child = Process.spawn({ "PIDFILE" => pidfile, "SOULSHOUSE_SERVER_TOKEN" => server_token }, "bin/rails", "server", "-e", "test", "-p", config.port(:backend).to_s,
+  child = Process.spawn({ "PIDFILE" => pidfile, "SOULSHOUSE_SERVER_TOKEN" => server_token,
+    "HOUSE_INFERENCE_OPENROUTER_API_KEY" => "test-only-house" }, "bin/rails", "server", "-e", "test", "-p", config.port(:backend).to_s,
     "-b", "127.0.0.1", out: log, err: [ :child, :out ])
   ready = false
   60.times do

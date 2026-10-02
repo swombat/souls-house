@@ -98,7 +98,7 @@ class AgentTest < ActiveSupport::TestCase
     agent = agents(:research_assistant)
 
     assert_equal(
-      [ "active", "colour", "deprecated", "health_state", "icon", "id", "model_id", "model_label", "name", "paused", "runtime", "unavailability_reason" ],
+      [ "active", "colour", "deprecated", "health_state", "icon", "id", "inference_setup_message", "model_id", "model_label", "name", "paused", "runtime", "unavailability_reason" ],
       agent.as_json(as: :list).keys.sort
     )
   end

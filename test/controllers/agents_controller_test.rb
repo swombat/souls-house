@@ -147,13 +147,74 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "should get new agent wizard" do
-    get new_account_agent_path(@account)
+    HouseInference::Offering.stub(:configured?, true) do
+      get new_account_agent_path(@account)
+    end
 
     assert_response :success
     assert_equal @account.to_param, inertia_shared_props.dig("account", "id")
+    assert_equal HouseInference::Offering::MODEL_ID, inertia_shared_props.fetch("default_model_id")
+    house_models = inertia_shared_props.fetch("grouped_models").fetch("On the house")
+    assert_includes house_models.pluck("model_id"), inertia_shared_props.fetch("default_model_id")
     top_models = inertia_shared_props.fetch("grouped_models").fetch("Top Models")
     assert_includes top_models.pluck("model_id"), "openai/gpt-6-astra"
     assert_includes top_models.pluck("model_id"), "google/gemini-3.8-flash"
+  end
+
+  test "birth without a model defaults to house inference" do
+    HouseInference::Offering.stub(:configured?, true) do
+      assert_difference [ "Agent.count", "ApiKey.count", "HouseInferenceGrant.count" ], 1 do
+        assert_enqueued_with(job: ProvisionAgentJob) do
+          post account_agents_path(@account), params: {
+            agent: { name: "Default house birth", system_prompt: "Synthetic seed" }
+          }
+        end
+      end
+    end
+
+    agent = Agent.last
+    assert_equal HouseInference::Offering::MODEL_ID, agent.model_id
+    assert_equal agent.id, HouseInferenceGrant.find_by!(user: @user).agent_id
+    assert_redirected_to onboarding_account_agent_path(@account, agent)
+  end
+
+  test "new resident default falls back when the user has a funded resident in another account" do
+    @agent.update_columns(model_id: HouseInference::Offering::MODEL_ID)
+    grant = HouseInferenceGrant.create!(user: @user, agent: @agent)
+
+    HouseInference::Offering.stub(:configured?, true) do
+      assert_personal_birth_default(accounts(:team_account))
+    end
+
+    assert_equal @agent.id, grant.reload.agent_id
+    assert_equal HouseInference::Offering::MODEL_ID, @agent.reload.model_id
+  end
+
+  test "new resident default falls back for members without credential permission" do
+    sign_in users(:existing_user)
+    account = accounts(:team_account)
+    assert_not account.ai_credentials_manageable_by?(users(:existing_user))
+
+    HouseInference::Offering.stub(:configured?, true) do
+      assert_personal_birth_default(account)
+    end
+  end
+
+  test "new resident default falls back when house inference is not configured" do
+    HouseInference::Offering.stub(:configured?, false) do
+      assert_personal_birth_default(@account)
+    end
+  end
+
+  test "an unassigned house grant still allows the house default" do
+    HouseInferenceGrant.create!(user: @user)
+
+    HouseInference::Offering.stub(:configured?, true) do
+      get new_account_agent_path(@account)
+    end
+
+    assert_response :success
+    assert_equal HouseInference::Offering::MODEL_ID, inertia_shared_props.fetch("default_model_id")
   end
 
   test "should create born-hosted agent" do
@@ -171,6 +232,8 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     end
 
     agent = Agent.last
+    assert_equal "openrouter/auto", agent.model_id
+    assert_nil HouseInferenceGrant.find_by(agent: agent)
     assert_equal "Created Test Agent", agent.name
     assert_equal @account, agent.account
     assert_equal "provisioning", agent.runtime
@@ -685,6 +748,27 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     get edit_account_agent_path(accounts(:team_account), agents(:other_account_agent))
 
     assert_response :success
+  end
+
+  private
+
+  def assert_personal_birth_default(account)
+    expected_model = Chat::MODELS.first.fetch(:model_id)
+    get new_account_agent_path(account)
+    assert_response :success
+    assert_equal expected_model, inertia_shared_props.fetch("default_model_id")
+
+    assert_no_difference "HouseInferenceGrant.count" do
+      assert_difference "Agent.count", 1 do
+        post account_agents_path(account), params: {
+          agent: { name: "Personal default birth", system_prompt: "Synthetic seed" }
+        }
+      end
+    end
+    agent = Agent.last
+    assert_equal expected_model, agent.model_id
+    assert_nil HouseInferenceGrant.find_by(agent: agent)
+    assert_redirected_to onboarding_account_agent_path(account, agent)
   end
 
 end

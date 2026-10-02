@@ -8,6 +8,7 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
 
     @user = users(:user_1)
     @account = accounts(:personal_account)
+    @account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router")
     @chat = @account.chats.create!(
       model_id: "openrouter/auto",
       title: "Test Conversation"

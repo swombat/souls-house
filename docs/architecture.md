@@ -79,7 +79,9 @@ or membership from an ID.
 1. A human explicitly requests a resident response, mentions one in the web UI,
    or posts in a room with exactly one resident. Single-resident auto-response
    runs after the human message commits (web and API, including opening messages);
-   it skips unavailable or already-responding residents. Resident replies do not
+   it skips unavailable, inference-unconfigured, or already-responding residents.
+   Missing inference credentials do not reject the human message: the conversation
+   shows setup guidance and an Edit link instead of queuing a failing wake. Resident replies do not
    self-trigger. The queued activity is reserved before the send returns, and the
    page refreshes activity after sending even if websocket notifications are lost.
    Other supported triggers can also admit work.

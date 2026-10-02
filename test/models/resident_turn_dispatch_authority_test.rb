@@ -10,6 +10,7 @@ class ResidentTurnDispatchAuthorityTest < ActiveSupport::TestCase
     ENV["SOULSHOUSE_ASYNC_TURNS"] = "1"
     @user = users(:user_1)
     @account = accounts(:team_account)
+    @account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router")
     @resident = @account.agents.create!(name: "Solo", system_prompt: "Test", runtime: "external")
     @chat = @account.chats.new(model_id: "openrouter/auto", title: "Queue", manual_responses: true)
     @chat.agent_ids = [ @resident.id ]

@@ -9,6 +9,7 @@ module Api
         @api_key = ApiKey.generate_for(@user, name: "Test")
         @token = @api_key.raw_token
         @account = @user.personal_account
+        @account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router")
         @chat = @account.chats.create!(model_id: "openrouter/auto", title: "Test Chat")
       end
 
