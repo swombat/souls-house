@@ -5,6 +5,14 @@ module Notices
 
       def section_for(agent)
         items = Notice.for_agent(agent).filter_map { |notice| render(notice, agent) }
+        witness = AuditLog.where(auditable: agent, action: "export_resident_archive").order(:created_at).last
+        if witness
+          items << "- [platform export custody, not authored memory] A private separate-copy archive was exported #{witness.data['created_at']} by #{witness.user&.to_param}, export #{witness.data['export_id']}. This source was not moved or deleted."
+        end
+        custody = agent.portability_custody
+        if custody.present?
+          items << "- [platform custody, not authored memory] This body was restored as a separate copy from archive-declared resident #{custody['source_resident_id']} (installation #{custody['source_installation']}), export #{custody['export_id']} created #{custody['created_at']} by #{custody['exported_by']}; imported #{custody['imported_at']} by #{custody['imported_by']}. The source is preserved. Conversations/session history and old service availability are not inherited; credentials, integrations and local hook trust require deliberate reconnection/review."
+        end
         return if items.empty?
 
         <<~TEXT.strip

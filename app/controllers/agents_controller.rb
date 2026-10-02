@@ -10,6 +10,7 @@ class AgentsController < ApplicationController
     end
 
     render inertia: "agents/index", props: {
+      resident_import_url: current_account.owned_by?(Current.user) ? import_account_agents_path(current_account) : nil,
       agents: Agents::ResidentDirectory.new(current_account).call,
       grouped_models: grouped_models,
       colour_options: Agent::VALID_COLOURS,
@@ -21,6 +22,7 @@ class AgentsController < ApplicationController
   def new
     render inertia: "agents/new", props: {
       grouped_models: grouped_models,
+      resident_import_url: current_account.owned_by?(Current.user) ? import_account_agents_path(current_account) : nil,
       default_model_id: Agents::HostedBirth.default_model_id(account: current_account, creator: Current.user),
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,
@@ -55,6 +57,7 @@ class AgentsController < ApplicationController
     )
 
     render inertia: "agents/edit", props: {
+      portability: portability_props,
       agent: @agent.as_json,
       house_allowance: HouseInferenceGrant.find_by(agent: @agent)&.presentation,
       telegram_deep_link: @agent.telegram_configured? ? @agent.telegram_deep_link_for(Current.user) : nil,
@@ -105,6 +108,24 @@ class AgentsController < ApplicationController
   end
 
   private
+
+  def portability_props
+    can_manage = current_account.owned_by?(Current.user)
+    supported = @agent.externally_hosted? && !@agent.imported_home?
+    reason = Agents::Portability::Export.unavailable_reason(@agent)
+    if can_manage && !reason
+      begin
+        Agents::Portability::Transport.new(@agent).stopped!
+      rescue Agents::Portability::Error, Agents::Resources::OwnershipError
+        reason = "Stop the resident before export; runtime state must be verifiable"
+      end
+    end
+    { can_manage: can_manage, export_url: portable_export_account_agent_path(current_account, @agent),
+      import_url: import_account_agents_path(current_account),
+      stop_url: supported ? portability_stop_account_agent_path(current_account, @agent) : nil,
+      activate_url: supported && !@agent.active? && @agent.paused? ? portability_activate_account_agent_path(current_account, @agent) : nil,
+      imported: @agent.portability_custody.present?, export_ready: can_manage && reason.nil?, unavailable_reason: reason }
+  end
 
   def set_agent
     @agent = current_account.agents.find(params[:id])

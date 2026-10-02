@@ -30,6 +30,13 @@ module Agents
     end
 
     def spawn!
+      agent.with_lock do
+        raise SandboxError, "Inactive resident requires explicit activation" unless agent.active?
+        spawn_without_portability_gate!
+      end
+    end
+
+    def spawn_without_portability_gate!
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
       ensure_memory_not_suspended!
       raise SandboxError, "agent uuid missing" if agent.uuid.blank?
@@ -86,6 +93,13 @@ module Agents
     end
 
     def recreate!
+      agent.with_lock do
+        raise SandboxError, "Inactive resident requires explicit activation" unless agent.active?
+        recreate_without_portability_gate!
+      end
+    end
+
+    def recreate_without_portability_gate!
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
       ensure_memory_not_suspended!
       if container_exists?
@@ -178,6 +192,13 @@ module Agents
     end
 
     def start!
+      agent.with_lock do
+        raise SandboxError, "Inactive resident requires explicit activation" unless agent.active?
+        start_without_portability_gate!
+      end
+    end
+
+    def start_without_portability_gate!
       ensure_memory_not_suspended!
       update_restart_policy!
       docker_system("start", agent.container_name, out: File::NULL, err: File::NULL) || raise(SandboxError, "failed to start #{agent.container_name}")
@@ -219,6 +240,8 @@ module Agents
     rescue StandardError
       false
     end
+
+    private :spawn_without_portability_gate!, :start_without_portability_gate!, :recreate_without_portability_gate!
 
     private
 

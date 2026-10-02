@@ -276,6 +276,7 @@ class Agent < ApplicationRecord
   end
 
   def apply_default_service_accesses
+    return if portability_custody.present?
     account.service_connections.where(enabled_for_new_agents: true).find_each do |connection|
       agent_service_accesses.find_or_create_by!(service_connection: connection) do |access|
         access.enabled = true
@@ -305,6 +306,7 @@ class Agent < ApplicationRecord
   end
 
   def enqueue_model_change_orientation
+    return if portability_custody.present? && !active?
     return unless identity_owned_by_agent?
 
     ModelChangeOrientationJob.perform_later(id, model_id)

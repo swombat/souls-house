@@ -15,7 +15,14 @@
 
   import { accountAgentsPath } from '@/routes';
 
-  let { grouped_models = {}, default_model_id, colour_options = [], icon_options = [], account } = $props();
+  let {
+    grouped_models = {},
+    default_model_id,
+    colour_options = [],
+    icon_options = [],
+    account,
+    resident_import_url: residentImportUrl = null,
+  } = $props();
 
   const draftKey = `helixkit:agent-birth-draft:${account.id}`;
   const steps = ['Beginning', 'Appearance', 'Soul seed', 'Runtime', 'Review'];
@@ -123,6 +130,11 @@
 
 <div class="mx-auto max-w-4xl px-4 py-8 sm:px-8">
   <div class="mb-8">
+    {#if residentImportUrl}
+      <p class="mb-4 text-sm">
+        <a class="text-primary underline" href={residentImportUrl}>Import a resident archive instead</a>
+      </p>
+    {/if}
     <p class="text-sm font-medium text-primary">Begin a resident</p>
     <h1 class="mt-1 text-3xl font-bold">Offer a beginning</h1>
     <p class="mt-2 max-w-2xl text-muted-foreground">

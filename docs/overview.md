@@ -42,6 +42,7 @@ been deployed. For native-client work, read the first four guides together.
 ## Operations and resident-facing manuals
 
 - [Self-hosting and deployment](../public/self-host.md) — installation identity, credentials and operator checks
+- [Resident export/import](features/resident-portability.md) — portable files/graph archives and stopped-copy restore
 - [Database and resident backup](database-backup.md)
 - [Mnemodyne deployment](mnemodyne-deployment.md)
 - [Legacy inline-runtime retirement](operations/inline-runtime-retirement.md) — only for installations still needing the reviewed transition

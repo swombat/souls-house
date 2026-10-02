@@ -22,19 +22,22 @@ class AgentRuntimeInteraction < ApplicationRecord
   scope :active, -> { where(finished_at: nil).where("run_id IS NOT NULL OR started_at >= ?", ACTIVE_WINDOW.ago) }
 
   def self.record_trigger!(agent:, chat:, trigger_kind:, conversation_id:, requested_by:, session_id:, endpoint_url:, request_text:, last_included_message_id: nil, provider_auth_mode: "api_key")
-    interaction = create!(
-      agent: agent,
-      chat: chat,
-      trigger_kind: trigger_kind,
-      conversation_obfuscated_id: conversation_id,
-      requested_by: requested_by,
-      session_id: session_id,
-      endpoint_url: endpoint_url,
-      request_text: request_text,
-      last_included_message_id: last_included_message_id,
-      provider_auth_mode: provider_auth_mode,
-      started_at: Time.current
-    )
+    interaction = agent.with_lock do
+      raise Agent::RuntimeAvailability::Unavailable, "Resident is inactive" unless agent.active?
+      create!(
+        agent: agent,
+        chat: chat,
+        trigger_kind: trigger_kind,
+        conversation_obfuscated_id: conversation_id,
+        requested_by: requested_by,
+        session_id: session_id,
+        endpoint_url: endpoint_url,
+        request_text: request_text,
+        last_included_message_id: last_included_message_id,
+        provider_auth_mode: provider_auth_mode,
+        started_at: Time.current
+      )
+    end
 
     result = yield interaction
     interaction.record_result!(result)

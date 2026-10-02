@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_01_122000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_02_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -350,6 +350,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_122000) do
     t.boolean "persistent_session", default: false, null: false
     t.boolean "persistent_wake_session", default: false, null: false
     t.string "portable_home_id"
+    t.jsonb "portability_custody", default: {}, null: false
     t.jsonb "provider_auth_modes", default: {}, null: false
     t.jsonb "provider_connections", default: {}, null: false
     t.datetime "provisioning_started_at"

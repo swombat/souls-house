@@ -8,7 +8,7 @@
   import AgentIndexHeader from '$lib/components/agents/AgentIndexHeader.svelte';
   import AgentUpgradeDialog from '$lib/components/agents/AgentUpgradeDialog.svelte';
 
-  let { agents = [], grouped_models = {}, account } = $props();
+  let { agents = [], grouped_models = {}, account, resident_import_url: residentImportUrl = null } = $props();
 
   // Subscribe to both:
   // - Account:${id}:agents - individual agent updates (via collection subscription)
@@ -72,6 +72,11 @@
 
 <div class="p-8 max-w-6xl mx-auto">
   <AgentIndexHeader onCreate={() => router.visit(newAccountAgentPath(account.id))} />
+  {#if residentImportUrl}
+    <p class="mb-6 text-sm">
+      <a class="text-primary underline" href={residentImportUrl}>Import a resident archive</a>
+    </p>
+  {/if}
 
   {#if agents.length === 0}
     <AgentEmptyState onCreate={() => router.visit(newAccountAgentPath(account.id))} />

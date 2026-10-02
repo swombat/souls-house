@@ -109,7 +109,15 @@ Rails.application.routes.draw do
     get "agents", as: nil, to: redirect { |params, request| "/accounts/#{params[:account_id]}/residents#{request.query_string.present? ? "?#{request.query_string}" : ""}" }
     get "agents/*legacy_path", as: nil, to: redirect { |params, request| "/accounts/#{params[:account_id]}/residents/#{params[:legacy_path]}#{request.query_string.present? ? "?#{request.query_string}" : ""}" }
     resources :agents, path: "residents", except: :show do
+      collection do
+        get :import, to: "agents/portability#new"
+        post :import_preview, to: "agents/portability#preview"
+        post :import_archive, to: "agents/portability#create"
+      end
       member do
+        get :portable_export, to: "agents/portability#export"
+        post :portability_stop, to: "agents/portability#stop"
+        post :portability_activate, to: "agents/portability#activate"
         get :onboarding, to: "agents/onboarding#show"
         get "identity_export", to: "agents/runtime_checks#identity_export", as: :identity_export
         post "send_test_request", to: "agents/runtime_checks#send_test_request", as: :send_test_request

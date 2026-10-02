@@ -18,6 +18,7 @@ class Mnemodyne::Vault < Mnemodyne::Record
   private
 
   def schedule_first_checkpoint
+    return if agent.portability_custody.present? && !agent.active?
     if Agents::Config.backups_enabled?
       Mnemodyne::FirstCheckpointJob.set(wait_until: Mnemodyne::FirstCheckpointJob.next_attempt_at(agent)).perform_later(agent_id)
     end

@@ -19,6 +19,7 @@
   import AgentSettingsTabs from '$lib/components/agents/AgentSettingsTabs.svelte';
   import AgentInteractionsPanel from '$lib/components/agents/AgentInteractionsPanel.svelte';
   import AgentCostsPanel from '$lib/components/agents/AgentCostsPanel.svelte';
+  import ResidentPortabilityPanel from '$lib/components/agents/resident-portability-panel.svelte';
 
   let {
     agent,
@@ -42,11 +43,19 @@
     interactions = [],
     interactions_pagination: interactionsPagination = {},
     cost_report: costReport = {},
+    portability = null,
     account,
   } = $props();
 
   useSync({
-    [`Agent:${agent.id}`]: ['agent', 'memories', 'interactions', 'interactions_pagination', 'cost_report'],
+    [`Agent:${agent.id}`]: [
+      'agent',
+      'memories',
+      'interactions',
+      'interactions_pagination',
+      'cost_report',
+      'portability',
+    ],
   });
 
   let selectedModel = $state(agent.model_id);
@@ -60,6 +69,7 @@
   );
   let showFormActions = $derived(
     activeTab !== 'memory' &&
+      activeTab !== 'portability' &&
       activeTab !== 'interactions' &&
       activeTab !== 'costs' &&
       activeTab !== 'integrations' &&
@@ -78,6 +88,7 @@
     { id: 'interactions', label: 'Sessions', icon: TerminalWindow },
     { id: 'memory', label: 'Memory', icon: Graph },
     { id: 'costs', label: 'Costs', icon: CurrencyDollar },
+    ...(portability?.can_manage ? [{ id: 'portability', label: 'Export / Import', icon: CloudArrowUp }] : []),
   ];
 
   let form = useForm({
@@ -206,6 +217,8 @@
             {runtimeObservabilityUrl} />
         {:else if activeTab === 'costs'}
           <AgentCostsPanel report={costReport} />
+        {:else if activeTab === 'portability'}
+          <ResidentPortabilityPanel {portability} />
         {/if}
 
         {#if showFormActions}
