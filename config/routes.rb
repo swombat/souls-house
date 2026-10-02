@@ -229,7 +229,7 @@ Rails.application.routes.draw do
       resources :key_requests, only: [ :create, :show ]
       post "agents/:uuid/announce", to: "agents#announce", as: :agent_announce
       get "agents/:uuid/health", to: "agents#health", as: :agent_health
-      resources :conversations, only: [ :index, :show, :create ] do
+      resources :conversations, only: [ :index, :show, :create, :update ] do
         resource :draft, only: [ :show, :update ]
         get :search, on: :collection
         resource :bookmark, only: [ :show, :update, :destroy ], controller: "agent_bookmarks"

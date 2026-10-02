@@ -4,6 +4,7 @@ module Api
 
       PAGE_SIZE = 100
       SEARCH_PAGE_SIZE = 50
+      TITLE_MAX_LENGTH = 255
 
       def search
         response.headers["Cache-Control"] = "no-store"
@@ -106,6 +107,27 @@ module Api
             created_at: chat.created_at.iso8601
           }
         }, status: :created
+      end
+
+      # Rename only. The title is read from the top level; any other shape
+      # (for example a nested {"conversation": {...}}) gets 422 rather than a
+      # silent success, so a caller can never mistake a no-op for a rename.
+      def update
+        chat = conversations_scope.kept.find(params[:id])
+        title = params[:title]
+
+        unless title.is_a?(String) && title.strip.present? && title.strip.length <= TITLE_MAX_LENGTH
+          render json: { error: "Provide a top-level title: nonblank text of at most #{TITLE_MAX_LENGTH} characters" },
+                 status: :unprocessable_entity
+          return
+        end
+        title = title.strip
+
+        if chat.update(title: title)
+          render json: { conversation: conversation_json(chat) }
+        else
+          render json: { error: chat.errors.full_messages.to_sentence }, status: :unprocessable_entity
+        end
       end
 
       private
