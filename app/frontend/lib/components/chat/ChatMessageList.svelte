@@ -1,4 +1,5 @@
 <script>
+  import { editAccountAgentPath } from '@/routes';
   import { chatTimelineItems } from '$lib/chat-timeline';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import MessageBubble from '$lib/components/chat/MessageBubble.svelte';
@@ -11,6 +12,8 @@
 
   let {
     messagesContainer = $bindable(),
+    agents = [],
+    accountId,
     loadingMore = false,
     hasMore = false,
     oldestId = null,
@@ -36,6 +39,7 @@
     requestVoice = () => {},
   } = $props();
 
+  const setupAgents = $derived(agents.filter((agent) => agent.inference_setup_message));
   const timelineItems = $derived(chatTimelineItems(allMessages, visibleMessages, runtimeInteractions));
 
   // Measure before adding sections: after a tall update, a reader who was
@@ -67,7 +71,7 @@
   onscroll={handleScroll}
   data-testid="chat-messages"
   class="flex-1 min-h-0 overflow-y-auto px-3 md:px-6 py-4">
-  <div class="space-y-4" class:h-full={timelineItems.length === 0} data-chat-content>
+  <div class="space-y-4" class:h-full={timelineItems.length === 0 && setupAgents.length === 0} data-chat-content>
     {#if loadingMore}
       <div class="flex justify-center py-4">
         <Spinner size={24} class="animate-spin text-muted-foreground" />
@@ -81,7 +85,7 @@
     {/if}
 
     {#if !Array.isArray(timelineItems) || timelineItems.length === 0}
-      <div class="flex items-center justify-center h-full">
+      <div class="flex items-center justify-center" class:h-full={setupAgents.length === 0}>
         <div class="text-center text-muted-foreground">
           <p>Start the conversation by sending a message below.</p>
         </div>
@@ -171,5 +175,11 @@
         </div>
       {/if}
     {/if}
+    {#each setupAgents as agent (agent.id)}
+      <p role="status" aria-label="Resident setup" class="rounded-lg border p-4 text-sm text-muted-foreground">
+        {agent.name}: {agent.inference_setup_message}
+        <a class="text-primary underline" href={editAccountAgentPath(accountId, agent.id)}>Edit {agent.name}</a>
+      </p>
+    {/each}
   </div>
 </div>

@@ -140,22 +140,3 @@ test('a network failure releases the trigger and gives a retryable error', async
     fetchMock.mockRestore();
   }
 });
-
-test('shows setup instructions before an automatic wake needs the manual button', () => {
-  render(AgentTriggerBar, {
-    accountId: 'account',
-    chatId: 'chat',
-    agents: [
-      {
-        id: 'resident',
-        name: 'Resident',
-        inference_setup_message: 'Edit the resident and set up credentials before asking them to respond.',
-      },
-    ],
-  });
-  expect(screen.getByRole('status')).toHaveTextContent('set up credentials');
-  expect(screen.getByRole('link', { name: 'Edit Resident' })).toHaveAttribute(
-    'href',
-    '/accounts/account/residents/resident/edit'
-  );
-});

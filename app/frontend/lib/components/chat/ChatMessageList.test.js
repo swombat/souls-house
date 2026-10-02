@@ -60,3 +60,21 @@ test('ordinary linked messages group without a flag and keep active work below t
   expect(container.textContent).toContain('1m 00s elapsed');
   expect(precedes(sections[1], container.querySelector('[data-testid="runtime-activity-card"]'))).toBe(true);
 });
+
+test('shows setup instructions before an automatic wake needs the manual button', () => {
+  render(ChatMessageList, {
+    accountId: 'account',
+    agents: [
+      {
+        id: 'resident',
+        name: 'Resident',
+        inference_setup_message: 'Edit the resident and set up credentials before asking them to respond.',
+      },
+    ],
+  });
+  expect(screen.getByRole('status')).toHaveTextContent('set up credentials');
+  expect(screen.getByRole('link', { name: 'Edit Resident' })).toHaveAttribute(
+    'href',
+    '/accounts/account/residents/resident/edit'
+  );
+});

@@ -132,6 +132,8 @@
       <TelegramBanner {telegramDeepLink} {agents} chatId={chat?.id} />
       {#if debugMode && isSiteAdmin}<ChatDebug />{/if}
       <ChatMessageList
+        {agents}
+        accountId={account.id}
         bind:messagesContainer={history.container}
         loadingMore={history.loading}
         hasMore={history.hasMore}

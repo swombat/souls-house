@@ -41,7 +41,7 @@ test('new residents default to house funding and missing credentials never stran
     await composer.fill('My first hello remains saved');
     await composer.press('Enter');
     await expect(page.getByText('My first hello remains saved', { exact: true })).toBeVisible();
-    await expect(page.getByRole('status')).toContainText('set up credentials');
+    await expect(page.getByRole('status', { name: 'Resident setup' })).toContainText('set up credentials');
     await expect(page.getByTestId('runtime-activity-card')).toHaveCount(0);
     await page.getByRole('link', { name: 'Edit E2E Researcher', exact: true }).click();
     await expect(page).toHaveURL(/\/residents\/[^/]+\/edit$/);
