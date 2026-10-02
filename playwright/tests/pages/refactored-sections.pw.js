@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/experimental-ct-svelte';
 import Subscription from '../../../app/frontend/lib/components/agents/AgentProviderSubscriptionPanel.svelte';
-import PersonalServices from '../../../app/frontend/pages/accounts/personal_services.svelte';
+import Integrations from '../../../app/frontend/pages/accounts/integrations.svelte';
 
 test('subscription code input belongs to the ceremony and completion selects subscription mode', async ({
   mount,
@@ -56,13 +56,13 @@ test('subscription code input belongs to the ceremony and completion selects sub
   await expect(component.getByRole('button', { name: 'Reconnect' })).toBeVisible();
 });
 
-test('personal service cards retain resident provisioning controls after extraction', async ({ mount, page }) => {
+test('integration cards retain resident provisioning controls after extraction', async ({ mount, page }) => {
   let requestBody;
   await page.route('**/synthetic-access', async (route) => {
     requestBody = route.request().postDataJSON();
     return route.fulfill({ json: {} });
   });
-  const component = await mount(PersonalServices, {
+  const component = await mount(Integrations, {
     props: {
       account: { id: 'synthetic-account', name: 'Synthetic account' },
       services: [],
@@ -72,6 +72,8 @@ test('personal service cards retain resident provisioning controls after extract
           label: 'Synthetic repository',
           provider: 'github',
           status: 'connected',
+          can_manage: true,
+          can_provision: true,
           residents: [
             {
               id: 'synthetic-resident',
