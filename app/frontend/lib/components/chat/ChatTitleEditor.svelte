@@ -1,11 +1,18 @@
 <script>
   import { Spinner } from 'phosphor-svelte';
 
-  let { chat, titleIsLoading = false, onSaveTitle = () => {} } = $props();
+  let {
+    chat,
+    titleIsLoading = false,
+    onSaveTitle = () => {},
+    onDraftTitle = () => {},
+    onCancelTitle = () => {},
+  } = $props();
 
   let titleEditing = $state(false);
   let titleEditValue = $state('');
   let titleInputRef = $state(null);
+  let originalTitle = '';
 
   $effect(() => {
     if (titleEditing && titleInputRef) {
@@ -16,6 +23,7 @@
 
   function startEditingTitle() {
     if (!chat) return;
+    originalTitle = chat.title || '';
     titleEditValue = chat.title || 'New Chat';
     titleEditing = true;
   }
@@ -23,6 +31,7 @@
   function cancelEditingTitle() {
     titleEditing = false;
     titleEditValue = '';
+    onCancelTitle(originalTitle);
   }
 
   function saveTitle() {
@@ -31,7 +40,7 @@
       return;
     }
 
-    const previousTitle = chat.title;
+    const previousTitle = originalTitle;
     titleEditing = false;
     onSaveTitle(titleEditValue.trim(), previousTitle);
   }
@@ -51,6 +60,7 @@
   <input
     bind:this={titleInputRef}
     bind:value={titleEditValue}
+    oninput={(event) => onDraftTitle(event.currentTarget.value)}
     onkeydown={handleTitleKeydown}
     onblur={saveTitle}
     type="text"

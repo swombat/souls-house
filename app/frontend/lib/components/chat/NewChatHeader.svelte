@@ -11,6 +11,10 @@
     <Button variant="ghost" size="sm" onclick={onMenuOpen} class="h-8 w-8 p-0 md:hidden">
       <List size={20} />
     </Button>
-    <ChatTitleEditor chat={{ title }} onSaveTitle={(value) => (title = value)} />
+    <ChatTitleEditor
+      chat={{ title }}
+      onDraftTitle={(value) => (title = value)}
+      onCancelTitle={(value) => (title = value)}
+      onSaveTitle={(value) => (title = value)} />
   </div>
 </header>
