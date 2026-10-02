@@ -1,5 +1,8 @@
 class ChatsController < ApplicationController
 
+  include DraftAuthorBinding
+
+  before_action :require_matching_draft_author, only: :create
   require_feature_enabled :chats
   before_action :set_chat, except: [ :index, :create, :new, :search ]
   before_action :require_available_agents, only: [ :index, :new ]
@@ -86,6 +89,11 @@ class ChatsController < ApplicationController
       audio_signed_id: params[:audio_signed_id],
       agent_ids: agents.map(&:id)
     )
+    # A normal redirect can also mean refusal. Only acknowledge a persisted chat.
+    submission_id = params[:draft_submission_id]
+    if submission_id.is_a?(String) && submission_id.match?(/\A[0-9a-f-]{36}\z/i)
+      flash[:draft_submission_id] = submission_id
+    end
     audit("create_chat", @chat, **chat_create_params.to_h)
     redirect_to account_chat_path(current_account, @chat)
   rescue ActiveRecord::RecordNotFound

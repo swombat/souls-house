@@ -23,6 +23,7 @@
         {@const isSelected = selectedAgentIds.includes(agent.id)}
         <button
           type="button"
+          aria-pressed={isSelected}
           onclick={() => toggleAgent(agent.id)}
           class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm border transition-colors
                  {isSelected

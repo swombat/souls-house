@@ -335,6 +335,51 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_chat_path(@account, chat)
   end
 
+  test "acknowledges a first-message draft only after creating its conversation" do
+    nonce = SecureRandom.uuid
+    assert_difference "Chat.count", 1 do
+      post account_chats_path(@account), params: {
+        message: "Keep this first message", agent_ids: [ agents(:research_assistant).to_param ],
+        draft_submission_id: nonce
+      }, headers: { "X-Draft-User" => @user.to_param }
+    end
+    assert_equal nonce, flash[:draft_submission_id]
+    follow_redirect!
+    assert_equal nonce, inertia_shared_props.fetch("flash")["draft_submission_id"]
+  end
+
+  test "refused first-message draft has no success receipt" do
+    [ [], [ agents(:other_account_agent).to_param ] ].each do |ids|
+      assert_no_difference "Chat.count" do
+        post account_chats_path(@account), params: {
+          message: "Keep this refused message", agent_ids: ids, draft_submission_id: SecureRandom.uuid
+        }
+      end
+      assert_redirected_to new_account_chat_path(@account)
+      assert_nil flash[:draft_submission_id]
+      follow_redirect!
+    end
+  end
+
+  test "stale first-message tab cannot submit as a replacement user" do
+    assert_no_difference "Chat.count" do
+      post account_chats_path(@account), params: {
+        message: "Private draft", agent_ids: [ agents(:research_assistant).to_param ],
+        draft_submission_id: SecureRandom.uuid
+      }, headers: { "X-Draft-User" => "previous-user" }
+    end
+    assert_response :forbidden
+    assert_nil flash[:draft_submission_id]
+  end
+
+  test "oversized draft receipt is not stored in the session" do
+    post account_chats_path(@account), params: {
+      agent_ids: [ agents(:research_assistant).to_param ], draft_submission_id: "x" * 5000
+    }
+    assert_redirected_to account_chat_path(@account, Chat.last)
+    assert_nil flash[:draft_submission_id]
+  end
+
   test "preserves a title chosen before creation without generating another" do
     assert_no_enqueued_jobs only: GenerateTitleJob do
       post account_chats_path(@account), params: {

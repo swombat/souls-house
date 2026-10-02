@@ -5,6 +5,11 @@ const PREFIX = 'conversation-draft:v1:';
 export const DRAFT_LOGOUT = 'conversation-draft-logout:';
 const editors = new Set();
 
+export function registerDraftEditor(editor) {
+  editors.add(editor);
+  return () => editors.delete(editor);
+}
+
 function browserStorage() {
   try {
     return localStorage;
@@ -38,7 +43,7 @@ export class ConversationDraft {
     request = (...args) => fetch(...args),
   }) {
     this.userId = userId;
-    editors.add(this);
+    registerDraftEditor(this);
     this.prefix = `${PREFIX}${userId}:${accountId}:${chatId}:`;
     this.key = this.prefix + crypto.randomUUID();
     this.storage = storage;
