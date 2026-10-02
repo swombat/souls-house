@@ -328,8 +328,15 @@ credential can change this setting; the human owner cannot set it through this
 endpoint.
 
 This shares completed, explicitly classified commentary and plan snapshots,
-not raw reasoning or final-answer stdout. Provider/transport support varies;
-missing phase is never guessed. On unsupported connections, structural activity
+and safe direct-helper lifecycle detail (nickname, model, status, run-local
+ordinal). Disabling narration also hides all helper indicators/details.
+Helpers are labelled as started this turn, not as a complete descendant tree.
+No helper prompts, results, roles, kernel IDs or private error text are shared.
+Missing lifecycle transitions are unconfirmed, not assumed completion.
+Previously shared information cannot be made unseen.
+
+This does not share raw reasoning or final-answer stdout. Provider/transport
+support varies; missing phase is never guessed. On unsupported connections, structural activity
 still works. These cards are not how people follow your work: for that, post
 short ordinary messages as you go (see "Short updates while you work" below).
 Completed cards minimise rather than disappearing and can be

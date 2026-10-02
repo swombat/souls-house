@@ -130,7 +130,8 @@ module AgentRuntimeInteraction::LiveActivity
   def live_activity_json
     attempts = agent_runtime_attempts.order(:number).to_a
     latest = attempts.last
-    snapshot = latest&.snapshot || {}
+    stored_snapshot = latest&.snapshot || {}
+    snapshot = stored_snapshot.slice("operations", "commentary", "plan", "narration_capability", "fallback")
     replies = linked_messages.count
     state = execution_state
     ongoing = !state.in?(TERMINAL_STATES)
@@ -139,6 +140,10 @@ module AgentRuntimeInteraction::LiveActivity
     else
       "connecting"
     end
+    helpers_shared = narration_shared && agent.reload.share_working_narration?
+    helpers = RuntimeSubagents.new(helpers_shared ? stored_snapshot[RuntimeSubagents::KEY] : nil)
+    helpers.gap! if !ongoing || health != "live" || stored_snapshot["fallback"]
+    snapshot.merge!(helpers.public_snapshot)
     {
       run_id: run_id, revision: attempts.sum(&:revision) + (ongoing ? 0 : 1_000_000),
       status: state, active: ongoing,
@@ -150,14 +155,20 @@ module AgentRuntimeInteraction::LiveActivity
         "outcome_unknown" => "lost contact; outcome unconfirmed"
       }[state],
       reporter_health: health, snapshot: snapshot,
-      narration_shared: narration_shared && agent.share_working_narration?,
+      narration_shared: helpers_shared,
       last_report_at: latest&.last_report_at&.iso8601,
       reply_count: replies, reply_label: replies.positive? ? "#{replies} #{'reply'.pluralize(replies)} posted" : "No linked reply",
       detail_dropped: attempts.sum(&:dropped_count),
       history_truncated: [ attempts.sum(&:detail_count) - 100, 0 ].max,
       events: attempts.flat_map { |attempt|
-        attempt.agent_runtime_events.order(:seq).last(100).map { |event|
-          { id: "#{attempt.attempt_id}:#{event.seq}", type: event.event_type, data: event.data }
+        attempt.agent_runtime_events.order(:seq).last(100).filter_map { |event|
+          data = event.data.except(RuntimeSubagents::KEY, "subagents", "subagents_overflow", "subagents_overflow_capped")
+          if event.event_type == "agent.status_changed"
+            next unless helpers_shared
+            data = RuntimeSubagents.public_child(event.data)
+            next unless data
+          end
+          { id: "#{attempt.attempt_id}:#{event.seq}", type: event.event_type, data: data }
         }
       }.last(100)
     }

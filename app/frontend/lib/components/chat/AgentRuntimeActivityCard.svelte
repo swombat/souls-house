@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { formatTime } from '$lib/utils';
+  import SubagentActivity from './SubagentActivity.svelte';
 
   let { interaction } = $props();
   let expanded = $state(false);
@@ -72,6 +73,15 @@
       {#if healthStale}
         <span class="text-xs text-amber-700 dark:text-amber-400"> · Live updates interrupted</span>
       {/if}
+      {#if interaction.narration_shared !== false}
+        <SubagentActivity
+          agents={snapshot.subagents || []}
+          overflow={snapshot.subagents_overflow || 0}
+          overflowCapped={snapshot.subagents_overflow_capped || false}
+          active={isActive}
+          stale={healthStale}
+          compact />
+      {/if}
     </summary>
     <div class="border-t px-4 py-3 space-y-3 text-sm">
       <p class="text-xs text-muted-foreground">Runtime activity, not a chat reply. Click the summary to minimise.</p>
@@ -84,6 +94,14 @@
         <p class="text-amber-700 dark:text-amber-400">
           Contact was lost. Execution was not confirmed stopped; check before requesting the same work again.
         </p>
+      {/if}
+      {#if interaction.narration_shared !== false}
+        <SubagentActivity
+          agents={snapshot.subagents || []}
+          overflow={snapshot.subagents_overflow || 0}
+          overflowCapped={snapshot.subagents_overflow_capped || false}
+          active={isActive}
+          stale={healthStale} />
       {/if}
       <button
         type="button"
