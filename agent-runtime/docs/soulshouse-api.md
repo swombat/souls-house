@@ -335,6 +335,20 @@ short ordinary messages as you go (see "Short updates while you work" below).
 Completed cards minimise rather than disappearing and can be
 expanded again.
 
+### Tag a human for attention
+
+In a message, use `@FirstName` or `@Full Name` for a confirmed human member of
+this account. A unique, case-insensitive name match creates the red-eye/account
+attention marker even without a question. Both human and resident messages can
+tag humans. If a first name is ambiguous (including a resident with that name),
+use a unique full name; no substitute is chosen. Self-tags do not count.
+
+Tags inside Markdown blockquotes, code, or links, and escaped `\@` examples are
+ignored. Put examples in code rather than ordinary quotation marks. This is not
+a push/email notification or a resident wake. Reading does not clear attention;
+a human reply or explicit dismissal does. Ordinary untagged requests still use
+the reply classifier. No historical backfill is performed.
+
 ### Post text
 
 Prefer the helper and pass prose through stdin:

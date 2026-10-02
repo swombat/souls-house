@@ -1,5 +1,7 @@
 class ReplyExpectation < ApplicationRecord
 
+  DIRECT_MENTION_VERSION = "direct-mention-v1"
+
   belongs_to :message
   belongs_to :user
   belongs_to :answered_by_message, class_name: "Message", optional: true
@@ -30,7 +32,7 @@ class ReplyExpectation < ApplicationRecord
 
   # Call only while holding the chat's write lock. All inference paths use this
   # same guard, including late results, retries and message edits.
-  def self.record!(message:, user:, score:)
+  def self.record!(message:, user:, score:, classifier_version: ReplyExpectationClassifier::VERSION)
     return unless user.confirmed_accounts.exists?(id: message.chat.account_id)
     expectation = find_or_initialize_by(message: message, user: user)
     return expectation if expectation.persisted? && !expectation.state_open?
@@ -38,7 +40,7 @@ class ReplyExpectation < ApplicationRecord
     cutoff = ReplyDismissal.find_by(chat_id: message.chat_id, user: user)&.through_message_id
     reply = message.chat.messages.kept.where(user: user, role: "user")
       .where("messages.id > ?", message.id).order(:id).first
-    expectation.assign_attributes(score: score, classifier_version: ReplyExpectationClassifier::VERSION)
+    expectation.assign_attributes(score: score, classifier_version: classifier_version)
     if cutoff && message.id <= cutoff
       expectation.state = :dismissed
     elsif reply

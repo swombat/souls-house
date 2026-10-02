@@ -4,6 +4,25 @@ Proposal/review: [#116](https://github.com/swombat/souls-house/issues/116).
 Lume approved implementation in conversation nJdpqJ, message eNKLVY.
 This document describes the PR, not a deployment attestation.
 
+## Explicit tags
+
+Human and resident messages can explicitly tag a confirmed human account member
+with `@FirstName` or `@Full Name` (case-insensitive). Short names must identify
+exactly one person; colliding human/resident names do not select a substitute.
+Use a unique full name when a first name is ambiguous. Self-tags do not count.
+Code, Markdown blockquotes, links, and escaped `\@` examples are not tags.
+These are text tags, not a mention picker or a stable-ID mention format.
+
+A resolved tag records attention in the message's save transaction, independently
+of the provider and job queue. A classifier negative cannot remove it. It uses
+the existing red eye and account counts, with the same reply/dismissal/access
+rules. Open direct-tag records are removed when the tag is edited out; edits
+never reopen answered or dismissed records. Direct records have version
+`direct-mention-v1` and score 1 (deterministic resolution, not model confidence).
+No historical backfill or deployment is implied by this code change.
+
+## Inferred requests
+
 New conversational activity uses the house's system OpenRouter key. Jev's typed
 Decisions API (`typesafe/jev-1.13`) answers one response-needed question per
 message, batched across a burst. Scores at least 0.50 reach a second, batched

@@ -10,7 +10,7 @@ class ClassifyReplyExpectationsJob < ApplicationJob
     return if messages.empty?
 
     eligible = messages.select(&:reply_attention_conversational?)
-    fingerprints = messages.to_h { |m| [ m.id, [ m.content, m.streaming, m.progress_message, m.discarded_at ] ] }
+    fingerprints = messages.to_h { |m| [ m.id, [ m.content, m.streaming, m.progress_message, m.discarded_at, m.role ] ] }
     users = chat.account.users.joins(:memberships).where(memberships: { account_id: chat.account_id })
       .merge(Membership.confirmed).distinct.includes(:profile).to_a
     results = classify(eligible, users)
@@ -18,9 +18,11 @@ class ClassifyReplyExpectationsJob < ApplicationJob
 
     chat.with_lock do
       return if chat.discarded? || chat.account.reload.disabled?
+      users = chat.account.users.joins(:memberships).where(memberships: { account_id: chat.account_id })
+        .merge(Membership.confirmed).distinct.includes(:profile).to_a
       messages.each do |message|
         message.reload
-        next unless fingerprints[message.id] == [ message.content, message.streaming, message.progress_message, message.discarded_at ]
+        next unless fingerprints[message.id] == [ message.content, message.streaming, message.progress_message, message.discarded_at, message.role ]
         next unless message.reply_attention_pending?
         if skipped_ids.include?(message.id)
           # Oversized input or an uncertain recipient is not a negative verdict.
@@ -29,11 +31,19 @@ class ClassifyReplyExpectationsJob < ApplicationJob
           message.update_columns(reply_attention_pending: false)
           next
         end
+        # A model cannot veto an explicit tag. Resolve against the same room
+        # roster, then keep the normal membership/reply/dismissal guards below.
+        direct_ids = message.reply_attention_conversational? ? DirectReplyMentions.call(message: message, users: users) : []
+        recipients = results.fetch(message.id, {}).merge(direct_ids.index_with { 1.0 })
         # Reconcile only open inferences; human dismissals and completed replies
         # are never reset by an edit or a retry.
-        ReplyExpectation.where(message: message).state_open.where.not(user_id: results.fetch(message.id, {}).keys).destroy_all
-        results.fetch(message.id, {}).each do |user_id, score|
-          ReplyExpectation.record!(message: message, user: users.find { |u| u.id == user_id }, score: score)
+        ReplyExpectation.where(message: message).state_open.where.not(user_id: recipients.keys).destroy_all
+        recipients.each do |user_id, score|
+          version = direct_ids.include?(user_id) ? ReplyExpectation::DIRECT_MENTION_VERSION : ReplyExpectationClassifier::VERSION
+          user = users.find { |u| u.id == user_id }
+          next unless user
+          ReplyExpectation.record!(message: message, user: user, score: score,
+            classifier_version: version)
         end
         message.update_columns(reply_attention_pending: false)
       end

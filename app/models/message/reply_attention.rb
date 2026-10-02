@@ -3,8 +3,9 @@ module Message::ReplyAttention
   extend ActiveSupport::Concern
 
   included do
-    before_save :mark_reply_attention_pending, if: -> { new_record? || will_save_change_to_content? || will_save_change_to_streaming? }
+    before_save :mark_reply_attention_pending, if: -> { new_record? || will_save_change_to_content? || will_save_change_to_streaming? || will_save_change_to_progress_message? || will_save_change_to_role? }
     after_create :close_reply_expectations
+    after_save :record_direct_reply_mentions, if: :reply_attention_content_changed?
     after_save_commit :enqueue_reply_attention, if: :reply_attention_content_changed?
     after_save_commit :refresh_reply_attention_visibility, if: :saved_change_to_discarded_at?
   end
@@ -16,7 +17,7 @@ module Message::ReplyAttention
   private
 
   def reply_attention_content_changed?
-    saved_change_to_content? || saved_change_to_streaming?
+    saved_change_to_content? || saved_change_to_streaming? || saved_change_to_progress_message? || saved_change_to_role?
   end
 
   def mark_reply_attention_pending
@@ -25,6 +26,23 @@ module Message::ReplyAttention
 
   def close_reply_expectations
     ReplyExpectation.close_for_reply!(self)
+  end
+
+  # Revisioned already holds the chat row lock in this save transaction. Tags
+  # reach the existing attention stream even when inference or its queue is down.
+  def record_direct_reply_mentions
+    return if chat.discarded? || chat.account.disabled?
+
+    users = chat.account.users.joins(:memberships)
+      .where(memberships: { account_id: chat.account_id }).merge(Membership.confirmed)
+      .distinct.includes(:profile).to_a
+    ids = reply_attention_conversational? ? DirectReplyMentions.call(message: self, users: users) : []
+    ReplyExpectation.where(message: self, classifier_version: ReplyExpectation::DIRECT_MENTION_VERSION)
+      .state_open.where.not(user_id: ids).destroy_all
+    users.select { |recipient| ids.include?(recipient.id) }.each do |recipient|
+      ReplyExpectation.record!(message: self, user: recipient, score: 1.0,
+        classifier_version: ReplyExpectation::DIRECT_MENTION_VERSION)
+    end
   end
 
   def enqueue_reply_attention

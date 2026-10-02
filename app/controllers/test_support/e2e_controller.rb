@@ -16,6 +16,9 @@ module TestSupport
       Setting.instance.update!(allow_agents: true, allow_chats: true, max_accounts: 1000)
 
       primary_user = create_user!("e2e-#{run_id}-primary@example.com")
+      if params[:direct_tag_profile]
+        primary_user.profile.update!(first_name: "TagReader", last_name: "Example")
+      end
       secondary_user = create_user!("e2e-#{run_id}-secondary@example.com")
       admin_user = create_user!("e2e-#{run_id}-admin@example.com", site_admin: true)
       account = Account.create!(name: "E2E #{run_id} Team", account_type: :team)
