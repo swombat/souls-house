@@ -36,3 +36,25 @@ test('does not show a button for unflagged threads', () => {
   render(ReplyAttentionEye, { chatId: 'other', accountId: 'account' });
   expect(screen.queryByRole('button')).not.toBeInTheDocument();
 });
+
+test('touch first explains, then dismisses; a new request resets confirmation', async () => {
+  render(ReplyAttentionEye, { chatId: 'chat', accountId: 'account' });
+  const eye = screen.getByRole('button', { name: /You have a mention or request/ });
+  const tap = async () => {
+    await fireEvent(eye, Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType: 'touch' }));
+    await fireEvent.click(eye);
+  };
+  await tap();
+  expect(router.post).not.toHaveBeenCalled();
+  expect(screen.getByText(/Tap again to dismiss the notification/)).toBeVisible();
+  page.set({ props: { reply_attention: { chats: { chat: 3 }, through_messages: { chat: 'new-message' } } } });
+  await tick();
+  await tap();
+  expect(router.post).not.toHaveBeenCalled();
+  await tap();
+  expect(router.post).toHaveBeenCalledWith(
+    '/accounts/account/chats/chat/reply_dismissal',
+    { through_message_id: 'new-message' },
+    expect.any(Object)
+  );
+});

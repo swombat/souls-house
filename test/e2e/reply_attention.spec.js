@@ -1,5 +1,55 @@
 import { expect, test } from '@playwright/test';
 
+test.describe('touch explanation', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test('first tap explains, outside tap cancels, second tap dismisses', async ({ page, request }, testInfo) => {
+    const setup = await (
+      await request.post('/test/e2e/setup', {
+        data: { run_id: `touch-attention-${Date.now()}`, direct_tag_profile: true },
+      })
+    ).json();
+    try {
+      const { chat_id: chatId } = await (
+        await request.post('/test/e2e/conversation_fixture', {
+          data: { account_id: setup.account_id, count: 1 },
+        })
+      ).json();
+      await request.post('/test/e2e/assistant_message', {
+        data: { chat_id: chatId, content: '@TagReader — please take a look.' },
+      });
+      await page.goto('/login');
+      await page.getByLabel(/email/i).fill(setup.primary_user.email);
+      await page.getByLabel(/password/i).fill(setup.password);
+      await page.getByRole('button', { name: /sign in|log in/i }).click();
+      await expect(page).toHaveURL(/\/$/);
+      await page.goto(`/accounts/${setup.account_id}/chats/new`);
+      const eye = page
+        .getByRole('navigation', { name: 'Recent conversations' })
+        .getByRole('button', { name: /You have a mention or request/ });
+      const explanation = page.getByText(/Tap again to dismiss the notification/);
+      const originalUrl = page.url();
+      await eye.tap();
+      await expect(explanation).toBeVisible();
+      await expect(eye).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath('touch-eye-explanation.png') });
+      await page.getByRole('heading', { name: 'Start a new conversation' }).tap();
+      await expect(explanation).not.toBeVisible();
+      await expect(eye).toBeVisible();
+      await eye.tap();
+      await expect(explanation).toBeVisible();
+      await eye.tap();
+      await expect(eye).toHaveCount(0);
+      await expect(explanation).not.toBeVisible();
+      expect(page.url()).toBe(originalUrl);
+      await page.reload();
+      await expect(eye).toHaveCount(0);
+    } finally {
+      await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
+    }
+  });
+});
+
 for (const directTag of [false, true]) {
   test(`cross-account attention badges, persistent eye, dismissal and reply clearing (${directTag ? 'direct tag' : 'inferred'})`, async ({
     page,

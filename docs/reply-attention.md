@@ -48,6 +48,9 @@ for the current human, then per-account thread counts. Multiple tags or inferred
 requests in one thread count once in these badges. A red eye marks affected threads.
 Its tooltip explains the mention/request, click-to-dismiss, and reply-to-dismiss behaviour.
 The eye is a keyboard-accessible button beside (not inside) the thread link.
+On touch devices, the first tap opens the explanation with “Tap again to dismiss
+the notification”; only the second tap dismisses. Tapping outside closes the
+explanation without dismissing, and a newer request resets that confirmation.
 Clicking it dismisses through the newest request represented by that badge,
 without opening the thread or clearing a newer request that arrives afterward.
 Reading does not clear it. Posting a reply mechanically clears prior requests;
