@@ -53,6 +53,14 @@ module TestSupport
             cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000)
         end
       end
+      if params[:busy_house_orientation]
+        resident = agents.first
+        resident.update!(model_id: HouseInference::Offering::MODEL_ID, health_state: "healthy",
+          birth_committed_at: Time.current, orientation_requested_at: Time.current)
+        grant = HouseInferenceGrant.create!(agent: resident, user: primary_user)
+        grant.house_inference_calls.create!(month: HouseInference::Offering.month,
+          model_id: resident.model_id, provider_route: "fireworks/us", charge_usd: 0.75)
+      end
       if params[:resident_dashboard]
         resident = agents.first
         resident.update_columns(model_id: "anthropic/claude-opus-4.6", health_state: "healthy",

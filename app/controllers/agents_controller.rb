@@ -21,7 +21,7 @@ class AgentsController < ApplicationController
   def new
     render inertia: "agents/new", props: {
       grouped_models: grouped_models,
-      default_model_id: HouseInference::Offering::MODEL_ID,
+      default_model_id: Agents::HostedBirth.default_model_id(account: current_account, creator: Current.user),
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,
       account: current_account.as_json

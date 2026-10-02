@@ -136,6 +136,19 @@ class SingleResidentResponseTest < ActiveSupport::TestCase
     assert_enqueued_jobs(1, only: ManualAgentResponseJob) { post_human }
   end
 
+  test "a pending house call is not a setup failure and another conversation can queue" do
+    @account.update!(use_system_ai_credentials: false)
+    @resident.update!(model_id: HouseInference::Offering::MODEL_ID)
+    grant = HouseInferenceGrant.create!(agent: @resident, user: @user)
+    grant.house_inference_calls.create!(month: HouseInference::Offering.month,
+      model_id: @resident.model_id, provider_route: "fireworks/us", charge_usd: 0.75)
+    HouseInference::Offering.stub :configured?, true do
+      assert_equal "house_inference_busy", Agents::InferenceAvailability.house_error(@resident).code
+      assert_nil @resident.inference_setup_message
+      assert_enqueued_jobs(1, only: ManualAgentResponseJob) { post_human }
+    end
+  end
+
   private
 
   def post_human

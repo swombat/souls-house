@@ -91,7 +91,7 @@ class Message < ApplicationRecord
     resident = chat.sole_resident
     return unless resident && chat.respondable?
     return unless resident.eligible_for_conversation?
-    return unless Agents::InferenceAvailability.available?(resident)
+    return unless Agents::InferenceAvailability.dispatchable?(resident)
     return if chat.agent_response_active?(resident)
 
     @single_resident_dispatch = MessageDispatch.accept!(message: self, target_agent_ids: [ resident.id ], kind: "automatic")
@@ -124,7 +124,7 @@ class Message < ApplicationRecord
 
       resident = chat.sole_resident
       return unless resident&.eligible_for_conversation?
-      return unless Agents::InferenceAvailability.available?(resident)
+      return unless Agents::InferenceAvailability.dispatchable?(resident)
       return if chat.agent_response_active?(resident)
 
       @single_resident_response_triggered = chat.trigger_agent_response!(resident).present?

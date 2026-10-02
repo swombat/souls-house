@@ -1,6 +1,16 @@
 module Agents
   class HostedBirth
 
+    def self.default_model_id(account:, creator:)
+      if HouseInference::Offering.configured? &&
+          account.ai_credentials_manageable_by?(creator) &&
+          !HouseInferenceGrant.where(user: creator).where.not(agent_id: nil).exists?
+        HouseInference::Offering::MODEL_ID
+      else
+        Chat::MODELS.first.fetch(:model_id)
+      end
+    end
+
     def initialize(account:, creator:, attributes:, open_beginning: false)
       @account = account
       @creator = creator
@@ -10,7 +20,8 @@ module Agents
 
     def create!
       now = Time.current
-      agent = account.agents.new({ model_id: HouseInference::Offering::MODEL_ID }.merge(attributes))
+      default_model = self.class.default_model_id(account: account, creator: creator)
+      agent = account.agents.new({ model_id: default_model }.merge(attributes))
       if agent.system_prompt.blank? && !open_beginning
         agent.errors.add(:system_prompt, "can't be blank unless you explicitly choose an open beginning")
         raise ActiveRecord::RecordInvalid, agent
