@@ -44,6 +44,27 @@ test.describe('unsent first-message recovery', () => {
     });
   }
 
+  test('successful creation clears the browser draft before returning to new', async ({ page }) => {
+    const input = page.getByTestId('message-composer').locator('textarea');
+    await input.fill('A first message that was actually sent');
+    const key = await page.evaluate(() =>
+      Object.keys(localStorage).find((key) => key.startsWith('conversation-draft:v1:') && key.endsWith(':new'))
+    );
+    expect(key).toBeTruthy();
+    const stored = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), key);
+    expect(stored.message).toBe('A first message that was actually sent');
+    await page.getByRole('button', { name: 'Start conversation' }).click();
+    await expect(page).toHaveURL(/\/chats\/(?!new$)[^/]+$/);
+    await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), key)).toBeNull();
+    await page.goto(url + '/new');
+    await expect(input).toHaveValue('');
+    expect(await page.evaluate((key) => localStorage.getItem(key), key)).toBeNull();
+    await expect(page.getByText(/may already (have been|be) sent/i)).toHaveCount(0);
+    await page.reload();
+    await expect(input).toHaveValue('');
+    expect(await page.evaluate((key) => localStorage.getItem(key), key)).toBeNull();
+  });
+
   test('real refusal redirect and remount retain the unsent text', async ({ page }) => {
     await page.route(`**${url}`, async (route) => {
       const request = route.request();
