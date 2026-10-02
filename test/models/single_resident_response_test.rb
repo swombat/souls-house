@@ -5,6 +5,7 @@ class SingleResidentResponseTest < ActiveSupport::TestCase
   setup do
     @user = users(:user_1)
     @account = @user.personal_account
+    @account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router")
     @resident = @account.agents.create!(name: "Solo", system_prompt: "Test", runtime: "external")
     @chat = @account.chats.new(title: "Solo room", manual_responses: true)
     @chat.agents = [ @resident ]
@@ -119,7 +120,7 @@ class SingleResidentResponseTest < ActiveSupport::TestCase
   end
 
   test "a funded house model wakes without personal credentials" do
-    @account.update!(use_system_ai_credentials: false)
+    @account.update!(use_system_ai_credentials: false, openrouter_api_key: nil)
     @resident.update!(model_id: HouseInference::Offering::MODEL_ID)
     HouseInferenceGrant.create!(agent: @resident, user: @user)
     HouseInference::Offering.stub :configured?, true do
@@ -129,7 +130,7 @@ class SingleResidentResponseTest < ActiveSupport::TestCase
   end
 
   test "a connected OAuth resident wakes without an API key" do
-    @account.update!(use_system_ai_credentials: false)
+    @account.update!(use_system_ai_credentials: false, openrouter_api_key: nil)
     @resident.update!(model_id: "openai/gpt-6-sol", provider_auth_modes: { openai: "oauth_account" },
       provider_connections: { openai: { status: "connected" } })
     assert_nil @resident.inference_setup_message
@@ -137,7 +138,7 @@ class SingleResidentResponseTest < ActiveSupport::TestCase
   end
 
   test "a pending house call is not a setup failure and another conversation can queue" do
-    @account.update!(use_system_ai_credentials: false)
+    @account.update!(use_system_ai_credentials: false, openrouter_api_key: nil)
     @resident.update!(model_id: HouseInference::Offering::MODEL_ID)
     grant = HouseInferenceGrant.create!(agent: @resident, user: @user)
     grant.house_inference_calls.create!(month: HouseInference::Offering.month,

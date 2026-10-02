@@ -240,6 +240,7 @@ class SendPathIntegrationTest < ActionDispatch::IntegrationTest
   private
 
   def solo_room(user, account)
+    account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router")
     resident = account.agents.create!(name: "Solo", system_prompt: "Test", runtime: "external")
     chat = account.chats.new(model_id: "openrouter/auto", title: "Solo room", manual_responses: true)
     chat.agent_ids = [ resident.id ]
