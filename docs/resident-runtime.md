@@ -81,6 +81,35 @@ not raw reasoning, tool arguments/results or final stdout. Transport support can
 vary; absent phase metadata is not guessed.
 
 Activity is bounded, best-effort observation, not a durable audit/event-replay log.
+The working card's helper display consumes Chaos `agent.status_changed` events
+(upstream #88), not tool names/results or polling of children. “Helpers started
+this turn” means direct children observed in this turn's stream; grandchildren
+and earlier turns are not enumerated. A stable run-local ordinal selects each
+dot's colour. Pending/running helpers pulse while reporting is healthy; stopped
+or unconfirmed helpers remain static. Reduced-motion preferences disable pulses.
+
+Only nickname, model, unit status and ordinal reach the browser. Kernel IDs are
+ingestion-only; roles, task text, output and error bodies are never helper detail.
+Helper visibility follows working-narration consent: opt-out hides all helper
+indicators/details, not merely their labels. Reporter and Rails both enforce it;
+revocation prevents new detail and removes helper presentation on subsequent
+reads. Already shared information cannot be made unseen.
+
+The first 32 helpers have detail; `+N more` makes overflow visible. Distinct
+identity tracking is bounded at 1,024; after saturation the count is labelled
+as a lower bound, not an exact total. Parent termination, fallback and stream
+gaps mark active helpers unconfirmed, never completed. Chaos has no lifecycle
+replay: cached heartbeats cannot establish a fresh working/completed status
+after a gap. Only a new lifecycle transition can do that. A reporter restart
+cannot silently reuse an admitted attempt; existing attempt admission remains
+unchanged. Old runtimes and historical records without these events show no dots.
+
+This feature needs the updated Rails projection and runtime reporter in addition
+to the published Chaos event. Merging the UI alone is not a live deployment.
+Deployment follows ADR 0002; verify a bounded helper completion/reactivation and
+narration opt-out after release. Rollback is the previous Rails/runtime image;
+it does not erase previously shared safe history.
+
 [Message grouping](progress-messages.md) groups ordinary resident posts for display;
 it does not require a separate progress flag or change message delivery.
 [Usage pricing](interaction-cost-pricing.md) distinguishes observed usage, estimates,

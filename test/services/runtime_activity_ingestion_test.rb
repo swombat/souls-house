@@ -235,7 +235,226 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
     assert_operator @run.as_chat_activity_json[:detail_dropped], :>, 0
   end
 
+  test "helper completion and reactivation retain run ordinals and stable ordering" do
+    start_helpers
+    ingest(2, "agent.status_changed", helper)
+    ingest(3, "agent.status_changed", helper.merge("child_process_id" => "private-child-2", "status" => "pending_init"))
+    ingest(4, "agent.status_changed", helper.merge("status" => "completed"))
+    assert_equal [ 1, 2 ], helper_snapshot["subagents"].map { |child| child["ordinal"] }
+    assert_equal %w[completed pending_init], helper_snapshot["subagents"].map { |child| child["status"] }
+    ingest(5, "agent.status_changed", helper)
+    assert_equal %w[running pending_init], helper_snapshot["subagents"].map { |child| child["status"] }
+    ingest(6, "agent.status_changed", helper.merge("status" => "completed"))
+    ingest(7, "supervisor.finished", { "outcome" => "completed" })
+    assert_equal %w[completed unknown], helper_snapshot["subagents"].map { |child| child["status"] }
+  end
+
+  test "source attachments and explicit gaps invalidate active children until fresh lifecycle" do
+    start_helpers
+    ingest(2, "agent.status_changed", helper)
+    ingest(3, "stream.started")
+    assert_equal "unknown", helper_snapshot["subagents"].first["status"]
+    ingest(4, "heartbeat", { "subagents" => [ helper.merge("status" => "completed") ] })
+    assert_equal "unknown", helper_snapshot["subagents"].first["status"]
+    ingest(5, "agent.status_changed", helper)
+    assert_equal "running", helper_snapshot["subagents"].first["status"]
+    ingest(6, "stream.gap")
+    ingest(7, "heartbeat", { "subagents" => [ helper ] })
+    assert_equal "unknown", helper_snapshot["subagents"].first["status"]
+    ingest(8, "agent.status_changed", helper.merge("status" => "completed"))
+    assert_equal "completed", helper_snapshot["subagents"].first["status"]
+  end
+
+  test "sequence omissions and reporting silence persist unknown across heartbeats" do
+    start_helpers
+    ingest(2, "agent.status_changed", helper)
+    ingest(4, "heartbeat", { "subagents" => [ helper ] })
+    assert_equal "unknown", helper_snapshot["subagents"].first["status"]
+    ingest(5, "agent.status_changed", helper)
+    travel 31.seconds do
+      assert_equal "unknown", helper_snapshot["subagents"].first["status"]
+      ingest(6, "heartbeat", { "subagents" => [ helper ] })
+      assert_equal "unknown", helper_snapshot["subagents"].first["status"]
+      assert_equal "live", @run.as_chat_activity_json[:reporter_health]
+    end
+  end
+
+  test "restarted reporter cannot reuse attempt admission or imply replay of active children" do
+    start_helpers
+    ingest(2, "agent.status_changed", helper)
+    assert_raises(RuntimeActivityIngestion::Invalid) do
+      ingest(1, "attempt.started", { "narration_capability" => "unknown" }, attempt_id: SecureRandom.uuid)
+    end
+    travel 31.seconds do
+      assert_equal "unknown", helper_snapshot["subagents"].first["status"]
+    end
+  end
+
+  test "fallback preserves ordinals and marks prior active children unknown" do
+    start_helpers
+    ingest(2, "agent.status_changed", helper)
+    ingest(3, "fallback")
+    assert_equal "unknown", helper_snapshot["subagents"].first["status"]
+    second = SecureRandom.uuid
+    ingest(1, "attempt.started", { "narration_capability" => "unknown" }, attempt_id: second, number: 2)
+    ingest(2, "agent.status_changed", helper.merge("child_process_id" => "private-child-2"), attempt_id: second, number: 2)
+    assert_equal [ 1, 2 ], helper_snapshot["subagents"].map { |child| child["ordinal"] }
+    assert_equal %w[unknown running], helper_snapshot["subagents"].map { |child| child["status"] }
+    ingest(4, "agent.status_changed", helper.merge("status" => "completed"))
+    assert_equal "unknown", helper_snapshot["subagents"].first["status"]
+  end
+
+  test "helper overflow counts distinct identities not repeated transitions" do
+    start_helpers
+    34.times { |index| ingest(index + 2, "agent.status_changed", helper.merge("child_process_id" => "private-child-#{index}")) }
+    ingest(36, "agent.status_changed", helper.merge("child_process_id" => "private-child-33", "status" => "completed"))
+    assert_equal 32, helper_snapshot["subagents"].size
+    assert_equal 2, helper_snapshot["subagents_overflow"]
+    assert_not helper_snapshot["subagents_overflow_capped"]
+    assert_equal (1..32).to_a, helper_snapshot["subagents"].map { |child| child["ordinal"] }
+  end
+
+  test "ingestion and browser and native projections do not expose kernel ids roles or private payloads" do
+    start_helpers
+    ingest(2, "agent.status_changed", helper.merge("agent_role" => "PRIVATE_ROLE", "prompt" => "PRIVATE_PROMPT",
+      "result" => "PRIVATE_RESULT", "error" => { "message" => "PRIVATE_ERROR" }))
+    attempt = @run.agent_runtime_attempts.first
+    assert_equal "Helper", helper_snapshot["subagents"].first["nickname"]
+    assert_equal %w[model nickname ordinal status], helper_snapshot["subagents"].first.keys.sort
+    assert_equal %w[model nickname ordinal status], attempt.agent_runtime_events.last.data.keys.sort
+    [ @run.as_chat_activity_json, Api::App::V1::Presenter.activity(@run),
+      attempt.snapshot, attempt.agent_runtime_events.pluck(:data) ].each do |projection|
+      %w[private-parent private-child PRIVATE_ROLE PRIVATE_PROMPT PRIVATE_RESULT PRIVATE_ERROR].each do |canary|
+        assert_not_includes projection.to_json, canary
+      end
+    end
+    @run.as_chat_activity_json.to_json.tap do |json|
+      attempt.snapshot.fetch(RuntimeSubagents::KEY).fetch("identities").each { |hash| assert_not_includes json, hash }
+    end
+    assert_not_includes Api::App::V1::Presenter.activity(@run).to_json, "Helper"
+  end
+
+  test "hidden narration omits helper details at ingress and hides already shared history on immediate revoke" do
+    start_helpers
+    ingest(2, "agent.status_changed", helper)
+    assert_includes @run.as_chat_activity_json.to_json, "Helper"
+    # Do not reload the run: its cached agent association must not leak.
+    @agent.update!(share_working_narration: false)
+    json = @run.as_chat_activity_json
+    assert_empty json[:snapshot]["subagents"]
+    assert_equal 0, json[:snapshot]["subagents_overflow"]
+    assert_not json[:snapshot]["subagents_overflow_capped"]
+    assert_not_includes json.to_json, "Helper"
+    assert_not_includes json.to_json, "synthetic-helper-model"
+    assert_not json[:events].any? { |event| event[:type] == "agent.status_changed" }
+    ingest(3, "agent.status_changed", helper.merge("agent_nickname" => "HIDDEN_NEW_HELPER"))
+    ingest(4, "heartbeat", { "subagents" => [ helper ] })
+    attempt = @run.agent_runtime_attempts.first
+    assert_not attempt.snapshot.key?(RuntimeSubagents::KEY)
+    assert_not_includes attempt.agent_runtime_events.pluck(:data).to_json, "HIDDEN_NEW_HELPER"
+    assert_empty helper_snapshot["subagents"]
+  end
+
+  test "optout scrubbed heartbeat replay does not conflict with accepted mixed batch digests" do
+    start_helpers
+    events = [
+      { "seq" => 2, "type" => "agent.status_changed", "data" => helper },
+      { "seq" => 3, "type" => "heartbeat", "data" => { "operations" => [], "subagents" => [ helper ] } },
+      { "seq" => 4, "type" => "turn.started", "data" => {} }
+    ]
+    payload = { "schema_version" => 1, "run_id" => @run.run_id, "attempt_id" => @attempt_id,
+      "attempt_number" => 1, "events" => events }
+    RuntimeActivityIngestion.new(@run, payload).call
+    @agent.update!(share_working_narration: false)
+    replay = payload.deep_dup
+    replay["events"].reject! { |event| event["type"] == "agent.status_changed" }
+    replay["events"].find { |event| event["type"] == "heartbeat" }["data"].delete("subagents")
+    assert_no_difference "AgentRuntimeEvent.count" do
+      RuntimeActivityIngestion.new(@run, replay).call
+    end
+    assert_equal "running", @run.reload.execution_state
+    assert_empty helper_snapshot["subagents"]
+  end
+
+  test "invalid helper heartbeat rolls back a mixed batch without partial lifecycle state" do
+    start_helpers
+    payload = { "schema_version" => 1, "run_id" => @run.run_id, "attempt_id" => @attempt_id,
+      "attempt_number" => 1, "events" => [
+        { "seq" => 2, "type" => "agent.status_changed", "data" => helper },
+        { "seq" => 3, "type" => "heartbeat", "data" => { "subagents" => [ helper.merge("status" => "invalid") ] } }
+      ] }
+    assert_no_difference "AgentRuntimeEvent.count" do
+      assert_raises(RuntimeActivityIngestion::Invalid) { RuntimeActivityIngestion.new(@run, payload).call }
+    end
+    assert_empty helper_snapshot["subagents"]
+    ingest(2, "agent.status_changed", helper)
+    assert_equal "running", helper_snapshot["subagents"].first["status"]
+  end
+
+  test "run consent is also required and malformed ingress is bounded" do
+    start_helpers
+    [
+      helper.merge("child_process_id" => "x" * 201), helper.merge("parent_process_id" => nil),
+      helper.merge("agent_nickname" => "x" * 201), helper.merge("model" => []),
+      helper.merge("status" => { "completed" => "private" }), helper.merge("status" => "unknown")
+    ].each do |invalid|
+      assert_raises(RuntimeActivityIngestion::Invalid) { ingest(2, "agent.status_changed", invalid) }
+    end
+    assert_raises(RuntimeActivityIngestion::Invalid) { ingest(2, "heartbeat", { "subagents" => [ helper ] * 33 }) }
+    @run.update!(narration_shared: false)
+    ingest(2, "agent.status_changed", helper)
+    assert_empty helper_snapshot["subagents"]
+    assert_not_includes @run.agent_runtime_attempts.first.snapshot.to_json, "Helper"
+  end
+
+  test "old raw helper event and unknown snapshot fields are not presented" do
+    start_helpers
+    ingest(2, "agent.status_changed", helper)
+    attempt = @run.agent_runtime_attempts.first
+    attempt.agent_runtime_events.last.update!(data: helper.merge("result" => "PRIVATE_RESULT"))
+    attempt.update!(snapshot: attempt.snapshot.merge("subagents" => [ helper ], "child_process_id" => "PRIVATE_ID"))
+    public_json = @run.as_chat_activity_json.to_json
+    %w[private-child private-parent PRIVATE_RESULT PRIVATE_ID _subagents identities].each do |canary|
+      assert_not_includes public_json, canary
+    end
+  end
+
+  test "old runs default empty and no tool name can invent a helper" do
+    start_helpers
+    ingest(2, "tool.started", { "operation_id" => "spawn_agent", "category" => "delegation" })
+    assert_empty helper_snapshot["subagents"]
+    assert_equal 0, helper_snapshot["subagents_overflow"]
+  end
+
+  test "synchronous terminal and detail budget cannot leave active helper presentation" do
+    start_helpers
+    ingest(2, "agent.status_changed", helper)
+    @run.agent_runtime_attempts.first.update!(detail_count: 2_000)
+    assert_no_difference "AgentRuntimeEvent.count" do
+      ingest(3, "agent.status_changed", helper.merge("status" => "completed"))
+    end
+    assert_equal "completed", helper_snapshot["subagents"].first["status"]
+    ingest(4, "agent.status_changed", helper)
+    @run.record_result!(status: 200, body: { "status" => "ok" })
+    assert_equal "unknown", helper_snapshot["subagents"].first["status"]
+  end
+
   private
+
+  def start_helpers
+    @agent.update!(share_working_narration: true)
+    @run.update!(narration_shared: true)
+    ingest(1, "attempt.started", { "narration_capability" => "unknown" })
+  end
+
+  def helper
+    { "parent_process_id" => "private-parent", "child_process_id" => "private-child",
+      "agent_nickname" => "Helper", "model" => "synthetic-helper-model", "status" => "running" }
+  end
+
+  def helper_snapshot
+    @run.reload.as_chat_activity_json[:snapshot]
+  end
 
   def ingest(seq, type, data = {}, attempt_id: @attempt_id, number: 1)
     RuntimeActivityIngestion.new(@run, {

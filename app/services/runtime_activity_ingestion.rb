@@ -7,7 +7,7 @@ class RuntimeActivityIngestion
     "tool" => "Use an external tool", "search" => "Search the web",
     "delegation" => "Delegate work"
   }.freeze
-  TYPES = %w[attempt.started turn.started turn.finished tool.started tool.finished commentary.completed plan.updated heartbeat fallback supervisor.finished warning].freeze
+  TYPES = %w[attempt.started turn.started turn.finished tool.started tool.finished agent.status_changed stream.started stream.gap commentary.completed plan.updated heartbeat fallback supervisor.finished warning].freeze
   OUTCOMES = %w[completed failed timed_out outcome_unknown].freeze
 
   def initialize(run, payload)
@@ -34,10 +34,14 @@ class RuntimeActivityIngestion
         # Its bounded reporting credential still permits historical detail,
         # but apply never resurrects a terminal run.
         raise Invalid unless run.dispatch_claimed_at?
-        attempt = run.agent_runtime_attempts.create!(attempt_id: payload["attempt_id"], number: payload["attempt_number"])
+        inherited = previous&.snapshot&.slice(RuntimeSubagents::KEY) || {}
+        attempt = run.agent_runtime_attempts.create!(attempt_id: payload["attempt_id"], number: payload["attempt_number"], snapshot: inherited)
       end
       raise Invalid unless attempt.number == payload["attempt_number"]
       latest = attempt.number == run.agent_runtime_attempts.maximum(:number)
+      @subagents_shared = shared_narration?
+      @subagents = RuntimeSubagents.new(@subagents_shared ? attempt.snapshot[RuntimeSubagents::KEY] : nil)
+      @subagents.gap! if attempt.last_report_at && attempt.last_report_at < 30.seconds.ago
       detail_count = run.agent_runtime_attempts.sum(:detail_count)
       detail_bytes = run.agent_runtime_attempts.sum(:detail_bytes)
       events.sort_by { |event| event["seq"] }.each do |event|
@@ -46,6 +50,7 @@ class RuntimeActivityIngestion
         raise Invalid if stored && stored.payload_digest != digest
         next if stored || event["seq"] <= attempt.last_seq
 
+        @subagents.gap! if event["seq"] > attempt.last_seq + 1
         data = project(event)
         if event["type"] != "heartbeat"
           bytes = data.to_json.bytesize
@@ -70,6 +75,9 @@ class RuntimeActivityIngestion
         attempt.last_seq = event["seq"]
         attempt.revision += 1
       end
+      snapshot = attempt.snapshot.except(RuntimeSubagents::KEY)
+      snapshot[RuntimeSubagents::KEY] = @subagents.state if @subagents_shared
+      attempt.snapshot = snapshot
       attempt.last_report_at = Time.current
       if latest && (attempt.last_broadcast_at.nil? || attempt.last_broadcast_at < 1.second.ago || run.finished_at?)
         attempt.last_broadcast_at = Time.current
@@ -121,6 +129,14 @@ class RuntimeActivityIngestion
     when "commentary.completed"
       content = text(data["text"])
       shared_narration? ? { "text" => content } : {}
+    when "agent.status_changed"
+      return {} unless @subagents_shared
+
+      child = RuntimeSubagents.ingress(data) || raise(Invalid)
+      @subagents.observe(child, run_id: run.run_id)
+    when "stream.started", "stream.gap"
+      @subagents.gap!
+      {}
     when "plan.updated"
       raise Invalid unless data["steps"].is_a?(Array) && data["steps"].size <= 100
       steps = data["steps"].map do |step|
@@ -133,14 +149,23 @@ class RuntimeActivityIngestion
       # Accounting is validated separately and never placed in public event data.
       { "outcome" => data["outcome"] }
     when "heartbeat"
-      return {} unless data.key?("operations")
-      raise Invalid unless data["operations"].is_a?(Array) && data["operations"].length <= 64
-      operations = data["operations"].map do |operation|
-        raise Invalid unless operation.is_a?(Hash)
-        project({ "type" => "tool.started", "data" => operation })
+      if @subagents_shared && data.key?("subagents")
+        raise Invalid unless data["subagents"].is_a?(Array) && data["subagents"].size <= RuntimeSubagents::LIMIT
+        data["subagents"].each do |source|
+          child = RuntimeSubagents.ingress(source, heartbeat: true) || raise(Invalid)
+          @subagents.observe(child, run_id: run.run_id, heartbeat: true)
+        end
       end
-      { "operations" => operations.index_by { |operation| operation["operation_id"] },
-        "detail_dropped" => data["detail_dropped"].to_i.clamp(0, 1_000_000) }
+      safe = { "detail_dropped" => data["detail_dropped"].to_i.clamp(0, 1_000_000) }
+      if data.key?("operations")
+        raise Invalid unless data["operations"].is_a?(Array) && data["operations"].length <= 64
+        operations = data["operations"].map do |operation|
+          raise Invalid unless operation.is_a?(Hash)
+          project({ "type" => "tool.started", "data" => operation })
+        end
+        safe["operations"] = operations.index_by { |operation| operation["operation_id"] }
+      end
+      safe
     else
       {}
     end
@@ -203,9 +228,11 @@ class RuntimeActivityIngestion
     when "plan.updated"
       snapshot["plan"] = data["steps"] if data["steps"]
     when "fallback"
+      @subagents.gap!
       snapshot["fallback"] = true
       snapshot["operations"] = {}
     when "supervisor.finished"
+      @subagents.gap!
       snapshot["operations"] = {}
       run.finish_execution!(data["outcome"]) if latest
     end

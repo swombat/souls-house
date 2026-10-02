@@ -33,6 +33,8 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class Reporter:
+    SUBAGENT_STATUSES = frozenset(("pending_init", "running", "interrupted", "completed",
+                                  "errored", "shutdown", "not_found"))
     CATEGORIES = {
         "command_execution": "command", "file_change": "files",
         "mcp_tool_call": "tool", "web_search": "search",
@@ -57,6 +59,7 @@ class Reporter:
         self.share = config.get("share_narration") is True
         self.capability = "unknown" if provider in ("openai", "openai-codex") else "unsupported"
         self.operations = {}
+        self.subagents = {}
         self.attempt_id = None
         self.number = 0
         self.seq = 0
@@ -76,13 +79,15 @@ class Reporter:
             self.seq += 1
             if kind == "heartbeat":
                 data = {"operations": list(self.operations.values()), "detail_dropped": self.dropped}
+                if self.share:
+                    data["subagents"] = list(self.subagents.values())
             event = {"seq": self.seq, "type": kind, "data": data or {}}
             packet = {
                 "schema_version": 1, "batch_id": str(uuid.uuid4()),
                 "run_id": self.run_id, "attempt_id": self.attempt_id,
                 "attempt_number": self.number, "events": [event],
             }
-            encoded = json.dumps(packet).encode()
+            encoded = json.dumps(packet, ensure_ascii=False).encode()
             if len(encoded) > 64 * 1024:
                 self.dropped += 1
                 return
@@ -106,11 +111,17 @@ class Reporter:
             self.number += 1
             self.seq = 0
             self.operations = {}
+            self.subagents = {}
             self.emit("attempt.started", {"narration_capability": self.capability})
+            self.stream_gap("stream.started")
 
     def project(self, event):
         kind = event.get("type")
-        if kind == "turn.started":
+        if kind == "process.started":
+            self.stream_gap("stream.started")
+        elif kind == "agent.status_changed":
+            self.project_subagent(event)
+        elif kind == "turn.started":
             self.emit("turn.started")
         elif kind in ("turn.completed", "turn.failed"):
             self.emit("turn.finished")
@@ -142,6 +153,39 @@ class Reporter:
                     for step in item.get("items", [])[:100] if isinstance(step, dict)
                 ]})
 
+    def project_subagent(self, event):
+        if not self.share:
+            return
+        if not isinstance(event.get("status"), str) or event["status"] not in self.SUBAGENT_STATUSES:
+            self.stream_gap()
+            return
+        identity = [event.get(key) for key in ("parent_process_id", "child_process_id")]
+        if any(not isinstance(value, str) or not value or len(value.encode()) > 200 or
+               any(char.isspace() or ord(char) < 33 or ord(char) == 127 for char in value) for value in identity):
+            self.stream_gap()
+            return
+        # IDs are ingestion-only. Rails maps them to run-local ordinals; no tool
+        # results, roles, prompts or private error strings enter this projection.
+        child = {key: event[key] for key in ("parent_process_id", "child_process_id", "status")}
+        previous = self.subagents.get(identity[1], {})
+        for key in ("agent_nickname", "model"):
+            value = event.get(key, previous.get(key))
+            child[key] = ("".join(char for char in value if ord(char) >= 32 and ord(char) != 127)
+                          .encode()[:200].decode(errors="ignore")) if isinstance(value, str) else None
+        with self.lock:
+            if identity[1] in self.subagents or len(self.subagents) < 32:
+                self.subagents[identity[1]] = child
+            # Even beyond the display cap, ingress sees identity for distinct
+            # overflow counting. Queue and server identity limits still apply.
+            self.emit("agent.status_changed", child)
+
+    def stream_gap(self, kind="stream.gap"):
+        with self.lock:
+            for child in self.subagents.values():
+                if child["status"] in ("pending_init", "running"):
+                    child["status"] = "unknown"
+            self.emit(kind)
+
     @staticmethod
     def _text(value):
         return str(value).encode()[:4096].decode("utf-8", errors="ignore")
@@ -163,6 +207,11 @@ class Reporter:
         process_started = b""
         stderr = bytearray()
 
+        def source_gap():
+            with self.lock:
+                if self.attempt_id == reader_attempt_id:
+                    self.stream_gap()
+
         def read_stdout():
             nonlocal retained_size, process_started
             while True:
@@ -174,10 +223,12 @@ class Reporter:
                         line = proc.stdout.readline(1024 * 1024)
                     with self.lock:
                         self.dropped += 1
+                        source_gap()
                     continue
                 try:
                     event = json.loads(line)
                     if not isinstance(event, dict):
+                        source_gap()
                         continue
                     with self.lock:
                         if self.attempt_id == reader_attempt_id:
@@ -194,6 +245,7 @@ class Reporter:
                         retained.append(line)
                         retained_size += len(line)
                 except (ValueError, TypeError, AttributeError):
+                    source_gap()
                     continue
 
         def read_stderr():
@@ -307,7 +359,7 @@ class Reporter:
                         if candidate["attempt_id"] != first["attempt_id"] or len(events) >= 50:
                             break
                         combined = {**first, "events": events + candidate["events"]}
-                        proposed = json.dumps(combined).encode()
+                        proposed = json.dumps(combined, ensure_ascii=False).encode()
                         if len(proposed) > 64 * 1024:
                             break
                         encoded = proposed
@@ -321,17 +373,25 @@ class Reporter:
                 self.wake.clear()
                 continue
             try:
-                req = urllib.request.Request(self.url, data=pending[0], method="POST",
+                encoded = pending[0] if self.share else self._without_subagents(pending[0])
+                if encoded is None:
+                    with self.lock:
+                        acknowledged = {id(entry) for entry in pending[1]}
+                        self.queue = collections.deque(entry for entry in self.queue if id(entry) not in acknowledged)
+                    pending = None
+                    continue
+                req = urllib.request.Request(self.url, data=encoded, method="POST",
                     headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.token}"})
                 with opener.open(req, timeout=5) as response:
                     ack = json.loads(response.read(8192))
                 if ack.get("share_narration") is False:
                     self.share = False
                     with self.lock:
+                        self.subagents = {}
                         self.queue = collections.deque(item for item in self.queue
-                            if item[1] not in ("commentary.completed", "plan.updated"))
+                            if item[1] not in ("commentary.completed", "plan.updated", "agent.status_changed"))
                         retry_batches = collections.deque(batch for batch in retry_batches
-                            if batch[1][0][1] not in ("commentary.completed", "plan.updated"))
+                            if batch[1][0][1] not in ("commentary.completed", "plan.updated", "agent.status_changed"))
                 with self.lock:
                     acknowledged = {id(entry) for entry in pending[1]}
                     self.queue = collections.deque(entry for entry in self.queue if id(entry) not in acknowledged)
@@ -367,3 +427,14 @@ class Reporter:
             except (OSError, ValueError):
                 time.sleep(backoff + random.uniform(0, 0.25))
                 backoff = min(30, backoff * 2)
+
+    @staticmethod
+    def _without_subagents(encoded):
+        packet = json.loads(encoded)
+        packet["events"] = [event for event in packet["events"]
+                            if event["type"] != "agent.status_changed"]
+        if not packet["events"]:
+            return None
+        for event in packet["events"]:
+            event["data"].pop("subagents", None)
+        return json.dumps(packet, ensure_ascii=False).encode()

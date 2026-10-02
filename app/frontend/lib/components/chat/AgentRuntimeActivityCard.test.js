@@ -173,3 +173,21 @@ test('historical completed cards use the resident background immediately', () =>
   });
   expect(container.querySelector('details')).toHaveClass('bg-violet-100', 'dark:bg-violet-900');
 });
+
+test('helper activity stays compact and narration opt-out hides all helper UI', async () => {
+  const interaction = {
+    ...base,
+    narration_shared: true,
+    snapshot: {
+      subagents: [{ ordinal: 1, nickname: 'Donny', model: 'gpt-6.1-sol', status: 'running' }],
+      subagents_overflow: 4,
+    },
+  };
+  const { container, rerender } = render(AgentRuntimeActivityCard, { interaction });
+  expect(container.querySelector('details').open).toBe(false);
+  expect(screen.getByRole('img', { name: 'Donny · Working' })).toBeVisible();
+  await rerender({ interaction: { ...interaction, narration_shared: false } });
+  expect(screen.queryByRole('img', { name: /Donny/ })).not.toBeInTheDocument();
+  expect(container.textContent).not.toContain('Donny');
+  expect(container.textContent).not.toContain('+4 more');
+});

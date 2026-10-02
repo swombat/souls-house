@@ -85,6 +85,114 @@ class ReporterTest(unittest.TestCase):
         self.assertNotIn("CANARY", json.dumps(self.packets))
         self.assertIn("session-1", json.dumps(self.packets))
 
+    def child(self, status="running", child_id="private-child", **extra):
+        # Exact shape of Chaos #88 CollabAgentStatusChangedEvent. Neither the
+        # older collab-tool payload nor its result/message fields are sources.
+        return {
+            "type": "agent.status_changed", "parent_process_id": "private-parent",
+            "child_process_id": child_id, "agent_nickname": "Helper",
+            "agent_role": "PRIVATE_ROLE", "model": "synthetic-model", "status": status, **extra,
+        }
+
+    def test_exact_lifecycle_is_allowlisted_before_transport_and_not_retained(self):
+        script = "print(" + repr(json.dumps(self.child(prompt="PRIVATE_PROMPT", result="PRIVATE_RESULT",
+                                                      error={"message": "PRIVATE_ERROR"}))) + ",flush=True)"
+        result = self.reporter.run([sys.executable, "-c", script], "", {}, 3)
+        self.reporter.finish(({"status": "ok"}, 200))
+        child = next(event["data"] for event in self.events() if event["type"] == "agent.status_changed")
+        self.assertEqual({"parent_process_id", "child_process_id", "agent_nickname", "model", "status"}, set(child))
+        self.assertEqual("synthetic-model", child["model"])
+        self.assertEqual("", result.stdout)
+        for canary in ("PRIVATE_ROLE", "PRIVATE_PROMPT", "PRIVATE_RESULT", "PRIVATE_ERROR"):
+            self.assertNotIn(canary, json.dumps(self.packets))
+
+    def test_completion_reactivation_and_source_reattachment_are_explicit(self):
+        self.reporter.begin_attempt()
+        for status in ("pending_init", "running", "completed", "running"):
+            self.reporter.project(self.child(status))
+        self.reporter.project({"type": "process.started", "process_id": "private-parent"})
+        self.reporter.emit("heartbeat")
+        self.reporter.project(self.child("interrupted"))
+        self.reporter.project(self.child("errored"))
+        self.reporter.project(self.child("shutdown"))
+        self.reporter.project(self.child("not_found"))
+        self.reporter.finish(({"status": "ok"}, 200))
+        statuses = [event["data"]["status"] for event in self.events() if event["type"] == "agent.status_changed"]
+        self.assertEqual(["pending_init", "running", "completed", "running",
+                          "interrupted", "errored", "shutdown", "not_found"], statuses)
+        heartbeat = next(event for event in self.events() if event["type"] == "heartbeat")
+        self.assertEqual("unknown", heartbeat["data"]["subagents"][0]["status"])
+        self.assertGreaterEqual(sum(event["type"] == "stream.started" for event in self.events()), 2)
+
+    def test_invalid_jsonl_and_oversized_lines_signal_a_source_gap(self):
+        script = "print(" + repr(json.dumps(self.child())) + ");print('not json');print('x'*1048577)"
+        self.reporter.run([sys.executable, "-c", script], "", {}, 3)
+        self.reporter.emit("heartbeat")
+        self.reporter.finish(({"status": "ok"}, 200))
+        self.assertGreaterEqual(sum(event["type"] == "stream.gap" for event in self.events()), 2)
+        heartbeat = next(event for event in self.events() if event["type"] == "heartbeat")
+        self.assertEqual("unknown", heartbeat["data"]["subagents"][0]["status"])
+
+    def test_hidden_narration_transmits_neither_helpers_nor_cached_heartbeat_details(self):
+        self.reporter.begin_attempt()
+        self.reporter.share = False
+        self.reporter.project(self.child())
+        self.reporter.emit("heartbeat")
+        self.reporter.finish(({"status": "ok"}, 200))
+        self.assertNotIn("Helper", json.dumps(self.packets))
+        self.assertNotIn("private-child", json.dumps(self.packets))
+        self.assertNotIn("subagents", json.dumps(self.packets))
+        self.assertFalse(any(event["type"] == "agent.status_changed" for event in self.events()))
+
+    def test_optout_scrubs_queued_mixed_batch_and_isolated_retries(self):
+        self.share = False
+        self.reject_type = "warning"
+        with self.reporter.lock:
+            self.reporter.begin_attempt()
+            self.reporter.emit("warning")
+            self.reporter.project(self.child())
+            self.reporter.emit("heartbeat")
+        self.reporter.finish(({"status": "ok"}, 200))
+        accepted = [packet for packet in self.packets if all(event["type"] != "warning" for event in packet["events"])]
+        self.assertNotIn("Helper", json.dumps(accepted))
+        self.assertNotIn("private-child", json.dumps(accepted))
+        self.assertTrue(any(event["type"] == "supervisor.finished" for packet in accepted for event in packet["events"]))
+        # Filtering removes private events, but does not renumber accepted
+        # control events or change their payloads/dedupe identity.
+        original = next(event for packet in self.packets for event in packet["events"] if event["type"] == "attempt.started")
+        replay = next(event for packet in accepted for event in packet["events"] if event["type"] == "attempt.started")
+        self.assertEqual(original, replay)
+
+    def test_cache_is_bounded_but_overflow_identity_events_reach_rails_for_distinct_count(self):
+        self.reporter.begin_attempt()
+        for index in range(40):
+            self.reporter.project(self.child(child_id=f"child-{index}", agent_nickname="界" * 300, model="界" * 300))
+        self.reporter.emit("heartbeat")
+        self.reporter.finish(({"status": "ok"}, 200))
+        children = [event["data"] for event in self.events() if event["type"] == "agent.status_changed"]
+        self.assertEqual(40, len(children))
+        self.assertEqual(32, len(self.reporter.subagents))
+        for child in children:
+            self.assertLessEqual(len(child["agent_nickname"].encode()), 200)
+        for packet in self.packets:
+            self.assertLessEqual(len(json.dumps(packet, ensure_ascii=False).encode()), 64 * 1024)
+
+    def test_malformed_events_and_collaboration_tool_results_never_establish_helpers(self):
+        self.reporter.begin_attempt()
+        for event in (self.child(status={"completed": "PRIVATE"}), self.child(status="unknown"),
+                      self.child(child_id=""), self.child(child_id="x" * 201),
+                      self.child(parent_process_id=None)):
+            self.reporter.project(event)
+        self.reporter.project({"type": "item.completed", "item": {
+            "id": "spawn", "type": "collab_tool_call", "tool": "spawn_agent",
+            "receiver_process_ids": ["private-child"], "status": "completed",
+            "agents_states": {"private-child": {"status": "completed", "message": "PRIVATE"}},
+            "prompt": "PRIVATE",
+        }})
+        self.reporter.finish(({"status": "ok"}, 200))
+        self.assertFalse(any(event["type"] == "agent.status_changed" for event in self.events()))
+        self.assertNotIn("PRIVATE", json.dumps(self.packets))
+
     def test_legacy_echo_is_suppressed_without_deduplicating_repeated_text(self):
         self.reporter.begin_attempt()
         for canonical in (True, False, True):
