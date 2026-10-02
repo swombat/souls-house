@@ -46,3 +46,19 @@ test('unmount aborts pending subscription requests', async () => {
   finish({ ok: true, json: async () => ({ status: 'pending' }) });
   await pending;
 });
+
+test('unchanged live edit props do not reload usage or capabilities', async () => {
+  const connected = { ...agent, available: true, connection: { status: 'connected' } };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ providers: { anthropic: { oauth_account: true } }, windows: [] }),
+    })
+  );
+  const view = render(Harness, { agent: connected });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(fetch).toHaveBeenCalledTimes(2);
+  for (let i = 0; i < 5; i++) await view.rerender({ agent: structuredClone(connected) });
+  expect(fetch).toHaveBeenCalledTimes(2);
+});

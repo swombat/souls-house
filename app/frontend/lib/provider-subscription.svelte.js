@@ -8,6 +8,8 @@ import {
 
 export function createProviderSubscription(context) {
   let agent = $state({ ...context().subscriptionAgent });
+  // Do not subscribe request effects to every replacement of the edit props.
+  let accountId = $derived(context().account.id);
   let connectOpen = $state(false);
   let ceremony = $state(null);
   let actionError = $state(null);
@@ -66,12 +68,12 @@ export function createProviderSubscription(context) {
 
   function subscriptionPath(cancel = false) {
     return cancel
-      ? cancelAccountAgentProviderSubscriptionPath(context().account.id, agent.id)
-      : accountAgentProviderSubscriptionPath(context().account.id, agent.id);
+      ? cancelAccountAgentProviderSubscriptionPath(accountId, agent.id)
+      : accountAgentProviderSubscriptionPath(accountId, agent.id);
   }
 
   function usagePath() {
-    return accountAgentProviderSubscriptionUsagePath(context().account.id, agent.id);
+    return accountAgentProviderSubscriptionUsagePath(accountId, agent.id);
   }
 
   async function jsonRequest(url, options = {}) {
