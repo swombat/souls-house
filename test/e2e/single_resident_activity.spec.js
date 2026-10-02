@@ -5,7 +5,7 @@ test('Enter shows the automatic wake without a manual trigger or websocket notif
   request,
 }, testInfo) => {
   const response = await request.post('/test/e2e/setup', {
-    data: { run_id: `solo-activity-${Date.now()}` },
+    data: { run_id: `solo-activity-${Date.now()}`, resident_credentials: true },
   });
   const setup = await response.json();
   try {

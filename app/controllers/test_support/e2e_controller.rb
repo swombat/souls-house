@@ -24,6 +24,7 @@ module TestSupport
       account = Account.create!(name: "E2E #{run_id} Team", account_type: :team)
       account.add_user!(primary_user, role: "owner", skip_confirmation: true)
       account.add_user!(secondary_user, role: "member", skip_confirmation: true)
+      account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router") if params[:resident_credentials]
       account.whiteboards.create!(name: "E2E Whiteboard", content: "# E2E Whiteboard")
 
       agents = [

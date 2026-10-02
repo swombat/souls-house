@@ -20,7 +20,9 @@ test('new residents default to house funding and missing credentials never stran
     await page.getByRole('button', { name: 'Begin', exact: true }).click();
     await page.getByLabel(/name/i).fill('Synthetic new resident');
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
-    await page.getByLabel(/soul seed/i).fill('Synthetic seed, not a real birth');
+    await page
+      .getByRole('textbox', { name: 'Initial soul seed', exact: true })
+      .fill('Synthetic seed, not a real birth');
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
     await expect(page.getByRole('button', { name: /DeepSeek V4.1 Flash · On the house/ })).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('house-default.png') });
