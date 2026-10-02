@@ -1,5 +1,6 @@
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, cleanup } from '@testing-library/svelte';
 import { afterEach, expect, test, vi } from 'vitest';
+import { tick } from 'svelte';
 import Summary from './AgentSubscriptionUsageSummary.svelte';
 
 const subscription = {
@@ -8,7 +9,11 @@ const subscription = {
   auth_mode: 'oauth_account',
   connection: { status: 'connected' },
 };
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 test('keeps both quota bars visible at a limit, showing used rather than remaining', async () => {
   vi.stubGlobal(
@@ -54,4 +59,85 @@ test('uses an explicit admin usage endpoint instead of account membership routes
   });
   expect(await screen.findByText('Usage unavailable')).toBeVisible();
   expect(fetchUsage).toHaveBeenCalledWith('/admin/agents/b/provider_subscription_usage', expect.any(Object));
+});
+
+test('does not refetch or hide usage when live updates replace equivalent subscription props', async () => {
+  const fetchUsage = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      status: 'available',
+      windows: [{ label: 'Weekly', remaining_percent: 60, resets_at: new Date(Date.now() + 86400000).toISOString() }],
+    }),
+  });
+  vi.stubGlobal('fetch', fetchUsage);
+  const { rerender } = render(Summary, { accountId: 'a', agentId: 'b', subscription });
+  expect(await screen.findByText('40% used')).toBeVisible();
+  for (let i = 0; i < 5; i++) {
+    await rerender({ accountId: 'a', agentId: 'b', subscription: structuredClone(subscription) });
+  }
+  expect(fetchUsage).toHaveBeenCalledTimes(1);
+  expect(screen.getByText('40% used')).toBeVisible();
+});
+
+test('refreshes once a minute without blanking bars or overlapping requests, and stops on unmount', async () => {
+  vi.useFakeTimers();
+  const snapshot = {
+    status: 'available',
+    windows: [{ label: 'Weekly', remaining_percent: 60, resets_at: new Date(Date.now() + 86400000).toISOString() }],
+  };
+  let finishRefresh;
+  const fetchUsage = vi
+    .fn()
+    .mockResolvedValueOnce({ ok: true, json: async () => snapshot })
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRefresh = resolve;
+        })
+    );
+  vi.stubGlobal('fetch', fetchUsage);
+  const { unmount } = render(Summary, { accountId: 'a', agentId: 'b', subscription });
+  await vi.advanceTimersByTimeAsync(0);
+  await tick();
+  expect(screen.getByText('40% used')).toBeVisible();
+  await vi.advanceTimersByTimeAsync(59_999);
+  expect(fetchUsage).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(fetchUsage).toHaveBeenCalledTimes(2);
+  expect(screen.getByText('40% used')).toBeVisible();
+  expect(screen.queryByText('Checking usage…')).not.toBeInTheDocument();
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(fetchUsage).toHaveBeenCalledTimes(2);
+  finishRefresh({ ok: true, json: async () => snapshot });
+  await vi.advanceTimersByTimeAsync(0);
+  unmount();
+  expect(fetchUsage.mock.calls[1][1].signal.aborted).toBe(true);
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(fetchUsage).toHaveBeenCalledTimes(2);
+});
+
+test('ignores an old request after switching residents and clears usage on disconnect', async () => {
+  let finishOld;
+  const fetchUsage = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishOld = resolve;
+        })
+    )
+    .mockResolvedValue({ ok: true, json: async () => ({ status: 'available', windows: [] }) });
+  vi.stubGlobal('fetch', fetchUsage);
+  const { rerender } = render(Summary, { accountId: 'a', agentId: 'b', subscription });
+  await tick();
+  await rerender({ accountId: 'a', agentId: 'c', subscription });
+  expect(await screen.findByText('Usage unavailable')).toBeVisible();
+  expect(fetchUsage).toHaveBeenCalledTimes(2);
+  expect(fetchUsage.mock.calls[0][1].signal.aborted).toBe(true);
+  finishOld({ ok: true, json: async () => ({ status: 'limited', windows: [] }) });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(screen.queryByText('Subscription limit reached')).not.toBeInTheDocument();
+  await rerender({ accountId: 'a', agentId: 'c', subscription: { ...subscription, connection: {} } });
+  expect(await screen.findByText('Subscription not connected')).toBeVisible();
+  expect(fetchUsage).toHaveBeenCalledTimes(2);
 });

@@ -22,35 +22,59 @@
     return () => clearInterval(timer);
   });
 
+  // Inertia live updates replace subscription objects even when their values
+  // are unchanged. Only a changed source should restart usage fetching.
+  let source = $derived(
+    subscription?.available &&
+      subscription.auth_mode === 'oauth_account' &&
+      subscription.connection?.status === 'connected'
+      ? JSON.stringify([
+          usageUrl || accountAgentProviderSubscriptionUsagePath(accountId, agentId),
+          subscription.provider,
+        ])
+      : null
+  );
+
   $effect(() => {
-    if (
-      !subscription?.available ||
-      subscription.auth_mode !== 'oauth_account' ||
-      subscription.connection?.status !== 'connected'
-    ) {
-      loading = false;
-      return;
-    }
-
-    loadUsage();
-  });
-
-  async function loadUsage() {
-    loading = true;
+    const currentSource = source;
+    usage = null;
     error = false;
+    loading = !!currentSource;
+    if (!currentSource) return;
 
-    try {
-      const response = await fetch(usageUrl || accountAgentProviderSubscriptionUsagePath(accountId, agentId), {
-        headers: { Accept: 'application/json' },
-      });
-      if (!response.ok) throw new Error('Usage unavailable');
-      usage = await response.json();
-    } catch {
-      error = true;
-    } finally {
-      loading = false;
+    const [url] = JSON.parse(currentSource);
+    const controller = new AbortController();
+    let pending = false;
+
+    async function refresh() {
+      if (pending) return;
+      pending = true;
+      try {
+        const response = await fetch(url, {
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Usage unavailable');
+        const snapshot = await response.json();
+        if (!controller.signal.aborted) {
+          usage = snapshot;
+          error = false;
+        }
+      } catch {
+        if (!controller.signal.aborted) error = true;
+      } finally {
+        pending = false;
+        if (!controller.signal.aborted) loading = false;
+      }
     }
-  }
+
+    refresh();
+    const timer = setInterval(refresh, 60_000);
+    return () => {
+      clearInterval(timer);
+      controller.abort();
+    };
+  });
 </script>
 
 {#if subscription?.auth_mode === 'oauth_account'}
