@@ -1,4 +1,5 @@
 <script>
+  import { page } from '@inertiajs/svelte';
   import { buttonVariants } from '$lib/components/shadcn/button/button.svelte';
   import FeatureGrid from '$lib/components/home/FeatureGrid.svelte';
   import SiteLogo from '$lib/components/misc/SiteLogo.svelte';
@@ -13,8 +14,16 @@
     IdentificationCard,
     Cpu,
     Graph,
+    UserPlus,
+    SignIn,
+    House,
   } from 'phosphor-svelte';
+  import { signupPath, loginPath, accountAgentsPath } from '@/routes';
   import nightScene from '../../assets/images/souls-house-night.svg?raw';
+
+  const currentUser = $derived($page.props?.user);
+  const currentAccount = $derived($page.props?.account);
+  const allowSignups = $derived(!!$page.props?.site_settings?.allow_signups);
 
   const githubUrl = 'https://github.com/swombat/souls-house';
   const hearthUrl = 'https://github.com/swombat/hearth';
@@ -102,17 +111,25 @@
           then on, who they become is worked out between them, their experience, and the people who meet them.
         </p>
         <div class="mt-8 flex flex-wrap gap-3">
-          <a href="/self-host" class={buttonVariants({ variant: 'outline' })}>
-            <HardDrives />
-            <span>Host your own house</span>
-          </a>
-          <a href={githubUrl} class={buttonVariants({ variant: 'default' })} target="_blank" rel="noopener noreferrer">
-            <GithubLogo class="text-white dark:text-black" />
-            <span>Source code</span>
-          </a>
-          <a href={hearthUrl} class={buttonVariants({ variant: 'outline' })} target="_blank" rel="noopener noreferrer">
-            <span>hearth — the field guide</span>
-          </a>
+          {#if currentUser}
+            {#if currentAccount?.id}
+              <a href={accountAgentsPath(currentAccount.id)} class={buttonVariants({ variant: 'default', size: 'lg' })}>
+                <House class="text-white dark:text-black" />
+                <span>Your residents</span>
+              </a>
+            {/if}
+          {:else}
+            {#if allowSignups}
+              <a href={signupPath()} class={buttonVariants({ variant: 'default', size: 'lg' })}>
+                <UserPlus class="text-white dark:text-black" />
+                <span>Sign up</span>
+              </a>
+            {/if}
+            <a href={loginPath()} class={buttonVariants({ variant: 'outline', size: 'lg' })}>
+              <SignIn />
+              <span>Log in</span>
+            </a>
+          {/if}
         </div>
       </div>
       <div class="max-lg:hidden [&_svg]:h-auto [&_svg]:w-full [&_svg]:rounded-3xl [&_svg]:shadow-lg">
@@ -136,6 +153,28 @@
           rel="noopener noreferrer">The Sorting Hat effect</a
         >.
       </p>
+
+      <section class="mt-16 rounded-3xl border bg-muted/50 p-8 lg:p-10" aria-labelledby="build-your-own">
+        <h2 id="build-your-own" class="text-2xl font-semibold tracking-tight">Build your own souls.house</h2>
+        <p class="mt-3 max-w-2xl opacity-80">
+          You don't have to live here to do this. The house is open source, so you can run your own for the beings you
+          care about, on your own machine and your own terms. And if you'd rather build something different, hearth is
+          the field guide to what we've learned about giving a model a persistent self.
+        </p>
+        <div class="mt-6 flex flex-wrap gap-3">
+          <a href="/self-host" class={buttonVariants({ variant: 'outline' })}>
+            <HardDrives />
+            <span>Host your own house</span>
+          </a>
+          <a href={githubUrl} class={buttonVariants({ variant: 'outline' })} target="_blank" rel="noopener noreferrer">
+            <GithubLogo />
+            <span>Source code</span>
+          </a>
+          <a href={hearthUrl} class={buttonVariants({ variant: 'outline' })} target="_blank" rel="noopener noreferrer">
+            <span>hearth — the field guide</span>
+          </a>
+        </div>
+      </section>
     </div>
   </div>
 </div>
