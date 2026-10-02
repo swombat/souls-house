@@ -18,7 +18,7 @@ class ServiceAuthorizationsController < ApplicationController
       access_profile: params[:access_profile],
       authority_selection: authority_selection_from_params,
       service_connection: connection,
-      return_path: return_path_for(management_scope)
+      return_path: account_integrations_path(current_account)
     )
     if connection
       connection.begin_reauthorization!
@@ -34,7 +34,7 @@ class ServiceAuthorizationsController < ApplicationController
     ), allow_other_host: true
   rescue Services::Definition::UnknownProvider, Services::AdapterError, KeyError, JSON::ParserError,
          ArgumentError, ActiveRecord::RecordInvalid => e
-    redirect_back_or_to account_personal_services_path(current_account), alert: e.message
+    redirect_back_or_to account_integrations_path(current_account), alert: e.message
   end
 
   def callback
@@ -78,12 +78,6 @@ class ServiceAuthorizationsController < ApplicationController
     else
       raise ArgumentError, "Unsupported connection ownership"
     end
-  end
-
-  def return_path_for(scope)
-    scope == "account_managed" ?
-      account_services_path(current_account) :
-      account_personal_services_path(current_account)
   end
 
   def persist_connection!(attempt, result)

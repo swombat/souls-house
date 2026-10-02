@@ -79,6 +79,16 @@ module TestSupport
         end
       end
 
+      if params[:integrations]
+        account.service_connections.create!(provider: "dropbox", connected_by_user: primary_user,
+          external_subject_id: "synthetic-shared-#{run_id}", external_identity: "team@example.com",
+          label: "Team files", management_scope: "account_managed", credential_kind: "oauth2",
+          credential_metadata: { "credential_strategy" => "static" })
+        account.service_connections.create!(provider: "github", connected_by_user: secondary_user,
+          label: "member/project", management_scope: "personal", credential_kind: "token",
+          credential_metadata: { "repository" => "member/project" })
+      end
+
       render json: {
         run_id: run_id,
         password: PASSWORD,

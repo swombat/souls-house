@@ -13,9 +13,9 @@ test('account services leads to account-scoped device controls and separate reco
     await page.getByRole('button', { name: /log in/i }).click();
     await expect(page).toHaveURL(/\/$/);
     await page.goto(`/accounts/${setup.account_param}/services`);
-    await expect(page.getByRole('heading', { name: 'Device integrations' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Connect a new integration' })).toBeVisible();
     await page.screenshot({ path: 'test-results/device-integrations-desktop.png', fullPage: true });
-    await page.getByRole('link', { name: 'Manage your device streams' }).click();
+    await page.getByRole('link', { name: /Polar H10 \/ RR stream/ }).click();
     await expect(page).toHaveURL(`/accounts/${setup.account_param}/device_streams`);
     await expect(page.locator('select[name=account_id]')).toHaveCount(0);
     await page.getByLabel('Stream name').fill('Synthetic H10');

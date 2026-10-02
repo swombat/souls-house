@@ -7,6 +7,7 @@
   let {
     form,
     agent,
+    account,
     telegramDeepLink = null,
     telegramSubscriberCount = 0,
     sendingTestNotification = false,
@@ -66,9 +67,12 @@
     {showIntegrationList} />
 {:else}
   <div class="space-y-6">
-    <div>
-      <h2 class="text-xl font-semibold">Integrations</h2>
-      <p class="text-sm text-muted-foreground">Connect {agent.name} to the services you use.</p>
+    <div class="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <h2 class="text-xl font-semibold">Integrations</h2>
+        <p class="text-sm text-muted-foreground">Connect {agent.name} to the services you use.</p>
+      </div>
+      <Button href={`/accounts/${account.id}/integrations#connect-new`}>Add integration</Button>
     </div>
 
     <div class="divide-y rounded-lg border">

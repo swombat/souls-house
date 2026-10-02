@@ -1,37 +1,7 @@
 class Accounts::PersonalServicesController < ApplicationController
 
   def show
-    service_definitions = Services::Definition.all
-      .select { |definition| definition.supports_management_scope?("personal") }
-    agents = current_account.agents.by_name.to_a
-    connections = current_account.service_connections.personal
-      .where(connected_by_user: Current.user)
-      .includes(:connected_by_user)
-      .to_a
-    accesses = AgentServiceAccess
-      .where(agent: agents, service_connection: connections)
-      .index_by { |access| [ access.agent_id, access.service_connection_id ] }
-
-    render inertia: "accounts/personal_services", props: {
-      account: current_account.as_json,
-      services: service_definitions.map(&:as_json),
-      focused_service: service_definitions.find { |definition| definition.key == params[:connect] }&.as_json,
-      connections: connections.map do |connection|
-        connection.as_connection_json(current_user: Current.user).merge(
-          residents: agents.map do |agent|
-            access = accesses[[ agent.id, connection.id ]]
-            {
-              id: agent.to_param,
-              name: agent.name,
-              active: agent.active?,
-              enabled: access&.enabled? || false,
-              provisioning_status: access&.provisioning_status,
-              access_update_url: account_agent_service_access_path(current_account, agent, connection.public_id)
-            }
-          end
-        )
-      end
-    }
+    redirect_to account_integrations_path(current_account, connect: params[:connect].presence)
   end
 
 end

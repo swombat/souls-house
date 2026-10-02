@@ -82,6 +82,7 @@ Rails.application.routes.draw do
     resources :api_keys, path: "external_access", only: [ :index, :create, :destroy ]
     resources :services, only: :index, module: :accounts
     resource :personal_services, only: :show, module: :accounts
+    resource :integrations, only: :show, module: :accounts
     resources :service_authorizations, only: :create
     resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts
 

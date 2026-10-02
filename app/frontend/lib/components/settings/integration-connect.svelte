@@ -5,7 +5,24 @@
   import { serviceIconClass } from '$lib/service-presentation';
   import { submitNativePost } from '$lib/integration-forms';
   import ServiceAuthoritySelector from '$lib/components/service-authority-selector.svelte';
-  let { account, focusedService } = $props();
+  let { account, focusedService, canManageAccount = false } = $props();
+  let managementScope = $state('personal');
+  let availableScopes = $derived(
+    (focusedService.management_scopes || ['personal']).filter((scope) => scope === 'personal' || canManageAccount)
+  );
+  let effectiveScope = $derived(availableScopes.includes(managementScope) ? managementScope : availableScopes[0]);
+  const scopeOptions = [
+    {
+      value: 'personal',
+      title: 'Just me',
+      detail: 'Uses your identity. You choose resident access; account admins can manage or disconnect it.',
+    },
+    {
+      value: 'account_managed',
+      title: 'The whole account',
+      detail: 'Managed by account admins. Choose resident access after connecting.',
+    },
+  ];
   let selectedProfiles = $state({});
   let authoritySelections = $state({});
   let credentialValues = $state({});
@@ -16,7 +33,7 @@
   function connect(service) {
     const data = {
       provider: service.key,
-      management_scope: 'personal',
+      management_scope: effectiveScope,
       access_profile: profileFor(service),
     };
     if (service.authority_groups.length > 0) {
@@ -58,7 +75,7 @@
   function connectCredentials(service) {
     router.post(`/accounts/${account.id}/service_connections`, {
       provider: service.key,
-      management_scope: 'personal',
+      management_scope: effectiveScope,
       credentials: credentialsFor(service),
     });
   }
@@ -79,6 +96,41 @@
     </div>
     <h2 class="text-xl font-semibold">{focusedService.name}</h2>
   </div>
+
+  {#if canManageAccount && availableScopes.length > 1}
+    <div role="radiogroup" aria-label="Integration scope" class="space-y-2">
+      <p class="text-sm font-medium">Who should own this connection?</p>
+      <div class="grid gap-2 sm:grid-cols-2">
+        {#each scopeOptions as option (option.value)}
+          <label
+            class={`flex cursor-pointer gap-3 rounded-lg border p-3 text-sm transition ${
+              managementScope === option.value ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/50'
+            }`}>
+            <input
+              type="radio"
+              name="management_scope"
+              value={option.value}
+              bind:group={managementScope}
+              class="mt-0.5" />
+            <span>
+              <span class="block font-medium">{option.title}</span>
+              <span class="block text-muted-foreground">{option.detail}</span>
+            </span>
+          </label>
+        {/each}
+      </div>
+    </div>
+  {:else}
+    <p class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+      {#if canManageAccount}
+        {focusedService.name} can only be connected personally. It will belong to you, and you choose which residents can
+        use it.
+      {:else}
+        This will be your personal integration. You choose which residents can use it. Account admins can also manage or
+        disconnect the connection.
+      {/if}
+    </p>
+  {/if}
 
   {#if focusedService.connection_method === 'credentials'}
     <div class="space-y-4">
@@ -125,8 +177,8 @@
     </select>
   {/if}
 
-  <div class="flex justify-end gap-3 border-t pt-4">
-    <Button variant="outline" href={`/accounts/${account.id}/personal_services`}>Cancel</Button>
+  <div class="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:justify-end">
+    <Button variant="outline" href={`/accounts/${account.id}/integrations`}>Cancel</Button>
     <Button
       type="button"
       disabled={focusedService.authority_groups.length > 0 && !hasAuthority(focusedService)}
