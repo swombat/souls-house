@@ -57,6 +57,7 @@ class SendPathIntegrationTest < ActionDispatch::IntegrationTest
   end
 
   test "an opening message is one automatic wake" do
+    accounts(:personal_account).update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router")
     user = users(:user_1)
     resident = user.personal_account.agents.create!(name: "Solo", system_prompt: "Test", runtime: "external")
 
