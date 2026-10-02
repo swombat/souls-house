@@ -18,16 +18,20 @@ class ReplyExpectation < ApplicationRecord
   after_commit -> { self.class.refresh_for(user_id) }
 
   def self.summary_for(user, account:)
-    counts = visible_to(user).state_open.group("chats.account_id", "chats.id").count
-    accounts = Account.where(id: counts.keys.map(&:first)).index_by(&:id)
-    chats = Chat.where(id: counts.keys.filter_map { |aid, cid| cid if aid == account&.id }).index_by(&:id)
+    counts = visible_to(user).state_open.group("chats.account_id", "chats.id")
+      .pluck("chats.account_id", "chats.id", Arel.sql("COUNT(*)"), Arel.sql("MAX(messages.id)"))
+    accounts = Account.where(id: counts.map(&:first)).index_by(&:id)
+    chats = Chat.where(id: counts.filter_map { |aid, cid| cid if aid == account&.id }).index_by(&:id)
     by_account = Hash.new(0)
     by_chat = {}
-    counts.each do |(aid, cid), count|
+    through_messages = {}
+    counts.each do |aid, cid, count, through_id|
       by_account[accounts.fetch(aid).to_param] += 1
-      by_chat[chats.fetch(cid).to_param] = count if chats.key?(cid)
+      next unless chats.key?(cid)
+      by_chat[chats.fetch(cid).to_param] = count
+      through_messages[chats.fetch(cid).to_param] = Message.encode_id(through_id)
     end
-    { total: counts.size, accounts: by_account, chats: by_chat }
+    { total: counts.size, accounts: by_account, chats: by_chat, through_messages: through_messages }
   end
 
   # Call only while holding the chat's write lock. All inference paths use this

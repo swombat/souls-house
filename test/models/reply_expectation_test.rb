@@ -54,6 +54,7 @@ class ReplyExpectationTest < ActiveSupport::TestCase
     record(@ask)
     record(other_ask)
     summary = ReplyExpectation.summary_for(@user, account: @chat.account)
+    assert_equal({ @chat.to_param => @ask.to_param }, summary[:through_messages])
     assert_equal 2, summary[:total]
     assert_equal({ @chat.to_param => 1 }, summary[:chats])
     assert_equal 1, summary[:accounts][other_chat.account.to_param]
@@ -68,6 +69,7 @@ class ReplyExpectationTest < ActiveSupport::TestCase
     assert_equal 1, summary[:total]
     assert_equal 1, summary[:accounts][@chat.account.to_param]
     assert_equal 4, summary[:chats][@chat.to_param]
+    assert_equal @chat.messages.order(:id).last.to_param, summary[:through_messages][@chat.to_param]
 
     second_chat = @chat.account.chats.create!(title: "Second thread")
     record(second_chat.messages.create!(role: "assistant", content: "Another thread"))

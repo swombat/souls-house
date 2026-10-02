@@ -21,13 +21,15 @@
         <p>Or you can select a recent conversation and jump straight to it:</p>
         <ul class="mt-3 space-y-2">
           {#each recentChats as chat (chat.id)}
-            <li>
+            <li class="relative">
               <Link
                 href={accountChatPath(accountId, chat.id)}
-                class="block rounded-md border border-border px-3 py-3 text-foreground hover:bg-accent break-words">
+                class="block rounded-md border border-border pl-3 pr-10 py-3 text-foreground hover:bg-accent break-words">
                 {chat.title_or_default || chat.title || 'New Conversation'}
-                <ReplyAttentionEye chatId={chat.id} />
               </Link>
+              <div class="absolute right-2 top-2">
+                <ReplyAttentionEye chatId={chat.id} {accountId} />
+              </div>
             </li>
           {/each}
         </ul>

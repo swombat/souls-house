@@ -46,29 +46,42 @@ for (const directTag of [false, true]) {
       await page.screenshot({ path: testInfo.outputPath('reply-attention-accounts.png') });
       await targetAccount.click();
       const thread = page.locator(`aside a[href$="/chats/${chatId}"]`);
-      await expect(thread.getByLabel('Your response is requested')).toBeVisible();
+      await expect(page.locator('aside').getByRole('button', { name: /You have a mention or request/ })).toBeVisible();
+      const eye = page.locator('aside').getByRole('button', { name: /You have a mention or request/ });
+      await expect(eye).toHaveAttribute('title', /Click to dismiss.*Responding to the thread also dismisses/);
+      const beforeDismiss = page.url();
+      if (directTag) {
+        await eye.focus();
+        await page.keyboard.press('Enter');
+      } else {
+        await eye.click();
+      }
+      await expect(eye).toHaveCount(0);
+      expect(page.url()).toBe(beforeDismiss);
+      await ask(`${firstMessage} A new request after dismissal.`);
+      await expect(eye).toBeVisible();
       await thread.click();
       await expect(page.getByText(firstMessage, { exact: true })).toBeVisible();
-      await expect(thread.getByLabel('Your response is requested')).toBeVisible();
+      await expect(page.locator('aside').getByRole('button', { name: /You have a mention or request/ })).toBeVisible();
       await page.reload();
-      await expect(thread.getByLabel('Your response is requested')).toBeVisible();
+      await expect(page.locator('aside').getByRole('button', { name: /You have a mention or request/ })).toBeVisible();
       await page.getByRole('button', { name: 'Conversation actions' }).click();
       await expect(page.getByRole('menuitem', { name: 'Dismiss request to respond' })).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath('reply-attention-dismiss.png') });
       await page.getByRole('menuitem', { name: 'Dismiss request to respond' }).click();
-      await expect(thread.getByLabel('Your response is requested')).toHaveCount(0);
+      await expect(page.locator('aside').getByRole('button', { name: /You have a mention or request/ })).toHaveCount(0);
       await expect(accountMenu.getByLabel('1 thread requests your response')).toHaveCount(0);
       await ask(
         directTag
           ? '@TagReader Example — another deliberate tag.'
           : 'Which location would you prefer for the synthetic meeting?'
       );
-      await expect(thread.getByLabel('Your response is requested')).toBeVisible();
+      await expect(page.locator('aside').getByRole('button', { name: /You have a mention or request/ })).toBeVisible();
       const composer = page.getByTestId('message-composer');
       await expect(composer.getByRole('status')).toHaveText('Saved');
       await composer.locator('textarea').fill("I'll look tonight");
       await composer.getByRole('button', { name: 'Send message', exact: true }).click();
-      await expect(thread.getByLabel('Your response is requested')).toHaveCount(0);
+      await expect(page.locator('aside').getByRole('button', { name: /You have a mention or request/ })).toHaveCount(0);
       await expect(accountMenu.getByLabel('1 thread requests your response')).toHaveCount(0);
     } finally {
       await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });

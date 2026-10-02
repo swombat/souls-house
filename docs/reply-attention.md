@@ -46,6 +46,10 @@ messages do not enqueue classification.
 The top-right account menu shows the total number of threads with open requests
 for the current human, then per-account thread counts. Multiple tags or inferred
 requests in one thread count once in these badges. A red eye marks affected threads.
+Its tooltip explains the mention/request, click-to-dismiss, and reply-to-dismiss behaviour.
+The eye is a keyboard-accessible button beside (not inside) the thread link.
+Clicking it dismisses through the newest request represented by that badge,
+without opening the thread or clearing a newer request that arrives afterward.
 Reading does not clear it. Posting a reply mechanically clears prior requests;
 “I'll look later” counts as a reply, not semantic completion. The conversation
 menu can dismiss through the latest displayed message, without clearing newer

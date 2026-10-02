@@ -27,6 +27,21 @@ class Chats::ReplyDismissalsControllerTest < ActionDispatch::IntegrationTest
     assert ReplyExpectation.find_by!(message: newer).state_open?
   end
 
+  test "sidebar dismissal returns to the referring page" do
+    post account_chat_reply_dismissal_path(@account, @chat),
+      params: { through_message_id: @ask.to_param },
+      headers: { "HTTP_REFERER" => account_chats_url(@account) }
+    assert_redirected_to account_chats_url(@account)
+    assert ReplyExpectation.find_by!(message: @ask).state_dismissed?
+  end
+
+  test "dismissal never redirects to another host" do
+    post account_chat_reply_dismissal_path(@account, @chat),
+      params: { through_message_id: @ask.to_param },
+      headers: { "HTTP_REFERER" => "https://untrusted.example/" }
+    assert_redirected_to account_chat_path(@account, @chat)
+  end
+
   test "requires own membership and source from this chat" do
     other = accounts(:existing_user_account).chats.create!(title: "Other")
     post account_chat_reply_dismissal_path(other.account, other), params: { through_message_id: @ask.to_param }

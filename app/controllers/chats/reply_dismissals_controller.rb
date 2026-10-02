@@ -7,7 +7,7 @@ class Chats::ReplyDismissalsController < ApplicationController
     through = chat.messages.kept.find(params.require(:through_message_id))
     ReplyDismissal.dismiss!(chat: chat, user: Current.user, through: through)
     audit("dismiss_reply_expectations", chat, through_message_id: through.to_param)
-    redirect_to account_chat_path(account, chat), status: :see_other
+    redirect_back fallback_location: account_chat_path(account, chat), allow_other_host: false, status: :see_other
   end
 
 end
