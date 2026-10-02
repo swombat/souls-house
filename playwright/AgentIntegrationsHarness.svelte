@@ -16,6 +16,7 @@
   <AgentIntegrationsPanel
     {form}
     {agent}
+    account={{ id: 'integration-test-account' }}
     {telegramDeepLink}
     {telegramSubscriberCount}
     onsendTestNotification={() => {}}

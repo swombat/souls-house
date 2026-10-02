@@ -115,9 +115,9 @@
         <span>User Settings</span>
       </DropdownMenu.Item>
       {#if currentAccount?.id}
-        <DropdownMenu.Item onclick={() => router.visit(`/accounts/${currentAccount.id}/personal_services`)}>
+        <DropdownMenu.Item onclick={() => router.visit(`/accounts/${currentAccount.id}/integrations`)}>
           <Plugs class="mr-2 size-4" />
-          <span>Personal Services</span>
+          <span>Integrations</span>
         </DropdownMenu.Item>
       {/if}
       {#if currentAccount?.id}
@@ -142,10 +142,6 @@
         <DropdownMenu.Item onclick={() => router.visit(accountApiKeysPath(currentAccount.id))}>
           <Plugs class="mr-2 size-4" />
           <span>External Access</span>
-        </DropdownMenu.Item>
-        <DropdownMenu.Item onclick={() => router.visit(`/accounts/${currentAccount.id}/services`)}>
-          <Plugs class="mr-2 size-4" />
-          <span>Account Services</span>
         </DropdownMenu.Item>
         <DropdownMenu.Item onclick={() => router.visit(accountPath(currentAccount.id))}>
           <Gear class="mr-2 size-4" />

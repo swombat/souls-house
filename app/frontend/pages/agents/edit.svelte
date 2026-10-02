@@ -188,6 +188,7 @@
           <AgentIntegrationsPanel
             {form}
             {agent}
+            {account}
             {telegramDeepLink}
             {telegramSubscriberCount}
             {sendingTestNotification}

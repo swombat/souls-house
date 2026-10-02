@@ -43,19 +43,34 @@
           <h3 class="truncate text-lg font-semibold">
             {connection.provider === 'google_workspace' ? connection.identity : connection.label}
           </h3>
+          <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            <span
+              class={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                connection.management_scope === 'personal'
+                  ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200'
+                  : 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200'
+              }`}>
+              {connection.management_scope === 'personal' ? 'Personal' : 'Account'}
+            </span>
+            <span class="truncate">Connected by {connection.connected_by_name}</span>
+          </p>
           {#if connection.status === 'reauthorizing'}
             <p class="text-sm text-amber-700">Reauthorization required before residents can use this connection.</p>
           {/if}
         </div>
       </div>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        class="border-destructive/20 text-destructive shadow-none hover:bg-destructive/10 hover:text-destructive"
-        onclick={() => removeConnection(connection)}>
-        Disconnect
-      </Button>
+      {#if connection.can_manage}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          class="border-destructive/20 text-destructive shadow-none hover:bg-destructive/10 hover:text-destructive"
+          onclick={() => removeConnection(connection)}>
+          Disconnect
+        </Button>
+      {:else}
+        <p class="text-sm text-muted-foreground sm:text-right">Managed by account admins</p>
+      {/if}
     </header>
 
     <ConnectionGoogleAuthority {connection} {services} {account} />
@@ -66,16 +81,19 @@
         <input
           type="checkbox"
           checked={connection.enabled_for_new_agents}
+          disabled={!connection.can_manage}
           onchange={(event) => updateConnection(connection, { enabled_for_new_agents: event.currentTarget.checked })} />
-        Provision to new residents by default
+        Turn on for new residents automatically
       </label>
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={connection.freely_provisionable}
-          onchange={(event) => updateConnection(connection, { freely_provisionable: event.currentTarget.checked })} />
-        Allow account admins to provision this access
-      </label>
+      {#if connection.can_delegate}
+        <label class="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={connection.freely_provisionable}
+            onchange={(event) => updateConnection(connection, { freely_provisionable: event.currentTarget.checked })} />
+          Let account admins switch this on for residents
+        </label>
+      {/if}
     </div>
   </div>
 </article>

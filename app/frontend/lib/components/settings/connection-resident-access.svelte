@@ -55,7 +55,9 @@
           <Switch
             id={`${connection.id}-${resident.id}`}
             checked={resident.enabled}
-            disabled={updating || (!resident.enabled && connection.status !== 'connected')}
+            disabled={updating ||
+              (resident.enabled ? !connection.can_manage : !connection.can_provision) ||
+              (!resident.enabled && connection.status !== 'connected')}
             onCheckedChange={(enabled) => toggleResidentAccess(connection, resident, enabled)}
             aria-label={`${resident.enabled ? 'Disable' : 'Enable'} ${connection.label} for ${resident.name}`} />
         </div>

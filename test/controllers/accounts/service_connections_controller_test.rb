@@ -56,6 +56,7 @@ class Accounts::ServiceConnectionsControllerTest < ActionDispatch::IntegrationTe
     assert_equal [ "dad/first-site", "dad/second-site" ], connections.pluck(:label)
     assert_equal "github_pat_first", connections.first.credential_payload_hash["token"]
     assert_equal "github_pat_second", connections.second.credential_payload_hash["token"]
+    assert_redirected_to account_integrations_path(@account)
   end
 
   test "does not accept GitHub repository credentials as account managed" do
@@ -69,7 +70,7 @@ class Accounts::ServiceConnectionsControllerTest < ActionDispatch::IntegrationTe
     }
 
     assert_not ServiceConnection.exists?(provider: "github", account: @account)
-    assert_redirected_to account_personal_services_path(@account)
+    assert_redirected_to account_integrations_path(@account)
   end
 
   test "does not store the same GitHub token twice" do
@@ -106,7 +107,7 @@ class Accounts::ServiceConnectionsControllerTest < ActionDispatch::IntegrationTe
       end
     end
 
-    assert_redirected_to account_personal_services_path(@account)
+    assert_redirected_to account_integrations_path(@account)
     assert_equal "That credential is already connected as dad/site", flash[:alert]
   end
 

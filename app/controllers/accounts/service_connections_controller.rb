@@ -40,10 +40,10 @@ class Accounts::ServiceConnectionsController < ApplicationController
           management_scope: connection.management_scope,
           external_identity: connection.external_identity,
           authority_summary: connection.credential_metadata["authority_summary"])
-    redirect_back fallback_location: account_personal_services_path(current_account),
-                  notice: "#{definition.name} connected"
+    redirect_to account_integrations_path(current_account),
+                notice: "#{definition.name} connected"
   rescue Services::Definition::UnknownProvider, Services::AdapterError, KeyError, ArgumentError, ActiveRecord::RecordInvalid => e
-    redirect_back fallback_location: account_personal_services_path(current_account), alert: e.message
+    redirect_back_or_to account_integrations_path(current_account), alert: e.message
   end
 
   def update
@@ -61,7 +61,7 @@ class Accounts::ServiceConnectionsController < ApplicationController
           provider: @connection.provider,
           enabled_for_new_agents: @connection.enabled_for_new_agents?,
           freely_provisionable: @connection.freely_provisionable?)
-    redirect_back fallback_location: account_path(current_account), notice: "Service connection updated"
+    redirect_back fallback_location: account_integrations_path(current_account), notice: "Service connection updated"
   end
 
   def destroy
@@ -73,7 +73,7 @@ class Accounts::ServiceConnectionsController < ApplicationController
     @connection.disconnect!
     audit(:disconnect_service, @connection, provider: @connection.provider)
     @connection.destroy!
-    redirect_back fallback_location: account_path(current_account), notice: "Service disconnected"
+    redirect_back fallback_location: account_integrations_path(current_account), notice: "Service disconnected"
   end
 
   private

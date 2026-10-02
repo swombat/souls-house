@@ -34,6 +34,7 @@ class ServiceAuthorizationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal attempt.requested_scopes.sort, query.fetch("scope").split.sort
     assert_equal ServiceAuthorizationAttempt.digest(query.fetch("state")), attempt.state_digest
     assert_equal service_authorization_callback_url, query.fetch("redirect_uri")
+    assert_equal account_integrations_path(@account), attempt.return_path
     assert_not query.key?("client_secret")
     assert_not query.key?("access_token")
   end
@@ -53,6 +54,29 @@ class ServiceAuthorizationsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to root_path
+  end
+
+  test "account-managed OAuth returns to integrations in the selected account" do
+    account = accounts(:team_account)
+    Rails.application.stub(:credentials, { dropbox: { app_key: "test-dropbox-client" } }) do
+      post account_service_authorizations_path(account), params: {
+        provider: "dropbox",
+        management_scope: "account_managed",
+        access_profile: "read_only"
+      }
+    end
+
+    assert_response :redirect
+    attempt = ServiceAuthorizationAttempt.order(:id).last
+    assert_equal account, attempt.account
+    assert_equal "account_managed", attempt.management_scope
+    assert_equal account_integrations_path(account), attempt.return_path
+    state = Rack::Utils.parse_query(URI(response.location).query).fetch("state")
+
+    get service_authorization_callback_path, params: { state: state, error: "access_denied" }
+
+    assert_redirected_to account_integrations_path(account)
+    assert attempt.reload.consumed_at.present?
   end
 
   test "starts Google Workspace authorization with offline access and PKCE" do
@@ -80,6 +104,7 @@ class ServiceAuthorizationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "S256", query.fetch("code_challenge_method")
     assert_equal attempt.requested_scopes.sort, query.fetch("scope").split.sort
     assert_equal service_authorization_callback_url, query.fetch("redirect_uri")
+    assert_equal account_integrations_path(@account), attempt.return_path
     assert_not query.key?("client_secret")
   end
 
@@ -125,7 +150,7 @@ class ServiceAuthorizationsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_redirected_to account_personal_services_path(@account)
+    assert_redirected_to account_integrations_path(@account)
     assert_match(/Unsupported Drive authority/, flash[:alert])
   end
 
