@@ -177,7 +177,7 @@
     </select>
   {/if}
 
-  <div class="flex justify-end gap-3 border-t pt-4">
+  <div class="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:justify-end">
     <Button variant="outline" href={`/accounts/${account.id}/integrations`}>Cancel</Button>
     <Button
       type="button"

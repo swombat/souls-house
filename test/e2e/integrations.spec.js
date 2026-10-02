@@ -56,6 +56,13 @@ for (const role of ['primary_user', 'secondary_user']) {
       } else {
         await expect(page.getByLabel('Integration scope')).toHaveCount(0);
       }
+      const connect = page.getByRole('button', { name: /^Connect / });
+      const card = await page.locator('.rounded-xl.bg-card').filter({ has: connect }).boundingBox();
+      for (const action of [page.getByRole('link', { name: 'Cancel', exact: true }), connect]) {
+        const box = await action.boundingBox();
+        expect(box.x).toBeGreaterThanOrEqual(card.x);
+        expect(box.x + box.width).toBeLessThanOrEqual(card.x + card.width);
+      }
       await page.screenshot({ path: testInfo.outputPath(`${role}-connect.png`), fullPage: true });
     } finally {
       expect((await request.post('/test/e2e/cleanup', { data: { run_id: runId } })).ok()).toBe(true);
