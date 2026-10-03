@@ -17,7 +17,7 @@ class ReplyExpectation < ApplicationRecord
 
   after_commit -> { self.class.refresh_for(user_id) }
 
-  def self.summary_for(user, account:)
+  def self.summary_for(user, account:, chat: nil)
     counts = visible_to(user).state_open.group("chats.account_id", "chats.id")
       .pluck("chats.account_id", "chats.id", Arel.sql("COUNT(*)"), Arel.sql("MAX(messages.id)"))
     accounts = Account.where(id: counts.map(&:first)).index_by(&:id)
@@ -31,7 +31,19 @@ class ReplyExpectation < ApplicationRecord
       by_chat[chats.fetch(cid).to_param] = count
       through_messages[chats.fetch(cid).to_param] = Message.encode_id(through_id)
     end
-    { total: counts.size, accounts: by_account, chats: by_chat, through_messages: through_messages }
+    message_ids = if chat && chat.account_id == account&.id
+      visible_to(user).state_open.where(messages: { chat_id: chat.id }).pluck(:message_id).map { |id| Message.encode_id(id) }
+    else
+      []
+    end
+    { total: counts.size, accounts: by_account, chats: by_chat, through_messages: through_messages, messages: message_ids }
+  end
+
+  def self.dismiss_message!(message:, user:)
+    message.chat.with_lock do
+      expectation = find_by!(message: message, user: user)
+      expectation.update!(state: :dismissed) if expectation.state_open?
+    end
   end
 
   # Call only while holding the chat's write lock. All inference paths use this

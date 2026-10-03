@@ -5,6 +5,7 @@
   import { PencilSimple, Trash } from 'phosphor-svelte';
   import FileAttachment from '$lib/components/chat/FileAttachment.svelte';
   import StoneCards from '$lib/components/chat/StoneCards.svelte';
+  import ReplyAttentionEye from './ReplyAttentionEye.svelte';
 
   import ModerationIndicator from '$lib/components/chat/ModerationIndicator.svelte';
   import AudioPlayer from '$lib/components/chat/AudioPlayer.svelte';
@@ -16,6 +17,8 @@
 
   let {
     message,
+    accountId,
+    chatId,
     progressMessages = [],
     progressContinued = false,
     isLastVisible = false,
@@ -68,6 +71,7 @@
           {/if}
           <Card.Root class="{getBubbleClass(message.author_colour)} min-w-0 w-fit">
             <Card.Content class="p-4">
+              <ReplyAttentionEye {accountId} {chatId} messageId={message.id} />
               <StoneCards stones={message.stones_json || []} />
               {#if message.files_json && message.files_json.length > 0}
                 <div class="space-y-2 mb-3">
@@ -130,6 +134,7 @@
                       <div class="flex-1 border-t border-border"></div>
                     </div>
                   {/if}
+                  <ReplyAttentionEye {accountId} {chatId} messageId={section.id} />
                   <AssistantMessageSection
                     message={section}
                     streamingThinking={sectionThinking[section.id] ||
