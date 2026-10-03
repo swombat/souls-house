@@ -1,0 +1,44 @@
+#!/bin/bash
+# Run explicitly as host root after reviewing this directory.
+# Secrets and installation-specific settings are provisioned separately.
+set -euo pipefail
+[[ "$(id -u)" = 0 ]] || { echo 'Run as host root'; exit 1; }
+source_dir="$(cd "$(dirname "$0")" && pwd)"
+install -d -m 755 /opt/house-deploy
+install -d -m 700 /etc/house-deploy /var/lib/house-deploy /var/lib/house-deploy/runs /var/lib/house-deploy/docker
+for file in gate.py worker.py ssh-command; do
+  install -m 755 "$source_dir/$file" "/opt/house-deploy/$file"
+done
+install -m 644 "$source_dir/roll-resident.rb" /opt/house-deploy/roll-resident.rb
+id house-deploy-trigger >/dev/null 2>&1 || useradd --system --create-home --shell /bin/sh house-deploy-trigger
+home="$(getent passwd house-deploy-trigger | cut -d: -f6)"
+chown root:root "$home"
+chmod 755 "$home"
+install -d -m 755 "$home/.ssh"
+touch "$home/.ssh/authorized_keys"
+chown root:root "$home/.ssh" "$home/.ssh/authorized_keys"
+chmod 644 "$home/.ssh/authorized_keys"
+printf '%s\n' 'house-deploy-trigger ALL=(root) NOPASSWD: /opt/house-deploy/gate.py' > /etc/sudoers.d/house-deploy
+chmod 440 /etc/sudoers.d/house-deploy
+visudo -cf /etc/sudoers.d/house-deploy
+for operation in rails chaos both; do
+  cat > "/etc/systemd/system/house-deploy-${operation}.service" <<EOF
+[Unit]
+Description=Host-owned house deployment (${operation})
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/house-deploy/worker.py ${operation}
+User=root
+UMask=0077
+Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin
+RuntimeMaxSec=5h
+TimeoutStopSec=30
+StandardOutput=null
+StandardError=null
+EOF
+done
+systemctl daemon-reload
+echo 'Installed. Provision settings, secrets, SSH keys and tools image before requesting a deploy.'

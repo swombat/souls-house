@@ -1,0 +1,10 @@
+name: Update Chaos
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy-house.yml
+    with:
+      operation: chaos
