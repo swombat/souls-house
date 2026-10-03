@@ -129,11 +129,16 @@ class HetznerCloudClient
     payload[:user_data] = user_data if user_data.present?
 
     server = request(:post, "/servers", payload)["server"]
-    unless server.is_a?(Hash) && server["id"].is_a?(Integer)
-      raise CreateOutcomeUnknown.new("Hetzner Cloud create returned success without a server id", code: "outcome_unknown")
+    unless server.is_a?(Hash) && server["id"].is_a?(Integer) && server["id"].positive?
+      raise CreateOutcomeUnknown.new("Hetzner Cloud create returned success without a valid server id", code: "outcome_unknown")
     end
 
-    Server.from_api(server)
+    begin
+      Server.from_api(server)
+    rescue TypeError, NoMethodError, KeyError
+      # A server may have been bought even though its description is malformed.
+      raise CreateOutcomeUnknown.new("Hetzner Cloud create returned a malformed server", code: "outcome_unknown")
+    end
   end
 
   def find_server(id)

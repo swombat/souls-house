@@ -80,9 +80,12 @@ class HetznerCloudClientTest < ActiveSupport::TestCase
       .to_return({ status: 201, body: {}.to_json },
                  { status: 201, body: { server: nil }.to_json },
                  { status: 201, body: { server: { name: "no-id" } }.to_json },
+                 { status: 201, body: { server: { id: 0 } }.to_json },
+                 { status: 201, body: { server: { id: 42, server_type: "malformed" } }.to_json },
+                 { status: 201, body: { server: { id: 42, public_net: { ipv4: "malformed" } } }.to_json },
                  { status: 201, body: "not json" })
 
-    5.times { assert_raises(HetznerCloudClient::CreateOutcomeUnknown) { create! } }
+    8.times { assert_raises(HetznerCloudClient::CreateOutcomeUnknown) { create! } }
   end
 
   test "classifies stock, name collision and rate limit errors" do
