@@ -37,14 +37,25 @@ class Accounts::GuestMembershipsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_agents_path(@nexus)
   end
 
-  test "the receiving account removes a guest it did not add" do
+  test "an owner of the receiving account removes a guest they did not add" do
     membership = @nexus.guest_memberships.create!(agent: @lume, added_by: @daniel)
-    sign_in @team_member
+    nexus_owner = users(:regular_user)
+    @nexus.memberships.create!(user: nexus_owner, role: "owner", confirmed_at: Time.current)
+    sign_in nexus_owner
 
     delete account_guest_membership_path(@nexus, membership)
 
     assert_redirected_to account_agents_path(@nexus)
     assert_not GuestMembership.exists?(membership.id)
+  end
+
+  test "a plain member of the receiving account cannot remove a guest" do
+    membership = @nexus.guest_memberships.create!(agent: @lume, added_by: @daniel)
+    sign_in @team_member
+
+    delete account_guest_membership_path(@nexus, membership)
+
+    assert GuestMembership.exists?(membership.id)
   end
 
   test "the home account withdraws its resident" do

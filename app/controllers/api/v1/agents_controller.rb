@@ -6,8 +6,11 @@ module Api
       before_action :find_agent_by_uuid, only: [ :announce, :health ]
       before_action :authenticate_with_trigger_token, only: [ :announce ]
 
+      # With conversation_id, list the residents of that room's account, so a
+      # guest can find whom it may invite there. Without it, the key's account.
       def index
-        agents = current_api_account.conversation_agents.active.by_name
+        account = params[:conversation_id].present? ? actionable_chats.find(params[:conversation_id]).account : current_api_account
+        agents = account.conversation_agents.active.by_name
         render json: { agents: agents.map { |a| agent_json(a) } }
       end
 

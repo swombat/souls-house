@@ -17,6 +17,7 @@
     guest_memberships: guestMemberships = [],
     away_memberships: awayMemberships = [],
     guest_candidates: guestCandidates = [],
+    can_end_guest_memberships: canEndGuestMemberships = false,
   } = $props();
 
   // Subscribe to both:
@@ -97,7 +98,8 @@
     accountId={account.id}
     guests={guestMemberships}
     away={awayMemberships}
-    candidates={guestCandidates} />
+    candidates={guestCandidates}
+    canEnd={canEndGuestMemberships} />
 </div>
 
 <AgentUpgradeDialog

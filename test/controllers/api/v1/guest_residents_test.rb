@@ -28,6 +28,23 @@ module Api
         assert @room.agents.reload.include?(@lume)
       end
 
+      test "a seated guest lists the residents of the room's account, not only its home" do
+        @room.agents << @lume
+
+        get api_v1_agents_url, params: { conversation_id: @room.to_param }, headers: @lume_headers
+        ids = response.parsed_body["agents"].map { |agent| agent["id"] }
+        assert_includes ids, @local.to_param
+        assert_not_includes ids, agents(:code_reviewer).to_param
+
+        post api_v1_conversation_participants_url(@room), params: { agent_id: agents(:code_reviewer).to_param }, headers: @lume_headers
+        assert_response :not_found, "a guest cannot bring its home siblings in"
+      end
+
+      test "the room directory is closed to rooms the key cannot act in" do
+        get api_v1_agents_url, params: { conversation_id: @room.to_param }, headers: @lume_headers
+        assert_response :not_found
+      end
+
       test "a local resident cannot seat a resident that is not a guest here" do
         post api_v1_conversation_participants_url(@room), params: { agent_id: agents(:code_reviewer).to_param }, headers: @local_headers
         assert_response :not_found

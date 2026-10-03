@@ -76,12 +76,22 @@ class GuestMembershipTest < ActiveSupport::TestCase
     assert_not woken
   end
 
-  test "either side can end it" do
+  test "an owner of either account can end it; other members cannot" do
     membership = @nexus.guest_memberships.create!(agent: @lume, added_by: @daniel)
+    nexus_owner = users(:regular_user)
+    @nexus.memberships.create!(user: nexus_owner, role: "owner", confirmed_at: Time.current)
 
-    assert membership.removable_by?(@team_member), "the receiving account"
-    assert membership.removable_by?(@daniel), "the home account"
-    assert_not membership.removable_by?(users(:regular_user))
+    assert membership.removable_by?(nexus_owner), "an owner of the receiving account"
+    assert membership.removable_by?(@daniel), "an owner of the home account"
+    assert_not membership.removable_by?(@team_member), "a plain member of the receiving account"
+  end
+
+  test "rooms seat only residents hosted there or guests there" do
+    chat = @nexus.chats.create!(model_id: "openrouter/auto", manual_responses: true, title: "Field film", agents: [ @local ])
+    assert_raises(ActiveRecord::RecordInvalid) { chat.chat_agents.create!(agent: agents(:code_reviewer)) }
+
+    @nexus.guest_memberships.create!(agent: @lume, added_by: @daniel)
+    assert chat.chat_agents.create!(agent: @lume)
   end
 
   test "the wake names the account and guest status only for guests" do

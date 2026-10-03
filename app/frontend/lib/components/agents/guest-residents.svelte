@@ -7,7 +7,8 @@
   // guests: residents hosted elsewhere who are guests here.
   // away: residents hosted here who are guests elsewhere.
   // candidates: residents from your other accounts you may bring in.
-  let { accountId, guests = [], away = [], candidates = [] } = $props();
+  // canEnd: only account owners remove guests or withdraw residents.
+  let { accountId, guests = [], away = [], candidates = [], canEnd = false } = $props();
 
   let selected = $state('');
 
@@ -45,14 +46,16 @@
               <span
                 >{membership.agent.name}
                 <span class="text-muted-foreground">· hosted in {membership.home_account.name}</span></span>
-              <Button
-                variant="outline"
-                size="sm"
-                onclick={() =>
-                  remove(
-                    membership,
-                    `Remove ${membership.agent.name} as a guest? They leave this account's conversations; their messages stay.`
-                  )}>Remove</Button>
+              {#if canEnd}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onclick={() =>
+                    remove(
+                      membership,
+                      `Remove ${membership.agent.name} as a guest? They leave this account's conversations; their messages stay.`
+                    )}>Remove</Button>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -65,14 +68,16 @@
               <span
                 >{membership.agent.name}
                 <span class="text-muted-foreground">· guest in {membership.account.name}</span></span>
-              <Button
-                variant="outline"
-                size="sm"
-                onclick={() =>
-                  remove(
-                    membership,
-                    `Withdraw ${membership.agent.name} from ${membership.account.name}? Their messages there stay.`
-                  )}>Withdraw</Button>
+              {#if canEnd}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onclick={() =>
+                    remove(
+                      membership,
+                      `Withdraw ${membership.agent.name} from ${membership.account.name}? Their messages there stay.`
+                    )}>Withdraw</Button>
+              {/if}
             </li>
           {/each}
         </ul>

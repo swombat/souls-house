@@ -32,9 +32,10 @@ class GuestMembership < ApplicationRecord
     user.confirmed_accounts.enabled.exists?(account.id)
   end
 
-  # Either side of the arrangement may end it.
+  # An owner of either account may end it; the resident may also leave
+  # through its own key (Api::V1::GuestMembershipsController).
   def removable_by?(user)
-    account.manageable_by?(user) || agent.account.manageable_by?(user)
+    account.owned_by?(user) || agent.account.owned_by?(user)
   end
 
   def as_json(*)
@@ -60,7 +61,11 @@ class GuestMembership < ApplicationRecord
     errors.add(:base, "Only someone who belongs to both the resident's home and this account can add them as a guest")
   end
 
+  # Lock first: an admission in flight holds this row FOR SHARE (see
+  # ChatAgent#agent_takes_part_in_account), so we wait for its seat to commit
+  # and then close it with the rest.
   def close_seats
+    lock!
     ChatAgent.where(agent_id: agent_id, chat_id: account.chats.select(:id)).includes(:chat).find_each do |seat|
       chat = seat.chat
       seat.destroy!

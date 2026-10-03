@@ -28,6 +28,7 @@ class Api::V1::DraftsControllerTest < ActionDispatch::IntegrationTest
 
   test "agent credentials never read the key owner's private draft" do
     agent = agents(:research_assistant)
+    agent.update_columns(account_id: @account.id) # seat a resident hosted in this room's account
     @chat.agents << agent
     key = ApiKey.generate_for(@user, name: "Resident", agent: agent)
     get @path, headers: { "Authorization" => "Bearer #{key.raw_token}" }

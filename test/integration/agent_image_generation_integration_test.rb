@@ -12,6 +12,7 @@ class AgentImageGenerationIntegrationTest < ActionDispatch::IntegrationTest
     @user = users(:confirmed_user)
     @account = @user.personal_account
     @agent = agents(:research_assistant)
+    @agent.update_columns(account_id: @account.id) # seat a resident hosted in this room's account
     @chat = @account.chats.create!(
       model_id: "openrouter/auto",
       title: "Generated image integration",
