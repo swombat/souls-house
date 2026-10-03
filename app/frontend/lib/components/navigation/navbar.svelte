@@ -49,6 +49,11 @@
       show: !!currentUser && siteSettings?.allow_chats,
     },
     {
+      href: currentAccount?.id ? `/accounts/${currentAccount.id}/rhythms` : '#',
+      label: 'Rhythms',
+      show: !!currentUser && siteSettings?.allow_chats && siteSettings?.allow_agents && !!currentAccount?.id,
+    },
+    {
       href: currentAccount?.id ? accountAgentsPath(currentAccount.id) : '#',
       label: 'Residents',
       show: !!currentUser && siteSettings?.allow_agents && !!currentAccount?.id,
