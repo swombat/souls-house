@@ -97,6 +97,89 @@ module Api
         assert @room.messages.exists?(content: "[System Notice] #{@lume.name} has left the conversation.")
       end
 
+      test "a guest finds the guest account's residents before any room exists there" do
+        get api_v1_agents_url, params: { account_id: @nexus.to_param }, headers: @lume_headers
+        assert_response :success
+        assert_includes response.parsed_body["agents"].map { |agent| agent["id"] }, @local.to_param
+      end
+
+      test "a guest starts a room in its guest account and invites a resident there" do
+        assert_difference -> { @nexus.chats.count }, 1 do
+          post api_v1_conversations_url,
+               params: { account_id: @nexus.to_param, title: "A question for Nexus", message: "Hello.", agent_ids: [ @local.to_param ] },
+               headers: @lume_headers, as: :json
+        end
+        assert_response :created
+
+        room = @nexus.chats.order(:id).last
+        assert_equal room.to_param, response.parsed_body.dig("conversation", "id")
+        assert_equal [ @local, @lume ].map(&:id).sort, room.agents.pluck(:id).sort
+        assert room.messages.exists?(agent: @lume, content: "Hello.")
+      end
+
+      test "without account_id a resident key still creates at home" do
+        post api_v1_conversations_url, params: { title: "At home" }, headers: @lume_headers, as: :json
+        assert_response :created
+        assert_equal @home, Chat.find(response.parsed_body.dig("conversation", "id")).account
+      end
+
+      test "a guest cannot start a room in an account it is not a guest of" do
+        assert_no_difference -> { Chat.count } do
+          post api_v1_conversations_url, params: { account_id: accounts(:another_team).to_param, title: "Uninvited" },
+               headers: @lume_headers, as: :json
+        end
+        assert_response :not_found
+
+        get api_v1_agents_url, params: { account_id: accounts(:another_team).to_param }, headers: @lume_headers
+        assert_response :not_found
+      end
+
+      test "a guest cannot bring its home siblings into a room it starts there" do
+        assert_no_difference -> { Chat.count } do
+          post api_v1_conversations_url, params: { account_id: @nexus.to_param, agent_ids: [ agents(:code_reviewer).to_param ] },
+               headers: @lume_headers, as: :json
+        end
+        assert_response :not_found
+      end
+
+      test "after leaving, the guest account is closed to creation and discovery" do
+        @membership.destroy!
+
+        post api_v1_conversations_url, params: { account_id: @nexus.to_param, title: "Too late" }, headers: @lume_headers, as: :json
+        assert_response :not_found
+
+        get api_v1_agents_url, params: { account_id: @nexus.to_param }, headers: @lume_headers
+        assert_response :not_found
+      end
+
+      test "a guest refused at the seat lock gets 422, not a half-made room" do
+        # The account check passed, then the membership went before the insert:
+        # the creator's seat is refused under the lock and the room rolls back.
+        GuestMembership.where(id: @membership.id).delete_all
+        controller_class = Api::V1::ConversationsController
+        controller_class.class_eval { alias_method :__original_requested_account, :requested_account }
+        controller_class.define_method(:requested_account) { Account.find(params[:account_id]) }
+        begin
+          assert_no_difference -> { Chat.count } do
+            post api_v1_conversations_url, params: { account_id: @nexus.to_param, title: "Raced" }, headers: @lume_headers, as: :json
+          end
+        ensure
+          controller_class.class_eval do
+            alias_method :requested_account, :__original_requested_account
+            remove_method :__original_requested_account
+          end
+        end
+        assert_response :unprocessable_entity
+        assert_match(/not a resident or guest of this account/, response.parsed_body["error"])
+      end
+
+      test "an account key cannot name another account" do
+        account_headers = { "Authorization" => "Bearer #{ApiKey.generate_for(@daniel, name: "Account", account: @home).raw_token}" }
+        post api_v1_conversations_url, params: { account_id: @nexus.to_param, agent_ids: [ @lume.to_param ] },
+             headers: account_headers, as: :json
+        assert_response :not_found
+      end
+
       test "a resident cannot end another resident's guest membership" do
         delete api_v1_guest_membership_url(@membership), headers: @local_headers
         assert_response :not_found

@@ -14,6 +14,17 @@ module Api
 
       private
 
+      # The account a request acts in. Defaults to the key's home account. A
+      # resident key may name an account where it is currently a guest; any
+      # other account_id is 404, so a departed guest loses the door at once.
+      def requested_account
+        return current_api_account if params[:account_id].blank?
+
+        reachable = Account.where(id: current_api_account.id)
+        reachable = reachable.or(Account.where(id: current_api_agent.guest_memberships.select(:account_id))) if current_api_agent
+        reachable.find(params[:account_id])
+      end
+
       # Rooms a key may act in: its account's rooms and, for a resident key,
       # every room where that resident holds a seat, at home or as a guest.
       def actionable_chats
