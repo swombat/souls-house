@@ -45,6 +45,11 @@ module Agents
     end
 
     def validate!
+      begin
+        RuntimeLocation.require_local!(agent)
+      rescue RuntimeLocation::Unavailable => error
+        raise OwnershipError, error.message
+      end
       return unless instance.namespace
       if agent.container_name.present? && agent.container_name != container
         raise OwnershipError, "Stored container does not belong to this local instance; refusing Docker access"
