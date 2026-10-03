@@ -177,7 +177,7 @@ class ChatsController < ApplicationController
   end
 
   def available_agents_scope
-    current_account.agents.eligible_for_conversation.order(:paused, :name)
+    current_account.conversation_agents.eligible_for_conversation.order(:paused, :name)
   end
 
   def selected_agents
@@ -189,7 +189,7 @@ class ChatsController < ApplicationController
     return [] if ids.empty?
     raise ActiveRecord::RecordNotFound unless ids.all? { |id| id.is_a?(String) }
 
-    current_account.agents.eligible_for_conversation.find(Agent.decode_id(ids))
+    current_account.conversation_agents.eligible_for_conversation.find(Agent.decode_id(ids))
   end
 
   def require_available_agents
@@ -204,7 +204,7 @@ class ChatsController < ApplicationController
 
   def addable_agents_for_chat(as: nil)
     return [] unless @chat.group_chat?
-    scope = current_account.agents.eligible_for_conversation.where.not(id: @chat.agent_ids)
+    scope = current_account.conversation_agents.eligible_for_conversation.where.not(id: @chat.agent_ids)
     agents_json(scope, as: as)
   end
 

@@ -7,7 +7,7 @@ module Api
       before_action :authenticate_with_trigger_token, only: [ :announce ]
 
       def index
-        agents = current_api_account.agents.active.by_name
+        agents = current_api_account.conversation_agents.active.by_name
         render json: { agents: agents.map { |a| agent_json(a) } }
       end
 
@@ -20,7 +20,7 @@ module Api
       end
 
       def show
-        agent = current_api_account.agents.find(params[:id])
+        agent = current_api_account.conversation_agents.find(params[:id])
         render json: { agent: agent_json(agent) }
       end
 

@@ -7,8 +7,17 @@
   import AgentGrid from '$lib/components/agents/AgentGrid.svelte';
   import AgentIndexHeader from '$lib/components/agents/AgentIndexHeader.svelte';
   import AgentUpgradeDialog from '$lib/components/agents/AgentUpgradeDialog.svelte';
+  import GuestResidents from '$lib/components/agents/guest-residents.svelte';
 
-  let { agents = [], grouped_models = {}, account, resident_import_url: residentImportUrl = null } = $props();
+  let {
+    agents = [],
+    grouped_models = {},
+    account,
+    resident_import_url: residentImportUrl = null,
+    guest_memberships: guestMemberships = [],
+    away_memberships: awayMemberships = [],
+    guest_candidates: guestCandidates = [],
+  } = $props();
 
   // Subscribe to both:
   // - Account:${id}:agents - individual agent updates (via collection subscription)
@@ -83,6 +92,12 @@
   {:else}
     <AgentGrid {agents} accountId={account.id} onUpgrade={openUpgradeModal} onDisable={disableAgent} />
   {/if}
+
+  <GuestResidents
+    accountId={account.id}
+    guests={guestMemberships}
+    away={awayMemberships}
+    candidates={guestCandidates} />
 </div>
 
 <AgentUpgradeDialog

@@ -12,6 +12,10 @@ class AgentsController < ApplicationController
     render inertia: "agents/index", props: {
       resident_import_url: current_account.owned_by?(Current.user) ? import_account_agents_path(current_account) : nil,
       agents: Agents::ResidentDirectory.new(current_account).call,
+      guest_memberships: current_account.guest_memberships.includes(agent: :account).order(:created_at).as_json,
+      away_memberships: GuestMembership.where(agent: current_account.agents).includes(:account, agent: :account).order(:created_at).as_json,
+      guest_candidates: GuestMembership.candidates_for(account: current_account, user: Current.user)
+        .includes(:account).by_name.map { |agent| { id: agent.to_param, name: agent.name, home_account_name: agent.account.name } },
       grouped_models: grouped_models,
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,

@@ -221,7 +221,7 @@ module Api
 
         obfuscated_ids = ids.uniq
         real_ids = obfuscated_ids.filter_map { |oid| Agent.decode_id(oid) }
-        agents = current_api_account.agents.eligible_for_conversation.where(id: real_ids)
+        agents = current_api_account.conversation_agents.eligible_for_conversation.where(id: real_ids)
 
         if agents.length != obfuscated_ids.length
           missing = obfuscated_ids.length - agents.length

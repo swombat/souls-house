@@ -133,7 +133,7 @@ module Api
 
         # Only a new conversation checks who may join one.
         def eligible_agents(account, agent_ids)
-          agents = account.agents.eligible_for_conversation.where(id: agent_ids).to_a
+          agents = account.conversation_agents.eligible_for_conversation.where(id: agent_ids).to_a
           return agents if agents.size == agent_ids.size
 
           render_invalid_agent_ids
