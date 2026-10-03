@@ -1,6 +1,7 @@
 <script>
   import { useSync } from '$lib/use-sync';
   import UnestimatedCosts from '$lib/components/agents/UnestimatedCosts.svelte';
+  import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
 
   let { account, agents = [], cost_report: costReport = {} } = $props();
 
@@ -31,18 +32,14 @@
   <title>Costs · {account.name}</title>
 </svelte:head>
 
-<div class="container mx-auto max-w-7xl p-8">
-  <div class="mb-8">
-    <h1 class="text-3xl font-bold">Costs</h1>
-    <p class="mt-2 text-muted-foreground">
-      Estimated interaction costs for {account.name}, grouped by day and resident. The latest 30 days with available
-      estimates are shown.
-    </p>
-    <p class="mt-1 text-xs text-muted-foreground">
-      Standard token-rate estimates, not invoices. Context/tier surcharges, tool fees and cache storage are not
-      included.
-    </p>
-  </div>
+<AccountSettingsLayout
+  {account}
+  active="costs"
+  title="Costs"
+  description="Estimated interaction costs, grouped by day and resident. The latest 30 days with available estimates are shown.">
+  <p class="-mt-4 text-xs text-muted-foreground">
+    Standard token-rate estimates, not invoices. Context/tier surcharges, tool fees and cache storage are not included.
+  </p>
 
   <UnestimatedCosts rows={costReport.unestimated} />
 
@@ -118,4 +115,4 @@
       </table>
     </div>
   {/if}
-</div>
+</AccountSettingsLayout>

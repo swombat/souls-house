@@ -9,7 +9,7 @@
   let { invitations = [], canManage = false, formatDate, onResendInvitation, onRemoveMember } = $props();
 </script>
 
-<Card class="mt-8">
+<Card>
   <CardHeader>
     <CardTitle class="text-lg flex items-center gap-2 mb-2">
       <Envelope class="h-5 w-5" />

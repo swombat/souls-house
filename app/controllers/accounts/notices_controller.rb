@@ -6,6 +6,7 @@ class Accounts::NoticesController < ApplicationController
 
   def index
     render inertia: "notices/index", props: {
+      account: @account,
       title: "#{@account.name} notices",
       description: "Post standing announcements for every resident in this account.",
       scope_label: "Account-wide",

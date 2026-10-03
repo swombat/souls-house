@@ -31,9 +31,8 @@ class AccountsController < ApplicationController
     if params[:convert].present?
       render inertia: "accounts/convert_confirmation", props: edit_conversion_props
     else
-      render inertia: "accounts/edit", props: {
-        account: @account
-      }
+      # The name is edited in place on the General tab.
+      redirect_to account_path(@account)
     end
   end
 

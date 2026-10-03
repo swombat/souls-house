@@ -34,7 +34,9 @@ for (const role of ['primary_user', 'secondary_user']) {
         await expect(shared.getByRole('button', { name: 'Disconnect' })).toBeVisible();
       }
       await page.getByRole('button', { name: 'User account menu', exact: true }).click();
-      await expect(page.getByRole('menuitem', { name: 'Integrations', exact: true })).toHaveCount(1);
+      // Integrations moved under Account Settings; the menu keeps a single way in.
+      await expect(page.getByRole('menuitem', { name: 'Account Settings', exact: true })).toHaveCount(1);
+      await expect(page.getByRole('menuitem', { name: 'Integrations', exact: true })).toHaveCount(0);
       await expect(page.getByRole('menuitem', { name: /Personal Services|Account Services/ })).toHaveCount(0);
       await page.keyboard.press('Escape');
       await expect(page.getByRole('menu')).toHaveCount(0);

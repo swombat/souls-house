@@ -27,7 +27,7 @@ class ApiKeysController < ApplicationController
 
   def destroy
     external_access_keys.find(params[:id]).destroy!
-    redirect_to account_api_keys_path(current_account), notice: "External access key revoked"
+    redirect_to account_api_keys_path(current_account), notice: "API key revoked"
   end
 
   private

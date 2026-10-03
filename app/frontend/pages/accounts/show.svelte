@@ -1,15 +1,16 @@
 <script>
   import { page, router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { editAccountPath } from '@/routes';
-  import { Gear } from 'phosphor-svelte';
-  import AccountSummaryCards from '$lib/components/accounts/AccountSummaryCards.svelte';
+  import { Input } from '$lib/components/shadcn/input/index.js';
+  import { Label } from '$lib/components/shadcn/label/index.js';
+  import * as Card from '$lib/components/shadcn/card';
+  import { accountPath, editAccountPath } from '@/routes';
+  import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import AccountTypeCard from '$lib/components/accounts/AccountTypeCard.svelte';
   import PendingInvitationsCard from '$lib/components/accounts/PendingInvitationsCard.svelte';
   import TeamMembersCard from '$lib/components/accounts/TeamMembersCard.svelte';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import { useSync } from '$lib/use-sync';
-  import * as logging from '$lib/logging';
 
   let { account, can_be_personal, members = [], can_manage = false, current_user_id } = $props();
 
@@ -19,6 +20,9 @@
   });
 
   let showInviteForm = $state(false);
+  let accountName = $state(account.name || '');
+  let savingName = $state(false);
+  const nameChanged = $derived(accountName.trim() !== '' && accountName.trim() !== account.name);
 
   function formatDate(dateString) {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -28,8 +32,16 @@
     });
   }
 
-  function goToEdit() {
-    router.visit(editAccountPath(account.id));
+  function saveName(event) {
+    event.preventDefault();
+    if (!nameChanged || savingName) return;
+
+    savingName = true;
+    router.put(
+      accountPath(account.id),
+      { account: { name: accountName.trim() } },
+      { preserveScroll: true, onFinish: () => (savingName = false) }
+    );
   }
 
   function goToConvertConfirmation() {
@@ -52,9 +64,7 @@
     showInviteForm = false;
   }
 
-  // Reactive derived values
   $effect(() => {
-    logging.debug('Props changed:', $page.props);
     // Close invite form on successful submission or error
     if ($page.props.flash?.success || $page.props.flash?.errors) {
       showInviteForm = false;
@@ -65,25 +75,45 @@
   const activeMembers = $derived(members.filter((m) => !m.invitation_pending));
 </script>
 
-<div class="container mx-auto p-8 max-w-6xl">
-  <div class="mb-8">
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-3xl font-bold mb-2">Account Settings</h1>
-        <p class="text-muted-foreground">Manage your account type and settings</p>
-      </div>
-      <Button onclick={goToEdit} class="gap-2">
-        <Gear class="h-4 w-4" />
-        Edit Account
-      </Button>
-    </div>
-  </div>
+<svelte:head>
+  <title>Account settings · {account.name}</title>
+</svelte:head>
 
+<AccountSettingsLayout {account} active="general" title="Account Settings">
   <FlashMessages flash={$page.props.flash} />
 
-  <AccountSummaryCards {account} activeMemberCount={activeMembers.length || 0} {formatDate} />
+  <Card.Root>
+    <Card.Header>
+      <Card.Title>Name</Card.Title>
+      <Card.Description>Shown in the account switcher and to everyone in the account.</Card.Description>
+    </Card.Header>
+    <Card.Content>
+      <form class="flex flex-col gap-3 sm:flex-row sm:items-end" onsubmit={saveName}>
+        <div class="flex-1 space-y-2">
+          <Label for="account-name">Account name</Label>
+          <Input id="account-name" bind:value={accountName} required />
+        </div>
+        <Button type="submit" disabled={!nameChanged || savingName}>{savingName ? 'Saving…' : 'Save name'}</Button>
+      </form>
+      <dl class="mt-4 flex flex-wrap gap-x-8 gap-y-1 text-xs text-muted-foreground">
+        <div class="flex gap-1">
+          <dt>Created</dt>
+          <dd>{formatDate(account.created_at)}</dd>
+        </div>
+        <div class="flex gap-1">
+          <dt>Account ID</dt>
+          <dd class="font-mono">{account.id}</dd>
+        </div>
+      </dl>
+    </Card.Content>
+  </Card.Root>
 
-  <!-- Team Members Section (only for team accounts) -->
+  <AccountTypeCard
+    {account}
+    canBePersonal={can_be_personal}
+    membersCount={activeMembers.length || 1}
+    onConvert={goToConvertConfirmation} />
+
   {#if !account.personal}
     <TeamMembersCard
       members={activeMembers}
@@ -94,7 +124,6 @@
       onInvite={handleInvite}
       onRemoveMember={removeMember} />
 
-    <!-- Pending Invitations -->
     {#if pendingInvitations.length > 0}
       <PendingInvitationsCard
         invitations={pendingInvitations}
@@ -104,6 +133,4 @@
         onRemoveMember={removeMember} />
     {/if}
   {/if}
-
-  <AccountTypeCard {account} canBePersonal={can_be_personal} onConvert={goToConvertConfirmation} />
-</div>
+</AccountSettingsLayout>

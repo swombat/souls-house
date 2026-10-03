@@ -11,26 +11,12 @@
     Gear,
     Check,
     Plus,
-    Plugs,
-    Key,
-    CurrencyDollar,
     Chalkboard,
-    Megaphone,
   } from 'phosphor-svelte';
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
   import { buttonVariants } from '$lib/components/shadcn/button/index.js';
   import { cn } from '$lib/utils.js';
-  import {
-    editUserPath,
-    editUserPasswordPath,
-    accountPath,
-    accountAgentApiKeysPath,
-    accountApiKeysPath,
-    accountCostsPath,
-    accountNoticesPath,
-    newAccountPath,
-    accountWhiteboardsPath,
-  } from '@/routes';
+  import { editUserPath, editUserPasswordPath, accountPath, newAccountPath, accountWhiteboardsPath } from '@/routes';
   import Avatar from '$lib/components/Avatar.svelte';
   import ReplyAttentionBadge from './ReplyAttentionBadge.svelte';
 
@@ -110,43 +96,17 @@
         </div>
       </DropdownMenu.GroupHeading>
       <DropdownMenu.Separator />
-      <DropdownMenu.Item onclick={() => router.visit(editUserPath())}>
-        <UserCircle class="mr-2 size-4" />
-        <span>User Settings</span>
-      </DropdownMenu.Item>
       {#if currentAccount?.id}
-        <DropdownMenu.Item onclick={() => router.visit(`/accounts/${currentAccount.id}/integrations`)}>
-          <Plugs class="mr-2 size-4" />
-          <span>Integrations</span>
+        <DropdownMenu.Item onclick={() => router.visit(accountPath(currentAccount.id))}>
+          <Gear class="mr-2 size-4" />
+          <span>Account Settings</span>
         </DropdownMenu.Item>
-      {/if}
-      {#if currentAccount?.id}
         {#if hasWhiteboards}
           <DropdownMenu.Item onclick={() => router.visit(accountWhiteboardsPath(currentAccount.id))}>
             <Chalkboard class="mr-2 size-4" />
             <span>Whiteboards</span>
           </DropdownMenu.Item>
         {/if}
-        <DropdownMenu.Item onclick={() => router.visit(accountCostsPath(currentAccount.id))}>
-          <CurrencyDollar class="mr-2 size-4" />
-          <span>Costs</span>
-        </DropdownMenu.Item>
-        <DropdownMenu.Item onclick={() => router.visit(accountNoticesPath(currentAccount.id))}>
-          <Megaphone class="mr-2 size-4" />
-          <span>Resident Notices</span>
-        </DropdownMenu.Item>
-        <DropdownMenu.Item onclick={() => router.visit(accountAgentApiKeysPath(currentAccount.id))}>
-          <Key class="mr-2 size-4" />
-          <span>Resident API Keys</span>
-        </DropdownMenu.Item>
-        <DropdownMenu.Item onclick={() => router.visit(accountApiKeysPath(currentAccount.id))}>
-          <Plugs class="mr-2 size-4" />
-          <span>External Access</span>
-        </DropdownMenu.Item>
-        <DropdownMenu.Item onclick={() => router.visit(accountPath(currentAccount.id))}>
-          <Gear class="mr-2 size-4" />
-          <span>Account Settings</span>
-        </DropdownMenu.Item>
       {/if}
       {#if accounts.length <= 1}
         <DropdownMenu.Item disabled={!allowAccountCreation} onclick={() => router.visit(newAccountPath())}>
@@ -154,6 +114,11 @@
           <span>New Account</span>
         </DropdownMenu.Item>
       {/if}
+      <DropdownMenu.Separator />
+      <DropdownMenu.Item onclick={() => router.visit(editUserPath())}>
+        <UserCircle class="mr-2 size-4" />
+        <span>User Settings</span>
+      </DropdownMenu.Item>
       <DropdownMenu.Item onclick={() => router.visit(editUserPasswordPath())}>
         <Password class="mr-2 size-4" />
         <span>Change Password</span>

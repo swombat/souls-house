@@ -3,7 +3,7 @@
   import { Key, Trash } from 'phosphor-svelte';
   import { siteName } from '$lib/branding';
 
-  let { apiKeys = [], onDelete = null, emptyMessage = 'No external access keys yet.' } = $props();
+  let { apiKeys = [], onDelete = null, emptyMessage = 'No keys yet.' } = $props();
 </script>
 
 <div class="border rounded-lg">

@@ -17,6 +17,6 @@
       You can close this tab and return to your CLI.
     </p>
 
-    <Button href={manage_path} variant="outline" class="w-full">Manage External Access</Button>
+    <Button href={manage_path} variant="outline" class="w-full">Manage API keys</Button>
   </div>
 </div>

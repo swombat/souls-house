@@ -21,8 +21,13 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test "should get edit" do
+  test "edit without conversion redirects to the general tab, where the name is edited" do
     get edit_account_path(@personal_account)
+    assert_redirected_to account_path(@personal_account)
+  end
+
+  test "edit with conversion still renders the confirmation page" do
+    get edit_account_path(@personal_account, convert: true)
     assert_response :success
   end
 

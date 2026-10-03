@@ -14,14 +14,14 @@ module Accounts
 
     def update
       unless current_account.ai_credentials_manageable_by?(Current.user)
-        deny_account_access!("Only account owners and administrators can change resident API keys")
+        deny_account_access!("Only account owners and administrators can change model API keys")
         return
       end
 
       current_account.update!(agent_api_key_params)
       AccountAgentCredentialsRefreshJob.perform_later(current_account.id) if current_account.saved_ai_credentials_change?
       audit_with_changes(:update_agent_api_keys, current_account)
-      redirect_to account_agent_api_keys_path(current_account), notice: "Resident API keys updated"
+      redirect_to account_agent_api_keys_path(current_account), notice: "Model API keys updated"
     rescue ActiveRecord::RecordInvalid => e
       redirect_to account_agent_api_keys_path(current_account), alert: e.message
     end

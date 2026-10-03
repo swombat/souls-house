@@ -1,9 +1,8 @@
 <script>
   import { page, router } from '@inertiajs/svelte';
-  import { Button } from '$lib/components/shadcn/button/index.js';
+  import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import PersonalToTeamConversionCard from '$lib/components/accounts/PersonalToTeamConversionCard.svelte';
   import TeamToPersonalConversionCard from '$lib/components/accounts/TeamToPersonalConversionCard.svelte';
-  import { ArrowLeft } from 'phosphor-svelte';
   import { accountPath } from '@/routes';
 
   const { account, can_be_personal, members_count } = $page.props;
@@ -74,23 +73,13 @@
   });
 </script>
 
-<div class="container mx-auto p-8 max-w-4xl">
-  <div class="mb-8">
-    <Button variant="ghost" onclick={goBack} class="gap-2 mb-4">
-      <ArrowLeft class="h-4 w-4" />
-      Back to Account
-    </Button>
-
-    <h1 class="text-3xl font-bold mb-2">Account Type Conversion</h1>
-    <p class="text-muted-foreground">
-      {#if account.personal}
-        Convert your personal account to a team account
-      {:else}
-        Convert your team account to a personal account
-      {/if}
-    </p>
-  </div>
-
+<AccountSettingsLayout
+  {account}
+  active="general"
+  title="Change account type"
+  description={account.personal
+    ? 'Convert this personal account to a team account.'
+    : 'Convert this team account to a personal account.'}>
   {#if account.personal}
     <PersonalToTeamConversionCard
       bind:teamName
@@ -106,4 +95,4 @@
       onConvert={handleConversion}
       onCancel={goBack} />
   {/if}
-</div>
+</AccountSettingsLayout>

@@ -384,8 +384,8 @@ test.describe('browser contracts', () => {
 
   test('new conversations remain resident-backed without an account conversation-mode setting', async ({ page }) => {
     await login(page, setup.primary_user, setup.password);
-    await page.goto(`/accounts/${setup.account_id}/edit`);
-    await expect(page.getByRole('heading', { name: 'Edit Account' })).toBeVisible();
+    await page.goto(`/accounts/${setup.account_id}`);
+    await expect(page.getByRole('heading', { name: 'Account Settings' })).toBeVisible();
     await expect(page.getByText('New Conversation Default')).toBeHidden();
 
     await page.goto(`/accounts/${setup.account_id}/chats`);
@@ -548,7 +548,7 @@ test.describe('browser contracts', () => {
       page.waitForResponse(
         (response) => response.url().endsWith('/agent_api_keys') && response.request().method() === 'PUT'
       ),
-      page.getByRole('button', { name: 'Save Resident API Keys' }).click(),
+      page.getByRole('button', { name: 'Save model API keys' }).click(),
     ]);
     await expect(page.getByText('Set', { exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/accounts\/[^/]+\/agent_api_keys$/);

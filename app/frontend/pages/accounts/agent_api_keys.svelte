@@ -1,20 +1,18 @@
 <script>
-  import { page } from '@inertiajs/svelte';
-  import Form from '$lib/components/forms/Form.svelte';
+  import { page, router } from '@inertiajs/svelte';
+  import FlashMessages from '$lib/components/FlashMessages.svelte';
+  import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
+  import ModelKeysDeliveryNote from '$lib/components/accounts/ModelKeysDeliveryNote.svelte';
   import { Input } from '$lib/components/shadcn/input/index.js';
   import { Label } from '$lib/components/shadcn/label/index.js';
   import Button from '$lib/components/shadcn/button/button.svelte';
   import { CheckCircle, XCircle } from 'phosphor-svelte';
-  import { accountAgentApiKeysPath, accountPath } from '@/routes';
+  import { accountAgentApiKeysPath } from '@/routes';
   import AgentProviderSubscriptionPanel from '$lib/components/agents/AgentProviderSubscriptionPanel.svelte';
   import { siteName } from '$lib/branding';
 
-  const {
-    account,
-    ai_api_keys_configured = {},
-    can_manage_ai_credentials = false,
-    subscription_agents = [],
-  } = $page.props;
+  // Read as props, not once from $page.props, so a save re-renders the "Set" badges.
+  let { account, ai_api_keys_configured = {}, can_manage_ai_credentials = false, subscription_agents = [] } = $props();
   const providerSections = [
     {
       title: 'OpenRouter',
@@ -118,8 +116,21 @@
     return { account: accountData };
   }
 
-  function handleCancel() {
-    window.location.href = accountPath(account.id);
+  let saving = $state(false);
+
+  function save(event) {
+    event.preventDefault();
+    if (saving) return;
+
+    saving = true;
+    router.put(accountAgentApiKeysPath(account.id), getFormData(), {
+      preserveScroll: true,
+      onSuccess: () => {
+        aiApiKeys = Object.fromEntries(aiProviders.map((provider) => [provider.id, '']));
+        clearedAiApiKeys = [];
+      },
+      onFinish: () => (saving = false),
+    });
   }
 
   function toggleApiKeyRemoval(providerId) {
@@ -130,130 +141,139 @@
   }
 </script>
 
-<Form
-  title="Resident API Keys"
-  description={`Configure the AI provider keys used by residents in ${account.name}.`}
-  action={accountAgentApiKeysPath(account.id)}
-  method="put"
-  data={getFormData}
-  submitLabel="Save Resident API Keys"
-  onCancel={handleCancel}>
-  <div class="space-y-4">
-    <p class="text-sm text-muted-foreground">
-      These encrypted credentials let {$siteName} residents call AI providers. They are separate from External Access keys,
-      which let outside agents and tools connect to {$siteName}.
-    </p>
+<svelte:head>
+  <title>Model API keys · {account.name}</title>
+</svelte:head>
 
-    <div class="space-y-6">
-      {#each providerSections as section}
-        <section class="space-y-3 rounded-lg border p-4">
-          <div class="space-y-1">
-            <h2 class="font-medium">{section.title}</h2>
-            <p class="text-sm text-muted-foreground">{section.description}</p>
-          </div>
+<AccountSettingsLayout
+  {account}
+  active="model_api_keys"
+  title="Model API keys"
+  description="The AI provider keys residents in this account use to call models.">
+  <FlashMessages flash={$page.props.flash} />
 
-          {#if section.details}
-            <details class="rounded-md bg-muted/50 px-3 py-2 text-sm">
-              <summary class="cursor-pointer font-medium">
-                {section.detailsLabel || 'How subscription API keys work'}
-              </summary>
-              <p class="mt-2 text-muted-foreground">{section.details}</p>
-            </details>
-          {/if}
+  <form onsubmit={save} class="space-y-4">
+    <div class="space-y-4">
+      <ModelKeysDeliveryNote accountName={account.name} />
 
-          <div class="grid gap-4 md:grid-cols-2">
-            {#each section.providers as provider}
-              <div class="space-y-2">
-                <div class="flex items-center justify-between gap-2">
-                  <Label for={`${provider.id}_api_key`}>{provider.name}</Label>
-                  <div class="flex items-center gap-2">
-                    {#if ai_api_keys_configured[provider.id] && !clearedAiApiKeys.includes(provider.id)}
-                      <span class="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                        <CheckCircle size={16} weight="fill" />
-                        Set
-                      </span>
-                      {#if can_manage_ai_credentials}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onclick={() => toggleApiKeyRemoval(provider.id)}>
-                          Remove
-                        </Button>
+      <div class="space-y-6">
+        {#each providerSections as section}
+          <section class="space-y-3 rounded-lg border p-4">
+            <div class="space-y-1">
+              <h2 class="font-medium">{section.title}</h2>
+              <p class="text-sm text-muted-foreground">{section.description}</p>
+            </div>
+
+            {#if section.details}
+              <details class="rounded-md bg-muted/50 px-3 py-2 text-sm">
+                <summary class="cursor-pointer font-medium">
+                  {section.detailsLabel || 'How subscription API keys work'}
+                </summary>
+                <p class="mt-2 text-muted-foreground">{section.details}</p>
+              </details>
+            {/if}
+
+            <div class="grid gap-4 md:grid-cols-2">
+              {#each section.providers as provider}
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between gap-2">
+                    <Label for={`${provider.id}_api_key`}>{provider.name}</Label>
+                    <div class="flex items-center gap-2">
+                      {#if ai_api_keys_configured[provider.id] && !clearedAiApiKeys.includes(provider.id)}
+                        <span
+                          class="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                          <CheckCircle size={16} weight="fill" />
+                          Set
+                        </span>
+                        {#if can_manage_ai_credentials}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onclick={() => toggleApiKeyRemoval(provider.id)}>
+                            Remove
+                          </Button>
+                        {/if}
+                      {:else}
+                        <span class="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                          <XCircle size={16} weight="fill" />
+                          {clearedAiApiKeys.includes(provider.id) ? 'Will be removed' : 'Not set'}
+                        </span>
+                        {#if can_manage_ai_credentials && clearedAiApiKeys.includes(provider.id)}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onclick={() => toggleApiKeyRemoval(provider.id)}>
+                            Undo
+                          </Button>
+                        {/if}
                       {/if}
-                    {:else}
-                      <span class="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                        <XCircle size={16} weight="fill" />
-                        {clearedAiApiKeys.includes(provider.id) ? 'Will be removed' : 'Not set'}
-                      </span>
-                      {#if can_manage_ai_credentials && clearedAiApiKeys.includes(provider.id)}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onclick={() => toggleApiKeyRemoval(provider.id)}>
-                          Undo
-                        </Button>
-                      {/if}
-                    {/if}
+                    </div>
                   </div>
+                  <Input
+                    id={`${provider.id}_api_key`}
+                    type="password"
+                    autocomplete="off"
+                    bind:value={aiApiKeys[provider.id]}
+                    disabled={!can_manage_ai_credentials || clearedAiApiKeys.includes(provider.id)}
+                    placeholder={ai_api_keys_configured[provider.id] ? 'Enter a replacement key' : 'Enter API key'} />
+                  <p class="text-xs text-muted-foreground">{provider.help}</p>
                 </div>
-                <Input
-                  id={`${provider.id}_api_key`}
-                  type="password"
-                  autocomplete="off"
-                  bind:value={aiApiKeys[provider.id]}
-                  disabled={!can_manage_ai_credentials || clearedAiApiKeys.includes(provider.id)}
-                  placeholder={ai_api_keys_configured[provider.id] ? 'Enter a replacement key' : 'Enter API key'} />
-                <p class="text-xs text-muted-foreground">{provider.help}</p>
-              </div>
-            {/each}
-          </div>
-        </section>
-      {/each}
-    </div>
-
-    <section class="space-y-4 rounded-lg border p-4">
-      <div class="space-y-1">
-        <h2 class="font-medium">Provider subscription accounts</h2>
-        <p class="text-sm text-muted-foreground">
-          Connect a personal provider subscription to a specific resident. The sign-in happens inside that resident's
-          Chaos container; {$siteName} never receives or stores the provider token.
-        </p>
+              {/each}
+            </div>
+          </section>
+        {/each}
       </div>
 
-      {#if subscription_agents.length === 0}
-        <p class="text-sm text-muted-foreground">
-          No residents currently use a provider with supported subscription sign-in.
+      <section class="space-y-4 rounded-lg border p-4">
+        <div class="space-y-1">
+          <h2 class="font-medium">Provider subscription accounts</h2>
+          <p class="text-sm text-muted-foreground">
+            Connect a personal provider subscription to a specific resident. The sign-in happens inside that resident's
+            Chaos container; {$siteName} never receives or stores the provider token.
+          </p>
+        </div>
+
+        {#if subscription_agents.length === 0}
+          <p class="text-sm text-muted-foreground">
+            No residents currently use a provider with supported subscription sign-in.
+          </p>
+        {:else}
+          <div class="space-y-3">
+            {#each subscription_agents as subscriptionAgent (subscriptionAgent.id)}
+              <AgentProviderSubscriptionPanel {account} {subscriptionAgent} canManage={can_manage_ai_credentials} />
+            {/each}
+          </div>
+        {/if}
+
+        <p class="text-xs text-muted-foreground">
+          Claude subscriptions use Claude Code clamping. Experimental Gemini subscription access uses Google’s official
+          Antigravity CLI while Chaos retains tool and permission control.
         </p>
-      {:else}
-        <div class="space-y-3">
-          {#each subscription_agents as subscriptionAgent (subscriptionAgent.id)}
-            <AgentProviderSubscriptionPanel {account} {subscriptionAgent} canManage={can_manage_ai_credentials} />
-          {/each}
+      </section>
+
+      {#if account.use_system_ai_credentials}
+        <div class="rounded-md border border-blue-500/30 bg-blue-500/10 p-4">
+          <div class="space-y-1">
+            <p class="text-sm font-medium">Shared AI keys are available as a fallback</p>
+            <p class="text-sm text-muted-foreground">
+              A site administrator has enabled shared application keys for providers where this account has no key of
+              its own. Only a site administrator can change this setting.
+            </p>
+          </div>
         </div>
       {/if}
 
-      <p class="text-xs text-muted-foreground">
-        Claude subscriptions use Claude Code clamping. Experimental Gemini subscription access uses Google’s official
-        Antigravity CLI while Chaos retains tool and permission control.
-      </p>
-    </section>
+      {#if !can_manage_ai_credentials}
+        <p class="text-sm text-muted-foreground">Only account owners and administrators can change model API keys.</p>
+      {/if}
+    </div>
 
-    {#if account.use_system_ai_credentials}
-      <div class="rounded-md border border-blue-500/30 bg-blue-500/10 p-4">
-        <div class="space-y-1">
-          <p class="text-sm font-medium">Shared AI keys are available as a fallback</p>
-          <p class="text-sm text-muted-foreground">
-            A site administrator has enabled shared application keys for providers where this account has no key of its
-            own. Only a site administrator can change this setting.
-          </p>
-        </div>
+    {#if can_manage_ai_credentials}
+      <div class="flex justify-end">
+        <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save model API keys'}</Button>
       </div>
     {/if}
-
-    {#if !can_manage_ai_credentials}
-      <p class="text-sm text-muted-foreground">Only account owners and administrators can change resident API keys.</p>
-    {/if}
-  </div>
-</Form>
+  </form>
+</AccountSettingsLayout>

@@ -2,6 +2,7 @@
   import { Copy, Warning } from 'phosphor-svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { accountApiKeysPath } from '@/routes';
+  import { siteName } from '$lib/branding';
 
   let { account, api_key, raw_token } = $props();
   let copied = $state(false);
@@ -15,7 +16,7 @@
 
 <div class="container mx-auto p-8 max-w-md">
   <div class="border rounded-lg p-6">
-    <h1 class="text-xl font-bold mb-2">External Access Key Created</h1>
+    <h1 class="text-xl font-bold mb-2">{$siteName} API key created</h1>
     <p class="text-muted-foreground mb-4">{api_key.name}</p>
 
     <div

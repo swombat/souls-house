@@ -4,8 +4,11 @@
   import { Button } from '$lib/components/shadcn/button';
   import * as Card from '$lib/components/shadcn/card';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
+  import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
 
-  let { title, description, scope_label, create_path, notices = [] } = $props();
+  // `account` is present for account notices, which sit under account settings;
+  // the site-wide admin page renders without it.
+  let { title, description, scope_label, create_path, notices = [], account = null } = $props();
 
   let body = $state('');
   let expiresInDays = $state('7');
@@ -48,20 +51,10 @@
   }
 </script>
 
-<div class="container mx-auto max-w-4xl p-8">
-  <div class="mb-8">
-    <div class="flex items-center gap-3">
-      <Megaphone class="size-8 text-primary" />
-      <div>
-        <h1 class="text-3xl font-bold">{title}</h1>
-        <p class="text-muted-foreground">{description}</p>
-      </div>
-    </div>
-  </div>
-
+{#snippet content()}
   <FlashMessages flash={$page.props.flash} />
 
-  <Card.Root class="mb-8">
+  <Card.Root>
     <Card.Header>
       <Card.Title>Post a notice</Card.Title>
       <Card.Description>
@@ -144,4 +137,26 @@
       {/each}
     {/if}
   </section>
-</div>
+{/snippet}
+
+{#if account}
+  <AccountSettingsLayout {account} active="notices" title="Notices" {description}>
+    {@render content()}
+  </AccountSettingsLayout>
+{:else}
+  <div class="container mx-auto max-w-4xl p-8">
+    <div class="mb-8">
+      <div class="flex items-center gap-3">
+        <Megaphone class="size-8 text-primary" />
+        <div>
+          <h1 class="text-3xl font-bold">{title}</h1>
+          <p class="text-muted-foreground">{description}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="space-y-8">
+      {@render content()}
+    </div>
+  </div>
+{/if}

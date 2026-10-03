@@ -2,6 +2,7 @@
   import IntegrationConnect from '$lib/components/settings/integration-connect.svelte';
   import IntegrationConnection from '$lib/components/settings/integration-connection.svelte';
   import { serviceDescription, serviceIconClass } from '$lib/service-presentation';
+  import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
 
   import { DropboxLogo, GithubLogo, GoogleLogo, Heartbeat, ArrowLeft, ArrowRight, Plus, Pulse } from 'phosphor-svelte';
 
@@ -33,7 +34,13 @@
 
 <svelte:head><title>Integrations</title></svelte:head>
 
-<div class="container mx-auto max-w-6xl space-y-8 p-8">
+<AccountSettingsLayout
+  {account}
+  active="integrations"
+  title={focusedService ? `Connect ${focusedService.name}` : 'Integrations'}
+  description={focusedService
+    ? serviceDescription(focusedService)
+    : `Connect a service once, then choose which residents in ${account.name} may use it.`}>
   {#if focusedService}
     <a
       href={`/accounts/${account.id}/integrations`}
@@ -41,25 +48,11 @@
       <ArrowLeft size={16} /> Integrations
     </a>
     <div class="max-w-2xl space-y-6">
-      <div>
-        <h1 class="text-3xl font-bold">Connect {focusedService.name}</h1>
-        <p class="mt-2 text-muted-foreground">{serviceDescription(focusedService)}</p>
-      </div>
       {#key focusedService.key}
         <IntegrationConnect {account} {focusedService} {canManageAccount} />
       {/key}
     </div>
   {:else}
-    <a href="/user/edit" class="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-      <ArrowLeft size={16} /> User settings
-    </a>
-    <div>
-      <h1 class="text-3xl font-bold">Integrations</h1>
-      <p class="mt-2 max-w-2xl text-muted-foreground">
-        Connect a service once, then choose which residents in {account.name} may use it.
-      </p>
-    </div>
-
     <section
       id="connect-new"
       aria-labelledby="connect-new-heading"
@@ -150,4 +143,4 @@
       {/each}
     </section>
   {/if}
-</div>
+</AccountSettingsLayout>
