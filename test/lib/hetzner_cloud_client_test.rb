@@ -42,6 +42,7 @@ class HetznerCloudClientTest < ActiveSupport::TestCase
     assert_equal "203.0.113.4", server.ipv4
     assert server.managed?
     assert_not_includes server.inspect, "leak-me"
+    assert_equal %i[id name status server_type location ipv4 ipv6 labels], HetznerCloudClient::Server.members
   end
 
   test "refuses unconfigured, off-allowlist and keyless creates before any request" do
@@ -65,10 +66,23 @@ class HetznerCloudClientTest < ActiveSupport::TestCase
     assert_not error.retryable?
   end
 
-  test "a create that fails server-side is outcome unknown" do
+  test "a create that fails server-side is outcome unknown and not retryable" do
     stub_request(:post, "#{API}/servers").to_return(status: 503, body: { error: { code: "unavailable", message: "busy" } }.to_json)
 
-    assert_raises(HetznerCloudClient::CreateOutcomeUnknown) { create! }
+    error = assert_raises(HetznerCloudClient::CreateOutcomeUnknown) { create! }
+
+    assert_equal 503, error.status
+    assert_not error.retryable?
+  end
+
+  test "a dropped connection or a malformed success on create is outcome unknown" do
+    stub_request(:post, "#{API}/servers").to_raise(EOFError).then
+      .to_return({ status: 201, body: {}.to_json },
+                 { status: 201, body: { server: nil }.to_json },
+                 { status: 201, body: { server: { name: "no-id" } }.to_json },
+                 { status: 201, body: "not json" })
+
+    5.times { assert_raises(HetznerCloudClient::CreateOutcomeUnknown) { create! } }
   end
 
   test "classifies stock, name collision and rate limit errors" do
@@ -85,12 +99,13 @@ class HetznerCloudClientTest < ActiveSupport::TestCase
     assert_equal 429, limited.status
   end
 
-  test "errors do not carry the token" do
-    stub_request(:get, "#{API}/servers/42").to_return(status: 401, body: { error: { code: "unauthorized", message: "bad token" } }.to_json)
+  test "errors carry the code and status, not the token or upstream message" do
+    stub_request(:get, "#{API}/servers/42")
+      .to_return(status: 401, body: { error: { code: "unauthorized", message: "token synthetic-token rejected" } }.to_json)
 
     error = assert_raises(HetznerCloudClient::Error) { @client.find_server(42) }
 
-    assert_not_includes error.message, "synthetic-token"
+    assert_equal "Hetzner Cloud unauthorized (HTTP 401)", error.message
   end
 
   test "find returns nil for a missing server and finds by placement label" do
@@ -103,22 +118,40 @@ class HetznerCloudClientTest < ActiveSupport::TestCase
     assert_equal [42], @client.find_by_placement("p-7").map(&:id)
   end
 
-  test "delete removes a managed server and is safe to repeat" do
+  test "delete reports acceptance, not completion, and is safe to repeat" do
     stub_request(:get, "#{API}/servers/42").to_return(
       { status: 200, body: { server: server_json }.to_json },
       { status: 404, body: { error: { code: "not_found", message: "gone" } }.to_json }
     )
-    delete = stub_request(:delete, "#{API}/servers/42").to_return(status: 200, body: { action: { id: 1 } }.to_json)
+    delete = stub_request(:delete, "#{API}/servers/42").to_return(status: 200, body: { action: { id: 77, status: "running" } }.to_json)
 
-    assert_equal :deleted, @client.delete_server(42)
-    assert_equal :already_absent, @client.delete_server(42)
+    accepted = @client.delete_server(42, placement_id: "p-7")
+
+    assert_equal HetznerCloudClient::DeleteAccepted.new(server_id: 42, action_id: 77, action_status: "running"), accepted
+    assert_equal :already_absent, @client.delete_server(42, placement_id: "p-7")
     assert_requested delete, times: 1
   end
 
   test "delete refuses a server the house did not create" do
     stub_request(:get, "#{API}/servers/42").to_return(status: 200, body: { server: server_json(labels: { "role" => "mail" }) }.to_json)
 
-    assert_raises(HetznerCloudClient::Refused) { @client.delete_server(42) }
+    assert_raises(HetznerCloudClient::Refused) { @client.delete_server(42, placement_id: "p-7") }
+    assert_not_requested :delete, /api\.hetzner\.cloud/
+  end
+
+  test "delete refuses another resident's managed server" do
+    other = { "souls-house/managed" => "true", "souls-house/placement" => "p-8" }
+    stub_request(:get, "#{API}/servers/42").to_return(status: 200, body: { server: server_json(labels: other) }.to_json)
+
+    assert_raises(HetznerCloudClient::Refused) { @client.delete_server(42, placement_id: "p-7") }
+    assert_raises(HetznerCloudClient::Refused) { @client.delete_server(42, placement_id: nil) }
+    assert_not_requested :delete, /api\.hetzner\.cloud/
+  end
+
+  test "delete refuses when the returned server is not the one requested" do
+    stub_request(:get, "#{API}/servers/42").to_return(status: 200, body: { server: server_json(id: 43) }.to_json)
+
+    assert_raises(HetznerCloudClient::Refused) { @client.delete_server(42, placement_id: "p-7") }
     assert_not_requested :delete, /api\.hetzner\.cloud/
   end
 
