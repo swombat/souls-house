@@ -1,0 +1,76 @@
+name: Host deployment transport
+
+on:
+  workflow_call:
+    inputs:
+      operation:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    # IMPORTANT: configure this environment's branch policy to master only.
+    # The if above is convenience, NOT the credential security boundary.
+    environment: production-deploy
+    env:
+      OPERATION: ${{ inputs.operation }}
+      DEPLOY_HOST: ${{ vars.HOUSE_DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ vars.HOUSE_DEPLOY_PORT }}
+      DEPLOY_KEY: ${{ secrets.HOUSE_DEPLOY_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.HOUSE_DEPLOY_KNOWN_HOSTS }}
+    steps:
+      - name: Request deployment and wait for verified outcome
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$OPERATION" in rails|chaos|both) ;; *) exit 2;; esac
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
+          umask 077
+          directory="$(mktemp -d)"
+          trap 'rm -rf "$directory"' EXIT
+          printf '%s\n' "$DEPLOY_KEY" > "$directory/key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$directory/known_hosts"
+          unset DEPLOY_KEY DEPLOY_KNOWN_HOSTS
+          remote() {
+            ssh -i "$directory/key" -p "$DEPLOY_PORT" \
+              -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$directory/known_hosts" \
+              -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+              "house-deploy-trigger@$DEPLOY_HOST" "$1"
+          }
+          receipt="$(remote "$OPERATION")"
+          printf '%s\n' "$receipt"
+          id="$(jq -er '.id' <<<"$receipt")"
+          [[ "$id" =~ ^[0-9a-f]{32}$ ]]
+          echo "Host job: $id" >> "$GITHUB_STEP_SUMMARY"
+          previous=""
+          for ((attempt=0; attempt<900; attempt++)); do
+            receipt="$(remote "status $id")"
+            if [[ "$receipt" != "$previous" ]]; then
+              printf '%s\n' "$receipt"
+              previous="$receipt"
+            fi
+            state="$(jq -er '.state' <<<"$receipt")"
+            case "$state" in
+              success)
+                printf '\nVerified:\n```json\n%s\n```\n' "$receipt" >> "$GITHUB_STEP_SUMMARY"
+                exit 0 ;;
+              failed|partial|interrupted)
+                printf '\nNot complete:\n```json\n%s\n```\n' "$receipt" >> "$GITHUB_STEP_SUMMARY"
+                exit 1 ;;
+              starting|running) sleep 20 ;;
+              *) echo 'Unknown host state'; exit 1 ;;
+            esac
+          done
+          echo "Wait expired; job $id may still be running on the host. Inspect before retrying."
+          exit 1

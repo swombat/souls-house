@@ -1,0 +1,253 @@
+#!/usr/bin/python3
+"""Host-owned worker. Raw subprocess output never crosses the SSH boundary."""
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+import urllib.request
+
+from gate import ROOT, OPERATIONS, atomic
+
+CONFIG = Path("/etc/house-deploy")
+CODE = Path("/opt/house-deploy")
+SHA = re.compile(r"[0-9a-f]{40}")
+
+
+def github(path):
+    request = urllib.request.Request("https://api.github.com/repos/seuros/chaos/" + path,
+                                     headers={"Accept": "application/vnd.github+json",
+                                              "User-Agent": "house-deploy"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.load(response)
+
+
+def published_revision(releases, reachable):
+    """Mainline build assets, not GitHub's older 'latest stable' version tag."""
+    for release in sorted(releases, key=lambda r: r.get("published_at") or "", reverse=True):
+        tag = release.get("tag_name", "")
+        revision = tag.removeprefix("build-")
+        if release.get("draft") or not tag.startswith("build-") or not SHA.fullmatch(revision):
+            continue
+        asset = f"chaos-linux-x86_64-{revision}.tar.gz"
+        names = {item["name"] for item in release.get("assets", [])}
+        if {asset, asset + ".sha256"} <= names and reachable(revision):
+            return revision
+    raise RuntimeError("No published mainline Linux runtime")
+
+
+def version_tuple(version):
+    match = re.fullmatch(r"chaos (\d+(?:\.\d+)+)", version)
+    if not match:
+        raise RuntimeError("Unrecognised runtime version")
+    return tuple(map(int, match[1].split(".")))
+
+
+class Worker:
+    def __init__(self, operation):
+        self.settings = json.loads((CONFIG / "settings.json").read_text())
+        self.data = json.loads((ROOT / "current.json").read_text())
+        if self.data["operation"] != operation or self.data["state"] != "starting":
+            raise RuntimeError("No matching request")
+        self.directory = ROOT / "runs" / self.data["id"]
+        self.log = (self.directory / "private.log").open("a")
+        self.repo = self.directory / "repo"
+
+    def report(self, step, **values):
+        self.data.update(step=step, **values)
+        atomic(self.directory / "status.json", self.data)
+
+    def run(self, args, *, input=None, capture=False, timeout=3600, cwd=None):
+        result = subprocess.run(args, input=input, text=True, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, timeout=timeout, cwd=cwd)
+        self.log.write(result.stdout + result.stderr)
+        self.log.flush()
+        if result.returncode:
+            raise RuntimeError("Subprocess failed; private diagnostics retained")
+        return result.stdout.strip() if capture else None
+
+    def web(self):
+        names = self.run(["docker", "ps", "--filter", "label=service=souls-house",
+                          "--filter", "label=role=web", "--format", "{{.Names}}"], capture=True).splitlines()
+        if len(names) != 1:
+            raise RuntimeError("Expected exactly one live web container")
+        return names[0]
+
+    def rails(self, code, env=None):
+        args = ["docker", "exec", "-i"]
+        for key, value in (env or {}).items():
+            args += ["-e", f"{key}={value}"]
+        args += [self.web(), "bin/rails", "runner", "-"]
+        output = self.run(args, input=code, capture=True, timeout=300)
+        return json.loads(next(line for line in reversed(output.splitlines()) if line.startswith("{")))
+
+    def checkout(self):
+        self.report("resolving master", state="running")
+        self.run(["git", "clone", "--depth", "1", "--single-branch", "--branch", "master",
+                  self.settings["repository"], str(self.repo)])
+        revision = self.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture=True)
+        if not SHA.fullmatch(revision):
+            raise RuntimeError("Invalid master revision")
+        self.report("master resolved", rails_revision=revision)
+        # Kamal executes only after checkout; service scripts remain root-installed
+        # and cannot silently change through a web deployment.
+
+    def kamal(self, *args):
+        command = [
+            "docker", "run", "--rm", "--network", "host",
+            "-v", "/var/run/docker.sock:/var/run/docker.sock",
+            "-v", f"{self.repo}:/work",
+            "-v", f"{CONFIG}/house.env:/work/config/house.env:ro",
+            "-v", f"{CONFIG}/secrets:/work/.kamal/secrets:ro",
+            "-v", f"{CONFIG}/ssh:/root/.ssh:ro",
+            "-v", f"{ROOT}/docker:/root/.docker",
+            "-e", "HOUSE_BUILDER_REMOTE=",
+            self.settings["tools_image"], *args,
+        ]
+        self.run(command, timeout=7200)
+
+    def deploy_rails(self):
+        self.report("deploying Rails")
+        # Kamal deploy takes its own production deploy lock: Mac/Dell operators
+        # contend for the same lock. No separate acquire (that would deadlock it).
+        self.kamal("deploy", "--skip-hooks", "--version", self.data["rails_revision"])
+        revision = self.data["rails_revision"]
+        for role in ("web", "jobs"):
+            versions = self.run(["docker", "ps", "--filter", "label=service=souls-house",
+                                 "--filter", f"label=role={role}",
+                                 "--format", "{{.Names}}"], capture=True).splitlines()
+            if versions != [f"souls-house-{role}-{revision}"]:
+                raise RuntimeError("Live application revision mismatch")
+        self.run(["curl", "--fail", "--silent", "--show-error", "--max-time", "30",
+                  self.settings["health_url"]], timeout=40)
+        self.rails("RefreshTelegramWebhooksJob.perform_later; puts({ok:true}.to_json)")
+        self.report("Rails healthy")
+
+    def inspect_image(self, image):
+        return json.loads(self.run(["docker", "image", "inspect", image], capture=True))[0]
+
+    def update_chaos(self):
+        self.report("resolving published Chaos")
+        master = github("commits/master")["sha"]
+        revision = published_revision(
+            github("releases?per_page=50"),
+            lambda sha: github(f"compare/{sha}...{master}")["status"] in ("ahead", "identical"))
+        self.report("Chaos resolved", chaos_revision=revision)
+        residents = self.rails(
+            "raise 'Async admission required' unless ResidentTurn.enabled?; "
+            "puts({residents:Agent.hosted.where.not(container_name:[nil,''])"
+            ".order(:id).map{|a| a.attributes.slice('id','container_name','container_image','active','paused')}}.to_json)"
+        )["residents"]
+        if not residents:
+            raise RuntimeError("No resident containers")
+        atomic(self.directory / "previous-residents.json", residents)
+        previous_refs = set()
+        for resident in residents:
+            profile = self.settings["custom_residents"].get(str(resident["id"]))
+            repository = resident["container_image"].rsplit(":", 1)[0]
+            if profile != "development" and repository not in self.settings["stock_repositories"]:
+                raise RuntimeError("Unrecognised custom image; operator review required")
+            info = self.inspect_image(resident["container_image"])
+            before_ref = info["Config"].get("Labels", {}).get("house.souls.chaos-ref", "")
+            if not SHA.fullmatch(before_ref):
+                raise RuntimeError("Previous runtime has no source label")
+            previous_refs.add(before_ref)
+        for old in previous_refs - {revision}:
+            comparison = github(f"compare/{old}...{revision}")
+            if comparison["status"] not in ("ahead", "identical"):
+                raise RuntimeError("Refusing runtime downgrade or divergent release")
+            if len(comparison.get("files", [])) >= 300:
+                raise RuntimeError("Release diff truncated; operator review required")
+            if any("migration" in f["filename"].lower() and f["filename"].endswith(".sql")
+                   and f["status"] != "added" for f in comparison.get("files", [])):
+                raise RuntimeError("Existing runtime migrations changed; operator review required")
+
+        tag = f"deploy-{self.data['id']}"
+        stock = self.settings["stock_repository"] + ":" + tag
+        self.report("building published runtime image")
+        self.run(["docker", "build", "--build-arg", f"CHAOS_HEAD={revision}",
+                  "--build-arg", "CHAOS_BUILD_MODE=prebuilt", "-t", stock,
+                  str(self.repo / "agent-runtime")], timeout=7200)
+        version = self.run(["docker", "run", "--rm", "--network", "none", "--entrypoint",
+                            "chaos", stock, "--version"], capture=True)
+        version_tuple(version)
+        self.report("checking runtime", chaos_version=version)
+        self.run(["docker", "run", "--rm", "--network", "none",
+                  "-v", f"{self.repo}:/source:ro", "-e", "CHAOS_TEST_BIN=/usr/local/bin/chaos",
+                  "--entrypoint", "python3", stock, "-m", "unittest", "discover",
+                  "-s", "/source/test", "-p", "runtime_config_test.py"], timeout=300)
+        development = None
+        if any(str(r["id"]) in self.settings["custom_residents"] for r in residents):
+            development = self.settings["development_repository"] + ":" + tag
+            self.report("building development runtime layer")
+            self.run(["docker", "build", "--build-arg", f"MIRA_BASE_IMAGE={stock}",
+                      "-f", str(self.repo / "agent-runtime/Dockerfile.mira-dev"),
+                      "-t", development, str(self.repo / "agent-runtime")], timeout=7200)
+        skipped = []
+        script = (CODE / "roll-resident.rb").read_text()
+        for resident in residents:
+            resident_id = resident["id"]
+            image = development if str(resident_id) in self.settings["custom_residents"] else stock
+            old_version = self.run(["docker", "exec", resident["container_name"], "chaos",
+                                    "--version"], capture=True)
+            if version_tuple(version) < version_tuple(old_version):
+                raise RuntimeError("Refusing runtime version downgrade")
+            self.report("waiting for idle resident", resident_id=resident_id)
+            deadline = time.monotonic() + self.settings.get("idle_wait_seconds", 600)
+            while True:
+                result = self.rails(script, {
+                    "DEPLOY_RESIDENT_ID": str(resident_id),
+                    "DEPLOY_RESIDENT_IMAGE": image, "DEPLOY_CHAOS_VERSION": version})
+                if result["result"] in ("healthy", "current"):
+                    atomic(self.directory / f"resident-{resident_id}.json", result)
+                    self.report("resident healthy", resident_id=resident_id)
+                    break
+                if result["result"] != "busy":
+                    raise RuntimeError("Unexpected restart result")
+                if time.monotonic() >= deadline:
+                    skipped.append(resident_id)
+                    self.report("busy resident left unchanged", skipped=skipped)
+                    break
+                time.sleep(15)
+        if skipped:
+            self.report("runtime rollout incomplete", state="partial", skipped=skipped)
+            return
+        for alias in self.settings["stock_aliases"]:
+            self.run(["docker", "tag", stock, alias])
+        self.report("all residents healthy")
+
+    def execute(self):
+        try:
+            # Same lock for manual runtime operations, as documented.
+            with (ROOT / "deployment.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.checkout()
+                if self.data["operation"] in ("rails", "both"):
+                    self.deploy_rails()
+                if self.data["operation"] in ("chaos", "both"):
+                    self.update_chaos()
+                if self.data["state"] != "partial":
+                    self.report("verified", state="success")
+        except Exception as error:
+            # Detailed diagnostics stay host-only, not in status/journal/Actions.
+            self.log.write(f"\n{type(error).__name__}: {error}\n")
+            self.log.flush()
+            self.report("failed; host operator inspection required", state="failed")
+        finally:
+            self.log.close()
+
+
+if __name__ == "__main__":
+    os.umask(0o077)
+    if len(sys.argv) != 2 or sys.argv[1] not in OPERATIONS:
+        sys.exit(2)
+    # Serialize startup with the privileged gate, which has already written
+    # current.json before starting this fixed service.
+    with (ROOT / "gate.lock").open("a") as gate:
+        fcntl.flock(gate, fcntl.LOCK_EX)
+        worker = Worker(sys.argv[1])
+    worker.execute()
+    sys.exit(0 if worker.data["state"] == "success" else 1)
