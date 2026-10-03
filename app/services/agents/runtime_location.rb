@@ -6,14 +6,16 @@ module Agents
     class Unavailable < StandardError; end
 
     def self.require_local!(agent)
-      return unless agent.is_a?(Agent) && agent.persisted?
-
-      # Do not trust a cached has_one absence on a long-lived Agent instance.
-      placement = AgentPlacement.uncached { AgentPlacement.find_by(agent_id: agent.id) }
-      return unless placement
-      return if placement.backend == "local" && placement.state == "ready"
+      return if local?(agent)
 
       raise Unavailable, "Resident placement is not available to the local runtime"
+    end
+
+    def self.local?(agent)
+      return true unless agent.is_a?(Agent) && agent.persisted?
+      # Do not trust a cached has_one absence on a long-lived Agent instance.
+      placement = AgentPlacement.uncached { AgentPlacement.find_by(agent_id: agent.id) }
+      placement.nil? || (placement.backend == "local" && placement.state == "ready")
     end
 
   end

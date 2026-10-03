@@ -85,4 +85,44 @@ class ResidentTurnPollJobTest < ActiveSupport::TestCase
     assert_equal "running", @turn.reload.state
   end
 
+  test "an admitted turn is withdrawn after placement leaves local without submitting to its stored endpoint" do
+    AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "pending")
+    stub_request(:get, @url).to_return(status: 404, body: { ledger_id: @ledger }.to_json)
+    stub_request(:delete, @url)
+      .with(headers: { "X-Resident-Ledger-ID" => @ledger })
+      .to_return(status: 200, body: status("cancelled",
+        result: { status: 409, body: { status: "cancelled" } }))
+
+    ResidentTurnPollJob.perform_now(@turn.id)
+
+    assert_equal "cancelled", @turn.reload.state
+    assert_not_requested :post, @url
+    assert_requested :delete, @url
+  end
+
+  test "retired local placement withdraws before submission and retains capacity until cancellation confirmed" do
+    AgentPlacement.create!(agent: @agent, backend: "local", state: "retired")
+    stub_request(:get, @url).to_return(status: 404, body: { ledger_id: @ledger }.to_json)
+    stub_request(:delete, @url).to_timeout
+
+    ResidentTurnPollJob.perform_now(@turn.id)
+
+    assert @turn.reload.cancel_requested_at?
+    assert_nil @turn.finished_at
+    assert_equal 1, ResidentTurn.occupying_capacity.count
+    assert_not_requested :post, @url
+  end
+
+  test "a placement change does not prevent reconciling already accepted work" do
+    AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "pending")
+    @turn.update!(state: "running", ledger_id: @ledger)
+    stub_request(:get, @url).to_return(status: 200, body: status("finished",
+      result: { status: 200, body: { status: "ok", returncode: 0 } }))
+
+    ResidentTurnPollJob.perform_now(@turn.id)
+
+    assert_equal "finished", @turn.reload.state
+    assert_not_requested :post, @url
+  end
+
 end

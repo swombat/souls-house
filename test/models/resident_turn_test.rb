@@ -31,6 +31,15 @@ class ResidentTurnTest < ActiveSupport::TestCase
     assert_equal "queued", second.reload.state
   end
 
+  test "a queued turn loses admission when placement leaves the local runtime" do
+    turn = queue_turn
+    AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "pending")
+
+    assert_empty ResidentTurn.admit!
+    assert_equal "cancelled", turn.reload.state
+    assert turn.finished_at?
+  end
+
   test "pause prevents admission without cancelling work" do
     turn = queue_turn
     Setting.instance.update!(resident_turn_limit: 0)

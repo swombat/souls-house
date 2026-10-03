@@ -26,6 +26,12 @@ before local Docker ownership checks, including the legacy production namespace.
 Provisioning/startup, endpoint resolution and backup environment construction
 also refuse unsupported placement.
 
+Queued turns recheck placement at admission and immediately before submission:
+their stored endpoint is not continuing permission to start work. Already
+admitted turns use the existing cancellation-tombstone path on refusal, retaining
+capacity until the old runtime confirms cancellation. Polling and containment of
+already accepted work remain possible at its original endpoint.
+
 This is **not fencing or a movement protocol**. A lookup and subsequent I/O are
 not atomic; existing operations may already be in flight. `generation` is only
 reserved metadata and is not yet enforced by any runner. Do not change a live
