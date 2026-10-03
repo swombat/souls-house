@@ -66,6 +66,7 @@ module Api
       end
 
       def create
+        @destination = requested_account
         agent_ids = resolve_agent_ids
         return if performed?
 
@@ -85,7 +86,7 @@ module Api
         end
 
         chat_attrs = {
-          account: current_api_account,
+          account: @destination,
           model_id: params[:model_id] || "openrouter/auto",
           title: params[:title],
           manual_responses: true
@@ -107,6 +108,12 @@ module Api
             created_at: chat.created_at.iso8601
           }
         }, status: :created
+      rescue ActiveRecord::RecordInvalid => error
+        # A guest that departed between the account check and the insert is
+        # refused by the seat lock; say so rather than raising.
+        record = error.record
+        seat_errors = record.respond_to?(:chat_agents) ? record.chat_agents.flat_map { |seat| seat.errors.full_messages } : []
+        render json: { error: (seat_errors.presence || record.errors.full_messages).to_sentence }, status: :unprocessable_entity
       end
 
       # Rename only. The title is read from the top level; any other shape
@@ -182,8 +189,10 @@ module Api
         agent_ids = ([ current_api_agent.id ] + invited_agent_ids).uniq
         opening_message = nil
 
-        current_api_account.chats.transaction do
-          chat = current_api_account.chats.new(
+        # In a guest account, the creator's own seat is admitted under the
+        # membership lock (ChatAgent#agent_takes_part_in_account), like any seat.
+        @destination.chats.transaction do
+          chat = @destination.chats.new(
             model_id: params[:model_id] || current_api_agent.model_id || "openrouter/auto",
             title: params[:title],
             manual_responses: true,
@@ -221,7 +230,7 @@ module Api
 
         obfuscated_ids = ids.uniq
         real_ids = obfuscated_ids.filter_map { |oid| Agent.decode_id(oid) }
-        agents = current_api_account.agents.eligible_for_conversation.where(id: real_ids)
+        agents = @destination.conversation_agents.eligible_for_conversation.where(id: real_ids)
 
         if agents.length != obfuscated_ids.length
           missing = obfuscated_ids.length - agents.length

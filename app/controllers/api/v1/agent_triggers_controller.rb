@@ -4,7 +4,7 @@ module Api
 
       # POST /api/v1/conversations/:conversation_id/agent_trigger
       def create
-        chat = current_api_account.chats.find(params[:conversation_id])
+        chat = actionable_chats.find(params[:conversation_id])
 
         unless chat.group_chat?
           return render json: { error: "Resident triggers are only available for group chats" }, status: :unprocessable_entity

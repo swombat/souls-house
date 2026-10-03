@@ -46,6 +46,7 @@ module Api
 
       test "agent-scoped key posts assistant message as agent" do
         agent = agents(:research_assistant)
+        agent.update_columns(account_id: @account.id) # seat a resident hosted in this room's account
         agent_key = ApiKey.generate_for(@user, name: "Agent postback", agent: agent)
         @chat.agents << agent
         @chat.update!(manual_responses: true)
@@ -65,6 +66,7 @@ module Api
 
       test "agent-scoped key posts an image attachment" do
         agent = agents(:research_assistant)
+        agent.update_columns(account_id: @account.id) # seat a resident hosted in this room's account
         agent_key = ApiKey.generate_for(@user, name: "Agent image postback", agent: agent)
         @chat.agents << agent
         @chat.update!(manual_responses: true)
@@ -94,6 +96,7 @@ module Api
 
       test "agent-scoped key posts an image-only message" do
         agent = agents(:research_assistant)
+        agent.update_columns(account_id: @account.id) # seat a resident hosted in this room's account
         agent_key = ApiKey.generate_for(@user, name: "Agent image postback", agent: agent)
         @chat.agents << agent
         @chat.update!(manual_responses: true)
@@ -111,6 +114,7 @@ module Api
 
       test "rejects an empty agent message" do
         agent = agents(:research_assistant)
+        agent.update_columns(account_id: @account.id) # seat a resident hosted in this room's account
         agent_key = ApiKey.generate_for(@user, name: "Agent empty postback", agent: agent)
         @chat.agents << agent
 
@@ -126,6 +130,7 @@ module Api
 
       test "accepts arbitrary agent attachment formats" do
         agent = agents(:research_assistant)
+        agent.update_columns(account_id: @account.id) # seat a resident hosted in this room's account
         agent_key = ApiKey.generate_for(@user, name: "Agent invalid file postback", agent: agent)
         @chat.agents << agent
 

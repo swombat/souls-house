@@ -204,7 +204,18 @@ class ExternalAgentResponseRequest
       - title: #{chat.title_or_default}
       - agents: #{agents.any? ? agents.join(", ") : "_none recorded_"}
       - humans_seen_in_transcript: #{humans.any? ? humans.join(", ") : "_none in stored messages_"}
+      #{account_line}
     TEXT
+  end
+
+  # Say plainly when the resident is a guest in the room's account, so context
+  # from one account is not carried into another by default. Home rooms keep
+  # their existing metadata (the line is last, so `strip` drops it).
+  def account_line
+    return "" if chat.account_id == agent.account_id
+
+    "- account: #{chat.account.name} (you are a guest here; your home account is #{agent.account.name}. " \
+      "Keep each account's private context to itself.)"
   end
 
   def conversation_context

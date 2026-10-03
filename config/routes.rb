@@ -82,6 +82,7 @@ Rails.application.routes.draw do
     end
 
     resource :agent_api_keys, only: [ :show, :update ], module: :accounts
+    resources :guest_memberships, only: [ :create, :destroy ], module: :accounts
     resource :costs, only: :show, module: :accounts
     resources :notices, only: [ :index, :create, :destroy ], module: :accounts
     resources :api_keys, path: "external_access", only: [ :index, :create, :destroy ]
@@ -257,6 +258,7 @@ Rails.application.routes.draw do
         resources :participants, only: :create
       end
       resources :agents, only: [ :index, :show ]
+      resources :guest_memberships, only: [ :index, :destroy ]
       resources :telegram_conversations, only: :show
       get "telegram_conversations/:conversation_id/messages/:message_id/media",
         to: "telegram_media#show",

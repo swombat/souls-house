@@ -49,6 +49,10 @@ class Account < ApplicationRecord
   has_one :owner, through: :owner_membership, source: :user
   has_many :chats, dependent: :destroy
   has_many :agents, dependent: :destroy
+  # Residents hosted elsewhere and present here as guests. Removal callbacks
+  # close seats; when the whole account goes, its rooms go with it.
+  has_many :guest_memberships, dependent: :delete_all
+  has_many :guest_agents, through: :guest_memberships, source: :agent
   has_many :notices, dependent: :destroy
   has_many :api_keys, dependent: :destroy
   has_many :metered_action_events, dependent: :destroy
@@ -124,6 +128,13 @@ class Account < ApplicationRecord
       role: role,
       invited_by: invited_by
     )
+  end
+
+  # Residents who can take part in this account's conversations: those hosted
+  # here and accepted guests. `agents` keeps meaning hosting ownership, for
+  # runtime administration, billing and deletion.
+  def conversation_agents
+    Agent.where(account_id: id).or(Agent.where(id: guest_memberships.select(:agent_id)))
   end
 
   def last_owner?

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_03_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -637,6 +637,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.string "repository_full_name"
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_github_integrations_on_account_id", unique: true
+  end
+
+  create_table "guest_memberships", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_id", null: false
+    t.bigint "added_by_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "agent_id"], name: "index_guest_memberships_on_account_id_and_agent_id", unique: true
+    t.index ["account_id"], name: "index_guest_memberships_on_account_id"
+    t.index ["added_by_id"], name: "index_guest_memberships_on_added_by_id"
+    t.index ["agent_id"], name: "index_guest_memberships_on_agent_id"
   end
 
   create_table "house_inference_calls", force: :cascade do |t|
@@ -1326,6 +1338,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
   add_foreign_key "device_streams", "accounts"
   add_foreign_key "device_streams", "users", column: "subject_user_id"
   add_foreign_key "github_integrations", "accounts"
+  add_foreign_key "guest_memberships", "accounts", on_delete: :cascade
+  add_foreign_key "guest_memberships", "agents", on_delete: :cascade
+  add_foreign_key "guest_memberships", "users", column: "added_by_id", on_delete: :nullify
   add_foreign_key "house_inference_calls", "house_inference_grants"
   add_foreign_key "house_inference_grants", "agents"
   add_foreign_key "house_inference_grants", "users"
