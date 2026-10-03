@@ -20,7 +20,8 @@ class Rhythm < ApplicationRecord
 
   enum :cadence, %w[daily weekly monthly yearly].index_with(&:itself), validate: true
 
-  validates :title, :opening, :time_of_day, :timezone, :next_run_at, presence: true
+  validates :title, :time_of_day, :timezone, :next_run_at, presence: true
+  validates :opening, presence: true, unless: -> { validation_context == :preview }
   validates :title, length: { maximum: 255 }
   validates :opening, length: { maximum: 20_000 }
   validates :time_of_day, format: { with: /\A(?:[01]\d|2[0-3]):[0-5]\d\z/ }
@@ -29,7 +30,7 @@ class Rhythm < ApplicationRecord
   validates :month_day, inclusion: { in: 1..31 }, if: -> { monthly? || yearly? }
   validates :month, inclusion: { in: 1..12 }, if: :yearly?
   validates :append_date, inclusion: { in: [ true, false ] }
-  validates :agents, length: { minimum: 1 }
+  validates :agents, length: { minimum: 1 }, unless: -> { validation_context == :preview }
   validate :residents_present_in_account
 
   before_validation :reset_next_run, if: :schedule_changed?
@@ -37,6 +38,7 @@ class Rhythm < ApplicationRecord
   scope :due, ->(now = Time.current) { where(next_run_at: ..now) }
 
   def resident_ids = agent_ids
+
   def resident_ids=(ids)
     self.agent_ids = ids
   end

@@ -48,10 +48,16 @@ class RhythmsController < ApplicationController
   end
 
   def preview
-    rhythm = Rhythm.new(account: current_account, creator: Current.user, **rhythm_params)
-    if rhythm.valid?
+    attributes = params.require(:rhythm).permit(:title, :append_date, :cadence, :time_of_day,
+      :weekday, :month_day, :month, :timezone)
+    rhythm = Rhythm.new(attributes)
+    rhythm.account = current_account
+    rhythm.creator = Current.user
+    response.headers["Cache-Control"] = "no-store"
+    if rhythm.valid?(:preview)
       at = rhythm.next_occurrence(after: Time.current)
       render json: { next_run_at: at.iso8601, preview_title: rhythm.preview_title(at: at),
+        timezone_identifier: ActiveSupport::TimeZone[rhythm.timezone].tzinfo.identifier,
         schedule_description: RhythmPresentation.new(rhythm, user: Current.user).schedule_description }
     else
       render json: { errors: rhythm.errors.to_hash(true) }, status: :unprocessable_entity
@@ -124,10 +130,13 @@ class RhythmsController < ApplicationController
   end
 
   def shared_props
+    eligible = current_account.conversation_agents.eligible_for_conversation.order(:name).to_a
+    residents = (eligible + (@rhythm&.agents&.to_a || [])).uniq(&:id)
     {
       account: current_account.as_json,
-      residents: current_account.conversation_agents.eligible_for_conversation.order(:name).map do |agent|
-        { id: agent.to_param, name: agent.name, colour: agent.colour, paused: agent.paused? }
+      residents: residents.map do |agent|
+        { id: agent.to_param, name: agent.name, colour: agent.colour, icon: agent.icon,
+          paused: agent.paused?, unavailable: !eligible.include?(agent) }
       end,
       timezones: ActiveSupport::TimeZone.all.map { |zone| { value: zone.name, label: zone.to_s, identifier: zone.tzinfo.identifier } }
     }

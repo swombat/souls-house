@@ -20,6 +20,7 @@ class RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_response :ok
     assert response.parsed_body["next_run_at"]
     assert_includes response.parsed_body["preview_title"], "Weekly reflection"
+    assert_equal "Europe/Madrid", response.parsed_body["timezone_identifier"]
     assert_difference "Rhythm.count", 1 do
       post account_rhythms_path(@account), params: { rhythm: @attributes }
     end
@@ -27,6 +28,13 @@ class RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @user, rhythm.creator
     assert_equal [ @resident ], rhythm.agents
     assert_redirected_to account_rhythm_path(@account, rhythm)
+  end
+
+  test "preview does not require private opening or resident selection" do
+    get preview_account_rhythms_path(@account), params: { rhythm: @attributes.except(:opening, :resident_ids) }, as: :json
+    assert_response :ok
+    assert_equal "no-store", response.headers["Cache-Control"]
+    assert response.parsed_body["next_run_at"]
   end
 
   test "cross-account resident selection fails closed" do
