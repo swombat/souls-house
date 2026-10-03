@@ -22,7 +22,8 @@ class Chat < ApplicationRecord
   has_many :chat_agents, dependent: :destroy
   has_many :agents, through: :chat_agents
   has_many :agent_runtime_interactions, dependent: :nullify
-  validates :agents, length: { minimum: 1, message: "must include at least one resident" }, if: :manual_responses?
+  validates :agents, length: { minimum: 1, message: "must include at least one resident" },
+    if: -> { new_record? && manual_responses? }
   # Public creation helpers cannot start bare-model conversations. Historical
   # rows remain readable and editable through ordinary persistence.
   validates :manual_responses, inclusion: { in: [ true ], message: "must be enabled for new resident conversations" }, on: :conversation_creation

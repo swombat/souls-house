@@ -256,7 +256,101 @@ class RhythmTest < ActiveSupport::TestCase
     assert_equal original_next_run, @rhythm.reload.next_run_at
   end
 
+  test "creator authority survives leaving selection but not guest withdrawal" do
+    guest = agents(:other_account_agent)
+    membership = GuestMembership.create!(account: @account, agent: guest, added_by: @user)
+    rhythm = resident_rhythm(creator_agent: guest)
+    rhythm.join!(agent: @agent)
+    rhythm.leave!(agent: guest)
+    assert rhythm.manageable_by_agent?(guest)
+    assert rhythm.manageable_by?(@account.owner)
+    membership.destroy!
+    assert_not rhythm.manageable_by_agent?(guest)
+    result = rhythm.fire!(manual: true, request_key: "withdrawn")
+    assert_equal :unavailable, result.status
+    assert_equal "creator_not_member", result.reason
+    assert_equal :unavailable, rhythm.resume!(holder: @account.owner).status
+  end
+
+  test "resident creator availability blocks firing even after leaving selection" do
+    rhythm = resident_rhythm
+    rhythm.join!(agent: agents(:code_reviewer))
+    rhythm.leave!(agent: @agent)
+    @agent.update!(paused: true)
+    assert_no_difference "Chat.count" do
+      assert_equal "creator_paused", rhythm.fire!(manual: true, request_key: "paused").reason
+    end
+    assert_equal :unavailable, rhythm.resume!(holder: @agent).status
+    @agent.update!(paused: false, active: false)
+    assert_equal :unavailable, rhythm.resume!(holder: @user).status
+    @agent.update!(active: true)
+    assert_equal :active, rhythm.resume!(holder: @agent).status
+  end
+
+  test "a withdrawn selection does not prevent owner editing or corrective removal" do
+    guest = agents(:other_account_agent)
+    membership = GuestMembership.create!(account: @account, agent: guest, added_by: @user)
+    @rhythm.update!(agents: [ guest, @agent ])
+    membership.destroy!
+    @rhythm.update!(title: "Still editable")
+    @rhythm.leave!(agent: guest)
+    assert_equal [ @agent ], @rhythm.reload.agents
+  end
+
+  test "creator identity must be singular and present on creation" do
+    rhythm = resident_rhythm
+    rhythm.creator = @user
+    assert_not rhythm.valid?
+    rhythm = Rhythm.new(@rhythm.attributes.except("id", "creator_id", "created_at", "updated_at"))
+    rhythm.agents = [ @agent ]
+    assert_not rhythm.valid?
+    assert rhythm.errors[:creator].present?
+  end
+
+  test "deleting an otherwise unreferenced creator nullifies invitation and fails closed" do
+    creator_agent = @agent.dup
+    creator_agent.name = "Temporary creator"
+    creator_agent.save!
+    rhythm = resident_rhythm(creator_agent: creator_agent)
+    creator_agent.destroy!
+    assert_nil rhythm.reload.creator_agent_id
+    assert_empty rhythm.agents
+    assert_equal "creator_not_member", rhythm.fire!(manual: true, request_key: "gone").reason
+    assert_nil RhythmPresentation.new(rhythm, user: @user).as_json.dig(:creator, :name)
+    assert_equal :unavailable, rhythm.resume!(holder: @user).status
+
+    human = User.create!(email_address: "temporary-rhythm@example.test", password: "password123")
+    human_rhythm = Rhythm.create!(@rhythm.attributes.except("id", "created_at", "updated_at").merge(
+      creator: human, agents: [ @agent ]
+    ))
+    human.destroy!
+    assert_nil human_rhythm.reload.creator_id
+    assert_equal "creator_not_member", human_rhythm.fire!(manual: true, request_key: "human-gone").reason
+  end
+
+  test "last self leave holds immediately and stale model instances cannot restore membership or erase holds" do
+    stale = Rhythm.find(@rhythm.id)
+    stale.agents.load
+    @rhythm.pause!(holder: @agent, reason: "Keep my hold")
+    @rhythm.leave!(agent: @agent)
+    assert_empty @rhythm.reload.agents
+    assert_equal %w[agent system], @rhythm.open_holds.order(:kind).pluck(:kind)
+    stale.join!(agent: @agent)
+    stale.join!(agent: @agent)
+    assert_equal 1, @rhythm.rhythm_agents.count
+    assert_equal %w[agent system], @rhythm.open_holds.order(:kind).pluck(:kind)
+    assert_equal :held, @rhythm.fire!(manual: true, request_key: "stale-held").status
+    assert_equal :held, stale.resume!(holder: @user).status
+    assert_equal :active, @rhythm.resume!(holder: @agent).status
+  end
+
   private
+
+  def resident_rhythm(creator_agent: @agent)
+    Rhythm.create!(@rhythm.attributes.except("id", "creator_id", "created_at", "updated_at").merge(
+      creator_agent: creator_agent, agents: [ creator_agent ]
+    ))
+  end
 
   def duplicate_in_another_room(occurrence)
     room = @account.chats.create_with_message!(

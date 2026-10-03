@@ -44,4 +44,43 @@ class RhythmProvenanceTest < ActiveSupport::TestCase
     assert_empty @occurrence.chat.agent_runtime_interactions
   end
 
+  test "resident opening is not a human message and preserves provenance and runtime controls" do
+    rhythm = Rhythm.create!(
+      account: @agent.account, creator_agent: @agent, agents: [ @agent ],
+      title: "Resident returning", opening: "My saved invitation", cadence: "daily",
+      time_of_day: "09:00", timezone: "UTC"
+    )
+    occurrence = nil
+    assert_enqueued_jobs 1, only: MessageDispatchJob do
+      occurrence = rhythm.fire!(manual: true, request_key: "resident").occurrence
+    end
+    opening = occurrence.message
+    assert_equal "assistant", opening.role
+    assert_equal @agent, opening.agent
+    assert_nil opening.user
+    assert_nil occurrence.creator
+    assert_equal @agent, occurrence.creator_agent
+    assert_equal @agent.name, occurrence.creator_label
+    assert_nil opening.runtime_interaction
+    assert_nil opening.message_dispatch.user
+    assert_equal "rhythm", opening.message_dispatch.kind
+    assert_empty occurrence.chat.agent_runtime_interactions
+    assert_equal "agent", opening.rhythm_provenance[:creator_type]
+    request = ExternalAgentResponseRequest.new(agent: @agent, chat: occurrence.chat)
+    text = request.send(:request_text)
+    assert_includes text, "RHYTHM INVITATION"
+    assert_includes text, @agent.name
+    assert_includes text, "/api/v1/rhythms/#{rhythm.to_param}/leave"
+    assert_not_includes text, "The user pressed the agent button"
+    occurrence.chat.messages.create!(role: "assistant", agent: @agent, content: "A reply in the round")
+    assert_equal occurrence, ExternalAgentResponseRequest.new(agent: @agent, chat: occurrence.chat).send(:rhythm_invitation)
+    occurrence.chat.messages.create!(role: "user", user: users(:user_1), content: "A real fresh request", suppress_automatic_dispatch: true)
+    assert_nil ExternalAgentResponseRequest.new(agent: @agent, chat: occurrence.chat).send(:rhythm_invitation)
+    rhythm.destroy!
+    assert_equal "Resident returning", opening.reload.rhythm_provenance[:title]
+    assert_equal "agent", opening.rhythm_provenance[:creator_type]
+    assert_nil opening.rhythm_provenance[:rhythm_url]
+    assert_equal @agent.name, occurrence.reload.creator_label
+  end
+
 end

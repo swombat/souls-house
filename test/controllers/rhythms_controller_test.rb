@@ -91,6 +91,40 @@ class RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_not rhythm.manageable_by?(other)
   end
 
+  test "human owner can manage resident authored rhythm and add other residents" do
+    rhythm = Rhythm.create!(@attributes.except(:resident_ids).merge(
+      account: @account, creator_agent: @resident, agents: [ @resident ]
+    ))
+    peer = agents(:code_reviewer)
+    patch account_rhythm_path(@account, rhythm), params: {
+      rhythm: @attributes.merge(resident_ids: [ @resident.to_param, peer.to_param ])
+    }
+    assert_redirected_to account_rhythm_path(@account, rhythm)
+    assert_equal [ @resident.id, peer.id ].sort, rhythm.reload.agent_ids.sort
+    assert_nil rhythm.creator
+    assert_equal @resident, rhythm.creator_agent
+    post pause_account_rhythm_path(@account, rhythm), params: { reason: "Owner hold" }
+    assert_equal [ "human" ], rhythm.open_holds.pluck(:kind)
+    delete account_rhythm_path(@account, rhythm)
+    assert_redirected_to account_rhythms_path(@account)
+    assert_not Rhythm.exists?(rhythm.id)
+  end
+
+  test "human clearing the selection holds immediately and readding does not silently resume" do
+    rhythm = make_rhythm
+    patch account_rhythm_path(@account, rhythm), params: { rhythm: { resident_ids: [] } }
+    assert_redirected_to account_rhythm_path(@account, rhythm)
+    assert_empty rhythm.reload.agents
+    assert_equal [ "no_selected_residents" ], rhythm.open_holds.pluck(:reason)
+    assert_equal "paused", RhythmPresentation.new(rhythm, user: @user).as_json[:state]
+
+    patch account_rhythm_path(@account, rhythm), params: { rhythm: { resident_ids: [ @resident.to_param ] } }
+    assert_redirected_to account_rhythm_path(@account, rhythm)
+    assert rhythm.reload.held?
+    post resume_account_rhythm_path(@account, rhythm)
+    assert_not rhythm.reload.held?
+  end
+
   private
 
   def make_rhythm

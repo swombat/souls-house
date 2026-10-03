@@ -205,7 +205,9 @@ class ExternalAgentResponseRequest
   def rhythm_invitation
     return @rhythm_invitation if defined?(@rhythm_invitation)
 
-    @rhythm_invitation = chat.messages.kept.where(role: "user").reorder(id: :desc).first&.rhythm_occurrence
+    @rhythm_invitation = chat.messages.kept.left_joins(:rhythm_occurrence)
+      .where("messages.role = 'user' OR rhythm_occurrences.id IS NOT NULL")
+      .reorder(id: :desc).first&.rhythm_occurrence
   end
 
   def rhythm_invitation_context
@@ -220,7 +222,7 @@ class ExternalAgentResponseRequest
     ]
     if occurrence.rhythm
       path = "/api/v1/rhythms/#{occurrence.rhythm.to_param}"
-      lines << "Read the actual state and holds with GET #{path}. Pause with POST #{path}/pause and JSON {\"reason\":\"your reason\"}; release only your own hold with POST #{path}/resume. Use SOULSHOUSE_APP_URL and your existing SOULSHOUSE_BEARER_TOKEN. The API returns the current state; do not substitute a memory note for pausing."
+      lines << "Read the actual state and holds with GET #{path}. Pause with POST #{path}/pause and JSON {\"reason\":\"your reason\"}; release your own hold with POST #{path}/resume (creators may also release corrected system holds, never another resident's hold). Leave the selection with POST #{path}/leave. Use SOULSHOUSE_APP_URL and your existing SOULSHOUSE_BEARER_TOKEN. The API returns the current state; do not substitute a memory note for pausing."
     else
       lines << "This rhythm has been deleted; it will not open future conversations."
     end

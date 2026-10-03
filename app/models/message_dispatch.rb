@@ -38,12 +38,13 @@ class MessageDispatch < ApplicationRecord
 
   belongs_to :message, optional: true
   belongs_to :chat
-  belongs_to :user
+  belongs_to :user, optional: true
   belongs_to :runtime_interaction, class_name: "AgentRuntimeInteraction", optional: true
   has_many :runtime_interactions, class_name: "AgentRuntimeInteraction", dependent: :nullify
 
   validates :status, inclusion: { in: STATUSES }
   validates :kind, inclusion: { in: KINDS }
+  validates :user, presence: true, unless: :rhythm?
   # The database's check constraint enforces the same variants; this is the
   # readable failure.
   validates :message, presence: true, if: :from_message?
@@ -298,7 +299,14 @@ class MessageDispatch < ApplicationRecord
       return "discarded" if message.discarded?
     end
     return "conversation_unavailable" unless chat.reload.respondable? && chat.manual_responses?
-    return "author_not_member" unless user.confirmed_accounts.exists?(chat.account_id)
+    if rhythm? && message.role == "assistant"
+      author = message.agent
+      return "author_not_member" unless author && chat.account.conversation_agents.exists?(author.id)
+      return "author_unavailable" unless author.reload.eligible_for_conversation?
+      return "author_paused" if author.paused?
+    else
+      return "author_not_member" unless user&.confirmed_accounts&.exists?(chat.account_id)
+    end
 
     nil
   end

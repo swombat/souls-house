@@ -11,7 +11,8 @@ class Rhythm < ApplicationRecord
   SCHEDULE_FIELDS = %w[cadence time_of_day weekday month_day month timezone].freeze
 
   belongs_to :account
-  belongs_to :creator, class_name: "User"
+  belongs_to :creator, class_name: "User", optional: true
+  belongs_to :creator_agent, class_name: "Agent", optional: true
   has_many :rhythm_agents, dependent: :destroy
   has_many :agents, through: :rhythm_agents
   has_many :holds, class_name: "RhythmHold", dependent: :destroy
@@ -30,10 +31,12 @@ class Rhythm < ApplicationRecord
   validates :month_day, inclusion: { in: 1..31 }, if: -> { monthly? || yearly? }
   validates :month, inclusion: { in: 1..12 }, if: :yearly?
   validates :append_date, inclusion: { in: [ true, false ] }
-  validates :agents, length: { minimum: 1 }, unless: -> { validation_context == :preview }
-  validate :residents_present_in_account
+  validates :agents, length: { minimum: 1 }, on: :create, unless: -> { validation_context == :preview }
+  validate :one_creator
+  validate :residents_present_in_account, if: :new_record?
 
   before_validation :reset_next_run, if: :schedule_changed?
+  after_save :hold_empty_selection
 
   scope :due, ->(now = Time.current) { where(next_run_at: ..now) }
 
@@ -45,6 +48,28 @@ class Rhythm < ApplicationRecord
 
   def manageable_by?(user)
     user.present? && (creator_id == user.id || account.owned_by?(user))
+  end
+
+  def manageable_by_agent?(agent)
+    agent.present? && creator_agent_id == agent.id && account.conversation_agents.exists?(agent.id)
+  end
+
+  def join!(agent:)
+    with_lock do
+      next Result.new(status: :forbidden) unless account.conversation_agents.exists?(agent.id)
+      agent.require_conversation_runtime!
+      rhythm_agents.find_or_create_by!(agent: agent)
+      Result.new(status: held? ? :held : :active)
+    end
+  end
+
+  def leave!(agent:)
+    with_lock do
+      rhythm_agents.where(agent: agent).destroy_all
+      # Never remove a departing resident's holds, nor delete their invitation.
+      add_system_hold!("no_selected_residents") unless agents.reload.exists?
+      Result.new(status: held? ? :held : :active)
+    end
   end
 
   def held?
@@ -91,13 +116,17 @@ class Rhythm < ApplicationRecord
       occurrence_title = preview_title(at: scheduled_for)
       chat = account.chats.create_with_message!(
         { title: occurrence_title, manual_responses: true },
-        message_content: opening, user: creator, agent_ids: agents.order(:id).ids,
+        message_content: creator_agent ? nil : opening, user: creator, agent_ids: agents.order(:id).ids,
         automatic_response: false
       )
+      if creator_agent
+        chat.messages.create!(role: "assistant", agent: creator_agent, content: opening,
+          suppress_automatic_dispatch: true)
+      end
       message = chat.messages.first!
       MessageDispatch.accept!(message: message, target_agent_ids: chat.agents.order(:id).ids, kind: "rhythm")
       occurrence = occurrences.create!(
-        chat: chat, message: message, creator: creator, creator_label: creator_label,
+        chat: chat, message: message, creator: creator, creator_agent: creator_agent, creator_label: creator_label,
         title: occurrence_title, rhythm_title: title, opening: opening, scheduled_for: scheduled_for,
         manual: manual, request_key: manual ? request_key : nil
       )
@@ -132,9 +161,15 @@ class Rhythm < ApplicationRecord
         # Selection changes never erase a resident's hold. Its author can still
         # release it after being removed from the selection or guest membership.
         own_holds = open_holds.where(kind: "agent", agent_id: holder.id)
-        next Result.new(status: :forbidden) unless own_holds.exists?
+        system_holds = open_holds.where(kind: "system")
+        can_release_system = manageable_by_agent?(holder) && system_holds.exists?
+        next Result.new(status: :forbidden) unless own_holds.exists? || can_release_system
+        if can_release_system && (reason = unavailable_reason)
+          next Result.new(status: :unavailable, reason: reason)
+        end
 
         own_holds.update_all(released_at: Time.current, updated_at: Time.current)
+        system_holds.update_all(released_at: Time.current, updated_at: Time.current) if can_release_system
       elsif holder.is_a?(User) && manageable_by?(holder)
         if open_holds.where(kind: "system").exists? && (reason = unavailable_reason)
           next Result.new(status: :unavailable, reason: reason)
@@ -154,8 +189,16 @@ class Rhythm < ApplicationRecord
 
   private
 
+  def one_creator
+    if creator && creator_agent
+      errors.add(:creator, "must be either a human or a resident, not both")
+    elsif new_record? && !creator && !creator_agent
+      errors.add(:creator, "must be present")
+    end
+  end
+
   def creator_label
-    creator.full_name.presence || creator.email_address.split("@").first
+    creator_agent&.name || creator&.full_name.presence || creator&.email_address&.split("@")&.first
   end
 
   def holder_attributes(holder)
@@ -163,7 +206,7 @@ class Rhythm < ApplicationRecord
     when User
       { kind: "human", user_id: holder.id } if manageable_by?(holder)
     when Agent
-      { kind: "agent", agent_id: holder.id } if agents.exists?(holder.id)
+      { kind: "agent", agent_id: holder.id } if agents.exists?(holder.id) || manageable_by_agent?(holder)
     when :system
       { kind: "system" }
     end
@@ -174,8 +217,18 @@ class Rhythm < ApplicationRecord
     hold.update!(reason: reason)
   end
 
+  def hold_empty_selection
+    add_system_hold!("no_selected_residents") unless agents.exists?
+  end
+
   def unavailable_reason
-    return "creator_not_member" unless creator.confirmed_accounts.exists?(account_id)
+    if creator_agent
+      return "creator_not_member" unless account.conversation_agents.exists?(creator_agent.id)
+      return "creator_unavailable" unless creator_agent.reload.eligible_for_conversation?
+      return "creator_paused" if creator_agent.paused?
+    else
+      return "creator_not_member" unless creator&.confirmed_accounts&.exists?(account_id)
+    end
     return "live_activity_disabled" unless AgentRuntimeInteraction.live_activity_enabled?
     selected = agents.reload.to_a
     return "no_selected_residents" if selected.empty?

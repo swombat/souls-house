@@ -85,6 +85,38 @@ test('a paused rhythm names who is holding it instead of a next time', () => {
   expect(screen.queryByText(/Next:/)).not.toBeInTheDocument();
 });
 
+test('a resident-created invitation shows its author without granting a viewing human management', () => {
+  render(RhythmShow, {
+    account,
+    rhythm: rhythmFixture({
+      creator: { id: 'mira', name: 'Mira', type: 'agent' },
+      can_manage: false,
+    }),
+  });
+  expect(screen.getByText(/set up by Mira/)).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /Edit/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Delete rhythm/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Start one now/ })).not.toBeInTheDocument();
+});
+
+test('an empty resident invitation remains visible with its system hold', () => {
+  render(RhythmShow, {
+    account,
+    rhythm: rhythmFixture({
+      creator: { id: 'mira', name: 'Mira', type: 'agent' },
+      residents: [],
+      resident_ids: [],
+      state: 'paused',
+      holds: [{ id: 'h1', holder_name: 'System', holder_type: 'system', reason: 'no_selected_residents' }],
+      can_manage: true,
+      can_resume: false,
+    }),
+  });
+  expect(screen.getByText('no_selected_residents')).toBeInTheDocument();
+  expect(screen.getByText('Not while paused')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Start one now/ })).toBeDisabled();
+});
+
 test('the form asks the server for the preview and shows the first occurrence', async () => {
   render(RhythmForm, { account, residents, timezones: [{ value: 'Europe/Madrid', label: 'Madrid' }] });
   await waitFor(() => expect(screen.getByText('Weekly reflection — 5 Oct 2026')).toBeInTheDocument());
