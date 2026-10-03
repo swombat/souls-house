@@ -78,7 +78,8 @@
       <Button onclick={onConvert} variant="outline">Convert to personal account</Button>
     {:else}
       <p class="text-sm text-muted-foreground">
-        A team account can only become personal when it has one member. This one has {membersCount}.
+        A team account can only become personal when it has one member and no pending invitations. This one has
+        {membersCount} memberships, including pending invitations.
       </p>
     {/if}
   </Card.Content>

@@ -111,7 +111,7 @@
   <AccountTypeCard
     {account}
     canBePersonal={can_be_personal}
-    membersCount={activeMembers.length || 1}
+    membersCount={members.length || 1}
     onConvert={goToConvertConfirmation} />
 
   {#if !account.personal}

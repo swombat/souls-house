@@ -18,7 +18,7 @@
     },
     {
       title: 'Account name changes',
-      description: 'The account will be renamed to "Personal Account"',
+      description: 'The account will be renamed after its remaining owner, using their name or email address',
     },
   ];
 </script>
@@ -49,7 +49,7 @@
       <div class="space-y-3 mt-2">
         <p>
           This team account cannot be converted to a personal account because it has <strong
-            >{membersCount} members</strong
+            >{membersCount} memberships, including pending invitations</strong
           >.
         </p>
         <p>Personal accounts can only have one user. To convert this account:</p>

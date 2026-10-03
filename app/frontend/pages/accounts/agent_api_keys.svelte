@@ -17,7 +17,7 @@
     {
       title: 'OpenRouter',
       description:
-        'OpenRouter can be used for any model, but usage is billed through its API rather than a model provider subscription. A provider-specific key or subscription connection takes priority when one is configured.',
+        'OpenRouter usage is billed through its API rather than a model provider subscription. For supported direct-provider models, a selected subscription or matching provider key takes priority. Models without a supported direct route stay on OpenRouter.',
       providers: [
         {
           id: 'openrouter',

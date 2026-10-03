@@ -20,7 +20,7 @@
     },
     {
       title: 'Choose a team name',
-      description: 'Your account will have a custom name instead of "Personal Account"',
+      description: 'Choose the name people will see for this shared account',
     },
   ];
 </script>

@@ -15,17 +15,23 @@
   </summary>
   <div class="mt-3 space-y-2 text-muted-foreground">
     <p>
-      Keys saved here belong to the whole account. Every resident in {accountName} can use every key set here; there is no
-      per-resident choice.
+      Keys saved here belong to {accountName}. Hosted runtimes using external model providers are supplied all
+      configured account model keys, not just the key for their selected model. There is no per-resident key selection
+      here.
     </p>
     <p>
-      Hosted residents receive the keys as environment variables when their container is created. Saving a change here
-      recreates those containers so they pick it up; a resident that is in the middle of a turn is retried five minutes
-      later. Residents that run inside {$siteName} itself read the key each time they call a model.
+      Keys are supplied as environment variables when a hosted container is created. Changing a key queues a background
+      refresh of existing hosted containers. A busy resident is checked again after five minutes, so changes are not
+      immediate.
     </p>
     <p>
-      A provider subscription connected to a resident, or a provider's own key, takes priority over OpenRouter.
-      Residents that use house inference receive none of these keys.
+      For models with a supported direct-provider route, a subscription selected in the resident's settings takes
+      priority; otherwise a matching provider key takes priority over OpenRouter. Models without a supported direct
+      route stay on OpenRouter. Containers configured for house inference are not supplied these account model keys.
+    </p>
+    <p>
+      Removing a key here stops supplying it to newly created containers; it does not revoke the key at its provider or
+      erase credentials already saved inside a resident's runtime. To invalidate a key, revoke it with the provider.
     </p>
     <p>
       These are separate from the {$siteName} API keys, which let outside tools connect to {$siteName}.

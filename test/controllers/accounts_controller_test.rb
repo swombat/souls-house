@@ -122,6 +122,20 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert @team_account.reload.team? # Should still be team
   end
 
+  test "general and conversion count pending invitations as memberships" do
+    @team_single_user.add_user!(users(:existing_user))
+
+    get account_path(@team_single_user)
+    assert_response :success
+    assert_equal false, inertia_shared_props.fetch("can_be_personal")
+    assert_equal 2, inertia_shared_props.fetch("members").length
+    assert_equal 1, inertia_shared_props.fetch("members").count { |member| member["invitation_pending"] }
+
+    get edit_account_path(@team_single_user, convert: true)
+    assert_equal 2, inertia_shared_props.fetch("members_count")
+    assert_equal false, inertia_shared_props.fetch("can_be_personal")
+  end
+
   test "should handle conversion errors gracefully" do
     # Try to convert to team with invalid name (empty)
     patch account_path(@personal_account), params: {
