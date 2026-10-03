@@ -36,6 +36,8 @@ class Message < ApplicationRecord
   belongs_to :runtime_interaction, class_name: "AgentRuntimeInteraction", optional: true
   has_one :account, through: :chat
   has_one :message_dispatch
+  has_many :message_stone_revisions, dependent: :destroy
+  has_many :stone_revisions, through: :message_stone_revisions
 
   attr_accessor :skip_content_validation
   attr_reader :single_resident_response_triggered
@@ -144,7 +146,7 @@ class Message < ApplicationRecord
   json_attributes :role, :content, :thinking, :thinking_preview, :user_name, :user_avatar_url,
                   :progress_message, :progress_break_after, :progress_status, :progress_run_id, :runtime_interaction_id,
                   :completed, :created_at_formatted, :created_at_hour, :streaming,
-                  :files_json, :content_html, :tools_used, :tool_status,
+                  :files_json, :stones_json, :content_html, :tools_used, :tool_status,
                   :author_name, :author_type, :author_colour, :input_tokens, :output_tokens,
                   :editable, :deletable,
                   :moderation_flagged, :moderation_severity, :moderation_scores,
@@ -165,6 +167,19 @@ class Message < ApplicationRecord
   end
 
   alias_method :completed, :completed?
+
+  def stones_json
+    stone_revisions.includes(:stone).map do |revision|
+      stone = revision.stone
+      {
+        id: revision.to_param, title: revision.title, number: revision.number,
+        url: "/stones/#{stone.public_token}/revisions/#{revision.number}",
+        latest_url: "/stones/#{stone.public_token}",
+        newer_revision_available: stone.latest_revision.number > revision.number,
+        withdrawn: stone.withdrawn?
+      }
+    end
+  end
 
   def user_name
     user&.full_name

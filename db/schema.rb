@@ -722,6 +722,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.check_constraint "(kind::text = ANY (ARRAY['mention'::character varying, 'automatic'::character varying]::text[])) AND message_id IS NOT NULL AND client_invocation_id IS NULL AND request_digest IS NULL OR kind::text = 'invoke'::text AND message_id IS NULL AND client_invocation_id IS NOT NULL AND request_digest IS NOT NULL", name: "message_dispatches_kind_variant"
   end
 
+  create_table "message_stone_revisions", force: :cascade do |t|
+    t.bigint "message_id", null: false
+    t.bigint "stone_revision_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["message_id", "stone_revision_id"], name: "idx_on_message_id_stone_revision_id_c117e2b9a3", unique: true
+    t.index ["message_id"], name: "index_message_stone_revisions_on_message_id"
+    t.index ["stone_revision_id"], name: "index_message_stone_revisions_on_stone_revision_id"
+  end
+
   create_table "messages", force: :cascade do |t|
     t.bigint "agent_id"
     t.bigint "ai_model_id"
@@ -1151,6 +1161,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.datetime "updated_at", null: false
   end
 
+  create_table "stone_revisions", force: :cascade do |t|
+    t.bigint "stone_id", null: false
+    t.integer "number", null: false
+    t.string "title", null: false
+    t.bigint "user_id"
+    t.bigint "agent_id"
+    t.string "policy_version", null: false
+    t.string "preview_status", default: "not_requested", null: false
+    t.text "preview_error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_stone_revisions_on_agent_id"
+    t.index ["stone_id", "number"], name: "index_stone_revisions_on_stone_id_and_number", unique: true
+    t.index ["stone_id"], name: "index_stone_revisions_on_stone_id"
+    t.index ["user_id"], name: "index_stone_revisions_on_user_id"
+    t.check_constraint "(user_id IS NULL) <> (agent_id IS NULL)", name: "stone_revisions_one_author"
+    t.check_constraint "number > 0", name: "stone_revisions_positive_number"
+  end
+
+  create_table "stones", force: :cascade do |t|
+    t.bigint "chat_id", null: false
+    t.datetime "withdrawn_at"
+    t.string "public_token", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["chat_id"], name: "index_stones_on_chat_id"
+    t.index ["public_token"], name: "index_stones_on_public_token", unique: true
+  end
+
   create_table "telegram_messages", force: :cascade do |t|
     t.text "caption"
     t.datetime "created_at", null: false
@@ -1312,6 +1351,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
   add_foreign_key "message_dispatches", "chats"
   add_foreign_key "message_dispatches", "messages", on_delete: :cascade
   add_foreign_key "message_dispatches", "users"
+  add_foreign_key "message_stone_revisions", "messages", on_delete: :cascade
+  add_foreign_key "message_stone_revisions", "stone_revisions", on_delete: :cascade
   add_foreign_key "messages", "agent_runtime_interactions", column: "runtime_interaction_id"
   add_foreign_key "messages", "agents"
   add_foreign_key "messages", "ai_models"
@@ -1356,6 +1397,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
   add_foreign_key "service_connections", "oura_integrations", column: "legacy_oura_integration_id"
   add_foreign_key "service_connections", "users", column: "connected_by_user_id"
   add_foreign_key "sessions", "users"
+  add_foreign_key "stone_revisions", "agents"
+  add_foreign_key "stone_revisions", "stones", on_delete: :cascade
+  add_foreign_key "stone_revisions", "users"
+  add_foreign_key "stones", "chats", on_delete: :cascade
   add_foreign_key "telegram_messages", "telegram_subscriptions"
   add_foreign_key "telegram_subscriptions", "agents"
   add_foreign_key "telegram_subscriptions", "safeguard_detections", column: "pending_safeguard_detection_id", on_delete: :nullify

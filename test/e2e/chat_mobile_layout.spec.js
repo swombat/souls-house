@@ -155,6 +155,26 @@ test.describe('mobile chat layout', () => {
     expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width + 1);
   });
 
+  test('paired dollar-prefixed identifiers stay literal and fit the mobile bubble', async ({ page, request }) => {
+    const fixture = await openConversation(page, request);
+    const content =
+      'Read $page.props for the account, then use $props() in the component.\n\n' +
+      'Initialise $state(account.name) locally and use $effect to synchronise later changes.';
+    await request.post('/test/e2e/assistant_message', { data: { chat_id: fixture.chat_id, content } });
+    await page.reload();
+    const prose = page.locator('.prose').filter({ hasText: 'Read $page.props' });
+    await expect(prose).toContainText('Read $page.props for the account, then use $props() in the component.');
+    await expect(prose).toContainText(
+      'Initialise $state(account.name) locally and use $effect to synchronise later changes.'
+    );
+    await expect(prose.locator('.katex')).toHaveCount(0);
+    const dimensions = await prose.evaluate((node) => ({ width: node.clientWidth, scrollWidth: node.scrollWidth }));
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width + 1);
+    const box = await prose.boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(360);
+  });
+
   test('inline code uses contrasting theme colours in both themes alongside fenced code', async ({
     page,
     request,

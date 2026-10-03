@@ -14,3 +14,153 @@ index da5297db5ca0a24c3d30bdeb6c4b6e398488399a..3d1e0544396258ddfdc124ce30dab790
  	const insidePopover = getContext('POPOVER');
  </script>
  
+diff --git a/dist/Elements/Element.svelte b/dist/Elements/Element.svelte
+index 4ede2ad1d959d9dae6542c5aab0b551470521de3..d4c87d138ce3b7936082aadd2ee5fd129dec44a8 100644
+--- a/dist/Elements/Element.svelte
++++ b/dist/Elements/Element.svelte
+@@ -289,3 +289,3 @@
+ {:else if token.type === 'escape'}
+-	<!-- TODO This does not seems to be tokenized for now -->
++	{@render children()}
+ {:else if token.type === 'space'}
+diff --git a/dist/marked/marked-math.js b/dist/marked/marked-math.js
+index 893ba7e456c000e18817c495e8949733ac18efde..9617b6b34ae8f83763667ddaaa3b0a6e12988fb5 100644
+--- a/dist/marked/marked-math.js
++++ b/dist/marked/marked-math.js
+@@ -1,9 +1,11 @@
+ // Math parsing rules
+ // Block math: supports both newline format ($$\nmath\n$$) and single-line format ($$math$$)
+ const blockRule = /^(\$\$)(?:\n((?:\\[\s\S]|[^\\])+?)\n\1(?:\n|$)|([^$\n]+?)\1(?=\s|$|$))/;
+-// Inline math: handles both single ($) and double ($$) dollar delimiters
+-// Avoids matching currency by checking context and requiring proper content
+-const inlineRule = /^(\${1,2})(?!\$)((?:[^$\n]|\\\$)*?)\1(?!\d)/;
++// Double dollars express explicit math intent. Single dollars need non-space
++// flanks and must not use the prefix of another dollar identifier as a closer.
++// Consume escaped characters first so an escaped dollar cannot close math.
++const displayInlineRule = /^(\$\$)(?!\$)((?:\\[^\n]|[^\\$\n])+?)\1(?!\d)/;
++const singleInlineRule = /^(\$)(?![\s$])((?:\\[^\n]|[^\\$\n])+?)\1(?![\w$])/;
+ // Enhanced currency detection patterns
+ const currencyPatterns = {
+     // Simple price patterns: $123, $123.45, $1,234.56
+@@ -47,39 +49,19 @@ export const markedMath = [
+                 }
+                 const currentIndex = index + dollarIndex;
+                 const possibleMath = src.substring(currentIndex);
+-                // Check if this could be math (not currency)
+-                if (possibleMath.match(inlineRule)) {
+-                    const match = possibleMath.match(inlineRule);
+-                    if (match) {
+-                        const content = match[2];
+-                        const dollarCount = match[1]; // '$' or '$$'
+-                        // Only apply currency detection to single dollars
+-                        // Double dollars ($$) indicate explicit math intent
+-                        if (dollarCount === '$' && isCurrencyPattern(content, src, currentIndex)) {
+-                            // This looks like currency with single dollars, skip it
+-                            index += dollarIndex + 1;
+-                            searchSrc = src.substring(index);
+-                            continue;
+-                        }
+-                        return currentIndex;
+-                    }
++                if (matchInlineMath(possibleMath, src, currentIndex)) {
++                    return currentIndex;
+                 }
+                 index += dollarIndex + 1;
+                 searchSrc = src.substring(index);
+             }
+         },
+         tokenizer(src) {
+-            const match = src.match(inlineRule);
++            const match = matchInlineMath(src, src, 0);
+             if (match) {
+                 const content = match[2];
+                 const dollarCount = match[1]; // '$' or '$$'
+                 const isDisplayMode = dollarCount === '$$';
+-                // Only apply currency detection to single dollars
+-                // Double dollars ($$) indicate explicit math intent
+-                if (dollarCount === '$' && isCurrencyPattern(content, src, 0)) {
+-                    // This looks like currency with single dollars, skip it
+-                    return;
+-                }
+                 return {
+                     type: 'math',
+                     isInline: true, // Inline tokenizer always produces inline math
+@@ -91,6 +73,20 @@ export const markedMath = [
+         }
+     }
+ ];
++// Keep the start hint and tokenizer in agreement; a hint alone does not prevent
++// Marked from invoking the tokenizer at the beginning of the remaining source.
++function matchInlineMath(src, fullSrc, dollarIndex) {
++    const match = src.match(displayInlineRule) || src.match(singleInlineRule);
++    if (!match || match[1] === '$$') {
++        return match;
++    }
++    const content = match[2];
++    if (/\s$/.test(content) || content.includes('`') ||
++        isCurrencyPattern(content, fullSrc, dollarIndex)) {
++        return;
++    }
++    return match;
++}
+ // Helper function to detect currency patterns
+ function isCurrencyPattern(content, fullSrc, dollarIndex) {
+     const trimmedContent = content.trim();
+diff --git a/dist/utils/parse-incomplete-markdown.js b/dist/utils/parse-incomplete-markdown.js
+index dd73ad46e67d796ea7f2f88c3ed72193a8b0c7b1..7af4b8c9b347c0aaff1b236ec55f30298bb43bfc 100644
+--- a/dist/utils/parse-incomplete-markdown.js
++++ b/dist/utils/parse-incomplete-markdown.js
+@@ -503,50 +503,9 @@ class IncompleteMarkdownParser {
+                     return line;
+                 }
+             },
+-            {
+-                name: 'inlineMath',
+-                pattern: /\$/,
+-                skipInBlockTypes: ['code', 'math'],
+-                handler: ({ line }) => {
+-                    // Inline countSingleDollarSigns logic
+-                    let singleDollars = 0;
+-                    for (let i = 0; i < line.length; i++) {
+-                        if (line[i] === '$') {
+-                            const prevChar = i > 0 ? line[i - 1] : '';
+-                            const nextChar = i < line.length - 1 ? line[i + 1] : '';
+-                            if (prevChar === '\\')
+-                                continue;
+-                            if (prevChar === '$' || nextChar === '$')
+-                                continue;
+-                            if (nextChar && /\d/.test(nextChar))
+-                                continue;
+-                            singleDollars++;
+-                        }
+-                    }
+-                    if (singleDollars % 2 === 1) {
+-                        let lastDollarIndex = -1;
+-                        for (let i = line.length - 1; i >= 0; i--) {
+-                            if (line[i] === '$') {
+-                                const prevChar = i > 0 ? line[i - 1] : '';
+-                                const nextChar = i < line.length - 1 ? line[i + 1] : '';
+-                                if (prevChar !== '\\' &&
+-                                    prevChar !== '$' &&
+-                                    nextChar !== '$' &&
+-                                    nextChar !== '' &&
+-                                    !/\d/.test(nextChar)) {
+-                                    lastDollarIndex = i;
+-                                    break;
+-                                }
+-                            }
+-                        }
+-                        if (lastDollarIndex !== -1) {
+-                            const endOfCellOrLine = findEndOfCellOrLineContaining(line, lastDollarIndex);
+-                            return line.substring(0, endOfCellOrLine) + '$' + line.substring(endOfCellOrLine);
+-                        }
+-                    }
+-                    return line;
+-                }
+-            },
++            // A lone dollar may prefix code, a path or currency. Do not invent a
++            // single-dollar closer while streaming; wait for the authored one.
++            // Explicit $$ math and other incomplete formatting still repair.
+             {
+                 name: 'blockMath',
+                 pattern: /\$\$/,

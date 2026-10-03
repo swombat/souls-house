@@ -3,6 +3,7 @@
 
   import { Spinner, Globe, SpeakerSimpleHigh, LightbulbFilament } from 'phosphor-svelte';
   import FileAttachment from '$lib/components/chat/FileAttachment.svelte';
+  import StoneCards from '$lib/components/chat/StoneCards.svelte';
   import ThinkingBlock from '$lib/components/chat/ThinkingBlock.svelte';
   import ModerationIndicator from '$lib/components/chat/ModerationIndicator.svelte';
   import AudioPlayer from '$lib/components/chat/AudioPlayer.svelte';
@@ -67,6 +68,8 @@
     shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']}
     class="prose [overflow-wrap:anywhere]" />
 {/if}
+
+<StoneCards stones={message.stones_json || []} />
 
 {#if message.files_json && message.files_json.length > 0}
   <div class:mt-3={message.content || message.thinking || streamingThinking} class="space-y-2">

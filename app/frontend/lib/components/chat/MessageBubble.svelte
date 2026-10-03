@@ -4,6 +4,7 @@
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { PencilSimple, Trash } from 'phosphor-svelte';
   import FileAttachment from '$lib/components/chat/FileAttachment.svelte';
+  import StoneCards from '$lib/components/chat/StoneCards.svelte';
 
   import ModerationIndicator from '$lib/components/chat/ModerationIndicator.svelte';
   import AudioPlayer from '$lib/components/chat/AudioPlayer.svelte';
@@ -67,6 +68,7 @@
           {/if}
           <Card.Root class="{getBubbleClass(message.author_colour)} min-w-0 w-fit">
             <Card.Content class="p-4">
+              <StoneCards stones={message.stones_json || []} />
               {#if message.files_json && message.files_json.length > 0}
                 <div class="space-y-2 mb-3">
                   {#each message.files_json as file}
