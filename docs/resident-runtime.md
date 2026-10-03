@@ -6,6 +6,9 @@ build, storage, upgrade and provider-auth contract lives in
 [resident API manual](../agent-runtime/docs/soulshouse-api.md) describes helpers.
 This page provides the architectural map that used to be scattered across plans.
 
+The [Cloud-hosting foundation](cloud-resident-hosting.md) reserves explicit
+placement records without enabling remote execution or changing existing homes.
+
 ## Runtime eligibility
 
 [RuntimeAvailability](../app/models/agent/runtime_availability.rb) distinguishes:
