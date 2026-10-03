@@ -20,6 +20,7 @@
     rhythmPreviewPath,
     rhythmsPath,
     submittableValues,
+    zoneIdentifier,
   } from '$lib/rhythms';
 
   let { account, rhythm = null, residents = [], timezones = [] } = $props();
@@ -135,7 +136,9 @@
     <section class="space-y-2">
       <Label>Residents</Label>
       <RhythmResidentPicker {residents} bind:selected={$form.rhythm.resident_ids} />
-      {#each errorsFor('resident_ids') as error}<p class="text-sm text-destructive">{error}</p>{/each}
+      {#each [...errorsFor('resident_ids'), ...errorsFor('agents')] as error}<p class="text-sm text-destructive">
+          {error}
+        </p>{/each}
     </section>
 
     <section class="space-y-4">
@@ -203,7 +206,8 @@
         {#if preview}
           <span class="text-muted-foreground">{preview.schedule_description}.</span>
           First one:
-          <span class="font-medium">{formatWhen(preview.next_run_at, $form.rhythm.timezone)}</span>
+          <span class="font-medium"
+            >{formatWhen(preview.next_run_at, zoneIdentifier($form.rhythm.timezone, timezones))}</span>
         {:else if previewErrors}
           <span class="text-muted-foreground">Fill in the details above to see when it will first happen.</span>
         {:else}

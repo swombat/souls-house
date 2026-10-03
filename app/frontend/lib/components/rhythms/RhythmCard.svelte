@@ -6,7 +6,7 @@
 
   let { rhythm, accountId } = $props();
 
-  const nextRun = $derived(formatWhen(rhythm.next_run_at, rhythm.timezone));
+  const nextRun = $derived(formatWhen(rhythm.next_run_at, rhythm.timezone_identifier ?? rhythm.timezone));
   const holdCount = $derived(rhythm.holds?.length ?? 0);
 </script>
 

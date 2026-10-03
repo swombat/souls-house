@@ -6,6 +6,7 @@ import {
   needsShortMonthNote,
   previewQuery,
   rhythmActionPath,
+  zoneIdentifier,
   submittableValues,
 } from './rhythms.js';
 
@@ -52,5 +53,12 @@ describe('rhythms helpers', () => {
 
   it('builds member action paths', () => {
     expect(rhythmActionPath('A1', 'R1', 'pause')).toBe('/accounts/A1/rhythms/R1/pause');
+  });
+
+  it('maps Rails zone names to IANA identifiers for display', () => {
+    const zones = [{ value: 'Madrid', label: '(GMT+01:00) Madrid', identifier: 'Europe/Madrid' }];
+    expect(zoneIdentifier('Madrid', zones)).toBe('Europe/Madrid');
+    expect(formatWhen('2026-10-05T07:00:00Z', zoneIdentifier('Madrid', zones))).toContain('09:00');
+    expect(zoneIdentifier('Europe/Madrid', [])).toBe('Europe/Madrid');
   });
 });

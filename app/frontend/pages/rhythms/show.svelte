@@ -5,14 +5,7 @@
   import { ArrowLeft, Pause, Play, PencilSimple, Trash, ChatCircle } from 'phosphor-svelte';
   import RhythmStateBadge from '$lib/components/rhythms/RhythmStateBadge.svelte';
   import RhythmResidentChips from '$lib/components/rhythms/RhythmResidentChips.svelte';
-  import {
-    editRhythmPath,
-    formatWhen,
-    occurrenceStatusLabel,
-    rhythmActionPath,
-    rhythmPath,
-    rhythmsPath,
-  } from '$lib/rhythms';
+  import { editRhythmPath, formatWhen, rhythmActionPath, rhythmPath, rhythmsPath } from '$lib/rhythms';
 
   let { account, rhythm } = $props();
 
@@ -22,7 +15,8 @@
 
   const holds = $derived(rhythm.holds ?? []);
   const occurrences = $derived(rhythm.occurrences ?? []);
-  const nextRun = $derived(formatWhen(rhythm.next_run_at, rhythm.timezone));
+  const zone = $derived(rhythm.timezone_identifier ?? rhythm.timezone);
+  const nextRun = $derived(formatWhen(rhythm.next_run_at, zone));
   const residentHolds = $derived(holds.filter((hold) => hold.holder_type === 'agent'));
 
   function post(action, data = {}) {
@@ -110,7 +104,7 @@
                   >{/if}
               </div>
               {#if hold.reason}<p class="mt-0.5 text-muted-foreground">{hold.reason}</p>{/if}
-              <p class="mt-0.5 text-xs text-muted-foreground">{formatWhen(hold.created_at, rhythm.timezone)}</p>
+              <p class="mt-0.5 text-xs text-muted-foreground">{formatWhen(hold.created_at, zone)}</p>
             </div>
           </li>
         {/each}
@@ -130,7 +124,7 @@
           <Play class="mr-1 size-4" />Resume
         </Button>
       {/if}
-      {#if rhythm.can_manage && !pausing}
+      {#if rhythm.can_manage && rhythm.state !== 'paused' && !pausing}
         <Button variant="outline" disabled={busy} onclick={() => (pausing = true)}>
           <Pause class="mr-1 size-4" />Pause
         </Button>
@@ -176,19 +170,14 @@
                 <span class="truncate font-medium">{occurrence.title}</span>
               {/if}
               <div class="mt-0.5 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <span>{formatWhen(occurrence.scheduled_for, rhythm.timezone)}</span>
+                <span>{formatWhen(occurrence.scheduled_for, zone)}</span>
                 {#if occurrence.manual}<span class="rounded bg-muted px-1.5">started by hand</span>{/if}
                 {#if occurrence.late}<span
                     class="rounded bg-amber-100 px-1.5 text-amber-800 dark:bg-amber-950 dark:text-amber-300">late</span
                   >{/if}
               </div>
             </div>
-            <span
-              class="shrink-0 text-xs {occurrence.status === 'failed' || occurrence.status === 'unavailable'
-                ? 'text-destructive'
-                : 'text-muted-foreground'}">
-              {occurrenceStatusLabel(occurrence.status)}
-            </span>
+            <span class="max-w-[50%] shrink-0 text-right text-xs text-muted-foreground">{occurrence.status}</span>
           </li>
         {/each}
       </ul>

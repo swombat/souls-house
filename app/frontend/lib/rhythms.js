@@ -121,19 +121,13 @@ export function formatWhen(iso, timezone, { withYear = true } = {}) {
   }
 }
 
+// Rails stores zone names like "Madrid"; Intl needs the IANA identifier.
+export function zoneIdentifier(timezone, timezones = []) {
+  return timezones.find((zone) => zone.value === timezone)?.identifier ?? timezone;
+}
+
 export function needsShortMonthNote(values) {
   if (values.cadence === 'monthly') return Number(values.month_day) > 28;
   if (values.cadence === 'yearly') return Number(values.month) === 2 && Number(values.month_day) === 29;
   return false;
-}
-
-export function occurrenceStatusLabel(status) {
-  const labels = {
-    pending: 'Waiting for replies',
-    delivered: 'Started',
-    replied: 'Replied',
-    unavailable: 'A resident was unavailable',
-    failed: 'Could not start',
-  };
-  return labels[status] ?? status ?? '';
 }

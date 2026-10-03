@@ -129,7 +129,7 @@ class RhythmsController < ApplicationController
       residents: current_account.conversation_agents.eligible_for_conversation.order(:name).map do |agent|
         { id: agent.to_param, name: agent.name, colour: agent.colour, paused: agent.paused? }
       end,
-      timezones: ActiveSupport::TimeZone.all.map { |zone| { value: zone.name, label: zone.to_s } }
+      timezones: ActiveSupport::TimeZone.all.map { |zone| { value: zone.name, label: zone.to_s, identifier: zone.tzinfo.identifier } }
     }
   end
 

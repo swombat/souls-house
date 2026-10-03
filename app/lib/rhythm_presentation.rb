@@ -15,10 +15,11 @@ class RhythmPresentation
       title: @rhythm.title, opening: @rhythm.opening, append_date: @rhythm.append_date,
       cadence: @rhythm.cadence, time_of_day: @rhythm.time_of_day,
       weekday: @rhythm.weekday, month_day: @rhythm.month_day, month: @rhythm.month,
-      timezone: @rhythm.timezone, next_run_at: at&.iso8601,
+      timezone: @rhythm.timezone, timezone_identifier: ActiveSupport::TimeZone[@rhythm.timezone.to_s]&.tzinfo&.identifier,
+      next_run_at: at&.iso8601,
       preview_title: at ? @rhythm.preview_title(at: at) : @rhythm.title,
       schedule_description: schedule_description, state: holds.empty? ? "active" : "paused",
-      creator: { id: @rhythm.creator&.to_param, name: @rhythm.creator&.full_name },
+      creator: { id: @rhythm.creator&.to_param, name: display_name(@rhythm.creator) },
       resident_ids: @rhythm.agents.map(&:to_param),
       residents: @rhythm.agents.map { |resident| { id: resident.to_param, name: resident.name, colour: resident.colour } },
       can_manage: manageable, can_resume: holds.any? { |hold| can_release?(hold) },
@@ -43,6 +44,13 @@ class RhythmPresentation
 
   private
 
+  # Names can be blank for people who never filled in a profile.
+  def display_name(user)
+    return unless user
+
+    user.full_name.presence || user.email_address.to_s.split("@").first
+  end
+
   def can_release?(hold)
     hold.kind == "agent" ? hold.agent == @agent : @rhythm.manageable_by?(@user)
   end
@@ -50,7 +58,7 @@ class RhythmPresentation
   def hold_payload(hold)
     {
       id: hold.id.to_s, holder_type: hold.kind,
-      holder_name: hold.agent&.name || hold.user&.full_name || "System",
+      holder_name: hold.kind == "system" ? "System" : (hold.agent&.name || display_name(hold.user)),
       reason: hold.reason, created_at: hold.created_at.iso8601, can_release: can_release?(hold)
     }
   end

@@ -24,7 +24,8 @@ function rhythmFixture(overrides = {}) {
     weekday: 5,
     month_day: null,
     month: null,
-    timezone: 'Europe/Madrid',
+    timezone: 'Madrid',
+    timezone_identifier: 'Europe/Madrid',
     next_run_at: '2026-10-09T07:00:00Z',
     schedule_description: 'Every Friday at 09:00',
     creator: { id: 'u1', name: 'Daniel' },
@@ -98,7 +99,7 @@ test('the form shows server validation errors next to their fields', () => {
     account,
     residents,
     timezones: [],
-    rhythm: rhythmFixture({ id: null, errors: { resident_ids: ['Choose at least one resident'] } }),
+    rhythm: rhythmFixture({ id: null, errors: { agents: ['Choose at least one resident'] } }),
   });
   expect(screen.getByText('Choose at least one resident')).toBeInTheDocument();
 });
@@ -130,7 +131,7 @@ test('occurrences show late, manual and failure states honestly', () => {
       scheduled_for: '2026-10-02T07:00:00Z',
       late: true,
       manual: false,
-      status: 'unavailable',
+      status: 'expired · resident unavailable',
       chat_url: '/accounts/acc/chats/c1',
     },
     {
@@ -139,14 +140,14 @@ test('occurrences show late, manual and failure states honestly', () => {
       scheduled_for: '2026-10-03T16:00:00Z',
       late: false,
       manual: true,
-      status: 'replied',
+      status: 'accepted · 31: running',
       chat_url: null,
     },
   ];
   render(RhythmShow, { account, rhythm: rhythmFixture({ occurrences }) });
   expect(screen.getByText('late')).toBeInTheDocument();
   expect(screen.getByText('started by hand')).toBeInTheDocument();
-  expect(screen.getByText('A resident was unavailable')).toHaveClass('text-destructive');
+  expect(screen.getByText('expired · resident unavailable')).toBeInTheDocument();
 });
 
 test('a scheduled message carries its provenance', () => {
