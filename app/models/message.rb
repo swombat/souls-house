@@ -36,10 +36,12 @@ class Message < ApplicationRecord
   belongs_to :runtime_interaction, class_name: "AgentRuntimeInteraction", optional: true
   has_one :account, through: :chat
   has_one :message_dispatch
+  has_one :rhythm_occurrence
   has_many :message_stone_revisions, dependent: :destroy
   has_many :stone_revisions, through: :message_stone_revisions
 
   attr_accessor :skip_content_validation
+  attr_accessor :suppress_automatic_dispatch
   attr_reader :single_resident_response_triggered
 
   broadcasts_to :chat
@@ -88,6 +90,7 @@ class Message < ApplicationRecord
   # more residents keep explicit mentions; PostFromHuman skips mention
   # dispatch here so one send never makes two wakes.
   def accept_single_resident_dispatch
+    return if suppress_automatic_dispatch
     return unless AgentRuntimeInteraction.live_activity_enabled?
 
     resident = chat.sole_resident
@@ -108,6 +111,7 @@ class Message < ApplicationRecord
   # keeps master's direct trigger. The two paths are exclusive: a dispatch is
   # only written while live activity is on.
   def trigger_single_resident_response
+    return if suppress_automatic_dispatch
     if @single_resident_dispatch
       @single_resident_dispatch.reserve!
       @single_resident_response_triggered = @single_resident_dispatch.reserved?
@@ -152,7 +156,7 @@ class Message < ApplicationRecord
                   :moderation_flagged, :moderation_severity, :moderation_scores,
                   :audio_source, :audio_url,
                   :voice_available, :voice_audio_url,
-                  :reasoning_skip_reason, :reasoning_skip_reason_label do |hash, options|
+                  :reasoning_skip_reason, :reasoning_skip_reason_label, :rhythm_provenance do |hash, options|
     if options&.dig(:include_ruby_llm_telemetry) && (telemetry = ruby_llm_telemetry)
       hash["ruby_llm_telemetry"] = telemetry
     end
@@ -167,6 +171,17 @@ class Message < ApplicationRecord
   end
 
   alias_method :completed, :completed?
+
+  def rhythm_provenance
+    occurrence = rhythm_occurrence
+    return unless occurrence
+
+    {
+      title: occurrence.rhythm_title, creator_name: occurrence.creator_label,
+      scheduled_for: occurrence.scheduled_for.iso8601, manual: occurrence.manual,
+      rhythm_url: occurrence.rhythm && Rails.application.routes.url_helpers.account_rhythm_path(chat.account, occurrence.rhythm)
+    }
+  end
 
   def stones_json
     stone_revisions.includes(:stone).map do |revision|

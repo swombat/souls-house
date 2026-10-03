@@ -94,7 +94,7 @@ class Chat < ApplicationRecord
   end
 
   # Create chat with optional initial message
-  def self.create_with_message!(attributes, message_content: nil, user: nil, files: nil, agent_ids: nil, audio_signed_id: nil)
+  def self.create_with_message!(attributes, message_content: nil, user: nil, files: nil, agent_ids: nil, audio_signed_id: nil, automatic_response: true)
     transaction do
       chat = new(attributes)
       chat.agent_ids = agent_ids if agent_ids.present?
@@ -105,6 +105,7 @@ class Chat < ApplicationRecord
           content: message_content || "",
           role: "user",
           user: user,
+          suppress_automatic_dispatch: !automatic_response,
           skip_content_validation: message_content.blank? && files.present? && files.any? # Skip content validation if we have files but no content
         })
         message.attachments.attach(files) if files.present? && files.any?

@@ -9,6 +9,7 @@
 
   import ModerationIndicator from '$lib/components/chat/ModerationIndicator.svelte';
   import AudioPlayer from '$lib/components/chat/AudioPlayer.svelte';
+  import RhythmProvenanceBadge from '$lib/components/chat/RhythmProvenanceBadge.svelte';
 
   import { Streamdown } from 'svelte-streamdown';
   import { formatTime, formatDateTime } from '$lib/utils';
@@ -48,6 +49,7 @@
   {#if message.role === 'user'}
     <div class="flex justify-end group">
       <div class="min-w-0 max-w-[85%] md:max-w-[70%]">
+        <RhythmProvenanceBadge provenance={message.rhythm_provenance} />
         <div class="flex justify-end items-center gap-2">
           {#if message.editable}
             <button

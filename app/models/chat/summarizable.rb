@@ -35,6 +35,7 @@ module Chat::Summarizable
       content: message.content,
       author: api_author_name(message),
       timestamp: message.created_at.iso8601,
+      rhythm_provenance: message.rhythm_provenance,
       attachments: message.attachments_for_api
     }
   end

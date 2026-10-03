@@ -67,6 +67,14 @@ Rails.application.routes.draw do
   post "telegram/webhook/:token", to: "telegram_webhooks#receive", as: :telegram_webhook
 
   resources :accounts, only: [ :new, :create, :show, :edit, :update ] do
+    resources :rhythms do
+      get :preview, on: :collection
+      member do
+        post :pause
+        post :resume
+        post :start
+      end
+    end
     resources :device_streams, only: [ :index, :create, :show, :update, :destroy ] do
       member do
         post :credential
@@ -157,7 +165,7 @@ Rails.application.routes.draw do
       end
     end
 
-      resources :agents, only: [ :index, :show ]
+    resources :agents, only: [ :index, :show ]
     resources :whiteboards, only: [ :index, :update ]
   end
 
@@ -223,6 +231,12 @@ Rails.application.routes.draw do
     end
 
     namespace :v1 do
+      resources :rhythms, only: :show do
+        member do
+          post :pause
+          post :resume
+        end
+      end
       get "house_inference/models", to: "house_inference#models"
       post "house_inference/chat/completions", to: "house_inference#create"
       post "streams/:stream_key/samples", to: "stream_samples#create"
