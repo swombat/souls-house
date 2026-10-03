@@ -161,7 +161,7 @@ class HetznerCloudClient
     server = find_server(id)
     return :already_absent if server.nil?
     refuse!("Server is not the one requested") unless server.id == Integer(id)
-    refuse!("Server is not managed by souls.house") unless server.managed?
+    refuse!("Server is not managed by this house") unless server.managed?
     refuse!("Server belongs to a different placement") unless server.placement_id == placement_id.to_s
 
     action = request(:delete, "/servers/#{server.id}")["action"] || {}
