@@ -13,6 +13,13 @@ class TelegramSubscription < ApplicationRecord
     user.full_name.presence || user.email_address
   end
 
+  # Whether this subscriber may see a room's content. A resident can now act in
+  # guest accounts, so its subscribers (members of its home account) are not
+  # automatically members of the room's account.
+  def reads_account?(account_id)
+    user.confirmed_accounts.enabled.exists?(account_id)
+  end
+
   def mark_blocked!
     update!(blocked: true)
   end

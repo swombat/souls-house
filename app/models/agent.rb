@@ -36,6 +36,8 @@ class Agent < ApplicationRecord
   has_many :safeguard_detections, dependent: :destroy
   has_many :safeguard_classifier_failures, dependent: :destroy
   has_many :chats, through: :chat_agents
+  # Accounts this resident visits as a guest; hosting stays with `account`.
+  has_many :guest_memberships, dependent: :delete_all
   has_many :agent_service_accesses, dependent: :destroy
   has_many :service_connections, through: :agent_service_accesses
 
