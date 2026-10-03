@@ -4,12 +4,24 @@ import RhythmsIndex from './index.svelte';
 import RhythmForm from './form.svelte';
 import RhythmShow from './show.svelte';
 import RhythmProvenanceBadge from '$lib/components/chat/RhythmProvenanceBadge.svelte';
+import RhythmResidentPicker from '$lib/components/rhythms/RhythmResidentPicker.svelte';
 
 const account = { id: 'acc' };
 const residents = [
   { id: 'lume', name: 'Lume', colour: 'orange', paused: false },
   { id: 'mira', name: 'Mira', colour: 'teal', paused: false },
 ];
+
+test('an unavailable existing selection can be removed but not selected again', async () => {
+  render(RhythmResidentPicker, {
+    residents: [{ id: 'old', name: 'Former resident', unavailable: true }],
+    selected: ['old'],
+  });
+  const button = screen.getByRole('button', { name: /Former resident/ });
+  expect(button).not.toBeDisabled();
+  await fireEvent.click(button);
+  expect(button).toBeDisabled();
+});
 
 function rhythmFixture(overrides = {}) {
   return {

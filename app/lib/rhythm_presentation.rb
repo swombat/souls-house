@@ -76,7 +76,8 @@ class RhythmPresentation
 
   def dispatch_status(dispatch)
     data = dispatch.as_app_json
-    runs = data[:runs].map { |run| "#{run[:agent_id]}: #{run[:status]}" }
+    names = dispatch.chat.agents.to_h { |resident| [ resident.to_param, resident.name ] }
+    runs = data[:runs].map { |run| "#{names[run[:agent_id]] || 'Former resident'}: #{run[:status]}" }
     ([ dispatch.status, dispatch.reason ] + runs).compact_blank.join(" · ")
   end
 

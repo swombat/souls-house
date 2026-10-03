@@ -189,6 +189,8 @@ class ExternalAgentResponseRequest
   end
 
   def response_expectation_text
+    return "Decide whether there is anything worth bringing forward from this invitation. A reply may be useful; quiet is also valid. Do not manufacture a finding to justify the rhythm." if rhythm_invitation
+
     if recent_human_message?
       "Decide whether to respond. The default for this trigger is that you post a reply, but choosing not to is also a valid response."
     else

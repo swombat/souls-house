@@ -84,11 +84,9 @@ export function submittableValues(values) {
 export function previewQuery(values) {
   const params = new URLSearchParams();
   const submittable = submittableValues(values);
-  for (const field of FORM_FIELDS) {
+  for (const field of FORM_FIELDS.filter((field) => !['opening', 'resident_ids'].includes(field))) {
     const value = submittable[field];
-    if (field === 'resident_ids') {
-      for (const id of value) params.append('rhythm[resident_ids][]', id);
-    } else if (value !== null && value !== undefined) {
+    if (value !== null && value !== undefined) {
       params.append(`rhythm[${field}]`, String(value));
     }
   }
@@ -128,6 +126,9 @@ export function zoneIdentifier(timezone, timezones = []) {
 
 export function needsShortMonthNote(values) {
   if (values.cadence === 'monthly') return Number(values.month_day) > 28;
-  if (values.cadence === 'yearly') return Number(values.month) === 2 && Number(values.month_day) === 29;
+  if (values.cadence === 'yearly') {
+    const shortestMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][Number(values.month) - 1];
+    return Number(values.month_day) > shortestMonth;
+  }
   return false;
 }

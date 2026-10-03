@@ -15,6 +15,7 @@
     <button
       type="button"
       aria-pressed={isSelected}
+      disabled={resident.unavailable && !isSelected}
       onclick={() => toggle(resident.id)}
       class="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors
              {isSelected
@@ -27,6 +28,9 @@
              {resident.paused === true ? 'opacity-60' : ''}">
       <Icon size={14} weight="duotone" />
       {resident.name}
+      {#if resident.unavailable}
+        <span class="text-[10px] uppercase tracking-wide text-muted-foreground">Unavailable</span>
+      {/if}
       {#if resident.paused === true}
         <span class="text-[10px] uppercase tracking-wide text-muted-foreground">Paused</span>
       {/if}

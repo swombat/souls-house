@@ -50,6 +50,15 @@ class RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert response.parsed_body["errors"]["time_of_day"]
   end
 
+  test "an ineligible selected resident remains removable in the edit picker" do
+    rhythm = make_rhythm
+    @resident.update!(active: false)
+    get edit_account_rhythm_path(@account, rhythm), headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
+    assert_response :success
+    resident = response.parsed_body.dig("props", "residents").find { |item| item["id"] == @resident.to_param }
+    assert resident["unavailable"]
+  end
+
   test "manual start is idempotent and renders held start honestly" do
     rhythm = make_rhythm
     key = SecureRandom.uuid

@@ -65,7 +65,7 @@ test('a member sets up a rhythm, starts one by hand, and pauses it', async ({ pa
         .or(page.getByText(/Rhythm: Weekly reflection/))
         .first()
     ).toBeVisible();
-    await expect(page.getByText(/^Started by e2e-rhythms-/)).toBeVisible();
+    await expect(page.getByText(/^Manual occurrence · Set up by e2e-rhythms-/)).toBeVisible();
     await shot('5-conversation');
 
     await page.goBack();

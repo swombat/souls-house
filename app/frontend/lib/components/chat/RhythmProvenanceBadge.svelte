@@ -14,7 +14,7 @@
       class="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs text-muted-foreground"
       title={when ? `Scheduled for ${when}` : undefined}>
       <Waves size={12} weight="duotone" />
-      <span>{provenance.manual ? 'Started by' : 'Scheduled by'} {provenance.creator_name}</span>
+      <span>{provenance.manual ? 'Manual occurrence · Set up by' : 'Scheduled by'} {provenance.creator_name}</span>
       <span aria-hidden="true">·</span>
       {#if provenance.rhythm_url}
         <Link href={provenance.rhythm_url} class="underline-offset-2 hover:underline">Rhythm: {provenance.title}</Link>

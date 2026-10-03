@@ -27,7 +27,8 @@ describe('rhythms helpers', () => {
   it('builds nested preview params Rails can read', () => {
     const query = previewQuery({ ...formValues({ resident_ids: ['AYa', 'BJZ'] }), cadence: 'daily' });
     const params = new URLSearchParams(query);
-    expect(params.getAll('rhythm[resident_ids][]')).toEqual(['AYa', 'BJZ']);
+    expect(params.has('rhythm[resident_ids][]')).toBe(false);
+    expect(params.has('rhythm[opening]')).toBe(false);
     expect(params.get('rhythm[cadence]')).toBe('daily');
     expect(params.has('rhythm[weekday]')).toBe(false);
   });
@@ -48,6 +49,8 @@ describe('rhythms helpers', () => {
     expect(needsShortMonthNote({ cadence: 'monthly', month_day: 31 })).toBe(true);
     expect(needsShortMonthNote({ cadence: 'monthly', month_day: 28 })).toBe(false);
     expect(needsShortMonthNote({ cadence: 'yearly', month: 2, month_day: 29 })).toBe(true);
+    expect(needsShortMonthNote({ cadence: 'yearly', month: 4, month_day: 31 })).toBe(true);
+    expect(needsShortMonthNote({ cadence: 'yearly', month: 2, month_day: 30 })).toBe(true);
     expect(needsShortMonthNote({ cadence: 'weekly', month_day: 31 })).toBe(false);
   });
 
