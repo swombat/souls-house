@@ -1,5 +1,78 @@
 import { expect, test } from '@playwright/test';
 
+for (const mobile of [false, true]) {
+  test.describe(`message flags (${mobile ? 'touch' : 'desktop'})`, () => {
+    if (mobile) test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+    test('identify their source, dismiss individually, and clear on reply', async ({ page, request }, testInfo) => {
+      const setup = await (
+        await request.post('/test/e2e/setup', {
+          data: { run_id: `message-flags-${Date.now()}`, direct_tag_profile: true },
+        })
+      ).json();
+      try {
+        const { chat_id: chatId } = await (
+          await request.post('/test/e2e/conversation_fixture', {
+            data: { account_id: setup.account_id, count: 1 },
+          })
+        ).json();
+        for (const content of ['@TagReader — first request.', '@TagReader — second request.', 'No request here.']) {
+          const response = await request.post('/test/e2e/assistant_message', {
+            data: { chat_id: chatId, content },
+          });
+          expect(response.ok()).toBe(true);
+        }
+        await page.goto('/login');
+        await page.getByLabel(/email/i).fill(setup.primary_user.email);
+        await page.getByLabel(/password/i).fill(setup.password);
+        await page.getByRole('button', { name: /sign in|log in/i }).click();
+        await expect(page).toHaveURL(/\/$/);
+        await page.goto(`/accounts/${setup.account_id}/chats/${chatId}`);
+        const tags = page.getByRole('button', { name: /This message appears to have flagged you/ });
+        await expect(tags).toHaveCount(2);
+        await expect(
+          page
+            .locator('section')
+            .filter({ hasText: 'No request here.' })
+            .getByRole('button', { name: /flagged you/ })
+        ).toHaveCount(0);
+        await page.reload();
+        await expect(tags).toHaveCount(2);
+        const second = page.locator('section').filter({ hasText: '@TagReader — second request.' });
+        const tag = second.getByRole('button', { name: /This message appears/ });
+        if (mobile) {
+          await tag.tap();
+          const explanation = page.getByText(/Tap again to dismiss this flag/);
+          await expect(explanation).toBeVisible();
+          await expect(tags).toHaveCount(2);
+          await page.screenshot({ path: testInfo.outputPath('message-flag-touch.png') });
+          await page.getByTestId('message-composer').locator('textarea').tap();
+          await expect(explanation).not.toBeVisible();
+          await tag.tap();
+          await expect(explanation).toBeVisible();
+          await expect(tags).toHaveCount(2);
+          await tag.tap();
+        } else {
+          await page.screenshot({ path: testInfo.outputPath('message-flag-desktop.png') });
+          await tag.focus();
+          await page.keyboard.press('Enter');
+        }
+        await expect(tags).toHaveCount(1);
+        await expect(second.getByRole('button', { name: /This message appears/ })).toHaveCount(0);
+        await page.reload();
+        await expect(tags).toHaveCount(1);
+        const composer = page.getByTestId('message-composer');
+        await expect(composer.getByRole('status')).toHaveText('Saved');
+        await composer.locator('textarea').fill('Replying clears the remaining request.');
+        await composer.getByRole('button', { name: 'Send message', exact: true }).click();
+        await expect(tags).toHaveCount(0);
+      } finally {
+        await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
+      }
+    });
+  });
+}
+
 test.describe('touch explanation', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 

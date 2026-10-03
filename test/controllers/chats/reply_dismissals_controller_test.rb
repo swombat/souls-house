@@ -15,6 +15,50 @@ class Chats::ReplyDismissalsControllerTest < ActionDispatch::IntegrationTest
     get account_chat_path(@account, @chat)
     assert_response :success
     assert_equal 1, inertia_shared_props.fetch("reply_attention").fetch("total")
+    assert_equal [ @ask.to_param ], inertia_shared_props.fetch("reply_attention").fetch("messages")
+    assert ReplyExpectation.find_by!(message: @ask).state_open?
+  end
+
+  test "message dismissal clears only its own flag and survives reclassification" do
+    older = @ask
+    target = @chat.messages.create!(role: "assistant", content: "Target")
+    newer = @chat.messages.create!(role: "assistant", content: "Newer")
+    [ target, newer ].each do |message|
+      @chat.with_lock { ReplyExpectation.record!(message: message, user: @user, score: 0.95) }
+    end
+    2.times do
+      post account_chat_reply_dismissal_path(@account, @chat), params: { message_id: target.to_param }
+      assert_response :see_other
+    end
+    @chat.with_lock { ReplyExpectation.record!(message: target, user: @user, score: 0.99) }
+    assert ReplyExpectation.find_by!(message: target).state_dismissed?
+    assert ReplyExpectation.find_by!(message: older).state_open?
+    assert ReplyExpectation.find_by!(message: newer).state_open?
+    assert_nil ReplyDismissal.find_by(chat: @chat, user: @user)
+    get account_chat_path(@account, @chat)
+    assert_equal [ older.to_param, newer.to_param ].sort, inertia_shared_props.fetch("reply_attention").fetch("messages").sort
+  end
+
+  test "message dismissal cannot change another users flag or a foreign message" do
+    foreign_chat = accounts(:existing_user_account).chats.create!(title: "Foreign")
+    foreign_message = foreign_chat.messages.create!(role: "assistant", content: "Foreign")
+    post account_chat_reply_dismissal_path(@account, @chat), params: { message_id: foreign_message.to_param }
+    assert_response :not_found
+    post account_chat_reply_dismissal_path(foreign_chat.account, foreign_chat), params: { message_id: foreign_message.to_param }
+    assert_response :not_found
+    other_flag = ReplyExpectation.create!(message: @ask, user: users(:existing_user), score: 0.9, classifier_version: "test")
+    post account_chat_reply_dismissal_path(@account, @chat), params: { message_id: @ask.to_param }
+    assert_response :see_other
+    assert other_flag.reload.state_open?
+    no_flag = @chat.messages.create!(role: "assistant", content: "No flag")
+    post account_chat_reply_dismissal_path(@account, @chat), params: { message_id: no_flag.to_param }
+    assert_response :not_found
+  end
+
+  test "ambiguous dismissal refuses both scopes" do
+    post account_chat_reply_dismissal_path(@account, @chat),
+      params: { message_id: @ask.to_param, through_message_id: @ask.to_param }
+    assert_response :bad_request
     assert ReplyExpectation.find_by!(message: @ask).state_open?
   end
 

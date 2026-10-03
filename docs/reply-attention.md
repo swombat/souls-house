@@ -58,6 +58,18 @@ Reading does not clear it. Posting a reply mechanically clears prior requests;
 menu can dismiss through the latest displayed message, without clearing newer
 messages. No automatic wakes, push, email, new inbox page or reopen workflow.
 
+Within the conversation, each message with an open request for the current human
+has a small, subdued red eye and “Flagged you” button above its content. The tooltip
+says the message appears to have flagged them and offers dismissal or a reply.
+Desktop click/keyboard activation dismisses that message's flag only; touch uses
+the same first-tap explanation, second-tap dismissal and outside-tap cancellation
+as the thread eye. Other messages' flags stay open. The existing expectation row
+retains dismissal, so edits/reclassification cannot reopen it; this does not move
+the conversation-wide dismissal cutoff. Grouped resident updates keep each tag
+on its actual source section, and human messages can carry the same tag.
+Personal open-message IDs are included only for the viewed conversation in the
+authorised `reply_attention` shared prop, never generic message JSON.
+
 ## Storage and ordering
 
 `ReplyExpectation` has one unique message/user pair and open/answered/dismissed

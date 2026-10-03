@@ -37,6 +37,46 @@ test('does not show a button for unflagged threads', () => {
   expect(screen.queryByRole('button')).not.toBeInTheDocument();
 });
 
+test('message tag dismisses exactly its own flag, not the thread cutoff', async () => {
+  page.set({ props: { reply_attention: { messages: ['ask'], through_messages: { chat: 'newer' } } } });
+  render(ReplyAttentionEye, { chatId: 'chat', accountId: 'account', messageId: 'ask' });
+  const tag = screen.getByRole('button', { name: /This message appears to have flagged you/ });
+  expect(tag).toHaveTextContent('Flagged you');
+  await fireEvent.click(tag);
+  expect(router.post).toHaveBeenCalledWith(
+    '/accounts/account/chats/chat/reply_dismissal',
+    { message_id: 'ask' },
+    expect.any(Object)
+  );
+});
+
+test('message tag first tap explains and second dismisses only that message', async () => {
+  page.set({ props: { reply_attention: { messages: ['ask'] } } });
+  render(ReplyAttentionEye, { chatId: 'chat', accountId: 'account', messageId: 'ask' });
+  const tag = screen.getByRole('button', { name: /This message appears/ });
+  const tap = async () => {
+    await fireEvent(tag, Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType: 'touch' }));
+    await fireEvent.click(tag);
+  };
+  await tap();
+  expect(router.post).not.toHaveBeenCalled();
+  expect(screen.getByText(/Tap again to dismiss this flag/)).toBeVisible();
+  await fireEvent.click(document.body);
+  expect(screen.queryByText(/Tap again to dismiss this flag/)).not.toBeInTheDocument();
+  await tap();
+  expect(router.post).not.toHaveBeenCalled();
+  await tap();
+  expect(router.post.mock.calls[0][1]).toEqual({ message_id: 'ask' });
+  page.set({ props: { reply_attention: { messages: [] } } });
+  await tick();
+  expect(screen.queryByRole('button')).not.toBeInTheDocument();
+});
+
+test('does not tag another message even when the thread is flagged', () => {
+  render(ReplyAttentionEye, { chatId: 'chat', accountId: 'account', messageId: 'unflagged' });
+  expect(screen.queryByRole('button')).not.toBeInTheDocument();
+});
+
 test('touch first explains, then dismisses; a new request resets confirmation', async () => {
   render(ReplyAttentionEye, { chatId: 'chat', accountId: 'account' });
   const eye = screen.getByRole('button', { name: /You have a mention or request/ });
