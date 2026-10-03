@@ -9,6 +9,9 @@ class TelegramNotificationJob < ApplicationJob
     # Checked at run (and retry) time: the row survives a discard now, so a
     # queued job would otherwise send content the human already removed.
     return if message.discarded? || chat.discarded?
+    # Rechecked at run (and retry) time too: access to the room's account may
+    # have ended since the job was queued, and the preview is the content.
+    return unless subscription.reads_account?(chat.account_id)
 
     agent = subscription.agent
     return unless agent.telegram_configured?

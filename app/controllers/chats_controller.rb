@@ -242,7 +242,9 @@ class ChatsController < ApplicationController
   end
 
   def telegram_deep_link_for_chat
-    telegram_agent = @chat.agents.detect(&:telegram_configured?)
+    # Only a resident's home-account members can subscribe to its bot, so a
+    # guest resident's bot is not offered to people who only share the room.
+    telegram_agent = @chat.agents.detect { |agent| agent.telegram_configured? && agent.account.users.exists?(Current.user.id) }
     return nil unless telegram_agent
 
     existing_sub = telegram_agent.telegram_subscriptions.find_by(user: Current.user, blocked: false)
