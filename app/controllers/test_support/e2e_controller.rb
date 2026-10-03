@@ -8,6 +8,51 @@ module TestSupport
 
     PASSWORD = "password123"
 
+    def stone_fixture
+      account = Account.find(params.fetch(:account_id))
+      raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
+
+      chat = account.chats.create!(title: "Private stone source", model_id: "openrouter/auto")
+      author = account.users.first!
+      html = <<~HTML
+        <!doctype html><html lang="en"><head><meta charset="utf-8"><title>Stone comparison</title>
+        <style>body{font-family:system-ui;padding:24px;background:#faf9f6;color:#252422}table{border-collapse:collapse;width:100%}td,th{padding:16px;border:1px solid #ddd}svg{max-width:100%}</style>
+        </head><body><h1>Two ways to explain an idea</h1>
+        <svg viewBox="0 0 500 100" role="img" aria-label="A simple comparison"><rect x="0" y="10" width="180" height="70" rx="12" fill="#b3a1cf"></rect><rect x="220" y="10" width="280" height="70" rx="12" fill="#91b6a2"></rect></svg>
+        <table><thead><tr><th>Conversation</th><th>Stone</th></tr></thead><tbody><tr><td>Develop the idea together</td><td>See its shape at a glance</td></tr></tbody></table>
+        <details><summary>Why both?</summary><p>The page supports the conversation, not the other way round.</p></details></body></html>
+      HTML
+      stone = Stone.publish!(chat: chat, title: "A first stone", html: html, author: author, public: true)
+      revision = stone.latest_revision
+      message = chat.messages.create!(content: "Compare these approaches.", role: "user", user: author)
+      message.stone_revisions << revision
+      if params[:hostile]
+        # Deliberately bypass upload validation in this test-only fixture to
+        # exercise the independent browser boundary against compromised storage.
+        hostile = <<~HTML
+          <!doctype html><h1>Hostile storage fixture</h1>
+          <script>document.body.dataset.scriptRan="yes";fetch("/login");top.location="/login";</script>
+          <img src="/login?stone_probe=img" onerror="document.body.dataset.eventRan='yes'">
+          <style>body{background-image:url('/login?stone_probe=css')}</style>
+          <iframe src="/login?stone_probe=frame"></iframe>
+          <form action="/login?stone_probe=form"><button>Attempt submit</button></form>
+          <a href="/login?stone_probe=top" target="_top">Attempt escape</a>
+        HTML
+        blob = ActiveStorage::Blob.create_and_upload!(
+          io: StringIO.new(hostile), filename: "hostile.html", content_type: "text/html", identify: false)
+        revision.html_attachment.update_column(:blob_id, blob.id)
+      else
+        stone.revise!(title: "A revised stone", html: html.sub("at a glance", "side by side"),
+          author: author, public: true, base_revision_id: revision.to_param)
+      end
+      render json: {
+        url: stone_revision_path(stone.public_token, 1),
+        content_url: stone_revision_content_path(stone.public_token, 1),
+        chat_url: account_chat_path(account, chat),
+        cookie_name: Rails.application.config.session_options[:key]
+      }
+    end
+
     def setup
       run_id = params.fetch(:run_id)
       cleanup_run(run_id)

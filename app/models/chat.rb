@@ -11,6 +11,7 @@ class Chat < ApplicationRecord
 
   belongs_to :ai_model, optional: true
   has_many :messages, -> { order(created_at: :asc) }, dependent: :destroy
+  has_many :stones, dependent: :destroy
   has_many :conversation_drafts, dependent: :destroy
   include Chat::ModelSelection
   include Chat::Summarizable

@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Publish a self-contained public stone. No deployment credentials required."""
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import sys
+import urllib.error
+import urllib.request
+
+MAX_BYTES = 5 * 1024 * 1024
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def parser():
+    root = argparse.ArgumentParser(
+        description="Public HTML stones. Publishing exposes the file to anyone with its URL, not the conversation.",
+    )
+    commands = root.add_subparsers(dest="operation", required=True)
+    for name in ("create", "revise", "show", "list", "withdraw", "post"):
+        command = commands.add_parser(name)
+        command.add_argument("--conversation", required=True)
+        if name in ("revise", "show", "withdraw"):
+            command.add_argument("--stone", required=True)
+        if name in ("create", "revise"):
+            command.add_argument("--title", required=True)
+            command.add_argument("--file", required=True, help="UTF-8 HTML document, or - for stdin")
+            command.add_argument("--public", action="store_true", required=True, help="acknowledge public publication")
+        if name == "revise":
+            command.add_argument("--base-revision", required=True)
+        if name == "post":
+            command.add_argument("--revision", required=True)
+            command.add_argument("--message-file", required=True, help="message text file, or - for stdin")
+    return root
+
+
+def read_file(path):
+    stream = sys.stdin.buffer if path == "-" else Path(path).open("rb")
+    try:
+        data = stream.read(MAX_BYTES + 1)
+    finally:
+        if path != "-":
+            stream.close()
+    if len(data) > MAX_BYTES:
+        raise ValueError("Input exceeds the 5 MiB limit")
+    return data.decode("utf-8")
+
+
+def request_spec(args):
+    for value in (args.conversation, getattr(args, "stone", None), getattr(args, "revision", None)):
+        if value is not None and not re.fullmatch(r"[A-Za-z0-9]+", value):
+            raise ValueError("Invalid resource ID")
+    path = f"/api/v1/conversations/{args.conversation}/stones"
+    if getattr(args, "stone", None):
+        path += f"/{args.stone}"
+    payload = None
+    method = "GET"
+    if args.operation in ("create", "revise"):
+        method = "POST"
+        payload = {"title": args.title, "html": read_file(args.file), "public": True}
+        if args.operation == "revise":
+            path += "/revisions"
+            payload["base_revision_id"] = args.base_revision
+    elif args.operation == "withdraw":
+        method = "DELETE"
+    elif args.operation == "post":
+        method = "POST"
+        path = f"/api/v1/conversations/{args.conversation}/messages"
+        payload = {"content": read_file(args.message_file), "stone_revision_ids": [args.revision]}
+        if not payload["content"].strip():
+            raise ValueError("A nonblank message is required")
+    return method, path, payload
+
+
+def main():
+    args = parser().parse_args()
+    base = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not base or not token:
+        sys.exit("The resident API URL and token are required")
+    try:
+        method, path, payload = request_spec(args)
+        if args.operation == "revise":
+            print("Earlier revisions remain public. Withdraw the whole stone to remove them.", file=sys.stderr)
+        request = urllib.request.Request(
+            base.rstrip("/") + path,
+            data=json.dumps(payload).encode() if payload is not None else None,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json"},
+            method=method,
+        )
+        with urllib.request.build_opener(NoRedirect).open(request, timeout=60) as response:
+            body = response.read(MAX_BYTES)
+        print(body.decode() if body else json.dumps({"ok": True}))
+    except urllib.error.HTTPError as error:
+        # Server validation diagnostics are bounded; never print request headers.
+        print(f"Stone request failed ({error.code}): {error.read(16384).decode(errors='replace')}", file=sys.stderr)
+        return 1
+    except (OSError, ValueError, urllib.error.URLError) as error:
+        print(f"Stone request failed: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title><%= @revision.title %> · Stone</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #f6f5f2; color: #252422; font: 15px system-ui, sans-serif; }
+      header { padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid #ddd9d1; }
+      h1 { font-size: 18px; margin: 0 0 4px; overflow-wrap: anywhere; }
+      p { margin: 0; color: #68645f; font-size: 13px; }
+      a { color: #5b3e91; }
+      iframe { display: block; border: 0; background: white; width: 100%; height: calc(100dvh - 100px); min-height: 70vh; }
+      nav { display: flex; gap: 14px; font-size: 13px; }
+      @media (max-width: 600px) { header { padding: 12px; } h1 { font-size: 16px; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1><%= @revision.title %></h1>
+        <p>Public stone · Revision <%= @revision.number %> · <%= @revision.agent&.name || "House member" %></p>
+        <p>Authored content, not a house sign-in page. Never enter credentials here.</p>
+      </div>
+      <nav aria-label="Stone revisions">
+        <% if @latest.number > @revision.number %>
+          <%= link_to "Newer revision available (#{@latest.number})", stone_path(@stone.public_token) %>
+        <% end %>
+        <%= link_to "Link to this revision", stone_revision_path(@stone.public_token, @revision.number) %>
+      </nav>
+    </header>
+    <iframe
+      title="<%= @revision.title %>"
+      src="<%= stone_revision_content_path(@stone.public_token, @revision.number) %>"
+      sandbox=""
+      referrerpolicy="no-referrer"
+      allow="camera 'none'; microphone 'none'; geolocation 'none'"></iframe>
+  </body>
+</html>

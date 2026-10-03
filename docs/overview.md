@@ -28,6 +28,8 @@ been deployed. For native-client work, read the first four guides together.
 
 ## Feature references
 
+- [Public HTML stones](stones.md) — publishing, immutable revisions, sandboxed delivery and withdrawal
+
 - [Private conversation drafts](conversation-drafts.md) — autosave, local recovery and cross-client revisions
 
 - [Message Markdown](message-markdown.md), [patch attachments](patch-attachments.md), [message grouping](progress-messages.md)

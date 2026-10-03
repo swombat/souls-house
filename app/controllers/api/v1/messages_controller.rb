@@ -23,6 +23,15 @@ module Api
           )
         end
         message.attachments.attach(params[:files]) if params[:files].present?
+        if params.key?(:stone_revision_ids)
+          ids = params[:stone_revision_ids]
+          unless ids.is_a?(Array) && ids.length <= 10 && ids.all? { |id| id.is_a?(String) }
+            return render json: { errors: [ "stone_revision_ids must be an array of at most 10 IDs" ] }, status: :unprocessable_entity
+          end
+          message.stone_revisions = ids.uniq.map do |id|
+            StoneRevision.joins(:stone).where(stones: { chat_id: chat.id, withdrawn_at: nil }).find(id)
+          end
+        end
         if params[:runtime_run_id].present?
           return head :forbidden unless current_api_agent
           interaction = chat.agent_runtime_interactions.find_by!(

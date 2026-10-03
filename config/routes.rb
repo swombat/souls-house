@@ -1,4 +1,8 @@
 Rails.application.routes.draw do
+  resources :stones, only: :show do
+    get "revisions/:number", to: "stones#show", as: :revision
+    get "revisions/:number/content", to: "stones#content", as: :revision_content
+  end
   if Rails.env.test?
     namespace :test_support, path: "test" do
       namespace :e2e do
@@ -10,6 +14,7 @@ Rails.application.routes.draw do
         post :invitation_url, to: "/test_support/e2e#invitation_url"
         post :state, to: "/test_support/e2e#state"
         post :cleanup, to: "/test_support/e2e#cleanup"
+        post :stone_fixture, to: "/test_support/e2e#stone_fixture"
       end
     end
   end
@@ -239,6 +244,9 @@ Rails.application.routes.draw do
       post "agents/:uuid/announce", to: "agents#announce", as: :agent_announce
       get "agents/:uuid/health", to: "agents#health", as: :agent_health
       resources :conversations, only: [ :index, :show, :create, :update ] do
+        resources :stones, only: [ :index, :show, :create, :destroy ] do
+          resources :revisions, only: [ :index, :show, :create ], controller: "stone_revisions"
+        end
         resource :draft, only: [ :show, :update ]
         get :search, on: :collection
         resource :bookmark, only: [ :show, :update, :destroy ], controller: "agent_bookmarks"
