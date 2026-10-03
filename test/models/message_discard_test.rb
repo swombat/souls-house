@@ -7,7 +7,8 @@ class MessageDiscardTest < ActiveSupport::TestCase
 
   setup do
     @agent = agents(:research_assistant)
-    @chat = @agent.account.chats.create!(model_id: "openrouter/auto", title: "Discard probe")
+    @chat = @agent.account.chats.create!(model_id: "openrouter/auto", title: "Discard probe",
+      manual_responses: true, agents: [ @agent ])
     @kept = @chat.messages.create!(role: "user", content: "Still here")
     @gone = @chat.messages.create!(role: "user", content: "Deleted words")
     @gone.discard!

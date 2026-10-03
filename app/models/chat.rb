@@ -22,6 +22,9 @@ class Chat < ApplicationRecord
   has_many :agents, through: :chat_agents
   has_many :agent_runtime_interactions, dependent: :nullify
   validates :agents, length: { minimum: 1, message: "must include at least one resident" }, if: :manual_responses?
+  # Public creation helpers cannot start bare-model conversations. Historical
+  # rows remain readable and editable through ordinary persistence.
+  validates :manual_responses, inclusion: { in: [ true ], message: "must be enabled for new resident conversations" }, on: :conversation_creation
 
   json_attributes :title_or_default, :model_id, :model_label, :ai_model_name, :updated_at_formatted,
                   :updated_at_short, :activity_at, :message_count, :context_tokens, :cost_tokens, :reasoning_tokens, :web_access, :manual_responses,
@@ -94,7 +97,7 @@ class Chat < ApplicationRecord
     transaction do
       chat = new(attributes)
       chat.agent_ids = agent_ids if agent_ids.present?
-      chat.save!
+      chat.save!(context: :conversation_creation)
 
       if message_content.present? || (files.present? && files.any?)
         message = chat.messages.create!({

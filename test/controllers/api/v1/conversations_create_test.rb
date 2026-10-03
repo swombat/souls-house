@@ -14,10 +14,10 @@ module Api
         @agent2 = agents(:code_reviewer)
       end
 
-      test "creates a simple 1-1 conversation" do
+      test "creates a single-resident conversation even with an explicit model" do
         assert_no_enqueued_jobs(only: AiResponseJob) do
           post api_v1_conversations_url,
-               params: { title: "Test Chat", message: "Hello!" },
+               params: { title: "Test Chat", message: "Hello!", agent_ids: [ @agent1.to_param ], model_id: "openai/gpt-4o" },
                headers: { "Authorization" => "Bearer #{@token}" }
         end
         assert_response :created
@@ -25,8 +25,9 @@ module Api
         json = JSON.parse(response.body)
         assert json["conversation"]["id"].present?
         assert_equal "Test Chat", json["conversation"]["title"]
-        assert_equal false, json["conversation"]["group_chat"]
-        assert_empty json["conversation"]["agents"]
+        assert_equal true, json["conversation"]["group_chat"]
+        assert_equal [ @agent1.to_param ], json["conversation"]["agents"].pluck("id")
+        assert_equal "Hello!", Chat.find(json["conversation"]["id"]).messages.sole.content
       end
 
       test "creates a group chat with agents" do
@@ -50,12 +51,81 @@ module Api
 
       test "creates conversation without initial message" do
         post api_v1_conversations_url,
-             params: { title: "Empty Chat" },
+             params: { title: "Empty Chat", agent_ids: [ @agent1.to_param ] },
              headers: { "Authorization" => "Bearer #{@token}" }
         assert_response :created
 
         json = JSON.parse(response.body)
         assert_equal "Empty Chat", json["conversation"]["title"]
+        assert_empty Chat.find(json["conversation"]["id"]).messages
+      end
+
+      test "account keys reject omitted empty and malformed resident IDs without side effects" do
+        [
+          {},
+          { agent_ids: nil },
+          { agent_ids: [] },
+          { agent_ids: "" },
+          { agent_ids: @agent1.to_param },
+          { agent_ids: { id: @agent1.to_param } },
+          { agent_ids: [ "" ] },
+          { agent_ids: [ " " ] },
+          { agent_ids: [ nil ] },
+          { agent_ids: [ 1 ] },
+          { agent_ids: [ [ @agent1.to_param ] ] },
+          { agent_ids: [ { id: @agent1.to_param } ] }
+        ].each do |params|
+          assert_no_difference [ "Chat.count", "Message.count" ] do
+            assert_no_enqueued_jobs do
+              post api_v1_conversations_url,
+                   params: params.merge(model_id: "openai/gpt-4o", message: "Must not persist"),
+                   headers: { "Authorization" => "Bearer #{@token}" },
+                   as: :json
+            end
+          end
+          assert_response :unprocessable_entity
+          assert_match(/agent_ids/, response.parsed_body["error"])
+        end
+      end
+
+      test "duplicate resident IDs do not create duplicate memberships" do
+        post api_v1_conversations_url,
+             params: { agent_ids: [ @agent1.to_param, @agent1.to_param ] },
+             headers: { "Authorization" => "Bearer #{@token}" },
+             as: :json
+
+        assert_response :created
+        assert_equal [ @agent1.id ], Chat.find(response.parsed_body["conversation"]["id"]).agent_ids
+      end
+
+      test "resident keys default to self with omitted or empty invite list" do
+        agent_key = ApiKey.generate_for(@user, name: "Agent key", agent: @agent1)
+
+        [ {}, { agent_ids: [] } ].each do |params|
+          post api_v1_conversations_url,
+               params: params.merge(model_id: "openai/gpt-4o"),
+               headers: { "Authorization" => "Bearer #{agent_key.raw_token}" },
+               as: :json
+
+          assert_response :created
+          chat = Chat.find(response.parsed_body["conversation"]["id"])
+          assert chat.group_chat?
+          assert_equal [ @agent1.id ], chat.agent_ids
+        end
+      end
+
+      test "resident keys cannot ignore malformed invite lists" do
+        agent_key = ApiKey.generate_for(@user, name: "Agent key", agent: @agent1)
+
+        [ "", @agent2.to_param, { id: @agent2.to_param }, [ "" ], [ 1 ], [ [ @agent2.to_param ] ] ].each do |ids|
+          assert_no_difference [ "Chat.count", "Message.count" ] do
+            post api_v1_conversations_url,
+                 params: { agent_ids: ids, message: "Must not persist" },
+                 headers: { "Authorization" => "Bearer #{agent_key.raw_token}" },
+                 as: :json
+          end
+          assert_response :unprocessable_entity
+        end
       end
 
       test "agent-scoped key creates conversation as that agent" do

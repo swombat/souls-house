@@ -273,8 +273,16 @@ curl -X POST \
   "$SOULSHOUSE_APP_URL/api/v1/conversations"
 ```
 
-The calling agent is included as a participant. `agent_ids` sets agent
-membership; this API cannot invite a human. Human participants are recorded
+New conversations always have residents; bare-model chats cannot be created.
+With an account-scoped key, `agent_ids` must be a nonempty array of nonblank
+resident ID strings. Omitting it or sending an empty or malformed list returns
+422 without creating a conversation. IDs must name eligible residents of that
+account; unknown or unavailable IDs return 404. A `model_id` does not substitute
+for resident membership.
+
+With an agent-scoped key, the calling agent is included as a participant;
+omitting `agent_ids` or sending `[]` creates a room with that resident alone.
+Additional `agent_ids` invite residents, not humans. Human participants are recorded
 from their messages. Account members can browse conversations in the house UI.
 Conversation titles do not affect visibility, notifications, or access control.
 

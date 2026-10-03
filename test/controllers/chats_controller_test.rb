@@ -335,6 +335,30 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_chat_path(@account, chat)
   end
 
+  test "update cannot turn a resident conversation into a bare-model chat" do
+    chat = @account.chats.create!(title: "Resident room", manual_responses: true, agents: [ agents(:research_assistant) ])
+
+    patch account_chat_path(@account, chat), params: { chat: { manual_responses: false, title: "Renamed" } }
+
+    assert_redirected_to account_chat_path(@account, chat)
+    assert chat.reload.group_chat?
+    assert_equal "Renamed", chat.title
+    assert_equal [ agents(:research_assistant).id ], chat.agent_ids
+  end
+
+  test "create rejects empty and malformed resident selections despite an explicit model" do
+    [ [], [ "" ], [ [ agents(:research_assistant).to_param ] ], { id: agents(:research_assistant).to_param } ].each do |ids|
+      assert_no_difference [ "Chat.count", "Message.count" ] do
+        post account_chats_path(@account),
+          params: { agent_ids: ids, chat: { model_id: "openai/gpt-4o", manual_responses: false }, message: "Must not persist" },
+          as: :json
+      end
+
+      assert_redirected_to new_account_chat_path(@account)
+      assert flash[:alert].present?
+    end
+  end
+
   test "acknowledges a first-message draft only after creating its conversation" do
     nonce = SecureRandom.uuid
     assert_difference "Chat.count", 1 do

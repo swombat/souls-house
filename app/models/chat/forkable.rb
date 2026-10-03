@@ -12,7 +12,7 @@ module Chat::Forkable
       )
 
       forked.agent_ids = agent_ids if manual_responses?
-      forked.save!
+      forked.save!(context: :conversation_creation)
 
       copied_messages = {}
       copied_tool_calls = {}

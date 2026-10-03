@@ -66,8 +66,11 @@ module Api
       end
 
       def create
+        agent_ids = resolve_agent_ids
+        return if performed?
+
         if current_api_agent
-          chat = create_agent_scoped_conversation!
+          chat = create_agent_scoped_conversation!(agent_ids)
 
           render json: {
             conversation: {
@@ -81,14 +84,11 @@ module Api
           return
         end
 
-        agent_ids = resolve_agent_ids
-        is_group = agent_ids.present?
-
         chat_attrs = {
           account: current_api_account,
           model_id: params[:model_id] || "openrouter/auto",
           title: params[:title],
-          manual_responses: is_group
+          manual_responses: true
         }
 
         chat = Chat.create_with_message!(
@@ -178,8 +178,8 @@ module Api
         Message.decode_id(params[:after_message_id])
       end
 
-      def create_agent_scoped_conversation!
-        agent_ids = ([ current_api_agent.id ] + Array(resolve_agent_ids)).uniq
+      def create_agent_scoped_conversation!(invited_agent_ids)
+        agent_ids = ([ current_api_agent.id ] + invited_agent_ids).uniq
         opening_message = nil
 
         current_api_account.chats.transaction do
@@ -209,9 +209,17 @@ module Api
       end
 
       def resolve_agent_ids
-        return nil if params[:agent_ids].blank?
+        ids = params[:agent_ids]
+        return [] if current_api_agent && ids.nil?
 
-        obfuscated_ids = Array(params[:agent_ids])
+        unless ids.is_a?(Array) && ids.all? { |id| id.is_a?(String) && id.present? } &&
+            (current_api_agent || ids.any?)
+          render json: { error: "agent_ids must be an array of nonblank resident IDs; account keys must select at least one resident" },
+                 status: :unprocessable_entity
+          return
+        end
+
+        obfuscated_ids = ids.uniq
         real_ids = obfuscated_ids.filter_map { |oid| Agent.decode_id(oid) }
         agents = current_api_account.agents.eligible_for_conversation.where(id: real_ids)
 

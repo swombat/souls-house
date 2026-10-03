@@ -155,7 +155,7 @@ class ChatsController < ApplicationController
 
   def chat_params
     params.fetch(:chat, {})
-      .permit(:model_id, :web_access, :manual_responses, :title)
+      .permit(:model_id, :web_access, :title)
   end
 
   def chat_create_params
@@ -181,8 +181,13 @@ class ChatsController < ApplicationController
   end
 
   def selected_agents
-    ids = Array(params[:agent_ids]).reject(&:blank?)
+    selection = params[:agent_ids]
+    unless selection.nil? || selection.is_a?(Array) || selection.is_a?(String)
+      raise ActiveRecord::RecordNotFound
+    end
+    ids = Array(selection).reject(&:blank?)
     return [] if ids.empty?
+    raise ActiveRecord::RecordNotFound unless ids.all? { |id| id.is_a?(String) }
 
     current_account.agents.eligible_for_conversation.find(Agent.decode_id(ids))
   end

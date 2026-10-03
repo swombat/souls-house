@@ -39,6 +39,9 @@ class HistoricalLlmPersistenceTest < ActiveSupport::TestCase
     assert_nil message.reasoning_skip_reason
     assert_equal "Old thinking", message.as_json["thinking"]
 
+    # Historical messages may be copied only after joining a resident room.
+    @chat.agents << agents(:research_assistant)
+    @chat.update!(manual_responses: true)
     forked = @chat.fork_with_title!("Archived copy")
     copy, result_copy = forked.messages.to_a
     %w[content thinking_text thinking_tokens input_tokens output_tokens cached_tokens cache_creation_tokens

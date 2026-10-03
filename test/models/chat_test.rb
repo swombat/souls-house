@@ -97,7 +97,7 @@ class ChatTest < ActiveSupport::TestCase
       assert_difference "Message.count" do
         assert_no_enqueued_jobs(only: AiResponseJob) do
           @chat = Chat.create_with_message!(
-            { model_id: "gpt-4o", account: @account },
+            { model_id: "gpt-4o", account: @account, manual_responses: true, agents: [ @account.agents.create!(name: "Resident", runtime: "external") ] },
             message_content: "Hello AI",
             user: @user
           )
@@ -116,7 +116,7 @@ class ChatTest < ActiveSupport::TestCase
       assert_no_difference "Message.count" do
         assert_no_enqueued_jobs(only: AiResponseJob) do
           @chat = Chat.create_with_message!(
-            { model_id: "gpt-4o", account: @account },
+            { model_id: "gpt-4o", account: @account, manual_responses: true, agents: [ @account.agents.create!(name: "Resident", runtime: "external") ] },
             message_content: nil,
             user: @user
           )
@@ -136,7 +136,7 @@ class ChatTest < ActiveSupport::TestCase
       assert_difference "Message.count" do
         assert_no_enqueued_jobs(only: AiResponseJob) do
           @chat = Chat.create_with_message!(
-            { model_id: "gpt-4o", account: @account },
+            { model_id: "gpt-4o", account: @account, manual_responses: true, agents: [ @account.agents.create!(name: "Resident", runtime: "external") ] },
             message_content: "Here's an image",
             user: @user,
             files: [ file ]
@@ -166,7 +166,7 @@ class ChatTest < ActiveSupport::TestCase
       assert_difference "Message.count" do
         assert_no_enqueued_jobs(only: AiResponseJob) do
           @chat = Chat.create_with_message!(
-            { model_id: "gpt-4o", account: @account },
+            { model_id: "gpt-4o", account: @account, manual_responses: true, agents: [ @account.agents.create!(name: "Resident", runtime: "external") ] },
             message_content: nil,
             user: @user,
             files: [ file ]
