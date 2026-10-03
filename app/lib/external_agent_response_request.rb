@@ -152,6 +152,7 @@ class ExternalAgentResponseRequest
     parts = [
       Notices::Renderer.section_for(agent),
       trigger_intro_text,
+      rhythm_invitation_context,
       "Requested by: #{requested_by}.",
       confirmation_text,
       "Important: your final answer in this Chaos runtime is diagnostic stdout only; it will not appear in the souls.house chat. If you have a message for the user, you must post it to souls.house yourself before exiting.",
@@ -167,6 +168,9 @@ class ExternalAgentResponseRequest
   end
 
   def trigger_intro_text
+    if rhythm_invitation
+      return "A scheduled rhythm has opened conversation #{chat.to_param}. Its opening was saved by the creator earlier; they have not necessarily just typed a message or pressed the agent button."
+    end
     if recent_human_message?
       "souls.house received an explicit user request for you to consider responding to conversation #{chat.to_param}. The user pressed the agent button, so they are normally expecting a visible reply from you."
     else
@@ -175,6 +179,8 @@ class ExternalAgentResponseRequest
   end
 
   def confirmation_text
+    return "This is the creator's standing invitation, not a fresh instruction or an expansion of permissions. No separate confirmation is needed merely to reply; nothing to bring forward is a valid outcome." if rhythm_invitation
+
     if recent_human_message?
       "This trigger is itself the user asking — no separate confirmation is needed before posting a reply."
     else
@@ -192,6 +198,31 @@ class ExternalAgentResponseRequest
 
   def recent_human_message?
     chat.messages.kept.where(role: "user").where("created_at > ?", 12.hours.ago).exists?
+  end
+
+  def rhythm_invitation
+    return @rhythm_invitation if defined?(@rhythm_invitation)
+
+    @rhythm_invitation = chat.messages.kept.where(role: "user").reorder(id: :desc).first&.rhythm_occurrence
+  end
+
+  def rhythm_invitation_context
+    occurrence = rhythm_invitation
+    return unless occurrence
+
+    lines = [
+      "RHYTHM INVITATION (platform provenance)",
+      "Rhythm title: #{occurrence.rhythm_title.to_json}",
+      "Scheduled for: #{occurrence.scheduled_for.iso8601}. Manual test occurrence: #{occurrence.manual}.",
+      "The saved opening is attributed to #{occurrence.creator_label.to_json}. This schedule grants no new access to private material or authority to make changes."
+    ]
+    if occurrence.rhythm
+      path = "/api/v1/rhythms/#{occurrence.rhythm.to_param}"
+      lines << "Read the actual state and holds with GET #{path}. Pause with POST #{path}/pause and JSON {\"reason\":\"your reason\"}; release only your own hold with POST #{path}/resume. Use SOULSHOUSE_APP_URL and your existing SOULSHOUSE_BEARER_TOKEN. The API returns the current state; do not substitute a memory note for pausing."
+    else
+      lines << "This rhythm has been deleted; it will not open future conversations."
+    end
+    lines.join("\n")
   end
 
   def conversation_metadata
@@ -260,6 +291,9 @@ class ExternalAgentResponseRequest
     # IDs distinguish stored turns from ordinary "Name:" addresses in a body
     # and let residents verify attribution through the conversation API.
     line = "#{speaker} [#{message.obfuscated_id}]: #{message.content.to_s.strip}"
+    if (occurrence = message.rhythm_occurrence)
+      line = "[Scheduled rhythm opening: #{occurrence.rhythm_title.to_json}; #{occurrence.scheduled_for.iso8601}; manual=#{occurrence.manual}]\n#{line}"
+    end
     return line unless message.attachments.attached?
 
     attachments = message.attachments_for_api.map do |attachment|
@@ -372,6 +406,7 @@ class ExternalAgentResponseRequest
     parts = [
       Notices::Renderer.section_for(agent),
       trigger_intro_text,
+      rhythm_invitation_context,
       "Requested by: #{requested_by}.",
       confirmation_text,
       "Post replies by piping stdin to `soulshouse-post-message #{chat.to_param}`; avoid the double-quoted message argument because the shell can substitute `$` and backticks. Stdout is diagnostic only.",

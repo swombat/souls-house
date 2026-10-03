@@ -28,7 +28,7 @@ class MessageDispatch < ApplicationRecord
   class InvocationRefused < StandardError; end
 
   STATUSES = %w[pending reserved cancelled expired].freeze
-  KINDS = %w[mention automatic invoke].freeze
+  KINDS = %w[mention automatic rhythm invoke].freeze
   EXPIRY = 10.minutes
   # The longest a dispatch's chain may keep starting links (each link starts
   # from the previous one's normal hand-on, never from recovery), and the most
@@ -108,9 +108,10 @@ class MessageDispatch < ApplicationRecord
 
   def mention? = kind == "mention"
   def automatic? = kind == "automatic"
+  def rhythm? = kind == "rhythm"
   # Caused by a human message, so bound to it: discard cancels, edit while
   # pending cancels, and it is swept like a mention.
-  def from_message? = mention? || automatic?
+  def from_message? = mention? || automatic? || rhythm?
   def invoke? = kind == "invoke"
   def pending? = status == "pending"
   def reserved? = status == "reserved"
