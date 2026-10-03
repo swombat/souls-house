@@ -123,7 +123,9 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "general and conversion count pending invitations as memberships" do
-    @team_single_user.add_user!(users(:existing_user))
+    Membership.create!(
+      account: @team_single_user, user: users(:existing_user), role: "member", invited_by: @user
+    )
 
     get account_path(@team_single_user)
     assert_response :success
@@ -132,6 +134,8 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, inertia_shared_props.fetch("members").count { |member| member["invitation_pending"] }
 
     get edit_account_path(@team_single_user, convert: true)
+    @inertia_props = nil
+    assert_response :success
     assert_equal 2, inertia_shared_props.fetch("members_count")
     assert_equal false, inertia_shared_props.fetch("can_be_personal")
   end

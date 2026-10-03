@@ -25,6 +25,8 @@ class AccountCapacityControllerTest < ActionDispatch::IntegrationTest
     end
     assert_redirected_to root_path
     get edit_account_path(accounts(:personal_account))
+    assert_redirected_to account_path(accounts(:personal_account))
+    follow_redirect!
     assert_response :success
     assert_equal false, inertia_shared_props.dig("site_settings", "allow_account_creation")
   end
