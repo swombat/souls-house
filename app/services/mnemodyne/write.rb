@@ -8,7 +8,7 @@ class Mnemodyne::Write
   def self.call(vault:, key:, operation:, payload:)
     raise InvalidKey unless key.is_a?(String) && key.match?(/\A[a-zA-Z0-9_.:-]{1,128}\z/)
 
-    digest = Digest::SHA256.hexdigest(JSON.generate(canonical([ operation, payload ])))
+    digest = Digest::SHA256.hexdigest(JSON.generate(Mnemodyne::CanonicalJson.normalize([ operation, payload ])))
     vault.with_lock do
       raise Conflict if vault.erasure_requested_at? || vault.suspended_at?
       previous = vault.operations.find_by(key: key)
@@ -22,14 +22,5 @@ class Mnemodyne::Write
       result
     end
   end
-
-  def self.canonical(value)
-    case value
-    when Hash then value.stringify_keys.sort.to_h.transform_values { |child| canonical(child) }
-    when Array then value.map { |child| canonical(child) }
-    else value
-    end
-  end
-  private_class_method :canonical
 
 end

@@ -2,6 +2,7 @@ class MessagesController < ApplicationController
 
   require_feature_enabled :chats
   include DraftAuthorBinding
+  include RespondableChat
   before_action :require_matching_draft_author, only: :create
   before_action :set_chat, only: [ :index, :create ]
   before_action :set_message, only: [ :update, :destroy ]
@@ -119,15 +120,6 @@ class MessagesController < ApplicationController
   def message_json(message, interaction_cost = nil)
     message.as_json(include_ruby_llm_telemetry: Current.user&.site_admin).tap do |json|
       json["interaction_cost"] = interaction_cost if interaction_cost
-    end
-  end
-
-  def require_respondable_chat
-    return if @chat.respondable?
-
-    respond_to do |format|
-      format.html { redirect_back_or_to account_chat_path(@chat.account, @chat), alert: "This conversation is archived or deleted and cannot receive new messages" }
-      format.json { render json: { error: "This conversation is archived or deleted" }, status: :unprocessable_entity }
     end
   end
 

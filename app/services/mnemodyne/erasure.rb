@@ -4,7 +4,7 @@ class Mnemodyne::Erasure
   GRACE_PERIOD = 7.days
 
   def self.fingerprint(envelope)
-    Digest::SHA256.hexdigest(JSON.generate(canonical(envelope.fetch("payload").slice("resident_uuid", "nodes", "edges", "settings"))))
+    Digest::SHA256.hexdigest(JSON.generate(Mnemodyne::CanonicalJson.normalize(envelope.fetch("payload").slice("resident_uuid", "nodes", "edges", "settings"))))
   end
 
   def self.export_receipt(vault, envelope)
@@ -65,14 +65,5 @@ class Mnemodyne::Erasure
     Rails.application.message_verifier("mnemodyne-erasure")
   end
   private_class_method :verifier
-
-  def self.canonical(value)
-    case value
-    when Hash then value.stringify_keys.sort.to_h.transform_values { |child| canonical(child) }
-    when Array then value.map { |child| canonical(child) }
-    else value
-    end
-  end
-  private_class_method :canonical
 
 end

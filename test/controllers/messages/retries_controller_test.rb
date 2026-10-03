@@ -59,4 +59,21 @@ class Messages::RetriesControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  test "archived retry keeps the HTML redirect and alert" do
+    message = @chat.messages.create!(role: "assistant", content: "Some content")
+    @chat.archive!
+
+    post message_retry_path(message)
+
+    assert_redirected_to account_chat_path(@account, @chat)
+    assert_equal "This conversation is archived or deleted and cannot receive new messages", flash[:alert]
+  end
+
+  test "shared response guard does not install chat scoping callbacks" do
+    [ MessagesController, Messages::RetriesController ].each do |controller|
+      assert_equal RespondableChat, controller.instance_method(:require_respondable_chat).owner
+      assert_not_includes controller.ancestors, ChatScoped
+    end
+  end
+
 end
