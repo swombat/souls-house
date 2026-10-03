@@ -26,12 +26,11 @@
   const explanation = $derived(
     `${introduction} Click to dismiss${messageId ? ' this flag if it is a mistake' : ''}. Responding to the thread also dismisses this notification.`
   );
+  const confirmationKey = $derived(JSON.stringify([chatId, through, Boolean(flagged)]));
 
   $effect(() => {
-    // A newly arriving request needs its own first tap.
-    through;
-    chatId;
-    flagged;
+    // Reset for a different request, not a fresh chat object from live reload.
+    confirmationKey;
     showingExplanation = false;
   });
 

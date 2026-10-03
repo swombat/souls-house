@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { page, router } from '@inertiajs/svelte';
 import ReplyAttentionEye from './ReplyAttentionEye.svelte';
+import ReplyAttentionEyeHarness from './ReplyAttentionEyeHarness.svelte';
 
 vi.mock('@inertiajs/svelte', async () => {
   const { writable } = await import('svelte/store');
@@ -97,4 +98,19 @@ test('touch first explains, then dismisses; a new request resets confirmation', 
     { through_message_id: 'new-message' },
     expect.any(Object)
   );
+});
+
+test('refreshing unchanged attention data does not reset the second tap', async () => {
+  const { rerender } = render(ReplyAttentionEyeHarness, { chat: { id: 'chat' } });
+  const eye = screen.getByRole('button', { name: /You have a mention or request/ });
+  const tap = async () => {
+    await fireEvent(eye, Object.assign(new Event('pointerdown', { bubbles: true }), { pointerType: 'touch' }));
+    await fireEvent.click(eye);
+  };
+  await tap();
+  page.set({ props: { reply_attention: { chats: { chat: 1 }, through_messages: { chat: 'visible-message' } } } });
+  await rerender({ chat: { id: 'chat' } });
+  expect(screen.getByText(/Tap again to dismiss the notification/)).toBeVisible();
+  await tap();
+  expect(router.post).toHaveBeenCalledTimes(1);
 });
