@@ -148,10 +148,12 @@
           <span>Account Settings</span>
         </DropdownMenu.Item>
       {/if}
-      <DropdownMenu.Item disabled={!allowAccountCreation} onclick={() => router.visit(newAccountPath())}>
-        <Plus class="mr-2 size-4" />
-        <span>New Account</span>
-      </DropdownMenu.Item>
+      {#if accounts.length <= 1}
+        <DropdownMenu.Item disabled={!allowAccountCreation} onclick={() => router.visit(newAccountPath())}>
+          <Plus class="mr-2 size-4" />
+          <span>New Account</span>
+        </DropdownMenu.Item>
+      {/if}
       <DropdownMenu.Item onclick={() => router.visit(editUserPasswordPath())}>
         <Password class="mr-2 size-4" />
         <span>Change Password</span>

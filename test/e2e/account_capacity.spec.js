@@ -47,6 +47,10 @@ test('account cap closes ordinary admission but preserves the admin exception', 
     await visitor.goto('/accounts/new');
     await expect(visitor).toHaveURL(/\/$/);
     await visitor.getByRole('button', { name: 'User account menu' }).click();
+    await visitor
+      .getByRole('menuitem', { name: /^Account / })
+      .and(visitor.locator('[aria-haspopup="menu"]'))
+      .hover();
     await expect(visitor.getByRole('menuitem', { name: 'New Account', exact: true })).toHaveAttribute(
       'aria-disabled',
       'true'
