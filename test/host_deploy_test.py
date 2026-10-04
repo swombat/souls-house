@@ -19,6 +19,8 @@ class WorkflowAuthorityTest(unittest.TestCase):
     def test_owner_only_on_original_dispatch_and_rerun(self):
         workflows = OPS.parents[1] / ".github/workflows"
         transport = (workflows / "deploy-house.yml").read_text()
+        self.assertNotIn("\nconcurrency:", transport)
+        self.assertIn("\n    concurrency:\n      group: production-deploy", transport)
         condition = next(line.strip().removeprefix("if: ") for line in
                          transport.splitlines() if line.strip().startswith("if: "))
         self.assertEqual(

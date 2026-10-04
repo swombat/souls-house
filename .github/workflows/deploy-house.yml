@@ -12,19 +12,21 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: production-deploy
-  cancel-in-progress: false
-
 jobs:
   deploy:
     # actor is the original caller; triggering_actor is the person requesting
     # this attempt, including reruns. Require both before attaching secrets.
     if: github.ref == 'refs/heads/master' && github.actor == 'swombat' && github.triggering_actor == 'swombat'
+    # Only authorized jobs may enter the queue; rejected callers must not
+    # displace an owner's pending deployment.
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     # IMPORTANT: configure this environment's branch policy to master only.
-    # The if above is convenience, NOT the credential security boundary.
+    # Environment policy is the branch boundary; the if is the actor boundary.
+    # Both depend on reviewed, protected master workflow code.
     environment: production-deploy
     env:
       OPERATION: ${{ inputs.operation }}
