@@ -68,10 +68,13 @@
   aria-label={tag ? `Edit ${tag.label}` : 'Add visual tag'}>
   <div class="grid min-h-0 flex-1 grid-rows-[auto_minmax(160px,1fr)] gap-5 sm:grid-cols-[220px_1fr] sm:grid-rows-1">
     <div class="space-y-4">
-      <div class="hidden rounded-xl border bg-muted/20 p-5 sm:block" aria-label="Tag preview">
-        <VisualTagIcon {icon} size={40} class={visualTagColour(colour)} />
-        <p class="mt-3 break-words font-medium">{label || 'New visual tag'}</p>
-        <p class="mt-1 text-xs text-muted-foreground">Your conversation, at a glance.</p>
+      <div class="hidden rounded-xl border bg-muted/20 p-3 sm:block" aria-label="Tag preview">
+        <p class="mb-3 text-xs text-muted-foreground">In the discussion list</p>
+        <div class="flex items-center gap-2 rounded-md bg-background px-2 py-3 text-sm">
+          <VisualTagIcon {icon} size={16} class={`shrink-0 ${visualTagColour(colour)}`} />
+          <span class="truncate">A conversation title</span>
+        </div>
+        <p class="mt-2 break-words text-xs text-muted-foreground">{label || 'New visual tag'}</p>
       </div>
       <div class="space-y-2">
         <Label for={`${formId}-label`}>Label</Label>

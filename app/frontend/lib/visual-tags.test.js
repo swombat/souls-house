@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { expect, test } from 'vitest';
 import { iconLabel, visualTagColour, visualTagIconName, visualTagIconNames } from './visual-tags';
-import { visualTagIconKeywords, visualTagIconMatches } from './visual-tag-icon-search';
+import { visualTagIconKeywords, visualTagIconMatches, visualTagBrowseGroups } from './visual-tag-icon-search';
 
 test('the shared catalog and sprite reproduce every installed Phosphor icon exactly', () => {
   expect(execFileSync('node', ['scripts/generate-visual-tag-icons.mjs', '--check'], { encoding: 'utf8' })).toContain(
@@ -49,4 +49,14 @@ test('meaning search uses installed Phosphor tags, categories and labels', () =>
   expect(visualTagIconMatches('Yarn', '')).toBe(true);
   expect(visualTagIconMatches('NotAnIcon', '')).toBe(false);
   expect(Object.keys(visualTagIconKeywords).sort()).toEqual(visualTagIconNames);
+});
+
+test('browse leads with familiar icons and keeps the complete library grouped without duplicates', () => {
+  const groups = visualTagBrowseGroups(visualTagIconNames);
+  expect(groups[0].label).toBe('Suggested');
+  expect(groups[0].icons).toContain('Wrench');
+  expect(groups[0].icons).toContain('Heart');
+  expect(groups.at(-1).label).toBe('brands');
+  expect(groups.flatMap((group) => group.icons).sort()).toEqual(visualTagIconNames);
+  expect(visualTagBrowseGroups(visualTagIconNames, 'brands')[0].icons).toContain('AmazonLogo');
 });

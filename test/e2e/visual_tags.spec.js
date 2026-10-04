@@ -32,12 +32,12 @@ for (const mobile of [false, true]) {
         const form = page.getByRole('form', { name: 'Add visual tag', exact: true });
         await form.getByLabel('Label', { exact: true }).fill('Experiments');
         await form.getByRole('button', { name: 'Colour: cyan' }).click();
-        await expect(form.getByRole('button', { name: 'Acorn', exact: true })).toBeVisible();
+        await expect(form.getByRole('button', { name: 'Chat Circle', exact: true })).toBeVisible();
         // The symbols must actually render, not just leave an empty SVG-sized box.
         await expect
           .poll(() =>
             form
-              .getByRole('button', { name: 'Acorn', exact: true })
+              .getByRole('button', { name: 'Chat Circle', exact: true })
               .locator('svg')
               .evaluate((svg) => svg.getBBox().width)
           )
