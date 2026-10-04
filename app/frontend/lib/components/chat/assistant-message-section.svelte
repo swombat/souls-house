@@ -9,6 +9,8 @@
   import AudioPlayer from '$lib/components/chat/AudioPlayer.svelte';
   import MessageTelemetry from '$lib/components/chat/MessageTelemetry.svelte';
   import { Streamdown } from 'svelte-streamdown';
+  import CommitRef from '$lib/components/chat/CommitRef.svelte';
+  import { commitRefExtensions } from '$lib/commit-refs.js';
   import { formatTime, formatDateTime } from '$lib/utils';
   import { reasoningSkipTooltip } from '$lib/chat-utils';
 
@@ -41,6 +43,12 @@
   <span class="expression-tag">{token.text}</span>
 {/snippet}
 
+{#snippet commitRefs({ token, streamdown })}
+  {#if token.type === 'commitRef'}
+    <CommitRef {token} theme={streamdown.theme} live={message.streaming !== true} />
+  {/if}
+{/snippet}
+
 {#if message.status === 'failed'}
   <div class="text-red-600 mb-2 text-sm">Failed to generate response</div>
 {:else if message.status === 'pending'}
@@ -63,6 +71,8 @@
     content={message.content}
     parseIncompleteMarkdown={message.streaming === true}
     inlineCitation={expressionTag}
+    extensions={commitRefExtensions}
+    children={commitRefs}
     baseTheme="shadcn"
     {shikiTheme}
     shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']}
