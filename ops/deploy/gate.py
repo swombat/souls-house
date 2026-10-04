@@ -54,8 +54,8 @@ def request(operation):
             raise RuntimeError("Another deployment is running")
         if active(result["operation"]):
             raise RuntimeError("Previous service is still exiting")
-        if result["state"] == "interrupted":
-            raise RuntimeError("Interrupted deployment requires operator inspection")
+        if result["state"] in ("failed", "interrupted"):
+            raise RuntimeError("Failed or interrupted deployment requires operator inspection")
     job_id = uuid.uuid4().hex
     directory = ROOT / "runs" / job_id
     directory.mkdir(mode=0o700)

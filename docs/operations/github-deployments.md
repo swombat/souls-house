@@ -97,7 +97,8 @@ sudo flock -n /var/lib/house-deploy/deployment.lock YOUR-REVIEWED-ROLLOUT-COMMAN
 Never clear locks while a worker runs. Inspect the fixed units with
 `systemctl status house-deploy-{rails,chaos,both}`. Stopping/cancelling GitHub does
 not cancel the host deployment. Host timeout or restart produces `interrupted`,
-not success. Inspect resident/container state before clearing
+not success. Failed and interrupted requests block further deployments.
+Inspect resident/container state before clearing
 `/var/lib/house-deploy/current.json` to allow another request.
 
 A failed resident recreation is left inactive/paused for operator repair. Its

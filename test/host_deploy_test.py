@@ -84,6 +84,12 @@ class GateTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 gate.request("rails")
 
+    def test_failed_worker_requires_operator_even_after_unit_exits(self):
+        self.job("failed")
+        with patch.object(gate, "active", return_value=False):
+            with self.assertRaises(RuntimeError):
+                gate.request("rails")
+
     def test_failed_unit_start_is_failed(self):
         with patch.object(gate.subprocess, "run", side_effect=subprocess.CalledProcessError(1, [])):
             self.assertEqual("failed", gate.request("rails")["state"])
