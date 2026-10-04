@@ -1,4 +1,6 @@
 name: Host deployment transport
+# Same-repository callers must inherit secrets for environment-secret resolution
+# (actions/runner#4453). The master-only environment remains the key boundary.
 
 on:
   workflow_call:
