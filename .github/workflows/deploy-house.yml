@@ -26,13 +26,16 @@ jobs:
       OPERATION: ${{ inputs.operation }}
       DEPLOY_HOST: ${{ vars.HOUSE_DEPLOY_HOST }}
       DEPLOY_PORT: ${{ vars.HOUSE_DEPLOY_PORT }}
-      DEPLOY_KEY: ${{ secrets.HOUSE_DEPLOY_KEY }}
-      DEPLOY_KNOWN_HOSTS: ${{ secrets.HOUSE_DEPLOY_KNOWN_HOSTS }}
     steps:
       - name: Request deployment and wait for verified outcome
         shell: bash
+        env:
+          DEPLOY_KEY: ${{ secrets.HOUSE_DEPLOY_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.HOUSE_DEPLOY_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
+          : "${DEPLOY_KEY:?Deployment environment SSH key unavailable}"
+          : "${DEPLOY_KNOWN_HOSTS:?Deployment environment host keys unavailable}"
           case "$OPERATION" in rails|chaos|both) ;; *) exit 2;; esac
           [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
           umask 077
