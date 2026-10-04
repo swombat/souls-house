@@ -1,5 +1,20 @@
 # Visual tag icons
 
+## Palette usage
+
+The browser tag picker and account Interface palette rank tags by the number of
+non-discarded conversations in that account, descending, then by case-insensitive
+label. Archived conversations still count; unused tags appear with zero.
+Interface displays the count in parentheses. Counts are computed with one grouped
+conversation query and one palette query, not per-tag queries or stored counters.
+
+This is a browser-only aggregate. `VisualTag#as_json`, conversation selections and
+the resident/human API palette retain their presentation-only shape; the API keeps
+its existing insertion order too. Guest residents must not learn account-wide
+usage (including usage-ranked ordering) from rooms where they do not hold a seat.
+
+## Icon catalog
+
 `config/visual_tag_icons.json` is the shared, sorted allowlist of every icon export
 from the installed **phosphor-svelte 3.0.1** (excluding its `IconContext` utility).
 Rails validates against this same file that the frontend uses for search.

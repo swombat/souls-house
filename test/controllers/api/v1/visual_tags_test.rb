@@ -47,6 +47,31 @@ module Api
         assert_equal "Title only", @room.reload.title
       end
 
+      test "account and resident API palettes keep presentation only shape and order independent of usage" do
+        popular = @account.visual_tags.create!(label: "Alpha", icon: "Heart", colour: "rose")
+        @account.chats.create!(title: "Hidden room", model_id: "openrouter/auto", visual_tag: popular)
+        [ @resident_headers, @human_headers ].each do |headers|
+          get api_v1_visual_tags_path, headers: headers
+          assert_response :success
+          assert_equal [ @tag.as_json, popular.as_json ], response.parsed_body.fetch("visual_tags")
+        end
+      end
+
+      test "guest API palette reveals neither aggregate counts nor usage ranked order in unseated rooms" do
+        destination = accounts(:team_account)
+        destination.guest_memberships.create!(agent: @agent, added_by: @user)
+        unused = destination.visual_tags.create!(label: "Zulu", icon: "Heart", colour: "rose")
+        used = destination.visual_tags.create!(label: "Alpha", icon: "Heart", colour: "rose")
+        2.times do
+          destination.chats.create!(title: "Unseated", model_id: "openrouter/auto", visual_tag: used)
+        end
+
+        get api_v1_visual_tags_path, params: { account_id: destination.to_param }, headers: @resident_headers
+        assert_response :success
+        assert_equal [ unused.as_json, used.as_json ], response.parsed_body.fetch("visual_tags")
+        assert response.parsed_body.fetch("visual_tags").all? { |tag| tag.keys.sort == %w[colour icon id label] }
+      end
+
       test "human account key can select a room tag" do
         update_room({ visual_tag_id: @tag.to_param }, headers: @human_headers)
         assert_response :success

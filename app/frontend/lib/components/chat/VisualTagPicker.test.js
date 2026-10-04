@@ -25,6 +25,19 @@ test('selecting a tag sends only its stable ID, not a title update', async () =>
   );
 });
 
+test('selection list preserves server usage order without adding counts to tag labels', async () => {
+  render(VisualTagPicker, {
+    ...props,
+    tags: [
+      { ...tag, label: 'Zulu', conversation_count: 3 },
+      { ...tag, id: 'unused', label: 'alpha', conversation_count: 0 },
+    ],
+  });
+  await fireEvent.click(screen.getByRole('button'));
+  await screen.findByRole('menuitem', { name: 'Zulu' });
+  expect(screen.getAllByRole('menuitem').map((item) => item.textContent.trim())).toEqual(['No tag', 'Zulu', 'alpha']);
+});
+
 test('clears a tag and reports failed saves', async () => {
   render(VisualTagPicker, { ...props, chat: { ...props.chat, visual_tag: tag } });
   await fireEvent.click(screen.getByRole('button'));
