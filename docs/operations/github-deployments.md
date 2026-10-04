@@ -14,6 +14,8 @@ checksum verifies download integrity, not publisher independence. GitHub and
 upstream release authority remain trusted. Existing SQL migration edits or
 removals, divergent history, unknown custom images, or a downgrade require an
 operator; this worker does not invent a state migration.
+Migration checks compare complete recursive Git trees, rejecting a truncated
+tree. They do not rely on GitHub compare's 300-file changed-file limit.
 
 ## Authority and installation
 
