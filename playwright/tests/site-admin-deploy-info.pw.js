@@ -21,7 +21,7 @@ test('site admin menu shows deployed and last merged commits when opened', async
   await component.getByText('Site Admin').click();
   const info = page.getByTestId('deploy-info');
   await expect(info).toContainText('Deployed aaaaaaa');
-  await expect(info).toContainText('Last merged bbbbbbb');
+  await expect(info).toContainText('Master bbbbbbb · committed');
   await expect(info).toContainText('Live build is 2 commits behind master');
   expect(requests).toBe(1);
   await page.screenshot({ path: 'tmp/site-admin-deploy-info.png' });

@@ -8,7 +8,7 @@ describe('deployLines', () => {
   it('shows deployed and merged separately, with the gap', () => {
     const text = deployLines({ deployed, master, behind_by: 3 }).map((l) => l.text);
     expect(text[0]).toMatch(/^Deployed aaaaaaa · up /);
-    expect(text[1]).toMatch(/^Last merged bbbbbbb · /);
+    expect(text[1]).toMatch(/^Master bbbbbbb · committed /);
     expect(text[2]).toBe('Live build is 3 commits behind master');
   });
 
@@ -28,7 +28,7 @@ describe('deployLines', () => {
       (l) => l.text
     );
     expect(text[0]).toContain('(uncommitted)');
-    expect(text[1]).toBe('Last merged: unknown (GitHub unreachable)');
+    expect(text[1]).toBe('Master: unknown (GitHub unreachable)');
   });
 
   it('handles loading and failure', () => {

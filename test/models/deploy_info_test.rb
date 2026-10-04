@@ -64,6 +64,14 @@ class DeployInfoTest < ActiveSupport::TestCase
     assert_nil DeployInfo.summary(version: DEPLOYED)[:behind_by]
   end
 
+  test "an ahead status without a positive count is unknown, never up to date" do
+    [ nil, 0, -1, "3", 2.5 ].each do |count|
+      Rails.cache.clear
+      @responses["/repos/swombat/souls-house/compare/#{DEPLOYED}...#{MASTER}"] = { "status" => "ahead", "ahead_by" => count }
+      assert_nil DeployInfo.summary(version: DEPLOYED)[:behind_by], count.inspect
+    end
+  end
+
   test "GitHub failure leaves master unknown and keeps the deployed line" do
     DeployInfo.fetcher = ->(_path) { raise Net::OpenTimeout }
 

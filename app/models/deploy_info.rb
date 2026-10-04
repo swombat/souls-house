@@ -96,7 +96,9 @@ class DeployInfo
 
     case data["status"]
     when "identical" then 0
-    when "ahead" then data["ahead_by"].to_i
+    when "ahead"
+      count = data["ahead_by"]
+      count if count.is_a?(Integer) && count.positive?
     end
   end
 

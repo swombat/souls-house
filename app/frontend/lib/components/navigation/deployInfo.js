@@ -26,13 +26,15 @@ export function deployLines(info, { failed = false } = {}) {
 
   const master = info.master;
   if (master) {
+    // Commit time, not merge time: direct pushes and fast-forwards keep the
+    // original commit date, so this must not be presented as "merged at".
     const merged = when(master.committed_at);
     lines.push({
-      text: `Last merged ${master.short}${merged ? ` · ${merged}` : ''}`,
+      text: `Master ${master.short}${merged ? ` · committed ${merged}` : ''}`,
       title: [master.sha, master.message].filter(Boolean).join(' — '),
     });
   } else {
-    lines.push({ text: 'Last merged: unknown (GitHub unreachable)' });
+    lines.push({ text: 'Master: unknown (GitHub unreachable)' });
   }
 
   if (info.behind_by === 0) lines.push({ text: 'Live build is up to date with master' });
