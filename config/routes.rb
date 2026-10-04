@@ -97,6 +97,8 @@ Rails.application.routes.draw do
     resources :services, only: :index, module: :accounts
     resource :personal_services, only: :show, module: :accounts
     resource :integrations, only: :show, module: :accounts
+    resource :interface, only: :show, module: :accounts
+    resources :visual_tags, only: [ :create, :update, :destroy ], module: :accounts
     resources :service_authorizations, only: :create
     resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts
 
@@ -107,6 +109,7 @@ Rails.application.routes.draw do
         post :transcription, to: "chats/transcriptions#create"
       end
       scope module: :chats do
+        resource :visual_tag, only: :update
         resource :reply_dismissal, only: :create
         resource :draft, only: [ :show, :update ]
         resource :archive, only: [ :create, :destroy ]
@@ -231,6 +234,7 @@ Rails.application.routes.draw do
     end
 
     namespace :v1 do
+      resources :visual_tags, only: :index
       resources :rhythms, only: %i[index show create update destroy] do
         member do
           post :join

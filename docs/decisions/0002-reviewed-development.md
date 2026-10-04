@@ -52,6 +52,13 @@ without checking product intent, resident effects and actual implementation.
 
 ## Consequences
 
+### Bounded exception: thread visual tags (2026-10-04)
+
+In **Thread icons request** (`GJPBMe`), Daniel directed “Just build it and then
+ask Lume for input :-)”. For issue #148 this waives the pre-implementation
+scope-review gate, not review of the implemented result or the separate
+deployment permission. Work remains on a dedicated PR branch.
+
 ### Scoped deployment-button amendment (2026-10-03)
 
 Daniel authorised the three manual GitHub deployment buttons in

@@ -1,0 +1,89 @@
+import { expect, test } from '@playwright/test';
+
+for (const mobile of [false, true]) {
+  test.describe(`visual tags (${mobile ? 'touch' : 'desktop'})`, () => {
+    if (mobile) test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+    test('configure, select, rename, clear and delete without navigating the discussion list', async ({
+      page,
+      request,
+    }, testInfo) => {
+      const response = await request.post('/test/e2e/setup', {
+        data: { run_id: `visual-tags-${mobile}-${Date.now()}` },
+      });
+      expect(response.ok()).toBe(true);
+      const setup = await response.json();
+      try {
+        const fixture = await request.post('/test/e2e/conversation_fixture', {
+          data: { account_id: setup.account_id, count: 1 },
+        });
+        expect(fixture.ok()).toBe(true);
+        await page.goto('/login');
+        await page.getByLabel(/email/i).fill(setup.primary_user.email);
+        await page.getByLabel(/password/i).fill(setup.password);
+        await page.getByRole('button', { name: /log in/i }).click();
+        await expect(page).toHaveURL(/\/$/);
+        const base = `/accounts/${setup.account_param}`;
+        await page.goto(`${base}/interface`);
+        await expect(page.getByRole('heading', { name: 'Visual tags', exact: true })).toBeVisible();
+        await expect(page.getByRole('form', { name: /^Edit / })).toHaveCount(9);
+        const form = page.getByRole('form', { name: 'Add visual tag', exact: true });
+        await form.getByLabel('Label', { exact: true }).fill('Experiments');
+        await form.getByLabel('Icon', { exact: true }).selectOption('MagnifyingGlass');
+        await form.getByLabel('Colour', { exact: true }).selectOption('teal');
+        await form.getByRole('button', { name: 'Add tag', exact: true }).click();
+        await expect(page.getByRole('form', { name: 'Edit Experiments' })).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await page.screenshot({ path: testInfo.outputPath('interface.png'), fullPage: true });
+
+        async function choose(label, choice) {
+          const nav = mobile
+            ? page.getByRole('navigation', { name: 'Recent conversations' })
+            : page.locator('aside').first();
+          const button = nav.getByRole('button', { name: `Change visual tag: ${label}`, exact: true }).first();
+          if (mobile) await button.tap();
+          else {
+            await button.focus();
+            await page.keyboard.press('Enter');
+          }
+          const option = page.getByRole('menuitem', { name: choice, exact: true });
+          if (mobile) await option.tap();
+          else await option.click();
+          await expect(
+            nav.getByRole('button', { name: `Change visual tag: ${choice}`, exact: true }).first()
+          ).toBeVisible();
+          await expect(page).toHaveURL(new RegExp(`${base}/chats/new$`));
+        }
+
+        await page.goto(`${base}/chats/new`);
+        await choose('No tag', 'Experiments');
+        await page.reload();
+        await choose('Experiments', 'No tag');
+        await choose('No tag', 'Experiments');
+        await page.screenshot({ path: testInfo.outputPath('tagged-list.png') });
+        await page.goto(`${base}/interface`);
+        const edit = page.getByRole('form', { name: 'Edit Experiments' });
+        await edit.getByLabel('Label', { exact: true }).fill('Fieldwork');
+        await edit.getByRole('button', { name: 'Save changes' }).click();
+        await expect(page.getByRole('form', { name: 'Edit Fieldwork' })).toBeVisible();
+        await page.goto(`${base}/chats/new`);
+        const nav = mobile
+          ? page.getByRole('navigation', { name: 'Recent conversations' })
+          : page.locator('aside').first();
+        await expect(nav.getByRole('button', { name: 'Change visual tag: Fieldwork' }).first()).toBeVisible();
+        await page.goto(`${base}/interface`);
+        page.once('dialog', (dialog) => dialog.accept());
+        await page
+          .getByRole('form', { name: 'Edit Fieldwork' })
+          .getByRole('button', { name: 'Remove', exact: true })
+          .click();
+        await expect(page.getByRole('form', { name: 'Edit Fieldwork' })).toHaveCount(0);
+        await page.goto(`${base}/chats/new`);
+        await expect(nav.getByRole('button', { name: 'Change visual tag: Fieldwork' })).toHaveCount(0);
+        await expect(nav.getByRole('button', { name: 'Change visual tag: No tag' }).first()).toBeVisible();
+      } finally {
+        expect((await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } })).ok()).toBe(true);
+      }
+    });
+  });
+}

@@ -15,6 +15,7 @@ class ApplicationController < ActionController::Base
       {
         user: Current.user.as_json,
         account: current_account&.as_json,
+        visual_tags: -> { current_account&.visual_tags&.palette_order&.map(&:as_json) || [] },
         accounts: Current.user.confirmed_accounts.map(&:as_json),
         reply_attention: -> { ReplyExpectation.summary_for(Current.user, account: current_account, chat: @chat) },
         account_has_whiteboards: current_account&.whiteboards&.active&.exists? || false,

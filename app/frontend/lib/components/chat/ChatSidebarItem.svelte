@@ -5,8 +5,9 @@
   import ChatParticipantAvatars from '$lib/components/chat/ChatParticipantAvatars.svelte';
   import { Archive, ChatText, Spinner, Trash } from 'phosphor-svelte';
   import ReplyAttentionEye from './ReplyAttentionEye.svelte';
+  import VisualTagPicker from './VisualTagPicker.svelte';
 
-  let { chat, accountId, activeChatId = null } = $props();
+  let { chat, accountId, activeChatId = null, visualTags = [] } = $props();
 </script>
 
 <div class="relative">
@@ -17,7 +18,7 @@
          {chat.archived ? 'opacity-50' : ''}
          {chat.discarded ? 'opacity-40' : ''}">
     <div
-      class="font-medium text-sm truncate flex items-center gap-2 {chat.discarded
+      class="pl-8 font-medium text-sm truncate flex items-center gap-2 {chat.discarded
         ? 'line-through text-red-600 dark:text-red-400'
         : ''}">
       {#if chat.archived && !chat.discarded}
@@ -53,6 +54,9 @@
       </div>
     </div>
   </Link>
+  <div class="absolute left-2 top-1.5">
+    <VisualTagPicker {chat} {accountId} tags={visualTags} />
+  </div>
   <div class="absolute right-2 top-2">
     <ReplyAttentionEye chatId={chat.id} {accountId} />
   </div>

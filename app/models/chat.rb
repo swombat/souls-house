@@ -17,6 +17,8 @@ class Chat < ApplicationRecord
   include Chat::Summarizable
 
   belongs_to :account
+  belongs_to :visual_tag, optional: true
+  validate :visual_tag_belongs_to_account
   belongs_to :active_whiteboard, class_name: "Whiteboard", optional: true
 
   has_many :chat_agents, dependent: :destroy
@@ -31,6 +33,8 @@ class Chat < ApplicationRecord
   json_attributes :title_or_default, :model_id, :model_label, :ai_model_name, :updated_at_formatted,
                   :updated_at_short, :activity_at, :message_count, :context_tokens, :cost_tokens, :reasoning_tokens, :web_access, :manual_responses,
                   :participants_json, :archived_at, :discarded_at, :archived, :discarded, :respondable, :summary do |hash, options|
+    hash["visual_tag"] = visual_tag&.as_json
+    hash.delete("visual_tag_id")
     # For sidebar format, only include attributes used by the chat list UI.
     if options&.dig(:as) == :sidebar_json
       hash.slice!(
@@ -44,6 +48,7 @@ class Chat < ApplicationRecord
         "context_tokens",
         "manual_responses",
         "participants_json",
+        "visual_tag",
         "archived",
         "discarded"
       )
@@ -178,9 +183,7 @@ class Chat < ApplicationRecord
   end
 
   def json_cache_key(as: nil)
-    return cache_key_with_version unless as.present?
-
-    "#{cache_key_with_version}/json/#{as}/v3"
+    "#{cache_key_with_version}/json/#{as || 'default'}/v4/#{visual_tag&.cache_key_with_version || 'untagged'}"
   end
 
   def updated_at_formatted
@@ -348,6 +351,12 @@ class Chat < ApplicationRecord
   end
 
   private
+
+  def visual_tag_belongs_to_account
+    if visual_tag && visual_tag.account_id != account_id
+      errors.add(:visual_tag, "must belong to this account")
+    end
+  end
 
   def configure_defaults
     unless ai_model_id.present? || model_id_string.present?

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_03_160200) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_04_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -530,6 +530,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_160200) do
     t.string "title"
     t.datetime "updated_at", null: false
     t.boolean "web_access", default: false, null: false
+    t.bigint "visual_tag_id"
     t.index ["account_id", "client_conversation_id"], name: "index_chats_on_client_conversation_identity", unique: true, where: "(client_conversation_id IS NOT NULL)"
     t.index ["account_id", "created_at"], name: "index_chats_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_chats_on_account_id"
@@ -540,6 +541,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_160200) do
     t.index ["initiated_by_agent_id"], name: "index_chats_on_initiated_by_agent_id"
     t.index ["last_consolidated_at"], name: "index_chats_on_last_consolidated_at"
     t.index ["manual_responses"], name: "index_chats_on_manual_responses"
+    t.index ["visual_tag_id"], name: "index_chats_on_visual_tag_id"
     t.index ["web_access"], name: "index_chats_on_web_access"
   end
 
@@ -1343,6 +1345,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_160200) do
     t.index ["password_reset_token"], name: "index_users_on_password_reset_token", unique: true
   end
 
+  create_table "visual_tags", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "label", limit: 80, null: false
+    t.string "icon", null: false
+    t.string "colour", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_visual_tags_on_account_id"
+    t.index ["id", "account_id"], name: "index_visual_tags_on_id_and_account_id", unique: true
+  end
+
   create_table "whiteboards", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.text "content"
@@ -1405,6 +1418,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_160200) do
   add_foreign_key "chats", "accounts"
   add_foreign_key "chats", "agents", column: "initiated_by_agent_id"
   add_foreign_key "chats", "ai_models"
+  add_foreign_key "chats", "visual_tags", column: ["visual_tag_id", "account_id"], primary_key: ["id", "account_id"]
   add_foreign_key "chats", "whiteboards", column: "active_whiteboard_id"
   add_foreign_key "conversation_compactions", "chats"
   add_foreign_key "conversation_drafts", "chats"
@@ -1498,6 +1512,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_160200) do
   add_foreign_key "tool_calls", "messages"
   add_foreign_key "tweet_logs", "agents"
   add_foreign_key "tweet_logs", "x_integrations"
+  add_foreign_key "visual_tags", "accounts"
   add_foreign_key "whiteboards", "accounts"
   add_foreign_key "x_integrations", "accounts"
 end
