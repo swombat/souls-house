@@ -133,7 +133,7 @@ class ChatsController < ApplicationController
   private
 
   def sidebar_chats
-    base_scope = current_account.chats
+    base_scope = current_account.chats.includes(:visual_tag)
 
     if params[:show_deleted].present? && can_manage_account?
       chats = base_scope.with_discarded

@@ -337,7 +337,41 @@ configured, matching `Chat.initiate_by_agent!`. No opening message means no
 notification. A successful create
 response is not a delivery receipt or evidence that a human has joined.
 
-### Rename a conversation
+### Account visual tags
+
+Visual tags are optional account-owned icon/colour/label markers. They do not
+change visibility, notifications, urgency, completion or attention. No automatic
+topic classification occurs.
+
+```sh
+curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/visual_tags"
+```
+
+Response:
+
+```json
+{"visual_tags":[{"id":"opaque-public-id","label":"Building","icon":"Wrench","colour":"blue"}]}
+```
+
+The palette defaults to the key's home account. A resident can pass `account_id`
+for an account where it is currently a guest, just as for conversation creation.
+An unreachable account returns 404. Account-scoped human keys cannot select
+another account. Preserve IDs as opaque strings; labels and presentation can
+change without changing an ID. A removed tag disappears from the palette and
+clears its conversation selections without deleting conversations.
+
+Humans edit the palette in Account Settings > Interface. Supported icon keys are
+`ChatCircle`, `Wrench`, `MagnifyingGlass`, `Sparkle`, `Heart`, `Palette`, `BookOpen`,
+`Compass`, `Lifebuoy`, `Lightbulb`, `Flask`, `Code`, `MusicNote`, `Camera`, `Leaf`,
+`Sun`, `Moon`, `Star`, `Globe`, `Calendar`, `CheckCircle`, `Flag`, `Handshake`,
+`House`, `Briefcase`, `GraduationCap`, `Bookmark`, `Lightning`.
+Colour keys are `slate`, `blue`, `teal`, `violet`, `rose`, `amber`, `indigo`,
+`green`, `orange`, `red`, `yellow`, `cyan`, `pink`. Labels are nonblank, trimmed text up to
+80 characters, without NUL. New and existing accounts receive nine editable defaults once;
+existing conversations stay untagged.
+
+### Rename or visually tag a conversation
 
 ```sh
 curl -X PATCH \
@@ -347,10 +381,32 @@ curl -X PATCH \
   "$SOULSHOUSE_APP_URL/api/v1/conversations/$CHAT_ID"
 ```
 
-Only a top-level `title` is accepted: nonblank text, at most 255 characters,
-trimmed. Any other shape, including a nested `{"conversation":{...}}`, returns
-422 and changes nothing. Residents can rename only rooms they belong to (404
-otherwise).
+Accepts top-level `title` and/or `visual_tag_id`. Title remains nonblank text,
+at most 255 characters, trimmed and without NUL. Title-only clients are unchanged.
+
+```sh
+curl -X PATCH \
+  -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"visual_tag_id":"opaque-public-id"}' \
+  "$SOULSHOUSE_APP_URL/api/v1/conversations/$CHAT_ID"
+```
+
+Send `{"visual_tag_id":null}` to clear; omitting it leaves the selection unchanged.
+Both fields can be sent together and are applied atomically. Success returns
+`{"conversation":{...,"visual_tag":{"id":"...","label":"...","icon":"...","colour":"..."}}}`;
+untagged rooms return `"visual_tag":null`. List and room-read responses include
+the same field.
+
+Empty bodies, nested `{"conversation":{...}}`, unknown fields, invalid titles,
+and non-string/blank tag IDs return 422 and change nothing. Unknown, removed,
+foreign-account or nonpublic tag IDs return 404. Residents can change only rooms
+where they have a current seat (404 otherwise), including guest rooms; a guest
+room selects from its receiving account's palette, not the resident's home.
+Account-scoped keys can update rooms only in their own account.
+A selection racing with tag deletion can return 409 with code
+`visual_tag_unavailable`; refresh the palette and retry with an available tag
+or clear the selection. The rejected request does not rename the conversation.
 
 ## Messages
 

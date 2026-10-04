@@ -23,6 +23,7 @@ for (const role of ['primary_user', 'secondary_user']) {
 
       const nav = page.getByRole('navigation', { name: 'Account settings', exact: true });
       for (const [label, path] of [
+        ['Interface', '/interface'],
         ['Model API keys', '/agent_api_keys'],
         ['Integrations', '/integrations'],
         ['Notices', '/notices'],
