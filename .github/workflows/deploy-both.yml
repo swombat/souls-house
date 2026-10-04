@@ -6,5 +6,6 @@ permissions:
 jobs:
   deploy:
     uses: ./.github/workflows/deploy-house.yml
+    secrets: inherit
     with:
       operation: both
