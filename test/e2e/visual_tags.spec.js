@@ -26,15 +26,42 @@ for (const mobile of [false, true]) {
         const base = `/accounts/${setup.account_param}`;
         await page.goto(`${base}/interface`);
         await expect(page.getByRole('heading', { name: 'Visual tags', exact: true })).toBeVisible();
-        await expect(page.getByRole('form', { name: /^Edit / })).toHaveCount(9);
+        await expect(page.getByRole('button', { name: /^Edit / })).toHaveCount(9);
+        await page.screenshot({ path: testInfo.outputPath('interface.png'), fullPage: true });
+        await page.getByRole('button', { name: 'Add tag', exact: true }).click();
         const form = page.getByRole('form', { name: 'Add visual tag', exact: true });
         await form.getByLabel('Label', { exact: true }).fill('Experiments');
-        await form.getByLabel('Icon', { exact: true }).selectOption('Flask');
-        await form.getByLabel('Colour', { exact: true }).selectOption('cyan');
+        await form.getByRole('button', { name: 'Colour: cyan' }).click();
+        await expect(form.getByRole('button', { name: 'Chat Circle', exact: true })).toBeVisible();
+        // The symbols must actually render, not just leave an empty SVG-sized box.
+        await expect
+          .poll(() =>
+            form
+              .getByRole('button', { name: 'Chat Circle', exact: true })
+              .locator('svg')
+              .evaluate((svg) => svg.getBBox().width)
+          )
+          .toBeGreaterThan(0);
+        await page.screenshot({ path: testInfo.outputPath('icon-browser.png') });
+        await form.getByRole('searchbox', { name: 'Search icons' }).fill('money');
+        await expect(form.getByRole('button', { name: 'Coins', exact: true })).toBeVisible();
+        await form.getByRole('searchbox', { name: 'Search icons' }).fill('atom');
+        await expect(form.getByRole('button', { name: 'Atom', exact: true }).locator('svg use')).toHaveAttribute(
+          'href',
+          /#Atom-duotone$/
+        );
+        await form.getByRole('button', { name: 'Atom', exact: true }).click();
+        await form.getByRole('button', { name: 'Colour: cyan' }).click();
+        await page.screenshot({ path: testInfo.outputPath('icon-search.png') });
         await form.getByRole('button', { name: 'Add tag', exact: true }).click();
-        await expect(page.getByRole('form', { name: 'Edit Experiments' })).toBeVisible();
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Edit Experiments' })).toBeVisible();
+        await page.getByRole('button', { name: 'Edit Experiments' }).click();
+        await expect(page.getByRole('button', { name: 'Colour: cyan' })).toHaveAttribute('aria-pressed', 'true');
+        await page.getByRole('searchbox', { name: 'Search icons' }).fill('atom');
+        await expect(page.getByRole('button', { name: 'Atom', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await page.getByRole('button', { name: 'Cancel', exact: true }).click();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-        await page.screenshot({ path: testInfo.outputPath('interface.png'), fullPage: true });
 
         async function choose(label, choice) {
           const nav = mobile
@@ -62,20 +89,22 @@ for (const mobile of [false, true]) {
         await choose('No tag', 'Experiments');
         await page.screenshot({ path: testInfo.outputPath('tagged-list.png') });
         await page.goto(`${base}/interface`);
+        await page.getByRole('button', { name: 'Edit Experiments' }).click();
         const edit = page.getByRole('form', { name: 'Edit Experiments' });
         await edit.getByLabel('Label', { exact: true }).fill('Fieldwork');
         await edit.getByRole('button', { name: 'Save changes' }).click();
-        await expect(page.getByRole('form', { name: 'Edit Fieldwork' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Edit Fieldwork' })).toBeVisible();
         await page.goto(`${base}/chats/new`);
         const nav = mobile
           ? page.getByRole('navigation', { name: 'Recent conversations' })
           : page.locator('aside').first();
         await expect(nav.getByRole('button', { name: 'Change visual tag: Fieldwork' }).first()).toBeVisible();
         await page.goto(`${base}/interface`);
+        await page.getByRole('button', { name: 'Edit Fieldwork' }).click();
         page.once('dialog', (dialog) => dialog.accept());
         await page
           .getByRole('form', { name: 'Edit Fieldwork' })
-          .getByRole('button', { name: 'Remove', exact: true })
+          .getByRole('button', { name: 'Remove tag', exact: true })
           .click();
         await expect(page.getByRole('form', { name: 'Edit Fieldwork' })).toHaveCount(0);
         await page.goto(`${base}/chats/new`);

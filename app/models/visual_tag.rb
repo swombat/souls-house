@@ -3,11 +3,7 @@ class VisualTag < ApplicationRecord
   include Broadcastable
   include SyncAuthorizable
 
-  ICON_OPTIONS = %w[
-    ChatCircle Wrench MagnifyingGlass Sparkle Heart Palette BookOpen Compass Lifebuoy
-    Lightbulb Flask Code MusicNote Camera Leaf Sun Moon Star Globe Calendar
-    CheckCircle Flag Handshake House Briefcase GraduationCap Bookmark Lightning
-  ].freeze
+  ICON_OPTIONS = JSON.parse(Rails.root.join("config/visual_tag_icons.json").read).map(&:freeze).freeze
   COLOUR_OPTIONS = %w[slate blue teal violet rose amber indigo green orange red yellow cyan pink].freeze
   DEFAULTS = [
     [ "Conversation", "ChatCircle", "slate" ],
