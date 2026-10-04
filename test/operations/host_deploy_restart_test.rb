@@ -31,6 +31,7 @@ class HostDeployRestartTest < ActiveSupport::TestCase
       case args
       when ["docker", "exec", "fixture", "pgrep", "-x", "chaos"] then ["", "", @idle]
       when ["docker", "inspect", "--format", "{{json .Mounts}}", "fixture"] then [@mounts, "", @success]
+      when ["docker", "inspect", "--format", "{{.Config.Image}}", "fixture"] then ["fixture:new\n", "", @success]
       when ["docker", "exec", "fixture", "chaos", "--version"] then ["chaos 47.10.0\n", "", @success]
       else raise "Unexpected Docker call"
       end
@@ -82,7 +83,7 @@ class HostDeployRestartTest < ActiveSupport::TestCase
     end
     assert_not @agent.reload.active?
     assert @agent.paused?
-    assert_equal "fixture:old", @agent.container_image
+    assert_equal "fixture:new", @agent.container_image
   end
 
 end

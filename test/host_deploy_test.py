@@ -129,8 +129,9 @@ class WorkerTest(unittest.TestCase):
         config.mkdir()
         (config / "settings.json").write_text("{}")
         (self.root / "runs" / ("a" * 32)).mkdir(parents=True)
-        gate.atomic(self.root / "current.json",
-                    dict(id="a" * 32, operation="both", state="starting", step="accepted"))
+        initial = dict(id="a" * 32, operation="both", state="starting", step="accepted")
+        gate.atomic(self.root / "current.json", initial)
+        gate.atomic(self.root / "runs" / ("a" * 32) / "status.json", initial)
         self.patches = [patch.object(worker, "ROOT", self.root), patch.object(worker, "CONFIG", config)]
         for p in self.patches:
             p.start()
@@ -179,6 +180,21 @@ class WorkerTest(unittest.TestCase):
             with self.assertRaises(RuntimeError) as error:
                 self.w.run(["fixture"])
         self.assertNotIn("SECRET", str(error.exception))
+
+    def test_manual_service_restart_cannot_replay_completed_job(self):
+        self.w.report("verified", state="success")
+        with self.assertRaises(RuntimeError):
+            worker.Worker("both")
+
+    def test_kamal_timeout_removes_only_its_named_container(self):
+        self.w.settings["tools_image"] = "fixture"
+        with patch.object(self.w, "run",
+                          side_effect=[subprocess.TimeoutExpired("docker", 7200), None]) as run:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.w.kamal("deploy")
+        name = "house-deploy-kamal-" + self.w.data["id"]
+        self.assertIn(name, run.call_args_list[0].args[0])
+        self.assertEqual(["docker", "rm", "-f", name], run.call_args_list[1].args[0])
 
 
 if __name__ == "__main__":

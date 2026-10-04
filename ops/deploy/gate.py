@@ -17,7 +17,7 @@ FIELDS = ("id", "operation", "state", "step", "rails_revision", "chaos_revision"
 
 
 def atomic(path, data):
-    temp = path.with_suffix(".tmp")
+    temp = path.with_suffix(f".{os.getpid()}.{uuid.uuid4().hex}.tmp")
     temp.write_text(json.dumps(data) + "\n")
     temp.replace(path)
 

@@ -85,6 +85,9 @@ Chaos retains previous images and original volumes, waits at most ten minutes
 per busy resident, and restarts one resident at a time. The existing SQL admission
 gate blocks enqueue/admission only for the short actual restart, so new requests
 wait and are delivered afterwards instead of being cancelled by a visible pause.
+PostgreSQL releases a gate idle in external Docker/HTTP work for90 seconds;
+per-resident receipts record observed `gate_seconds`. This bounds a hung external
+call, not a claim that every failure automatically restores a usable resident.
 No model is invoked, private memory read, or full-volume snapshot made. Skipped
 busy residents remain unchanged: final **partial** is red in Actions.
 
@@ -101,7 +104,8 @@ not success. Failed and interrupted requests block further deployments.
 Inspect resident/container state before clearing
 `/var/lib/house-deploy/current.json` to allow another request.
 
-A failed resident recreation is left inactive/paused for operator repair. Its
+A failed resident recreation is left inactive/paused for operator repair, with
+its image reconciled to Docker's actual image when the container can be inspected. Its
 previous image and flags are recorded before changes. Rolling back a binary
 does not reverse a schema migration; do not automatically boot an older binary
 against migrated state. Existing GitHub/restic backups remain the recovery

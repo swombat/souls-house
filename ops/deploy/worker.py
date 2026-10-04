@@ -50,9 +50,10 @@ class Worker:
     def __init__(self, operation):
         self.settings = json.loads((CONFIG / "settings.json").read_text())
         self.data = json.loads((ROOT / "current.json").read_text())
+        self.directory = ROOT / "runs" / self.data["id"]
+        self.data = json.loads((self.directory / "status.json").read_text())
         if self.data["operation"] != operation or self.data["state"] != "starting":
             raise RuntimeError("No matching request")
-        self.directory = ROOT / "runs" / self.data["id"]
         self.log = (self.directory / "private.log").open("a")
         self.repo = self.directory / "repo"
 
@@ -96,8 +97,9 @@ class Worker:
         # and cannot silently change through a web deployment.
 
     def kamal(self, *args):
+        name = "house-deploy-kamal-" + self.data["id"]
         command = [
-            "docker", "run", "--rm", "--network", "host",
+            "docker", "run", "--rm", "--name", name, "--network", "host",
             "-v", "/var/run/docker.sock:/var/run/docker.sock",
             "-v", f"{self.repo}:/work",
             "-v", f"{CONFIG}/house.env:/work/config/house.env:ro",
@@ -107,7 +109,13 @@ class Worker:
             "-e", "HOUSE_BUILDER_REMOTE=",
             self.settings["tools_image"], *args,
         ]
-        self.run(command, timeout=7200)
+        try:
+            self.run(command, timeout=7200)
+        except Exception:
+            # Killing a docker-run client alone doesn't stop its container.
+            # Only this job's explicitly named tools container can be removed.
+            self.run(["docker", "rm", "-f", name], timeout=30)
+            raise
 
     def deploy_rails(self):
         self.report("deploying Rails")

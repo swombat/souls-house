@@ -21,17 +21,22 @@ idle = -> {
 }
 
 changed = false
+result = nil
 begin
   Agent.transaction do
     # Same gate as enqueue!/admit!. New requests wait for this short restart,
     # then enqueue normally; they are NOT cancelled by a visible paused flag.
     Agent.connection.execute("SET LOCAL lock_timeout = '5s'")
+    # External Docker/HTTP work is idle-in-transaction from PostgreSQL's view.
+    # Bound its hold even if the host loses its docker-exec connection.
+    Agent.connection.execute("SET LOCAL idle_in_transaction_session_timeout = '90s'")
     Agent.connection.execute("SELECT pg_advisory_xact_lock(1936680308, 1)")
+    gate_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     a.lock!
     if a.container_image == target
-      puts({result: "current", id: a.id}.to_json)
+      result = {result: "current", id: a.id}
     elsif !idle.call
-      puts({result: "busy", id: a.id}.to_json)
+      result = {result: "busy", id: a.id}
     else
       before = inspect_mounts.call
       old = a.attributes.slice("active", "paused", "container_image")
@@ -46,15 +51,22 @@ begin
         .turn_status(SecureRandom.uuid)
       raise "Ledger unavailable" unless receipt[:status] == 404 && receipt.dig(:body, "ledger_id").present?
       a.update!(active: old.fetch("active"), paused: old.fetch("paused"))
-      puts({result: "healthy", id: a.id}.to_json)
+      result = {result: "healthy", id: a.id}
     end
+    result[:gate_seconds] = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - gate_started).round(3)
   end
+  puts result.to_json
 rescue ActiveRecord::LockWaitTimeout
   raise if changed
   puts({result: "busy", id: a.id}.to_json)
 rescue StandardError
   # DB rollback cannot roll back a container or runtime schema. Don't silently
   # boot an older binary against potentially migrated data.
-  a.reload.update!(active: false, paused: true) if changed
+  if changed
+    actual, _err, inspected = Open3.capture3("docker", "inspect", "--format", "{{.Config.Image}}", a.container_name)
+    attributes = {active: false, paused: true}
+    attributes[:container_image] = actual.strip if inspected.success? && !actual.strip.empty?
+    a.reload.update!(attributes)
+  end
   raise
 end
