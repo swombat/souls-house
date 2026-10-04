@@ -52,6 +52,18 @@ without checking product intent, resident effects and actual implementation.
 
 ## Consequences
 
+### Scoped deployment-button amendment (2026-10-03)
+
+Daniel authorised the three manual GitHub deployment buttons in
+[the deployment conversation](https://souls.house/accounts/gNDMev/chats/PJvKvY);
+[issue #144](https://github.com/swombat/souls-house/issues/144) records the design.
+For those buttons, clicking **Run workflow** is release approval: the host
+automatically selects and records latest master / published upstream mainline
+Chaos. There is no second commit-selection or reviewer gate. Ordinary issue/PR
+review remains. The initial setup includes authorised end-to-end deployment
+verification. See [operations](../operations/github-deployments.md) for the
+credential boundary, integrity versus publisher trust, and partial-result rules.
+
 ### Bounded exception: resident rhythm controls (2026-10-03)
 
 In the **Resident Rhythm Control** conversation (`WYNDDj`, message `YRxNxj`),
