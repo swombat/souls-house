@@ -16,8 +16,8 @@ test('edits all three fields using a scoped stable ID', async () => {
   render(VisualTagForm, props);
   expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
   await fireEvent.input(screen.getByLabelText('Label'), { target: { value: 'Care' } });
-  await fireEvent.change(screen.getByLabelText('Icon'), { target: { value: 'Heart' } });
-  await fireEvent.change(screen.getByLabelText('Colour'), { target: { value: 'rose' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Heart', exact: true }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Colour: rose' }));
   await fireEvent.submit(screen.getByRole('form'));
   expect(router.patch).toHaveBeenCalledWith(
     '/accounts/house/visual_tags/tag-one',
@@ -45,19 +45,19 @@ test('adds a tag and keeps failed input with validation errors visible', async (
 test('read-only members cannot mutate the palette', () => {
   render(VisualTagForm, { ...props, canManage: false });
   expect(screen.getByLabelText('Label')).toBeDisabled();
-  expect(screen.getByLabelText('Icon')).toBeDisabled();
-  expect(screen.getByLabelText('Colour')).toBeDisabled();
-  expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Heart', exact: true })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Colour: rose' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument();
 });
 
 test('deleting explains the effect on tagged conversations and allows cancellation', async () => {
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   render(VisualTagForm, props);
-  await fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Remove tag' }));
   expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Conversations using it will have no tag'));
   expect(router.delete).not.toHaveBeenCalled();
   confirm.mockReturnValue(true);
-  await fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Remove tag' }));
   expect(router.delete).toHaveBeenCalledWith('/accounts/house/visual_tags/tag-one', expect.any(Object));
   confirm.mockRestore();
 });

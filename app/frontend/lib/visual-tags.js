@@ -1,64 +1,7 @@
-import {
-  ChatCircle,
-  Wrench,
-  MagnifyingGlass,
-  Sparkle,
-  Heart,
-  Palette,
-  BookOpen,
-  Compass,
-  Lifebuoy,
-  Lightbulb,
-  Flask,
-  Code,
-  MusicNote,
-  Camera,
-  Leaf,
-  Sun,
-  Moon,
-  Star,
-  Globe,
-  Calendar,
-  CheckCircle,
-  Flag,
-  Handshake,
-  House,
-  Briefcase,
-  GraduationCap,
-  Bookmark,
-  Lightning,
-} from 'phosphor-svelte';
+import iconNames from '../../../config/visual_tag_icons.json';
 
-export const visualTagIcons = {
-  ChatCircle,
-  Wrench,
-  MagnifyingGlass,
-  Sparkle,
-  Heart,
-  Palette,
-  BookOpen,
-  Compass,
-  Lifebuoy,
-  Lightbulb,
-  Flask,
-  Code,
-  MusicNote,
-  Camera,
-  Leaf,
-  Sun,
-  Moon,
-  Star,
-  Globe,
-  Calendar,
-  CheckCircle,
-  Flag,
-  Handshake,
-  House,
-  Briefcase,
-  GraduationCap,
-  Bookmark,
-  Lightning,
-};
+export const visualTagIconNames = Object.freeze(iconNames);
+const validIconNames = new Set(visualTagIconNames);
 
 export const visualTagColours = {
   slate: 'text-slate-600 dark:text-slate-300',
@@ -76,14 +19,14 @@ export const visualTagColours = {
   pink: 'text-pink-600 dark:text-pink-400',
 };
 
-export function visualTagIcon(icon) {
-  return visualTagIcons[icon] || ChatCircle;
+export function visualTagIconName(icon) {
+  return validIconNames.has(icon) ? icon : 'ChatCircle';
 }
 
 export function visualTagColour(colour) {
-  return visualTagColours[colour] || visualTagColours.slate;
+  return Object.hasOwn(visualTagColours, colour) ? visualTagColours[colour] : visualTagColours.slate;
 }
 
 export function iconLabel(icon) {
-  return icon.replace(/([a-z])([A-Z])/g, '$1 $2');
+  return icon.replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').replace(/([a-z0-9])([A-Z])/g, '$1 $2');
 }

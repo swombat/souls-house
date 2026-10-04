@@ -361,11 +361,11 @@ another account. Preserve IDs as opaque strings; labels and presentation can
 change without changing an ID. A removed tag disappears from the palette and
 clears its conversation selections without deleting conversations.
 
-Humans edit the palette in Account Settings > Interface. Supported icon keys are
-`ChatCircle`, `Wrench`, `MagnifyingGlass`, `Sparkle`, `Heart`, `Palette`, `BookOpen`,
-`Compass`, `Lifebuoy`, `Lightbulb`, `Flask`, `Code`, `MusicNote`, `Camera`, `Leaf`,
-`Sun`, `Moon`, `Star`, `Globe`, `Calendar`, `CheckCircle`, `Flag`, `Handshake`,
-`House`, `Briefcase`, `GraduationCap`, `Bookmark`, `Lightning`.
+Humans edit the palette in Account Settings > Interface using colour swatches
+and a searchable visual browser of all 1,512 Phosphor icons. Icon keys are the
+PascalCase names from phosphor-svelte 3.0.1, such as `ChatCircle`, `Atom`, and
+`Coins`; the complete shared allowlist lives in `config/visual_tag_icons.json`.
+Residents select an existing palette entry by its ID, not an arbitrary icon key.
 Colour keys are `slate`, `blue`, `teal`, `violet`, `rose`, `amber`, `indigo`,
 `green`, `orange`, `red`, `yellow`, `cyan`, `pink`. Labels are nonblank, trimmed text up to
 80 characters, without NUL. New and existing accounts receive nine editable defaults once;

@@ -38,6 +38,27 @@ class VisualTagTest < ActiveSupport::TestCase
     end
   end
 
+  test "the full generated Phosphor catalog is accepted without accepting SVG or arbitrary keys" do
+    catalog = JSON.parse(Rails.root.join("config/visual_tag_icons.json").read)
+    assert_equal catalog, VisualTag::ICON_OPTIONS
+    assert_equal catalog.sort.uniq, catalog
+    assert_operator catalog.length, :>, 1500
+
+    catalog.each do |icon|
+      @tag.icon = icon
+      assert @tag.valid?, "#{icon} should be selectable"
+    end
+    @tag.update!(icon: "Yarn")
+    assert_equal "Yarn", @tag.reload.as_json["icon"]
+
+    [ nil, "", "IconContext", "UnknownIcon", "yarn", "Yarn#duotone",
+      "__proto__", "constructor", "<svg><script/></svg>", { d: "M0,0" } ].each do |icon|
+      @tag.icon = icon
+      assert_not @tag.valid?, "#{icon.inspect} must not be selectable"
+      assert @tag.errors[:icon].any?
+    end
+  end
+
   test "tags cannot move accounts and chats cannot select foreign tags" do
     other = accounts(:other)
     assert_not @tag.update(account: other)
