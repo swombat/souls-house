@@ -120,6 +120,12 @@ class ReleaseTest(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "tree incomplete"):
                     worker.verify_migrations(before, after)
 
+    def test_checks_upstream_migrate_directories_as_well_as_migrations(self):
+        before = self.tree(**{"var/proc/db/migrate/sqlite/0001.sql": "a",
+                              "var/proc/db/migrate/postgres/0001.sql": "b"})
+        with self.assertRaisesRegex(RuntimeError, "migrations changed"):
+            worker.verify_migrations(before, self.tree())
+
     def release(self, sha="a" * 40, date="2026-10-03"):
         name = f"chaos-linux-x86_64-{sha}.tar.gz"
         return dict(tag_name="build-" + sha, draft=False, published_at=date,

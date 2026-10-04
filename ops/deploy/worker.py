@@ -51,7 +51,7 @@ def migration_blobs(tree):
     if tree.get("truncated") is not False:
         raise RuntimeError("Release tree incomplete; operator review required")
     return {entry["path"]: entry["sha"] for entry in tree["tree"]
-            if entry["type"] == "blob" and "migration" in entry["path"].lower()
+            if entry["type"] == "blob" and "migrat" in entry["path"].lower()
             and entry["path"].endswith(".sql")}
 
 
