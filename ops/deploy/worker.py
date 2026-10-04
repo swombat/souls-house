@@ -46,6 +46,21 @@ def version_tuple(version):
     return tuple(map(int, match[1].split(".")))
 
 
+def migration_blobs(tree):
+    """Compare complete trees, not GitHub compare's first 300 changed files."""
+    if tree.get("truncated") is not False:
+        raise RuntimeError("Release tree incomplete; operator review required")
+    return {entry["path"]: entry["sha"] for entry in tree["tree"]
+            if entry["type"] == "blob" and "migration" in entry["path"].lower()
+            and entry["path"].endswith(".sql")}
+
+
+def verify_migrations(before, after):
+    old, new = migration_blobs(before), migration_blobs(after)
+    if any(new.get(path) != sha for path, sha in old.items()):
+        raise RuntimeError("Existing runtime migrations changed; operator review required")
+
+
 class Worker:
     def __init__(self, operation):
         self.settings = json.loads((CONFIG / "settings.json").read_text())
@@ -163,15 +178,13 @@ class Worker:
             if not SHA.fullmatch(before_ref):
                 raise RuntimeError("Previous runtime has no source label")
             previous_refs.add(before_ref)
-        for old in previous_refs - {revision}:
+        previous_refs.discard(revision)
+        target_tree = github(f"git/trees/{revision}?recursive=1") if previous_refs else None
+        for old in previous_refs:
             comparison = github(f"compare/{old}...{revision}")
             if comparison["status"] not in ("ahead", "identical"):
                 raise RuntimeError("Refusing runtime downgrade or divergent release")
-            if len(comparison.get("files", [])) >= 300:
-                raise RuntimeError("Release diff truncated; operator review required")
-            if any("migration" in f["filename"].lower() and f["filename"].endswith(".sql")
-                   and f["status"] != "added" for f in comparison.get("files", [])):
-                raise RuntimeError("Existing runtime migrations changed; operator review required")
+            verify_migrations(github(f"git/trees/{old}?recursive=1"), target_tree)
 
         tag = f"deploy-{self.data['id']}"
         stock = self.settings["stock_repository"] + ":" + tag

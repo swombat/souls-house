@@ -96,6 +96,30 @@ class GateTest(unittest.TestCase):
 
 
 class ReleaseTest(unittest.TestCase):
+    def tree(self, **paths):
+        return {"truncated": False, "tree": [
+            {"path": path, "sha": sha, "type": "blob"} for path, sha in paths.items()]}
+
+    def test_complete_migration_check_allows_additions(self):
+        before = self.tree(**{"db/migrations/001.sql": "a"})
+        after = self.tree(**{"db/migrations/001.sql": "a", "db/migrations/002.sql": "b",
+                             **{f"src/{i}.rs": "changed" for i in range(350)}})
+        worker.verify_migrations(before, after)
+
+    def test_complete_migration_check_refuses_edits_deletions_and_renames(self):
+        before = self.tree(**{"db/migrations/001.sql": "a"})
+        for after in [self.tree(), self.tree(**{"db/migrations/001.sql": "b"}),
+                      self.tree(**{"db/migrations/renamed.sql": "a"})]:
+            with self.assertRaisesRegex(RuntimeError, "migrations changed"):
+                worker.verify_migrations(before, after)
+
+    def test_incomplete_or_unmarked_tree_fails_closed(self):
+        good = self.tree()
+        for bad in [{"truncated": True, "tree": []}, {"tree": []}]:
+            for before, after in [(bad, good), (good, bad)]:
+                with self.assertRaisesRegex(RuntimeError, "tree incomplete"):
+                    worker.verify_migrations(before, after)
+
     def release(self, sha="a" * 40, date="2026-10-03"):
         name = f"chaos-linux-x86_64-{sha}.tar.gz"
         return dict(tag_name="build-" + sha, draft=False, published_at=date,
