@@ -46,7 +46,7 @@ class Accounts::VisualTagsControllerTest < ActionDispatch::IntegrationTest
     follow_redirect!
     assert inertia_shared_props.fetch("errors").fetch("label").present?
 
-    patch account_visual_tag_path(@account, @tag), params: { visual_tag: { colour: "red" } }
+    patch account_visual_tag_path(@account, @tag), params: { visual_tag: { colour: "unsafe" } }
     assert_redirected_to account_interface_path(@account)
     assert_equal "green", @tag.reload.colour
   end

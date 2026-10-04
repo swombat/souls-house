@@ -363,8 +363,11 @@ clears its conversation selections without deleting conversations.
 
 Humans edit the palette in Account Settings > Interface. Supported icon keys are
 `ChatCircle`, `Wrench`, `MagnifyingGlass`, `Sparkle`, `Heart`, `Palette`, `BookOpen`,
-`Compass`, `Lifebuoy`; colour keys are `slate`, `blue`, `teal`, `violet`, `rose`,
-`amber`, `indigo`, `green`, `orange`. Labels are nonblank, trimmed text up to
+`Compass`, `Lifebuoy`, `Lightbulb`, `Flask`, `Code`, `MusicNote`, `Camera`, `Leaf`,
+`Sun`, `Moon`, `Star`, `Globe`, `Calendar`, `CheckCircle`, `Flag`, `Handshake`,
+`House`, `Briefcase`, `GraduationCap`, `Bookmark`, `Lightning`.
+Colour keys are `slate`, `blue`, `teal`, `violet`, `rose`, `amber`, `indigo`,
+`green`, `orange`, `red`, `yellow`, `cyan`, `pink`. Labels are nonblank, trimmed text up to
 80 characters, without NUL. New and existing accounts receive nine editable defaults once;
 existing conversations stay untagged.
 

@@ -8,6 +8,25 @@ import {
   BookOpen,
   Compass,
   Lifebuoy,
+  Lightbulb,
+  Flask,
+  Code,
+  MusicNote,
+  Camera,
+  Leaf,
+  Sun,
+  Moon,
+  Star,
+  Globe,
+  Calendar,
+  CheckCircle,
+  Flag,
+  Handshake,
+  House,
+  Briefcase,
+  GraduationCap,
+  Bookmark,
+  Lightning,
 } from 'phosphor-svelte';
 
 export const visualTagIcons = {
@@ -20,6 +39,25 @@ export const visualTagIcons = {
   BookOpen,
   Compass,
   Lifebuoy,
+  Lightbulb,
+  Flask,
+  Code,
+  MusicNote,
+  Camera,
+  Leaf,
+  Sun,
+  Moon,
+  Star,
+  Globe,
+  Calendar,
+  CheckCircle,
+  Flag,
+  Handshake,
+  House,
+  Briefcase,
+  GraduationCap,
+  Bookmark,
+  Lightning,
 };
 
 export const visualTagColours = {
@@ -32,6 +70,10 @@ export const visualTagColours = {
   indigo: 'text-indigo-600 dark:text-indigo-400',
   green: 'text-green-700 dark:text-green-400',
   orange: 'text-orange-700 dark:text-orange-400',
+  red: 'text-red-600 dark:text-red-400',
+  yellow: 'text-yellow-700 dark:text-yellow-400',
+  cyan: 'text-cyan-700 dark:text-cyan-400',
+  pink: 'text-pink-600 dark:text-pink-400',
 };
 
 export function visualTagIcon(icon) {

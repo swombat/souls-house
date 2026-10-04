@@ -3,8 +3,12 @@ class VisualTag < ApplicationRecord
   include Broadcastable
   include SyncAuthorizable
 
-  ICON_OPTIONS = %w[ChatCircle Wrench MagnifyingGlass Sparkle Heart Palette BookOpen Compass Lifebuoy].freeze
-  COLOUR_OPTIONS = %w[slate blue teal violet rose amber indigo green orange].freeze
+  ICON_OPTIONS = %w[
+    ChatCircle Wrench MagnifyingGlass Sparkle Heart Palette BookOpen Compass Lifebuoy
+    Lightbulb Flask Code MusicNote Camera Leaf Sun Moon Star Globe Calendar
+    CheckCircle Flag Handshake House Briefcase GraduationCap Bookmark Lightning
+  ].freeze
+  COLOUR_OPTIONS = %w[slate blue teal violet rose amber indigo green orange red yellow cyan pink].freeze
   DEFAULTS = [
     [ "Conversation", "ChatCircle", "slate" ],
     [ "Building", "Wrench", "blue" ],
@@ -28,7 +32,6 @@ class VisualTag < ApplicationRecord
   validate :account_cannot_change, on: :update
   before_validation -> { self.label = label.strip if label.is_a?(String) }
   before_destroy :clear_chat_selections
-  after_update_commit :refresh_tagged_chats
 
   scope :palette_order, -> { order(:id) }
 
@@ -56,10 +59,6 @@ class VisualTag < ApplicationRecord
 
   def clear_chat_selections
     chats.find_each { |chat| chat.update!(visual_tag: nil) }
-  end
-
-  def refresh_tagged_chats
-    chats.find_each(&:touch)
   end
 
 end

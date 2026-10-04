@@ -29,8 +29,8 @@ for (const mobile of [false, true]) {
         await expect(page.getByRole('form', { name: /^Edit / })).toHaveCount(9);
         const form = page.getByRole('form', { name: 'Add visual tag', exact: true });
         await form.getByLabel('Label', { exact: true }).fill('Experiments');
-        await form.getByLabel('Icon', { exact: true }).selectOption('MagnifyingGlass');
-        await form.getByLabel('Colour', { exact: true }).selectOption('teal');
+        await form.getByLabel('Icon', { exact: true }).selectOption('Flask');
+        await form.getByLabel('Colour', { exact: true }).selectOption('cyan');
         await form.getByRole('button', { name: 'Add tag', exact: true }).click();
         await expect(page.getByRole('form', { name: 'Edit Experiments' })).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

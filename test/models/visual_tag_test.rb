@@ -80,8 +80,8 @@ class VisualTagTest < ActiveSupport::TestCase
     @chat.cached_sidebar_json
     account_channel = "Account:#{@account.to_param}"
     chat_channel = "Chat:#{@chat.to_param}"
-    assert_broadcasts(account_channel, 2) do
-      assert_broadcasts(chat_channel, 1) { @tag.update!(label: "Revised", colour: "green") }
+    assert_broadcasts(account_channel, 1) do
+      assert_broadcasts(chat_channel, 0) { @tag.update!(label: "Revised", colour: "green") }
     end
     assert_equal "Revised", @chat.reload.cached_json["visual_tag"]["label"]
     assert_equal "green", @chat.cached_sidebar_json["visual_tag"]["colour"]

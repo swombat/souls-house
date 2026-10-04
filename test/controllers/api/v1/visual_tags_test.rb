@@ -53,6 +53,28 @@ module Api
         assert_equal @tag, @room.reload.visual_tag
       end
 
+      test "palette edits preserve conversation ordering and cursor continuation" do
+        @room.update!(visual_tag: @tag, updated_at: 2.days.ago)
+        newer = @account.chats.create!(title: "Newer", model_id: "openrouter/auto",
+          manual_responses: true, agents: [ @agent ])
+        timestamp = @room.reload.updated_at
+        get api_v1_conversations_path, headers: @resident_headers
+        order = response.parsed_body.fetch("conversations").pluck("id")
+        get api_v1_conversations_path, params: { cursor: newer.to_param }, headers: @resident_headers
+        continuation = response.parsed_body.fetch("conversations").pluck("id")
+        assert_includes continuation, @room.to_param
+
+        @tag.update!(label: "Experiments", icon: "Flask", colour: "cyan")
+
+        assert_equal timestamp, @room.reload.updated_at
+        get api_v1_conversations_path, headers: @resident_headers
+        assert_equal order, response.parsed_body.fetch("conversations").pluck("id")
+        get api_v1_conversations_path, params: { cursor: newer.to_param }, headers: @resident_headers
+        rows = response.parsed_body.fetch("conversations")
+        assert_equal continuation, rows.pluck("id")
+        assert_equal "Experiments", rows.find { |row| row["id"] == @room.to_param }.dig("visual_tag", "label")
+      end
+
       test "malformed payloads fail explicitly without changing either metadata field" do
         @room.update!(visual_tag: @tag)
         [
