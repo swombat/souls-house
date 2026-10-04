@@ -76,9 +76,9 @@ class Worker:
         self.data.update(step=step, **values)
         atomic(self.directory / "status.json", self.data)
 
-    def run(self, args, *, input=None, capture=False, timeout=3600, cwd=None):
+    def run(self, args, *, input=None, capture=False, timeout=3600, cwd=None, umask=-1):
         result = subprocess.run(args, input=input, text=True, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, timeout=timeout, cwd=cwd)
+                                stderr=subprocess.PIPE, timeout=timeout, cwd=cwd, umask=umask)
         self.log.write(result.stdout + result.stderr)
         self.log.flush()
         if result.returncode:
@@ -103,7 +103,10 @@ class Worker:
     def checkout(self):
         self.report("resolving master", state="running")
         self.run(["git", "clone", "--depth", "1", "--single-branch", "--branch", "master",
-                  self.settings["repository"], str(self.repo)])
+                  self.settings["repository"], str(self.repo)], umask=0o022)
+        # Only public source gets normal file modes. The enclosing run directory,
+        # configuration, receipts and logs remain root-private. Docker COPY keeps
+        # source modes, so a 077 checkout would break non-root runtime startup.
         revision = self.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture=True)
         if not SHA.fullmatch(revision):
             raise RuntimeError("Invalid master revision")
@@ -196,6 +199,7 @@ class Worker:
                             "chaos", stock, "--version"], capture=True)
         version_tuple(version)
         self.report("checking runtime", chaos_version=version)
+        self.check_runtime_permissions(stock)
         self.run(["docker", "run", "--rm", "--network", "none",
                   "-v", f"{self.repo}:/source:ro", "-e", "CHAOS_TEST_BIN=/usr/local/bin/chaos",
                   "--entrypoint", "python3", stock, "-m", "unittest", "discover",
@@ -207,6 +211,7 @@ class Worker:
             self.run(["docker", "build", "--build-arg", f"MIRA_BASE_IMAGE={stock}",
                       "-f", str(self.repo / "agent-runtime/Dockerfile.mira-dev"),
                       "-t", development, str(self.repo / "agent-runtime")], timeout=7200)
+            self.check_runtime_permissions(development)
         skipped = []
         script = (CODE / "roll-resident.rb").read_text()
         for resident in residents:
@@ -239,6 +244,16 @@ class Worker:
         for alias in self.settings["stock_aliases"]:
             self.run(["docker", "tag", stock, alias])
         self.report("all residents healthy")
+
+    def check_runtime_permissions(self, image):
+        self.run(["docker", "run", "--rm", "--network", "none", "--user", "agent",
+                  "--entrypoint", "python3", image, "-c",
+                  "from pathlib import Path; "
+                  "root=Path('/usr/local/share/helixkit-agent'); "
+                  "paths=list(root.glob('*.py'))+list(Path('/home/agent').glob('*.py')); "
+                  "assert root/'runtime_settings.py' in paths; "
+                  "assert root/'runtime_hooks.py' in paths; "
+                  "[compile(p.read_bytes(),str(p),'exec') for p in paths]"], timeout=60)
 
     def execute(self):
         try:
