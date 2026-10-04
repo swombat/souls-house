@@ -53,7 +53,9 @@
           <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-muted/50">
             <VisualTagIcon icon={tag.icon} size={26} class={visualTagColour(tag.colour)} />
           </span>
-          <span class="min-w-0 flex-1 break-words text-sm font-medium">{tag.label}</span>
+          <span class="min-w-0 flex-1 break-words text-sm font-medium">
+            {tag.label} <span class="text-muted-foreground">({tag.conversation_count})</span>
+          </span>
           {#if can_manage}<PencilSimple
               size={16}
               class="shrink-0 text-muted-foreground/50 group-hover:text-foreground" />{/if}
@@ -63,8 +65,9 @@
       {/each}
     </div>
     <p class="text-xs leading-relaxed text-muted-foreground">
-      Shared across this account. Editing a tag updates every thread using it; removing it leaves the threads intact.
-      Tags never change notifications or access.
+      Counts include archived conversations in this account, but not deleted conversations. Shared across this account.
+      Editing a tag updates every thread using it; removing it leaves the threads intact. Tags never change
+      notifications or access.
     </p>
   </section>
 </AccountSettingsLayout>

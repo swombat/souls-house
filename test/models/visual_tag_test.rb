@@ -1,9 +1,11 @@
 require "test_helper"
+require "active_record/testing/query_assertions"
 require_relative "../../db/migrate/20261004150000_create_visual_tags"
 
 class VisualTagTest < ActiveSupport::TestCase
 
   include ActionCable::TestHelper
+  include ActiveRecord::Assertions::QueryAssertions
 
   setup do
     @account = accounts(:personal_account)
@@ -35,6 +37,56 @@ class VisualTagTest < ActiveSupport::TestCase
     assert_nil VisualTag.resolve_for(@account, nil)
     [ @tag.id, @tag.id.to_s, "", [], {}, "unknown" ].each do |invalid|
       assert_raises(ActiveRecord::RecordNotFound) { VisualTag.resolve_for(@account, invalid) }
+    end
+  end
+
+  test "browser palette ranks kept account conversations then alphabetical labels including unused tags" do
+    alpha = @account.visual_tags.create!(label: "alpha", icon: "Heart", colour: "rose")
+    popular = @account.visual_tags.create!(label: "Zulu", icon: "Compass", colour: "green")
+    @account.visual_tags.create!(label: "zebra", icon: "Heart", colour: "rose")
+    @account.visual_tags.create!(label: "Empty", icon: "Heart", colour: "rose")
+    @account.chats.create!(title: "Alpha", model_id: "openrouter/auto", visual_tag: alpha)
+    @account.chats.create!(title: "Popular", model_id: "openrouter/auto", visual_tag: popular)
+    archived = @account.chats.create!(title: "Archived", model_id: "openrouter/auto", visual_tag: popular)
+    archived.archive!
+    3.times do
+      @account.chats.create!(title: "Deleted", model_id: "openrouter/auto", visual_tag: @tag).discard!
+    end
+    foreign = accounts(:other).visual_tags.create!(label: "Foreign", icon: "Heart", colour: "rose")
+    accounts(:other).chats.create!(title: "Foreign", model_id: "openrouter/auto", visual_tag: foreign)
+
+    palette = VisualTag.palette_with_usage_for(@account)
+    assert_equal %w[Zulu alpha Building Empty zebra], palette.pluck("label")
+    assert_equal [ 2, 1, 1, 0, 0 ], palette.pluck("conversation_count")
+    assert_equal %w[colour conversation_count icon id label], palette.first.keys.sort
+    assert_equal %w[colour icon id label], popular.as_json.keys.sort
+    assert_equal @tag.as_json, @chat.as_json["visual_tag"]
+  end
+
+  test "browser palette reflects selections clears discards and restores without cached counts" do
+    other = @account.visual_tags.create!(label: "Other", icon: "Heart", colour: "rose")
+    @chat.update!(visual_tag: other)
+    palette = VisualTag.palette_with_usage_for(@account)
+    assert_equal [ other.to_param, @tag.to_param ], palette.pluck("id")
+    assert_equal [ 1, 0 ], palette.pluck("conversation_count")
+
+    @chat.discard!
+    assert_equal [ 0, 0 ], VisualTag.palette_with_usage_for(@account).pluck("conversation_count")
+    @chat.undiscard!
+    @chat.archive!
+    assert_equal [ 1, 0 ], VisualTag.palette_with_usage_for(@account).pluck("conversation_count")
+    @chat.update!(visual_tag: nil)
+    assert_equal [ 0, 0 ], VisualTag.palette_with_usage_for(@account).pluck("conversation_count")
+  end
+
+  test "browser palette loads usage in two queries regardless of palette size" do
+    10.times { |i| @account.visual_tags.create!(label: "Unused #{i}", icon: "Heart", colour: "rose") }
+    # Start with fresh associations, as in a request, not the setup's loaded tags.
+    account = Account.find(@account.id)
+    assert_queries_count(2) do
+      palette = VisualTag.palette_with_usage_for(account)
+      assert_equal 11, palette.size
+      assert_equal 1, palette.first["conversation_count"]
     end
   end
 

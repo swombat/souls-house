@@ -65,7 +65,7 @@ class Chats::VisualTagsControllerTest < ActionDispatch::IntegrationTest
     @chat.update!(visual_tag: @tag)
     get account_chats_path(@account), headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
     assert_response :success
-    assert_equal [ @tag.as_json ], inertia_shared_props["visual_tags"]
+    assert_equal [ @tag.as_json.merge("conversation_count" => 1) ], inertia_shared_props["visual_tags"]
     row = inertia_shared_props.fetch("chats").find { |chat| chat["id"] == @chat.to_param }
     assert_equal @tag.as_json, row.fetch("visual_tag")
   end

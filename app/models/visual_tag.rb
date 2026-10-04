@@ -31,6 +31,18 @@ class VisualTag < ApplicationRecord
 
   scope :palette_order, -> { order(:id) }
 
+  # Browser-only account aggregate. Keep as_json and the resident API palette
+  # presentation-only: guests must not learn usage in rooms they cannot see.
+  # Archiving preserves a selection; only discarded conversations stop counting.
+  def self.palette_with_usage_for(account)
+    counts = account.chats.kept.where.not(visual_tag_id: nil).group(:visual_tag_id).count
+    account.visual_tags.map do |tag|
+      tag.as_json.merge("conversation_count" => counts.fetch(tag.id, 0))
+    end.sort_by do |tag|
+      [ -tag["conversation_count"], tag["label"].downcase, tag["label"], tag["id"] ]
+    end
+  end
+
   # Public writes accept opaque IDs only, not database IDs or coercible values.
   def self.resolve_for(account, public_id)
     return if public_id.nil?

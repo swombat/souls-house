@@ -27,6 +27,19 @@ for (const mobile of [false, true]) {
         await page.goto(`${base}/interface`);
         await expect(page.getByRole('heading', { name: 'Visual tags', exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: /^Edit / })).toHaveCount(9);
+        const defaults = [
+          'Building',
+          'Care',
+          'Conversation',
+          'Creative',
+          'Help',
+          'Plans',
+          'Reading',
+          'Reflection',
+          'Research',
+        ];
+        const palette = page.getByLabel('Visual tag palette', { exact: true });
+        await expect(palette.getByRole('button')).toHaveText(defaults.map((label) => `${label} (0)`));
         await page.screenshot({ path: testInfo.outputPath('interface.png'), fullPage: true });
         await page.getByRole('button', { name: 'Add tag', exact: true }).click();
         const form = page.getByRole('form', { name: 'Add visual tag', exact: true });
@@ -56,7 +69,9 @@ for (const mobile of [false, true]) {
         await form.getByRole('button', { name: 'Add tag', exact: true }).click();
         await expect(page.getByRole('dialog')).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Edit Experiments' })).toBeVisible();
-        await page.getByRole('button', { name: 'Edit Experiments' }).click();
+        const experimentTile = page.getByRole('button', { name: 'Edit Experiments' });
+        if (mobile) await experimentTile.tap();
+        else await experimentTile.click();
         await expect(page.getByRole('button', { name: 'Colour: cyan' })).toHaveAttribute('aria-pressed', 'true');
         await page.getByRole('searchbox', { name: 'Search icons' }).fill('atom');
         await expect(page.getByRole('button', { name: 'Atom', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -68,6 +83,9 @@ for (const mobile of [false, true]) {
             ? page.getByRole('navigation', { name: 'Recent conversations' })
             : page.locator('aside').first();
           const button = nav.getByRole('button', { name: `Change visual tag: ${label}`, exact: true }).first();
+          // New props can arrive before the previous PATCH's onFinish enables
+          // this control again; focus() alone does not wait for that boundary.
+          await expect(button).toBeEnabled();
           if (mobile) await button.tap();
           else {
             await button.focus();
@@ -88,7 +106,18 @@ for (const mobile of [false, true]) {
         await choose('Experiments', 'No tag');
         await choose('No tag', 'Experiments');
         await page.screenshot({ path: testInfo.outputPath('tagged-list.png') });
+        const tagNav = mobile
+          ? page.getByRole('navigation', { name: 'Recent conversations' })
+          : page.locator('aside').first();
+        await tagNav.getByRole('button', { name: 'Change visual tag: Experiments', exact: true }).first().click();
+        await expect(page.getByRole('menuitem')).toHaveText(['No tag', 'Experiments', ...defaults]);
+        await page.keyboard.press('Escape');
         await page.goto(`${base}/interface`);
+        await expect(palette.getByRole('button')).toHaveText([
+          'Experiments (1)',
+          ...defaults.map((label) => `${label} (0)`),
+        ]);
+        await page.screenshot({ path: testInfo.outputPath('usage-ranked-palette.png'), fullPage: true });
         await page.getByRole('button', { name: 'Edit Experiments' }).click();
         const edit = page.getByRole('form', { name: 'Edit Experiments' });
         await edit.getByLabel('Label', { exact: true }).fill('Fieldwork');
