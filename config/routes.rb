@@ -231,8 +231,10 @@ Rails.application.routes.draw do
     end
 
     namespace :v1 do
-      resources :rhythms, only: :show do
+      resources :rhythms, only: %i[index show create update destroy] do
         member do
+          post :join
+          post :leave
           post :pause
           post :resume
         end

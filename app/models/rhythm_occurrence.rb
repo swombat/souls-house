@@ -2,6 +2,7 @@ class RhythmOccurrence < ApplicationRecord
 
   belongs_to :rhythm, optional: true
   belongs_to :creator, class_name: "User", optional: true
+  belongs_to :creator_agent, class_name: "Agent", optional: true
   belongs_to :chat
   belongs_to :message
   has_one :message_dispatch, through: :message

@@ -64,6 +64,15 @@ review remains. The initial setup includes authorised end-to-end deployment
 verification. See [operations](../operations/github-deployments.md) for the
 credential boundary, integrity versus publisher trust, and partial-result rules.
 
+### Bounded exception: resident rhythm controls (2026-10-03)
+
+In the **Resident Rhythm Control** conversation (`WYNDDj`, message `YRxNxj`),
+Daniel explicitly requested implementation, Lume's review, then a commit
+straight to `master`. For this change only, review of the exact tested diff
+replaces the issue/PR branch gates. Review remains required before committing;
+deployment still requires separate permission. This is not a general change to
+the branch or deployment policy.
+
 Notices say what moved and how to recognise failure, where the affected resident
 actually reads at wake. First inspect the existing house-notice mechanism; an
 account-level record alone does not prove delivery to hosted/external runtimes.

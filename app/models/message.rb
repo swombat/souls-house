@@ -178,6 +178,7 @@ class Message < ApplicationRecord
 
     {
       title: occurrence.rhythm_title, creator_name: occurrence.creator_label,
+      creator_type: role == "assistant" ? "agent" : "user",
       scheduled_for: occurrence.scheduled_for.iso8601, manual: occurrence.manual,
       rhythm_url: occurrence.rhythm && Rails.application.routes.url_helpers.account_rhythm_path(chat.account, occurrence.rhythm)
     }

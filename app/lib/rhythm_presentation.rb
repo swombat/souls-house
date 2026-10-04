@@ -7,11 +7,15 @@ class RhythmPresentation
   end
 
   def as_json(history: false)
-    manageable = @rhythm.manageable_by?(@user)
+    manageable = @rhythm.manageable_by?(@user) || @rhythm.manageable_by_agent?(@agent)
     holds = @rhythm.persisted? ? @rhythm.open_holds.includes(:user, :agent).to_a : []
     at = @rhythm.next_run_at
+    selected = @rhythm.agents.to_a
+    present = @agent && @rhythm.account.conversation_agents.exists?(@agent.id)
     {
       id: @rhythm.persisted? ? @rhythm.to_param : nil,
+      account_id: @rhythm.account.to_param,
+      url: @rhythm.persisted? ? account_rhythm_path(@rhythm.account, @rhythm) : nil,
       title: @rhythm.title, opening: @rhythm.opening, append_date: @rhythm.append_date,
       cadence: @rhythm.cadence, time_of_day: @rhythm.time_of_day,
       weekday: @rhythm.weekday, month_day: @rhythm.month_day, month: @rhythm.month,
@@ -19,10 +23,16 @@ class RhythmPresentation
       next_run_at: at&.iso8601,
       preview_title: at ? @rhythm.preview_title(at: at) : @rhythm.title,
       schedule_description: schedule_description, state: holds.empty? ? "active" : "paused",
-      creator: { id: @rhythm.creator&.to_param, name: display_name(@rhythm.creator) },
-      resident_ids: @rhythm.agents.map(&:to_param),
-      residents: @rhythm.agents.map { |resident| { id: resident.to_param, name: resident.name, colour: resident.colour } },
+      creator: {
+        id: (@rhythm.creator_agent || @rhythm.creator)&.to_param,
+        name: @rhythm.creator_agent&.name || display_name(@rhythm.creator),
+        type: @rhythm.creator_agent ? "agent" : (@rhythm.creator ? "user" : nil)
+      },
+      resident_ids: selected.map(&:to_param),
+      residents: selected.map { |resident| { id: resident.to_param, name: resident.name, colour: resident.colour } },
       can_manage: manageable, can_resume: holds.any? { |hold| can_release?(hold) },
+      can_join: !!(present && @agent.eligible_for_conversation? && !selected.include?(@agent)),
+      can_leave: !!(present && selected.include?(@agent)),
       start_request_key: SecureRandom.uuid, errors: @rhythm.errors.to_hash(true),
       holds: holds.map { |hold| hold_payload(hold) },
       occurrences: history ? @rhythm.occurrences.includes(:chat, message: :message_dispatch)
@@ -52,7 +62,10 @@ class RhythmPresentation
   end
 
   def can_release?(hold)
-    hold.kind == "agent" ? hold.agent == @agent : @rhythm.manageable_by?(@user)
+    return hold.agent == @agent if hold.kind == "agent"
+    return true if @rhythm.manageable_by?(@user)
+
+    hold.kind == "system" && @rhythm.manageable_by_agent?(@agent)
   end
 
   def hold_payload(hold)

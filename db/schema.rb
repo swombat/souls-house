@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_03_160100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_03_160200) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -712,7 +712,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_160100) do
     t.string "status", default: "pending", null: false
     t.jsonb "target_agent_ids", default: [], null: false
     t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
+    t.bigint "user_id"
     t.index ["chat_id", "user_id", "client_invocation_id"], name: "index_message_dispatches_on_invocation_identity", unique: true, where: "(client_invocation_id IS NOT NULL)"
     t.index ["chat_id"], name: "index_message_dispatches_on_chat_id"
     t.index ["message_id"], name: "index_message_dispatches_on_message_id", unique: true
@@ -720,6 +720,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_160100) do
     t.index ["status", "accepted_at"], name: "index_message_dispatches_on_status_and_accepted_at"
     t.index ["user_id"], name: "index_message_dispatches_on_user_id"
     t.check_constraint "(kind::text = ANY (ARRAY['mention'::character varying::text, 'automatic'::character varying::text, 'rhythm'::character varying::text])) AND message_id IS NOT NULL AND client_invocation_id IS NULL AND request_digest IS NULL OR kind::text = 'invoke'::text AND message_id IS NULL AND client_invocation_id IS NOT NULL AND request_digest IS NOT NULL", name: "message_dispatches_kind_variant"
+    t.check_constraint "user_id IS NOT NULL OR kind::text = 'rhythm'::text", name: "message_dispatches_human_author"
   end
 
   create_table "message_stone_revisions", force: :cascade do |t|
@@ -1089,18 +1090,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_160100) do
     t.string "request_key"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "creator_agent_id"
     t.index ["chat_id"], name: "index_rhythm_occurrences_on_chat_id"
+    t.index ["creator_agent_id"], name: "index_rhythm_occurrences_on_creator_agent_id"
     t.index ["creator_id"], name: "index_rhythm_occurrences_on_creator_id"
     t.index ["message_id"], name: "index_rhythm_occurrences_on_message_id", unique: true
     t.index ["rhythm_id", "request_key"], name: "index_rhythm_occurrences_manual_identity", unique: true, where: "(manual = true)"
     t.index ["rhythm_id", "scheduled_for"], name: "index_rhythm_occurrences_scheduled_identity", unique: true, where: "(manual = false)"
     t.index ["rhythm_id"], name: "index_rhythm_occurrences_on_rhythm_id"
+    t.check_constraint "creator_id IS NULL OR creator_agent_id IS NULL", name: "rhythm_occurrences_one_creator"
     t.check_constraint "manual = true AND request_key IS NOT NULL OR manual = false AND request_key IS NULL", name: "rhythm_occurrences_request_identity"
   end
 
   create_table "rhythms", force: :cascade do |t|
     t.bigint "account_id", null: false
-    t.bigint "creator_id", null: false
+    t.bigint "creator_id"
     t.string "title", null: false
     t.boolean "append_date", default: true, null: false
     t.text "opening", null: false
@@ -1113,9 +1117,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_160100) do
     t.datetime "next_run_at", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "creator_agent_id"
     t.index ["account_id"], name: "index_rhythms_on_account_id"
+    t.index ["creator_agent_id"], name: "index_rhythms_on_creator_agent_id"
     t.index ["creator_id"], name: "index_rhythms_on_creator_id"
     t.index ["next_run_at"], name: "index_rhythms_on_next_run_at"
+    t.check_constraint "creator_id IS NULL OR creator_agent_id IS NULL", name: "rhythms_one_creator"
   end
 
   create_table "safeguard_classifier_failures", force: :cascade do |t|
@@ -1460,12 +1467,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_160100) do
   add_foreign_key "rhythm_holds", "agents", on_delete: :nullify
   add_foreign_key "rhythm_holds", "rhythms", on_delete: :cascade
   add_foreign_key "rhythm_holds", "users", on_delete: :nullify
+  add_foreign_key "rhythm_occurrences", "agents", column: "creator_agent_id", on_delete: :nullify
   add_foreign_key "rhythm_occurrences", "chats", on_delete: :cascade
   add_foreign_key "rhythm_occurrences", "messages", on_delete: :cascade
   add_foreign_key "rhythm_occurrences", "rhythms", on_delete: :nullify
   add_foreign_key "rhythm_occurrences", "users", column: "creator_id", on_delete: :nullify
   add_foreign_key "rhythms", "accounts", on_delete: :cascade
-  add_foreign_key "rhythms", "users", column: "creator_id"
+  add_foreign_key "rhythms", "agents", column: "creator_agent_id", on_delete: :nullify
+  add_foreign_key "rhythms", "users", column: "creator_id", on_delete: :nullify
   add_foreign_key "safeguard_classifier_failures", "agents"
   add_foreign_key "safeguard_detections", "agent_runtime_interactions", column: "reclaimed_by_interaction_id", on_delete: :nullify
   add_foreign_key "safeguard_detections", "agent_runtime_interactions", on_delete: :nullify
