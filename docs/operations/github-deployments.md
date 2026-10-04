@@ -6,6 +6,21 @@ is needed. The host resolves latest master / latest published mainline Chaos
 once and records exact revisions. A green result means verification completed,
 not merely that the request was accepted.
 
+Only the `swombat` GitHub account may execute deployments. The shared transport
+checks both the original caller (`github.actor`) and the current attempt's
+caller (`github.triggering_actor`) before the environment-backed job starts.
+Other repository writers can still see and dispatch workflows, but their
+deployment job is skipped without receiving credentials. They cannot deploy by
+rerunning a previous owner-authorized run either. Use a fresh owner dispatch
+rather than rerunning another person's rejected request.
+
+This is an execution guard, not protection against malicious changes merged to
+`master`: repository administrators and reviewed mainline workflow code remain
+trusted. Keep the master-only environment policy and protected-mainline review
+rules in place. Older workflow runs retain their old definition when rerun;
+disable reruns of pre-guard deployment runs by deleting those Actions runs
+(retain host-side deployment receipts).
+
 The Chaos build channel includes upstream's `build-<sha>` prereleases. The
 version-tagged “latest stable” release can be older than the installed runtime.
 We require published Linux artifacts on upstream master, verify their checksum
