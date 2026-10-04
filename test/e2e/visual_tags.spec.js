@@ -69,7 +69,9 @@ for (const mobile of [false, true]) {
         await form.getByRole('button', { name: 'Add tag', exact: true }).click();
         await expect(page.getByRole('dialog')).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Edit Experiments' })).toBeVisible();
-        await page.getByRole('button', { name: 'Edit Experiments' }).click();
+        const experimentTile = page.getByRole('button', { name: 'Edit Experiments' });
+        if (mobile) await experimentTile.tap();
+        else await experimentTile.click();
         await expect(page.getByRole('button', { name: 'Colour: cyan' })).toHaveAttribute('aria-pressed', 'true');
         await page.getByRole('searchbox', { name: 'Search icons' }).fill('atom');
         await expect(page.getByRole('button', { name: 'Atom', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -81,6 +83,9 @@ for (const mobile of [false, true]) {
             ? page.getByRole('navigation', { name: 'Recent conversations' })
             : page.locator('aside').first();
           const button = nav.getByRole('button', { name: `Change visual tag: ${label}`, exact: true }).first();
+          // New props can arrive before the previous PATCH's onFinish enables
+          // this control again; focus() alone does not wait for that boundary.
+          await expect(button).toBeEnabled();
           if (mobile) await button.tap();
           else {
             await button.focus();
