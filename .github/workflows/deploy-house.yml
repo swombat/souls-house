@@ -18,7 +18,9 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/master'
+    # actor is the original caller; triggering_actor is the person requesting
+    # this attempt, including reruns. Require both before attaching secrets.
+    if: github.ref == 'refs/heads/master' && github.actor == 'swombat' && github.triggering_actor == 'swombat'
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     # IMPORTANT: configure this environment's branch policy to master only.

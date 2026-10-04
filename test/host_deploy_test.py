@@ -15,6 +15,33 @@ import gate
 import worker
 
 
+class WorkflowAuthorityTest(unittest.TestCase):
+    def test_owner_only_on_original_dispatch_and_rerun(self):
+        workflows = OPS.parents[1] / ".github/workflows"
+        transport = (workflows / "deploy-house.yml").read_text()
+        condition = next(line.strip().removeprefix("if: ") for line in
+                         transport.splitlines() if line.strip().startswith("if: "))
+        self.assertEqual(
+            "github.ref == 'refs/heads/master' && github.actor == 'swombat' "
+            "&& github.triggering_actor == 'swombat'", condition)
+        # Exercise the actual checked-in expression, not a separate predicate.
+        from types import SimpleNamespace
+        for ref in ["refs/heads/master", "refs/heads/other"]:
+            for actor in ["swombat", "seuros", ""]:
+                for triggering_actor in ["swombat", "seuros", ""]:
+                    context = SimpleNamespace(ref=ref, actor=actor,
+                                              triggering_actor=triggering_actor)
+                    allowed = eval(condition.replace("&&", "and"),
+                                   {"__builtins__": {}, "github": context})
+                    self.assertEqual(
+                        ref == "refs/heads/master" and actor == triggering_actor == "swombat",
+                        allowed, (ref, actor, triggering_actor))
+        for name in ["deploy-rails.yml", "deploy-chaos.yml", "deploy-both.yml"]:
+            caller = (workflows / name).read_text()
+            self.assertIn("uses: ./.github/workflows/deploy-house.yml", caller)
+            self.assertNotIn("runs-on:", caller)
+
+
 class GateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
