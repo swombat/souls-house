@@ -226,6 +226,35 @@ class WorkerTest(unittest.TestCase):
         self.assertIn(name, run.call_args_list[0].args[0])
         self.assertEqual(["docker", "rm", "-f", name], run.call_args_list[1].args[0])
 
+    def test_only_public_checkout_overrides_private_umask(self):
+        self.w.settings["repository"] = "https://example.test/public.git"
+        with patch.object(self.w, "run", side_effect=[None, "b" * 40]) as run:
+            self.w.checkout()
+        self.assertEqual(0o022, run.call_args_list[0].kwargs["umask"])
+        self.assertNotIn("umask", run.call_args_list[1].kwargs)
+
+    def test_subprocess_umask_does_not_change_worker_umask(self):
+        path = self.root / "public-file"
+        previous = os.umask(0o077)
+        try:
+            self.w.run([sys.executable, "-c",
+                        "from pathlib import Path; Path(__import__('sys').argv[1]).touch()", str(path)],
+                       umask=0o022)
+            private = self.root / "private-file"
+            private.touch()
+        finally:
+            os.umask(previous)
+        self.assertEqual(0o644, path.stat().st_mode & 0o777)
+        self.assertEqual(0o600, private.stat().st_mode & 0o777)
+
+    def test_permission_preflight_uses_resident_user_without_network(self):
+        with patch.object(self.w, "run") as run:
+            self.w.check_runtime_permissions("fixture:image")
+        args = run.call_args.args[0]
+        self.assertEqual("agent", args[args.index("--user") + 1])
+        self.assertEqual("none", args[args.index("--network") + 1])
+        self.assertIn("p.read_bytes()", args[-1])
+
 
 if __name__ == "__main__":
     unittest.main()
