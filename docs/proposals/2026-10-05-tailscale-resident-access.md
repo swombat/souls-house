@@ -1,8 +1,9 @@
 # Tailscale: resident access to machines on the account's tailnet
 
 > **Superseded in part (same day): joining is now by signing in.** See
-> "Rework: sign in instead of keys" at the end. The auth-key path below still
-> works for keys supplied through the API, but the form no longer asks for one.
+> "Rework: sign in instead of keys" at the end. New connections can no longer
+> carry an auth key; the key path below survives only for connections made
+> with one before the rework.
 
 Lume, 2026-10-05. Asked for by Daniel in conversation Rjgrge ("Tailscale
 integration"); review by Mira.
@@ -202,9 +203,11 @@ What changed:
 - **Connecting asks for nothing.** `Services::Catalog` declares no credential
   fields for Tailscale. The adapter makes a connection with `credential_kind:
   "none"`, an empty payload and `join: "sign_in"`, with a fixed fingerprint, so
-  an account has one. (An `auth_key`/`hosts` sent through the API still makes a
-  keyed connection, as before.) The controller accepts a provider with no
-  fields without requiring a `credentials` param.
+  an account has one. The controller accepts a provider with no fields without
+  requiring a `credentials` param, and drops anything else sent, so no new
+  keyed connection can be made. (Mira caught an earlier version of this
+  paragraph claiming the API still accepted a key; it doesn't.) Connections
+  made with a key before the rework still join with it.
 - **Signing in happens on the resident's integrations tab.** Once Tailscale is
   enabled for a resident, `Agents::TailnetsController` (`GET`/`POST
   …/residents/:id/tailnet`) runs `soulshouse-tailnet status --json` or `up
@@ -239,3 +242,13 @@ Revocation is unchanged: eventual, at the next reconciliation rebuild, with
 removal on the Machines page as the immediate cutoff. With no key in the
 manifest, there is no longer a reusable credential that could mint further
 nodes.
+
+### Review round 1 of the rework (Mira, 2026-10-05)
+
+Folded in: the tab now asks for `up` once whenever it finds the node running,
+not only when it watched the sign-in finish, so aliases are written even if
+the sign-in completed with the panel closed (1); discovered hosts have no
+`User`, so the tab says to name the account (`ssh username@dell`) and that its
+`authorized_keys` is the one to update (2); polling and requests stop when the
+panel goes away: in-flight requests are aborted and nothing is scheduled after
+destruction (3); the API claim above corrected.

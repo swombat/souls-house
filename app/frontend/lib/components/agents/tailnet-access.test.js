@@ -46,27 +46,72 @@ describe('a resident’s Tailscale node', () => {
     expect(screen.getByText('ssh-ed25519 AAAA soulshouse-lume')).toBeInTheDocument();
   });
 
-  it('once joined, lists the machines and how to switch key expiry off', async () => {
-    respond({
-      ...base,
-      daemon: true,
-      backend_state: 'Running',
-      node: 'soulshouse-lume.tail1234.ts.net',
-      hosts: [
-        { alias: 'danbook', target: '100.64.0.3', online: false, os: 'macOS' },
-        { alias: 'dell', target: '100.64.0.2', online: true, os: 'linux' },
-      ],
-      pubkey: 'ssh-ed25519 AAAA soulshouse-lume',
-    });
+  const joined = {
+    ...base,
+    daemon: true,
+    backend_state: 'Running',
+    node: 'soulshouse-lume.tail1234.ts.net',
+    hosts: [
+      { alias: 'danbook', target: '100.64.0.3', online: false, os: 'macOS' },
+      { alias: 'dell', target: '100.64.0.2', online: true, os: 'linux' },
+    ],
+    pubkey: 'ssh-ed25519 AAAA soulshouse-lume',
+  };
+
+  it('once joined, lists the machines, the login account to name, and how to switch key expiry off', async () => {
+    respond(joined, joined);
     render(TailnetAccess, { url, agentName: 'Lume' });
 
-    expect(await screen.findByText('ssh dell')).toBeInTheDocument();
-    expect(screen.getByText('ssh danbook')).toBeInTheDocument();
+    expect(await screen.findByText('dell')).toBeInTheDocument();
+    expect(screen.getByText('danbook')).toBeInTheDocument();
+    expect(screen.getByText(/doesn't say which account to log in as/)).toBeInTheDocument();
     expect(screen.getByText('Disable Key Expiry')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Tailscale Machines page' })).toHaveAttribute(
       'href',
       'https://login.tailscale.com/admin/machines'
     );
+  });
+
+  it('opening the panel on a node that joined while it was closed writes the SSH aliases once', async () => {
+    const fetchMock = respond(joined, joined);
+    render(TailnetAccess, { url, agentName: 'Lume' });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls.map(([, options]) => options.method)).toEqual(['GET', 'POST']);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('closing the panel mid-request aborts it and schedules nothing more', async () => {
+    vi.useFakeTimers();
+    let resolveFirst;
+    const fetchMock = vi.fn((_url, options) => {
+      return new Promise((resolve, reject) => {
+        resolveFirst = () =>
+          resolve({
+            ok: true,
+            status: 200,
+            json: () =>
+              Promise.resolve({
+                ...base,
+                backend_state: 'NeedsLogin',
+                auth_url: 'https://login.tailscale.com/a/x',
+                hosts: [],
+              }),
+          });
+        options.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      });
+    });
+    globalThis.fetch = fetchMock;
+
+    const { unmount } = render(TailnetAccess, { url, agentName: 'Lume' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const { signal } = fetchMock.mock.calls[0][1];
+    unmount();
+    expect(signal.aborted).toBe(true);
+    resolveFirst();
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('explains a grant the container has not picked up yet', async () => {

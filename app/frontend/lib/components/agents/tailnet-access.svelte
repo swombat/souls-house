@@ -14,7 +14,9 @@
   let copied = $state(false);
   let timer = null;
   let polls = 0;
-  let wasWaiting = false;
+  let reconciled = false;
+  let destroyed = false;
+  const inFlight = new AbortController();
 
   const MAX_POLLS = 200; // about 13 minutes at 4s
 
@@ -30,6 +32,7 @@
       method,
       headers: { Accept: 'application/json', 'X-CSRF-Token': csrfToken() },
       credentials: 'same-origin',
+      signal: inFlight.signal,
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
@@ -37,25 +40,31 @@
   }
 
   async function refresh() {
+    let next = null;
     try {
-      report = await request('GET');
-      failed = null;
+      next = await request('GET');
     } catch (error) {
+      if (destroyed) return;
       failed = error.message;
     }
-    // When a sign-in completes, ask once more so the resident's SSH aliases
-    // are written straight away rather than at its next boot.
-    if (wasWaiting && report?.backend_state === 'Running') {
-      wasWaiting = false;
+    if (destroyed) return;
+    if (next) {
+      report = next;
+      failed = null;
+    }
+    // Status only reads. Once the node is running, ask once per visit for
+    // `up`, which writes the resident's SSH aliases: the sign-in may have
+    // finished while this panel was closed.
+    if (running && !reconciled) {
       await bringUp();
       return;
     }
-    wasWaiting = report?.backend_state === 'NeedsLogin';
     schedule();
   }
 
   function schedule() {
     clearTimeout(timer);
+    if (destroyed) return;
     const keepWatching = !report?.available || report.backend_state !== 'Running';
     if (keepWatching && polls < MAX_POLLS) {
       polls += 1;
@@ -64,15 +73,18 @@
   }
 
   async function bringUp() {
+    if (destroyed) return;
     busy = true;
     try {
-      report = await request('POST');
+      const next = await request('POST');
+      if (destroyed) return;
+      report = next;
       failed = null;
-      wasWaiting = report?.backend_state === 'NeedsLogin';
+      if (running) reconciled = true;
       polls = 0;
       schedule();
     } catch (error) {
-      failed = error.message;
+      if (!destroyed) failed = error.message;
     } finally {
       busy = false;
     }
@@ -86,7 +98,11 @@
 
   onMount(() => {
     refresh();
-    return () => clearTimeout(timer);
+    return () => {
+      destroyed = true;
+      clearTimeout(timer);
+      inFlight.abort();
+    };
   });
 </script>
 
@@ -119,12 +135,17 @@
             <span
               class={host.online ? 'size-2 rounded-full bg-emerald-500' : 'size-2 rounded-full bg-muted-foreground/40'}
             ></span>
-            <code>ssh {host.alias}</code>
+            <code>{host.alias}</code>
             <span class="text-xs text-muted-foreground"
               >{host.os || ''}{host.online === false ? ' · offline' : ''}</span>
           </li>
         {/each}
       </ul>
+      <p class="text-xs text-muted-foreground">
+        Tailscale doesn't say which account to log in as, so {agentName} names it:
+        <code>ssh <span class="italic">username</span>@{report.hosts[0].alias}</code>. That account is the one whose
+        <code>~/.ssh/authorized_keys</code> needs the key below.
+      </p>
     {/if}
     <p class="text-xs text-muted-foreground">
       So it never needs signing in again: in the

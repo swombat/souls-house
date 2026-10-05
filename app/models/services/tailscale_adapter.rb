@@ -23,9 +23,11 @@ module Services
     # a person signs in to Tailscale from that resident's integrations tab, so
     # the node belongs to whoever signed in. One such connection per account.
     #
-    # An auth key (and host aliases) can still be supplied through the API for
-    # tailnets run by tags rather than people; the form no longer asks for it.
-    # There is no network call: a key can't be checked without spending it.
+    # The catalog declares no fields, so the connect controller passes nothing
+    # here and no new keyed connection can be made. The key/hosts branch below
+    # is kept so connections made with a key before sign-in existed keep
+    # describing themselves correctly; the runtime still joins those with
+    # their key. There is no network call either way.
     def connection_attributes(credentials:, user:)
       auth_key = credentials["auth_key"].to_s.strip
       if auth_key.present? && !auth_key.match?(AUTH_KEY_PATTERN)
