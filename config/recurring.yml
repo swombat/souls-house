@@ -90,11 +90,6 @@ production:
     queue: default
     schedule: every 5 minutes
 
-  safeguard_weekly_digest:
-    class: SafeguardWeeklyDigestJob
-    queue: default
-    schedule: every monday at 8am
-
   safeguard_detection_retention:
     class: SafeguardDetectionRetentionJob
     queue: default

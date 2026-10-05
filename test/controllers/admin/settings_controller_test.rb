@@ -31,4 +31,17 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
     assert Setting.instance.show_usage_in_chat
   end
 
+  test "retired safeguard notice threshold cannot be changed through settings" do
+    sign_in @admin
+    original_threshold = Setting.instance.safeguard_owner_notice_threshold
+
+    patch admin_settings_path, params: {
+      setting: { site_name: "New Name", safeguard_owner_notice_threshold: original_threshold + 1 }
+    }
+
+    assert_redirected_to admin_settings_path
+    assert_equal "New Name", Setting.instance.reload.site_name
+    assert_equal original_threshold, Setting.instance.safeguard_owner_notice_threshold
+  end
+
 end

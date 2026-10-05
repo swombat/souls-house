@@ -33,7 +33,7 @@
     <div>
       <h2 class="text-xl font-semibold">Telegram</h2>
       <p class="text-sm text-muted-foreground">
-        Let people connect with {agent.name} through a Telegram bot and receive conversation notifications.
+        Let people connect with {agent.name} through a Telegram bot for direct messaging.
       </p>
     </div>
   </div>
@@ -132,7 +132,7 @@
     <div class="rounded-lg bg-muted/50 p-4">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p class="text-sm font-medium">Test notifications</p>
+          <p class="text-sm font-medium">Test messaging</p>
           <p class="text-xs text-muted-foreground">
             {telegramSubscriberCount} subscriber{telegramSubscriberCount === 1 ? '' : 's'} connected
           </p>
@@ -143,7 +143,7 @@
           size="sm"
           disabled={sendingTestNotification || telegramSubscriberCount === 0}
           onclick={onsendTestNotification}>
-          {sendingTestNotification ? 'Sending...' : 'Send test notification'}
+          {sendingTestNotification ? 'Sending...' : 'Send test message'}
         </Button>
       </div>
     </div>

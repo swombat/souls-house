@@ -41,7 +41,7 @@ class Agents::TelegramTestsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to edit_account_agent_path(@account, @agent)
-    assert_match(/Test notification sent to 1 subscriber/, flash[:notice])
+    assert_match(/Test message sent to 1 subscriber/, flash[:notice])
   end
 
   test "create handles telegram API error" do

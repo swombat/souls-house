@@ -43,9 +43,9 @@
   <div
     class="border-b border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-4 py-2 text-sm flex items-center justify-between gap-3">
     <div>
-      <span class="font-medium text-blue-800 dark:text-blue-200">Get notified on Telegram</span>
+      <span class="font-medium text-blue-800 dark:text-blue-200">Connect on Telegram</span>
       <span class="text-blue-700 dark:text-blue-300 ml-1">
-        -- Receive a notification when {telegramAgentName} reaches out.
+        -- Exchange direct messages with {telegramAgentName}.
       </span>
       <a
         href={telegramDeepLink}

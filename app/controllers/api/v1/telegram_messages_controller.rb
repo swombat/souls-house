@@ -225,7 +225,6 @@ module Api
           detection.update!(telegram_message: output_message)
         ensure
           SafeguardColdOfferJob.perform_later(detection)
-          SafeguardOwnerNoticeJob.perform_later(detection)
         end
         detection
       end

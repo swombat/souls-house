@@ -159,7 +159,7 @@
               {/if}
             </div>
             <p class="text-sm text-muted-foreground">
-              Chat with the resident and receive notifications through a Telegram bot.
+              Exchange direct messages with the resident through a Telegram bot.
             </p>
           </div>
         </div>
