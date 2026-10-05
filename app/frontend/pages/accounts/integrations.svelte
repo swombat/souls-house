@@ -7,6 +7,7 @@
   import {
     DropboxLogo,
     GithubLogo,
+    Funnel,
     ShareNetwork,
     GoogleLogo,
     Heartbeat,
@@ -88,6 +89,8 @@
                   <GoogleLogo size={22} weight="bold" />
                 {:else if service.key === 'github'}
                   <GithubLogo size={22} weight="fill" />
+                {:else if service.key === 'pipedrive'}
+                  <Funnel size={22} weight="bold" />
                 {:else if service.key === 'tailscale'}
                   <ShareNetwork size={22} weight="bold" />
                 {:else}
