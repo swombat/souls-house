@@ -1,9 +1,10 @@
 <script>
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
-  import { DropboxLogo, GithubLogo, GoogleLogo, Heartbeat } from 'phosphor-svelte';
+  import { DropboxLogo, GithubLogo, ShareNetwork, GoogleLogo, Heartbeat } from 'phosphor-svelte';
   import { serviceIconClass } from '$lib/service-presentation';
   import { submitNativePost } from '$lib/integration-forms';
+  import TailscaleKeyNote from './tailscale-key-note.svelte';
   import ServiceAuthoritySelector from '$lib/components/service-authority-selector.svelte';
   let { account, focusedService, canManageAccount = false } = $props();
   let managementScope = $state('personal');
@@ -90,6 +91,8 @@
         <GoogleLogo size={26} weight="bold" />
       {:else if focusedService.key === 'github'}
         <GithubLogo size={26} weight="fill" />
+      {:else if focusedService.key === 'tailscale'}
+        <ShareNetwork size={26} weight="bold" />
       {:else}
         <Heartbeat size={26} weight="fill" />
       {/if}
@@ -145,6 +148,9 @@
           </a>
           with access to one repository and only the permissions it needs.
         </div>
+      {/if}
+      {#if focusedService.key === 'tailscale'}
+        <TailscaleKeyNote />
       {/if}
       {#each focusedService.credential_fields as field}
         <label class="block space-y-1.5">

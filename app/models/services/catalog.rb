@@ -221,5 +221,46 @@ module Services
       adapter_class: "Services::GithubTokenAdapter"
     )
 
+    Services::Definition.register(
+      key: "tailscale",
+      name: "Tailscale",
+      management_scopes: %w[personal account_managed],
+      connection_method: "credentials",
+      credential_strategy: "static",
+      api_origins: %w[https://controlplane.tailscale.com],
+      documentation: [
+        "https://tailscale.com/kb/1085/auth-keys",
+        "https://tailscale.com/kb/1068/tags",
+        "https://tailscale.com/kb/1112/userspace-networking"
+      ],
+      access_profiles: {
+        tailnet: []
+      },
+      default_access_profile: "tailnet",
+      credential_fields: [
+        {
+          key: "auth_key",
+          label: "Auth key",
+          type: "password",
+          placeholder: "tskey-auth-…",
+          help: "Reusable, pre-approved, and tagged (for example tag:soulshouse). The tailnet policy for that tag " \
+                "decides which machines and ports residents can reach."
+        },
+        {
+          key: "hosts",
+          label: "Machines",
+          type: "text",
+          placeholder: "dell=daniel@dell, mac=me@macbook",
+          help: "Optional. alias=user@machine, separated by commas. Each becomes `ssh alias` inside the resident."
+        }
+      ],
+      runtime_notes: [
+        "Run soulshouse-tailnet status to see whether this resident is on the tailnet and which machines answer.",
+        "Each configured machine is reachable as `ssh <alias>`; soulshouse-tailnet pubkey prints the key its owner must authorise.",
+        "These machines are people's own computers: no broad pkill or killall, and start their scheduled jobs through their scheduler rather than inline."
+      ],
+      adapter_class: "Services::TailscaleAdapter"
+    )
+
   end
 end

@@ -54,6 +54,13 @@ mkdir -p "$AGENT_HOME/.chaos" \
          "$AGENT_HOME/state/antigravity"
 chmod 0700 "$AGENT_HOME/state" "$AGENT_HOME/state/claude" "$AGENT_HOME/state/antigravity"
 
+# Tailscale integration, for stock and imported homes alike, now that state is
+# agent-owned. Granted: start userspace tailscaled and join (or rejoin) the
+# tailnet. Not granted but a node is saved: log it out and delete it. Runs in
+# the background so a slow or failing tailnet never holds up the resident; the
+# outcome is in state/tailnet-boot.log and `soulshouse-tailnet status`.
+gosu agent sh -c 'soulshouse-tailnet boot >>"$HOME/state/tailnet-boot.log" 2>&1' &
+
 # Migrate before provider/account commands, journald, or incoming work. Keep
 # preferences in the database; config.toml is bootstrap-only in Chaos 47.6.
 export CHAOS_HOME="${CHAOS_HOME:-$AGENT_HOME/.chaos}"
