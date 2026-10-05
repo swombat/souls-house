@@ -45,3 +45,24 @@ test('the homepage links to a two-column features page with an expandable index'
 
   expect(errors).toEqual([]);
 });
+
+test('logged-out visitors get Features as a top-level navbar link, on desktop and in the mobile menu', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/changelog');
+  const navLink = page.locator('nav').first().getByRole('link', { name: 'Features', exact: true });
+  await expect(navLink).toBeVisible();
+  if (process.env.FEATURES_SCREENSHOTS)
+    await page.screenshot({ path: `${process.env.FEATURES_SCREENSHOTS}/nav-desktop.png` });
+  await navLink.click();
+  await expect(page).toHaveURL(/\/features$/);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(navLink).toBeHidden();
+  await page.getByRole('button', { name: /Not Logged In/ }).click();
+  const menuItem = page.getByRole('menuitem', { name: 'Features', exact: true });
+  await expect(menuItem).toBeVisible();
+  if (process.env.FEATURES_SCREENSHOTS)
+    await page.screenshot({ path: `${process.env.FEATURES_SCREENSHOTS}/nav-mobile.png` });
+});
