@@ -69,6 +69,12 @@ module TestSupport
       account = Account.create!(name: "E2E #{run_id} Team", account_type: :team)
       account.add_user!(primary_user, role: "owner", skip_confirmation: true) unless params[:single_account]
       account.add_user!(secondary_user, role: "member", skip_confirmation: true)
+      if params[:admin_account_list]
+        12.times do |index|
+          Account.create!(name: "E2E #{run_id} Browse #{index.to_s.rjust(2, '0')}", account_type: :team)
+        end
+        account.update!(name: "E2E #{run_id} #{"LongAccountName" * 12}")
+      end
       account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router") if params[:resident_credentials]
       account.whiteboards.create!(name: "E2E Whiteboard", content: "# E2E Whiteboard")
 

@@ -1,5 +1,4 @@
 <script>
-  import { page } from '@inertiajs/svelte';
   import { router } from '@inertiajs/svelte';
   import AdminAccountDetails from '$lib/components/admin/AdminAccountDetails.svelte';
   import AdminAccountList from '$lib/components/admin/AdminAccountList.svelte';
@@ -46,6 +45,14 @@
     });
   }
 
+  function showAccounts() {
+    router.visit('/admin/accounts', {
+      preserveState: true,
+      preserveScroll: true,
+      only: ['selected_account'],
+    });
+  }
+
   function formatDate(dateString) {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -55,11 +62,16 @@
   }
 </script>
 
-<div class="flex h-[calc(100vh-4rem)] flex-col md:flex-row">
+<div class="flex h-[calc(100dvh-4rem)] min-h-0 flex-col md:flex-row">
   <AdminAccountList accounts={filtered} selectedAccount={selected_account} bind:search onSelect={selectAccount} />
 
-  <main class="min-w-0 flex-1 overflow-y-auto bg-background">
+  <main class="{selected_account ? 'block' : 'hidden'} min-h-0 min-w-0 flex-1 overflow-y-auto bg-background md:block">
     {#if selected_account}
+      <div class="sticky top-0 z-10 border-b bg-background p-3 md:hidden">
+        <button class="rounded-md px-3 py-2 text-sm font-medium hover:bg-muted" onclick={showAccounts}>
+          ← Back to accounts
+        </button>
+      </div>
       <AdminAccountDetails account={selected_account} {formatDate} />
     {:else}
       <AdminAccountPlaceholder />

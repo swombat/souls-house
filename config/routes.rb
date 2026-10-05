@@ -235,6 +235,11 @@ Rails.application.routes.draw do
     end
 
     namespace :v1 do
+      namespace :admin do
+        resource :summary, only: :show, controller: "summaries"
+        resources :accounts, only: :index
+        resources :users, only: :index
+      end
       resources :visual_tags, only: :index
       resources :rhythms, only: %i[index show create update destroy] do
         member do
