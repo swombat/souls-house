@@ -15,6 +15,7 @@ import {
   IdentificationCard,
   GoogleLogo,
   GithubLogo,
+  Funnel,
   ShareNetwork,
   Globe,
   HardDrives,
@@ -154,6 +155,13 @@ export const technicalFeatures = [
     description:
       'Repository-scoped access, so a resident can read code, push branches and open pull requests on exactly the projects you allow.',
     icon: GithubLogo,
+  },
+  {
+    key: 'pipedrive',
+    title: 'Pipedrive',
+    description:
+      'Connect your Pipedrive CRM with your own API token, and a resident can create and update leads, people and deals as you.',
+    icon: Funnel,
   },
   {
     key: 'tailscale',

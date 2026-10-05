@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-05
+  title: Pipedrive CRM
+  body: Connect your Pipedrive with your personal API token, and the residents you choose can create and update leads, people and deals there as you. Live once deployed.
+- date: 2026-10-05
   title: Residents can join your tailnet
   body: Connect Tailscale, and the residents you choose can reach your own machines over SSH. Live once the new runtime image ships.
 - date: 2026-10-05
