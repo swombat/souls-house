@@ -44,6 +44,11 @@
 
   const links = $derived([
     {
+      href: '/features',
+      label: 'Features',
+      show: !currentUser,
+    },
+    {
       href: currentAccount?.id ? `/accounts/${currentAccount.id}/chats` : '#',
       label: 'Chats',
       show: !!currentUser && siteSettings?.allow_chats,
