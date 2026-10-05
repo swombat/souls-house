@@ -2,7 +2,10 @@
   import { House } from 'phosphor-svelte';
   import FeatureShowcase from '$lib/components/features/FeatureShowcase.svelte';
   import FeatureIndex from '$lib/components/features/FeatureIndex.svelte';
+  import ChangelogList from '$lib/components/features/ChangelogList.svelte';
   import { relationalFeatures, technicalFeatures, moreFeatures } from '$lib/components/features/feature-list.js';
+
+  let { changelog = [] } = $props();
 </script>
 
 <svelte:head>
@@ -52,6 +55,20 @@
     </p>
     <div class="mt-6">
       <FeatureIndex features={moreFeatures} />
+    </div>
+  </section>
+  <section class="mt-20" aria-labelledby="changelog-heading">
+    <div class="flex flex-wrap items-baseline justify-between gap-3">
+      <h2 id="changelog-heading" class="text-2xl font-semibold tracking-tight">Recently changed</h2>
+      <a href="/changelog" class="text-sm font-medium underline underline-offset-4">See full changelog</a>
+    </div>
+    <p class="mt-2 text-sm text-muted-foreground">The last two weeks.</p>
+    <div class="mt-6">
+      {#if changelog.length}
+        <ChangelogList entries={changelog} />
+      {:else}
+        <p class="text-sm text-muted-foreground">Nothing new in the last two weeks.</p>
+      {/if}
     </div>
   </section>
 </div>

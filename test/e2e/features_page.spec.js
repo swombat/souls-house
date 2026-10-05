@@ -27,12 +27,21 @@ test('the homepage links to a two-column features page with an expandable index'
   await dropboxRow.click();
   await expect(detail).toBeVisible();
 
+  await expect(page.getByRole('heading', { name: 'Recently changed' })).toBeVisible();
+  await expect(page.getByTestId('changelog-entry').first()).toBeVisible();
+  await expect(page.getByText('A voice', { exact: true })).toHaveCount(0);
+
   await page.setViewportSize({ width: 390, height: 844 });
   const lifeMobile = await life.boundingBox();
   const houseMobile = await house.boundingBox();
   expect(houseMobile.y).toBeGreaterThan(lifeMobile.y + lifeMobile.height - 1);
   if (process.env.FEATURES_SCREENSHOTS)
     await page.screenshot({ path: `${process.env.FEATURES_SCREENSHOTS}/mobile.png`, fullPage: true });
+
+  await page.getByRole('link', { name: 'See full changelog' }).click();
+  await expect(page).toHaveURL(/\/changelog$/);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Changelog');
+  await expect(page.getByTestId('changelog-entry').first()).toBeVisible();
 
   expect(errors).toEqual([]);
 });

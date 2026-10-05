@@ -41,6 +41,23 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "features", inertia_component
   end
 
+  test "features page carries only the last two weeks of the changelog" do
+    get features_path
+
+    recent = inertia_shared_props["changelog"]
+    assert_equal Changelog.recent.map { |entry| entry[:title] }, recent.map { |entry| entry["title"] }
+    cutoff = Date.current - Changelog::RECENT_DAYS
+    assert recent.all? { |entry| Date.iso8601(entry["date"]) > cutoff }
+  end
+
+  test "changelog page carries every entry without authentication" do
+    get changelog_path
+
+    assert_response :success
+    assert_equal "changelog", inertia_component
+    assert_equal Changelog.entries.size, inertia_shared_props["changelog"].size
+  end
+
   test "should get self hosting guide without authentication" do
     get self_host_path
 

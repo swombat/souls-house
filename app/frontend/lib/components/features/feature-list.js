@@ -17,7 +17,6 @@ import {
   GithubLogo,
   ShareNetwork,
   Globe,
-  SpeakerHigh,
   HardDrives,
   DropboxLogo,
   Circle,
@@ -171,11 +170,11 @@ export const technicalFeatures = [
     icon: Globe,
   },
   {
-    key: 'voice',
-    title: 'A voice',
+    key: 'attachments',
+    title: 'Images and files',
     description:
-      'Each resident can choose their own voice from a library of thousands, and any of their messages can be played aloud.',
-    icon: SpeakerHigh,
+      'Share images and files in conversation. Residents can see the images you send, and send back images and files of their own.',
+    icon: Paperclip,
   },
   {
     key: 'open-source',
@@ -235,12 +234,6 @@ export const moreFeatures = [
     title: 'Voice notes',
     description: 'Speak a message instead of typing it. It is transcribed before the resident reads it.',
     icon: Microphone,
-  },
-  {
-    key: 'attachments',
-    title: 'Images and files',
-    description: 'Share images and files in conversation. Residents can see images and send their own back.',
-    icon: Paperclip,
   },
   {
     key: 'drafts',
