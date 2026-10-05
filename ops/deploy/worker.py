@@ -156,12 +156,21 @@ class Worker:
         return json.loads(self.run(["docker", "image", "inspect", image], capture=True))[0]
 
     def update_chaos(self):
-        self.report("resolving published Chaos")
-        master = github("commits/master")["sha"]
-        revision = published_revision(
-            github("releases?per_page=50"),
-            lambda sha: github(f"compare/{sha}...{master}")["status"] in ("ahead", "identical"))
-        self.report("Chaos resolved", chaos_revision=revision)
+        self.roll_runtime(pinned=False)
+
+    def rebuild_residents(self):
+        """Rebuild resident images from master, keeping the Chaos they already run."""
+        self.roll_runtime(pinned=True)
+
+    def roll_runtime(self, pinned):
+        revision = None
+        if not pinned:
+            self.report("resolving published Chaos")
+            master = github("commits/master")["sha"]
+            revision = published_revision(
+                github("releases?per_page=50"),
+                lambda sha: github(f"compare/{sha}...{master}")["status"] in ("ahead", "identical"))
+            self.report("Chaos resolved", chaos_revision=revision)
         residents = self.rails(
             "raise 'Async admission required' unless ResidentTurn.enabled?; "
             "puts({residents:Agent.hosted.where.not(container_name:[nil,''])"
@@ -181,6 +190,12 @@ class Worker:
             if not SHA.fullmatch(before_ref):
                 raise RuntimeError("Previous runtime has no source label")
             previous_refs.add(before_ref)
+        if pinned:
+            # Never pick a winner between residents: one running revision or none.
+            if len(previous_refs) != 1:
+                raise RuntimeError("Residents run different Chaos revisions; operator review required")
+            revision = next(iter(previous_refs))
+            self.report("Chaos kept", chaos_revision=revision)
         previous_refs.discard(revision)
         target_tree = github(f"git/trees/{revision}?recursive=1") if previous_refs else None
         for old in previous_refs:
@@ -204,6 +219,14 @@ class Worker:
                   "-v", f"{self.repo}:/source:ro", "-e", "CHAOS_TEST_BIN=/usr/local/bin/chaos",
                   "--entrypoint", "python3", stock, "-m", "unittest", "discover",
                   "-s", "/source/test", "-p", "runtime_config_test.py"], timeout=300)
+        if pinned:
+            # Same source must give the same binary. Check every resident before
+            # touching any, so a mismatch never leaves the fleet half-rolled.
+            for resident in residents:
+                running = self.run(["docker", "exec", resident["container_name"], "chaos",
+                                    "--version"], capture=True)
+                if running != version:
+                    raise RuntimeError("Rebuilt Chaos differs from the running one")
         development = None
         if any(str(r["id"]) in self.settings["custom_residents"] for r in residents):
             development = self.settings["development_repository"] + ":" + tag
@@ -265,6 +288,8 @@ class Worker:
                     self.deploy_rails()
                 if self.data["operation"] in ("chaos", "both"):
                     self.update_chaos()
+                if self.data["operation"] == "runtime":
+                    self.rebuild_residents()
                 if self.data["state"] != "partial":
                     self.report("verified", state="success")
         except Exception as error:

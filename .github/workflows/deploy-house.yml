@@ -42,7 +42,7 @@ jobs:
           set -euo pipefail
           : "${DEPLOY_KEY:?Deployment environment SSH key unavailable}"
           : "${DEPLOY_KNOWN_HOSTS:?Deployment environment host keys unavailable}"
-          case "$OPERATION" in rails|chaos|both) ;; *) exit 2;; esac
+          case "$OPERATION" in rails|chaos|both|runtime) ;; *) exit 2;; esac
           [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
           umask 077
           directory="$(mktemp -d)"
