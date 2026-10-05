@@ -17,13 +17,22 @@ module Services
       @definition = definition
     end
 
-    # No network call: an auth key can't be checked without an API token or
-    # without spending it. The resident's first `soulshouse-tailnet up` is the
-    # real check, and `soulshouse-tailnet status` reports its result.
+    SIGN_IN_FINGERPRINT_SOURCE = "tailscale:sign-in"
+
+    # Normally there is nothing to check here: each resident's node joins when
+    # a person signs in to Tailscale from that resident's integrations tab, so
+    # the node belongs to whoever signed in. One such connection per account.
+    #
+    # The catalog declares no fields, so the connect controller passes nothing
+    # here and no new keyed connection can be made. The key/hosts branch below
+    # is kept so connections made with a key before sign-in existed keep
+    # describing themselves correctly; the runtime still joins those with
+    # their key. There is no network call either way.
     def connection_attributes(credentials:, user:)
       auth_key = credentials["auth_key"].to_s.strip
-      raise Error, "Tailscale auth key is required" if auth_key.blank?
-      raise Error, "Use a Tailscale auth key (it starts with tskey-auth-)" unless auth_key.match?(AUTH_KEY_PATTERN)
+      if auth_key.present? && !auth_key.match?(AUTH_KEY_PATTERN)
+        raise Error, "Use a Tailscale auth key (it starts with tskey-auth-)"
+      end
 
       hosts = parse_hosts(credentials["hosts"])
       label = hosts.any? ? "Tailnet: #{hosts.map { |h| h['alias'] }.join(', ')}" : "Tailnet"
@@ -32,16 +41,20 @@ module Services
         external_subject_id: nil,
         external_identity: nil,
         label: label,
-        credential_kind: "token",
-        credential_fingerprint: credential_fingerprint(auth_key),
-        credential_payload: {
-          "auth_key" => auth_key
-        },
+        credential_kind: auth_key.present? ? "token" : "none",
+        credential_fingerprint: credential_fingerprint(auth_key.presence || SIGN_IN_FINGERPRINT_SOURCE),
+        credential_payload: auth_key.present? ? { "auth_key" => auth_key } : {},
         credential_metadata: {
           "credential_strategy" => definition.credential_strategy,
+          "join" => auth_key.present? ? "auth_key" : "sign_in",
           "hosts" => hosts,
-          "authority_summary" => "Joins residents to the tailnet as their own nodes. The tailnet policy for the key's tag, " \
-                                 "and the accounts that accept each resident's SSH key, are the actual authority."
+          "authority_summary" => if auth_key.present?
+                                   "Joins residents to the tailnet as tagged nodes. The tailnet policy for the key's tag, " \
+                                     "and the accounts that accept each resident's SSH key, are the actual authority."
+                                 else
+                                   "Each resident joins the tailnet of whoever signs in for it, and can reach every machine " \
+                                     "there. The accounts that accept the resident's SSH key decide what it can do on arrival."
+                                 end
         }
       }
     end

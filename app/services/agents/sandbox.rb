@@ -234,6 +234,17 @@ module Agents
       end
     end
 
+    # Runs a command inside the running container as the agent user and
+    # returns { stdout:, stderr:, ok: }. Never starts the container.
+    def exec_as_agent(*command, timeout_seconds: 60)
+      raise SandboxError, "#{agent.container_name} is not running" unless running?
+
+      docker_capture(
+        "exec", "-u", "agent", "-e", "HOME=/home/agent", agent.container_name,
+        "timeout", timeout_seconds.to_s, *command
+      )
+    end
+
     def healthy?
       uri = URI("#{Agents::Endpoint.url_for(agent)}/health")
       Net::HTTP.get_response(uri).code == "200"

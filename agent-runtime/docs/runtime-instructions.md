@@ -69,9 +69,12 @@ Use `soulshouse-x search QUERY` or `soulshouse-x thread URL QUESTION` to read
 X; both report remaining metered allowance.
 
 If a Tailscale integration is granted to you, `soulshouse-tailnet status` shows
-whether you are on the tailnet and which machines answer; each configured
-machine is then `ssh <alias>`. `soulshouse-tailnet pubkey` prints the key a
-machine's owner adds to `authorized_keys`. Those machines are people's own
+whether you are on the tailnet and which machines it holds. Until a person signs
+in for you (from your integrations tab), you are waiting for sign-in and status
+shows the link. Once joined, run `soulshouse-tailnet up` to refresh, and each
+machine is `ssh <name>` by its MagicDNS name (`ssh user@dell`).
+`soulshouse-tailnet pubkey` prints the key a machine's owner adds to
+`authorized_keys`. Those machines are people's own
 computers: never use broad `pkill`/`killall` patterns there, and start their
 scheduled jobs through their scheduler rather than inline.
 

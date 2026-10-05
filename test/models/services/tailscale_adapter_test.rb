@@ -6,7 +6,20 @@ class Services::TailscaleAdapterTest < ActiveSupport::TestCase
     @adapter = Services::TailscaleAdapter.new(Services::Definition.fetch("tailscale"))
   end
 
-  test "builds a static tailnet connection with parsed hosts" do
+  test "with nothing pasted, builds a sign-in connection that carries no secret" do
+    result = @adapter.connection_attributes(credentials: {}, user: users(:user_1))
+
+    assert_equal "none", result[:credential_kind]
+    assert_equal({}, result[:credential_payload])
+    assert_equal "sign_in", result.dig(:credential_metadata, "join")
+    assert_equal [], result.dig(:credential_metadata, "hosts")
+    assert_equal "Tailnet", result[:label]
+    assert_equal result[:credential_fingerprint],
+                 @adapter.connection_attributes(credentials: { "hosts" => "" }, user: users(:user_1))[:credential_fingerprint],
+                 "one sign-in connection per account"
+  end
+
+  test "still accepts an auth key with parsed hosts, for tagged tailnets" do
     result = @adapter.connection_attributes(
       credentials: {
         "auth_key" => " tskey-auth-kAbc123CNTRL-secretpart ",
@@ -16,6 +29,7 @@ class Services::TailscaleAdapterTest < ActiveSupport::TestCase
     )
 
     assert_equal "token", result[:credential_kind]
+    assert_equal "auth_key", result.dig(:credential_metadata, "join")
     assert_equal "tskey-auth-kAbc123CNTRL-secretpart", result.dig(:credential_payload, "auth_key")
     assert_equal [
       { "alias" => "dell", "user" => "daniel", "machine" => "dell" },
@@ -35,7 +49,7 @@ class Services::TailscaleAdapterTest < ActiveSupport::TestCase
   end
 
   test "rejects keys that are not auth keys" do
-    [ "", "tskey-api-abc", "tskey-client-abc", "tskey-auth-abc def" ].each do |key|
+    [ "tskey-api-abc", "tskey-client-abc", "tskey-auth-abc def" ].each do |key|
       assert_raises(Services::TailscaleAdapter::Error, key) do
         @adapter.connection_attributes(credentials: { "auth_key" => key }, user: users(:user_1))
       end
@@ -63,7 +77,7 @@ class Services::TailscaleAdapterTest < ActiveSupport::TestCase
 
     assert_equal "credentials", definition.connection_method
     assert_equal "static", definition.credential_strategy
-    assert_equal %w[auth_key hosts], definition.credential_fields.map { |f| f["key"] }
+    assert_equal [], definition.credential_fields, "nothing to paste: residents join by signing in"
   end
 
 end

@@ -46,9 +46,20 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
     def save(): json.dump(world, open(world_path, "w"))
     cmd = args[0]
     if cmd == "status":
-        print(json.dumps({"BackendState": world["backend"], "Self": {"HostName": "soulshouse-test", "TailscaleIPs": ["100.64.0.9"]}}))
+        report = {"BackendState": world["backend"], "Self": {"HostName": "soulshouse-test", "TailscaleIPs": ["100.64.0.9"]}}
+        if world["backend"] == "NeedsLogin" and world.get("auth_url"):
+            report["AuthURL"] = world["auth_url"]
+        if world["backend"] == "Running":
+            report["Peer"] = world.get("peers", {})
+        print(json.dumps(report))
     elif cmd == "up":
         key = next((a.split("file:", 1)[1] for a in args if a.startswith("--auth-key=file:")), None)
+        if world["backend"] == "NeedsLogin" and key is None:
+            # Interactive: the daemon gets a login link and waits for a person.
+            world["auth_url"] = "https://login.tailscale.com/a/fake%d" % (world.get("login_starts", 0) + 1)
+            world["login_starts"] = world.get("login_starts", 0) + 1; save()
+            print("\\nTo authenticate, visit:\\n\\n\\t" + world["auth_url"] + "\\n")
+            print("timeout waiting for Tailscale service to enter a Running state", file=sys.stderr); sys.exit(1)
         if world["backend"] == "NeedsLogin":
             if key is None or open(key).read() != world["valid_key"]:
                 print("backend error: invalid key: unable to validate API key", file=sys.stderr); sys.exit(1)
@@ -273,14 +284,56 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
     assert status.success?, err
     assert_includes out, "state: Running"
     assert_includes out, "100.64.0.9"
-    assert_includes out, "ssh dell  →  daniel@dell  (answers)"
+    assert_includes out, "ssh dell  →  daniel@dell  (online)"
 
     out, err, status = tailnet("status", "--json")
     assert status.success?, err
     report = JSON.parse(out)
     assert report["granted"]
     assert_equal "Running", report["backend_state"]
-    assert_equal [ { "alias" => "dell", "target" => "daniel@dell", "reachable" => true } ], report["hosts"]
+    assert_equal [ { "alias" => "dell", "target" => "daniel@dell", "online" => true, "os" => nil } ], report["hosts"]
+    assert_match(/\Assh-ed25519 /, report["pubkey"])
+  end
+
+  test "without an auth key, up starts a sign-in and reports the login link" do
+    write_manifest(connection_id: "svc_1", key: nil, hosts: [])
+
+    out, err, status = tailnet("up", "--json")
+    assert status.success?, err
+    report = JSON.parse(out)
+    assert_equal "NeedsLogin", report["backend_state"]
+    assert_equal "https://login.tailscale.com/a/fake1", report["auth_url"]
+    assert_match(/\Assh-ed25519 /, report["pubkey"], "the key exists before sign-in, so it can be authorised meanwhile")
+    assert_equal [], report["hosts"]
+
+    out, err, status = tailnet("up")
+    assert status.success?, err
+    assert_includes out, "waiting for sign-in: https://login.tailscale.com/a/fake1"
+    assert_equal 1, world["login_starts"], "a pending login is reused, not restarted"
+    assert_equal 0, world.fetch("logged_out", 0), "a node waiting for sign-in is this integration's, not stale state"
+  end
+
+  test "once someone signs in, every machine on the tailnet becomes an ssh alias" do
+    write_manifest(connection_id: "svc_1", key: nil, hosts: [])
+    assert tailnet("up").last.success?
+    set_world(world.merge("backend" => "Running", "peers" => {
+      "k1" => { "DNSName" => "dell.tail1234.ts.net.", "HostName" => "dell", "TailscaleIPs" => [ "100.64.0.2", "fd7a::2" ], "Online" => true, "OS" => "linux" },
+      "k2" => { "DNSName" => "danbook.tail1234.ts.net.", "HostName" => "Daniel's MacBook", "TailscaleIPs" => [ "100.64.0.3" ], "Online" => false, "OS" => "macOS" },
+      "k3" => { "DNSName" => "evil%h;x.tail1234.ts.net.", "HostName" => "x", "TailscaleIPs" => [ "100.64.0.4" ], "Online" => true }
+    }))
+
+    out, err, status = tailnet("up", "--json")
+    assert status.success?, err
+    report = JSON.parse(out)
+    assert_nil report["auth_url"]
+    assert_equal %w[danbook dell], report["hosts"].map { |h| h["alias"] }
+    assert_equal [ false, true ], report["hosts"].map { |h| h["online"] }
+
+    config = File.read(@ssh_config)
+    assert_includes config, "Host dell\n    HostName 100.64.0.2\n"
+    assert_includes config, "Host danbook\n    HostName 100.64.0.3\n"
+    assert_not_includes config, "evil"
+    assert_equal 1, world["login_starts"]
   end
 
   test "status without a grant or a daemon says so and exits 3" do
@@ -317,7 +370,7 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
       "version" => 1,
       "services" => [
         { "provider" => "tailscale", "connection_id" => connection_id, "label" => "Tailnet",
-          "credentials" => { "auth_key" => key }, "metadata" => { "hosts" => hosts } }
+          "credentials" => key ? { "auth_key" => key } : {}, "metadata" => { "hosts" => hosts } }
       ] + extra
     }.to_yaml)
   end
