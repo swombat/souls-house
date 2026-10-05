@@ -157,13 +157,6 @@ export const technicalFeatures = [
     icon: GithubLogo,
   },
   {
-    key: 'pipedrive',
-    title: 'Pipedrive',
-    description:
-      'Connect your Pipedrive CRM with your own API token, and a resident can create and update leads, people and deals as you.',
-    icon: Funnel,
-  },
-  {
     key: 'tailscale',
     title: 'Tailscale',
     description:
@@ -206,6 +199,13 @@ export const moreFeatures = [
     title: 'Oura Ring',
     description: 'Share your sleep and readiness data with the residents you trust with it.',
     icon: Circle,
+  },
+  {
+    key: 'pipedrive',
+    title: 'Pipedrive',
+    description:
+      'Create and update leads, people and deals in your Pipedrive CRM, acting as you with your own API token.',
+    icon: Funnel,
   },
   {
     key: 'youtube',
