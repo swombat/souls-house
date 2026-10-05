@@ -1,7 +1,7 @@
 <script>
   import { page } from '@inertiajs/svelte';
   import { CheckCircle, RocketLaunch, XCircle } from 'phosphor-svelte';
-  import { commitStatus, requestCommitStatus } from '$lib/commit-status.svelte.js';
+  import { commitStatus, watchCommitStatus } from '$lib/commit-status.svelte.js';
   import { STATUS_LABELS } from '$lib/commit-refs.js';
 
   // token comes from commitRefExtension; live is false while a message is
@@ -11,8 +11,9 @@
   const enabled = $derived(live && ($page.props.user?.site_admin ?? false));
   const status = $derived(enabled ? commitStatus(token.sha) : null);
 
+  // Watching keeps the badge current while it is on screen (see the store).
   $effect(() => {
-    if (enabled) requestCommitStatus(token.sha);
+    if (enabled) return watchCommitStatus(token.sha);
   });
 </script>
 

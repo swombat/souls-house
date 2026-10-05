@@ -20,6 +20,7 @@ class Admin::CommitStatusesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal({ "51625a7" => nil }, response.parsed_body["statuses"])
+    assert response.parsed_body.key?("revision")
   end
 
   test "non-admin gets nothing" do

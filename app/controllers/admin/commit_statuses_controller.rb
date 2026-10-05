@@ -5,7 +5,11 @@ class Admin::CommitStatusesController < ApplicationController
 
   def index
     shas = params[:shas].to_s.split(",")
-    render json: { statuses: CommitStatus.lookup(shas) }
+    summary = DeployInfo.summary
+    render json: {
+      statuses: CommitStatus.lookup(shas, summary:),
+      revision: CommitStatus.revision(summary)
+    }
   end
 
   private
