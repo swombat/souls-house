@@ -160,10 +160,7 @@ for (const directTag of [false, true]) {
       const accountMenu = page.getByRole('button', { name: 'User account menu' });
       await expect(accountMenu.getByLabel('1 thread requests your response')).toBeVisible();
       await accountMenu.click();
-      await page
-        .getByRole('menuitem')
-        .filter({ hasText: /^Account/ })
-        .hover();
+      await page.getByRole('menuitem', { name: /^Account(?! Settings)/ }).click();
       const targetAccount = page.getByRole('menuitem').filter({ hasText: `E2E ${setup.run_id} Team` });
       await expect(targetAccount.getByLabel('1 thread requests your response')).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath('reply-attention-accounts.png') });

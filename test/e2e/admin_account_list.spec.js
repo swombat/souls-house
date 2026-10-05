@@ -35,7 +35,7 @@ test('mobile admin browses a full-height list, searches, selects and returns; de
     await page.getByRole('button', { name: 'Back to accounts' }).click();
     await expect(list).toBeVisible();
     await expect(search).toHaveValue(runId);
-    await search.fill('LongAccountName');
+    await search.fill(`${runId} LongAccountName`);
     await expect(list.getByRole('button')).toHaveCount(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await list.getByRole('button').click();

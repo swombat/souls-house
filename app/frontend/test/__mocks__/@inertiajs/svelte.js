@@ -71,8 +71,14 @@ export const page = readable({
   version: null,
 });
 
-// Mock router
+// Mock router. Global listeners registered with router.on are kept in routerListeners so a
+// test can fire them (vi.clearAllMocks would otherwise erase import-time registrations).
+export const routerListeners = {};
 export const router = {
+  on: vi.fn((type, callback) => {
+    (routerListeners[type] ||= []).push(callback);
+    return () => {};
+  }),
   visit: vi.fn(),
   get: vi.fn(),
   post: vi.fn(),
