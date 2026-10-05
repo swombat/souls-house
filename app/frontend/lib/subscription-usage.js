@@ -59,7 +59,9 @@ export function predictedUsage(window, now = Date.now()) {
 
 export function weeklyRemainingPercent(usage, provider, modelId = '') {
   const weekly = displayUsageWindows(usage, provider, modelId).find((window) => window.displayLabel === 'Weekly');
-  return weekly ? clampPercent(weekly.remaining_percent) : null;
+  const remaining = weekly?.remaining_percent;
+  if (remaining == null || remaining === '' || !Number.isFinite(Number(remaining))) return null;
+  return clampPercent(remaining);
 }
 
 export function predictionTone(prediction) {

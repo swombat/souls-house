@@ -7,9 +7,27 @@ import {
   predictionTone,
   resetDescription,
   usageLine,
+  weeklyRemainingPercent,
 } from './subscription-usage';
 
 const now = Date.parse('2026-08-31T00:00:00Z');
+
+it.each([null, undefined, '', 'unavailable', NaN])(
+  'keeps unknown weekly remaining (%s) distinct from zero',
+  (remaining) => {
+    const usage = {
+      windows: [{ id: 'session', label: 'Session', remaining_percent: remaining, resets_at: '2026-10-11T00:00:00Z' }],
+    };
+    expect(weeklyRemainingPercent(usage, 'openai')).toBeNull();
+  }
+);
+
+it('preserves genuinely exhausted weekly usage', () => {
+  const usage = {
+    windows: [{ id: 'session', label: 'Session', remaining_percent: 0, resets_at: '2026-10-11T00:00:00Z' }],
+  };
+  expect(weeklyRemainingPercent(usage, 'openai')).toBe(0);
+});
 
 describe('subscription usage display', () => {
   it('shows only the selected Gemini quota family', () => {
