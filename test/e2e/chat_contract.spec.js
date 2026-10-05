@@ -329,7 +329,8 @@ test.describe('browser contracts', () => {
     await page.keyboard.press('Escape');
 
     await accountMenu.click();
-    await page.locator('[data-dropdown-menu-sub-trigger]').filter({ hasText: 'Account' }).hover();
+    // Account switching is a drill-down panel inside the one menu, opened by selecting the current account.
+    await page.getByRole('menuitem', { name: /^Account(?! Settings)/ }).click();
     await page.getByRole('menuitem', { name: `E2E ${setup.run_id} Team`, exact: true }).click();
     await expect(page).toHaveURL(/\/accounts\/[^/]+\/chats$/);
     const switchedAccountId = new URL(page.url()).pathname.split('/')[2];
