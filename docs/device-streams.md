@@ -90,6 +90,15 @@ sequence, observed and server-received timestamps. `truncated` indicates the cap
 an empty window does not mean no historical data is stored. `server_time` and
 `latest_received_at` support freshness checks; no completeness guarantee is made.
 
+`GET /api/v1/streams/:stream_key/sessions` discovers up to 50 non-erased sessions
+with stored batches under the same reader grants and no-store policy. The
+response contains `stream_key`, `server_time`, `truncated` and `sessions`; each
+entry has only `session_id`, `first_observed_at`, `last_observed_at` and
+`batch_count`, never RR values. Newest means highest stored observation time,
+with ties broken by descending internal session ID, not latest upload time.
+Empty sessions are omitted. `truncated: true` means older sessions exist beyond
+this discovery window; this endpoint is not a complete archive index.
+
 `GET /api/v1/streams/:stream_key/sessions/:session_id` reads a known client
 session UUID, including historical uploads, under the same current reader grants
 and account scope as `latest`. Device credentials cannot read. It returns
@@ -105,7 +114,8 @@ For a final analysis, wait for the Mac uploader to finish, then read again from
 the first page and reconcile against its locally persisted sequence manifest.
 Null `next_cursor` only means no further rows at that request, not that recording
 or upload has finished. The client supplies the session UUID; this endpoint does
-not discover sessions, wake residents, or add a session-finalization protocol.
+not wake residents or add a session-finalization protocol. The bounded session
+list above supplies UUIDs for recent recordings without an out-of-band handoff.
 
 UTC deltas cannot reproduce monotonic integrity calculations. Keep monotonic
 timing, disconnect/contact evidence, interval boundaries, algorithm version and

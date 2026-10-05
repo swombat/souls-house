@@ -21,6 +21,26 @@ class Api::V1::StreamsController < Api::V1::BaseController
     }
   end
 
+  def sessions
+    rows = @stream.device_stream_sessions.where(erased_at: nil)
+      .joins(:device_stream_batches)
+      .group("device_stream_sessions.id")
+      .order(Arel.sql("MAX(device_stream_batches.observed_at) DESC, device_stream_sessions.id DESC"))
+      .limit(51)
+      .pluck("device_stream_sessions.session_uuid",
+             Arel.sql("MIN(device_stream_batches.observed_at)"),
+             Arel.sql("MAX(device_stream_batches.observed_at)"),
+             Arel.sql("COUNT(device_stream_batches.id)"))
+    render json: {
+      stream_key: @stream.stream_key, server_time: Time.current.iso8601(6),
+      truncated: rows.length > 50,
+      sessions: rows.first(50).map { |uuid, first, last, count|
+        { session_id: uuid, first_observed_at: first.iso8601(6),
+          last_observed_at: last.iso8601(6), batch_count: count }
+      }
+    }
+  end
+
   def show_session
     session = @stream.device_stream_sessions.find_by!(session_uuid: params[:session_id], erased_at: nil)
     cursor = params[:cursor]

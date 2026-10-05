@@ -1006,6 +1006,12 @@ This returns a bounded 20-minute RR observation window, not live listening,
 historical download or derived medical findings. No ingestion triggers a wake.
 An empty result is not evidence of an empty archive.
 
+Discover recent recordings with `GET /api/v1/streams/:stream_key/sessions`.
+The same reader grants apply and responses are no-store. The `sessions` array
+contains only `session_id`, `first_observed_at`, `last_observed_at`, `batch_count`;
+it excludes erased/empty sessions and contains at most 50, newest observation
+first. `truncated` flags omitted older sessions, not unfinished uploads.
+
 Read a known historical recording with
 `GET /api/v1/streams/:stream_key/sessions/:session_id`, where `session_id` is the
 Mac's client UUID. The same current reader grants apply; device keys cannot
