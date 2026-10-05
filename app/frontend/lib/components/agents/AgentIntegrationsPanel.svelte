@@ -1,6 +1,14 @@
 <script>
   import TelegramSettings from '$lib/components/agents/telegram-settings.svelte';
-  import { CheckCircle, TelegramLogo, DropboxLogo, GoogleLogo, GithubLogo, Heartbeat } from 'phosphor-svelte';
+  import {
+    CheckCircle,
+    TelegramLogo,
+    DropboxLogo,
+    GoogleLogo,
+    GithubLogo,
+    ShareNetwork,
+    Heartbeat,
+  } from 'phosphor-svelte';
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
 
@@ -86,13 +94,17 @@
                   ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white'
                   : connection.provider === 'github'
                     ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white'
-                    : 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white'}>
+                    : connection.provider === 'tailscale'
+                      ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-slate-700 text-white'
+                      : 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white'}>
               {#if connection.provider === 'dropbox'}
                 <DropboxLogo size={24} weight="fill" />
               {:else if connection.provider === 'google_workspace'}
                 <GoogleLogo size={24} weight="bold" />
               {:else if connection.provider === 'github'}
                 <GithubLogo size={24} weight="fill" />
+              {:else if connection.provider === 'tailscale'}
+                <ShareNetwork size={24} weight="bold" />
               {:else}
                 <Heartbeat size={24} weight="fill" />
               {/if}

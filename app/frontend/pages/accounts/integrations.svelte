@@ -4,7 +4,17 @@
   import { serviceDescription, serviceIconClass } from '$lib/service-presentation';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
 
-  import { DropboxLogo, GithubLogo, GoogleLogo, Heartbeat, ArrowLeft, ArrowRight, Plus, Pulse } from 'phosphor-svelte';
+  import {
+    DropboxLogo,
+    GithubLogo,
+    ShareNetwork,
+    GoogleLogo,
+    Heartbeat,
+    ArrowLeft,
+    ArrowRight,
+    Plus,
+    Pulse,
+  } from 'phosphor-svelte';
 
   let {
     account,
@@ -78,6 +88,8 @@
                   <GoogleLogo size={22} weight="bold" />
                 {:else if service.key === 'github'}
                   <GithubLogo size={22} weight="fill" />
+                {:else if service.key === 'tailscale'}
+                  <ShareNetwork size={22} weight="bold" />
                 {:else}
                   <Heartbeat size={22} weight="fill" />
                 {/if}

@@ -19,7 +19,7 @@ to exercise every available capability.
    ```sh
    for helper in soulshouse-post-message soulshouse-send-telegram \
      soulshouse-append-journal soulshouse-gws soulshouse-usage \
-     soulshouse-youtube soulshouse-x house-memory
+     soulshouse-youtube soulshouse-x soulshouse-tailnet house-memory
    do
      if command -v "$helper" >/dev/null 2>&1; then
        printf '%s: present\n' "$helper"
