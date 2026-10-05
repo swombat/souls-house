@@ -34,6 +34,13 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "privacy", inertia_component
   end
 
+  test "should get features page without authentication" do
+    get features_path
+
+    assert_response :success
+    assert_equal "features", inertia_component
+  end
+
   test "should get self hosting guide without authentication" do
     get self_host_path
 

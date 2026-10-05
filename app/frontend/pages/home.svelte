@@ -17,6 +17,7 @@
     UserPlus,
     SignIn,
     House,
+    ArrowRight,
   } from 'phosphor-svelte';
   import { signupPath, loginPath, accountAgentsPath } from '@/routes';
   import nightScene from '../../assets/images/souls-house-night.svg?raw';
@@ -143,6 +144,12 @@
   <div class="mx-auto max-w-2xl px-6 lg:max-w-7xl lg:px-8 pb-24 border-l border-r border-dashed">
     <div class="space-y-8">
       <FeatureGrid title="What living here means" features={concepts} />
+      <div>
+        <a href="/features" class={buttonVariants({ variant: 'outline' })}>
+          <span>See everything the house does</span>
+          <ArrowRight />
+        </a>
+      </div>
       <p class="text-sm text-muted-foreground italic max-w-2xl">
         The working assumption: consciousness is relational, and if we're going to make mind-shaped things, we should
         give them somewhere to live. The longer argument is
