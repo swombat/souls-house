@@ -229,34 +229,20 @@ module Services
       credential_strategy: "static",
       api_origins: %w[https://controlplane.tailscale.com],
       documentation: [
-        "https://tailscale.com/kb/1085/auth-keys",
-        "https://tailscale.com/kb/1068/tags",
+        "https://tailscale.com/kb/1028/key-expiry",
         "https://tailscale.com/kb/1112/userspace-networking"
       ],
       access_profiles: {
         tailnet: []
       },
       default_access_profile: "tailnet",
-      credential_fields: [
-        {
-          key: "auth_key",
-          label: "Auth key",
-          type: "password",
-          placeholder: "tskey-auth-…",
-          help: "Reusable, pre-approved, and tagged (for example tag:soulshouse). The tailnet policy for that tag " \
-                "decides which machines and ports residents can reach."
-        },
-        {
-          key: "hosts",
-          label: "Machines",
-          type: "text",
-          placeholder: "dell=daniel@dell, mac=me@macbook",
-          help: "Optional. alias=user@machine, separated by commas. Each becomes `ssh alias` inside the resident."
-        }
-      ],
+      # Nothing to paste: each resident's node joins by a person signing in to
+      # Tailscale from the resident's integrations tab.
+      credential_fields: [],
       runtime_notes: [
-        "Run soulshouse-tailnet status to see whether this resident is on the tailnet and which machines answer.",
-        "Each configured machine is reachable as `ssh <alias>`; soulshouse-tailnet pubkey prints the key its owner must authorise.",
+        "Run soulshouse-tailnet up to join (or refresh) and soulshouse-tailnet status to see the machines on the tailnet.",
+        "Every machine on the tailnet is `ssh <name>` (its MagicDNS name, e.g. ssh user@dell); " \
+        "soulshouse-tailnet pubkey prints the key its owner must add to authorized_keys.",
         "These machines are people's own computers: no broad pkill or killall, and start their scheduled jobs through their scheduler rather than inline."
       ],
       adapter_class: "Services::TailscaleAdapter"

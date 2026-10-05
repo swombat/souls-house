@@ -73,40 +73,35 @@ class Accounts::ServiceConnectionsControllerTest < ActionDispatch::IntegrationTe
     assert_redirected_to account_integrations_path(@account)
   end
 
-  test "connects Tailscale with its own credential fields and hands them to a granted resident" do
+  test "connects Tailscale with nothing pasted, ignores stray fields, and grants a resident a sign-in entry" do
     assert_difference "ServiceConnection.where(provider: 'tailscale').count", 1 do
       post account_service_connections_path(@account), params: {
         provider: "tailscale",
         management_scope: "personal",
-        credentials: {
-          auth_key: "tskey-auth-kTest-secret",
-          hosts: "dell=daniel@dell",
-          token: "not-a-tailscale-field"
-        }
+        credentials: { auth_key: "tskey-auth-kTest-secret", token: "not-a-tailscale-field" }
       }
     end
     assert_redirected_to account_integrations_path(@account)
 
     connection = @account.service_connections.find_by!(provider: "tailscale")
-    assert_equal({ "auth_key" => "tskey-auth-kTest-secret" }, connection.credential_payload_hash)
-    assert_equal [ { "alias" => "dell", "user" => "daniel", "machine" => "dell" } ], connection.credential_metadata["hosts"]
+    assert_equal({}, connection.credential_payload_hash, "the form has no fields, so nothing pasted is stored")
+    assert_equal "sign_in", connection.credential_metadata["join"]
 
     agent = @account.agents.first || flunk("fixture account has no resident")
     agent.agent_service_accesses.find_or_create_by!(service_connection: connection).update!(enabled: true)
     entry = Agents::ServiceManifest.new(agent).to_h["services"].find { |s| s["provider"] == "tailscale" }
-    assert_equal "tskey-auth-kTest-secret", entry.dig("credentials", "auth_key")
-    assert_equal "dell", entry.dig("metadata", "hosts", 0, "alias")
+    assert_equal({}, entry["credentials"])
   end
 
-  test "rejects a Tailscale key that is not an auth key" do
-    post account_service_connections_path(@account), params: {
-      provider: "tailscale",
-      management_scope: "personal",
-      credentials: { auth_key: "tskey-api-secret" }
-    }
+  test "connects Tailscale without any credentials param at all, once per account" do
+    post account_service_connections_path(@account), params: { provider: "tailscale", management_scope: "personal" }
+    assert_redirected_to account_integrations_path(@account)
+    assert_equal 1, @account.service_connections.where(provider: "tailscale").count
 
-    assert_not ServiceConnection.exists?(provider: "tailscale", account: @account)
-    assert_match(/tskey-auth-/, flash[:alert])
+    assert_no_difference "ServiceConnection.count" do
+      post account_service_connections_path(@account), params: { provider: "tailscale", management_scope: "personal" }
+    end
+    assert_match(/already connected/, flash[:alert])
   end
 
   test "does not store the same GitHub token twice" do

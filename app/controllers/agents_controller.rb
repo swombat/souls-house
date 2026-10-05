@@ -222,7 +222,8 @@ class AgentsController < ApplicationController
         connection.as_connection_json(current_user: Current.user).merge(
           enabled: access&.enabled? || false,
           provisioning_status: access&.provisioning_status,
-          access_update_url: account_agent_service_access_path(current_account, @agent, connection.public_id)
+          access_update_url: account_agent_service_access_path(current_account, @agent, connection.public_id),
+          tailnet_url: connection.provider == "tailscale" ? account_agent_tailnet_path(current_account, @agent) : nil
         )
       end
   end

@@ -88,7 +88,10 @@ class Accounts::ServiceConnectionsController < ApplicationController
 
   # Each credentials provider declares its own fields; nothing else passes.
   def credential_params(definition)
-    params.require(:credentials).permit(*definition.credential_fields.map { |field| field.fetch("key") })
+    keys = definition.credential_fields.map { |field| field.fetch("key") }
+    return ActionController::Parameters.new.permit if keys.empty?
+
+    params.require(:credentials).permit(*keys)
   end
 
   def authorize_management_scope!(definition, scope)

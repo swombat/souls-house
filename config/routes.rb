@@ -161,6 +161,7 @@ Rails.application.routes.draw do
         end
         resource :provider_subscription_usage, only: :show
         resources :service_accesses, only: :update
+        resource :tailnet, only: [ :show, :create ]
         resources :memories, only: [ :create ] do
           resource :discard, only: [ :create, :destroy ], module: :memories
           resource :protection, only: [ :create, :destroy ], module: :memories
