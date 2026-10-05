@@ -1006,6 +1006,16 @@ This returns a bounded 20-minute RR observation window, not live listening,
 historical download or derived medical findings. No ingestion triggers a wake.
 An empty result is not evidence of an empty archive.
 
+Read a known historical recording with
+`GET /api/v1/streams/:stream_key/sessions/:session_id`, where `session_id` is the
+Mac's client UUID. The same current reader grants apply; device keys cannot
+read. Each no-store page has at most 200 batches in sequence order, plus
+`next_cursor`; repeat with `?cursor=<next_cursor>` until null. Missing, erased or
+inaccessible sessions return 404; invalid cursors return 422. This is not a
+snapshot: late lower sequences can land behind a cursor. After upload completes,
+read again from the start and reconcile with the Mac's local manifest. A null
+cursor is not proof that the recording or upload is complete.
+
 Only a separate append-only `shd_…` device credential may POST to
 `/api/v1/streams/:stream_key/samples`. Never copy an agent token to the device.
 The `rr.v1` envelope contains `schema`, client `session_id` UUID, integer

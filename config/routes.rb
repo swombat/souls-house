@@ -254,6 +254,7 @@ Rails.application.routes.draw do
       post "house_inference/chat/completions", to: "house_inference#create"
       post "streams/:stream_key/samples", to: "stream_samples#create"
       get "streams/:stream_key/latest", to: "streams#latest"
+      get "streams/:stream_key/sessions/:session_id", to: "streams#show_session"
       post "runtime_runs/:run_id/events", to: "runtime_events#create"
       get "agent/bookmarks", to: "agent_bookmarks#index", as: :agent_bookmarks
       patch "agent/activity_preferences", to: "agents#activity_preferences"

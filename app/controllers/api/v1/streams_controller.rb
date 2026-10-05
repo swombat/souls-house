@@ -21,6 +21,29 @@ class Api::V1::StreamsController < Api::V1::BaseController
     }
   end
 
+  def show_session
+    session = @stream.device_stream_sessions.find_by!(session_uuid: params[:session_id], erased_at: nil)
+    cursor = params[:cursor]
+    if params.key?(:cursor) && !(cursor.is_a?(String) && /\A(?:0|[1-9][0-9]{0,15})\z/.match?(cursor) && cursor.to_i <= 9_007_199_254_740_991)
+      return render json: { error: "Invalid cursor" }, status: :unprocessable_entity
+    end
+
+    batches = session.device_stream_batches.order(:sequence)
+    batches = batches.where("sequence > ?", cursor.to_i) if cursor
+    page = batches.limit(201).to_a
+    more = page.length > 200
+    page = page.first(200)
+    render json: {
+      schema: "rr.v1", stream_key: @stream.stream_key, session_id: session.session_uuid,
+      server_time: Time.current.iso8601(6),
+      next_cursor: more ? page.last.sequence.to_s : nil,
+      batches: page.map { |batch|
+        { session_id: session.session_uuid, sequence: batch.sequence,
+          observed_at: batch.observed_at.iso8601(6), received_at: batch.created_at.iso8601(6), rr_ms: batch.rr_ms }
+      }
+    }
+  end
+
   private
 
   def find_readable_stream
