@@ -3,6 +3,7 @@
 
   let { accountId, agent, showUsage = false, mobileGauge = false } = $props();
   let remaining = $state(null);
+  let usageIdentity;
   let label = $derived(agentNameWithUsage(agent.name, remaining, showUsage));
   let gaugeColour = $derived(
     remaining >= 50
@@ -16,7 +17,13 @@
 
   $effect(() => {
     let cancelled = false;
-    remaining = null;
+    // Prop refreshes replace agent objects. Keep the existing display while
+    // revalidating, but never carry usage across residents/accounts/models.
+    const identity = `${accountId}:${agent.id}:${agent.model_id}`;
+    if (identity !== usageIdentity) {
+      usageIdentity = identity;
+      remaining = null;
+    }
 
     loadAgentWeeklyRemaining(accountId, agent).then((value) => {
       if (!cancelled) remaining = value;

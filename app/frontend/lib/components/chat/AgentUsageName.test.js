@@ -50,3 +50,38 @@ test('leaves the picker name as text without a mobile gauge', async () => {
   expect(await screen.findByText('Resident (80% left)')).toBeInTheDocument();
   expect(container.querySelector('[data-subscription-gauge]')).toBeNull();
 });
+
+test('keeps the last gauge and label mounted while refreshing the same resident', async () => {
+  loadAgentWeeklyRemaining.mockResolvedValue(80);
+  const { container, rerender } = render(AgentUsageName, props);
+  await waitFor(() => expect(container.querySelector('.md\\:inline')).toHaveTextContent('80% left'));
+  const gauge = container.querySelector('[data-subscription-gauge]');
+  let finish;
+  loadAgentWeeklyRemaining.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+  await rerender({ agent: { ...props.agent } });
+  expect(container.querySelector('[data-subscription-gauge]')).toBe(gauge);
+  expect(container.querySelector('.md\\:inline')).toHaveTextContent('80% left');
+  finish(20);
+  await waitFor(() => expect(gauge.firstElementChild.style.height).toBe('20%'));
+  expect(container.querySelector('[data-subscription-gauge]')).toBe(gauge);
+});
+
+test('clears the old usage when switching residents during a pending request', async () => {
+  loadAgentWeeklyRemaining.mockResolvedValue(80);
+  const { container, rerender } = render(AgentUsageName, props);
+  await waitFor(() => expect(container.querySelector('[data-subscription-gauge]')).not.toBeNull());
+  loadAgentWeeklyRemaining.mockImplementationOnce(() => new Promise(() => {}));
+  await rerender({ agent: { id: 'other', name: 'Other' } });
+  expect(container.querySelector('[data-subscription-gauge]')).toBeNull();
+  expect(container.querySelector('.md\\:inline')).toHaveTextContent('Other');
+});
+
+test('still hides usage when a completed refresh reports it unavailable', async () => {
+  loadAgentWeeklyRemaining.mockResolvedValue(80);
+  const { container, rerender } = render(AgentUsageName, props);
+  await waitFor(() => expect(container.querySelector('[data-subscription-gauge]')).not.toBeNull());
+  loadAgentWeeklyRemaining.mockResolvedValueOnce(null);
+  await rerender({ agent: { ...props.agent } });
+  await waitFor(() => expect(container.querySelector('[data-subscription-gauge]')).toBeNull());
+  expect(container.querySelector('.md\\:inline').textContent).toBe('Resident');
+});

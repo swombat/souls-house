@@ -1,6 +1,61 @@
 import { test, expect } from '@playwright/experimental-ct-svelte';
 import AgentTriggerBar from '../../app/frontend/lib/components/chat/AgentTriggerBar.svelte';
 
+for (const width of [390, 1280]) {
+  test(`usage refresh keeps buttons stationary at ${width}px`, async ({ mount, page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.clock.install();
+    let requests = 0;
+    let release;
+    const pending = new Promise((resolve) => (release = resolve));
+    await page.route('**/provider_subscription_usage', async (route) => {
+      requests++;
+      if (requests > 1) await pending;
+      await route.fulfill({
+        json: {
+          windows: [{ id: 'session', remaining_percent: requests > 1 ? 79 : 80, resets_at: '2026-10-11T00:00:00Z' }],
+        },
+      });
+    });
+    const props = {
+      accountId: 'refresh-account',
+      chatId: 'chat',
+      showUsage: true,
+      agents: [
+        {
+          id: 'subscription',
+          name: 'Resident',
+          provider_subscription: {
+            available: true,
+            auth_mode: 'oauth_account',
+            provider: 'openai',
+            connection: { status: 'connected' },
+          },
+        },
+        { id: 'api', name: 'API resident' },
+      ],
+    };
+    const component = await mount(AgentTriggerBar, { props });
+    const button = component.getByRole('button', { name: /^Resident/ });
+    await expect(button).toHaveAccessibleName('Resident (80% left)');
+    const bounds = await button.boundingBox();
+    const other = component.getByRole('button', { name: 'API resident', exact: true });
+    const otherBounds = await other.boundingBox();
+    await button.evaluate((node) => (window.originalResidentButton = node));
+    await page.clock.fastForward(61_000);
+    await component.update({ props: { ...props, agents: props.agents.map((agent) => ({ ...agent })) } });
+    await expect.poll(() => requests).toBe(2);
+    await expect(button).toHaveAccessibleName('Resident (80% left)');
+    expect(await button.boundingBox()).toEqual(bounds);
+    expect(await other.boundingBox()).toEqual(otherBounds);
+    release();
+    await expect(button).toHaveAccessibleName('Resident (79% left)');
+    expect(await button.boundingBox()).toEqual(bounds);
+    expect(await other.boundingBox()).toEqual(otherBounds);
+    expect(await button.evaluate((node) => node === window.originalResidentButton)).toBe(true);
+  });
+}
+
 test('mobile subscription gauges fit the resident buttons and disappear on desktop', async ({
   mount,
   page,
