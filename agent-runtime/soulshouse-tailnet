@@ -37,6 +37,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -311,9 +312,10 @@ def forget() -> int:
 def leave_tailnet() -> None:
     """Log the saved node out, stop its daemon, delete the node state.
 
-    Must be called with the state lock held. If the logout can't be confirmed,
-    the daemon is stopped but the state is kept so the next boot retries; the
-    node may still be on the tailnet, and the error says so."""
+    Must be called with the state lock held. Node state is deleted only after
+    the logout is confirmed and the daemon is confirmed gone. Otherwise the
+    state is kept so the next boot retries, and the error says exactly what is
+    and isn't known."""
     if (STATE_DIR / "tailscaled.state").exists():
         try:
             state = ensure_daemon()
@@ -322,13 +324,18 @@ def leave_tailnet() -> None:
                 if result.returncode != 0:
                     raise TailnetError("tailscale logout failed: " + (result.stderr or result.stdout).strip())
         except (TailnetError, subprocess.TimeoutExpired) as error:
-            stop_daemon()
+            stopped = stop_daemon()
+            daemon = "The daemon is stopped" if stopped else "The daemon could NOT be confirmed stopped and may still be connected"
             raise TailnetError(
-                f"could not confirm logout ({error}). The daemon is stopped and the node state is kept "
-                "so the next boot retries. The node may still be listed on the tailnet: remove it in the "
-                "Tailscale admin console if access must end now."
+                f"could not confirm logout ({error}). {daemon}; the node state is kept so the next boot retries. "
+                "The node may still be listed on the tailnet: remove it in the Tailscale admin console if access "
+                "must end now."
             ) from error
-    stop_daemon()
+    if not stop_daemon():
+        raise TailnetError(
+            "logged out, but the daemon could not be confirmed stopped; the node state is kept so the next "
+            "boot retries"
+        )
     for child in STATE_DIR.iterdir():
         if child.name == ".lock":
             continue
@@ -338,70 +345,52 @@ def leave_tailnet() -> None:
             child.unlink(missing_ok=True)
 
 
-def stop_daemon() -> None:
-    # Only the daemon this helper started, by its recorded PID and only if that
-    # PID is still a tailscaled on our socket. Never a pattern match: a pattern
-    # also matches whatever shell happens to mention the socket path.
+def stop_daemon() -> bool:
+    """Stop the daemon this helper started. True only when nothing serves our
+    socket afterwards.
+
+    Ownership is the recorded PID, accepted only while that PID is still a
+    tailscaled on our socket. Never a pattern match: a pattern also matches
+    whatever shell happens to mention the socket path. A daemon answering on
+    our socket that we can't tie to an owned PID is never signalled, and the
+    result is False: we can't claim it stopped."""
+    pid = owned_daemon_pid()
+    if pid is not None:
+        for sig, wait in ((signal.SIGTERM, 5.0), (signal.SIGKILL, 2.0)):
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, sig)
+            deadline = time.monotonic() + wait
+            while time.monotonic() < deadline and process_alive(pid):
+                time.sleep(0.1)
+            if not process_alive(pid):
+                break
+        if process_alive(pid):
+            return False
+        with contextlib.suppress(FileNotFoundError):
+            (STATE_DIR / "tailscaled.pid").unlink()
+    return backend_status() is None
+
+
+def owned_daemon_pid() -> int | None:
     try:
         pid = int((STATE_DIR / "tailscaled.pid").read_text().strip())
         cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
-    except (FileNotFoundError, ValueError):
-        return
-    if not any(arg.endswith(b"tailscaled") for arg in cmdline[:2]) or f"--socket={socket_path()}".encode() not in cmdline:
-        return
-    with contextlib.suppress(ProcessLookupError):
-        os.kill(pid, 15)
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and Path(f"/proc/{pid}").exists():
-        time.sleep(0.1)
+    except (FileNotFoundError, ProcessLookupError, ValueError):
+        return None
+    if not any(arg.endswith(b"tailscaled") for arg in cmdline[:2]):
+        return None
+    if f"--socket={socket_path()}".encode() not in cmdline:
+        return None
+    return pid
 
 
-def pubkey() -> int:
-    require_entry()
-    with state_lock():
-        key = ensure_ssh_key()
-    print(Path(f"{key}.pub").read_text().strip())
-    return 0
-
-
-def status(as_json: bool) -> int:
-    entry = tailnet_entry()
-    state = backend_status()
-    report = {
-        "granted": entry is not None,
-        "daemon": state is not None,
-        "backend_state": (state or {}).get("BackendState"),
-        "node": None,
-        "addresses": [],
-        "hosts": [],
-    }
-    me = (state or {}).get("Self") or {}
-    if me:
-        report["node"] = (me.get("DNSName") or me.get("HostName") or "").rstrip(".")
-        report["addresses"] = me.get("TailscaleIPs") or []
-    for host in hosts_of(entry or {}):
-        reachable = None
-        if report["backend_state"] == "Running":
-            with contextlib.suppress(subprocess.TimeoutExpired):
-                reachable = cli("ping", "-c", "1", "--timeout=3s", host["machine"], timeout=10).returncode == 0
-        report["hosts"].append({"alias": host["alias"], "target": ssh_target(host), "reachable": reachable})
-
-    if as_json:
-        print(json.dumps(report, indent=2))
-        return 0
-
-    if not report["granted"]:
-        print("No Tailscale integration is granted to this resident.")
-    if not report["daemon"]:
-        print("tailscaled is not running." + ("  Run: soulshouse-tailnet up" if report["granted"] else ""))
-        return 0 if report["granted"] else 3
-    print(f"state: {report['backend_state']}")
-    if report["node"]:
-        print(f"node:  {report['node']}  {' '.join(report['addresses'])}")
-    for host in report["hosts"]:
-        answer = {True: "answers", False: "no answer", None: "not checked"}[host["reachable"]]
-        print(f"  ssh {host['alias']}  →  {host['target']}  ({answer})")
-    return 0
+def process_alive(pid: int) -> bool:
+    """A zombie has exited; it only waits to be reaped."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except (FileNotFoundError, ProcessLookupError):
+        return False
+    return stat.rsplit(")", 1)[-1].split()[0] != "Z"
 
 
 # ── ssh ────────────────────────────────────────────────────────────────────

@@ -15,14 +15,19 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
     args = dict(a.split("=", 1) for a in sys.argv[1:] if "=" in a)
     statedir, sock_path = args["--statedir"], args["--socket"]
     world = os.environ["FAKE_TS_WORLD"]
-    if json.load(open(world)).get("daemon_fails"):
+    config = json.load(open(world))
+    if config.get("daemon_fails"):
         sys.exit(1)
+    if config.get("ignore_term"):
+        import signal
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
     state_file = os.path.join(statedir, "tailscaled.state")
     if not os.path.exists(state_file):
         open(state_file, "w").write("{}")
-    s = socket.socket(socket.AF_UNIX); s.bind(sock_path); s.listen(1)
+    s = socket.socket(socket.AF_UNIX); s.bind(sock_path); s.listen(16)
     while True:
-        time.sleep(1)
+        conn, _ = s.accept()
+        conn.close()
   PYTHON
 
   FAKE_TAILSCALE = <<~PYTHON
@@ -30,7 +35,13 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
     import json, os, sys
     world_path = os.environ["FAKE_TS_WORLD"]
     world = json.load(open(world_path))
+    sock = next(a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--socket="))
     args = [a for a in sys.argv[1:] if not a.startswith("--socket=")]
+    import socket
+    try:  # like the real CLI: no listening daemon, no answer
+        probe = socket.socket(socket.AF_UNIX); probe.connect(sock); probe.close()
+    except OSError:
+        print("failed to connect to local tailscaled", file=sys.stderr); sys.exit(1)
     open(os.environ["FAKE_TS_LOG"], "a").write(" ".join(args) + "\\n")
     def save(): json.dump(world, open(world_path, "w"))
     cmd = args[0]
@@ -136,6 +147,51 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
     assert_not_includes File.read(@ssh_config), "Host dell", "aliases go even when logout fails"
   end
 
+  test "a daemon that ignores TERM is killed, confirmed gone, and only then is its state deleted" do
+    write_manifest(connection_id: "svc_1")
+    set_world(world.merge("ignore_term" => true))
+    assert tailnet("up").last.success?
+    File.delete(manifest_path)
+
+    out, err, status = tailnet("boot")
+    assert status.success?, err
+    assert_includes out, "left the tailnet"
+    assert_not daemon_alive?
+    assert_not File.exist?(File.join(@dir, "state", "tailscaled.state"))
+  end
+
+  test "a daemon it cannot tie to a recorded PID is left alone and the state is kept" do
+    write_manifest(connection_id: "svc_1")
+    assert tailnet("up").last.success?
+    File.delete(File.join(@dir, "state", "tailscaled.pid"))
+    File.delete(manifest_path)
+
+    _, err, status = tailnet("boot")
+    assert_not status.success?
+    assert_match(/could not be confirmed stopped/, err)
+    assert daemon_alive?, "an unowned daemon is never signalled"
+    assert File.exist?(File.join(@dir, "state", "tailscaled.state"))
+    kill_fake_daemons
+  end
+
+  test "a recorded PID that now belongs to another process is not signalled" do
+    write_manifest(connection_id: "svc_1")
+    assert tailnet("up").last.success?
+    bystander = Process.spawn("sleep", "30")
+    File.write(File.join(@dir, "state", "tailscaled.pid"), "#{bystander}\n")
+    File.delete(manifest_path)
+
+    _, err, status = tailnet("boot")
+    assert_not status.success?
+    assert_match(/could not be confirmed stopped/, err)
+    assert_nothing_raised { Process.kill(0, bystander) }
+    assert File.exist?(File.join(@dir, "state", "tailscaled.state"))
+  ensure
+    Process.kill("KILL", bystander) rescue nil
+    Process.wait(bystander) rescue nil
+    kill_fake_daemons
+  end
+
   test "a different integration's node is logged out before joining with the new key" do
     write_manifest(connection_id: "svc_1")
     assert tailnet("up").last.success?
@@ -227,6 +283,18 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
     sleep 0.2
     FileUtils.rm_f(File.join(@dir, "state", "tailscaled.sock"))
     FileUtils.rm_f(File.join(@dir, "state", "tailscaled.pid"))
+  end
+
+  def kill_fake_daemons
+    fake_daemon_pids.each { |pid| Process.kill("KILL", pid) rescue nil }
+  end
+
+  def fake_daemon_pids
+    Dir.glob("/proc/[0-9]*/cmdline").filter_map do |path|
+      path.split("/")[2].to_i if File.read(path).include?("--statedir=#{File.join(@dir, 'state')}")
+    rescue Errno::ENOENT, Errno::ESRCH, Errno::EACCES
+      nil
+    end
   end
 
   def daemon_alive?
