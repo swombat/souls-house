@@ -393,6 +393,54 @@ def process_alive(pid: int) -> bool:
     return stat.rsplit(")", 1)[-1].split()[0] != "Z"
 
 
+def pubkey() -> int:
+    require_entry()
+    with state_lock():
+        key = ensure_ssh_key()
+    print(Path(f"{key}.pub").read_text().strip())
+    return 0
+
+
+def status(as_json: bool) -> int:
+    entry = tailnet_entry()
+    state = backend_status()
+    report = {
+        "granted": entry is not None,
+        "daemon": state is not None,
+        "backend_state": (state or {}).get("BackendState"),
+        "node": None,
+        "addresses": [],
+        "hosts": [],
+    }
+    me = (state or {}).get("Self") or {}
+    if me:
+        report["node"] = (me.get("DNSName") or me.get("HostName") or "").rstrip(".")
+        report["addresses"] = me.get("TailscaleIPs") or []
+    for host in hosts_of(entry or {}):
+        reachable = None
+        if report["backend_state"] == "Running":
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                reachable = cli("ping", "-c", "1", "--timeout=3s", host["machine"], timeout=10).returncode == 0
+        report["hosts"].append({"alias": host["alias"], "target": ssh_target(host), "reachable": reachable})
+
+    if as_json:
+        print(json.dumps(report, indent=2))
+        return 0
+
+    if not report["granted"]:
+        print("No Tailscale integration is granted to this resident.")
+    if not report["daemon"]:
+        print("tailscaled is not running." + ("  Run: soulshouse-tailnet up" if report["granted"] else ""))
+        return 0 if report["granted"] else 3
+    print(f"state: {report['backend_state']}")
+    if report["node"]:
+        print(f"node:  {report['node']}  {' '.join(report['addresses'])}")
+    for host in report["hosts"]:
+        answer = {True: "answers", False: "no answer", None: "not checked"}[host["reachable"]]
+        print(f"  ssh {host['alias']}  →  {host['target']}  ({answer})")
+    return 0
+
+
 # ── ssh ────────────────────────────────────────────────────────────────────
 
 def ssh_dir() -> Path:

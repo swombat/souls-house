@@ -235,6 +235,60 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
     assert_operator config.index("Match all"), :<, config.index("User everyone")
   end
 
+  test "every documented command resolves to a function" do
+    out, err, status = Open3.capture3("python3", "-c", <<~PY, SCRIPT.to_s)
+      import importlib.machinery, importlib.util, re, sys
+      loader = importlib.machinery.SourceFileLoader("tailnet", sys.argv[1])
+      spec = importlib.util.spec_from_loader("tailnet", loader)
+      module = importlib.util.module_from_spec(spec)
+      loader.exec_module(module)
+      commands = re.findall(r"soulshouse-tailnet (\\w+)", module.__doc__)
+      missing = [c for c in commands if not callable(getattr(module, c, None))]
+      print(sorted(set(commands)), "missing:", missing)
+      sys.exit(1 if missing else 0)
+    PY
+    assert status.success?, out + err
+    assert_includes out, "'pubkey'"
+    assert_includes out, "'status'"
+  end
+
+  test "pubkey prints one stable ed25519 public key, and needs a grant" do
+    write_manifest(connection_id: "svc_1")
+    first, err, status = tailnet("pubkey")
+    assert status.success?, err
+    assert_match(/\Assh-ed25519 \S+ soulshouse-test\n\z/, first)
+    assert_equal first, tailnet("pubkey").first
+
+    File.delete(manifest_path)
+    _, err, status = tailnet("pubkey")
+    assert_not status.success?
+    assert_match(/no Tailscale integration/, err)
+  end
+
+  test "status reports the node and its machines, in text and JSON" do
+    write_manifest(connection_id: "svc_1")
+    assert tailnet("up").last.success?
+
+    out, err, status = tailnet("status")
+    assert status.success?, err
+    assert_includes out, "state: Running"
+    assert_includes out, "100.64.0.9"
+    assert_includes out, "ssh dell  →  daniel@dell  (answers)"
+
+    out, err, status = tailnet("status", "--json")
+    assert status.success?, err
+    report = JSON.parse(out)
+    assert report["granted"]
+    assert_equal "Running", report["backend_state"]
+    assert_equal [ { "alias" => "dell", "target" => "daniel@dell", "reachable" => true } ], report["hosts"]
+  end
+
+  test "status without a grant or a daemon says so and exits 3" do
+    out, _, status = tailnet("status")
+    assert_equal 3, status.exitstatus
+    assert_includes out, "No Tailscale integration is granted"
+  end
+
   private
 
   def tailnet(*args)
