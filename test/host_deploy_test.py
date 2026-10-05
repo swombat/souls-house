@@ -38,7 +38,8 @@ class WorkflowAuthorityTest(unittest.TestCase):
                     self.assertEqual(
                         ref == "refs/heads/master" and actor == triggering_actor == "swombat",
                         allowed, (ref, actor, triggering_actor))
-        for name in ["deploy-rails.yml", "deploy-chaos.yml", "deploy-both.yml"]:
+        for name in ["deploy-rails.yml", "deploy-chaos.yml", "deploy-both.yml",
+                     "deploy-runtime.yml"]:
             caller = (workflows / name).read_text()
             self.assertIn("uses: ./.github/workflows/deploy-house.yml", caller)
             self.assertNotIn("runs-on:", caller)
@@ -64,7 +65,7 @@ class GateTest(unittest.TestCase):
         return job_id
 
     def test_exact_command_grammar(self):
-        for args in [["rails"], ["chaos"], ["both"], ["status", "a" * 32]]:
+        for args in [["rails"], ["chaos"], ["both"], ["runtime"], ["status", "a" * 32]]:
             self.assertTrue(gate.valid_args(args))
         for args in [[], ["rails", "--help"], ["rails;id"], ["status", "../secret"],
                      ["status", "A" * 32], ["status", "a" * 31], ["status", "a" * 32, "extra"]]:
@@ -275,6 +276,85 @@ class WorkerTest(unittest.TestCase):
             os.umask(previous)
         self.assertEqual(0o644, path.stat().st_mode & 0o777)
         self.assertEqual(0o600, private.stat().st_mode & 0o777)
+
+    def test_every_operation_is_wired_end_to_end(self):
+        root = OPS.parents[1]
+        transport = (root / ".github/workflows/deploy-house.yml").read_text()
+        install = (OPS / "install").read_text()
+        for operation in gate.OPERATIONS:
+            self.assertIn(f"operation: {operation}", "".join(
+                path.read_text() for path in (root / ".github/workflows").glob("deploy-*.yml")))
+            self.assertIn(operation, transport.split('case "$OPERATION" in ')[1].split(")")[0])
+            self.assertIn(operation, install.split("for operation in ")[1].split(";")[0])
+            # Read the forced command's grammar rather than executing it: an
+            # accepted command would exec sudo.
+            import re
+            grammar = re.search(r're\.fullmatch\(r"(.+?)", command\)',
+                                (OPS / "ssh-command").read_text())[1]
+            self.assertTrue(re.fullmatch(grammar, operation), operation)
+
+    def test_runtime_operation_only_rebuilds_residents(self):
+        self.w.data["operation"] = "runtime"
+        with patch.object(self.w, "checkout"), patch.object(self.w, "deploy_rails") as rails, \
+             patch.object(self.w, "update_chaos") as chaos, \
+             patch.object(self.w, "rebuild_residents") as rebuild:
+            self.w.execute()
+        rails.assert_not_called()
+        chaos.assert_not_called()
+        rebuild.assert_called_once()
+        self.assertEqual("success", self.w.data["state"])
+
+    def pinned_fixture(self, refs, running="chaos 47.11.0.1"):
+        self.w.settings.update(custom_residents={}, stock_repositories=["stock"],
+                               stock_repository="stock", stock_aliases=["stock:latest"],
+                               development_repository="dev", idle_wait_seconds=0)
+        residents = [dict(id=i, container_name=f"r{i}", container_image=f"stock:{i}")
+                     for i in range(len(refs))]
+        labels = {f"stock:{i}": ref for i, ref in enumerate(refs)}
+        commands = []
+
+        def run(args, **kwargs):
+            commands.append(args)
+            if args[:2] == ["docker", "exec"]:
+                return running
+            if "--version" in args:
+                return "chaos 47.11.0.1"
+            return None
+        patches = [
+            patch.object(worker, "github", side_effect=AssertionError("pinned must not ask upstream")),
+            patch.object(self.w, "rails", side_effect=lambda code, env=None:
+                         {"residents": residents} if env is None else {"result": "healthy"}),
+            patch.object(self.w, "inspect_image", side_effect=lambda image:
+                         {"Config": {"Labels": {"house.souls.chaos-ref": labels[image]}}}),
+            patch.object(self.w, "run", side_effect=run),
+            patch.object(self.w, "check_runtime_permissions"),
+            patch.object(worker, "CODE", self.root),
+        ]
+        (self.root / "roll-resident.rb").write_text("")
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        return commands
+
+    def test_rebuild_keeps_the_running_chaos_revision(self):
+        commands = self.pinned_fixture(["c" * 40, "c" * 40])
+        self.w.rebuild_residents()
+        build = next(c for c in commands if c[:2] == ["docker", "build"])
+        self.assertIn("CHAOS_HEAD=" + "c" * 40, build)
+        self.assertEqual("c" * 40, self.w.data["chaos_revision"])
+        self.assertEqual("all residents healthy", self.w.data["step"])
+
+    def test_rebuild_refuses_mixed_revisions(self):
+        commands = self.pinned_fixture(["c" * 40, "d" * 40])
+        with self.assertRaisesRegex(RuntimeError, "different Chaos revisions"):
+            self.w.rebuild_residents()
+        self.assertFalse(any(c[:2] == ["docker", "build"] for c in commands))
+
+    def test_rebuild_refuses_a_different_binary_before_rolling_anyone(self):
+        self.pinned_fixture(["c" * 40], running="chaos 47.10.0.1")
+        with self.assertRaisesRegex(RuntimeError, "differs from the running one"):
+            self.w.rebuild_residents()
+        self.w.rails.assert_called_once()
 
     def test_permission_preflight_uses_resident_user_without_network(self):
         with patch.object(self.w, "run") as run:

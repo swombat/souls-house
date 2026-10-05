@@ -10,7 +10,7 @@ import sys
 import uuid
 
 ROOT = Path("/var/lib/house-deploy")
-OPERATIONS = ("rails", "chaos", "both")
+OPERATIONS = ("rails", "chaos", "both", "runtime")
 TERMINAL = ("success", "failed", "partial", "interrupted")
 FIELDS = ("id", "operation", "state", "step", "rails_revision", "chaos_revision",
           "chaos_version", "skipped", "resident_id")

@@ -21,7 +21,7 @@ chmod 644 "$home/.ssh/authorized_keys"
 printf '%s\n' 'house-deploy-trigger ALL=(root) NOPASSWD: /opt/house-deploy/gate.py' > /etc/sudoers.d/house-deploy
 chmod 440 /etc/sudoers.d/house-deploy
 visudo -cf /etc/sudoers.d/house-deploy
-for operation in rails chaos both; do
+for operation in rails chaos both runtime; do
   cat > "/etc/systemd/system/house-deploy-${operation}.service" <<EOF
 [Unit]
 Description=Host-owned house deployment (${operation})
