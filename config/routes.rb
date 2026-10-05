@@ -332,6 +332,8 @@ Rails.application.routes.draw do
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
   # Defines the root path route ("/")
+  get "features" => "pages#features", as: :features
+  get "changelog" => "pages#changelog", as: :changelog
   get "privacy" => "pages#privacy", as: :privacy
   get "self-host" => "pages#self_host", as: :self_host
   get "self-host/technical" => "pages#self_host_technical", as: :self_host_technical
