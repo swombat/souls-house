@@ -9,14 +9,14 @@
     <%= f.label :name, "Stream name" %> <%= f.text_field :name, required: true, maxlength: 100 %>
     <%= f.submit "Create disabled stream" %>
   <% end %>
-  <p><%= link_to "Personal data recovery (all accounts)", device_streams_path %> — revoke devices or erase your data even after leaving an account.</p>
+  <p><%= link_to "Personal data recovery (all accounts)", device_streams_path %> — revoke devices or delete your data even after leaving an account.</p>
   <% else %>
   <h1>Personal device data recovery</h1>
-  <p>Revoke devices or erase your own data across accounts, including accounts you have left.
+  <p>Revoke devices or delete your own data across accounts, including accounts you have left.
     To create a stream or manage readers, open Device streams from that account's Services page.</p>
   <% end %>
   <ul><% @streams.each do |stream| %>
     <li><%= link_to stream.name, @stream_account ? account_device_stream_path(@stream_account, stream.stream_key) : device_stream_path(stream.stream_key) %>
-      — <%= stream.account.name %><%= " (erased)" if stream.erased_at? %></li>
+      — <%= stream.account.name %><%= " (deleted)" if stream.erased_at? %></li>
   <% end %></ul>
 </main></body></html>

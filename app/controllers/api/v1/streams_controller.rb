@@ -5,7 +5,7 @@ class Api::V1::StreamsController < Api::V1::BaseController
   def latest
     now = Time.current
     # Bound by observation time, not arrival order. A late retry cannot become "latest".
-    batches = @stream.device_stream_batches
+    batches = @stream.visible_batches
       .where(observed_at: (now - 20.minutes)..(now + 5.minutes))
       .includes(:device_stream_session).order(observed_at: :desc, id: :desc).limit(1201).to_a
     truncated = batches.length > 1200
@@ -48,7 +48,9 @@ class Api::V1::StreamsController < Api::V1::BaseController
       return render json: { error: "Invalid cursor" }, status: :unprocessable_entity
     end
 
-    batches = session.device_stream_batches.order(:sequence)
+    # Re-check the tombstone in the payload query itself: deletion only marks the
+    # session, so a deletion committed after the lookup above must still hide rows.
+    batches = @stream.visible_batches.where(device_stream_session_id: session.id).order(:sequence)
     batches = batches.where("sequence > ?", cursor.to_i) if cursor
     page = batches.limit(201).to_a
     more = page.length > 200

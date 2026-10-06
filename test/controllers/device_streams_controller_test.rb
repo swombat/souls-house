@@ -24,7 +24,9 @@ class DeviceStreamsControllerTest < ActionDispatch::IntegrationTest
   test "browser controls expose revoke erase and one-time credential" do
     get account_device_stream_path(@account, @stream.stream_key)
     assert_response :success
-    assert_select "h2", text: "Permanent bulk erasure"
+    assert_select "h2", text: "Delete all and close"
+    assert_no_match(/permanent/i, response.body)
+    assert_match(/samples stay stored/, response.body)
     post credential_account_device_stream_path(@account, @stream.stream_key)
     assert_response :success
     assert_equal "no-store", response.headers["Cache-Control"]
