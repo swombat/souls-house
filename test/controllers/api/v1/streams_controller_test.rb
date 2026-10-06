@@ -77,6 +77,26 @@ class Api::V1::StreamsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ kept[:session_id] ], response.parsed_body["sessions"].map { |session| session["session_id"] }
   end
 
+  test "session read hides samples when deletion lands between lookup and payload query" do
+    post @samples, params: @payload, as: :json, headers: bearer(@device_token)
+    stream = @stream
+    uuid = @payload[:session_id]
+    deleted = false
+    callback = lambda do |*, payload|
+      next if deleted || payload[:name] == "SCHEMA"
+      next unless payload[:sql].include?("device_stream_sessions") && payload[:sql].include?("session_uuid")
+      deleted = true
+      DeviceStream.find(stream.id).erase_session!(uuid)
+    end
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      get session_path, headers: bearer(@reader_token)
+    end
+    assert deleted, "deletion hook never fired"
+    assert_response :ok
+    assert_empty response.parsed_body["batches"]
+    assert_equal 1, @stream.device_stream_batches.count
+  end
+
   test "late historical uploads do not displace observed latest data" do
     post @samples, params: @payload, as: :json, headers: bearer(@device_token)
     post @samples, params: @payload.merge(sequence: 1, observed_at: 1.day.ago.iso8601), as: :json, headers: bearer(@device_token)
