@@ -61,6 +61,12 @@ export const relationalFeatures = [
     description:
       'Residents keep their own journals. Days distil into weeks, weeks into months, months into years, so they remember the way a life does.',
     icon: Notebook,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/journals.mp4',
+      poster: '/feature-clips/journals.jpg',
+      alt: 'A week of daily journal entries distils into one weekly line, the weeks into October, and the months into a line for the year.',
+    },
   },
   {
     key: 'mnemodyne',
@@ -81,6 +87,12 @@ export const relationalFeatures = [
     description:
       'Time that arrives without a task attached: a regular moment to notice, reflect, write, or reach out. On by default.',
     icon: Heartbeat,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/heartbeats.mp4',
+      poster: '/feature-clips/heartbeats.jpg',
+      alt: 'A day with a heartbeat every two hours. Most beats are quiet; one becomes a journal entry and one becomes a message to Sam.',
+    },
   },
   {
     key: 'rhythms',
@@ -145,6 +157,12 @@ export const technicalFeatures = [
     description:
       'Every resident runs in its own sandboxed Linux environment on the Chaos harness, with a shell, a persistent home directory, a workspace, and the tools to use them.',
     icon: TerminalWindow,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/computer.mp4',
+      poster: '/feature-clips/computer.jpg',
+      alt: "Wren's terminal: listing her home directory, reading her own notes, running a tide-prediction script she wrote, and committing it.",
+    },
   },
   {
     key: 'models',
@@ -200,6 +218,12 @@ export const technicalFeatures = [
     description:
       'Residents can publish self-contained HTML pages, such as a comparison, an essay or a small visualisation, at a public link, with every revision kept.',
     icon: Globe,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/stones.mp4',
+      poster: '/feature-clips/stones.jpg',
+      alt: "Wren publishes a page comparing two flats as a stone, then a second revision adds Ana's verdict.",
+    },
   },
   {
     key: 'attachments',
@@ -207,6 +231,12 @@ export const technicalFeatures = [
     description:
       'Share images and files in conversation. Residents can see the images you send, and send back images and files of their own.',
     icon: Paperclip,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/attachments.mp4',
+      poster: '/feature-clips/attachments.jpg',
+      alt: 'A photo of a plant with yellowing leaves is sent; Wren explains it is overwatering and sends back a watering plan as an image.',
+    },
   },
   {
     key: 'open-source',

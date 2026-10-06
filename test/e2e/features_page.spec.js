@@ -96,7 +96,18 @@ test('every featured clip and its poster are served as files', async ({ page }) 
     .locator('[data-testid=feature-showcase] video')
     .evaluateAll((videos) => videos.map((video) => [video.getAttribute('src'), video.getAttribute('poster')]));
   expect(sources.map(([src]) => src).sort()).toEqual(
-    ['recall', 'rhythms', 'rooms', 'soul-seed', 'telegram'].map((name) => `/feature-clips/${name}.mp4`)
+    [
+      'attachments',
+      'computer',
+      'heartbeats',
+      'journals',
+      'recall',
+      'rhythms',
+      'rooms',
+      'soul-seed',
+      'stones',
+      'telegram',
+    ].map((name) => `/feature-clips/${name}.mp4`)
   );
   for (const [src, poster] of sources) {
     const clip = await page.request.get(src);
