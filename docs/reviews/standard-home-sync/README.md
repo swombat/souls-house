@@ -15,7 +15,10 @@ scope [#180](https://github.com/swombat/souls-house/issues/180).
   never count as successful branch synchronization.
 - Conflicts preserve local commits and attempt a separate, non-force rescue ref.
   A successful rescue push does not resolve the conflict; a failed rescue push
-  requires retaining the local working copy. Deliberate reconciliation is needed.
+  requires retaining the local working copy. The resident reconciles deliberately
+  from its own checkout; no site-admin approval is needed.
+- Policy changes use the existing request's refresh/confirmation flow with the
+  account's own configuration permissions, without replacing the checkout.
 - The local-use guide installs a commit-pinned, checksum-verified standalone
   Python runner; it is not a cross-harness adapter or scheduler installer.
 

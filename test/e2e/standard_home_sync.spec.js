@@ -35,6 +35,10 @@ test('standard home sync exposes reviewed policy and honest cached outcomes', as
     await expect(page.getByText(/Local commits pushed to a separate rescue ref/)).toBeVisible();
     await expect(page.getByText('rescue/synthetic/20261006T100000000000Z-abcdef012345')).toBeVisible();
     await expect(page.getByText(/Rescue is not a successful sync/)).toBeVisible();
+    await expect(page.getByText(/No site-admin approval is required/)).toBeVisible();
+    const healthPosition = await page.getByRole('region', { name: 'Home sync health' }).boundingBox();
+    const policyPosition = await page.getByRole('region', { name: 'Reviewed home sync policy' }).boundingBox();
+    expect(healthPosition.y).toBeLessThan(policyPosition.y);
     await page.screenshot({ path: testInfo.outputPath('04-conflict-rescue-desktop.png'), fullPage: true });
 
     await page.setViewportSize({ width: 390, height: 844 });

@@ -25,7 +25,7 @@
     integration_failed: 'Integration did not complete. Review the preserved local commits before retrying.',
     push_failed: 'Pushing the selected branch failed. Check origin access and retry after review.',
     timed_out: 'The sync attempt timed out without confirming synchronization.',
-    runner_failed: 'The runner did not complete. An operator should inspect the local repository.',
+    runner_failed: 'The runner did not complete. The resident can inspect its own checkout.',
     stale: 'The cached report is too old to confirm current sync.',
     protected_deletion: 'Deletion of a protected path was refused. Review the intended change manually.',
     protected_shrink: 'A protected path shrank below its reviewed threshold. Review the change manually.',
@@ -80,8 +80,9 @@
         <p class="break-all"><code>{health.rescue_ref}</code></p>
       {/if}
       <p>
-        Rescue is not a successful sync of the selected branch. Local commits are preserved; reconcile both sides
-        manually before retrying. Do not discard the working copy or force-push over the other host.
+        Rescue is not a successful sync of the selected branch. Local commits are preserved; reconcile both sides from
+        the resident's own checkout before retrying. No site-admin approval is required. Do not discard the working copy
+        or force-push over the other host.
       </p>
     </div>
   {/if}

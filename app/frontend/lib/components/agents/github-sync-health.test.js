@@ -36,6 +36,8 @@ test.each(['pushed', 'failed'])('rescue %s is separate from branch sync', (rescu
     },
   });
   expect(screen.getByText(/Rescue is not a successful sync/)).toBeVisible();
+  expect(screen.getByText(/from the resident's own checkout/)).toBeVisible();
+  expect(screen.getByText(/No site-admin approval is required/)).toBeVisible();
   expect(screen.getByText('rescue/example-host/20261006T100000000000Z-abcdef012345')).toBeVisible();
   expect(screen.getByText('1 day ago (reported age)')).toBeVisible();
   expect(screen.queryByRole('heading', { name: 'Last sync check succeeded' })).not.toBeInTheDocument();

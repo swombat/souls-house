@@ -137,6 +137,51 @@ class GithubResidentImportTest < ActiveSupport::TestCase
     end
   end
 
+  test "account owner refreshes and confirms changed sync policy on the same resident" do
+    request = import_request(sync_strategy: "standard", sync_configuration: {
+      "auto_commit_paths" => [ "journals" ], "append_only_paths" => [], "allow_destructive_paths" => []
+    })
+    approve_fixture(request)
+    owner, repo = request.repository.split("/")
+    agent = request.create_agent!(account: request.account, name: "Policy change", runtime: "external",
+      home_profile: "portable_v1", portable_home_id: request.portable_home_id, identity_seeded_at: Time.current,
+      github_repo_url: "https://github.com/#{request.repository}", github_repo_owner: owner, github_repo_name: repo,
+      container_image: request.approved_image)
+    request.update!(status: "ready")
+    user = request.requested_by
+    assert_not user.site_admin
+    policy = { "auto_commit_paths" => [ "journals" ], "append_only_paths" => [ "journals" ],
+      "allow_destructive_paths" => [] }
+    source = Object.new
+    source.define_singleton_method(:with_checkout) do |branch:, **_options, &block|
+      block.call("/synthetic", { "identity_id" => request.portable_home_id, "standard_sync" => policy }, "b" * 40, branch)
+    end
+    connection = request.service_connection
+    result = { credential_fingerprint: connection.credential_fingerprint, credential_metadata: connection.credential_metadata }
+    definition = connection.definition
+    adapter = definition.adapter
+    adapter.stub(:connection_attributes, result) do
+      definition.stub(:adapter, adapter) do
+        connection.stub(:definition, definition) do
+          Agents::GithubImportSource.stub(:new, source) { request.refresh_review!(user) }
+        end
+      end
+    end
+    assert_equal "pending_review", request.reload.status
+    assert request.approval_error
+    assert_equal policy, request.sync_configuration
+    assert_equal agent.id, request.agent.id
+    assert_equal agent.identity_seeded_at, request.agent.identity_seeded_at
+    Agents::GithubImportSource.stub(:new, source) do
+      assert_enqueued_with(job: GithubResidentImportJob, args: [ request.id ]) do
+        request.approve!(user, review_revision: request.review_revision)
+      end
+    end
+    assert_nil request.reload.approval_error
+    assert_equal user, request.approved_by
+    assert_equal policy, request.sync_configuration
+  end
+
   test "same request refreshes rotated credential review without replacing resident or identity" do
     request = import_request
     approve_fixture(request)

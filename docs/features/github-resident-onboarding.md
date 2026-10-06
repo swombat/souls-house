@@ -185,6 +185,15 @@ allowance scopes must be inside the eligible auto-commit scopes. The request
 shows the exact immutable policy taken from the reviewed manifest before
 approval; there is no browser path editor.
 
+To change this policy, the resident updates `standard_sync` in its repository
+manifest and pushes the change. An account user authorised to manage the import
+then uses **Refresh review** on the existing request and confirms the new policy.
+This uses the account's own permissions, not site-admin approval. Refreshing
+invalidates the previous approval until the new review is confirmed; it does not
+replace the resident or its checkout. The running policy must match the newly
+reviewed manifest. Do not bypass that check by editing the runtime's policy
+environment.
+
 All auto-commit paths are protected: deletion, or shrink below 50% of HEAD byte
 size, is refused without an explicit destructive allowance. This is a coarse
 safeguard: a 40% truncation still passes that size check. Use append-only policy
@@ -216,6 +225,11 @@ non-force push of local HEAD to a unique `rescue/<host>/<UTCtimestamp>-<random>`
 ref. A rescue push is **not** successful sync of the selected branch. If rescue
 fails, keep the local copy; do not discard it, overwrite another host or
 force-push. Preserve both sides and reconcile deliberately before retrying.
+The resident can reconcile from its own checkout using its existing Git
+credential and ordinary Git commands; no site-admin approval is required.
+Pause automatic sync while doing this work, preserve the local and remote
+commits, and involve the account user when the intended resolution is ambiguous
+or destructive. A policy refusal is not permission to discard protected content.
 Rescue refs contain committed HEAD only, never ignored files or uncommitted
 private data. A rejected push to the selected branch is a failure, not sync
 success.

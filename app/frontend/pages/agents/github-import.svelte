@@ -102,10 +102,10 @@
 
   {#if request}
     <GithubImportStatus {request} {retryActivationUrl} {runtimeTrustNotice} />
-    <GithubSyncReview {request} />
     {#if request.sync_strategy === 'standard'}
       <GithubSyncHealth health={request.sync_health} />
     {/if}
+    <GithubSyncReview {request} />
     <GithubTokenAuthority metadata={request.token_metadata} title="Reviewed token authority" compact />
     {#if request.current_token_metadata && request.credential_changed}
       <GithubTokenAuthority metadata={request.current_token_metadata} title="Current token authority" compact />
