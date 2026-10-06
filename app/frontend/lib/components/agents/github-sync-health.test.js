@@ -32,11 +32,11 @@ test.each(['pushed', 'failed'])('rescue %s is separate from branch sync', (rescu
       last_success_at: '2026-10-05T10:00:00Z',
       last_success_age_seconds: 86400,
       rescue_status: rescueStatus,
-      rescue_ref: 'rescue/example-host/20261006T100000Z-synthetic',
+      rescue_ref: 'rescue/example-host/20261006T100000000000Z-abcdef012345',
     },
   });
   expect(screen.getByText(/Rescue is not a successful sync/)).toBeVisible();
-  expect(screen.getByText('rescue/example-host/20261006T100000Z-synthetic')).toBeVisible();
+  expect(screen.getByText('rescue/example-host/20261006T100000000000Z-abcdef012345')).toBeVisible();
   expect(screen.getByText('1 day ago (reported age)')).toBeVisible();
   expect(screen.queryByRole('heading', { name: 'Last sync check succeeded' })).not.toBeInTheDocument();
 });

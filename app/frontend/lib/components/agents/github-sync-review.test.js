@@ -20,6 +20,7 @@ test('shows every reviewed policy and protection threshold as text', () => {
   });
   expect(screen.getByText(/shrink below 50%/)).toBeVisible();
   expect(screen.getByText(/always refuse rewriting or truncation/)).toBeVisible();
+  expect(screen.getByText(/blocks keep their internal order, repeated lines and blanks/)).toBeVisible();
   expect(screen.getAllByText('notes/<synthetic>.md')).toHaveLength(3);
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
 });

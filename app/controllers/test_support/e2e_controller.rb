@@ -428,7 +428,7 @@ module TestSupport
         conflict_health = {
           "state" => "needs_attention", "checked_at" => Time.current.iso8601,
           "last_success_at" => 2.hours.ago.iso8601, "reason_code" => "merge_conflict",
-          "rescue_ref" => "rescue/synthetic/20261006T100000Z-example", "rescue_status" => "pushed"
+          "rescue_ref" => "rescue/synthetic/20261006T100000000000Z-abcdef012345", "rescue_status" => "pushed"
         }
         conflict = GithubResidentImport.create!(ready_attributes.merge(
           name: "Example sync conflict", portable_home_id: "example-conflict-#{run_id}",

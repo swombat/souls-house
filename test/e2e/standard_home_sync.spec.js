@@ -18,7 +18,7 @@ test('standard home sync exposes reviewed policy and honest cached outcomes', as
     await page.getByLabel('Resident display name').fill('Synthetic standard resident');
     await page.screenshot({ path: testInfo.outputPath('01-keep-existing-desktop.png'), fullPage: true });
     await page.getByRole('radio', { name: 'Use standard two-way Git sync' }).check();
-    await expect(page.getByText(/uncommitted edits are not automatically saved/)).toBeVisible();
+    await expect(page.getByText(/uncommitted edits are not automatically\s+saved/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Request site-admin review' })).toBeEnabled();
     await page.screenshot({ path: testInfo.outputPath('02-standard-choice-desktop.png'), fullPage: true });
     // Do not submit or approve: fixtures are synthetic and no repository/runtime is contacted.
@@ -33,6 +33,7 @@ test('standard home sync exposes reviewed policy and honest cached outcomes', as
     await expect(page.getByRole('heading', { name: 'Sync needs attention' })).toBeVisible();
     await expect(page.getByText(/2 hours ago \(reported age\)/)).toBeVisible();
     await expect(page.getByText(/Local commits pushed to a separate rescue ref/)).toBeVisible();
+    await expect(page.getByText('rescue/synthetic/20261006T100000000000Z-abcdef012345')).toBeVisible();
     await expect(page.getByText(/Rescue is not a successful sync/)).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('04-conflict-rescue-desktop.png'), fullPage: true });
 

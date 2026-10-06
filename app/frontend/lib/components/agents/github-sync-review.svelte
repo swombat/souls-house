@@ -41,8 +41,9 @@
       even with a destructive allowance.
     </p>
     <p class="text-sm text-muted-foreground">
-      Append-only merging applies only to proven complete UTF-8 line additions: it preserves common-base lines,
-      deduplicates new lines and sorts additions by UTF-8 bytes. Other conflicts require manual reconciliation; neither
+      Append-only merging requires an exact common-base complete UTF-8 line prefix. Appended blocks keep their internal
+      order, repeated lines and blanks. Equal blocks appear once; a shared whole-block prefix keeps the longer addition;
+      divergent blocks are concatenated in UTF-8 byte order. Other conflicts require manual reconciliation; neither
       identity anchors nor narratives are automatically reconciled.
     </p>
   {:else}
