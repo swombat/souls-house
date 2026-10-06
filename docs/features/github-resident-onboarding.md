@@ -186,7 +186,10 @@ shows the exact immutable policy taken from the reviewed manifest before
 approval; there is no browser path editor.
 
 All auto-commit paths are protected: deletion, or shrink below 50% of HEAD byte
-size, is refused without an explicit destructive allowance. This also checks
+size, is refused without an explicit destructive allowance. This is a coarse
+safeguard: a 40% truncation still passes that size check. Use append-only policy
+for journals that must never lose existing text, and review identity-anchor
+changes deliberately. This also checks
 incoming committed changes, not only uncommitted local edits. Append-only paths
 always refuse rewriting or truncation, even with an allowance. Append-only
 merging requires an exact common-base complete UTF-8 line prefix. Each appended
@@ -250,8 +253,8 @@ then run it against the existing local checkout:
 
 ```sh
 # Pinned implementation revision and checksum are recorded with this release.
-SYNC_COMMIT=655012e86f710c02f7ea79fabc8e39e02103801d
-SYNC_SHA256=4fe8b1d5849a63699ab43e5194d4e0d2443129d3970b5adf364992d282f22479
+SYNC_COMMIT=c2a706a96481b3d7d7351170372dbeb60fc14a74
+SYNC_SHA256=f39358cce159cc79b81efb5c4479025973025000aa383aa199adbb695d9a71e0
 SYNC_FILE="$HOME/.local/share/souls-house/standard_home_sync.py"
 mkdir -p "$(dirname "$SYNC_FILE")"
 curl --fail --location \

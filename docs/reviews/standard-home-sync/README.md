@@ -45,6 +45,16 @@ Prior PR179 images in `../github-resident-onboarding/` are not replaced.
 
 ## Checks and limits
 
+Lume's first head review reproduced idle merge-commit ping-pong and repeated
+rescue branches for unchanged commits. Both are fixed: descendant histories
+fast-forward after protection checks; successful rescue refs are reused only
+after verifying that the remote ref still names the same local commit.
+Eight alternating idle cycles add no commits, and rescue cache lifecycle tests
+cover failed pushes, changed heads and missing/mismatched remote refs.
+The backend helper's final full Python run passed 231 tests (five skips).
+Container-hostname rescue labels remain a limitation; stable body labels and
+in-cycle push retries are deferred. A rejected push retries on the next cycle.
+
 - Full Vitest: 80 files, 526 tests passed.
 - Scoped Prettier and Svelte size check passed (four existing size warnings).
 - Full frontend format check reports three unchanged files:
