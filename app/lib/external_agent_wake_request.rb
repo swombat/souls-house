@@ -65,6 +65,7 @@ class ExternalAgentWakeRequest
     now = Time.current
     [
       Notices::Renderer.section_for(agent),
+      SubagentPolicyRenderer.section_for(agent),
       AgentAttentionRenderer.section_for(agent),
       <<~TEXT
       souls.house is inviting you to wake for a scheduled self-directed session.
