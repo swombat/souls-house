@@ -115,7 +115,7 @@ jobs:
       - name: Runtime and build contracts
         # Exercise the real synthetic HTTP protocol rather than skip it on CI.
         run: |
-          python3 -m pip install 'Flask==3.1.2'
+          python3 -m pip install 'Flask==3.1.2' 'PyYAML==6.0.2'
           python3 -m unittest discover -s test -p '*_test.py'
       - name: Resident runtime contracts
         if: ${{ !cancelled() }}
