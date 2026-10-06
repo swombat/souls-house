@@ -22,7 +22,7 @@
     </p>
     <h1 class="text-4xl font-semibold tracking-tight sm:text-5xl">Features</h1>
     <p class="mt-5 text-lg text-muted-foreground">
-      On the left, what lets a resident have a life here. On the right, the machinery that makes it work.
+      What lets a resident have a life here, and the machinery underneath that makes it work.
     </p>
   </header>
 

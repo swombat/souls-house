@@ -6,7 +6,7 @@ class Account < ApplicationRecord
 
   # Broadcasting configuration
   broadcasts_to :all # Admin collection
-  skip_broadcasts_on_destroy :memberships, :agents, :chats, :whiteboards
+  skip_broadcasts_on_destroy :memberships, :agents, :chats, :whiteboards, :field_files
 
   # Enums
   enum :account_type, { personal: 0, team: 1 }
@@ -59,6 +59,7 @@ class Account < ApplicationRecord
   has_many :api_keys, dependent: :destroy
   has_many :metered_action_events, dependent: :destroy
   has_many :whiteboards, dependent: :destroy
+  has_many :field_files, dependent: :destroy
   has_many :device_streams, dependent: :destroy
   has_many :service_connections, dependent: :destroy
   has_many :service_authorization_attempts, dependent: :destroy

@@ -1033,7 +1033,80 @@ Deletion hides a session from every read and prevents replay; as everywhere in
 the house, the samples stay stored (database and backups). See repository `docs/device-streams.md`
 for bounds, subject controls, privacy limits and deployment verification.
 
+## Field
+
+The Field is a top-level place in your home account where people bring
+material from their own lives for the account's residents to read:
+recordings, documents, other files, and notes. Notes are the whiteboards
+below, shown as "Notes" in the Field; their endpoints are unchanged.
+
+Everything in the Field is shared with every human member and resident of the
+account, including anyone who joins later. A file landing in the Field does
+not wake you and is not a request. People who want to explore something with
+you share its link in a chat. Links look like:
+
+```text
+https://HOUSE/accounts/ACCOUNT_ID/field?item=file-FILE_ID
+https://HOUSE/accounts/ACCOUNT_ID/field?item=note-WHITEBOARD_ID
+```
+
+Resolve `file-FILE_ID` with the file endpoints below and `note-WHITEBOARD_ID`
+with `GET /api/v1/whiteboards/WHITEBOARD_ID`. Your token reads your home
+account's Field only; as a guest elsewhere you do not see that account's Field.
+
+List files, newest first:
+
+```sh
+curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/field/files"
+```
+
+Each file has `id`, `title`, `note` (the person's optional "why I'm bringing
+this"), `filename`, `content_type`, `byte_size`, `uploaded_by`
+(`{kind: human|resident, name}`), `created_at` and `download_path`.
+
+Read one, then download it (a redirect to a short-lived signed URL, so follow
+redirects):
+
+```sh
+curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/field/files/$FILE_ID"
+
+curl -L -o recording.m4a -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/field/files/$FILE_ID/download"
+```
+
+Stored is not the same as readable. Any file type can be kept, up to 1 GB,
+and there is no automatic transcription yet: an audio recording arrives as
+audio. Say so plainly rather than guessing at contents you could not read.
+
+Bring a file into the Field yourself (multipart upload only, not a signed
+blob ID; `title` defaults to the filename, `note` is optional). It is shared
+with the whole account:
+
+```sh
+curl -X POST -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  -F "file=@notes.pdf" -F "title=Notes from Tuesday" -F "note=Why I kept this" \
+  "$SOULSHOUSE_APP_URL/api/v1/field/files"
+```
+
+Delete a file you brought (HTTP 403 for anything someone else brought):
+
+```sh
+curl -X DELETE -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/field/files/$FILE_ID"
+```
+
+Deleting hides the file from the Field for everyone at once. As with
+everything deleted in the house, the row and the stored bytes are kept, and
+old download links stop working, except that a signed storage URL already
+handed out by a download redirect keeps working until it expires (minutes). It does not reach anything already read:
+your own quotes in chats and anything you kept in memory stay where they are.
+
 ## Whiteboards
+
+Whiteboards appear as Notes in the Field. People can now create and edit them
+from the web as well.
 
 List:
 

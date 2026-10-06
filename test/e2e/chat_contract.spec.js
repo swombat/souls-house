@@ -319,7 +319,7 @@ test.describe('browser contracts', () => {
     await expect(page).toHaveURL(/\/residents\/new$/);
   });
 
-  test('agent navigation is direct and whiteboards only appear for configured accounts', async ({ page }) => {
+  test('agent navigation is direct and the Field replaces the whiteboards menu item', async ({ page }) => {
     await login(page, setup.primary_user, setup.password);
 
     await page.goto(`/accounts/${setup.empty_account_id}/chats`);
@@ -344,11 +344,14 @@ test.describe('browser contracts', () => {
     await expect(page.getByRole('heading', { name: 'Residents' })).toBeVisible();
 
     await accountMenu.click();
-    const whiteboardsItem = page.getByRole('menuitem', { name: 'Whiteboards' });
-    await expect(whiteboardsItem).toBeVisible();
-    await whiteboardsItem.click();
-    await expect(page).toHaveURL(/\/accounts\/[^/]+\/whiteboards$/);
-    await expect(page.getByRole('heading', { name: 'Whiteboards' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Whiteboards' })).toBeHidden();
+    await page.keyboard.press('Escape');
+
+    const fieldLink = page.locator('nav').getByRole('link', { name: 'Field', exact: true });
+    await expect(fieldLink).toHaveAttribute('href', new RegExp(`/accounts/${switchedAccountId}/field$`));
+    await fieldLink.click();
+    await expect(page.getByRole('heading', { name: 'Field', exact: true })).toBeVisible();
+    await expect(page.getByText('E2E Whiteboard').first()).toBeVisible();
   });
 
   test('user can commit a new resident without an inline promotion step', async ({ page }) => {
