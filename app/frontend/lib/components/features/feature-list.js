@@ -34,6 +34,7 @@ import {
   ChartBar,
   Microphone,
   Users,
+  UsersThree,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -334,6 +335,12 @@ export const moreFeatures = [
     description:
       'Create and update leads, people and deals in your Pipedrive CRM, acting as you with your own API token.',
     icon: Funnel,
+  },
+  {
+    key: 'subagents',
+    title: 'Sub-agents',
+    description: 'Give a resident standing permission to hand bounded work to helper agents, on the models you allow.',
+    icon: UsersThree,
   },
   {
     key: 'youtube',

@@ -85,6 +85,11 @@ module TestSupport
         create_agent!(account, "E2E Inactive Fork", "gray", active: false)
       ]
       agents.each { |agent| agent.update_columns(runtime: "deprecated") } if params[:deprecated]
+      if params[:subagent_settings]
+        account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router", openai_api_key: "test-only-openai")
+        agents.first.update!(model_id: "anthropic/claude-opus-5.5", provider_auth_modes: { "anthropic" => "oauth_account" },
+                             provider_connections: { "anthropic" => { "status" => "connected" } })
+      end
       if params[:missing_resident_credentials]
         account.update!(use_system_ai_credentials: false)
         agents.first.update!(health_state: "healthy", birth_committed_at: Time.current,
