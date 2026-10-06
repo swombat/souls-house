@@ -223,8 +223,13 @@ class Sync:
         if ancestor == 0:
             return
         # --no-ff leaves integration uncommitted so append resolution is also
-        # deterministic for changes Git would otherwise merge without conflict.
+        # deterministic for truly divergent histories. A descendant already
+        # contains our exact base; do not create an empty merge on each body.
         try:
+            if base == local:
+                self.git('merge', '--ff-only', '--no-overwrite-ignore', remote,
+                         reason='integration_failed')
+                return
             _out, code = self.git('merge', '--no-commit', '--no-ff', '--no-overwrite-ignore', remote,
                                   reason='integration_failed', acceptable=(0, 1))
             conflicts = self.paths('diff', '--name-only', '--diff-filter=U', '-z')
@@ -257,13 +262,27 @@ class Sync:
             failure.state = 'needs_attention'
             raise
 
-    def rescue(self):
+    def rescue(self, status):
         self.deadline = time.monotonic() + 60
+        sha = self.text('rev-parse', 'HEAD')
+        cached_ref = status.get('rescued_ref')
+        if (status.get('rescued_sha') == sha and isinstance(cached_ref, str) and
+                re.fullmatch(r'rescue/[A-Za-z0-9_-]{1,48}/[0-9]{8}T[0-9]{12}Z-[a-f0-9]{12}', cached_ref)):
+            # A status-file pair alone is not evidence the remote still holds
+            # this commit. Never reuse a missing/moved/mismatched rescue ref.
+            try:
+                remote = self.text('ls-remote', '--refs', 'origin', 'refs/heads/' + cached_ref,
+                                   reason='push_failed')
+            except Refused:
+                return cached_ref, 'failed'
+            if remote == sha + '\trefs/heads/' + cached_ref:
+                return cached_ref, 'pushed'
         host = re.sub('[^a-zA-Z0-9_-]', '-', socket.gethostname())[:48] or 'local'
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
         ref = f'rescue/{host}/{stamp}-{uuid.uuid4().hex[:12]}'
         try:
-            self.git('push', '--no-verify', 'origin', 'HEAD:refs/heads/' + ref, reason='push_failed')
+            self.git('push', '--no-verify', 'origin', sha + ':refs/heads/' + ref, reason='push_failed')
+            status.update(rescued_sha=sha, rescued_ref=ref)
             return ref, 'pushed'
         except Refused:
             return ref, 'failed'
@@ -277,16 +296,27 @@ class Sync:
             common = self.root / common
         common = common.resolve()
         status_path = common / 'standard-home-sync-status.json'
-        try:
-            previous = json.loads(status_path.read_text())
-        except (OSError, ValueError):
-            previous = {}
-        status = dict(state='unknown', checked_at=now(), last_success_at=previous.get('last_success_at'),
-                      reason_code='not_recorded', rescue_ref=None, rescue_status='not_needed')
         with (common / 'standard-home-sync.lock').open('a') as lock:
+            busy = False
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
+                busy = True
+            try:
+                previous = json.loads(status_path.read_text())
+                if not isinstance(previous, dict):
+                    previous = {}
+            except (OSError, ValueError):
+                previous = {}
+            status = dict(state='unknown', checked_at=now(), last_success_at=previous.get('last_success_at'),
+                          reason_code='not_recorded', rescue_ref=None, rescue_status='not_needed',
+                          rescued_sha=None, rescued_ref=None)
+            saved_sha, saved_ref = previous.get('rescued_sha'), previous.get('rescued_ref')
+            if (isinstance(saved_sha, str) and re.fullmatch(r'[0-9a-f]{40}', saved_sha) and
+                    isinstance(saved_ref, str) and
+                    re.fullmatch(r'rescue/[A-Za-z0-9_-]{1,48}/[0-9]{8}T[0-9]{12}Z-[a-f0-9]{12}', saved_ref)):
+                status.update(rescued_sha=saved_sha, rescued_ref=saved_ref)
+            if busy:
                 status.update(state='busy', reason_code='lock_busy')
                 return status, 75  # do not overwrite the active runner's status
             try:
@@ -301,7 +331,7 @@ class Sync:
             except Refused as failure:
                 status.update(state=failure.state, reason_code=failure.reason)
                 if getattr(failure, 'rescue', False):
-                    status['rescue_ref'], status['rescue_status'] = self.rescue()
+                    status['rescue_ref'], status['rescue_status'] = self.rescue(status)
                 code = 1
             status['checked_at'] = now()
             with tempfile.NamedTemporaryFile(mode='w', dir=common, delete=False) as stream:

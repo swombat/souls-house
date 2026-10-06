@@ -48,10 +48,25 @@ class StandardHomeSyncTest(unittest.TestCase):
         self.git(root, 'add', 'journal.txt', 'identity.txt')
         self.git(root, 'commit', '-m', message)
 
-    def run_sync(self, config=None):
+    def run_sync(self, config=None, root=None):
         from unittest.mock import patch
         with patch.dict(os.environ, self.env, clear=True):
-            return standard.Sync(self.home, 'main', self.config if config is None else config).run()
+            return standard.Sync(root or self.home, 'main', self.config if config is None else config).run()
+
+    def rescue_refs(self):
+        return self.git(self.remote, 'for-each-ref', '--format=%(refname)', 'refs/heads/rescue').splitlines()
+
+    def test_idle_alternating_clones_add_no_commits_after_one_append(self):
+        (self.home / 'journal.txt').write_text('base\n## New entry\n\nBody.\n\n')
+        self.assertEqual(self.run_sync()[1], 0)
+        expected = self.git(self.remote, 'rev-parse', 'main')
+        count = self.git(self.remote, 'rev-list', '--count', 'main')
+        for _cycle in range(8):
+            for root in (self.peer, self.home):
+                status, code = self.run_sync(root=root)
+                self.assertEqual((code, status['state']), (0, 'ok'))
+                self.assertEqual(self.git(root, 'rev-parse', 'HEAD'), expected)
+                self.assertEqual(self.git(self.remote, 'rev-list', '--count', 'main'), count)
 
     def test_committed_changes_only_default_and_confirmed_success(self):
         (self.home / 'journal.txt').write_text('base\nlocal\n')
@@ -256,6 +271,90 @@ class StandardHomeSyncTest(unittest.TestCase):
                          (1, 'merge_conflict', 'failed'))
         self.assertEqual(local, self.git(self.home, 'rev-parse', 'HEAD'))
         self.assertIsNone(status['last_success_at'])
+
+    def test_repeated_conflict_reuses_verified_rescue_across_busy_and_failure(self):
+        local, _upstream = self.conflicting_commits()
+        first, _code = self.run_sync()
+        self.assertEqual(first['rescued_sha'], local)
+        self.assertEqual(first['rescued_ref'], first['rescue_ref'])
+        # A verified cached rescue must not attempt another push.
+        hook = self.remote / 'hooks/pre-receive'
+        hook.write_text('#!/bin/sh\nexit 1\n'); hook.chmod(0o755)
+        with (self.home / '.git/standard-home-sync.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            busy, code = self.run_sync()
+            self.assertEqual(code, 75)
+            self.assertEqual(busy['rescued_ref'], first['rescue_ref'])
+        (self.home / 'excluded.txt').write_text('uncommitted synthetic private data')
+        failed, code = self.run_sync()
+        self.assertEqual((code, failed['reason_code']), (1, 'dirty_worktree'))
+        self.assertEqual(failed['rescued_sha'], local)
+        self.assertEqual(failed['rescued_ref'], first['rescue_ref'])
+        (self.home / 'excluded.txt').unlink()
+        for _cycle in range(4):
+            status, code = self.run_sync()
+            self.assertEqual((code, status['state'], status['rescue_status']),
+                             (1, 'needs_attention', 'pushed'))
+            self.assertEqual(status['rescue_ref'], first['rescue_ref'])
+        self.assertEqual(self.rescue_refs(), ['refs/heads/' + first['rescue_ref']])
+
+    def test_failed_rescue_can_retry_then_new_head_gets_new_rescue(self):
+        self.conflicting_commits()
+        hook = self.remote / 'hooks/pre-receive'
+        hook.write_text('#!/bin/sh\nexit 1\n'); hook.chmod(0o755)
+        failed, _code = self.run_sync()
+        self.assertEqual(failed['rescue_status'], 'failed')
+        self.assertIsNone(failed['rescued_sha'])
+        hook.unlink()
+        rescued, _code = self.run_sync()
+        self.assertEqual(rescued['rescue_status'], 'pushed')
+        self.assertEqual(len(self.rescue_refs()), 1)
+        (self.home / 'journal.txt').write_text('base\nnew local commit\n')
+        newer, _code = self.run_sync()
+        self.assertEqual(newer['rescue_status'], 'pushed')
+        self.assertNotEqual(newer['rescue_ref'], rescued['rescue_ref'])
+        self.assertNotEqual(newer['rescued_sha'], rescued['rescued_sha'])
+        self.assertEqual(newer['rescued_sha'], self.git(self.home, 'rev-parse', 'HEAD'))
+        self.assertEqual(len(self.rescue_refs()), 2)
+
+    def test_mismatched_cached_ref_and_sha_is_not_reused(self):
+        self.conflicting_commits()
+        first, _code = self.run_sync()
+        (self.home / 'journal.txt').write_text('base\nnew committed head\n')
+        self.commit(self.home, 'new head')
+        head = self.git(self.home, 'rev-parse', 'HEAD')
+        path = self.home / '.git/standard-home-sync-status.json'
+        cached = json.loads(path.read_text())
+        cached['rescued_sha'] = head  # ref still points to the previous commit
+        path.write_text(json.dumps(cached))
+        status, _code = self.run_sync()
+        self.assertEqual(status['rescued_sha'], head)
+        self.assertNotEqual(status['rescue_ref'], first['rescue_ref'])
+        self.assertEqual(self.git(self.remote, 'rev-parse', status['rescue_ref']), head)
+
+    def test_deleted_rescue_ref_is_not_reused(self):
+        self.conflicting_commits()
+        first, _code = self.run_sync()
+        self.git(self.remote, 'update-ref', '-d', 'refs/heads/' + first['rescue_ref'])
+        status, _code = self.run_sync()
+        self.assertNotEqual(status['rescue_ref'], first['rescue_ref'])
+        self.assertEqual(status['rescue_status'], 'pushed')
+        self.assertEqual(len(self.rescue_refs()), 1)
+
+    def test_success_keeps_rescue_cache_but_does_not_report_a_rescue_attempt(self):
+        self.conflicting_commits()
+        first, _code = self.run_sync()
+        # Synthetic peer deliberately reconciles both histories, retaining its
+        # own content. The home can now fast-forward without another commit.
+        self.git(self.peer, 'fetch', 'origin', first['rescue_ref'])
+        self.git(self.peer, 'merge', '-s', 'ours', 'FETCH_HEAD', '-m', 'manual reconciliation')
+        self.git(self.peer, 'push', 'origin', 'main')
+        status, code = self.run_sync()
+        self.assertEqual((code, status['state'], status['rescue_status']), (0, 'ok', 'not_needed'))
+        self.assertIsNone(status['rescue_ref'])
+        self.assertEqual(status['rescued_sha'], first['rescued_sha'])
+        self.assertEqual(status['rescued_ref'], first['rescued_ref'])
+        self.assertEqual(len(self.rescue_refs()), 1)
 
     def test_ignored_private_file_collision_is_never_overwritten_or_published(self):
         self.assert_ignored_collision('private.txt', 'private.txt')
