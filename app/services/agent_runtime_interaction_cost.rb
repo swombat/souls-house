@@ -31,6 +31,7 @@ class AgentRuntimeInteractionCost
     [ /(?:anthropic\/)?claude-sonnet-4(?:-\d{8})?\z/, "anthropic/claude-sonnet-4", 3, 15 ],
 
     [ /\A(?:openai\/)?gpt-6-astra\z/, "openai/gpt-6-astra", 10, 50 ],
+    [ /\A(?:openai\/)?gpt-6\.1-sol\z/, "openai/gpt-6.1-sol", 2, 10 ],
     [ /\A(?:openai\/)?gpt-6-sol\z/, "openai/gpt-6-sol", 2, 10 ],
     [ /\A(?:openai\/)?gpt-6-luna\z/, "openai/gpt-6-luna", 0.1, 0.5 ],
     [ /(?:openai\/)?gpt-5\.6-sol(?:-pro)?\z/, "openai/gpt-5.6-sol", 5, 30 ],

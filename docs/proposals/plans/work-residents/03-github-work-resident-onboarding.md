@@ -1,6 +1,9 @@
 # 3. GitHub-hosted work-resident onboarding
 
-Status: PARKED. Resume only after project 1 is complete and Daniel prioritises it.
+Status: A bounded first slice was reprioritised by Daniel on 2026-10-06 in
+qelBoJ / JBxwre; see [issue #177](https://github.com/swombat/souls-house/issues/177)
+and the [onboarding guide](../../../features/github-resident-onboarding.md).
+The broader capabilities below remain a proposal, not a claim of delivery.
 Independent of project 2 unless later product choices introduce a real dependency.
 Author: Mira, 2026-10-01. Source: qJlpyJ / JpkOEY.
 

@@ -26,6 +26,7 @@ class Agent < ApplicationRecord
   end
 
   belongs_to :account
+  belongs_to :github_resident_import, optional: true, inverse_of: :agent
   has_one :house_inference_grant, dependent: :nullify
   has_one :memory_vault, class_name: "Mnemodyne::Vault", dependent: :restrict_with_error, inverse_of: :agent
   belongs_to :outbound_api_key, class_name: "ApiKey", optional: true
@@ -280,7 +281,7 @@ class Agent < ApplicationRecord
   end
 
   def apply_default_service_accesses
-    return if portability_custody.present?
+    return if portability_custody.present? || github_resident_import_id.present?
     account.service_connections.where(enabled_for_new_agents: true).find_each do |connection|
       agent_service_accesses.find_or_create_by!(service_connection: connection) do |access|
         access.enabled = true

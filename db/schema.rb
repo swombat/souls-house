@@ -385,11 +385,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
     t.boolean "subagents_enabled", default: false, null: false
     t.jsonb "subagent_models", default: [], null: false
     t.datetime "subagents_policy_changed_at"
+    t.bigint "github_resident_import_id"
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
     t.index ["account_id"], name: "index_agents_on_account_id"
     t.index ["container_name"], name: "index_agents_on_container_name", unique: true
+    t.index ["github_resident_import_id"], name: "index_agents_on_github_resident_import_id", unique: true
     t.index ["outbound_api_key_id"], name: "index_agents_on_outbound_api_key_id"
     t.index ["portable_home_id"], name: "index_agents_on_portable_home_id", unique: true
     t.index ["runtime"], name: "index_agents_on_runtime"
@@ -659,6 +661,39 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
     t.index ["account_id"], name: "index_github_integrations_on_account_id", unique: true
   end
 
+  create_table "github_resident_imports", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "service_connection_id", null: false
+    t.bigint "requested_by_id", null: false
+    t.bigint "approved_by_id"
+    t.string "name", null: false
+    t.string "model_id", null: false
+    t.string "repository", null: false
+    t.string "repository_id", null: false
+    t.string "branch", null: false
+    t.string "commit_sha", null: false
+    t.string "portable_home_id", null: false
+    t.string "credential_fingerprint", null: false
+    t.jsonb "token_metadata", default: {}, null: false
+    t.string "status", default: "pending_review", null: false
+    t.string "approved_commit_sha"
+    t.string "observed_branch_sha_at_approval"
+    t.string "approved_credential_fingerprint"
+    t.string "approved_image"
+    t.datetime "approved_at"
+    t.string "last_error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "sync_strategy", default: "existing", null: false
+    t.jsonb "sync_configuration", default: {}, null: false
+    t.jsonb "sync_health", default: {}, null: false
+    t.index ["account_id"], name: "index_github_resident_imports_on_account_id"
+    t.index ["approved_by_id"], name: "index_github_resident_imports_on_approved_by_id"
+    t.index ["requested_by_id"], name: "index_github_resident_imports_on_requested_by_id"
+    t.index ["service_connection_id"], name: "index_github_resident_imports_on_service_connection_id"
+    t.check_constraint "sync_strategy::text = ANY (ARRAY['existing'::character varying, 'standard'::character varying]::text[])", name: "github_resident_import_sync_strategy"
+  end
+
   create_table "guest_memberships", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "agent_id", null: false
@@ -739,7 +774,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
     t.index ["runtime_interaction_id"], name: "index_message_dispatches_on_runtime_interaction_id"
     t.index ["status", "accepted_at"], name: "index_message_dispatches_on_status_and_accepted_at"
     t.index ["user_id"], name: "index_message_dispatches_on_user_id"
-    t.check_constraint "(kind::text = ANY (ARRAY['mention'::character varying, 'automatic'::character varying, 'rhythm'::character varying]::text[])) AND message_id IS NOT NULL AND client_invocation_id IS NULL AND request_digest IS NULL OR kind::text = 'invoke'::text AND message_id IS NULL AND client_invocation_id IS NOT NULL AND request_digest IS NOT NULL", name: "message_dispatches_kind_variant"
+    t.check_constraint "(kind::text = ANY (ARRAY['mention'::character varying::text, 'automatic'::character varying::text, 'rhythm'::character varying::text])) AND message_id IS NOT NULL AND client_invocation_id IS NULL AND request_digest IS NULL OR kind::text = 'invoke'::text AND message_id IS NULL AND client_invocation_id IS NOT NULL AND request_digest IS NOT NULL", name: "message_dispatches_kind_variant"
     t.check_constraint "user_id IS NOT NULL OR kind::text = 'rhythm'::text", name: "message_dispatches_human_author"
   end
 
@@ -1422,6 +1457,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
   add_foreign_key "agent_service_accesses", "service_connections"
   add_foreign_key "agents", "accounts"
   add_foreign_key "agents", "api_keys", column: "outbound_api_key_id"
+  add_foreign_key "agents", "github_resident_imports"
   add_foreign_key "api_key_requests", "api_keys"
   add_foreign_key "api_keys", "accounts"
   add_foreign_key "api_keys", "agents"
@@ -1448,6 +1484,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
   add_foreign_key "device_streams", "users", column: "subject_user_id"
   add_foreign_key "field_files", "accounts"
   add_foreign_key "github_integrations", "accounts"
+  add_foreign_key "github_resident_imports", "accounts"
+  add_foreign_key "github_resident_imports", "service_connections"
+  add_foreign_key "github_resident_imports", "users", column: "approved_by_id"
+  add_foreign_key "github_resident_imports", "users", column: "requested_by_id"
   add_foreign_key "guest_memberships", "accounts", on_delete: :cascade
   add_foreign_key "guest_memberships", "agents", on_delete: :cascade
   add_foreign_key "guest_memberships", "users", column: "added_by_id", on_delete: :nullify

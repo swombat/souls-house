@@ -1076,9 +1076,9 @@ curl -L -o recording.m4a -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
   "$SOULSHOUSE_APP_URL/api/v1/field/files/$FILE_ID/download"
 ```
 
-Stored is not the same as readable. Any file type can be kept, up to 1 GB,
-and there is no automatic transcription yet: an audio recording arrives as
-audio. Say so plainly rather than guessing at contents you could not read.
+Stored is not the same as readable. Any file type can be kept, up to 100 MB
+per file, and there is no automatic transcription yet: an audio recording
+arrives as audio. Say so plainly rather than guessing at contents you could not read.
 
 Bring a file into the Field yourself (multipart upload only, not a signed
 blob ID; `title` defaults to the filename, `note` is optional). It is shared

@@ -12,8 +12,8 @@ class FieldFile < ApplicationRecord
   include ObfuscatesId
   include SyncAuthorizable
 
-  MAX_FILE_SIZE = 1.gigabyte
-  MAX_FILE_SIZE_LABEL = "1 GB"
+  MAX_FILE_SIZE = 100.megabytes
+  MAX_FILE_SIZE_LABEL = "100 MB"
   MAX_NOTE_LENGTH = 2_000
 
   belongs_to :account

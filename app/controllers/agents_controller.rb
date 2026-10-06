@@ -11,6 +11,7 @@ class AgentsController < ApplicationController
 
     render inertia: "agents/index", props: {
       resident_import_url: current_account.owned_by?(Current.user) ? import_account_agents_path(current_account) : nil,
+      github_resident_import_url: GithubResidentImport.requestable_by?(current_account, Current.user) ? new_account_github_resident_import_path(current_account) : nil,
       agents: Agents::ResidentDirectory.new(current_account).call,
       can_end_guest_memberships: current_account.owned_by?(Current.user),
       guest_memberships: current_account.guest_memberships.includes(agent: :account).order(:created_at).as_json,
@@ -28,6 +29,7 @@ class AgentsController < ApplicationController
     render inertia: "agents/new", props: {
       grouped_models: grouped_models,
       resident_import_url: current_account.owned_by?(Current.user) ? import_account_agents_path(current_account) : nil,
+      github_resident_import_url: GithubResidentImport.requestable_by?(current_account, Current.user) ? new_account_github_resident_import_path(current_account) : nil,
       default_model_id: Agents::HostedBirth.default_model_id(account: current_account, creator: Current.user),
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,

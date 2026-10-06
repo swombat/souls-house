@@ -16,8 +16,8 @@
     notes = [],
     tab = 'all',
     selected = null,
-    max_file_bytes = 1024 * 1024 * 1024,
-    max_file_label = '1 GB',
+    max_file_bytes = 100 * 1024 * 1024,
+    max_file_label = '100 MB',
     account_name = '',
     account,
   } = $props();
