@@ -100,6 +100,14 @@ class Chat < ApplicationRecord
   end
 
   # Create chat with optional initial message
+  # The opening message wakes residents the same way a later send does: a
+  # room with one resident wakes it automatically (Message), and a room with
+  # several wakes the residents the message @mentions, through the same
+  # durable mention dispatch PostFromHuman writes. The dispatch is accepted in
+  # this transaction and enqueued once every enclosing transaction commits.
+  # While live activity is off there is no durable run to reserve, so the
+  # conversation is still created and the mention simply doesn't wake anyone
+  # (the person can ask again from the room).
   def self.create_with_message!(attributes, message_content: nil, user: nil, files: nil, agent_ids: nil, audio_signed_id: nil, automatic_response: true)
     transaction do
       chat = new(attributes)
@@ -123,10 +131,27 @@ class Chat < ApplicationRecord
             Rails.logger.warn "Invalid audio_signed_id for initial message in chat #{chat.id}"
           end
         end
+        chat.send(:accept_opening_mention_dispatch, message) if automatic_response
       end
       chat
     end
   end
+
+  def accept_opening_mention_dispatch(message)
+    return if sole_resident
+    return unless AgentRuntimeInteraction.live_activity_enabled?
+
+    target_ids = mentioned_agent_ids(message.content.to_s)
+    return if target_ids.empty?
+
+    dispatch = MessageDispatch.accept!(message: message, target_agent_ids: target_ids)
+    ActiveRecord.after_all_transactions_commit do
+      MessageDispatchJob.perform_later(dispatch)
+    rescue StandardError => e
+      Rails.logger.warn "[Chat] opening dispatch #{dispatch.id} enqueue failed, wake will lapse: #{e.class}: #{e.message}"
+    end
+  end
+  private :accept_opening_mention_dispatch
 
   def title_or_default
     title.presence || "New Conversation"
