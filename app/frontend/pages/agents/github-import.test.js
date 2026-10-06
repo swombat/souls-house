@@ -73,7 +73,7 @@ test('standard sync is an explicit choice with manifest-owned paths, not a paths
   expect(screen.getByText(/not a promise of automatic conflict resolution/)).toBeVisible();
   expect(screen.queryByRole('textbox', { name: /paths/i })).not.toBeInTheDocument();
   await fireEvent.input(screen.getByLabelText('Resident display name'), { target: { value: 'Example' } });
-  await fireEvent.click(screen.getByRole('button', { name: 'Request site-admin review' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Request account approval' }));
   const form = get(useForm.mock.results.at(-1).value);
   expect(form.github_resident_import.sync_strategy).toBe('standard');
   expect(form.github_resident_import).not.toHaveProperty('sync_auto_commit_paths');
