@@ -59,7 +59,24 @@ Prior PR179 images in `../github-resident-onboarding/` are not replaced.
   policy, health, rescue and overflow checks.
 - Full integrated Rails with frozen source: **3347 runs, 21128 assertions,
   zero failures/errors/skips**.
-- Visual inspection pending.
+- All seven captured screenshots were visually inspected, with original-resolution
+  checks of the detailed policy and mobile health pages. No blocking layout issue
+  was found at the captured desktop and 390px mobile widths.
+
+### Visual findings
+
+- The default and standard radio selections are distinct; the standard guidance
+  stays inside the form and does not overlap its submit button.
+- Reviewed scopes, protections and whole-block append semantics remain readable.
+  Unknown and stale sync do not appear successful; rescue failure and the old
+  last-success age remain separate from import readiness.
+- Mobile cards stack cleanly; long identity IDs, reviewed SHAs and rescue refs
+  wrap within their borders, with no clipped health text or overlapping controls.
+  The native connection select truncates its long one-line label; the reviewed
+  repository is shown in full on the request page.
+- Detailed policy and approval pages require substantial vertical scrolling.
+  These captures are not a full accessibility audit or evidence about other
+  viewports, themes or live runtime behavior.
 
 An initial Rails run had three Inertia version conflicts after frontend source
 was edited during that run: boot-time version and dynamic test headers differed.

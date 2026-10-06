@@ -242,8 +242,8 @@ Python 3.9+ on Linux or macOS, Git, a checkout on the selected branch with no
 staged changes or unfinished Git operation, and your own working
 `origin` credentials (Contents write permission for GitHub pushes). It contains
 no credentials and installs no scheduler or cross-harness adapter.
-Automatic commits use `Home sync <home-sync@localhost>` unless configured
-otherwise; installing a personal Git author is not a prerequisite.
+The runner's Git commands use `Home sync <home-sync@localhost>` as the commit
+author; installing a personal Git author is not a prerequisite.
 
 Install the pinned runner outside the identity repository, verify its checksum,
 then run it against the existing local checkout:
