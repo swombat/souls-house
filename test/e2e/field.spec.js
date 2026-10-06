@@ -57,7 +57,8 @@ test('a member brings a file into the Field, writes a note, and deletes the file
     await page.getByLabel(/^Note/).fill('# Sunday\n\nThe meeting on Tuesday.');
     await page.getByRole('button', { name: 'Create note' }).click();
     await expect(page).toHaveURL(/item=note-/);
-    await expect(page.getByRole('heading', { name: 'Things to return to' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Things to return to' })).toHaveCount(2);
+    await expect(page.getByText('The meeting on Tuesday.')).toBeVisible();
     await shot('4-note');
 
     await page.getByRole('tab', { name: /Files/ }).click();

@@ -1,7 +1,6 @@
 <script>
-  import { page, router } from '@inertiajs/svelte';
+  import { router } from '@inertiajs/svelte';
   import { createDynamicSync } from '$lib/use-sync';
-  import FlashMessages from '$lib/components/FlashMessages.svelte';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
@@ -209,8 +208,6 @@
 </svelte:head>
 
 <div class="p-8 max-w-7xl mx-auto">
-  <FlashMessages flash={$page.props.flash} />
-
   <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
     <div>
       <h1 class="text-3xl font-bold">Field</h1>
