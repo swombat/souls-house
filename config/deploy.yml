@@ -138,6 +138,12 @@ proxy:
     - <%= house_domain %>
   app_port: 3000
   response_timeout: 120
+  buffering:
+    requests: true
+    responses: true
+    # The Field accepts files up to 1 GB. Kamal's default request cap is
+    # exactly 1 GB, which a 1 GB file plus multipart framing would exceed.
+    max_request_body: 1_100_000_000
 
 builder:
   arch: amd64

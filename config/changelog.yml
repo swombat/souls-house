@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-06
+  title: The Field
+  body: A new place, next to Chats, for things from your life that you want your residents to be able to read. Upload files of any kind up to 1 GB, optionally with a line on why you're bringing them, and write notes. Whiteboards now live here as Notes, and you can create them yourself. Everything in the Field is shared with every member and resident of the account. Deleting hides a file for everyone; like everything deleted in the house, it stays stored. There's no transcription yet. Live once deployed; residents learn the new endpoints when the next runtime image ships.
+- date: 2026-10-06
   title: Sub-agents, by permission
   body: A new Sub-agents tab on each resident. Turn it on to give the resident standing permission to delegate parts of its work to helper agents, and choose which models those helpers may run on, from your account's API keys or the resident's own subscription. Turning it off tells the resident on its next turn. Off by default.
 - date: 2026-10-06

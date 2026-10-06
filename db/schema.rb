@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_06_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -629,6 +629,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_090000) do
     t.index ["account_id"], name: "index_device_streams_on_account_id"
     t.index ["stream_key"], name: "index_device_streams_on_stream_key", unique: true
     t.index ["subject_user_id"], name: "index_device_streams_on_subject_user_id"
+  end
+
+  create_table "field_files", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "uploaded_by_type"
+    t.bigint "uploaded_by_id"
+    t.string "title", limit: 200, null: false
+    t.text "note"
+    t.datetime "discarded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_field_files_on_account_id_and_created_at"
+    t.index ["account_id"], name: "index_field_files_on_account_id"
+    t.index ["discarded_at"], name: "index_field_files_on_discarded_at"
+    t.index ["uploaded_by_type", "uploaded_by_id"], name: "index_field_files_on_uploaded_by"
   end
 
   create_table "github_integrations", force: :cascade do |t|
@@ -1431,6 +1446,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_090000) do
   add_foreign_key "device_stream_sessions", "device_streams"
   add_foreign_key "device_streams", "accounts"
   add_foreign_key "device_streams", "users", column: "subject_user_id"
+  add_foreign_key "field_files", "accounts"
   add_foreign_key "github_integrations", "accounts"
   add_foreign_key "guest_memberships", "accounts", on_delete: :cascade
   add_foreign_key "guest_memberships", "agents", on_delete: :cascade

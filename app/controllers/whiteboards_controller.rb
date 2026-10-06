@@ -1,18 +1,29 @@
 class WhiteboardsController < ApplicationController
 
+  # Whiteboards are shown as "notes" inside the Field. The model and the
+  # resident API keep the whiteboard name so existing scripts keep working.
   require_feature_enabled :agents
-  before_action :set_whiteboard, only: [ :update ]
+  before_action :set_whiteboard, only: [ :update, :destroy ]
 
   def index
-    @whiteboards = current_account.whiteboards.active.by_name
-    chat_counts = Chat.where(active_whiteboard_id: @whiteboards.pluck(:id))
-                      .group(:active_whiteboard_id)
-                      .count
+    note = current_account.whiteboards.active.find_by(id: Whiteboard.decode_id(params[:id])) if params[:id].present?
+    item = note ? "note-#{note.to_param}" : nil
+    redirect_to account_field_path(current_account, tab: "notes", item: item)
+  end
 
-    render inertia: "whiteboards/index", props: {
-      whiteboards: @whiteboards.map { |w| whiteboard_json(w, chat_counts[w.id] || 0) },
-      account: current_account.as_json
-    }
+  def create
+    whiteboard = current_account.whiteboards.new(
+      name: params.dig(:whiteboard, :name),
+      content: params.dig(:whiteboard, :content).to_s,
+      last_edited_by: Current.user
+    )
+
+    if whiteboard.save
+      redirect_to account_field_path(current_account, tab: "notes", item: "note-#{whiteboard.to_param}")
+    else
+      redirect_to account_field_path(current_account, tab: "notes"),
+        inertia: { errors: { name: whiteboard.errors.full_messages.to_sentence } }
+    end
   end
 
   def update
@@ -32,6 +43,11 @@ class WhiteboardsController < ApplicationController
     end
   end
 
+  def destroy
+    @whiteboard.soft_delete!
+    redirect_to account_field_path(current_account, tab: "notes"), notice: "Note deleted."
+  end
+
   private
 
   def set_whiteboard
@@ -40,20 +56,6 @@ class WhiteboardsController < ApplicationController
 
   def whiteboard_params
     params.require(:whiteboard).permit(:content)
-  end
-
-  def whiteboard_json(whiteboard, active_chat_count = 0)
-    {
-      id: whiteboard.id,
-      name: whiteboard.name,
-      summary: whiteboard.summary,
-      content: whiteboard.content,
-      content_length: whiteboard.content.to_s.length,
-      revision: whiteboard.revision,
-      last_edited_at: whiteboard.last_edited_at&.strftime("%b %d at %l:%M %p"),
-      editor_name: whiteboard.editor_name,
-      active_chat_count: active_chat_count
-    }
   end
 
 end
