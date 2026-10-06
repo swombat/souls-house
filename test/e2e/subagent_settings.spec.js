@@ -33,7 +33,7 @@ test('the Sub-agents tab grants standing permission and an allowlist from the ac
     await rowFor(page, 'DeepSeek V4 Flash').getByRole('button', { name: 'Add' }).click();
     await filter.fill('');
     await page.getByLabel('Provider').selectOption('openai');
-    await page.getByPlaceholder('Model ID').fill('gpt-6.1-sol');
+    await page.getByPlaceholder('Model ID').fill('e2e-custom-model');
     await page.getByPlaceholder('Model ID').locator('xpath=..').getByRole('button', { name: 'Add' }).click();
     await expect(page.getByText('OpenAI · API key · custom ID')).toBeVisible();
     await page.screenshot({ path: 'test-results/subagents-on.png', fullPage: true });
@@ -45,7 +45,7 @@ test('the Sub-agents tab grants standing permission and an allowlist from the ac
     await expect(page.getByLabel('Allow this resident to use sub-agents')).toBeChecked();
     await expect(page.getByText('Claude Sonnet (latest)', { exact: true })).toBeVisible();
     await expect(page.getByText('Claude subscription', { exact: false }).first()).toBeVisible();
-    await expect(page.getByText('gpt-6.1-sol', { exact: true })).toBeVisible();
+    await expect(page.getByText('e2e-custom-model', { exact: true })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: 'test-results/subagents-mobile.png', fullPage: true });
