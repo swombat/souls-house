@@ -5,8 +5,9 @@ All auto-commit scopes are protected against deletion and shrinking below half
 their HEAD byte size, except explicitly allowed destructive scopes. Append-only
 scopes never allow rewrites. Independent append additions are complete UTF-8
 suffix blocks: retain each block verbatim, deduplicate identical blocks, retain
-the longer prefix-contained extension, otherwise order whole blocks by UTF-8
-bytes. Never reorder or deduplicate individual lines inside a block.
+the longer prefix-contained extension, otherwise retain the published remote
+suffix first and append the local suffix. This preserves the published tip as
+a byte prefix for other bodies. Never reorder/deduplicate lines inside a block.
 The common-dir advisory lock coordinates this runner, not arbitrary Git/editors.
 """
 import argparse
@@ -191,7 +192,7 @@ class Sync:
             elif theirs_suffix.startswith(ours_suffix):
                 additions = theirs_suffix
             else:
-                additions = b''.join(sorted((ours_suffix, theirs_suffix)))
+                additions = theirs_suffix + ours_suffix
             merged[path] = old + additions
         return merged
 

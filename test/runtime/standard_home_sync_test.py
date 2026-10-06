@@ -68,6 +68,108 @@ class StandardHomeSyncTest(unittest.TestCase):
                 self.assertEqual(self.git(root, 'rev-parse', 'HEAD'), expected)
                 self.assertEqual(self.git(self.remote, 'rev-list', '--count', 'main'), count)
 
+    def assert_converged_cycles(self, expected, first, second):
+        head = self.git(self.remote, 'rev-parse', 'main')
+        count = self.git(self.remote, 'rev-list', '--count', 'main')
+        for _cycle in range(4):
+            for root in (first, second):
+                status, code = self.run_sync(root=root)
+                self.assertEqual((code, status['state']), (0, 'ok'))
+                self.assertEqual((root / 'journal.txt').read_text(), expected)
+                self.assertEqual(self.git(root, 'rev-parse', 'HEAD'), head)
+                self.assertEqual(self.git(self.remote, 'rev-list', '--count', 'main'), count)
+
+    def assert_publication_order_converges(self, first_is_home, first_value):
+        other_value = 'e3' if first_value == 'e4' else 'e4'
+        first = self.home if first_is_home else self.peer
+        second = self.peer if first_is_home else self.home
+        first_block = f'## {first_value}\n\nFirst body.\nRepeated.\nRepeated.\n\n\n'
+        second_block = f'## {other_value}\n\nSecond body.\nRepeated.\nRepeated.\n\n\n'
+        (first / 'journal.txt').write_text('base\n' + first_block)
+        (second / 'journal.txt').write_text('base\n' + second_block)
+        self.assertEqual(self.run_sync(root=first)[1], 0)
+        published = self.git(self.remote, 'show', 'main:journal.txt')
+        self.assertEqual(self.run_sync(root=second)[1], 0)
+        expected = 'base\n' + first_block + second_block
+        self.assertTrue(expected.startswith(published))
+        self.assert_converged_cycles(expected, first, second)
+        # Both bodies append again; reverse publication order on this round.
+        next_first = '## z-next\n\nFirst later body.\n\n\n'
+        next_second = '## a-next\n\nSecond later body.\n\n\n'
+        (first / 'journal.txt').write_text(expected + next_first)
+        (second / 'journal.txt').write_text(expected + next_second)
+        self.assertEqual(self.run_sync(root=second)[1], 0)
+        self.assertEqual(self.run_sync(root=first)[1], 0)
+        self.assert_converged_cycles(expected + next_second + next_first, second, first)
+
+    def test_home_publishes_larger_value_first_and_both_bodies_converge(self):
+        self.assert_publication_order_converges(True, 'e4')
+
+    def test_home_publishes_smaller_value_first_and_both_bodies_converge(self):
+        self.assert_publication_order_converges(True, 'e3')
+
+    def test_peer_publishes_larger_value_first_and_both_bodies_converge(self):
+        self.assert_publication_order_converges(False, 'e4')
+
+    def test_peer_publishes_smaller_value_first_and_both_bodies_converge(self):
+        self.assert_publication_order_converges(False, 'e3')
+
+    def rejected_append_merge(self):
+        first = '## e4\n\nAlready published body.\n\n\n'
+        second = '## e3\n\nUnpublished body.\nRepeated.\nRepeated.\n\n\n'
+        (self.home / 'journal.txt').write_text('base\n' + first)
+        (self.peer / 'journal.txt').write_text('base\n' + second)
+        self.assertEqual(self.run_sync()[1], 0)
+        hook = self.remote / 'hooks/pre-receive'
+        hook.write_text('#!/bin/sh\nexit 1\n'); hook.chmod(0o755)
+        status, code = self.run_sync(root=self.peer)
+        self.assertEqual((code, status['reason_code']), (1, 'push_failed'))
+        self.assertEqual((self.peer / 'journal.txt').read_text(), 'base\n' + first + second)
+        rejected_head = self.git(self.peer, 'rev-parse', 'HEAD')
+        hook.unlink()
+        return first, second, rejected_head
+
+    def test_failed_append_merge_push_retries_unchanged_tip_then_converges(self):
+        first, second, rejected_head = self.rejected_append_merge()
+        self.assertEqual(self.run_sync(root=self.peer)[1], 0)
+        self.assertEqual(self.git(self.peer, 'rev-parse', 'HEAD'), rejected_head)
+        self.assert_converged_cycles('base\n' + first + second, self.home, self.peer)
+
+    def test_failed_append_merge_push_handles_further_local_and_remote_appends(self):
+        first, second, rejected_head = self.rejected_append_merge()
+        remote_more = '## Later published\n\nRemote body.\n\n\n'
+        local_more = '## Later unpublished\n\nLocal body.\nRepeated.\nRepeated.\n\n\n'
+        (self.home / 'journal.txt').write_text('base\n' + first + remote_more)
+        self.assertEqual(self.run_sync()[1], 0)
+        (self.peer / 'journal.txt').write_text('base\n' + first + second + local_more)
+        self.assertEqual(self.run_sync(root=self.peer)[1], 0)
+        # Failed integration remains reachable; no reset/rebase rewrites it.
+        self.git(self.peer, 'merge-base', '--is-ancestor', rejected_head, 'HEAD')
+        self.assert_converged_cycles('base\n' + first + remote_more + second + local_more,
+                                     self.home, self.peer)
+
+    def test_shared_unpublished_side_parent_requires_manual_reconciliation(self):
+        # A body copied from another body's unpublished branch can hold a side
+        # parent later incorporated non-prefix. This is not a published-prefix
+        # history, and must remain a safe refusal rather than silently rewrite.
+        (self.peer / 'journal.txt').write_text('base\n## e3\n\nCopied unpublished body.\n\n')
+        self.commit(self.peer, 'unpublished side parent')
+        copied = self.base / 'copied-body'
+        self.git(self.base, 'clone', str(self.peer), str(copied))
+        self.configure(copied)
+        self.git(copied, 'remote', 'set-url', 'origin', str(self.remote))
+        original_head = self.git(copied, 'rev-parse', 'HEAD')
+        original_bytes = (copied / 'journal.txt').read_bytes()
+        (self.home / 'journal.txt').write_text('base\n## e4\n\nPublished first.\n\n')
+        self.assertEqual(self.run_sync()[1], 0)
+        self.assertEqual(self.run_sync(root=self.peer)[1], 0)
+        status, code = self.run_sync(root=copied)
+        self.assertEqual((code, status['state'], status['reason_code']),
+                         (1, 'needs_attention', 'append_only_violation'))
+        self.assertEqual(self.git(copied, 'rev-parse', 'HEAD'), original_head)
+        self.assertEqual((copied / 'journal.txt').read_bytes(), original_bytes)
+        self.assertEqual(status['rescue_status'], 'pushed')
+
     def test_committed_changes_only_default_and_confirmed_success(self):
         (self.home / 'journal.txt').write_text('base\nlocal\n')
         self.commit(self.home, 'local')
