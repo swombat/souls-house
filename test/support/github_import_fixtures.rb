@@ -23,8 +23,8 @@ module GithubImportFixtures
     }.merge(attrs))
   end
 
-  def approve_fixture(request)
-    request.update!(status: "approved", approved_by: users(:site_admin_user), approved_at: Time.current,
+  def approve_fixture(request, by: users(:user_1))
+    request.update!(status: "approved", approved_by: by, approved_at: Time.current,
       approved_commit_sha: request.commit_sha, approved_credential_fingerprint: request.credential_fingerprint,
       approved_image: Agents::Config.default_image)
   end

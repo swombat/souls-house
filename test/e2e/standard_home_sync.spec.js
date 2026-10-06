@@ -19,7 +19,7 @@ test('standard home sync exposes reviewed policy and honest cached outcomes', as
     await page.screenshot({ path: testInfo.outputPath('01-keep-existing-desktop.png'), fullPage: true });
     await page.getByRole('radio', { name: 'Use standard two-way Git sync' }).check();
     await expect(page.getByText(/uncommitted edits are not automatically\s+saved/)).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Request site-admin review' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Request account approval' })).toBeEnabled();
     await page.screenshot({ path: testInfo.outputPath('02-standard-choice-desktop.png'), fullPage: true });
     // Do not submit or approve: fixtures are synthetic and no repository/runtime is contacted.
     await page.goto(setup.standard_sync_review_url);

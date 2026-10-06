@@ -45,20 +45,43 @@ class GithubResidentImportTest < ActiveSupport::TestCase
     assert_not_includes request.sync_health.to_json, "secret"
   end
 
-  test "only confirmed account admins can request and only site admins can approve" do
+  test "current account and connection permissions authorize approval and remain live" do
     assert GithubResidentImport.requestable_by?(accounts(:team_account), users(:user_1))
     assert_not GithubResidentImport.requestable_by?(accounts(:team_account), users(:existing_user))
     request = import_request
-    assert_raises(Account::NotAuthorized) { request.approve!(users(:user_1), review_revision: request.review_revision) }
-    assert request.approval_error
+    approver = users(:user_1)
+    assert_not approver.site_admin
+    assert request.approvable_by?(approver)
+    assert_not request.approvable_by?(users(:existing_user))
+    assert_raises(Account::NotAuthorized) { request.approve!(users(:existing_user), review_revision: request.review_revision) }
     Agents::GithubImportSource.stub(:new, source_stub(request)) do
       assert_enqueued_with(job: GithubResidentImportJob, args: [ request.id ]) do
-        request.approve!(users(:site_admin_user), review_revision: request.review_revision)
+        request.approve!(approver, review_revision: request.review_revision)
       end
     end
     assert_nil request.approval_error
+    assert_equal approver, request.approved_by
     assert_equal request.commit_sha, request.approved_commit_sha
     assert_equal request.credential_fingerprint, request.approved_credential_fingerprint
+
+    request.account.memberships.find_by!(user: approver).update_column(:role, "member")
+    assert_match(/Approver no longer has permission/, request.approval_error)
+  end
+
+  test "approval expires when the approver loses provisioning permission for the selected connection" do
+    connection = import_connection(account: accounts(:team_account))
+    request = import_request(connection: connection)
+    approver = users(:user_1)
+    assert request.approvable_by?(approver)
+    Agents::GithubImportSource.stub(:new, source_stub(request)) do
+      request.approve!(approver, review_revision: request.review_revision)
+    end
+    assert_nil request.approval_error
+
+    connection.update!(connected_by_user: users(:existing_user))
+    assert request.account.service_credentials_manageable_by?(approver)
+    assert_not connection.reload.provisionable_by?(approver)
+    assert_match(/Approver no longer has permission/, request.approval_error)
   end
 
   test "rotation disconnect repository changes and resident configuration changes fail closed" do
@@ -76,10 +99,10 @@ class GithubResidentImportTest < ActiveSupport::TestCase
   test "stale review and classic tokens cannot be approved" do
     request = import_request
     Agents::GithubImportSource.stub(:new, source_stub(request)) do
-      assert_raises(ArgumentError) { request.approve!(users(:site_admin_user), review_revision: "old") }
+      assert_raises(ArgumentError) { request.approve!(users(:user_1), review_revision: "old") }
       request.service_connection.credential_payload_hash = { "token" => "ghp_synthetic" }
       request.service_connection.save!
-      assert_raises(ArgumentError) { request.approve!(users(:site_admin_user), review_revision: request.review_revision) }
+      assert_raises(ArgumentError) { request.approve!(users(:user_1), review_revision: request.review_revision) }
     end
   end
 
@@ -96,7 +119,7 @@ class GithubResidentImportTest < ActiveSupport::TestCase
     source.define_singleton_method(:with_checkout) do |**_, &block|
       block.call("/synthetic", { "identity_id" => request.portable_home_id }, "b" * 40, "main")
     end
-    Agents::GithubImportSource.stub(:new, source) { request.approve!(users(:site_admin_user), review_revision: request.review_revision) }
+    Agents::GithubImportSource.stub(:new, source) { request.approve!(users(:user_1), review_revision: request.review_revision) }
     assert_equal "a" * 40, request.approved_commit_sha
     assert_equal "b" * 40, request.observed_branch_sha_at_approval
     assert_nil request.approval_error
@@ -212,7 +235,7 @@ class GithubResidentImportTest < ActiveSupport::TestCase
     assert_equal agent.identity_seeded_at, request.agent.identity_seeded_at
     assert request.approval_error
     Agents::GithubImportSource.stub(:new, source_stub(request)) do
-      request.approve!(users(:site_admin_user), review_revision: request.review_revision)
+      request.approve!(users(:user_1), review_revision: request.review_revision)
     end
     assert_nil request.approval_error
     assert_equal fingerprint, request.approved_credential_fingerprint

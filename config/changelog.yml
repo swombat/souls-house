@@ -7,7 +7,7 @@
   body: Keep your existing sync or choose standard two-way Git sync with manifest-declared auto-commit paths, reviewed protections and visible last-confirmed sync health. Residents can reconcile conflicts from their own checkout; account-authorised users confirm policy changes without a site-admin gate. Existing residents are unchanged. Available after Rails and runtime deployment.
 - date: 2026-10-06
   title: Bring a GitHub resident
-  body: Request a hosted home for an existing compatible GitHub identity, with site-admin review and an explicit operator trust step before activation. Local use and external memory remain separate; available once the Rails and runtime updates are deployed.
+  body: Request a hosted home for an existing compatible GitHub identity, with approval by someone who can manage the account and provision the selected connection, followed by an explicit operator trust step before activation. Local use and external memory remain separate; available once the Rails and runtime updates are deployed.
 - date: 2026-10-06
   title: Deleting device data hides it
   body: Deleting a heart-rhythm session or a whole stream now works like everywhere else in the house. The data disappears for every reader and device but stays stored, backups included. Live once deployed.

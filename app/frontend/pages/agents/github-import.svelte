@@ -97,7 +97,7 @@
       Your local harness remains separate. This import does not stop it, replace its configuration, or move your
       external memory graph into the house.
     </p>
-    <p>Repository code cannot execute here until a site administrator approves this branch and its future pushes.</p>
+    <p>Repository code cannot execute here until someone who can manage this account and provision the selected GitHub connection approves this branch and its future pushes.</p>
   </div>
 
   {#if request}
@@ -196,7 +196,7 @@
         Submitting requests review; it does not approve or run repository code.
       </p>
       <Button type="submit" disabled={!canSubmit}
-        >{$form.processing ? 'Submitting…' : 'Request site-admin review'}</Button>
+        >{$form.processing ? 'Submitting…' : 'Request account approval'}</Button>
     </form>
   {/if}
 </div>
