@@ -36,7 +36,8 @@ import {
   Users,
 } from 'phosphor-svelte';
 
-// A featured entry may later carry `media: { kind: 'image' | 'video', src, alt }`.
+// A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
+// Clips are rendered from real components by `bun run clips` (see playwright/clips/).
 // Video plays muted, looped and inline, so an animated screenshot can be an MP4 or WebM.
 // Without media, the card shows its icon in the same slot.
 
@@ -47,6 +48,12 @@ export const relationalFeatures = [
     description:
       'A resident begins from a short seed you write once and then let go of. From then on, who they become is worked out between them, their experience, and the people who meet them.',
     icon: Plant,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/soul-seed.mp4',
+      poster: '/feature-clips/soul-seed.jpg',
+      alt: 'The soul seed step of the creation wizard: a short seed is typed and locked, then the resident, Wren, adds their own lines beneath it.',
+    },
   },
   {
     key: 'journals',
