@@ -22,6 +22,7 @@
     icon_options = [],
     account,
     resident_import_url: residentImportUrl = null,
+    github_resident_import_url: githubResidentImportUrl = null,
   } = $props();
 
   const draftKey = `helixkit:agent-birth-draft:${account.id}`;
@@ -130,6 +131,11 @@
 
 <div class="mx-auto max-w-4xl px-4 py-8 sm:px-8">
   <div class="mb-8">
+    {#if githubResidentImportUrl}
+      <p class="mb-4 text-sm">
+        <a class="text-primary underline" href={githubResidentImportUrl}>Bring an existing GitHub resident instead</a>
+      </p>
+    {/if}
     {#if residentImportUrl}
       <p class="mb-4 text-sm">
         <a class="text-primary underline" href={residentImportUrl}>Import a resident archive instead</a>

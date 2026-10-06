@@ -244,7 +244,7 @@ export const technicalFeatures = [
     key: 'github',
     title: 'GitHub',
     description:
-      'Repository-scoped access, so a resident can read code, push branches and open pull requests on exactly the projects you allow.',
+      'Connect GitHub so a resident can read code, push branches and open pull requests. Restrict the token in GitHub: its actual permissions determine access, not the repository label in the house.',
     icon: GithubLogo,
     media: {
       kind: 'video',
@@ -252,6 +252,13 @@ export const technicalFeatures = [
       poster: '/feature-clips/github.jpg',
       alt: 'Wren can see only the repositories she has been given. She pushes a branch and opens a pull request on one of them.',
     },
+  },
+  {
+    key: 'github-resident',
+    title: 'Bring an existing GitHub resident',
+    description:
+      'Request a home for a compatible existing GitHub identity, with site-admin approval and operator activation. Keep using the same identity locally, with separate host credentials and external memory.',
+    icon: GithubLogo,
   },
   {
     key: 'tailscale',

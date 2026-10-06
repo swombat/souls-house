@@ -140,6 +140,8 @@ module TestSupport
           credential_metadata: { "repository" => "member/project" })
       end
 
+      github_imports = github_import_fixtures(account, primary_user, admin_user, run_id) if params[:github_resident_onboarding]
+
       render json: {
         run_id: run_id,
         password: PASSWORD,
@@ -149,6 +151,7 @@ module TestSupport
         primary_user: user_json(primary_user),
         secondary_user: user_json(secondary_user),
         admin_user: user_json(admin_user),
+        **(github_imports || {}),
         agents: agents.map { |agent|
           { id: agent.to_param, name: agent.name, edit_url: edit_account_agent_path(account, agent) }
         }
@@ -369,6 +372,47 @@ module TestSupport
 
     private
 
+    def github_import_fixtures(account, user, admin, run_id)
+      connection = account.service_connections.create!(
+        provider: "github", connected_by_user: user, status: "connected",
+        external_subject_id: "example-identity", external_identity: "example-user",
+        label: "example-org/example-home", management_scope: "personal",
+        credential_kind: "token",
+        credential_fingerprint: Services::GithubTokenAdapter.fingerprint("github_pat_EXAMPLE_NOT_A_REAL_TOKEN"),
+        credential_payload_hash: { "token" => "github_pat_EXAMPLE_NOT_A_REAL_TOKEN" },
+        credential_metadata: {
+          "repository" => "example-org/example-home", "repository_id" => "123456",
+          "default_branch" => "main", "token_kind" => "fine_grained",
+          "oauth_scopes" => nil, "authority_source" => "token_format"
+        }
+      )
+      attributes = {
+        account: account, requested_by: user, service_connection: connection,
+        name: "Example resident", model_id: HouseInference::Offering::MODEL_ID,
+        repository: "example-org/example-home", repository_id: "123456", branch: "main",
+        commit_sha: "0123456789abcdef0123456789abcdef01234567",
+        portable_home_id: "example-#{run_id}",
+        credential_fingerprint: connection.credential_fingerprint,
+        token_metadata: connection.credential_metadata.slice("token_kind", "oauth_scopes", "authority_source")
+      }
+      pending = GithubResidentImport.create!(attributes)
+      failed = GithubResidentImport.create!(attributes.merge(
+        name: "Example failed import", portable_home_id: "example-failed-#{run_id}",
+        status: "failed", last_error: "Synthetic setup failure; no real repository or runtime was contacted."
+      ))
+      waiting_trust = GithubResidentImport.create!(attributes.merge(
+        name: "Example awaiting runtime trust", portable_home_id: "example-trust-#{run_id}",
+        status: "needs_runtime_trust", approved_by: admin, approved_at: Time.current,
+        approved_commit_sha: attributes[:commit_sha],
+        approved_credential_fingerprint: connection.credential_fingerprint,
+        approved_image: "example-runtime:synthetic"
+      ))
+      base = "/accounts/#{account.to_param}/github_resident_imports"
+      { github_import_url: "#{base}/#{pending.to_param}", github_import_new_url: "#{base}/new",
+        github_import_failed_url: "#{base}/#{failed.to_param}",
+        github_import_trust_url: "#{base}/#{waiting_trust.to_param}" }
+    end
+
     def ensure_test_environment
       head :not_found unless Rails.env.test?
     end
@@ -394,6 +438,7 @@ module TestSupport
       ApiKey.where(agent_id: agent_ids).destroy_all
       AuditLog.where(account: accounts).or(AuditLog.where(user: users)).destroy_all
       Session.where(user: users).destroy_all
+      GithubResidentImport.where(account: accounts).destroy_all
       accounts.find_each(&:destroy!)
       users.find_each(&:destroy!)
     end

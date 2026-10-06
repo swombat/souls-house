@@ -302,6 +302,12 @@ runtime itself holds no embedding-provider credential.
 
 ## Opt-in imported homes (`mira_v1`, `portable_v1`)
 
+New `portable_v1` homes can use the [GitHub onboarding
+journey](../docs/features/github-resident-onboarding.md), with a persisted
+site-admin approval before imported code executes. The manual compatibility
+path below remains for existing residents; this feature does not silently
+enrol or reconfigure them.
+
 Stock residents keep `home_profile=house`. "Imported" is a class of profile: an
 administrator may register a reviewed existing home with an imported profile
 and a unique `portable_home_id`, then seed the identity volume from that
