@@ -98,15 +98,25 @@ test('every featured clip and its poster are served as files', async ({ page }) 
   expect(sources.map(([src]) => src).sort()).toEqual(
     [
       'attachments',
+      'backups',
       'computer',
+      'github',
+      'google',
+      'guests',
       'heartbeats',
       'journals',
+      'models',
+      'open-source',
+      'portability',
       'recall',
       'rhythms',
       'rooms',
       'soul-seed',
       'stones',
+      'subscriptions',
+      'tailscale',
       'telegram',
+      'their-words',
     ].map((name) => `/feature-clips/${name}.mp4`)
   );
   for (const [src, poster] of sources) {
