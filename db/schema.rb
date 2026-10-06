@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_04_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_06_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -382,6 +382,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_04_150000) do
     t.datetime "updated_at", null: false
     t.uuid "uuid"
     t.string "voice_id"
+    t.boolean "subagents_enabled", default: false, null: false
+    t.jsonb "subagent_models", default: [], null: false
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
@@ -721,7 +723,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_04_150000) do
     t.index ["runtime_interaction_id"], name: "index_message_dispatches_on_runtime_interaction_id"
     t.index ["status", "accepted_at"], name: "index_message_dispatches_on_status_and_accepted_at"
     t.index ["user_id"], name: "index_message_dispatches_on_user_id"
-    t.check_constraint "(kind::text = ANY (ARRAY['mention'::character varying::text, 'automatic'::character varying::text, 'rhythm'::character varying::text])) AND message_id IS NOT NULL AND client_invocation_id IS NULL AND request_digest IS NULL OR kind::text = 'invoke'::text AND message_id IS NULL AND client_invocation_id IS NOT NULL AND request_digest IS NOT NULL", name: "message_dispatches_kind_variant"
+    t.check_constraint "(kind::text = ANY (ARRAY['mention'::character varying, 'automatic'::character varying, 'rhythm'::character varying]::text[])) AND message_id IS NOT NULL AND client_invocation_id IS NULL AND request_digest IS NULL OR kind::text = 'invoke'::text AND message_id IS NULL AND client_invocation_id IS NOT NULL AND request_digest IS NOT NULL", name: "message_dispatches_kind_variant"
     t.check_constraint "user_id IS NOT NULL OR kind::text = 'rhythm'::text", name: "message_dispatches_human_author"
   end
 

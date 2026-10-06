@@ -298,6 +298,15 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "edit renders the sub-agent catalog props" do
+    get edit_account_agent_path(@account, @agent)
+
+    catalog = @agent.subagent_catalog
+    assert_equal catalog.options.as_json, inertia_shared_props["subagent_catalog"]
+    assert_equal catalog.providers.as_json, inertia_shared_props["subagent_providers"]
+    assert_equal catalog.empty_reason, inertia_shared_props["subagent_catalog_empty_reason"]
+  end
+
   test "edit exposes provider subscription setup for a supported hosted agent" do
     @agent.update!(
       model_id: "openai/gpt-5",
@@ -473,6 +482,20 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     @agent.reload
     assert_equal "Updated Name", @agent.name
     assert_equal "Updated prompt", @agent.system_prompt
+  end
+
+  test "update persists subagents_enabled and subagent_models" do
+    patch account_agent_path(@account, @agent), params: {
+      agent: {
+        subagents_enabled: true,
+        subagent_models: [ "openrouter:deepseek/deepseek-v4-pro-0813", " openrouter:deepseek/deepseek-v4-pro-0813 " ]
+      }
+    }
+
+    assert_redirected_to account_agents_path(@account)
+    @agent.reload
+    assert @agent.subagents_enabled?
+    assert_equal [ "openrouter:deepseek/deepseek-v4-pro-0813" ], @agent.subagent_models
   end
 
   test "deletion disables and preserves the resident and private memory" do

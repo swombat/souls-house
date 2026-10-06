@@ -112,6 +112,26 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     refute_includes text, "asking you to act"
   end
 
+  test "request text includes the sub-agent policy section only when enabled" do
+    agent = agents(:research_assistant)
+    agent.account.assign_attributes(use_system_ai_credentials: false)
+    Account::AI_PROVIDERS.each_key { |provider| agent.account.public_send("#{provider}_api_key=", nil) }
+    agent.account.save!
+    agent.account.openrouter_api_key = "sk-or-test"
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Sub-agent policy prompt")
+    chat.messages.create!(role: "user", content: "Can you delegate part of this?")
+
+    agent.update!(subagents_enabled: false)
+    disabled_text = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:request_text)
+    refute_includes disabled_text, "Sub-agents: standing permission"
+
+    agent.update!(subagents_enabled: true, subagent_models: [ "openrouter:deepseek/deepseek-v4-pro-0813" ])
+    enabled_text = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:request_text)
+    assert_includes enabled_text, "Sub-agents: standing permission"
+    assert_includes enabled_text, "standing permission to use sub-agents"
+    assert_includes enabled_text, "DeepSeek V4 Pro 0813"
+  end
+
   test "quiet guidance depends on human recency rather than legacy title prefixes" do
     agent = agents(:research_assistant)
     [ "Quiet room", "[AGENT-ONLY] Quiet room" ].each do |title|

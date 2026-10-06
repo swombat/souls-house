@@ -2,7 +2,16 @@
   import AgentHostingPanel from '$lib/components/agents/agent-hosting-panel.svelte';
   import { useForm, router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { Palette, Gear, Plug, CloudArrowUp, TerminalWindow, CurrencyDollar, Graph } from 'phosphor-svelte';
+  import {
+    Palette,
+    Gear,
+    UsersThree,
+    Plug,
+    CloudArrowUp,
+    TerminalWindow,
+    CurrencyDollar,
+    Graph,
+  } from 'phosphor-svelte';
   import {
     accountAgentsPath,
     accountAgentPath,
@@ -16,6 +25,7 @@
   import AgentIntegrationsPanel from '$lib/components/agents/AgentIntegrationsPanel.svelte';
   import ResidentMemoryPanel from '$lib/components/agents/ResidentMemoryPanel.svelte';
   import AgentSettingsPanel from '$lib/components/agents/AgentSettingsPanel.svelte';
+  import AgentSubagentsPanel from '$lib/components/agents/AgentSubagentsPanel.svelte';
   import AgentSettingsTabs from '$lib/components/agents/AgentSettingsTabs.svelte';
   import AgentInteractionsPanel from '$lib/components/agents/AgentInteractionsPanel.svelte';
   import AgentCostsPanel from '$lib/components/agents/AgentCostsPanel.svelte';
@@ -44,6 +54,9 @@
     interactions_pagination: interactionsPagination = {},
     cost_report: costReport = {},
     portability = null,
+    subagent_catalog = [],
+    subagent_catalog_empty_reason = null,
+    subagent_providers = [],
     account,
   } = $props();
 
@@ -73,7 +86,11 @@
       activeTab !== 'interactions' &&
       activeTab !== 'costs' &&
       activeTab !== 'integrations' &&
-      (!runtimeManaged || activeTab === 'appearance' || activeTab === 'settings' || activeTab === 'hosting')
+      (!runtimeManaged ||
+        activeTab === 'appearance' ||
+        activeTab === 'settings' ||
+        activeTab === 'subagents' ||
+        activeTab === 'hosting')
   );
   let hostingVisited = $state(false);
   $effect(() => {
@@ -83,6 +100,7 @@
   const tabs = [
     { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'settings', label: 'Settings', icon: Gear },
+    { id: 'subagents', label: 'Sub-agents', icon: UsersThree },
     { id: 'integrations', label: 'Integrations', icon: Plug },
     { id: 'hosting', label: 'Hosting', icon: CloudArrowUp },
     { id: 'interactions', label: 'Sessions', icon: TerminalWindow },
@@ -112,6 +130,8 @@
       session_max_age_minutes: agent.session_max_age_minutes ?? 240,
       session_context_budget_tokens: agent.session_context_budget_tokens ?? 300000,
       turn_timeout_minutes: agent.turn_timeout_minutes ?? 30,
+      subagents_enabled: agent.subagents_enabled || false,
+      subagent_models: agent.subagent_models || [],
     },
   });
 
@@ -195,6 +215,13 @@
             groupedModels={grouped_models}
             {runtimeManaged}
             bind:selectedModel />
+        {:else if activeTab === 'subagents'}
+          <AgentSubagentsPanel
+            bind:enabled={$form.agent.subagents_enabled}
+            bind:models={$form.agent.subagent_models}
+            catalog={subagent_catalog}
+            emptyReason={subagent_catalog_empty_reason}
+            providers={subagent_providers} />
         {:else if activeTab === 'integrations'}
           <AgentIntegrationsPanel
             {form}

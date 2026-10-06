@@ -151,6 +151,7 @@ class ExternalAgentResponseRequest
   def request_text
     parts = [
       Notices::Renderer.section_for(agent),
+      SubagentPolicyRenderer.section_for(agent),
       trigger_intro_text,
       rhythm_invitation_context,
       "Requested by: #{requested_by}.",
@@ -409,6 +410,7 @@ class ExternalAgentResponseRequest
 
     parts = [
       Notices::Renderer.section_for(agent),
+      SubagentPolicyRenderer.section_for(agent),
       trigger_intro_text,
       rhythm_invitation_context,
       "Requested by: #{requested_by}.",
