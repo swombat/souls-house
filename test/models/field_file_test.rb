@@ -27,7 +27,7 @@ class FieldFileTest < ActiveSupport::TestCase
     file = @account.field_files.new(title: "Too big", file: upload)
     file.file.blob.byte_size = FieldFile::MAX_FILE_SIZE + 1
     assert_not file.valid?
-    assert_equal "must be 1 GB or smaller", file.errors[:file].first
+    assert_equal "must be 100 MB or smaller", file.errors[:file].first
   end
 
   test "the why-line is bounded" do
