@@ -37,7 +37,7 @@ test('GitHub onboarding makes the request and account approval boundary visible'
     await expect(approve).toBeDisabled();
     await page.screenshot({ path: testInfo.outputPath('02-pending-review.png'), fullPage: true });
 
-    await expect(page.getByText(/manage this account and provision the selected GitHub connection/)).toBeVisible();
+    await expect(page.getByText(/manage this account and provision the selected GitHub\s+connection/)).toBeVisible();
     await page.getByRole('checkbox', { name: /I approve execution/ }).check();
     await expect(page.getByText(/including future pushes/).last()).toBeVisible();
     await expect(approve).toBeEnabled();
