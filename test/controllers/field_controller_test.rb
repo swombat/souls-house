@@ -23,8 +23,8 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ "Tuesday meeting" ], props["files"].map { |f| f["title"] }
     assert_includes props["notes"].map { |n| n["title"] }, "Week notes"
     assert_equal @account.name, props["account_name"]
-    assert_equal 1.gigabyte, props["max_file_bytes"]
-    assert_equal "1 GB", props["max_file_label"]
+    assert_equal 100.megabytes, props["max_file_bytes"]
+    assert_equal "100 MB", props["max_file_label"]
   end
 
   test "a human brings a file into the Field" do
