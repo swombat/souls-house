@@ -89,7 +89,10 @@
       Your local harness remains separate. This import does not stop it, replace its configuration, or move your
       external memory graph into the house.
     </p>
-    <p>Repository code cannot execute here until someone who can manage this account and provision the selected GitHub connection approves this branch and its future pushes.</p>
+    <p>
+      Repository code cannot execute here until someone who can manage this account and provision the selected GitHub
+      connection approves this branch and its future pushes.
+    </p>
   </div>
 
   {#if request}

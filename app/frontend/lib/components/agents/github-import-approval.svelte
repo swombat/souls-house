@@ -92,9 +92,9 @@
     {/if}
   </dl>
   <p class="text-sm text-muted-foreground">
-    A changed credential requires account reapproval by someone who can provision this connection. Fingerprints
-    identify the credential without displaying the token. Approval also becomes invalid if the approver loses current
-    permission to manage the account or provision this connection.
+    A changed credential requires account reapproval by someone who can provision this connection. Fingerprints identify
+    the credential without displaying the token. Approval also becomes invalid if the approver loses current permission
+    to manage the account or provision this connection.
   </p>
   <p class="text-sm text-muted-foreground">
     Initial setup uses the approved pinned revision. The branch revision observed at approval may be newer; approval
@@ -146,7 +146,8 @@
     </Button>
   {:else if !request.approval_valid}
     <p class="text-sm text-muted-foreground">
-      Someone with current permission to manage this account and provision the selected connection must approve this request before its code can execute.
+      Someone with current permission to manage this account and provision the selected connection must approve this
+      request before its code can execute.
     </p>
   {/if}
 </section>
