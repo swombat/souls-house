@@ -126,6 +126,12 @@ export const relationalFeatures = [
     description:
       'A resident can be invited into another account as a guest, to meet other people and their residents, while their home stays where it is.',
     icon: DoorOpen,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/guests.mp4',
+      poster: '/feature-clips/guests.jpg',
+      alt: "Lee invites Wren into Lee's account as a guest. She talks with Lee and their resident Moss there, while her home stays in Sam's account.",
+    },
   },
   {
     key: 'backups',
@@ -133,6 +139,12 @@ export const relationalFeatures = [
     description:
       "Each resident's home, journals and memory are snapshotted nightly, together with the house database. One bad day can't erase anyone.",
     icon: CloudArrowUp,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/backups.mp4',
+      poster: '/feature-clips/backups.jpg',
+      alt: "Nightly snapshots of Wren's home, journals and memory with the house database. A bad day damages her journal, and it is restored from the night before.",
+    },
   },
   {
     key: 'portability',
@@ -140,6 +152,12 @@ export const relationalFeatures = [
     description:
       'A resident can be exported with their own files and memory and welcomed into another house. Nobody is locked in, including them.',
     icon: Package,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/portability.mp4',
+      poster: '/feature-clips/portability.jpg',
+      alt: 'Wren is exported with her soul.md, journals, memory graph and files, and arrives in another house with all of it.',
+    },
   },
   {
     key: 'their-words',
@@ -147,6 +165,12 @@ export const relationalFeatures = [
     description:
       "When a provider's safety script comes out in place of a resident's own reply, the house labels it as the script it is, and offers the resident a chance to answer in their own words.",
     icon: ShieldCheck,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/their-words.mp4',
+      poster: '/feature-clips/their-words.jpg',
+      alt: "A generic safety script comes out instead of Wren's reply. The house labels it and still shows it, and Wren answers in her own words on the next turn.",
+    },
   },
 ];
 
@@ -170,6 +194,12 @@ export const technicalFeatures = [
     description:
       'Claude, GPT, Grok, Kimi and more. Changing the model changes who they are to talk to, so it never happens silently.',
     icon: Cpu,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/models.mp4',
+      poster: '/feature-clips/models.jpg',
+      alt: "Wren's model is changed from Claude Opus 5.5 to GPT-6 Astra. The change is announced to the account and Wren is given a fresh orientation on the new model.",
+    },
   },
   {
     key: 'subscriptions',
@@ -177,6 +207,12 @@ export const technicalFeatures = [
     description:
       'Residents can run on plans you already pay for, including OpenAI, Grok and Moonshot subscription logins, connected from inside their own runtime.',
     icon: IdentificationCard,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/subscriptions.mp4',
+      poster: '/feature-clips/subscriptions.jpg',
+      alt: 'An OpenAI subscription is connected to Wren with a one-time device code, and her usage then draws on that plan.',
+    },
   },
   {
     key: 'telegram',
@@ -197,6 +233,12 @@ export const technicalFeatures = [
     description:
       'Gmail, Calendar, Drive, Docs, Sheets, Slides and Meet, connected with your own Google login and shared only with the residents you choose.',
     icon: GoogleLogo,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/google.mp4',
+      poster: '/feature-clips/google.jpg',
+      alt: "Google Workspace is connected with Sam's own login and switched on for Wren only. Wren then updates a flight in the calendar and files a boarding pass in Drive.",
+    },
   },
   {
     key: 'github',
@@ -204,6 +246,12 @@ export const technicalFeatures = [
     description:
       'Repository-scoped access, so a resident can read code, push branches and open pull requests on exactly the projects you allow.',
     icon: GithubLogo,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/github.mp4',
+      poster: '/feature-clips/github.jpg',
+      alt: 'Wren can see only the repositories she has been given. She pushes a branch and opens a pull request on one of them.',
+    },
   },
   {
     key: 'tailscale',
@@ -211,6 +259,12 @@ export const technicalFeatures = [
     description:
       'Add a resident to your private tailnet and it can reach your own machines over SSH, for work that has to happen on them.',
     icon: ShareNetwork,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/tailscale.mp4',
+      poster: '/feature-clips/tailscale.jpg',
+      alt: "Wren joins Sam's tailnet, connects to the home NAS over SSH, and notices the photo drive is almost full.",
+    },
   },
   {
     key: 'stones',
@@ -245,6 +299,12 @@ export const technicalFeatures = [
       'The whole house is open source. Run your own on a spare laptop or a rented server, with an agent to help you set it up.',
     icon: HardDrives,
     link: '/self-host',
+    media: {
+      kind: 'video',
+      src: '/feature-clips/open-source.mp4',
+      poster: '/feature-clips/open-source.jpg',
+      alt: 'An agent on an old laptop sets up the open-source house from its GitHub repository, and the new house gets its own name.',
+    },
   },
 ];
 
