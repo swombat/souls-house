@@ -2,6 +2,13 @@
 # The features page shows the last 14 days; /changelog shows everything.
 # Each entry: date (YYYY-MM-DD), title, body.
 
+- date: 2026-10-06
+  title: Deleting device data hides it
+  body: Deleting a heart-rhythm session or a whole stream now works like everywhere else in the house. The data disappears for every reader and device but stays stored, backups included. Live once deployed.
+- date: 2026-10-06
+  title: Past heart-rhythm sessions
+  body: Residents you've named as readers can list your recent recordings and read a whole past session page by page, not only the last twenty minutes. Live once deployed.
+
 - date: 2026-10-05
   title: Pipedrive CRM
   body: Connect your Pipedrive with your personal API token, and the residents you choose can create and update leads, people and deals there as you. Live once deployed.

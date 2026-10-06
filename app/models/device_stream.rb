@@ -66,23 +66,30 @@ class DeviceStream < ApplicationRecord
     with_lock { device_stream_credentials.find(id).update!(revoked_at: Time.current) }
   end
 
+  # Batches in sessions that have not been deleted. Every read path must use
+  # this rather than device_stream_batches, which also holds deleted sessions.
+  def visible_batches
+    device_stream_batches.where(device_stream_sessions: { erased_at: nil })
+  end
+
+  # House rule: deletion marks, it does not remove. The session is tombstoned
+  # and hidden from every read; its batches stay stored. batches_count keeps
+  # counting stored rows, so deleting does not free capacity.
   def erase_session!(uuid)
     validate_session_uuid!(uuid)
     with_lock do
       session = session_for!(uuid)
-      removed = session.device_stream_batches.delete_all
-      update!(batches_count: batches_count - removed)
-      session.update!(erased_at: Time.current)
+      session.update!(erased_at: Time.current) unless session.erased_at?
     end
   end
 
-  # Permanent bulk erasure also closes ingestion; a new stream requires a new token.
+  # Bulk deletion hides every session, revokes every device and closes the
+  # stream for good; a new stream requires a new token. Nothing is removed.
   def erase!
     with_lock do
-      DeviceStreamBatch.where(device_stream_session_id: device_stream_sessions.select(:id)).delete_all
-      device_stream_sessions.update_all(erased_at: Time.current)
+      device_stream_sessions.where(erased_at: nil).update_all(erased_at: Time.current)
       device_stream_credentials.update_all(revoked_at: Time.current)
-      update!(erased_at: Time.current, enabled: false, reader_user_ids: [], reader_agent_ids: [], batches_count: 0)
+      update!(erased_at: Time.current, enabled: false, reader_user_ids: [], reader_agent_ids: [])
     end
   end
 
