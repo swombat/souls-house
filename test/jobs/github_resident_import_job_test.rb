@@ -91,11 +91,18 @@ class GithubResidentImportJobTest < ActiveSupport::TestCase
     sandbox.define_singleton_method(:spawn!) { calls << :spawn }
     Agents::GithubImportSource.stub(:new, source_stub(request)) do
       Agents::Volume.stub(:new, volume) do
-        Agents::Sandbox.stub(:new, sandbox) { GithubResidentImportJob.perform_now(request.id) }
+        Agents::Config.stub(:default_image, "helixkit-agent-runtime:new-deployment") do
+          Agents::Sandbox.stub(:new, ->(agent) {
+            assert_equal "helixkit-agent-runtime:new-deployment", agent.container_image
+            sandbox
+          }) { GithubResidentImportJob.perform_now(request.id) }
+        end
       end
     end
     assert_equal [ :seed, :spawn ], calls
     assert_equal "ready", request.reload.status
+    assert_not_equal request.approved_image, request.agent.container_image
+    assert_nil request.approval_error
   end
 
 end

@@ -21,8 +21,10 @@ class GithubResidentImportJob < ApplicationJob
           runtime: "provisioning", active: false, paused: true, scheduled_wakes_enabled: false,
           github_repo_owner: owner, github_repo_name: repo, github_repo_url: "https://github.com/#{request.repository}")
         Agents::HostedProvisioning.new(agent: agent, user: request.requested_by).prepare!(started_at: Time.current)
-        agent.update!(container_image: request.approved_image)
       end
+      # The house-owned runtime follows deployments, not repository approval.
+      # approved_image records provenance; it is not an execution pin.
+      agent.update!(container_image: Agents::Config.default_image)
       request.reload.require_approval!
       volume = Agents::Volume.new(agent)
       # A retry never replaces a populated home. Interrupted seeding requires

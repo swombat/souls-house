@@ -38,11 +38,11 @@ class GithubResidentImport < ApplicationRecord
       connection.provider == "github" && metadata["repository"] == repository &&
       metadata["repository_id"].to_s == repository_id &&
       token.start_with?("github_pat_")
-    return "Reviewed revision or runtime configuration changed" unless approved_commit_sha == commit_sha && approved_image.present?
+    return "Reviewed revision changed" unless approved_commit_sha == commit_sha
     if agent
       return "Resident runtime configuration changed" unless agent.account_id == account_id &&
         agent.home_profile == "portable_v1" && agent.portable_home_id == portable_home_id &&
-        agent.container_image == approved_image && agent.github_repo_url == "https://github.com/#{repository}" &&
+        agent.github_repo_url == "https://github.com/#{repository}" &&
         "#{agent.github_repo_owner}/#{agent.github_repo_name}" == repository
     end
     nil
