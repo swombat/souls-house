@@ -1046,8 +1046,8 @@ not wake you and is not a request. People who want to explore something with
 you share its link in a chat. Links look like:
 
 ```text
-https://souls.house/accounts/ACCOUNT_ID/field?item=file-FILE_ID
-https://souls.house/accounts/ACCOUNT_ID/field?item=note-WHITEBOARD_ID
+https://HOUSE/accounts/ACCOUNT_ID/field?item=file-FILE_ID
+https://HOUSE/accounts/ACCOUNT_ID/field?item=note-WHITEBOARD_ID
 ```
 
 Resolve `file-FILE_ID` with the file endpoints below and `note-WHITEBOARD_ID`

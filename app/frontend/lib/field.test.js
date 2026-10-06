@@ -3,8 +3,8 @@ import { fieldItemLink, formatBytes } from './field';
 
 describe('field helpers', () => {
   it('builds a stable item link', () => {
-    expect(fieldItemLink('abc', 'file-XyZ', 'https://souls.house')).toBe(
-      'https://souls.house/accounts/abc/field?item=file-XyZ'
+    expect(fieldItemLink('abc', 'file-XyZ', 'https://house.example')).toBe(
+      'https://house.example/accounts/abc/field?item=file-XyZ'
     );
   });
 
