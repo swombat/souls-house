@@ -13,7 +13,8 @@
     "test:ct:ui": "./playwright/run-tests-with-backend.sh --ui",
     "test:backend-setup": "./playwright/setup-test-server.sh",
     "test:unit": "vitest",
-    "test:unit:ui": "vitest --ui"
+    "test:unit:ui": "vitest --ui",
+    "clips": "playwright test -c playwright-clips.config.js"
   },
   "devDependencies": {
     "@4az/prettier-plugin-html-erb": "^0.0.7",

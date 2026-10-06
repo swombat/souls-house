@@ -66,3 +66,26 @@ test('logged-out visitors get Features as a top-level navbar link, on desktop an
   if (process.env.FEATURES_SCREENSHOTS)
     await page.screenshot({ path: `${process.env.FEATURES_SCREENSHOTS}/nav-mobile.png` });
 });
+
+test('the soul seed card plays its rendered clip, muted and looping, with a poster frame', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/features');
+  const card = page.getByTestId('feature-showcase').filter({ hasText: 'A soul seed, not a system prompt' });
+  const video = card.locator('video');
+  await expect(video).toHaveAttribute('src', '/feature-clips/soul-seed.mp4');
+  await expect(video).toHaveAttribute('poster', '/feature-clips/soul-seed.jpg');
+  expect(await video.evaluate((el) => el.muted && el.loop)).toBe(true);
+  const poster = await page.request.get('/feature-clips/soul-seed.jpg');
+  expect(poster.ok()).toBe(true);
+  const clip = await page.request.get('/feature-clips/soul-seed.mp4');
+  expect(clip.ok()).toBe(true);
+  expect(clip.headers()['content-type']).toContain('video/mp4');
+  if (process.env.FEATURES_SCREENSHOTS) {
+    await video.evaluate((el) => {
+      el.pause();
+      el.currentTime = 11;
+    });
+    await page.waitForTimeout(300);
+    await card.screenshot({ path: `${process.env.FEATURES_SCREENSHOTS}/soul-seed-card.png` });
+  }
+});

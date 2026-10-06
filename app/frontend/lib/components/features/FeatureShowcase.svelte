@@ -1,6 +1,9 @@
 <script>
   let { feature } = $props();
   let Icon = $derived(feature.icon);
+  // Respect reduced motion: show the poster frame and let the visitor start the clip themselves.
+  const reduceMotion =
+    typeof window !== 'undefined' && (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
 </script>
 
 <article class="overflow-hidden rounded-2xl border bg-card" data-testid="feature-showcase">
@@ -8,8 +11,10 @@
     <video
       class="aspect-video w-full border-b bg-muted object-cover"
       src={feature.media.src}
+      poster={feature.media.poster}
       aria-label={feature.media.alt}
-      autoplay
+      autoplay={!reduceMotion}
+      controls={reduceMotion}
       muted
       loop
       playsinline></video>
