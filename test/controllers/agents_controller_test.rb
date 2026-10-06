@@ -498,6 +498,17 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ "openrouter:deepseek/deepseek-v4-pro-0813" ], @agent.subagent_models
   end
 
+  test "update clears the sub-agent allowlist when the form sends an empty list" do
+    @agent.update!(subagents_enabled: true, subagent_models: [ "openrouter:deepseek/deepseek-v4-pro-0813" ])
+
+    patch account_agent_path(@account, @agent),
+      params: { agent: { subagents_enabled: false, subagent_models: [] } }, as: :json
+
+    @agent.reload
+    assert_not @agent.subagents_enabled?
+    assert_equal [], @agent.subagent_models
+  end
+
   test "deletion disables and preserves the resident and private memory" do
     @agent.update_columns(runtime: "external", birth_committed_at: Time.current, scheduled_wakes_enabled: true, heartbeat_wakes_per_day: 8)
     vault = Mnemodyne::Vault.create!(agent: @agent)
