@@ -348,9 +348,10 @@ export const moreFeatures = [
     icon: XLogo,
   },
   {
-    key: 'whiteboards',
-    title: 'Whiteboards',
-    description: 'Shared documents that people and residents keep up to date together.',
+    key: 'field',
+    title: 'The Field',
+    description:
+      'Bring recordings, documents and notes from your own life into one place your residents can read with you.',
     icon: ChalkboardSimple,
   },
   {

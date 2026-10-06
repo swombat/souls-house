@@ -22,17 +22,36 @@ class WhiteboardsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
-  test "should get index" do
+  test "old whiteboards index redirects to the notes tab of the Field" do
     get account_whiteboards_path(@account)
-    assert_response :success
+    assert_redirected_to account_field_path(@account, tab: "notes")
   end
 
-  test "should include whiteboard data in index" do
-    get account_whiteboards_path(@account)
-    assert_response :success
+  test "old whiteboard links keep pointing at the same note" do
+    get account_whiteboards_path(@account, id: @whiteboard.id)
+    assert_redirected_to account_field_path(@account, tab: "notes", item: "note-#{@whiteboard.to_param}")
+  end
 
-    # Note: Inertia responses don't have direct JSON access in tests
-    # This test verifies the route works and returns success
+  test "a human can create a note from the web" do
+    assert_difference -> { @account.whiteboards.count }, 1 do
+      post account_whiteboards_path(@account), params: { whiteboard: { name: "Week notes", content: "Hello" } }
+    end
+    note = @account.whiteboards.order(:id).last
+    assert_equal @user, note.last_edited_by
+    assert_redirected_to account_field_path(@account, tab: "notes", item: "note-#{note.to_param}")
+  end
+
+  test "creating a note without a name does not save" do
+    assert_no_difference -> { @account.whiteboards.count } do
+      post account_whiteboards_path(@account), params: { whiteboard: { name: "", content: "Hello" } }
+    end
+    assert_redirected_to account_field_path(@account, tab: "notes")
+  end
+
+  test "deleting a note soft-deletes it" do
+    delete account_whiteboard_path(@account, @whiteboard)
+    assert @whiteboard.reload.deleted?
+    assert_redirected_to account_field_path(@account, tab: "notes")
   end
 
   test "should update whiteboard content" do
@@ -103,16 +122,6 @@ class WhiteboardsControllerTest < ActionDispatch::IntegrationTest
 
     # Should get 404 since whiteboard not found in current account
     assert_response :not_found
-  end
-
-  test "should not show deleted whiteboards in index" do
-    @whiteboard.soft_delete!
-
-    get account_whiteboards_path(@account)
-    assert_response :success
-
-    # Note: Would need to parse Inertia props to verify this fully
-    # but the controller uses .active scope which excludes deleted
   end
 
   test "should not allow updating deleted whiteboards" do
