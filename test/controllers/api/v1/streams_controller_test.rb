@@ -81,7 +81,132 @@ class Api::V1::StreamsControllerTest < ActionDispatch::IntegrationTest
     assert_empty @stream.device_stream_batches
   end
 
+  test "historical session pages preserve RR precision and isolate sessions" do
+    session = @stream.device_stream_sessions.create!(session_uuid: @payload[:session_id])
+    201.times do |i|
+      session.device_stream_batches.create!(sequence: i * 2, observed_at: 1.day.ago, rr_ms: [ 810.546875 ], payload_digest: "synthetic")
+    end
+    other = @stream.device_stream_sessions.create!(session_uuid: SecureRandom.uuid)
+    other.device_stream_batches.create!(sequence: 1, observed_at: 1.day.ago, rr_ms: [ 999 ], payload_digest: "synthetic")
+    get session_path, headers: bearer(@reader_token)
+    assert_response :ok
+    body = response.parsed_body
+    assert_equal 200, body["batches"].size
+    assert_equal (0...200).map { |i| i * 2 }, body["batches"].pluck("sequence")
+    assert_equal "398", body["next_cursor"]
+    assert_equal [ 810.546875 ], body["batches"].first["rr_ms"]
+    assert_equal @payload[:session_id], body["session_id"]
+    assert_equal "no-store", response.headers["Cache-Control"]
+    get session_path, params: { cursor: body["next_cursor"] }, headers: bearer(@reader_token)
+    assert_response :ok
+    assert_equal [ 400 ], response.parsed_body["batches"].pluck("sequence")
+    assert_nil response.parsed_body["next_cursor"]
+  end
+
+  test "session reads recheck explicit agent grants and account scope" do
+    @stream.device_stream_sessions.create!(session_uuid: @payload[:session_id])
+    agent = agents(:other_account_agent)
+    token = ApiKey.generate_for(@subject, agent: agent, name: "Session reader").raw_token
+    get session_path, headers: bearer(token)
+    assert_response :not_found
+    @stream.configure!(user_ids: [], agent_ids: [ agent.id ], enabled: true)
+    get session_path, headers: bearer(token)
+    assert_response :ok
+    assert_empty response.parsed_body["batches"]
+    @stream.configure!(user_ids: [], agent_ids: [], enabled: true)
+    get session_path, params: { cursor: "0" }, headers: bearer(token)
+    assert_response :not_found
+    wrong_account = ApiKey.generate_for(@subject, account: accounts(:personal_account), name: "Wrong account").raw_token
+    get session_path, headers: bearer(wrong_account)
+    assert_response :not_found
+    get session_path, headers: bearer(@device_token)
+    assert_response :unauthorized
+  end
+
+  test "session reads reject malformed cursors and hide erased or foreign sessions" do
+    @stream.device_stream_sessions.create!(session_uuid: @payload[:session_id])
+    [ "", "-1", "01", "1.0", "9007199254740992", "x", [ "1" ] ].each do |cursor|
+      get session_path, params: { cursor: cursor }, headers: bearer(@reader_token)
+      assert_response :unprocessable_entity
+      assert_equal "no-store", response.headers["Cache-Control"]
+    end
+    get session_path, params: { cursor: "9007199254740991" }, headers: bearer(@reader_token)
+    assert_response :ok
+    assert_empty response.parsed_body["batches"]
+    other_stream = DeviceStream.create!(account: @account, subject_user: @subject, name: "Other")
+    foreign = other_stream.device_stream_sessions.create!(session_uuid: SecureRandom.uuid)
+    get "/api/v1/streams/#{@stream.stream_key}/sessions/#{foreign.session_uuid}", headers: bearer(@reader_token)
+    assert_response :not_found
+    @stream.erase_session!(@payload[:session_id])
+    get session_path, headers: bearer(@reader_token)
+    assert_response :not_found
+    assert_equal "no-store", response.headers["Cache-Control"]
+    @stream.erase!
+    get session_path, headers: bearer(@reader_token)
+    assert_response :not_found
+  end
+
+  test "discovery lists bounded metadata by observation time not upload order" do
+    base = 2.days.ago.change(usec: 0)
+    uuids = 51.times.map do |i|
+      session = @stream.device_stream_sessions.create!(session_uuid: SecureRandom.uuid)
+      session.device_stream_batches.create!(sequence: 0, observed_at: base + i.minutes,
+                                            rr_ms: [ 810.546875 ], payload_digest: "synthetic")
+      session.session_uuid
+    end
+    newest = @stream.device_stream_sessions.find_by!(session_uuid: uuids.last)
+    newest.device_stream_batches.create!(sequence: 1, observed_at: base - 1.minute,
+                                         rr_ms: [ 800 ], payload_digest: "synthetic")
+    @stream.device_stream_sessions.create!(session_uuid: SecureRandom.uuid)
+    get sessions_path, headers: bearer(@reader_token)
+    assert_response :ok
+    body = response.parsed_body
+    assert_equal true, body["truncated"]
+    assert_equal uuids.reverse.first(50), body["sessions"].pluck("session_id")
+    assert_equal %w[batch_count first_observed_at last_observed_at session_id], body["sessions"].first.keys.sort
+    assert_equal 2, body["sessions"].first["batch_count"]
+    assert_equal (base - 1.minute).iso8601(6), body["sessions"].first["first_observed_at"]
+    assert_equal (base + 50.minutes).iso8601(6), body["sessions"].first["last_observed_at"]
+    assert_equal "no-store", response.headers["Cache-Control"]
+    @stream.erase_session!(uuids.last)
+    get sessions_path, headers: bearer(@reader_token)
+    assert_equal false, response.parsed_body["truncated"]
+    assert_equal uuids[0...-1].reverse, response.parsed_body["sessions"].pluck("session_id")
+  end
+
+  test "discovery rechecks reader grants rejects device and wrong account and hides erased streams" do
+    agent = agents(:other_account_agent)
+    token = ApiKey.generate_for(@subject, agent: agent, name: "Discovery reader").raw_token
+    get sessions_path, headers: bearer(token)
+    assert_response :not_found
+    @stream.configure!(user_ids: [], agent_ids: [ agent.id ], enabled: true)
+    get sessions_path, headers: bearer(token)
+    assert_response :ok
+    assert_equal [], response.parsed_body["sessions"]
+    assert_equal false, response.parsed_body["truncated"]
+    @stream.configure!(user_ids: [], agent_ids: [], enabled: true)
+    get sessions_path, headers: bearer(token)
+    assert_response :not_found
+    get sessions_path, headers: bearer(@device_token)
+    assert_response :unauthorized
+    wrong_account = ApiKey.generate_for(@subject, account: accounts(:personal_account), name: "Wrong account").raw_token
+    get sessions_path, headers: bearer(wrong_account)
+    assert_response :not_found
+    @stream.erase!
+    get sessions_path, headers: bearer(@reader_token)
+    assert_response :not_found
+    assert_equal "no-store", response.headers["Cache-Control"]
+  end
+
   private
+
+  def sessions_path
+    "/api/v1/streams/#{@stream.stream_key}/sessions"
+  end
+
+  def session_path
+    "/api/v1/streams/#{@stream.stream_key}/sessions/#{@payload[:session_id]}"
+  end
 
   def bearer(token)
     { "Authorization" => "Bearer #{token}" }

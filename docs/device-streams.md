@@ -89,7 +89,33 @@ client clock lead), up to 1,200 batches in observation order, with session,
 sequence, observed and server-received timestamps. `truncated` indicates the cap;
 an empty window does not mean no historical data is stored. `server_time` and
 `latest_received_at` support freshness checks; no completeness guarantee is made.
-There is no historical download API in this first slice.
+
+`GET /api/v1/streams/:stream_key/sessions` discovers up to 50 non-erased sessions
+with stored batches under the same reader grants and no-store policy. The
+response contains `stream_key`, `server_time`, `truncated` and `sessions`; each
+entry has only `session_id`, `first_observed_at`, `last_observed_at` and
+`batch_count`, never RR values. Newest means highest stored observation time,
+with ties broken by descending internal session ID, not latest upload time.
+Empty sessions are omitted. `truncated: true` means older sessions exist beyond
+this discovery window; this endpoint is not a complete archive index.
+
+`GET /api/v1/streams/:stream_key/sessions/:session_id` reads a known client
+session UUID, including historical uploads, under the same current reader grants
+and account scope as `latest`. Device credentials cannot read. It returns
+`schema`, `stream_key`, `session_id`, `server_time`, `batches` (the same fields as
+latest) and `next_cursor`. Pages contain at most 200 batches in ascending sequence
+order. Follow `?cursor=<next_cursor>` until it is null; treat the cursor as opaque.
+Missing, erased and inaccessible sessions return 404. Malformed cursors return
+422. Responses use `Cache-Control: no-store`; grants are checked on every request.
+
+Pagination is not a snapshot or a completeness certificate. Uploads may arrive
+out of order: a late lower sequence can land behind an already-read cursor.
+For a final analysis, wait for the Mac uploader to finish, then read again from
+the first page and reconcile against its locally persisted sequence manifest.
+Null `next_cursor` only means no further rows at that request, not that recording
+or upload has finished. The client supplies the session UUID; this endpoint does
+not wake residents or add a session-finalization protocol. The bounded session
+list above supplies UUIDs for recent recordings without an out-of-band handoff.
 
 UTC deltas cannot reproduce monotonic integrity calculations. Keep monotonic
 timing, disconnect/contact evidence, interval boundaries, algorithm version and
