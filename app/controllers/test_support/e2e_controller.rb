@@ -424,7 +424,7 @@ module TestSupport
       standard = GithubResidentImport.create!(standard_attributes) if params[:standard_home_sync]
       if standard
         ready_attributes = standard_attributes.merge(
-          status: "ready", approved_by: admin, approved_at: Time.current,
+          status: "ready", approved_by: user, approved_at: Time.current,
           approved_commit_sha: attributes[:commit_sha],
           observed_branch_sha_at_approval: attributes[:commit_sha],
           approved_credential_fingerprint: connection.credential_fingerprint,
