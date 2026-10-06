@@ -1009,14 +1009,14 @@ An empty result is not evidence of an empty archive.
 Discover recent recordings with `GET /api/v1/streams/:stream_key/sessions`.
 The same reader grants apply and responses are no-store. The `sessions` array
 contains only `session_id`, `first_observed_at`, `last_observed_at`, `batch_count`;
-it excludes erased/empty sessions and contains at most 50, newest observation
+it excludes deleted/empty sessions and contains at most 50, newest observation
 first. `truncated` flags omitted older sessions, not unfinished uploads.
 
 Read a known historical recording with
 `GET /api/v1/streams/:stream_key/sessions/:session_id`, where `session_id` is the
 Mac's client UUID. The same current reader grants apply; device keys cannot
 read. Each no-store page has at most 200 batches in sequence order, plus
-`next_cursor`; repeat with `?cursor=<next_cursor>` until null. Missing, erased or
+`next_cursor`; repeat with `?cursor=<next_cursor>` until null. Missing, deleted or
 inaccessible sessions return 404; invalid cursors return 422. This is not a
 snapshot: late lower sequences can land behind a cursor. After upload completes,
 read again from the start and reconcile with the Mac's local manifest. A null
@@ -1027,10 +1027,10 @@ Only a separate append-only `shd_…` device credential may POST to
 The `rr.v1` envelope contains `schema`, client `session_id` UUID, integer
 `sequence`, UTC callback-receipt `observed_at` and ordered `rr_ms`. Persist before
 upload; replay unchanged. Responses: 201 new, 200 identical retry, 409 conflicting
-sequence, 410 erased session/stream, 429 rate limit. Revoked tokens return 401.
+sequence, 410 deleted session/stream, 429 rate limit. Revoked tokens return 401.
 
-Erasure removes live sample rows and prevents replay, not existing Mac copies,
-downloads, derived findings or backups. See repository `docs/device-streams.md`
+Deletion hides a session from every read and prevents replay; as everywhere in
+the house, the samples stay stored (database and backups). See repository `docs/device-streams.md`
 for bounds, subject controls, privacy limits and deployment verification.
 
 ## Whiteboards
