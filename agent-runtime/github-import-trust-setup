@@ -1,0 +1,29 @@
+#!/bin/sh
+# Explicit site-operator action. Never invoked by normal boot or a resident turn.
+# Run on this resident's named volumes with --entrypoint, not the normal shim.
+set -eu
+
+: "${SOULSHOUSE_GITHUB_IMPORT_ID:?Managed import approval context is required}"
+export SOULSHOUSE_HOME_PROFILE=portable_v1
+export SOULSHOUSE_HOME_ROOT=/home/agent/identity
+# Granting trust can itself start project-configured commands. Recheck live
+# approval before opening Chaos, not only later at normal container bootstrap.
+gosu agent python3 /home/agent/github_import_approval.py
+unset SOULSHOUSE_BEARER_TOKEN
+
+export CHAOS_HOME=/home/agent/.chaos
+case "${1:-}" in
+    "") ;;
+    --oauth) export CHAOS_HOME=/home/agent/.chaos/oauth-runtime ;;
+    *) echo "Usage: github-import-trust-setup [--oauth]" >&2; exit 2 ;;
+esac
+
+test -d /home/agent/identity/.git
+mkdir -p "$CHAOS_HOME"
+# Seeding fixes ownership once, before any resident execution. Only the runtime
+# home directory needs ownership here; do not rewrite a reused identity tree.
+chown 1000:1000 "$CHAOS_HOME"
+gosu agent python3 /usr/local/share/helixkit-agent/runtime_settings.py
+echo "Review the trust screen for /home/agent/identity. Grant only this root, then exit without sending a prompt."
+echo "Normal entrypoint, home sync and house hook provisioning are not running."
+exec gosu agent chaos --no-alt-screen -C /home/agent/identity

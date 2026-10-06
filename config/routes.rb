@@ -101,6 +101,11 @@ Rails.application.routes.draw do
     resources :visual_tags, only: [ :create, :update, :destroy ], module: :accounts
     resources :service_authorizations, only: :create
     resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts
+    resources :github_resident_imports, only: [ :new, :create, :show ] do
+      post :approve, on: :member
+      post :refresh, on: :member
+      post :retry_activation, on: :member
+    end
 
     resources :chats do
       get :activity, on: :member
@@ -261,6 +266,7 @@ Rails.application.routes.draw do
       post "runtime_runs/:run_id/events", to: "runtime_events#create"
       get "agent/bookmarks", to: "agent_bookmarks#index", as: :agent_bookmarks
       patch "agent/activity_preferences", to: "agents#activity_preferences"
+      get "agent/github_import_approval", to: "github_import_approvals#show"
       namespace :memory do
         resources :formations, only: :create
         resource :export, only: :show

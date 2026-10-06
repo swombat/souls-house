@@ -382,6 +382,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
     t.datetime "updated_at", null: false
     t.uuid "uuid"
     t.string "voice_id"
+    t.bigint "github_resident_import_id"
     t.boolean "subagents_enabled", default: false, null: false
     t.jsonb "subagent_models", default: [], null: false
     t.datetime "subagents_policy_changed_at"
@@ -390,6 +391,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
     t.index ["account_id"], name: "index_agents_on_account_id"
     t.index ["container_name"], name: "index_agents_on_container_name", unique: true
+    t.index ["github_resident_import_id"], name: "index_agents_on_github_resident_import_id", unique: true
     t.index ["outbound_api_key_id"], name: "index_agents_on_outbound_api_key_id"
     t.index ["portable_home_id"], name: "index_agents_on_portable_home_id", unique: true
     t.index ["runtime"], name: "index_agents_on_runtime"
@@ -657,6 +659,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
     t.string "repository_full_name"
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_github_integrations_on_account_id", unique: true
+  end
+
+  create_table "github_resident_imports", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "service_connection_id", null: false
+    t.bigint "requested_by_id", null: false
+    t.bigint "approved_by_id"
+    t.string "name", null: false
+    t.string "model_id", null: false
+    t.string "repository", null: false
+    t.string "repository_id", null: false
+    t.string "branch", null: false
+    t.string "commit_sha", null: false
+    t.string "portable_home_id", null: false
+    t.string "credential_fingerprint", null: false
+    t.jsonb "token_metadata", default: {}, null: false
+    t.string "status", default: "pending_review", null: false
+    t.string "approved_commit_sha"
+    t.string "observed_branch_sha_at_approval"
+    t.string "approved_credential_fingerprint"
+    t.string "approved_image"
+    t.datetime "approved_at"
+    t.string "last_error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_github_resident_imports_on_account_id"
+    t.index ["approved_by_id"], name: "index_github_resident_imports_on_approved_by_id"
+    t.index ["requested_by_id"], name: "index_github_resident_imports_on_requested_by_id"
+    t.index ["service_connection_id"], name: "index_github_resident_imports_on_service_connection_id"
   end
 
   create_table "guest_memberships", force: :cascade do |t|
@@ -1422,6 +1453,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
   add_foreign_key "agent_service_accesses", "service_connections"
   add_foreign_key "agents", "accounts"
   add_foreign_key "agents", "api_keys", column: "outbound_api_key_id"
+  add_foreign_key "agents", "github_resident_imports"
   add_foreign_key "api_key_requests", "api_keys"
   add_foreign_key "api_keys", "accounts"
   add_foreign_key "api_keys", "agents"
@@ -1448,6 +1480,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
   add_foreign_key "device_streams", "users", column: "subject_user_id"
   add_foreign_key "field_files", "accounts"
   add_foreign_key "github_integrations", "accounts"
+  add_foreign_key "github_resident_imports", "accounts"
+  add_foreign_key "github_resident_imports", "service_connections"
+  add_foreign_key "github_resident_imports", "users", column: "approved_by_id"
+  add_foreign_key "github_resident_imports", "users", column: "requested_by_id"
   add_foreign_key "guest_memberships", "accounts", on_delete: :cascade
   add_foreign_key "guest_memberships", "agents", on_delete: :cascade
   add_foreign_key "guest_memberships", "users", column: "added_by_id", on_delete: :nullify
