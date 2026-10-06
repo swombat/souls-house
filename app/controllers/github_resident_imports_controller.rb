@@ -1,7 +1,7 @@
 class GithubResidentImportsController < ApplicationController
 
   require_feature_enabled :agents
-  before_action :require_import_admin!
+  before_action :require_import_authority!
   before_action :set_import, only: [ :show, :approve, :refresh, :retry_activation ]
 
   def new
@@ -28,7 +28,7 @@ class GithubResidentImportsController < ApplicationController
         credential_fingerprint: connection.credential_fingerprint, token_metadata: token_metadata))
     end
     audit(:request_github_resident_import, @import, repository: @import.repository, commit_sha: @import.commit_sha)
-    redirect_to account_github_resident_import_path(current_account, @import), notice: "Import requested. A site admin must approve repository execution."
+    redirect_to account_github_resident_import_path(current_account, @import), notice: "Import requested. An authorized account manager must approve repository execution."
   rescue Account::NotAuthorized
     head :forbidden
   rescue Agents::GithubImportSource::Error, ActiveRecord::RecordInvalid, ArgumentError, KeyError
@@ -37,22 +37,26 @@ class GithubResidentImportsController < ApplicationController
   end
 
   def approve
-    return head :forbidden unless Current.user.site_admin
+    return head :forbidden unless @import.approvable_by?(Current.user)
     raise ArgumentError unless params[:confirmed].to_s == "true"
     @import.approve!(Current.user, review_revision: params[:review_revision])
     audit(:approve_github_resident_import, @import, repository: @import.repository, branch: @import.branch,
       commit_sha: @import.approved_commit_sha, credential_fingerprint: @import.approved_credential_fingerprint,
       approval_scope: "future_pushes_to_this_branch")
     redirect_to account_github_resident_import_path(current_account, @import), notice: "Repository execution approved. Import queued."
+  rescue Account::NotAuthorized
+    head :forbidden
   rescue ArgumentError, ActiveRecord::RecordInvalid, Agents::GithubImportSource::Error
     redirect_to account_github_resident_import_path(current_account, @import), alert: "Approval failed. Review the current request and credential."
   end
 
   def retry_activation
-    return head :forbidden unless Current.user.site_admin
+    return head :forbidden unless @import.approvable_by?(Current.user)
     @import.retry_activation!(Current.user)
     audit(:retry_github_resident_import_activation, @import)
     redirect_to account_github_resident_import_path(current_account, @import), notice: "Activation retry queued."
+  rescue Account::NotAuthorized
+    head :forbidden
   rescue ArgumentError, Agent::RuntimeAvailability::Unavailable
     redirect_to account_github_resident_import_path(current_account, @import), alert: "Activation requires valid approval and operator runtime trust."
   end
@@ -60,7 +64,7 @@ class GithubResidentImportsController < ApplicationController
   def refresh
     @import.refresh_review!(Current.user)
     audit(:refresh_github_resident_import_review, @import, commit_sha: @import.commit_sha)
-    redirect_to account_github_resident_import_path(current_account, @import), notice: "Review refreshed. Site-admin approval is required again."
+    redirect_to account_github_resident_import_path(current_account, @import), notice: "Review refreshed. Account approval is required again."
   rescue Account::NotAuthorized
     head :forbidden
   rescue ArgumentError, ActiveRecord::RecordInvalid, Services::AdapterError, Agents::GithubImportSource::Error
@@ -69,7 +73,7 @@ class GithubResidentImportsController < ApplicationController
 
   private
 
-  def require_import_admin!
+  def require_import_authority!
     head :forbidden unless GithubResidentImport.requestable_by?(current_account, Current.user)
   end
 
@@ -78,6 +82,7 @@ class GithubResidentImportsController < ApplicationController
   end
 
   def render_import
+    can_manage_import = @import.present? && @import.approvable_by?(Current.user)
     render inertia: "agents/github-import", props: {
       account: current_account.as_json, github_import: import_props,
       connections: current_account.service_connections.connected.where(provider: "github").select { |connection|
@@ -86,10 +91,10 @@ class GithubResidentImportsController < ApplicationController
         repository: connection.credential_metadata["repository"], token_metadata: token_props(connection_metadata(connection)) } },
       models: (Chat::MODELS + HouseInference::Offering.models).map { |model| model.slice(:model_id, :label) },
       submit_url: account_github_resident_imports_path(current_account),
-      approve_url: @import && Current.user.site_admin ? approve_account_github_resident_import_path(current_account, @import) : nil,
-      refresh_url: @import ? refresh_account_github_resident_import_path(current_account, @import) : nil,
-      retry_activation_url: @import && Current.user.site_admin ? retry_activation_account_github_resident_import_path(current_account, @import) : nil,
-      can_approve: Current.user.site_admin,
+      approve_url: can_manage_import ? approve_account_github_resident_import_path(current_account, @import) : nil,
+      refresh_url: can_manage_import ? refresh_account_github_resident_import_path(current_account, @import) : nil,
+      retry_activation_url: can_manage_import ? retry_activation_account_github_resident_import_path(current_account, @import) : nil,
+      can_approve: can_manage_import,
       future_branch_trust_notice: GithubResidentImport::FUTURE_BRANCH_TRUST_NOTICE,
       runtime_trust_notice: GithubResidentImport::RUNTIME_TRUST_NOTICE
     }

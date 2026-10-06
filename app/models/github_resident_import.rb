@@ -24,9 +24,15 @@ class GithubResidentImport < ApplicationRecord
     account.service_credentials_manageable_by?(user)
   end
 
+  def approvable_by?(user)
+    self.class.requestable_by?(account, user) && service_connection.reload.provisionable_by?(user)
+  end
+
   def approval_error
-    return "Site-admin approval is required" unless approved_at && approved_by&.site_admin &&
+    return "Current account approval is required" unless approved_at && approved_by &&
       status.in?(%w[approved provisioning needs_runtime_trust ready])
+    return "Approver no longer has permission to manage this account and provision its GitHub connection" unless
+      approvable_by?(approved_by)
     connection = service_connection.reload
     metadata = connection.credential_metadata.to_h
     token = connection.credential_payload_hash["token"].to_s
@@ -58,13 +64,14 @@ class GithubResidentImport < ApplicationRecord
   end
 
   def approve!(user, review_revision:)
-    raise Account::NotAuthorized unless user&.site_admin
+    raise Account::NotAuthorized unless approvable_by?(user)
     observed_sha = nil
     Agents::GithubImportSource.new(service_connection).with_checkout(branch: branch) do |_root, manifest, sha, _branch|
       raise ArgumentError, "Portable identity changed" unless manifest["identity_id"] == portable_home_id
       observed_sha = sha
     end
     with_lock do
+      raise Account::NotAuthorized unless approvable_by?(user)
       raise ArgumentError, "Review changed; reload before approving" unless self.review_revision == review_revision
       raise ArgumentError, "This import is already approved; use activation retry after operator trust" unless status.in?(%w[pending_review failed])
       connection = service_connection.reload
@@ -83,8 +90,9 @@ class GithubResidentImport < ApplicationRecord
   end
 
   def retry_activation!(user)
-    raise Account::NotAuthorized unless user&.site_admin
+    raise Account::NotAuthorized unless approvable_by?(user)
     with_lock do
+      raise Account::NotAuthorized unless approvable_by?(user)
       raise ArgumentError, "This home is not waiting for runtime trust" unless status == "needs_runtime_trust"
       require_approval!
       update!(status: "approved", last_error: nil)
@@ -93,7 +101,7 @@ class GithubResidentImport < ApplicationRecord
   end
 
   def refresh_review!(user)
-    raise Account::NotAuthorized unless self.class.requestable_by?(account, user) && service_connection.provisionable_by?(user)
+    raise Account::NotAuthorized unless approvable_by?(user)
     raise ArgumentError, "Wait for provisioning to finish" if status.in?(%w[approved provisioning])
     connection = service_connection.reload
     # Refresh provider-reported scope metadata rather than reusing an old
@@ -104,6 +112,7 @@ class GithubResidentImport < ApplicationRecord
     Agents::GithubImportSource.new(connection).with_checkout(branch: branch) do |_root, manifest, sha, _branch|
       raise ArgumentError, "Portable identity changed" unless manifest["identity_id"] == portable_home_id
       with_lock do
+        raise Account::NotAuthorized unless approvable_by?(user)
         raise ArgumentError, "Wait for provisioning to finish" if status.in?(%w[approved provisioning])
         raise ArgumentError, "Credential changed during review" unless service_connection.reload.credential_fingerprint == result[:credential_fingerprint]
         @refreshing_review = true

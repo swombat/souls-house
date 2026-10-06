@@ -46,7 +46,7 @@ test('prepares a request without a soul seed or automatic execution', async () =
     'https://github.com/swombat/souls-house/blob/master/docs/features/github-resident-onboarding.md'
   );
   expect(screen.queryByRole('textbox', { name: /soul/i })).not.toBeInTheDocument();
-  const submit = screen.getByRole('button', { name: 'Request site-admin review' });
+  const submit = screen.getByRole('button', { name: 'Request account approval' });
   expect(submit).toBeDisabled();
   await fireEvent.input(screen.getByLabelText('Resident display name'), { target: { value: 'Existing Resident' } });
   await fireEvent.click(submit);
@@ -79,7 +79,7 @@ test.each(['classic', 'unknown', 'unexpected_kind'])(
     expect(screen.getByText('repo, workflow')).toBeVisible();
     expect(screen.getByRole('alert')).toHaveTextContent('Classic and unknown tokens cannot');
     await fireEvent.input(screen.getByLabelText('Resident display name'), { target: { value: 'Existing Resident' } });
-    expect(screen.getByRole('button', { name: 'Request site-admin review' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Request account approval' })).toBeDisabled();
   }
 );
 
@@ -97,9 +97,9 @@ test('switching to a blocked connection updates authority and disables submissio
     ],
   });
   await fireEvent.input(screen.getByLabelText('Resident display name'), { target: { value: 'Existing Resident' } });
-  expect(screen.getByRole('button', { name: 'Request site-admin review' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Request account approval' })).toBeEnabled();
   await fireEvent.change(screen.getByLabelText('GitHub connection'), { target: { value: 'classic' } });
-  expect(screen.getByRole('button', { name: 'Request site-admin review' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Request account approval' })).toBeDisabled();
   expect(screen.getByText('Classic token')).toBeVisible();
 });
 
@@ -109,7 +109,7 @@ test('empty connections provide an account-scoped setup link, not an import form
     'href',
     '/accounts/account/personal_services'
   );
-  expect(screen.queryByRole('button', { name: 'Request site-admin review' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Request account approval' })).not.toBeInTheDocument();
 });
 
 test('server form errors remain visible without losing the request form', async () => {
@@ -136,18 +136,18 @@ test('real-shaped processing state disables duplicate request submission', async
 
 test('ordinary users can see SHA and fingerprint review data without admin actions', () => {
   render(GithubImport, { ...props, github_import: { ...request, credential_changed: true } });
-  expect(screen.getByText('Waiting for site-admin review')).toBeVisible();
+  expect(screen.getByText('Waiting for account approval')).toBeVisible();
   expect(screen.getByText('current-sha')).toBeVisible();
   expect(screen.getByText('current-fingerprint')).toBeVisible();
   expect(screen.getByText('live-fingerprint')).toBeVisible();
   expect(screen.getByText(props.future_branch_trust_notice)).toBeVisible();
-  expect(screen.getByText(/changed credential requires site-admin reapproval/)).toBeVisible();
+  expect(screen.getByText(/changed credential requires account reapproval/)).toBeVisible();
   expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Approve repository execution' })).not.toBeInTheDocument();
   expect(screen.queryByText('Beginning recorded')).not.toBeInTheDocument();
 });
 
-test('site approval requires explicit future-branch trust confirmation and submits once', async () => {
+test('account approval requires explicit future-branch trust confirmation and submits once', async () => {
   render(GithubImport, { ...props, github_import: request, can_approve: true, approve_url: '/approve' });
   const approval = screen.getByRole('button', { name: 'Approve repository execution' });
   expect(approval).toBeDisabled();
@@ -264,7 +264,7 @@ test('changed credential approval errors and previous approval evidence remain v
       credential_changed: true,
       approved_at: '2026-10-06T09:00:00Z',
       approved_by_name: 'Reviewer',
-      approval_error: 'Credential changed; site-admin reapproval required.',
+      approval_error: 'Credential changed; account reapproval required.',
       last_error: 'Import stopped safely.',
     },
     can_approve: true,
@@ -275,13 +275,13 @@ test('changed credential approval errors and previous approval evidence remain v
   expect(screen.getByText('Pinned reviewed revision')).toBeVisible();
   expect(screen.getByText('Branch SHA observed at approval')).toBeVisible();
   expect(screen.getByText('previous-fingerprint')).toBeVisible();
-  expect(screen.getByText('Credential changed; site-admin reapproval required.')).toBeVisible();
+  expect(screen.getByText('Credential changed; account reapproval required.')).toBeVisible();
   expect(screen.getByText('Import stopped safely.')).toBeVisible();
   expect(screen.getByText(/credential has changed since this request/)).toBeVisible();
   expect(screen.getByRole('button', { name: 'Reapprove and retry import' })).toBeDisabled();
 });
 
-test('classic credentials also block the admin approval checkbox', () => {
+test('classic credentials also block the account approval checkbox', () => {
   render(GithubImport, {
     ...props,
     github_import: { ...request, token_metadata: { token_kind: 'classic', oauth_scopes: ['repo'] } },

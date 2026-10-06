@@ -66,7 +66,7 @@
 </script>
 
 <section class="space-y-4 rounded-lg border p-5" aria-label="Repository execution approval">
-  <h2 class="text-lg font-semibold">Site-admin execution approval</h2>
+  <h2 class="text-lg font-semibold">Account execution approval</h2>
   <p class="text-sm">
     Approving runs all code in <strong>{request.repository}@{request.branch}</strong>, now and on every future push,
     with this token.
@@ -88,12 +88,13 @@
       <dt class="text-muted-foreground">Approved credential fingerprint</dt>
       <dd class="break-all font-mono">{request.approved_credential_fingerprint}</dd>
       <dt class="text-muted-foreground">Approved by</dt>
-      <dd>{request.approved_by_name || 'Site administrator'} · {request.approved_at}</dd>
+      <dd>{request.approved_by_name || 'Account manager'} · {request.approved_at}</dd>
     {/if}
   </dl>
   <p class="text-sm text-muted-foreground">
-    A changed credential requires site-admin reapproval. Fingerprints identify the credential without displaying the
-    token.
+    A changed credential requires account reapproval by someone who can provision this connection. Fingerprints
+    identify the credential without displaying the token. Approval also becomes invalid if the approver loses current
+    permission to manage the account or provision this connection.
   </p>
   <p class="text-sm text-muted-foreground">
     Initial setup uses the approved pinned revision. The branch revision observed at approval may be newer; approval
@@ -101,7 +102,7 @@
   </p>
   {#if request.credential_changed}
     <p role="alert" class="text-sm text-destructive">
-      The credential has changed since this request was prepared. Site-admin reapproval is required before execution.
+      The credential has changed since this request was prepared. Account reapproval is required before execution.
     </p>
   {/if}
   {#if request.approval_error}
@@ -119,7 +120,7 @@
   {#if refreshUrl && refreshable}
     <p class="text-sm text-muted-foreground">
       Refresh review to check the current branch and credential authority using this same request and resident. Their
-      existing home is preserved. Execution still requires explicit site-admin approval afterward.
+      existing home is preserved. Execution still requires explicit account approval afterward.
     </p>
     <Button variant="outline" onclick={refreshReview} disabled={refreshing || submitting}>
       {refreshing ? 'Refreshing…' : 'Refresh review'}
@@ -145,7 +146,7 @@
     </Button>
   {:else if !request.approval_valid}
     <p class="text-sm text-muted-foreground">
-      A site administrator must approve this request before its code can execute.
+      Someone with current permission to manage this account and provision the selected connection must approve this request before its code can execute.
     </p>
   {/if}
 </section>

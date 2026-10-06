@@ -12,7 +12,7 @@ test('a seeded home needing runtime trust is not presented as ready', () => {
   expect(screen.queryByRole('button')).not.toBeInTheDocument();
 });
 
-test('a site-admin activation retry requires valid approval and reports rejection', async () => {
+test('an account-authorized activation retry requires valid approval and reports rejection', async () => {
   router.post.mockImplementationOnce((_url, _data, options) => {
     options.onError({});
     options.onFinish();

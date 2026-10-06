@@ -140,7 +140,7 @@ module TestSupport
           credential_metadata: { "repository" => "member/project" })
       end
 
-      github_imports = github_import_fixtures(account, primary_user, admin_user, run_id) if params[:github_resident_onboarding]
+      github_imports = github_import_fixtures(account, primary_user, run_id) if params[:github_resident_onboarding]
 
       render json: {
         run_id: run_id,
@@ -372,7 +372,7 @@ module TestSupport
 
     private
 
-    def github_import_fixtures(account, user, admin, run_id)
+    def github_import_fixtures(account, user, run_id)
       connection = account.service_connections.create!(
         provider: "github", connected_by_user: user, status: "connected",
         external_subject_id: "example-identity", external_identity: "example-user",
@@ -402,7 +402,7 @@ module TestSupport
       ))
       waiting_trust = GithubResidentImport.create!(attributes.merge(
         name: "Example awaiting runtime trust", portable_home_id: "example-trust-#{run_id}",
-        status: "needs_runtime_trust", approved_by: admin, approved_at: Time.current,
+        status: "needs_runtime_trust", approved_by: user, approved_at: Time.current,
         approved_commit_sha: attributes[:commit_sha],
         observed_branch_sha_at_approval: attributes[:commit_sha],
         approved_credential_fingerprint: connection.credential_fingerprint,

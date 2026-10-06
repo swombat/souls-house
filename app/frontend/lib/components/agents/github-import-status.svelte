@@ -5,10 +5,10 @@
   let retrying = $state(false);
   let retryError = $state('');
   const states = {
-    pending_review: ['Waiting for site-admin review', 'No imported repository code is approved to run yet.'],
+    pending_review: ['Waiting for account approval', 'No imported repository code is approved to run yet.'],
     approved: [
       'Approved; waiting for setup',
-      'Site-admin approval is recorded. The resident home will be prepared next.',
+      'Account approval is recorded. The resident home will be prepared next.',
     ],
     provisioning: [
       'Preparing the existing home',
@@ -24,7 +24,7 @@
     ],
     failed: [
       'Import needs attention',
-      'Setup did not complete. A site administrator can review and retry this request.',
+      'Setup did not complete. Someone currently authorized to manage this resident and connection can review and retry this request.',
     ],
   };
   let state = $derived(

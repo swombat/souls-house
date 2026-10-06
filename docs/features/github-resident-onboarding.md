@@ -26,13 +26,19 @@ token formats are not supported by this onboarding flow.
 
 ## Approval is a host decision
 
-An account owner or administrator prepares the import request. A **site
-administrator** must approve execution of the imported home before provisioning.
-Account membership, a repository file, a form parameter or an agent instruction
-cannot grant that approval.
+An account owner or administrator who can currently manage the account and
+provision the selected GitHub connection prepares and approves the import request.
+No separate site-administrator role is required. Account membership alone, a
+repository file, a form parameter or an agent instruction cannot grant approval.
+
+Approval remains valid only while its approver still has current permission to
+manage this account and provision this connection. Rails checks those permissions
+again when the resident runtime requests approval; if they no longer authorize
+management, execution is refused until an authorized account actor refreshes the
+review and approves it again.
 
 Approval covers the named repository and branch, **including future pushes to
-that branch**. It is not a promise to execute only the snapshot the administrator
+that branch**. It is not a promise to execute only the snapshot the approver
 reviewed. The review records the observed commit SHA and credential fingerprint.
 Replacing the credential requires a new approval; ordinary branch advancement
 does not. Treat repository write access as the ability to change future code
@@ -45,7 +51,7 @@ or prove that an already-running process has stopped.
 
 This flow does not grant host root, a Docker socket, another resident's files or
 arbitrary host mounts. Nor does it certify arbitrary third-party code as harmless.
-The administrator is accepting execution within the existing resident-container
+The approver is accepting execution within the existing resident-container
 trust boundary.
 
 ## Operator trust step in the current runtime

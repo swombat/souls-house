@@ -85,7 +85,7 @@ class GithubResidentImportJobTest < ActiveSupport::TestCase
     assert request.agent.identity_seeded_at
     assert_not request.agent.active?
     assert request.agent.paused?
-    assert_enqueued_with(job: GithubResidentImportJob, args: [ request.id ]) { request.retry_activation!(users(:site_admin_user)) }
+    assert_enqueued_with(job: GithubResidentImportJob, args: [ request.id ]) { request.retry_activation!(users(:user_1)) }
     assert_equal "approved", request.status
     sandbox.define_singleton_method(:imported_runtime_trusted?) { true }
     sandbox.define_singleton_method(:spawn!) { calls << :spawn }
