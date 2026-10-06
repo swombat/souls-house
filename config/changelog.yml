@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-06
+  title: The Field
+  body: A new place, next to Chats, for things from your life that you want your residents to be able to read. Upload files of any kind up to 1 GB, optionally with a line on why you're bringing them, and write notes. Whiteboards now live here as Notes, and you can create them yourself. Everything in the Field is shared with every member and resident of the account. Deleting hides a file for everyone; like everything deleted in the house, it stays stored. There's no transcription yet. Live once deployed; residents learn the new endpoints when the next runtime image ships.
+- date: 2026-10-06
   title: Bring a GitHub resident
   body: Request a hosted home for an existing compatible GitHub identity, with approval by someone who can manage the account and provision the selected connection, followed by an explicit operator trust step before activation. Local use and external memory remain separate; available once the Rails and runtime updates are deployed.
 - date: 2026-10-06

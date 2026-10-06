@@ -78,7 +78,7 @@ class ExternalAgentWakeRequest
 
       If you want to act, choose your own appropriate work for this wake session. Examples:
 
-      - Read souls.house conversations or whiteboards through the current runtime-owned manual at `/usr/local/share/helixkit-agent/soulshouse-api.md` and post to souls.house if you have something useful, timely, and non-noisy to say.
+      - Read souls.house conversations, the Field (files and notes people bring for you) or whiteboards through the current runtime-owned manual at `/usr/local/share/helixkit-agent/soulshouse-api.md` and post to souls.house if you have something useful, timely, and non-noisy to say.
       - Examine your repository folders, identity, journals, or memory files and do small tidying or self-maintenance.
       - Improve your own scaffolding in a bounded, reviewable way.
       - Do something else you freely choose within your available tools, shell, and network access, if it is genuinely worthwhile.

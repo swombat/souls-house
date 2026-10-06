@@ -13,12 +13,11 @@
     Gear,
     Check,
     Plus,
-    Chalkboard,
   } from 'phosphor-svelte';
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
   import { buttonVariants } from '$lib/components/shadcn/button/index.js';
   import { cn } from '$lib/utils.js';
-  import { editUserPath, editUserPasswordPath, accountPath, newAccountPath, accountWhiteboardsPath } from '@/routes';
+  import { editUserPath, editUserPasswordPath, accountPath, newAccountPath } from '@/routes';
   import Avatar from '$lib/components/Avatar.svelte';
   import ReplyAttentionBadge from './ReplyAttentionBadge.svelte';
 
@@ -27,7 +26,6 @@
     currentAccount = null,
     accounts = [],
     replyAttention = {},
-    hasWhiteboards = false,
     allowAccountCreation = true,
     currentTheme = 'system',
     onThemeChange = () => {},
@@ -123,12 +121,6 @@
             <Gear class="mr-2 size-4" />
             <span>Account Settings</span>
           </DropdownMenu.Item>
-          {#if hasWhiteboards}
-            <DropdownMenu.Item onclick={() => router.visit(accountWhiteboardsPath(currentAccount.id))}>
-              <Chalkboard class="mr-2 size-4" />
-              <span>Whiteboards</span>
-            </DropdownMenu.Item>
-          {/if}
         {/if}
         {#if accounts.length <= 1}
           <DropdownMenu.Item disabled={!allowAccountCreation} onclick={() => router.visit(newAccountPath())}>

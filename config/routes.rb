@@ -175,7 +175,9 @@ Rails.application.routes.draw do
     end
 
     resources :agents, only: [ :index, :show ]
-    resources :whiteboards, only: [ :index, :update ]
+    get "field", to: "field#index", as: :field
+    resources :field_files, path: "field/files", only: [ :create, :update, :destroy ]
+    resources :whiteboards, only: [ :index, :create, :update, :destroy ]
   end
 
   resources :messages, only: [ :update, :destroy ] do
@@ -314,6 +316,11 @@ Rails.application.routes.draw do
         resource :access_token, only: :show, controller: "service_connection_tokens"
       end
       resources :whiteboards, only: [ :index, :show, :create, :update ]
+      namespace :field do
+        resources :files, only: [ :index, :show, :create, :destroy ] do
+          get :download, on: :member
+        end
+      end
     end
   end
 
