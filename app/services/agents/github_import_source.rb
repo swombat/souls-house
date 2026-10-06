@@ -15,8 +15,10 @@ module Agents
     BRANCH_PATTERN = %r{\A[A-Za-z0-9][A-Za-z0-9_./-]{0,199}\z}
     SHA_PATTERN = /\A[0-9a-f]{40}\z/
 
-    def initialize(connection)
+    def initialize(connection, sync_strategy: "existing")
       @connection = connection
+      raise Error, "Invalid sync selection" unless sync_strategy.in?(%w[existing standard])
+      @sync_strategy = sync_strategy
     end
 
     def with_checkout(branch:, commit_sha: nil)
@@ -117,6 +119,7 @@ module Agents
       identity = manifest.fetch("identity_id")
       raise Error, "Invalid portable identity ID" unless identity.is_a?(String) && identity.match?(/\A[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}\z/)
       env = { "PATH" => ENV.fetch("PATH"), "SOULSHOUSE_HOME_PROFILE" => "portable_v1",
+        "SOULSHOUSE_HOME_SYNC_STRATEGY" => @sync_strategy,
         "SOULSHOUSE_HOME_ROOT" => root, "SOULSHOUSE_PORTABLE_HOME_ID" => identity,
         "CHAOS_HOME" => File.join(File.dirname(root), "unused-chaos-home") }
       script = Rails.root.join("agent-runtime/imported_home.py").to_s

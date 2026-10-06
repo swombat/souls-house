@@ -12,7 +12,8 @@ An ordinary repository containing only a Markdown prompt is not yet compatible.
    provider sessions and machine-specific state out of Git.
 3. Create a fine-grained GitHub personal access token restricted to the intended
    identity repository, with only the permissions needed. Read access is needed
-   for import; the resident's own sync may also need Contents write access.
+   for import; standard two-way sync and an existing script that pushes also need
+   Contents write access.
    Connect it through Account Services as the person authorised to grant access.
 4. Review the home's sync and wake scripts. These execute code. A manifest is
    configuration, not a security sandbox.
@@ -80,6 +81,17 @@ request/resident's Rails records. It must contain only:
 - `SOULSHOUSE_GITHUB_IMPORT_FINGERPRINT`: its full approved credential fingerprint.
 - `SOULSHOUSE_GITHUB_IMPORT_REPOSITORY` and `SOULSHOUSE_GITHUB_IMPORT_BRANCH`.
 - `SOULSHOUSE_PORTABLE_HOME_ID`: the reviewed identity ID.
+- `SOULSHOUSE_HOME_SYNC_STRATEGY`: the request's reviewed `sync_strategy`
+  (`existing` or `standard`).
+- `SOULSHOUSE_HOME_SYNC_CONFIGURATION`: JSON encoding of the request's immutable
+  reviewed `sync_configuration`, including `auto_commit_paths`,
+  `append_only_paths` and `allow_destructive_paths` for standard sync.
+
+Derive these sync values from the same approved request/resident records used
+for bootstrap, not by rereading the branch's current manifest or inventing a
+fresh local policy. Preserve the reviewed JSON and literal scopes exactly.
+Standard import approval checks this policy; missing or mismatched values fail
+closed, even if the new manifest would otherwise validate.
 
 Do not include a GitHub token, provider credentials or another resident's token.
 Do not print the file or place it in Git. These are the same approval-context
@@ -136,7 +148,9 @@ Place `resident-home.json` at the repository root, for example:
 ```
 
 Use a stable, unique identity ID. Referenced input files must exist, be nonempty
-and remain inside the repository. The sync entry point must be a Python file.
+and remain inside the repository. With **Keep existing sync** (the default), the
+sync entry point must be a Python file. **Use standard two-way Git sync** permits
+the manifest to omit `sync`; it uses the house's standalone runner instead.
 `sync_status` is optional and may name a file not yet created. Do not use symlinks
 to machine-local files or commit a different host's Chaos database.
 
@@ -150,6 +164,96 @@ variable rather than hard-coding a laptop path. See the [runtime
 contract](../../agent-runtime/README.md#opt-in-imported-homes-mira_v1-portable_v1)
 for hook import, sync status and existing-profile compatibility.
 
+## Choose and review the sync policy
+
+The import form offers **Keep existing sync** and **Use standard two-way Git
+sync**. Existing sync leaves the reviewed home's own script responsible for its
+policy. This choice does not enroll or modify an existing resident.
+
+Standard sync exchanges committed changes with the selected branch on `origin`.
+It does not save arbitrary uncommitted work. To opt into automatic commits,
+declare literal repository-relative file or directory scopes in the manifest:
+
+```json
+{
+  "standard_sync": {
+    "auto_commit_paths": ["journals", "notes"],
+    "append_only_paths": ["journals"],
+    "allow_destructive_paths": []
+  }
+}
+```
+
+An absent or empty `auto_commit_paths` list means **committed changes only**:
+uncommitted edits are not automatically saved. Never include credentials,
+host-local state or unreviewed identity anchors. Append-only and destructive
+allowance scopes must be inside the eligible auto-commit scopes. The request
+shows the exact immutable policy taken from the reviewed manifest before
+approval; there is no browser path editor.
+
+To change this policy, the resident updates `standard_sync` in its repository
+manifest and pushes the change. An account user authorised to manage the import
+then uses **Refresh review** on the existing request and confirms the new policy.
+This uses the account's own permissions, not site-admin approval. Refreshing
+invalidates the previous approval until the new review is confirmed; it does not
+replace the resident or its checkout. The running policy must match the newly
+reviewed manifest. Do not bypass that check by editing the runtime's policy
+environment.
+
+All auto-commit paths are protected: deletion, or shrink below 50% of HEAD byte
+size, is refused without an explicit destructive allowance. This is a coarse
+safeguard: a 40% truncation still passes that size check. Use append-only policy
+for journals that must never lose existing text, and review identity-anchor
+changes deliberately. This also checks
+incoming committed changes, not only uncommitted local edits. Append-only paths
+always refuse rewriting or truncation, even with an allowance. Append-only
+merging requires an exact common-base complete UTF-8 line prefix. Each appended
+suffix remains verbatim, including multiline order, repeated lines and blanks.
+Equal suffixes are deduplicated as whole blocks. If one entire suffix is a prefix
+of the other, only the longer remains; genuinely divergent suffixes are
+concatenated with the remote's published block first, then the local block.
+Published content is not reordered to impose lexical or chronological order.
+Individual lines
+are never sorted or deduplicated. This is not general conflict resolution or a
+guarantee of chronological ordering between concurrent hosts.
+This supports clones following the published `origin` history, not arbitrary
+history repair: a clone copied from an unpublished merge side-parent, or an
+older history that already reordered published text, may fail the prefix check.
+Such histories remain preserved for manual reconciliation rather than being
+silently rewritten.
+
+Staged changes, edits outside the eligible policy, an existing Git operation,
+or the wrong branch stop a cycle for manual review. Ignored or untracked files
+that integration would overwrite cause an explicit refusal and remain intact.
+On conflict or integration
+failure, the runner aborts integration, preserves local commits and attempts a
+non-force push of local HEAD to a unique `rescue/<host>/<UTCtimestamp>-<random>`
+ref. A rescue push is **not** successful sync of the selected branch. If rescue
+fails, keep the local copy; do not discard it, overwrite another host or
+force-push. Preserve both sides and reconcile deliberately before retrying.
+The resident can reconcile from its own checkout using its existing Git
+credential and ordinary Git commands; no site-admin approval is required.
+Pause automatic sync while doing this work, preserve the local and remote
+commits, and involve the account user when the intended resolution is ambiguous
+or destructive. A policy refusal is not permission to discard protected content.
+Rescue refs contain committed HEAD only, never ignored files or uncommitted
+private data. A rejected push to the selected branch is a failure, not sync
+success.
+
+### Read sync health honestly
+
+The import page displays a cached runtime health check, not a live Git query:
+last confirmed success, its reported age, report time and any rescue
+outcome. `unknown` and `stale` do not mean up to date. `busy`, `blocked`, `failed`
+and `needs_attention` do not advance the last-success timestamp. Protected
+refusals and conflicts need attention; rescue success and rescue failure are
+reported separately, neither as branch-sync success. Even a successful check
+does not prove every other host has synchronized or that external memory works.
+No raw Git output, private contents or arbitrary runner error is displayed.
+Age is calculated when the page is presented, not a ticking browser clock.
+A formerly successful report becomes stale after 30 minutes without confirmed
+success, or when its success timestamp is missing.
+
 ## Keep using the identity locally
 
 Keep independent working copies on each host. The house is an additional home,
@@ -160,6 +264,56 @@ git clone git@github.com:example-org/example-home.git
 cd example-home
 export SOULSHOUSE_HOME_ROOT="$PWD"
 ```
+
+### Run standard sync locally
+
+The same standalone runner can be used outside the hosted runtime. It needs
+Python 3.9+ on Linux or macOS, Git, a checkout on the selected branch with no
+staged changes or unfinished Git operation, and your own working
+`origin` credentials (Contents write permission for GitHub pushes). It contains
+no credentials and installs no scheduler or cross-harness adapter.
+The runner's Git commands use `Home sync <home-sync@localhost>` as the commit
+author; installing a personal Git author is not a prerequisite.
+
+Install the pinned runner outside the identity repository, verify its checksum,
+then run it against the existing local checkout:
+
+```sh
+# Pinned implementation revision and checksum are recorded with this release.
+SYNC_COMMIT=9210880ed0548bc27eef616cb0193949d2eedbff
+SYNC_SHA256=df4af498cfc0a9c0073e65e4db6c2dfdd27d913e367324383ccb66b44d2e3f49
+SYNC_FILE="$HOME/.local/share/souls-house/standard_home_sync.py"
+mkdir -p "$(dirname "$SYNC_FILE")"
+curl --fail --location \
+  "https://raw.githubusercontent.com/swombat/souls-house/$SYNC_COMMIT/agent-runtime/standard_home_sync.py" \
+  --output "$SYNC_FILE"
+printf '%s  %s\n' "$SYNC_SHA256" "$SYNC_FILE" | shasum -a 256 -c - &&
+  python3 "$SYNC_FILE" --root "$SOULSHOUSE_HOME_ROOT" --branch main
+```
+
+That default syncs **committed changes only**. For the example policy above,
+replace the final invocation with:
+
+```sh
+python3 "$SYNC_FILE" --root "$SOULSHOUSE_HOME_ROOT" --branch main \
+  --auto-commit-path journals --auto-commit-path notes \
+  --append-only-path journals
+```
+
+Repeat `--auto-commit-path`, `--append-only-path` and, only for explicitly reviewed
+exceptions, `--allow-destructive-path` as needed to match the manifest's policy.
+Choose the real selected branch, not necessarily `main`. Only `origin` is used;
+the command does not discover arbitrary remotes or configure authentication.
+Keep the runner file pinned and verified when wiring this command into your
+local harness's supported hooks or scheduler. That wiring is your separate
+local setup, not performed by import or by this command. Review output and
+manual failure guidance before scheduling repeated cycles.
+
+The common Git directory holds `standard-home-sync-status.json` and
+`standard-home-sync.lock`, outside the versioned home. The advisory lock
+coordinates this runner only: keep other Git operations and editors quiescent
+while a cycle runs. Do not delete a held lock to bypass another cycle. Hosted
+standard sync checks every ten minutes; local scheduling remains separate.
 
 Use the local harness's supported instruction entry point:
 

@@ -67,6 +67,49 @@ class Agents::GithubImportSourceTest < ActiveSupport::TestCase
     assert_empty @commands
   end
 
+  test "standard selection validates data without requiring or executing a repository sync script" do
+    path = File.join(@repo, "resident-home.json")
+    manifest = JSON.parse(File.read(path))
+    manifest.delete("sync")
+    manifest["standard_sync"] = { "auto_commit_paths" => [ "journals" ], "append_only_paths" => [ "journals" ] }
+    File.write(path, JSON.generate(manifest))
+    git("add", "resident-home.json")
+    git("commit", "-m", "Standard manifest")
+    connection = import_connection
+    source = local_source(connection, sync_strategy: "standard")
+    source.with_checkout(branch: "main") do |_root, home, _sha, _branch|
+      assert_equal [ "journals" ], home.dig("standard_sync", "auto_commit_paths")
+    end
+    assert_raises(Agents::GithubImportSource::Error) do
+      local_source(connection).with_checkout(branch: "main") { flunk }
+    end
+  end
+
+  test "standard selection refuses unsafe paths on host without running Git sync" do
+    path = File.join(@repo, "resident-home.json")
+    manifest = JSON.parse(File.read(path))
+    manifest["standard_sync"] = { "auto_commit_paths" => [ "." ] }
+    File.write(path, JSON.generate(manifest))
+    git("add", "resident-home.json")
+    git("commit", "-m", "Unsafe config")
+    assert_raises(Agents::GithubImportSource::Error) do
+      local_source(import_connection, sync_strategy: "standard").with_checkout(branch: "main") { flunk }
+    end
+  end
+
+  test "host checkout does not execute committed attributes filters or hooks" do
+    marker = File.join(@tmp, "MUST-NOT-EXIST")
+    File.write(File.join(@repo, ".gitattributes"), "* filter=evil\n")
+    FileUtils.mkdir_p(File.join(@repo, "evil-hooks"))
+    File.write(File.join(@repo, "evil-hooks/post-checkout"), "#!/bin/sh\ntouch #{marker}\n", perm: 0755)
+    git("config", "filter.evil.smudge", "touch #{marker}")
+    git("config", "core.hooksPath", "evil-hooks")
+    git("add", ".gitattributes", "evil-hooks")
+    git("commit", "-m", "Executable config stays at source")
+    local_source(import_connection, sync_strategy: "standard").with_checkout(branch: "main") { |_root| }
+    assert_not File.exist?(marker)
+  end
+
   private
 
   def git(*args)
@@ -79,8 +122,8 @@ class Agents::GithubImportSourceTest < ActiveSupport::TestCase
     out
   end
 
-  def local_source(connection)
-    source = Agents::GithubImportSource.new(connection)
+  def local_source(connection, **options)
+    source = Agents::GithubImportSource.new(connection, **options)
     real = source.method(:run_git)
     repo = @repo
     @commands = []

@@ -5,6 +5,9 @@
   import GithubTokenAuthority from '$lib/components/agents/github-token-authority.svelte';
   import GithubImportApproval from '$lib/components/agents/github-import-approval.svelte';
   import GithubImportStatus from '$lib/components/agents/github-import-status.svelte';
+  import GithubSyncOptions from '$lib/components/agents/github-sync-options.svelte';
+  import GithubSyncReview from '$lib/components/agents/github-sync-review.svelte';
+  import GithubSyncHealth from '$lib/components/agents/github-sync-health.svelte';
   import { accountAgentsPath, accountPersonalServicesPath } from '@/routes';
 
   let {
@@ -19,6 +22,10 @@
     retry_activation_url: retryActivationUrl = null,
     runtime_trust_notice: runtimeTrustNotice = '',
     future_branch_trust_notice: futureBranchTrustNotice = '',
+    sync_strategies: syncStrategies = [
+      { value: 'existing', label: 'Keep existing sync' },
+      { value: 'standard', label: 'Use standard two-way Git sync' },
+    ],
   } = $props();
 
   let form = useForm({
@@ -27,6 +34,7 @@
       model_id: models[0]?.model_id || '',
       service_connection_id: connections[0]?.id || '',
       branch: '',
+      sync_strategy: 'existing',
     },
   });
   let selectedConnection = $derived(
@@ -97,6 +105,10 @@
 
   {#if request}
     <GithubImportStatus {request} {retryActivationUrl} {runtimeTrustNotice} />
+    {#if request.sync_strategy === 'standard'}
+      <GithubSyncHealth health={request.sync_health} />
+    {/if}
+    <GithubSyncReview {request} />
     <GithubTokenAuthority metadata={request.token_metadata} title="Reviewed token authority" compact />
     {#if request.current_token_metadata && request.credential_changed}
       <GithubTokenAuthority metadata={request.current_token_metadata} title="Current token authority" compact />
@@ -178,6 +190,11 @@
       {#if errorsFor('branch')}
         <p role="alert" class="text-sm text-destructive">{errorsFor('branch')}</p>
       {/if}
+      <GithubSyncOptions
+        bind:value={$form.github_resident_import.sync_strategy}
+        strategies={syncStrategies}
+        disabled={$form.processing}
+        error={errorsFor('sync_strategy')} />
       <p class="text-sm text-muted-foreground">
         Submitting requests review; it does not approve or run repository code.
       </p>

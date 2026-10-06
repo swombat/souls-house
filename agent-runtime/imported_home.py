@@ -27,6 +27,19 @@ IMPORTED_PROFILES = {
 MANIFEST_FILE_KEYS = ('instructions', 'soul', 'narrative', 'hooks', 'journal_reader')
 
 
+def sync_strategy():
+    value = os.environ.get('SOULSHOUSE_HOME_SYNC_STRATEGY', 'existing')
+    if value not in ('existing', 'standard') or (value == 'standard' and profile() != 'portable_v1'):
+        raise ValueError('unsupported home sync selection')
+    return value
+
+
+def standard_sync_configuration(manifest):
+    from standard_home_sync import validate_configuration
+    reviewed = os.environ.get('SOULSHOUSE_HOME_SYNC_CONFIGURATION')
+    return validate_configuration(json.loads(reviewed) if reviewed else manifest.get('standard_sync', {}))
+
+
 def profile():
     value = os.environ.get('SOULSHOUSE_HOME_PROFILE') or HOUSE_PROFILE
     if value != HOUSE_PROFILE and value not in IMPORTED_PROFILES:
@@ -138,7 +151,9 @@ def validate(root=None):
         raise ValueError('imported home profile requires its existing external graph')
     for key in MANIFEST_FILE_KEYS:
         home_file(root, manifest.get(key), key)
-    if 'sync' in manifest or IMPORTED_PROFILES[selected]['default_sync'] is None:
+    if sync_strategy() == 'standard':
+        standard_sync_configuration(manifest)
+    elif 'sync' in manifest or IMPORTED_PROFILES[selected]['default_sync'] is None:
         # An explicit sync path is part of the manifest contract. A profile
         # with no compatibility default must declare one. mira_v1's default is
         # checked by the sync loop instead, so her turns do not change.

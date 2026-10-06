@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 from pathlib import Path
 import sys
@@ -47,6 +48,26 @@ class ManagedImportTest(unittest.TestCase):
                       {**request, "protocol": "http"}):
             self.assertIsNone(helper.credentials(wrong, services, "svc_12", "owner/home"))
         self.assertIsNone(helper.credentials(request, services, "svc_other", "owner/home"))
+
+    def test_standard_policy_and_strategy_must_match_server_before_any_git(self):
+        config = {'auto_commit_paths': ['notes'], 'append_only_paths': ['notes']}
+        env = {
+            'SOULSHOUSE_HOME_PROFILE': 'portable_v1', 'SOULSHOUSE_HOME_SYNC_STRATEGY': 'standard',
+            'SOULSHOUSE_HOME_SYNC_CONFIGURATION': json.dumps(config),
+            'SOULSHOUSE_GITHUB_IMPORT_ID': '12', 'SOULSHOUSE_GITHUB_IMPORT_FINGERPRINT': 'opaque',
+            'SOULSHOUSE_GITHUB_IMPORT_REPOSITORY': 'owner/home',
+            'SOULSHOUSE_GITHUB_IMPORT_BRANCH': 'main', 'SOULSHOUSE_PORTABLE_HOME_ID': 'identity'}
+        approved = {'approved': True, 'import_id': '12', 'credential_fingerprint': 'opaque',
+                    'repository': 'owner/home', 'branch': 'main', 'portable_home_id': 'identity',
+                    'home_profile': 'portable_v1', 'sync_strategy': 'standard', 'sync_configuration': config}
+        with patch.dict(os.environ, env, clear=True), \
+                patch.object(guard.imported_home, 'validate', return_value=(Path('/home'), {'identity_id': 'identity'})), \
+                patch.object(guard.subprocess, 'run') as run:
+            for changed in ({'sync_strategy': 'existing'}, {'sync_configuration': {'auto_commit_paths': ['private']}}):
+                with self.assertRaises(ValueError):
+                    guard.check(lambda: {**approved, **changed})
+                run.assert_not_called()
+            self.assertTrue(guard.check(lambda: approved))
 
     def test_guard_precedes_hook_import_and_sync_start(self):
         text = (RUNTIME / "entrypoint.sh").read_text()

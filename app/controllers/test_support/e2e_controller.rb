@@ -413,10 +413,55 @@ module TestSupport
         approved_credential_fingerprint: connection.credential_fingerprint,
         approved_image: "example-runtime:synthetic"
       ))
+      standard_attributes = attributes.merge(
+        name: "Example standard sync", portable_home_id: "example-standard-#{run_id}",
+        sync_strategy: "standard",
+        sync_configuration: {
+          "auto_commit_paths" => [ "journals", "notes" ],
+          "append_only_paths" => [ "journals" ], "allow_destructive_paths" => []
+        }
+      )
+      standard = GithubResidentImport.create!(standard_attributes) if params[:standard_home_sync]
+      if standard
+        ready_attributes = standard_attributes.merge(
+          status: "ready", approved_by: user, approved_at: Time.current,
+          approved_commit_sha: attributes[:commit_sha],
+          observed_branch_sha_at_approval: attributes[:commit_sha],
+          approved_credential_fingerprint: connection.credential_fingerprint,
+          approved_image: "example-runtime:synthetic"
+        )
+        conflict_health = {
+          "state" => "needs_attention", "checked_at" => Time.current.iso8601,
+          "last_success_at" => 2.hours.ago.iso8601, "reason_code" => "merge_conflict",
+          "rescue_ref" => "rescue/synthetic/20261006T100000000000Z-abcdef012345", "rescue_status" => "pushed"
+        }
+        conflict = GithubResidentImport.create!(ready_attributes.merge(
+          name: "Example sync conflict", portable_home_id: "example-conflict-#{run_id}",
+          sync_health: conflict_health
+        ))
+        rescue_failed = GithubResidentImport.create!(ready_attributes.merge(
+          name: "Example rescue failure", portable_home_id: "example-rescue-failed-#{run_id}",
+          sync_health: conflict_health.merge("rescue_status" => "failed")
+        ))
+        stale = GithubResidentImport.create!(ready_attributes.merge(
+          name: "Example stale sync", portable_home_id: "example-stale-#{run_id}",
+          sync_configuration: {},
+          sync_health: {
+            "state" => "ok", "checked_at" => 2.days.ago.iso8601,
+            "last_success_at" => 2.days.ago.iso8601, "reason_code" => "synced", "rescue_status" => "not_needed"
+          }
+        ))
+      end
       base = "/accounts/#{account.to_param}/github_resident_imports"
       { github_import_url: "#{base}/#{pending.to_param}", github_import_new_url: "#{base}/new",
         github_import_failed_url: "#{base}/#{failed.to_param}",
-        github_import_trust_url: "#{base}/#{waiting_trust.to_param}" }
+        github_import_trust_url: "#{base}/#{waiting_trust.to_param}",
+        **(standard ? {
+          standard_sync_review_url: "#{base}/#{standard.to_param}",
+          standard_sync_conflict_url: "#{base}/#{conflict.to_param}",
+          standard_sync_rescue_failed_url: "#{base}/#{rescue_failed.to_param}",
+          standard_sync_stale_url: "#{base}/#{stale.to_param}"
+        } : {}) }
     end
 
     def ensure_test_environment

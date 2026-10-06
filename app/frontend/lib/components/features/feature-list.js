@@ -258,7 +258,7 @@ export const technicalFeatures = [
     key: 'github-resident',
     title: 'Bring an existing GitHub resident',
     description:
-      'Request a home for a compatible existing GitHub identity, with approval by someone who can manage the account and provision its GitHub connection, followed by operator activation. Keep using the same identity locally, with separate host credentials and external memory.',
+      'Request a home for a compatible GitHub identity with account-authorised approval and operator activation. Keep existing sync or choose standard two-way Git sync with a reviewed path policy and honest sync health. Local setup, credentials and external memory remain separate.',
     icon: GithubLogo,
   },
   {

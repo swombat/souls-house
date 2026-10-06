@@ -5,6 +5,46 @@ class GithubResidentImportTest < ActiveSupport::TestCase
 
   include GithubImportFixtures
 
+  test "sync selection and policies are immutable reviewed configuration" do
+    request = import_request(sync_strategy: "standard", sync_configuration: {
+      "auto_commit_paths" => [ "journals" ], "append_only_paths" => [ "journals" ] })
+    assert_not request.update(sync_strategy: "existing")
+    request.reload
+    assert_not request.update(sync_configuration: { "auto_commit_paths" => [ "private" ] })
+    request.reload
+    assert request.update(sync_health: { "state" => "unknown" })
+  end
+
+  test "sync scopes are literal bounded and policy paths remain within commit scopes" do
+    request = import_request
+    [ { "auto_commit_paths" => [ "." ] }, { "auto_commit_paths" => [ ".git/config" ] },
+      { "auto_commit_paths" => [ "safe" ], "append_only_paths" => [ "other" ] },
+      { "auto_commit_paths" => [ "safe/*" ] }, { "unknown" => true } ].each do |config|
+      request.reload
+      request.assign_attributes(sync_strategy: "standard", sync_configuration: config)
+      assert_not request.valid?
+    end
+  end
+
+  test "safe health projection drops arbitrary strings and surfaces current success age" do
+    request = import_request(sync_strategy: "standard")
+    request.record_sync_health!({ "state" => "needs_attention", "reason_code" => "merge_conflict",
+      "checked_at" => Time.current.iso8601, "last_success_at" => 2.hours.ago.iso8601,
+      "rescue_ref" => "rescue/synthetic/20261006T120000000000Z-abcdefabcdef", "rescue_status" => "pushed",
+      "private_output" => "secret" })
+    props = request.sync_health_props
+    assert_equal "needs_attention", props["state"]
+    assert_equal "pushed", props["rescue_status"]
+    assert_operator props["last_success_age_seconds"], :>=, 7199
+    assert_not props.key?("private_output")
+    request.record_sync_health!({ "state" => "ok", "reason_code" => "synced", "last_success_at" => 2.hours.ago.iso8601 })
+    assert_equal "stale", request.sync_health_props["state"]
+    request.record_sync_health!({ "state" => "secret", "reason_code" => "secret", "rescue_ref" => "private" })
+    assert_equal "unknown", request.sync_health_props["state"]
+    assert_nil request.sync_health_props["rescue_ref"]
+    assert_not_includes request.sync_health.to_json, "secret"
+  end
+
   test "current account and connection permissions authorize approval and remain live" do
     assert GithubResidentImport.requestable_by?(accounts(:team_account), users(:user_1))
     assert_not GithubResidentImport.requestable_by?(accounts(:team_account), users(:existing_user))
@@ -118,6 +158,51 @@ class GithubResidentImportTest < ActiveSupport::TestCase
     Agents::Sandbox.stub(:new, sandbox) do
       assert_raises(Agent::RuntimeAvailability::Unavailable) { AccountAgentCredentialsRefreshJob.perform_now(agent.account_id, agent.id) }
     end
+  end
+
+  test "account owner refreshes and confirms changed sync policy on the same resident" do
+    request = import_request(sync_strategy: "standard", sync_configuration: {
+      "auto_commit_paths" => [ "journals" ], "append_only_paths" => [], "allow_destructive_paths" => []
+    })
+    approve_fixture(request)
+    owner, repo = request.repository.split("/")
+    agent = request.create_agent!(account: request.account, name: "Policy change", runtime: "external",
+      home_profile: "portable_v1", portable_home_id: request.portable_home_id, identity_seeded_at: Time.current,
+      github_repo_url: "https://github.com/#{request.repository}", github_repo_owner: owner, github_repo_name: repo,
+      container_image: request.approved_image)
+    request.update!(status: "ready")
+    user = request.requested_by
+    assert_not user.site_admin
+    policy = { "auto_commit_paths" => [ "journals" ], "append_only_paths" => [ "journals" ],
+      "allow_destructive_paths" => [] }
+    source = Object.new
+    source.define_singleton_method(:with_checkout) do |branch:, **_options, &block|
+      block.call("/synthetic", { "identity_id" => request.portable_home_id, "standard_sync" => policy }, "b" * 40, branch)
+    end
+    connection = request.service_connection
+    result = { credential_fingerprint: connection.credential_fingerprint, credential_metadata: connection.credential_metadata }
+    definition = connection.definition
+    adapter = definition.adapter
+    adapter.stub(:connection_attributes, result) do
+      definition.stub(:adapter, adapter) do
+        connection.stub(:definition, definition) do
+          Agents::GithubImportSource.stub(:new, source) { request.refresh_review!(user) }
+        end
+      end
+    end
+    assert_equal "pending_review", request.reload.status
+    assert request.approval_error
+    assert_equal policy, request.sync_configuration
+    assert_equal agent.id, request.agent.id
+    assert_equal agent.identity_seeded_at, request.agent.identity_seeded_at
+    Agents::GithubImportSource.stub(:new, source) do
+      assert_enqueued_with(job: GithubResidentImportJob, args: [ request.id ]) do
+        request.approve!(user, review_revision: request.review_revision)
+      end
+    end
+    assert_nil request.reload.approval_error
+    assert_equal user, request.approved_by
+    assert_equal policy, request.sync_configuration
   end
 
   test "same request refreshes rotated credential review without replacing resident or identity" do

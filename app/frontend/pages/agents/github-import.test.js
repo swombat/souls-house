@@ -59,9 +59,24 @@ test('prepares a request without a soul seed or automatic execution', async () =
       model_id: 'openai/test-model',
       service_connection_id: 'connection',
       branch: '',
+      sync_strategy: 'existing',
     },
   });
   expect(router.post).not.toHaveBeenCalled();
+});
+
+test('standard sync is an explicit choice with manifest-owned paths, not a paths editor', async () => {
+  render(GithubImport, props);
+  expect(screen.getByRole('radio', { name: 'Keep existing sync' })).toBeChecked();
+  await fireEvent.click(screen.getByRole('radio', { name: 'Use standard two-way Git sync' }));
+  expect(screen.getByText(/uncommitted edits are not automatically saved/)).toBeVisible();
+  expect(screen.getByText(/not a promise of automatic conflict resolution/)).toBeVisible();
+  expect(screen.queryByRole('textbox', { name: /paths/i })).not.toBeInTheDocument();
+  await fireEvent.input(screen.getByLabelText('Resident display name'), { target: { value: 'Example' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Request account approval' }));
+  const form = get(useForm.mock.results.at(-1).value);
+  expect(form.github_resident_import.sync_strategy).toBe('standard');
+  expect(form.github_resident_import).not.toHaveProperty('sync_auto_commit_paths');
 });
 
 test.each(['classic', 'unknown', 'unexpected_kind'])(

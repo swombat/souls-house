@@ -7,6 +7,7 @@ class Api::V1::GithubImportApprovalsController < Api::V1::BaseController
     render json: { approved: true, import_id: request.id.to_s,
       repository: request.repository, branch: request.branch,
       portable_home_id: request.portable_home_id, home_profile: "portable_v1",
+      sync_strategy: request.sync_strategy, sync_configuration: request.sync_configuration,
       credential_fingerprint: request.approved_credential_fingerprint,
       commit_sha: request.approved_commit_sha }
   end

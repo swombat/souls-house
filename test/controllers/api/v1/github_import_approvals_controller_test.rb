@@ -19,6 +19,8 @@ class Api::V1::GithubImportApprovalsControllerTest < ActionDispatch::Integration
     get api_v1_agent_github_import_approval_path, headers: headers
     assert_response :success
     assert_equal request.approved_credential_fingerprint, response.parsed_body["credential_fingerprint"]
+    assert_equal "existing", response.parsed_body["sync_strategy"]
+    assert_equal({}, response.parsed_body["sync_configuration"])
     assert_not_includes response.body, "github_pat_synthetic"
 
     membership = request.account.memberships.find_by!(user: request.approved_by)

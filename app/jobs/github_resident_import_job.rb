@@ -9,7 +9,7 @@ class GithubResidentImportJob < ApplicationJob
       request.require_approval!
       request.update!(status: "provisioning", last_error: nil)
     end
-    source = Agents::GithubImportSource.new(request.service_connection)
+    source = Agents::GithubImportSource.new(request.service_connection, sync_strategy: request.sync_strategy)
     source.with_checkout(branch: request.branch, commit_sha: request.approved_commit_sha) do |root, manifest, sha, branch|
       raise Agents::GithubImportSource::Error, "Reviewed home identity changed" unless
         manifest["identity_id"] == request.portable_home_id && sha == request.commit_sha && branch == request.branch
