@@ -81,6 +81,28 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
     assert_response :redirect
   end
 
+  test "one reachability rule across discarded messages and discarded Field files" do
+    file = @account.field_files.create!(file: upload, uploaded_by: @user)
+    blob = file.file.blob
+    chat = @account.chats.create!(model_id: "openrouter/auto", title: "Shared blob")
+    message = chat.messages.create!(content: "Same bytes", role: "user", user: @user)
+    message.attachments.attach(blob)
+    url = Rails.application.routes.url_helpers.rails_blob_path(blob, disposition: :attachment, only_path: true)
+
+    file.discard!
+    get url
+    assert_response :redirect, "a kept message still owns the blob"
+
+    message.discard!
+    get url
+    follow_redirect! if response.redirect?
+    assert_response :not_found, "discarded owners must not keep each other reachable"
+
+    file.undiscard!
+    get url
+    assert_response :redirect, "a kept Field file still owns the blob"
+  end
+
   test "another account's files cannot be deleted or edited" do
     other = accounts(:another_team)
     file = other.field_files.create!(file: upload)

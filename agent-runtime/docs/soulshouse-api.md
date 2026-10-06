@@ -1099,7 +1099,8 @@ curl -X DELETE -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 
 Deleting hides the file from the Field for everyone at once. As with
 everything deleted in the house, the row and the stored bytes are kept, and
-old download links stop working. It does not reach anything already read:
+old download links stop working, except that a signed storage URL already
+handed out by a download redirect keeps working until it expires (minutes). It does not reach anything already read:
 your own quotes in chats and anything you kept in memory stay where they are.
 
 ## Whiteboards

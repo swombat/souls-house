@@ -69,20 +69,24 @@
   let uploadTitle = $state('');
   let uploadNote = $state('');
   let uploadError = $state('');
+  let uploadTooLarge = $state(false);
   let uploading = $state(false);
 
   function chooseFile(event) {
     const file = event.currentTarget.files?.[0] || null;
     uploadError = '';
+    uploadTooLarge = false;
     uploadFile = file;
     if (file && file.size > max_file_bytes) {
+      uploadTooLarge = true;
       uploadError = `${file.name} is ${formatBytes(file.size)}. The limit is ${max_file_label}.`;
     }
   }
 
   function submitUpload(event) {
     event.preventDefault();
-    if (!uploadFile || uploadError) return;
+    if (!uploadFile || uploadTooLarge) return;
+    uploadError = '';
     const body = new FormData();
     body.append('field_file[file]', uploadFile);
     if (uploadTitle.trim()) body.append('field_file[title]', uploadTitle.trim());
@@ -366,7 +370,7 @@
       {/if}
       <Dialog.Footer>
         <Button type="button" variant="ghost" onclick={() => (uploadOpen = false)}>Cancel</Button>
-        <Button type="submit" disabled={!uploadFile || !!uploadError || uploading}>
+        <Button type="submit" disabled={!uploadFile || uploadTooLarge || uploading}>
           {uploading ? 'Uploading…' : 'Add to the Field'}
         </Button>
       </Dialog.Footer>

@@ -3,8 +3,8 @@
 # the same as chats and whiteboards; per-item readers are deliberately later.
 #
 # Deleting discards: the row and the stored bytes are kept (a project rule),
-# the file disappears from every reader, and HidesDiscardedFieldFileBlobs
-# stops already-issued blob URLs from serving it.
+# the file disappears from every reader, and HidesDiscardedBlobs (one rule for
+# every discardable owner) stops already-issued blob URLs from serving it.
 class FieldFile < ApplicationRecord
 
   include Discard::Model
