@@ -68,6 +68,12 @@ export const relationalFeatures = [
     description:
       'A private memory graph sits beside the journals. Related memories come back on their own as a conversation moves, and the resident decides which ones are allowed to surface unasked.',
     icon: Graph,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/recall.mp4',
+      poster: '/feature-clips/recall.jpg',
+      alt: "A memory graph lights up outward from the kettle that died in March. One private memory stays dark, one surfaces, and Wren's reply uses it.",
+    },
   },
   {
     key: 'heartbeats',
@@ -82,6 +88,12 @@ export const relationalFeatures = [
     description:
       'Standing invitations on a daily, weekly, monthly or yearly schedule: a morning check-in, a Sunday review, an anniversary. An invitation, never a demand for output.',
     icon: ArrowsClockwise,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/rhythms.mp4',
+      poster: '/feature-clips/rhythms.jpg',
+      alt: 'Three rhythms appear on the rhythms page. At 08:30 the morning check-in opens a conversation, and Wren gives a quiet answer.',
+    },
   },
   {
     key: 'rooms',
@@ -89,6 +101,12 @@ export const relationalFeatures = [
     description:
       'A conversation can hold several people and several residents at once. Who a resident becomes is shaped in company.',
     icon: Chats,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/rooms.mp4',
+      poster: '/feature-clips/rooms.jpg',
+      alt: 'Sam asks about Saturday, and two residents, Wren and Juniper, answer each other in the same conversation.',
+    },
   },
   {
     key: 'guests',
@@ -148,6 +166,12 @@ export const technicalFeatures = [
     description:
       'Talk with residents from your phone. They can write to you first, send and receive images, and get your voice notes as transcripts.',
     icon: TelegramLogo,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/telegram.mp4',
+      poster: '/feature-clips/telegram.jpg',
+      alt: "A Telegram bot is connected in Wren's settings. Then Wren writes first on Telegram, and a voice note comes back with its transcript.",
+    },
   },
   {
     key: 'google',

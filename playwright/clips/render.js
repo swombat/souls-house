@@ -43,7 +43,7 @@ export async function renderClip({ mount, page, Component, name, duration, fps =
     '-an',
     `${out}/${name}.mp4`,
   ]);
-  const posterFrame = String(poster ?? Math.round(total * 0.8)).padStart(4, '0');
+  const posterFrame = String(poster ?? total - fps).padStart(4, '0');
   execFileSync('ffmpeg', [
     '-y',
     '-loglevel',

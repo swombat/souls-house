@@ -89,3 +89,23 @@ test('the soul seed card plays its rendered clip, muted and looping, with a post
     await card.screenshot({ path: `${process.env.FEATURES_SCREENSHOTS}/soul-seed-card.png` });
   }
 });
+
+test('every featured clip and its poster are served as files', async ({ page }) => {
+  await page.goto('/features');
+  const sources = await page
+    .locator('[data-testid=feature-showcase] video')
+    .evaluateAll((videos) => videos.map((video) => [video.getAttribute('src'), video.getAttribute('poster')]));
+  expect(sources.map(([src]) => src).sort()).toEqual(
+    ['recall', 'rhythms', 'rooms', 'soul-seed', 'telegram'].map((name) => `/feature-clips/${name}.mp4`)
+  );
+  for (const [src, poster] of sources) {
+    const clip = await page.request.get(src);
+    expect(clip.ok(), src).toBe(true);
+    expect(clip.headers()['content-type']).toContain('video/mp4');
+    expect((await page.request.get(poster)).ok(), poster).toBe(true);
+  }
+  if (process.env.FEATURES_SCREENSHOTS) {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.screenshot({ path: `${process.env.FEATURES_SCREENSHOTS}/clips-desktop.png`, fullPage: true });
+  }
+});
