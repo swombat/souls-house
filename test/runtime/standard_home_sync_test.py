@@ -149,15 +149,58 @@ class StandardHomeSyncTest(unittest.TestCase):
             status, code = self.run_sync(config)
             self.assertEqual((code, status['reason_code']), (1, 'append_only_violation'))
 
-    def test_independent_append_merge_is_deterministic_deduplicated(self):
+    def test_independent_append_merge_preserves_each_suffix_verbatim(self):
         (self.home / 'journal.txt').write_text('base\nzebra\nshared\n')
         (self.peer / 'journal.txt').write_text('base\nalpha\nshared\n')
         self.commit(self.peer, 'peer append')
         self.git(self.peer, 'push', 'origin', 'main')
         status, code = self.run_sync()
         self.assertEqual((code, status['state']), (0, 'ok'))
-        self.assertEqual((self.home / 'journal.txt').read_text(), 'base\nalpha\nshared\nzebra\n')
+        self.assertEqual((self.home / 'journal.txt').read_text(), 'base\nalpha\nshared\nzebra\nshared\n')
         self.assertEqual(self.git(self.home, 'status', '--porcelain'), '')
+
+    def assert_append_merge(self, ours, theirs, expected):
+        base = '# Existing entry\n\nExisting body.\n\n'
+        (self.home / 'journal.txt').write_text(base)
+        self.commit(self.home, 'shared multiline base')
+        self.git(self.home, 'push', 'origin', 'main')
+        self.git(self.peer, 'pull', '--ff-only', 'origin', 'main')
+        (self.home / 'journal.txt').write_text(base + ours)
+        (self.peer / 'journal.txt').write_text(base + theirs)
+        if theirs:
+            self.commit(self.peer, 'peer multiline append')
+            self.git(self.peer, 'push', 'origin', 'main')
+        status, code = self.run_sync()
+        self.assertEqual((code, status['state']), (0, 'ok'))
+        self.assertEqual((self.home / 'journal.txt').read_text(), base + expected)
+        self.assertEqual(self.git(self.home, 'status', '--porcelain'), '')
+
+    def test_multiline_divergent_suffixes_keep_headings_body_and_repeated_blanks(self):
+        ours = '## Zebra entry\n\nBody first.\nRepeated.\nRepeated.\n\n\nBody last.\n\n'
+        theirs = '## Alpha entry\n\nFirst.\n\n\nSecond.\nRepeated.\nRepeated.\n\n'
+        self.assert_append_merge(ours, theirs, theirs + ours)
+
+    def test_single_sided_remote_append_is_not_reordered_during_integration(self):
+        suffix = '## Heading\n\nZebra body.\nAlpha body.\nRepeated.\nRepeated.\n\n\n'
+        self.assert_append_merge('', suffix, suffix)
+
+    def test_single_sided_local_append_is_not_reordered(self):
+        suffix = '## Heading\n\nZebra body.\nAlpha body.\nRepeated.\nRepeated.\n\n\n'
+        self.assert_append_merge(suffix, '', suffix)
+
+    def test_identical_multiline_suffix_is_deduplicated_only_as_a_whole_block(self):
+        suffix = '## Same entry\n\nRepeated.\nRepeated.\n\n\nBody after blanks.\n\n'
+        self.assert_append_merge(suffix, suffix, suffix)
+
+    def test_prefix_contained_multiline_suffix_retains_longer_extension(self):
+        suffix = '## Shared entry\n\nRepeated.\nRepeated.\n\n\n'
+        longer = suffix + '## Next entry\n\nBody.\n\n'
+        self.assert_append_merge(longer, suffix, longer)
+
+    def test_remote_longer_prefix_extension_is_not_duplicated(self):
+        suffix = '## Shared entry\n\nRepeated.\nRepeated.\n\n\n'
+        longer = suffix + '## Next entry\n\nBody.\n\n'
+        self.assert_append_merge(suffix, longer, longer)
 
     def test_new_independent_append_files_are_not_mistaken_for_deletions(self):
         config = {'auto_commit_paths': ['journals'], 'append_only_paths': ['journals']}
@@ -213,6 +256,62 @@ class StandardHomeSyncTest(unittest.TestCase):
                          (1, 'merge_conflict', 'failed'))
         self.assertEqual(local, self.git(self.home, 'rev-parse', 'HEAD'))
         self.assertIsNone(status['last_success_at'])
+
+    def test_ignored_private_file_collision_is_never_overwritten_or_published(self):
+        self.assert_ignored_collision('private.txt', 'private.txt')
+
+    def test_ignored_private_directory_cannot_be_replaced_by_remote_file(self):
+        self.assert_ignored_collision('private/nested.txt', 'private')
+
+    def test_ignored_private_file_cannot_be_replaced_by_remote_directory(self):
+        self.assert_ignored_collision('private', 'private/nested.txt')
+
+    def assert_ignored_collision(self, local_path, remote_path):
+        (self.home / '.gitignore').write_text('private*\n')
+        self.git(self.home, 'add', '.gitignore')
+        self.git(self.home, 'commit', '-m', 'ignore local private file')
+        self.git(self.home, 'push', 'origin', 'main')
+        self.git(self.peer, 'pull', '--ff-only', 'origin', 'main')
+        confirmed, code = self.run_sync({})
+        self.assertEqual(code, 0)
+        private = 'LOCAL PRIVATE SYNTHETIC CONTENT\n'
+        local_file, remote_file = self.home / local_path, self.peer / remote_path
+        local_file.parent.mkdir(parents=True, exist_ok=True)
+        remote_file.parent.mkdir(parents=True, exist_ok=True)
+        local_file.write_text(private)
+        remote_file.write_text('REMOTE TRACKED CONTENT\n')
+        self.git(self.peer, 'add', '-f', '--', remote_path)
+        self.git(self.peer, 'commit', '-m', 'introduce tracked colliding path')
+        self.git(self.peer, 'push', 'origin', 'main')
+        head = self.git(self.home, 'rev-parse', 'HEAD')
+        status, code = self.run_sync({})
+        self.assertEqual((code, status['state'], status['reason_code']),
+                         (1, 'needs_attention', 'dirty_worktree'))
+        self.assertEqual(local_file.read_text(), private)
+        self.assertEqual(self.git(self.home, 'rev-parse', 'HEAD'), head)
+        self.assertEqual(status['last_success_at'], confirmed['last_success_at'])
+        self.assertEqual(status['rescue_status'], 'pushed')
+        self.assertEqual(self.git(self.remote, 'rev-parse', status['rescue_ref']), head)
+        self.assertNotIn(local_path, self.git(self.remote, 'ls-tree', '-r', '--name-only', status['rescue_ref']))
+        self.assertEqual(self.git(self.remote, 'show', 'main:' + remote_path), 'REMOTE TRACKED CONTENT')
+        self.assertEqual(self.git(self.home, 'status', '--porcelain'), '')
+
+    def test_rejected_primary_push_preserves_head_and_last_confirmed_success(self):
+        confirmed, code = self.run_sync({})
+        self.assertEqual(code, 0)
+        upstream = self.git(self.remote, 'rev-parse', 'main')
+        (self.home / 'journal.txt').write_text('base\nlocal committed changes\n')
+        self.commit(self.home, 'local commit awaiting push')
+        local = self.git(self.home, 'rev-parse', 'HEAD')
+        hook = self.remote / 'hooks/pre-receive'
+        hook.write_text('#!/bin/sh\nexit 1\n'); hook.chmod(0o755)
+        status, code = self.run_sync({})
+        self.assertEqual((code, status['state'], status['reason_code']),
+                         (1, 'failed', 'push_failed'))
+        self.assertEqual(status['last_success_at'], confirmed['last_success_at'])
+        self.assertEqual(local, self.git(self.home, 'rev-parse', 'HEAD'))
+        self.assertEqual(upstream, self.git(self.remote, 'rev-parse', 'main'))
+        self.assertEqual(self.git(self.home, 'status', '--porcelain'), '')
 
     def test_committed_remote_append_rewrite_refuses_and_rescues(self):
         (self.peer / 'journal.txt').write_text('remote rewrite\n')

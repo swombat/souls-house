@@ -4,10 +4,13 @@ No credentials, hooks, scheduling or global Git configuration are installed.
 All auto-commit scopes are protected against deletion and shrinking below half
 their HEAD byte size, except explicitly allowed destructive scopes. Append-only
 scopes never allow rewrites. Independent append additions are complete UTF-8
-lines: retain the common base, deduplicate additions, sort them by UTF-8 bytes.
+suffix blocks: retain each block verbatim, deduplicate identical blocks, retain
+the longer prefix-contained extension, otherwise order whole blocks by UTF-8
+bytes. Never reorder or deduplicate individual lines inside a block.
 The common-dir advisory lock coordinates this runner, not arbitrary Git/editors.
 """
 import argparse
+from bisect import bisect_left
 from datetime import datetime, timezone
 import fcntl
 import json
@@ -182,9 +185,14 @@ class Sync:
                 ours, theirs = ours or b'', theirs or b''
             self.check_append(old, ours)
             self.check_append(old, theirs)
-            additions = set(line + b'\n' for data in (ours[len(old):], theirs[len(old):])
-                            for line in data.split(b'\n')[:-1])
-            merged[path] = old + b''.join(sorted(additions))
+            ours_suffix, theirs_suffix = ours[len(old):], theirs[len(old):]
+            if ours_suffix.startswith(theirs_suffix):
+                additions = ours_suffix
+            elif theirs_suffix.startswith(ours_suffix):
+                additions = theirs_suffix
+            else:
+                additions = b''.join(sorted((ours_suffix, theirs_suffix)))
+            merged[path] = old + additions
         return merged
 
     def integrate(self):
@@ -195,6 +203,17 @@ class Sync:
         merge_paths = set(self.paths('diff', '--name-only', '--no-renames', '-z', base, local) +
                           self.paths('diff', '--name-only', '--no-renames', '-z', base, remote))
         try:
+            # --no-overwrite-ignore is insufficient on some non-fast-forward
+            # merge paths. Refuse collisions explicitly before any checkout.
+            ignored = self.paths('ls-files', '--others', '--ignored', '--exclude-standard', '-z')
+            incoming = sorted(self.paths('ls-tree', '-r', '--name-only', '-z', remote))
+            tracked_paths = set(incoming)
+            for private in ignored:
+                parts = private.split('/')
+                descendant = bisect_left(incoming, private + '/')
+                if (any('/'.join(parts[:end]) in tracked_paths for end in range(1, len(parts) + 1)) or
+                        (descendant < len(incoming) and incoming[descendant].startswith(private + '/'))):
+                    raise Refused('dirty_worktree', 'needs_attention')
             append = self.append_merges(base, local, remote)
         except Refused as failure:
             # No merge has started; local commits already remain intact.
@@ -206,7 +225,7 @@ class Sync:
         # --no-ff leaves integration uncommitted so append resolution is also
         # deterministic for changes Git would otherwise merge without conflict.
         try:
-            _out, code = self.git('merge', '--no-commit', '--no-ff', remote,
+            _out, code = self.git('merge', '--no-commit', '--no-ff', '--no-overwrite-ignore', remote,
                                   reason='integration_failed', acceptable=(0, 1))
             conflicts = self.paths('diff', '--name-only', '--diff-filter=U', '-z')
             if any(path not in append for path in conflicts):
