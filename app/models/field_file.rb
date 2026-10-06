@@ -1,13 +1,19 @@
 # A file someone brought into an account's Field: material from their life
 # that the account's humans and residents can read. Visibility is the account,
 # the same as chats and whiteboards; per-item readers are deliberately later.
+#
+# Deleting discards: the row and the stored bytes are kept (a project rule),
+# the file disappears from every reader, and HidesDiscardedFieldFileBlobs
+# stops already-issued blob URLs from serving it.
 class FieldFile < ApplicationRecord
 
+  include Discard::Model
   include Broadcastable
   include ObfuscatesId
   include SyncAuthorizable
 
-  MAX_FILE_SIZE = 100.megabytes
+  MAX_FILE_SIZE = 1.gigabyte
+  MAX_FILE_SIZE_LABEL = "1 GB"
   MAX_NOTE_LENGTH = 2_000
 
   belongs_to :account
@@ -61,7 +67,7 @@ class FieldFile < ApplicationRecord
     end
 
     if file.byte_size > MAX_FILE_SIZE
-      errors.add(:file, "must be less than #{MAX_FILE_SIZE / 1.megabyte}MB")
+      errors.add(:file, "must be #{MAX_FILE_SIZE_LABEL} or smaller")
     end
   end
 

@@ -637,10 +637,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
     t.bigint "uploaded_by_id"
     t.string "title", limit: 200, null: false
     t.text "note"
+    t.datetime "discarded_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "created_at"], name: "index_field_files_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_field_files_on_account_id"
+    t.index ["discarded_at"], name: "index_field_files_on_discarded_at"
     t.index ["uploaded_by_type", "uploaded_by_id"], name: "index_field_files_on_uploaded_by"
   end
 

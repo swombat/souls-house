@@ -7,7 +7,7 @@ class FieldController < ApplicationController
   TABS = %w[all files notes].freeze
 
   def index
-    files = current_account.field_files.includes(:uploaded_by, file_attachment: :blob).newest_first
+    files = current_account.field_files.kept.includes(:uploaded_by, file_attachment: :blob).newest_first
     notes = current_account.whiteboards.active.includes(:last_edited_by).order(updated_at: :desc)
 
     render inertia: "field/index", props: {
@@ -15,7 +15,8 @@ class FieldController < ApplicationController
       notes: notes.map { |note| FieldItems.note_json(note) },
       tab: TABS.include?(params[:tab]) ? params[:tab] : "all",
       selected: params[:item].to_s.presence,
-      max_file_megabytes: FieldFile::MAX_FILE_SIZE / 1.megabyte,
+      max_file_bytes: FieldFile::MAX_FILE_SIZE,
+      max_file_label: FieldFile::MAX_FILE_SIZE_LABEL,
       account_name: current_account.name,
       account: current_account.as_json
     }

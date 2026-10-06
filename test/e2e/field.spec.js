@@ -52,7 +52,14 @@ test('a member brings a file into the Field, writes a note, and deletes the file
     await expect(page).toHaveURL(/item=file-/);
     await shot('3-file');
 
+    // A rejected note keeps the dialog open and what was typed.
     await page.getByTestId('field-new-note').click();
+    await page.getByLabel('Name').fill('E2E Whiteboard');
+    await page.getByLabel(/^Note/).fill('Typed before the clash');
+    await page.getByRole('button', { name: 'Create note' }).click();
+    await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Name has already been taken');
+    await expect(page.getByLabel(/^Note/)).toHaveValue('Typed before the clash');
+    await shot('4a-duplicate-note');
     await page.getByLabel('Name').fill('Things to return to');
     await page.getByLabel(/^Note/).fill('# Sunday\n\nThe meeting on Tuesday.');
     await page.getByRole('button', { name: 'Create note' }).click();

@@ -16,7 +16,8 @@
     notes = [],
     tab = 'all',
     selected = null,
-    max_file_megabytes = 100,
+    max_file_bytes = 1024 * 1024 * 1024,
+    max_file_label = '1 GB',
     account_name = '',
     account,
   } = $props();
@@ -74,8 +75,8 @@
     const file = event.currentTarget.files?.[0] || null;
     uploadError = '';
     uploadFile = file;
-    if (file && file.size > max_file_megabytes * 1024 * 1024) {
-      uploadError = `${file.name} is ${formatBytes(file.size)}. The limit is ${max_file_megabytes} MB.`;
+    if (file && file.size > max_file_bytes) {
+      uploadError = `${file.name} is ${formatBytes(file.size)}. The limit is ${max_file_label}.`;
     }
   }
 
@@ -88,13 +89,14 @@
     if (uploadNote.trim()) body.append('field_file[note]', uploadNote.trim());
     uploading = true;
     router.post(`/accounts/${account.id}/field/files`, body, {
+      preserveState: true,
       onSuccess: () => {
         uploadOpen = false;
         uploadFile = null;
         uploadTitle = '';
         uploadNote = '';
       },
-      onError: () => (uploadError = 'The upload failed. Please try again.'),
+      onError: (errors) => (uploadError = errors.file || 'The upload failed. Please try again.'),
       onFinish: () => (uploading = false),
     });
   }
@@ -104,20 +106,24 @@
   let noteName = $state('');
   let noteContent = $state('');
   let creatingNote = $state(false);
+  let noteError = $state('');
 
   function submitNote(event) {
     event.preventDefault();
     if (!noteName.trim()) return;
     creatingNote = true;
+    noteError = '';
     router.post(
       `/accounts/${account.id}/whiteboards`,
       { whiteboard: { name: noteName.trim(), content: noteContent } },
       {
+        preserveState: true,
         onSuccess: () => {
           noteOpen = false;
           noteName = '';
           noteContent = '';
         },
+        onError: (errors) => (noteError = errors.name || 'The note could not be saved. Please try again.'),
         onFinish: () => (creatingNote = false),
       }
     );
@@ -195,9 +201,9 @@
 
   function deleteFile() {
     const message =
-      `Delete "${current.title}" from the Field? It leaves the Field now and the stored file is queued for ` +
-      'removal. This does not reach anything a resident has already read: quotes in chats and things kept in ' +
-      'memory stay where they are.';
+      `Delete "${current.title}" from the Field? It disappears for everyone, people and residents. Like ` +
+      'everything deleted in the house, the file itself stays stored. Deleting does not reach anything a ' +
+      'resident has already read: quotes in chats and things kept in memory stay where they are.';
     if (!confirm(message)) return;
     router.delete(`/accounts/${account.id}/field/files/${current.id}`);
   }
@@ -335,7 +341,7 @@
     </Dialog.Header>
     <form onsubmit={submitUpload} class="space-y-4">
       <div class="space-y-1">
-        <Label for="field-file">File (up to {max_file_megabytes} MB)</Label>
+        <Label for="field-file">File (up to {max_file_label})</Label>
         <Input id="field-file" type="file" onchange={chooseFile} required />
         <p class="text-xs text-muted-foreground">
           Any kind of file can be kept here. Residents may not be able to read every format.
@@ -387,6 +393,9 @@
           rows="8"
           class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"></textarea>
       </div>
+      {#if noteError}
+        <p class="text-sm text-destructive" role="alert">{noteError}</p>
+      {/if}
       <Dialog.Footer>
         <Button type="button" variant="ghost" onclick={() => (noteOpen = false)}>Cancel</Button>
         <Button type="submit" disabled={!noteName.trim() || creatingNote}>Create note</Button>

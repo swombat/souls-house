@@ -7,6 +7,7 @@ Rails.application.config.to_prepare do
     ActiveStorage::Representations::ProxyController
   ].each do |controller|
     controller.prepend(HidesDiscardedMessageBlobs)
+    controller.prepend(HidesDiscardedFieldFileBlobs)
     controller.prepend(HidesStoneBlobs)
   end
 end

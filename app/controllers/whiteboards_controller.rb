@@ -21,7 +21,8 @@ class WhiteboardsController < ApplicationController
     if whiteboard.save
       redirect_to account_field_path(current_account, tab: "notes", item: "note-#{whiteboard.to_param}")
     else
-      redirect_to account_field_path(current_account, tab: "notes"), alert: whiteboard.errors.full_messages.to_sentence
+      redirect_to account_field_path(current_account, tab: "notes"),
+        inertia: { errors: { name: whiteboard.errors.full_messages.to_sentence } }
     end
   end
 

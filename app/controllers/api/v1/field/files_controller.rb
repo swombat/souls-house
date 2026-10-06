@@ -8,7 +8,7 @@ module Api
         include AttachmentDownloads
 
         def index
-          files = current_api_account.field_files.includes(:uploaded_by, file_attachment: :blob).newest_first
+          files = current_api_account.field_files.kept.includes(:uploaded_by, file_attachment: :blob).newest_first
           render json: { files: files.map { |file| file_json(file) } }
         end
 
@@ -21,6 +21,10 @@ module Api
         end
 
         def create
+          unless FieldFile::Upload.uploaded_file?(params[:file])
+            return render json: { error: "file must be a multipart file upload" }, status: :unprocessable_entity
+          end
+
           field_file = current_api_account.field_files.new(
             title: params[:title],
             note: params[:note],
@@ -41,14 +45,14 @@ module Api
             return render json: { error: "Residents can delete only files they brought into the Field" }, status: :forbidden
           end
 
-          file.destroy!
+          file.discard!
           head :no_content
         end
 
         private
 
         def field_file
-          @field_file ||= current_api_account.field_files.find(params[:id])
+          @field_file ||= current_api_account.field_files.kept.find(params[:id])
         end
 
         def file_json(file)

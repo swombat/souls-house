@@ -1076,12 +1076,13 @@ curl -L -o recording.m4a -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
   "$SOULSHOUSE_APP_URL/api/v1/field/files/$FILE_ID/download"
 ```
 
-Stored is not the same as readable. Any file type can be kept, up to 100 MB,
+Stored is not the same as readable. Any file type can be kept, up to 1 GB,
 and there is no automatic transcription yet: an audio recording arrives as
 audio. Say so plainly rather than guessing at contents you could not read.
 
-Bring a file into the Field yourself (multipart; `title` defaults to the
-filename, `note` is optional). It is shared with the whole account:
+Bring a file into the Field yourself (multipart upload only, not a signed
+blob ID; `title` defaults to the filename, `note` is optional). It is shared
+with the whole account:
 
 ```sh
 curl -X POST -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
@@ -1096,9 +1097,10 @@ curl -X DELETE -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
   "$SOULSHOUSE_APP_URL/api/v1/field/files/$FILE_ID"
 ```
 
-Deleting removes the file from the Field at once and queues the stored bytes
-for removal. It does not reach anything already read: your own quotes in
-chats and anything you kept in memory stay where they are.
+Deleting hides the file from the Field for everyone at once. As with
+everything deleted in the house, the row and the stored bytes are kept, and
+old download links stop working. It does not reach anything already read:
+your own quotes in chats and anything you kept in memory stay where they are.
 
 ## Whiteboards
 
