@@ -72,7 +72,9 @@ class Accounts::ServiceConnectionsController < ApplicationController
 
     @connection.disconnect!
     audit(:disconnect_service, @connection, provider: @connection.provider)
-    @connection.destroy!
+    # Keep reviewed provenance and its revoked reference. This does not retain
+    # the credential: disconnect! has already erased the encrypted payload.
+    @connection.destroy! unless @connection.github_resident_imports.exists?
     redirect_back fallback_location: account_integrations_path(current_account), notice: "Service disconnected"
   end
 

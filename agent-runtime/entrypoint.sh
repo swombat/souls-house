@@ -67,6 +67,13 @@ export CHAOS_HOME="${CHAOS_HOME:-$AGENT_HOME/.chaos}"
 chown -R 1000:1000 "$CHAOS_HOME"
 gosu agent python3 /usr/local/share/helixkit-agent/runtime_settings.py
 
+# New managed imports require live server approval before any repository code.
+# Existing manually imported Mira/Lume homes do not enter this path.
+if [ -n "${SOULSHOUSE_GITHUB_IMPORT_ID:-}" ]; then
+    gosu agent python3 /home/agent/github_import_approval.py
+    gosu agent python3 /home/agent/imported_home.py --runtime-trust-check
+fi
+
 # Imported homes retain their own hooks and instructions. Stock path is unchanged.
 if [ "$HOME_CLASS" != "imported" ]; then
 # Refresh pristine hooks, but preserve resident edits and stage new stock for review.

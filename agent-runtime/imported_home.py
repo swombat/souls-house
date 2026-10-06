@@ -239,6 +239,16 @@ def main(argv):
         chaos_home = os.environ.get('CHAOS_HOME') or '/home/agent/.chaos'
         print(f'imported home hooks: {check_hook_import_source(root, manifest, chaos_home)}')
         return 0
+    if argv[1:] == ['--runtime-trust-check']:
+        root, _manifest = validate()
+        chaos_home = Path(os.environ.get('CHAOS_HOME') or '/home/agent/.chaos')
+        require_runtime_trust(root, chaos_home)
+        if os.environ.get('SOULSHOUSE_GITHUB_IMPORT_REQUIRE_OAUTH_TRUST') == '1' and not (chaos_home / 'oauth-runtime').is_dir():
+            raise ValueError('Trust the imported root in the OAuth runtime before activation')
+        if (chaos_home / 'oauth-runtime').is_dir():
+            require_runtime_trust(root, chaos_home / 'oauth-runtime')
+        print('imported runtime trust verified')
+        return 0
     if enabled():
         validate()
         print('imported home validated')

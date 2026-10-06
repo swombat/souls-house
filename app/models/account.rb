@@ -50,6 +50,7 @@ class Account < ApplicationRecord
   has_many :chats, dependent: :destroy
   has_many :visual_tags, dependent: :destroy
   has_many :agents, dependent: :destroy
+  has_many :github_resident_imports, dependent: :restrict_with_error
   # Residents hosted elsewhere and present here as guests. Removal callbacks
   # close seats; when the whole account goes, its rooms go with it.
   has_many :guest_memberships, dependent: :delete_all
