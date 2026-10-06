@@ -4,16 +4,17 @@
   <h1><%= @stream.name %></h1>
   <p>Account: <strong><%= @stream.account.name %></strong></p>
   <% unless @stream_account %>
-    <p>Personal recovery controls: you may revoke devices or erase data here. Reader changes and new credentials require account membership.</p>
+    <p>Personal recovery controls: you may revoke devices or delete data here. Reader changes and new credentials require account membership.</p>
     <% if Current.user.confirmed_accounts.exists?(@stream.account_id) %>
       <%= link_to "Manage in account", account_device_stream_path(@stream.account, @stream.stream_key) %>
     <% end %>
   <% end %>
   <p>Stream key: <code><%= @stream.stream_key %></code></p>
-  <p>RR data stays until you erase it or capacity is reached. Readers may analyse it; this does not authorize publication.
-    Erasure removes live server samples, not Mac files, downloaded copies, derived findings or backups.
-    Ask your operator about backup expiry and restoration handling. Infrastructure administrators can access stored data.</p>
-  <% if @stream.erased_at? %><p>This stream is permanently erased and cannot ingest again.</p><% else %>
+  <p>Readers may analyse RR data; this does not authorize publication.
+    As everywhere in this house, deleting hides data, it does not destroy it: deleted sessions disappear from every reader and
+    device, but the samples stay stored on the server and in its backups. Mac files, downloaded copies and derived findings
+    are not affected. Infrastructure administrators can access stored data. If you need data truly gone, run your own house.</p>
+  <% if @stream.erased_at? %><p>This stream is deleted and closed. It cannot ingest again.</p><% else %>
     <% if @stream_account %>
     <%= form_with url: stream_controls_path, method: :patch, local: true do %>
       <fieldset><legend>Readers (explicit selection; future house members are not automatically added)</legend>
@@ -39,17 +40,17 @@
     <h2>Sessions (newest 100)</h2>
     <ul><% @sessions.each do |session| %>
       <li><code><%= session.session_uuid %></code>
-      <% if session.erased_at? %> erased<% else %>
-        <%= button_to "Permanently erase session", stream_controls_path(:erase_session, session_id: session.session_uuid), method: :delete %>
+      <% if session.erased_at? %> deleted<% else %>
+        <%= button_to "Delete session", stream_controls_path(:erase_session, session_id: session.session_uuid), method: :delete %>
       <% end %></li>
     <% end %></ul>
-    <h2>Erase an older session by UUID</h2>
+    <h2>Delete an older session by UUID</h2>
     <%= form_with url: stream_controls_path(:erase_session), method: :delete, local: true do |f| %>
-      <%= f.label :session_id, "Session UUID" %><%= f.text_field :session_id, required: true %><%= f.submit "Permanently erase session" %>
+      <%= f.label :session_id, "Session UUID" %><%= f.text_field :session_id, required: true %><%= f.submit "Delete session" %>
     <% end %>
-    <h2>Permanent bulk erasure</h2>
-    <p>This removes every session payload and revokes every device. You cannot reopen this stream.</p>
-    <%= button_to "Permanently erase all data and close stream", stream_controls_path, method: :delete %>
+    <h2>Delete all and close</h2>
+    <p>This hides every session from every reader and revokes every device. The samples stay stored. You cannot reopen this stream.</p>
+    <%= button_to "Delete all sessions and close stream", stream_controls_path, method: :delete %>
   <% end %>
   <%= link_to "Your streams", stream_index_path %>
 </main></body></html>

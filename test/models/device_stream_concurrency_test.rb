@@ -34,8 +34,8 @@ class DeviceStreamConcurrencyTest < ActiveSupport::TestCase
       end
     end
     assert_includes results, :erased
-    assert_empty @stream.device_stream_batches
-    assert_equal 0, @stream.reload.batches_count
+    assert_empty @stream.visible_batches
+    assert_equal @stream.device_stream_batches.count, @stream.reload.batches_count
     assert_equal :gone, append
   end
 
@@ -43,9 +43,9 @@ class DeviceStreamConcurrencyTest < ActiveSupport::TestCase
     concurrently(2) do |i|
       i.zero? ? DeviceStream.find(@stream.id).erase! : append
     end
-    assert_empty @stream.device_stream_batches
+    assert_empty @stream.visible_batches
     assert @stream.reload.erased_at
-    assert_equal 0, @stream.batches_count
+    assert_equal @stream.device_stream_batches.count, @stream.batches_count
   end
 
   test "revoke committed while append waits is enforced on cached credential" do
