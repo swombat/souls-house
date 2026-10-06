@@ -15,6 +15,8 @@ export default defineConfig({
   workers: 1,
   use: {
     ...devices['Desktop Chrome'],
+    locale: 'en-GB',
+    timezoneId: 'Europe/Madrid',
     ctPort: Number(process.env.CLIPS_CT_PORT || 3297),
     ctCacheDir: 'tmp/clips-ct-cache',
     ctViteConfig: {

@@ -25,7 +25,7 @@
       alt={feature.media.alt}
       loading="lazy" />
   {:else}
-    <div class="flex h-24 items-center justify-center border-b bg-muted/60 sm:h-28" aria-hidden="true">
+    <div class="flex aspect-video items-center justify-center border-b bg-muted/60" aria-hidden="true">
       <Icon size={52} weight="duotone" class="text-primary" />
     </div>
   {/if}
