@@ -61,10 +61,14 @@ class AgentsController < ApplicationController
       limit: 25
     )
 
+    catalog = @agent.subagent_catalog
     render inertia: "agents/edit", props: {
       portability: portability_props,
       agent: @agent.as_json,
       house_allowance: HouseInferenceGrant.find_by(agent: @agent)&.presentation,
+      subagent_catalog: catalog.options,
+      subagent_providers: catalog.providers,
+      subagent_catalog_empty_reason: catalog.empty_reason,
       telegram_deep_link: @agent.telegram_configured? ? @agent.telegram_deep_link_for(Current.user) : nil,
       telegram_subscriber_count: @agent.telegram_subscriptions.active.count,
       memories: memories_for_display,
@@ -100,7 +104,8 @@ class AgentsController < ApplicationController
     audit("update_agent", @agent, **agent_audit_data(attrs))
     redirect_to account_agents_path(current_account), notice: update_notice(model_changed)
   rescue ActiveRecord::RecordInvalid => e
-    redirect_to edit_account_agent_path(current_account, @agent),
+    tab = "subagents" if e.record.errors.attribute_names.intersect?(%i[subagents_enabled subagent_models])
+    redirect_to edit_account_agent_path(current_account, @agent, tab: tab),
                 inertia: { errors: e.record.errors.to_hash }
   end
 
@@ -144,7 +149,8 @@ class AgentsController < ApplicationController
       :telegram_bot_token, :telegram_bot_username,
       :voice_id, :persistent_session, :persistent_wake_session, :scheduled_wakes_enabled,
       :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
-      :session_context_budget_tokens, :turn_timeout_minutes
+      :session_context_budget_tokens, :turn_timeout_minutes, :subagents_enabled,
+      subagent_models: []
     )
 
     permitted.delete(:telegram_bot_token) if permitted[:telegram_bot_token].blank?
