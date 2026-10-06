@@ -509,6 +509,15 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [], @agent.subagent_models
   end
 
+  test "a rejected sub-agent allowlist returns to the Sub-agents tab with the error" do
+    patch account_agent_path(@account, @agent), params: {
+      agent: { subagents_enabled: true, subagent_models: [ "openrouter:bad?" ] }
+    }
+
+    assert_redirected_to edit_account_agent_path(@account, @agent, tab: "subagents")
+    assert_not @agent.reload.subagents_enabled?
+  end
+
   test "deletion disables and preserves the resident and private memory" do
     @agent.update_columns(runtime: "external", birth_committed_at: Time.current, scheduled_wakes_enabled: true, heartbeat_wakes_per_day: 8)
     vault = Mnemodyne::Vault.create!(agent: @agent)

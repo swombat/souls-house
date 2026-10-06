@@ -14,6 +14,7 @@ module Agent::Subagents
 
   included do
     before_validation :normalize_subagent_models
+    before_save :stamp_subagent_policy_change, if: -> { subagents_enabled_changed? || subagent_models_changed? }
     validate :subagent_models_are_well_formed
   end
 
@@ -30,6 +31,12 @@ module Agent::Subagents
   end
 
   private
+
+  # Once a policy has been set, triggers keep stating the current one, so that
+  # switching it off reaches sessions that saw the earlier permission.
+  def stamp_subagent_policy_change
+    self.subagents_policy_changed_at = Time.current
+  end
 
   def normalize_subagent_models
     self.subagent_models = Array(subagent_models).map { |key| key.to_s.strip }.compact_blank.uniq

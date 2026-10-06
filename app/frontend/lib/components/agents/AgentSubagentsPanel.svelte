@@ -4,6 +4,9 @@
   import { siteName } from '$lib/branding';
 
   const VISIBLE_LIMIT = 50;
+  // Mirrors Agent::Subagents on the server.
+  const MAX_MODELS = 50;
+  const MODEL_KEY = /^[a-z]+:[A-Za-z0-9][A-Za-z0-9._/:[\]@-]{0,199}$/;
 
   let {
     enabled = $bindable(false),
@@ -11,6 +14,7 @@
     catalog = [],
     emptyReason = null,
     providers = [],
+    serverErrors = [],
   } = $props();
 
   let filterText = $state('');
@@ -61,8 +65,10 @@
     return groups;
   });
 
+  let atLimit = $derived(models.length >= MAX_MODELS);
+
   function addModel(key) {
-    if (!allowedSet.has(key)) models = [...models, key];
+    if (!allowedSet.has(key) && !atLimit) models = [...models, key];
   }
 
   function removeModel(key) {
@@ -78,8 +84,12 @@
       customError = 'Enter a model ID.';
     } else if (/\s/.test(trimmedId)) {
       customError = 'Model ID cannot contain spaces.';
+    } else if (!MODEL_KEY.test(`${customProvider}:${trimmedId}`)) {
+      customError = 'Model IDs may use letters, digits and . _ / : [ ] @ - only.';
     } else if (allowedSet.has(`${customProvider}:${trimmedId}`)) {
       customError = 'That model is already allowed.';
+    } else if (atLimit) {
+      customError = `At most ${MAX_MODELS} models can be allowed.`;
     } else {
       models = [...models, `${customProvider}:${trimmedId}`];
       customModelId = '';
@@ -92,6 +102,14 @@
     <h2 class="text-lg font-semibold">Sub-agents</h2>
     <p class="text-sm text-muted-foreground">Let this resident delegate bounded, parallel subtasks to sub-agents.</p>
   </div>
+
+  {#if serverErrors.length > 0}
+    <div role="alert" class="rounded border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+      {#each serverErrors as message (message)}
+        <p>Sub-agent models {message}.</p>
+      {/each}
+    </div>
+  {/if}
 
   <div class="flex items-start gap-3 rounded border bg-muted/30 p-4">
     <input
@@ -118,7 +136,8 @@
 
       {#if models.length === 0}
         <p class="text-sm text-muted-foreground">
-          No models allowed yet. The resident will be told it may delegate only to its own model.
+          No models allowed yet. The resident will not spawn sub-agents until you add at least one. To let it use its
+          own model, add that model too.
         </p>
       {:else}
         <div class="space-y-2">
@@ -164,7 +183,12 @@
                         <p class="truncate text-sm">{entry.label}</p>
                         <p class="text-xs text-muted-foreground">{entry.source}</p>
                       </div>
-                      <Button type="button" variant="outline" size="sm" onclick={() => addModel(entry.key)}>Add</Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={atLimit}
+                        onclick={() => addModel(entry.key)}>Add</Button>
                     </div>
                   {/each}
                 </div>

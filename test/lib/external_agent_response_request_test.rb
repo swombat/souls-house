@@ -132,6 +132,30 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes enabled_text, "DeepSeek V4 Pro 0813"
   end
 
+  test "a resumed session's delta carries the revocation after sub-agents are switched off" do
+    agent = agents(:research_assistant)
+    agent.account.update!(use_system_ai_credentials: false, openrouter_api_key: "sk-or-test")
+    agent.update!(persistent_session: true, subagents_enabled: true,
+                  subagent_models: [ "openrouter:deepseek/deepseek-v4-pro-0813" ])
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Sub-agent revocation")
+    first = chat.messages.create!(role: "user", content: "Please delegate this")
+    AgentRuntimeInteraction.create!(
+      agent: agent, chat: chat, trigger_kind: "conversation", session_id: "s",
+      requested_by: "test", started_at: 1.minute.ago, last_included_message_id: first.id,
+      chaos_session_id: "chaos-1", transport_status: 200, runtime_status: "ok"
+    )
+    chat.messages.create!(role: "user", content: "Actually, stop delegating")
+
+    assert_includes ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:request_delta_text),
+      "Sub-agents: standing permission"
+
+    agent.update!(subagents_enabled: false)
+    delta = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:request_delta_text)
+
+    assert_includes delta, "Sub-agents: no standing permission"
+    refute_includes delta, "DeepSeek V4 Pro 0813"
+  end
+
   test "quiet guidance depends on human recency rather than legacy title prefixes" do
     agent = agents(:research_assistant)
     [ "Quiet room", "[AGENT-ONLY] Quiet room" ].each do |title|

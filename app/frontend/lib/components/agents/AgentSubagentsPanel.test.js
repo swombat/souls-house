@@ -132,4 +132,31 @@ describe('resident sub-agents', () => {
     expect(screen.getByText('Anthropic · API key · custom ID')).toBeInTheDocument();
     expect(screen.getByText('No longer available')).toBeInTheDocument();
   });
+  it('shows server validation errors on the tab', () => {
+    render(AgentSubagentsPanel, {
+      enabled: true,
+      models: ['openrouter:bad?'],
+      catalog,
+      serverErrors: ['contains invalid entries: openrouter:bad?'],
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('Sub-agent models contains invalid entries: openrouter:bad?');
+  });
+
+  it('rejects custom IDs the server would refuse', async () => {
+    const providers = [{ provider: 'openrouter', provider_label: 'OpenRouter', source: 'API key' }];
+    render(AgentSubagentsPanel, { enabled: true, models: [], catalog, providers });
+    await fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'openrouter' } });
+    await fireEvent.input(screen.getByPlaceholderText('Model ID'), { target: { value: 'bad?' } });
+    const addButtons = screen.getAllByRole('button', { name: 'Add' });
+    await fireEvent.click(addButtons[addButtons.length - 1]);
+    expect(screen.getByText(/Model IDs may use letters, digits/)).toBeInTheDocument();
+  });
+
+  it('stops adding once fifty models are allowed', () => {
+    const models = Array.from({ length: 50 }, (_, index) => `openrouter:model-${index}`);
+    render(AgentSubagentsPanel, { enabled: true, models, catalog });
+    for (const button of screen.getAllByRole('button', { name: 'Add' })) {
+      expect(button).toBeDisabled();
+    }
+  });
 });

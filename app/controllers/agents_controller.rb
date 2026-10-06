@@ -104,7 +104,8 @@ class AgentsController < ApplicationController
     audit("update_agent", @agent, **agent_audit_data(attrs))
     redirect_to account_agents_path(current_account), notice: update_notice(model_changed)
   rescue ActiveRecord::RecordInvalid => e
-    redirect_to edit_account_agent_path(current_account, @agent),
+    tab = "subagents" if e.record.errors.attribute_names.intersect?(%i[subagents_enabled subagent_models])
+    redirect_to edit_account_agent_path(current_account, @agent, tab: tab),
                 inertia: { errors: e.record.errors.to_hash }
   end
 

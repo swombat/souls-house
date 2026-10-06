@@ -384,6 +384,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_090000) do
     t.string "voice_id"
     t.boolean "subagents_enabled", default: false, null: false
     t.jsonb "subagent_models", default: [], null: false
+    t.datetime "subagents_policy_changed_at"
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"

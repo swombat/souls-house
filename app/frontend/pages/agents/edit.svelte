@@ -221,7 +221,8 @@
             bind:models={$form.agent.subagent_models}
             catalog={subagent_catalog}
             emptyReason={subagent_catalog_empty_reason}
-            providers={subagent_providers} />
+            providers={subagent_providers}
+            serverErrors={[$form.errors.subagent_models, $form.errors.subagents_enabled].flat().filter(Boolean)} />
         {:else if activeTab === 'integrations'}
           <AgentIntegrationsPanel
             {form}

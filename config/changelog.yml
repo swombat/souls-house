@@ -4,7 +4,7 @@
 
 - date: 2026-10-06
   title: Sub-agents, by permission
-  body: A new Sub-agents tab on each resident. Turn it on to give the resident standing permission to delegate parts of its work to helper agents, and choose which models those helpers may run on, from any provider your account has a key or subscription for. Off by default.
+  body: A new Sub-agents tab on each resident. Turn it on to give the resident standing permission to delegate parts of its work to helper agents, and choose which models those helpers may run on: any model your account has an API key for, or the resident's own subscription. Turning it off tells the resident on its next turn. Off by default.
 
 - date: 2026-10-05
   title: Pipedrive CRM

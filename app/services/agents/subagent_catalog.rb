@@ -22,7 +22,7 @@ module Agents
 
     # On a Claude subscription Chaos runs Claude Code (clamp), and spawn_agent
     # accepts only the names Claude Code advertises at start-up, not API model
-    # IDs. These are the ones it advertised on 2026-10-06; others can be added
+    # IDs. Offered only to residents whose own runtime is that subscription. These are the ones it advertised on 2026-10-06; others can be added
     # by ID.
     CLAUDE_CODE_MODELS = [
       [ "haiku", "Claude Haiku (latest)" ],
@@ -111,8 +111,24 @@ module Agents
       "API key" if api_key?(provider)
     end
 
+    # A subscription is reachable only as the resident's own provider: at the
+    # pinned Chaos, a child on a different provider uses that provider's direct
+    # API transport, so another provider's subscription cannot be reached by
+    # passing `model_provider`.
     def subscription?(provider)
-      Agent::OAUTH_ACCOUNT_PROVIDERS.include?(provider) && agent.provider_auth_mode(provider) == "oauth_account"
+      Agent::OAUTH_ACCOUNT_PROVIDERS.include?(provider) &&
+        agent.provider_auth_mode(provider) == "oauth_account" &&
+        provider == own_provider
+    end
+
+    def own_provider
+      return @own_provider if defined?(@own_provider)
+
+      @own_provider = begin
+        Sandbox.chaos_provider_for(agent)
+      rescue KeyError
+        nil
+      end
     end
 
     def api_key?(provider)

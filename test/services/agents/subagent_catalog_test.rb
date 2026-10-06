@@ -39,7 +39,8 @@ module Agents
         "a model without provider_model_id must not be offered as an openai sub-agent option"
     end
 
-    test "Anthropic oauth_account gives the Claude Code aliases with source 'Claude subscription'" do
+    test "a resident running on a Claude subscription gets the Claude Code aliases" do
+      @agent.model_id = "anthropic/claude-opus-5.5"
       @agent.provider_auth_modes = { "anthropic" => "oauth_account" }
 
       catalog = SubagentCatalog.new(@agent)
@@ -48,6 +49,27 @@ module Agents
       expected_keys = SubagentCatalog::CLAUDE_CODE_MODELS.map { |model, _label| "anthropic:#{model}" }
       assert_equal expected_keys.sort, anthropic_options.map { |candidate| candidate[:key] }.sort
       assert anthropic_options.all? { |candidate| candidate[:source] == "Claude subscription" }
+    end
+
+    # At the pinned Chaos, a child on another provider rides that provider's
+    # direct transport, so an OpenRouter parent cannot reach a Claude subscription.
+    test "another provider's subscription is not offered across providers" do
+      @agent.account.openrouter_api_key = "sk-or-test"
+      @agent.provider_auth_modes = { "anthropic" => "oauth_account" }
+
+      catalog = SubagentCatalog.new(@agent)
+
+      assert_equal [ "openrouter" ], catalog.providers.map { |entry| entry[:provider] }
+      assert_nil catalog.resolve("anthropic:sonnet")
+    end
+
+    test "across providers, an API key is offered in place of the subscription" do
+      @agent.account.anthropic_api_key = "sk-ant-test"
+      @agent.provider_auth_modes = { "anthropic" => "oauth_account" }
+
+      anthropic = SubagentCatalog.new(@agent).providers.find { |entry| entry[:provider] == "anthropic" }
+
+      assert_equal "API key", anthropic[:source]
     end
 
     test "no keys leaves providers empty with a reason" do
