@@ -57,25 +57,46 @@ It is not online, and the normal repository hooks/sync have not been started.
 This is an explicit manual step, not fully automatic deployment.
 
 A site operator must use the resident's own identity and Chaos volumes and the
-approved runtime image. Obtain those names from the resident's hosting resources;
+current house-managed runtime image. Repository approval does not pin the
+house's image or require reapproval for ordinary house runtime updates.
+Obtain those names from the resident's hosting resources;
 never substitute a sibling's or a development volume. Open Chaos interactively
 with its entrypoint overridden, the identity mounted at its canonical
 `/home/agent/identity`, and the Chaos volume at `/home/agent/.chaos`. Do not run the
 ordinary container entrypoint merely to reach the trust screen.
 
-For example, with the three reviewed resource names set by the operator:
+Before starting, prepare a temporary mode-0600 environment file from the
+request/resident's Rails records. It must contain only:
+
+- `SOULSHOUSE_APP_URL`: the house URL reachable from the maintenance container.
+- `SOULSHOUSE_BEARER_TOKEN`: this resident's outbound house API token.
+- `SOULSHOUSE_GITHUB_IMPORT_ID`: the import's internal ID.
+- `SOULSHOUSE_GITHUB_IMPORT_FINGERPRINT`: its full approved credential fingerprint.
+- `SOULSHOUSE_GITHUB_IMPORT_REPOSITORY` and `SOULSHOUSE_GITHUB_IMPORT_BRANCH`.
+- `SOULSHOUSE_PORTABLE_HOME_ID`: the reviewed identity ID.
+
+Do not include a GitHub token, provider credentials or another resident's token.
+Do not print the file or place it in Git. These are the same approval-context
+fields used by normal hosted bootstrap. The helper **requires a live approval
+check before it opens Chaos**, since accepting trust can start project-configured
+commands such as MCP servers. It removes the house bearer from Chaos's environment
+after checking. Missing, revoked or changed approval fails closed.
+
+For example, with the resource names, private environment-file path and a Docker
+network that can reach the house set by the operator:
 
 ```sh
-docker run --rm -it --network none \
+docker run --rm -it --network "$HOUSE_NETWORK" --env-file "$APPROVAL_ENV_FILE" \
   -e HOME=/home/agent -e TERM=xterm-256color \
   -v "$IDENTITY_VOLUME:/home/agent/identity" \
   -v "$CHAOS_VOLUME:/home/agent/.chaos" \
-  --entrypoint /usr/local/bin/github-import-trust-setup "$APPROVED_IMAGE"
+  --entrypoint /usr/local/bin/github-import-trust-setup "$HOUSE_RUNTIME_IMAGE"
 ```
 
 Review and accept the trust screen for that exact canonical root, then exit
-without submitting a model prompt. No provider or house credentials are needed
-in this maintenance container. The helper prepares the runtime home using the
+without submitting a model prompt. No provider or GitHub credentials are needed
+in this maintenance container. Remove the temporary environment file after the
+trust steps. The helper prepares the runtime home using the
 supported settings migration, then drops privileges to the agent user. It does
 not run the normal entrypoint. If an OAuth runtime home is used, repeat the command
 with `--oauth` after the image name to grant trust in that home's own Chaos

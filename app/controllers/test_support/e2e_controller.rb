@@ -404,6 +404,7 @@ module TestSupport
         name: "Example awaiting runtime trust", portable_home_id: "example-trust-#{run_id}",
         status: "needs_runtime_trust", approved_by: admin, approved_at: Time.current,
         approved_commit_sha: attributes[:commit_sha],
+        observed_branch_sha_at_approval: attributes[:commit_sha],
         approved_credential_fingerprint: connection.credential_fingerprint,
         approved_image: "example-runtime:synthetic"
       ))

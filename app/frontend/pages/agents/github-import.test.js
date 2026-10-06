@@ -135,7 +135,7 @@ test('real-shaped processing state disables duplicate request submission', async
 });
 
 test('ordinary users can see SHA and fingerprint review data without admin actions', () => {
-  render(GithubImport, { ...props, github_import: request });
+  render(GithubImport, { ...props, github_import: { ...request, credential_changed: true } });
   expect(screen.getByText('Waiting for site-admin review')).toBeVisible();
   expect(screen.getByText('current-sha')).toBeVisible();
   expect(screen.getByText('current-fingerprint')).toBeVisible();
@@ -226,6 +226,7 @@ test('current token metadata is distinct and blocks approval after rotation to c
     github_import: {
       ...request,
       status: 'failed',
+      credential_changed: true,
       current_token_metadata: { token_kind: 'classic', oauth_scopes: ['repo'], authority_source: 'GitHub scopes' },
     },
     can_approve: true,
@@ -236,6 +237,19 @@ test('current token metadata is distinct and blocks approval after rotation to c
   expect(screen.getByRole('region', { name: 'Current token authority' })).toHaveTextContent('Classic token');
   expect(screen.getByRole('checkbox')).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Refresh review' })).toBeEnabled();
+});
+
+test('unchanged authority and unapproved provenance do not duplicate the review', () => {
+  render(GithubImport, {
+    ...props,
+    github_import: { ...request, current_token_metadata: request.token_metadata, credential_changed: false },
+    can_approve: true,
+    approve_url: '/approve',
+  });
+  expect(screen.queryByRole('region', { name: 'Current token authority' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Approved pinned SHA')).not.toBeInTheDocument();
+  expect(screen.queryByText('Branch SHA observed at approval')).not.toBeInTheDocument();
+  expect(screen.getByText(/Approving runs all code/)).toBeVisible();
 });
 
 test('changed credential approval errors and previous approval evidence remain visible', async () => {

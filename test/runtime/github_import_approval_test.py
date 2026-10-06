@@ -53,6 +53,13 @@ class ManagedImportTest(unittest.TestCase):
         self.assertLess(text.index("github_import_approval.py"), text.index("runtime_hooks.py"))
         self.assertLess(text.index("github_import_approval.py"), text.index("home_sync_loop.py"))
 
+    def test_operator_helper_requires_live_approval_before_interactive_chaos(self):
+        text = (RUNTIME / "github-import-trust-setup").read_text()
+        self.assertIn("${SOULSHOUSE_GITHUB_IMPORT_ID:?", text)
+        self.assertIn("set -eu", text)
+        self.assertLess(text.index("github_import_approval.py"), text.index("runtime_settings.py"))
+        self.assertLess(text.index("github_import_approval.py"), text.index("exec gosu agent chaos"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -94,9 +94,9 @@
 
   {#if request}
     <GithubImportStatus {request} {retryActivationUrl} {runtimeTrustNotice} />
-    <GithubTokenAuthority metadata={request.token_metadata} title="Reviewed token authority" />
-    {#if request.current_token_metadata}
-      <GithubTokenAuthority metadata={request.current_token_metadata} title="Current token authority" />
+    <GithubTokenAuthority metadata={request.token_metadata} title="Reviewed token authority" compact />
+    {#if request.current_token_metadata && request.credential_changed}
+      <GithubTokenAuthority metadata={request.current_token_metadata} title="Current token authority" compact />
     {/if}
     <GithubImportApproval {request} {approveUrl} {canApprove} {refreshUrl} {futureBranchTrustNotice} />
   {:else if connections.length === 0}

@@ -68,26 +68,25 @@
 <section class="space-y-4 rounded-lg border p-5" aria-label="Repository execution approval">
   <h2 class="text-lg font-semibold">Site-admin execution approval</h2>
   <p class="text-sm">
-    Importing this home allows its code and hooks to run with broad execution privileges in the resident runtime.
-    Approval covers the selected branch and all future pushes to it, not only the commit shown here.
+    Approving runs all code in <strong>{request.repository}@{request.branch}</strong>, now and on every future push,
+    with this token.
   </p>
-  {#if futureBranchTrustNotice}
-    <p class="text-sm">{futureBranchTrustNotice}</p>
-  {/if}
   <dl class="grid gap-2 text-sm sm:grid-cols-[auto_1fr]">
     <dt class="text-muted-foreground">Pinned reviewed revision</dt>
     <dd class="break-all font-mono">{request.commit_sha || 'Not resolved yet'}</dd>
     <dt class="text-muted-foreground">Request credential fingerprint</dt>
     <dd class="break-all font-mono">{request.credential_fingerprint || 'Not available'}</dd>
-    <dt class="text-muted-foreground">Current credential fingerprint</dt>
-    <dd class="break-all font-mono">{request.current_credential_fingerprint || 'Not available'}</dd>
-    <dt class="text-muted-foreground">Approved pinned SHA</dt>
-    <dd class="break-all font-mono">{request.approved_commit_sha || 'Not approved'}</dd>
-    <dt class="text-muted-foreground">Branch SHA observed at approval</dt>
-    <dd class="break-all font-mono">{request.observed_branch_sha_at_approval || 'Not observed yet'}</dd>
-    <dt class="text-muted-foreground">Approved credential fingerprint</dt>
-    <dd class="break-all font-mono">{request.approved_credential_fingerprint || 'Not approved'}</dd>
+    {#if request.credential_changed}
+      <dt class="text-muted-foreground">Current credential fingerprint</dt>
+      <dd class="break-all font-mono">{request.current_credential_fingerprint || 'Not available'}</dd>
+    {/if}
     {#if request.approved_at}
+      <dt class="text-muted-foreground">Approved pinned SHA</dt>
+      <dd class="break-all font-mono">{request.approved_commit_sha}</dd>
+      <dt class="text-muted-foreground">Branch SHA observed at approval</dt>
+      <dd class="break-all font-mono">{request.observed_branch_sha_at_approval}</dd>
+      <dt class="text-muted-foreground">Approved credential fingerprint</dt>
+      <dd class="break-all font-mono">{request.approved_credential_fingerprint}</dd>
       <dt class="text-muted-foreground">Approved by</dt>
       <dd>{request.approved_by_name || 'Site administrator'} · {request.approved_at}</dd>
     {/if}
@@ -125,6 +124,9 @@
     <Button variant="outline" onclick={refreshReview} disabled={refreshing || submitting}>
       {refreshing ? 'Refreshing…' : 'Refresh review'}
     </Button>
+  {/if}
+  {#if futureBranchTrustNotice}
+    <p class="text-sm">{futureBranchTrustNotice}</p>
   {/if}
   {#if canApprove && approveUrl && reviewable}
     <label class="flex items-start gap-3 text-sm">
