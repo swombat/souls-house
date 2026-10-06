@@ -46,6 +46,9 @@ def check(fetch=fetch_approval):
         raise ValueError("Managed GitHub import approval changed; reapproval is required")
     if manifest["identity_id"] != expected["portable_home_id"]:
         raise ValueError("Managed import identity changed")
+    if (result.get('sync_strategy', 'existing') != imported_home.sync_strategy() or
+            result.get('sync_configuration', {}) != json.loads(os.environ.get('SOULSHOUSE_HOME_SYNC_CONFIGURATION', '{}'))):
+        raise ValueError('Managed import sync selection changed')
     # Git configuration is host-generated, not copied from another installation.
     # credential.useHttpPath limits helper matching, not arbitrary resident code.
     commands = [

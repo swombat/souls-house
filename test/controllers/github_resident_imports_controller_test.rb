@@ -53,6 +53,38 @@ class GithubResidentImportsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, request.credential_fingerprint
   end
 
+  test "standard selection persists manifest policies rather than user supplied paths" do
+    connection = import_connection
+    source = source_stub
+    source.define_singleton_method(:with_checkout) do |branch:, **_options, &block|
+      block.call("/synthetic", { "identity_id" => "synthetic-portable-home", "standard_sync" => {
+        "auto_commit_paths" => [ "journals", "identity.md" ],
+        "append_only_paths" => [ "journals" ], "allow_destructive_paths" => [] } }, "a" * 40, branch)
+    end
+    Agents::GithubImportSource.stub(:new, source) do
+      post account_github_resident_imports_path(@account), params: {
+        github_resident_import: { name: "Standard", model_id: Chat::MODELS.first[:model_id],
+          service_connection_id: connection.public_id, branch: "main", sync_strategy: "standard",
+          sync_configuration: { auto_commit_paths: [ "." ] } }
+      }
+    end
+    request = GithubResidentImport.last
+    assert_equal "standard", request.sync_strategy
+    assert_equal [ "journals", "identity.md" ], request.sync_auto_commit_paths
+    get account_github_resident_import_path(@account, request)
+    props = inertia_shared_props
+    assert_equal "standard", props.dig("github_import", "sync_strategy")
+    assert_equal [ "journals" ], props.dig("github_import", "sync_append_only_paths")
+    assert_equal "unknown", props.dig("github_import", "sync_health", "state")
+    assert_equal %w[existing standard], props.fetch("sync_strategies").pluck("value")
+  end
+
+  test "new requests keep existing strategy by default" do
+    get new_account_github_resident_import_path(@account)
+    assert_equal "existing", inertia_shared_props.fetch("sync_strategies").first.fetch("value")
+    assert_equal "existing", import_request.sync_strategy
+  end
+
   test "members unconfirmed users and cross-account credentials cannot submit" do
     login_as(users(:existing_user))
     get new_account_github_resident_import_path(accounts(:team_account))

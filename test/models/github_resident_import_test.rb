@@ -5,6 +5,46 @@ class GithubResidentImportTest < ActiveSupport::TestCase
 
   include GithubImportFixtures
 
+  test "sync selection and policies are immutable reviewed configuration" do
+    request = import_request(sync_strategy: "standard", sync_configuration: {
+      "auto_commit_paths" => [ "journals" ], "append_only_paths" => [ "journals" ] })
+    assert_not request.update(sync_strategy: "existing")
+    request.reload
+    assert_not request.update(sync_configuration: { "auto_commit_paths" => [ "private" ] })
+    request.reload
+    assert request.update(sync_health: { "state" => "unknown" })
+  end
+
+  test "sync scopes are literal bounded and policy paths remain within commit scopes" do
+    request = import_request
+    [ { "auto_commit_paths" => [ "." ] }, { "auto_commit_paths" => [ ".git/config" ] },
+      { "auto_commit_paths" => [ "safe" ], "append_only_paths" => [ "other" ] },
+      { "auto_commit_paths" => [ "safe/*" ] }, { "unknown" => true } ].each do |config|
+      request.reload
+      request.assign_attributes(sync_strategy: "standard", sync_configuration: config)
+      assert_not request.valid?
+    end
+  end
+
+  test "safe health projection drops arbitrary strings and surfaces current success age" do
+    request = import_request(sync_strategy: "standard")
+    request.record_sync_health!({ "state" => "needs_attention", "reason_code" => "merge_conflict",
+      "checked_at" => Time.current.iso8601, "last_success_at" => 2.hours.ago.iso8601,
+      "rescue_ref" => "rescue/synthetic/20261006T120000000000Z-abcdefabcdef", "rescue_status" => "pushed",
+      "private_output" => "secret" })
+    props = request.sync_health_props
+    assert_equal "needs_attention", props["state"]
+    assert_equal "pushed", props["rescue_status"]
+    assert_operator props["last_success_age_seconds"], :>=, 7199
+    assert_not props.key?("private_output")
+    request.record_sync_health!({ "state" => "ok", "reason_code" => "synced", "last_success_at" => 2.hours.ago.iso8601 })
+    assert_equal "stale", request.sync_health_props["state"]
+    request.record_sync_health!({ "state" => "secret", "reason_code" => "secret", "rescue_ref" => "private" })
+    assert_equal "unknown", request.sync_health_props["state"]
+    assert_nil request.sync_health_props["rescue_ref"]
+    assert_not_includes request.sync_health.to_json, "secret"
+  end
+
   test "only confirmed account admins can request and only site admins can approve" do
     assert GithubResidentImport.requestable_by?(accounts(:team_account), users(:user_1))
     assert_not GithubResidentImport.requestable_by?(accounts(:team_account), users(:existing_user))

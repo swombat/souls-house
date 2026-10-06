@@ -233,6 +233,10 @@ module Agents
         try:
             import github_import_approval
             import imported_home
+            import os
+            if os.environ.get('SOULSHOUSE_HOME_SYNC_STRATEGY') == 'standard':
+                import standard_home_sync
+                assert callable(imported_home.standard_sync_configuration)
             entrypoint = Path('/usr/local/bin/entrypoint.sh').read_text()
             assert entrypoint.index('github_import_approval.py') < entrypoint.index('runtime_hooks.py')
             assert entrypoint.index('--runtime-trust-check') < entrypoint.index('home_sync_loop.py')
@@ -250,6 +254,8 @@ module Agents
         "-e", "SOULSHOUSE_HOME_PROFILE=portable_v1",
         "-e", "SOULSHOUSE_HOME_ROOT=#{IDENTITY_PATH}",
         "-e", "SOULSHOUSE_PORTABLE_HOME_ID=#{agent.portable_home_id}",
+        "-e", "SOULSHOUSE_HOME_SYNC_STRATEGY=#{agent.github_resident_import.sync_strategy}",
+        "-e", "SOULSHOUSE_HOME_SYNC_CONFIGURATION=#{agent.github_resident_import.sync_configuration.to_json}",
         "-e", "SOULSHOUSE_GITHUB_IMPORT_REQUIRE_OAUTH_TRUST=#{managed_import_oauth_trust_required? ? '1' : '0'}",
         "--entrypoint", "python3", agent.container_image,
         "-c", check)
@@ -666,6 +672,8 @@ module Agents
           "-e", "SOULSHOUSE_GITHUB_IMPORT_FINGERPRINT=#{request.approved_credential_fingerprint}",
           "-e", "SOULSHOUSE_GITHUB_IMPORT_REPOSITORY=#{request.repository}",
           "-e", "SOULSHOUSE_GITHUB_IMPORT_BRANCH=#{request.branch}",
+          "-e", "SOULSHOUSE_HOME_SYNC_STRATEGY=#{request.sync_strategy}",
+          "-e", "SOULSHOUSE_HOME_SYNC_CONFIGURATION=#{request.sync_configuration.to_json}",
           "-e", "SOULSHOUSE_GITHUB_IMPORT_CONNECTION=#{request.service_connection.public_id}" ]
         args += [ "-e", "SOULSHOUSE_GITHUB_IMPORT_REQUIRE_OAUTH_TRUST=1" ] if managed_import_oauth_trust_required?
       end

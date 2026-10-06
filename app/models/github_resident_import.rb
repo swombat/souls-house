@@ -16,12 +16,58 @@ class GithubResidentImport < ApplicationRecord
     :commit_sha, :portable_home_id, :credential_fingerprint, presence: true
   validates :name, length: { maximum: 100 }
   validates :status, inclusion: { in: STATUSES }
+  validates :sync_strategy, inclusion: { in: %w[existing standard] }
+  validate :valid_sync_configuration
   validates :commit_sha, format: { with: /\A[0-9a-f]{40}\z/ }
   validate :connection_matches_account
   validate :reviewed_configuration_is_immutable, on: :update
 
   def self.requestable_by?(account, user)
     account.service_credentials_manageable_by?(user)
+  end
+
+  def sync_auto_commit_paths
+    sync_configuration.fetch("auto_commit_paths", [])
+  end
+
+  def sync_append_only_paths
+    sync_configuration.fetch("append_only_paths", [])
+  end
+
+  def sync_allow_destructive_paths
+    sync_configuration.fetch("allow_destructive_paths", [])
+  end
+
+  SYNC_STATES = %w[unknown ok busy blocked needs_attention failed stale].freeze
+  SYNC_REASONS = %w[not_recorded runtime_unavailable synced lock_busy staged_changes dirty_worktree
+    operation_in_progress wrong_branch invalid_configuration protected_deletion protected_shrink
+    append_only_violation commit_failed fetch_failed merge_conflict integration_failed push_failed
+    timed_out runner_failed stale].freeze
+
+  def record_sync_health!(data)
+    data = {} unless data.is_a?(Hash)
+    safe = {
+      "state" => data["state"].in?(SYNC_STATES) ? data["state"] : "unknown",
+      "reason_code" => data["reason_code"].in?(SYNC_REASONS) ? data["reason_code"] : "not_recorded",
+      "rescue_status" => data["rescue_status"].in?(%w[not_needed pushed failed]) ? data["rescue_status"] : "not_needed"
+    }
+    %w[checked_at last_success_at].each do |key|
+      safe[key] = safe_sync_time(data[key])
+    end
+    safe["last_success_at"] ||= sync_health["last_success_at"]
+    ref = data["rescue_ref"]
+    safe["rescue_ref"] = ref if ref.is_a?(String) && ref.match?(%r{\Arescue/[A-Za-z0-9_-]{1,48}/[0-9]{8}T[0-9]{12}Z-[a-f0-9]{12}\z})
+    update!(sync_health: safe)
+  end
+
+  def sync_health_props
+    data = sync_health.presence || { "state" => "unknown", "reason_code" => "not_recorded", "rescue_status" => "not_needed" }
+    success = safe_sync_time(data["last_success_at"])
+    age = success && [ (Time.current - Time.iso8601(success)).to_i, 0 ].max
+    props = data.slice("state", "checked_at", "last_success_at", "reason_code", "rescue_ref", "rescue_status")
+      .merge("last_success_age_seconds" => age)
+    props.merge!("state" => "stale", "reason_code" => "stale") if data["state"] == "ok" && (!age || age > 1800)
+    props
   end
 
   def approval_error
@@ -60,7 +106,7 @@ class GithubResidentImport < ApplicationRecord
   def approve!(user, review_revision:)
     raise Account::NotAuthorized unless user&.site_admin
     observed_sha = nil
-    Agents::GithubImportSource.new(service_connection).with_checkout(branch: branch) do |_root, manifest, sha, _branch|
+    Agents::GithubImportSource.new(service_connection, sync_strategy: sync_strategy).with_checkout(branch: branch) do |_root, manifest, sha, _branch|
       raise ArgumentError, "Portable identity changed" unless manifest["identity_id"] == portable_home_id
       observed_sha = sha
     end
@@ -101,13 +147,14 @@ class GithubResidentImport < ApplicationRecord
     result = connection.definition.adapter.connection_attributes(
       credentials: { "token" => connection.credential_payload_hash["token"], "repository" => repository }, user: user)
     raise ArgumentError, "Only fine-grained-format tokens are supported" unless result.dig(:credential_metadata, "token_kind") == "fine_grained"
-    Agents::GithubImportSource.new(connection).with_checkout(branch: branch) do |_root, manifest, sha, _branch|
+    Agents::GithubImportSource.new(connection, sync_strategy: sync_strategy).with_checkout(branch: branch) do |_root, manifest, sha, _branch|
       raise ArgumentError, "Portable identity changed" unless manifest["identity_id"] == portable_home_id
       with_lock do
         raise ArgumentError, "Wait for provisioning to finish" if status.in?(%w[approved provisioning])
         raise ArgumentError, "Credential changed during review" unless service_connection.reload.credential_fingerprint == result[:credential_fingerprint]
         @refreshing_review = true
         update!(commit_sha: sha, credential_fingerprint: result[:credential_fingerprint],
+          sync_configuration: sync_strategy == "standard" ? manifest.fetch("standard_sync", {}) : {},
           token_metadata: result[:credential_metadata].slice("token_kind", "oauth_scopes", "authority_source", "authority_summary", "authority_warnings"),
           status: "pending_review", last_error: nil)
       ensure
@@ -118,6 +165,36 @@ class GithubResidentImport < ApplicationRecord
 
   private
 
+  def safe_sync_time(value)
+    return unless value.is_a?(String) && value.length <= 40 && value.match?(/(?:Z|[+-]\d{2}:\d{2})\z/)
+    Time.iso8601(value).utc.iso8601(6)
+  rescue ArgumentError
+    nil
+  end
+
+  def valid_sync_configuration
+    keys = %w[auto_commit_paths append_only_paths allow_destructive_paths]
+    config = sync_configuration
+    valid = config.is_a?(Hash) && (config.keys - keys).empty?
+    if valid
+      valid = keys.all? do |key|
+        paths = config.fetch(key, [])
+        paths.is_a?(Array) && paths.size <= 100 && paths.all? { |path|
+          path.is_a?(String) && path.length.between?(1, 1024) &&
+            !path.match?(/[\x00-\x1f\\*?\[]/) && !path.start_with?("/") &&
+            path.split("/", -1).none? { |part| part.in?(%w[. .. .git]) || part.empty? }
+        }
+      end
+    end
+    if valid
+      valid = keys.drop(1).all? { |key| config.fetch(key, []).all? { |path|
+        config.fetch("auto_commit_paths", []).any? { |scope| path == scope || path.start_with?("#{scope}/") }
+      } }
+    end
+    errors.add(:sync_configuration, "must declare safe literal scopes within auto-commit paths") unless valid
+    errors.add(:sync_configuration, "requires standard sync") if sync_strategy == "existing" && config.present?
+  end
+
   def connection_matches_account
     return unless service_connection
     errors.add(:service_connection, "must be a GitHub connection in this account") unless
@@ -125,8 +202,8 @@ class GithubResidentImport < ApplicationRecord
   end
 
   def reviewed_configuration_is_immutable
-    immutable = %w[account_id service_connection_id requested_by_id name model_id repository repository_id branch portable_home_id]
-    immutable += %w[commit_sha credential_fingerprint token_metadata] unless @refreshing_review
+    immutable = %w[account_id service_connection_id requested_by_id name model_id repository repository_id branch portable_home_id sync_strategy]
+    immutable += %w[commit_sha credential_fingerprint token_metadata sync_configuration] unless @refreshing_review
     if (changes.keys & immutable).any?
       errors.add(:base, "Submit a new request to change reviewed configuration")
     end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_06_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_06_123000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -666,10 +666,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_110000) do
     t.string "last_error"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "sync_strategy", default: "existing", null: false
+    t.jsonb "sync_configuration", default: {}, null: false
+    t.jsonb "sync_health", default: {}, null: false
     t.index ["account_id"], name: "index_github_resident_imports_on_account_id"
     t.index ["approved_by_id"], name: "index_github_resident_imports_on_approved_by_id"
     t.index ["requested_by_id"], name: "index_github_resident_imports_on_requested_by_id"
     t.index ["service_connection_id"], name: "index_github_resident_imports_on_service_connection_id"
+    t.check_constraint "sync_strategy::text = ANY (ARRAY['existing'::character varying, 'standard'::character varying]::text[])", name: "github_resident_import_sync_strategy"
   end
 
   create_table "guest_memberships", force: :cascade do |t|

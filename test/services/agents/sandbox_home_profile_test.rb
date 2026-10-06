@@ -1,7 +1,22 @@
 require "test_helper"
+require_relative "../../support/github_import_fixtures"
 
 module Agents
   class SandboxHomeProfileTest < ActiveSupport::TestCase
+
+    include GithubImportFixtures
+
+    test "only explicit approved request selects standard and passes reviewed policies" do
+      request = import_request(sync_strategy: "standard", sync_configuration: { "auto_commit_paths" => [ "notes" ] })
+      approve_fixture(request)
+      agent = agents(:research_assistant)
+      agent.update_columns(account_id: request.account_id, github_resident_import_id: request.id,
+        home_profile: "portable_v1", portable_home_id: request.portable_home_id,
+        github_repo_url: "https://github.com/#{request.repository}", github_repo_owner: "example", github_repo_name: "resident")
+      args = env_args(agent)
+      assert_includes args, "SOULSHOUSE_HOME_SYNC_STRATEGY=standard"
+      assert_includes args, 'SOULSHOUSE_HOME_SYNC_CONFIGURATION={"auto_commit_paths":["notes"]}'
+    end
 
     def env_args(agent)
       Agents::Sandbox.new(agent).send(:home_profile_env_args)

@@ -1,7 +1,10 @@
 require "test_helper"
 require "webmock/minitest"
+require_relative "../support/github_import_fixtures"
 
 class AgentHealthCheckJobTest < ActiveJob::TestCase
+
+  include GithubImportFixtures
 
   setup do
     @agent = agents(:research_assistant)
@@ -54,6 +57,22 @@ class AgentHealthCheckJobTest < ActiveJob::TestCase
     assert_equal "healthy", @agent.health_state
     assert_equal 0, @agent.consecutive_health_failures
     assert_nil @agent.last_health_check_at
+  end
+
+  test "records only standard sync safe status without raw errors" do
+    request = import_request(account: @agent.account, connection: import_connection(account: @agent.account), sync_strategy: "standard")
+    @agent.update_columns(github_resident_import_id: request.id)
+    stub_request(:get, "https://agent.example.com/health").to_return(status: 200, body: {
+      home_sync: { state: "needs_attention", reason_code: "merge_conflict", rescue_status: "failed",
+        checked_at: Time.current.iso8601, last_error: "PRIVATE LOG" }
+    }.to_json)
+    AgentHealthCheckJob.perform_now
+    assert_equal "needs_attention", request.reload.sync_health_props["state"]
+    assert_equal "failed", request.sync_health_props["rescue_status"]
+    assert_not_includes request.sync_health.to_json, "PRIVATE"
+    stub_request(:get, "https://agent.example.com/health").to_return(status: 500)
+    AgentHealthCheckJob.perform_now
+    assert_equal "runtime_unavailable", request.reload.sync_health_props["reason_code"]
   end
 
 end

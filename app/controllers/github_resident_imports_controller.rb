@@ -13,11 +13,12 @@ class GithubResidentImportsController < ApplicationController
   end
 
   def create
-    attrs = params.require(:github_resident_import).permit(:name, :model_id, :service_connection_id, :branch)
+    attrs = params.require(:github_resident_import).permit(:name, :model_id, :service_connection_id, :branch, :sync_strategy)
+    attrs[:sync_strategy] ||= "existing"
     connection = current_account.service_connections.find_by_public_id!(attrs.delete(:service_connection_id))
     raise Account::NotAuthorized unless connection.provider == "github" && connection.provisionable_by?(Current.user)
     raise ArgumentError, "Choose a supported model" unless (Chat::MODELS + HouseInference::Offering.models).any? { |model| model[:model_id] == attrs[:model_id] }
-    Agents::GithubImportSource.new(connection).with_checkout(branch: attrs.delete(:branch)) do |_root, manifest, sha, branch|
+    Agents::GithubImportSource.new(connection, sync_strategy: attrs[:sync_strategy]).with_checkout(branch: attrs.delete(:branch)) do |_root, manifest, sha, branch|
       metadata = connection.credential_metadata
       raise ArgumentError, "Credential metadata changed" unless Services::GithubTokenAdapter.fingerprint(connection.credential_payload_hash["token"].to_s) == connection.credential_fingerprint
       # Old or rotated connections cannot lend a new token old scope claims.
@@ -25,7 +26,8 @@ class GithubResidentImportsController < ApplicationController
       @import = current_account.github_resident_imports.create!(attrs.merge(service_connection: connection,
         requested_by: Current.user, repository: metadata.fetch("repository"), repository_id: metadata.fetch("repository_id"),
         branch: branch, commit_sha: sha, portable_home_id: manifest.fetch("identity_id"),
-        credential_fingerprint: connection.credential_fingerprint, token_metadata: token_metadata))
+        credential_fingerprint: connection.credential_fingerprint, token_metadata: token_metadata,
+        sync_configuration: attrs[:sync_strategy] == "standard" ? manifest.fetch("standard_sync", {}) : {}))
     end
     audit(:request_github_resident_import, @import, repository: @import.repository, commit_sha: @import.commit_sha)
     redirect_to account_github_resident_import_path(current_account, @import), notice: "Import requested. A site admin must approve repository execution."
@@ -85,6 +87,7 @@ class GithubResidentImportsController < ApplicationController
       }.map { |connection| { id: connection.public_id, label: connection.display_label,
         repository: connection.credential_metadata["repository"], token_metadata: token_props(connection_metadata(connection)) } },
       models: (Chat::MODELS + HouseInference::Offering.models).map { |model| model.slice(:model_id, :label) },
+      sync_strategies: [ { value: "existing", label: "Keep existing sync" }, { value: "standard", label: "Use standard two-way Git sync" } ],
       submit_url: account_github_resident_imports_path(current_account),
       approve_url: @import && Current.user.site_admin ? approve_account_github_resident_import_path(current_account, @import) : nil,
       refresh_url: @import ? refresh_account_github_resident_import_path(current_account, @import) : nil,
@@ -103,6 +106,11 @@ class GithubResidentImportsController < ApplicationController
       id: @import.to_param, status: @import.status, name: @import.name, model_id: @import.model_id,
       repository: @import.repository, branch: @import.branch, commit_sha: @import.commit_sha,
       portable_home_id: @import.portable_home_id, home_profile: "portable_v1",
+      sync_strategy: @import.sync_strategy, sync_auto_commit_paths: @import.sync_auto_commit_paths,
+      sync_append_only_paths: @import.sync_append_only_paths,
+      sync_allow_destructive_paths: @import.sync_allow_destructive_paths,
+      sync_protected_paths: @import.sync_auto_commit_paths, sync_shrink_minimum_ratio: 0.5,
+      sync_health: @import.sync_health_props,
       review_revision: @import.review_revision,
       token_metadata: token_props(@import.token_metadata), approved_commit_sha: @import.approved_commit_sha,
       current_token_metadata: token_props(connection_metadata(connection)),
