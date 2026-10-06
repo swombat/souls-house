@@ -24,7 +24,7 @@ repository selection or effective permissions. Check those in GitHub. A successf
 repository connection proves access, not least privilege. Classic and unknown
 token formats are not supported by this onboarding flow.
 
-## Approval is a host decision
+## Approval belongs to the account
 
 An account owner or administrator who can currently manage the account and
 provision the selected GitHub connection prepares and approves the import request.
