@@ -52,6 +52,17 @@ after verifying that the remote ref still names the same local commit.
 Eight alternating idle cycles add no commits, and rescue cache lifecycle tests
 cover failed pushes, changed heads and missing/mismatched remote refs.
 The backend helper's final full Python run passed 231 tests (five skips).
+The second review found a remaining append-convergence defect: sorting whole
+suffixes could reorder published content and strand the first host behind its
+append-prefix guard. Daniel authorized the correction and clarified that
+ordinary fixes within agreed work do not need another permission request.
+The correction preserves remote-published order before local additions;
+chronological ordering is not promised. Four publisher/value permutations,
+repeated idle cycles, subsequent concurrent appends and rejected-push recovery
+pass. The final neutral-environment Python suites pass 130 runtime and 108 root
+tests (five skips), including 39 real Git cases. Already non-prefix histories
+and clones copied from unpublished side-parents remain explicit safe-refusal
+cases, not a promise of arbitrary history repair.
 Container-hostname rescue labels remain a limitation; stable body labels and
 in-cycle push retries are deferred. A rejected push retries on the next cycle.
 

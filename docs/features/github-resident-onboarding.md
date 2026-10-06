@@ -196,9 +196,16 @@ merging requires an exact common-base complete UTF-8 line prefix. Each appended
 suffix remains verbatim, including multiline order, repeated lines and blanks.
 Equal suffixes are deduplicated as whole blocks. If one entire suffix is a prefix
 of the other, only the longer remains; genuinely divergent suffixes are
-concatenated as whole blocks in UTF-8 byte lexicographic order. Individual lines
+concatenated with the remote's published block first, then the local block.
+Published content is not reordered to impose lexical or chronological order.
+Individual lines
 are never sorted or deduplicated. This is not general conflict resolution or a
 guarantee of chronological ordering between concurrent hosts.
+This supports clones following the published `origin` history, not arbitrary
+history repair: a clone copied from an unpublished merge side-parent, or an
+older history that already reordered published text, may fail the prefix check.
+Such histories remain preserved for manual reconciliation rather than being
+silently rewritten.
 
 Staged changes, edits outside the eligible policy, an existing Git operation,
 or the wrong branch stop a cycle for manual review. Ignored or untracked files
@@ -253,8 +260,8 @@ then run it against the existing local checkout:
 
 ```sh
 # Pinned implementation revision and checksum are recorded with this release.
-SYNC_COMMIT=c2a706a96481b3d7d7351170372dbeb60fc14a74
-SYNC_SHA256=f39358cce159cc79b81efb5c4479025973025000aa383aa199adbb695d9a71e0
+SYNC_COMMIT=9210880ed0548bc27eef616cb0193949d2eedbff
+SYNC_SHA256=df4af498cfc0a9c0073e65e4db6c2dfdd27d913e367324383ccb66b44d2e3f49
 SYNC_FILE="$HOME/.local/share/souls-house/standard_home_sync.py"
 mkdir -p "$(dirname "$SYNC_FILE")"
 curl --fail --location \

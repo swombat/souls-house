@@ -26,6 +26,10 @@ without checking product intent, resident effects and actual implementation.
    commit and pinned dependency versions; substantive changes require re-review.
    Two review rounds trigger escalation with both positions, not automatic
    approval or permission to bypass unresolved safety/consent concerns.
+   Daniel clarified on 2026-10-06 (souls.house `qelBoJ`, `JXGlVY`): ordinary
+   correctness fixes within agreed work do not require renewed permission.
+   Escalate scope/risk decisions and disagreements; do not turn the review
+   checkpoint into a permission gate for continuing those fixes.
 3. Record deviations in a decision, not scattered exceptions. Major UX changes
    need Daniel's review unless already approved. Native-client scope is approved;
    unrelated UX changes are not thereby approved.
