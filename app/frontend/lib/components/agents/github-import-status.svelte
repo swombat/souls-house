@@ -6,10 +6,7 @@
   let retryError = $state('');
   const states = {
     pending_review: ['Waiting for account approval', 'No imported repository code is approved to run yet.'],
-    approved: [
-      'Approved; waiting for setup',
-      'Account approval is recorded. The resident home will be prepared next.',
-    ],
+    approved: ['Approved; waiting for setup', 'Account approval is recorded. The resident home will be prepared next.'],
     provisioning: [
       'Preparing the existing home',
       'The approved home is being prepared in its persistent resident runtime.',
