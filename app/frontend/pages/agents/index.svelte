@@ -82,17 +82,10 @@
 </svelte:head>
 
 <div class="p-8 max-w-6xl mx-auto">
-  <AgentIndexHeader onCreate={() => router.visit(newAccountAgentPath(account.id))} />
-  {#if githubResidentImportUrl}
-    <p class="mb-4 text-sm">
-      <a class="text-primary underline" href={githubResidentImportUrl}>Bring an existing GitHub resident</a>
-    </p>
-  {/if}
-  {#if residentImportUrl}
-    <p class="mb-6 text-sm">
-      <a class="text-primary underline" href={residentImportUrl}>Import a resident archive</a>
-    </p>
-  {/if}
+  <AgentIndexHeader
+    onCreate={() => router.visit(newAccountAgentPath(account.id))}
+    githubImportUrl={githubResidentImportUrl}
+    archiveImportUrl={residentImportUrl} />
 
   {#if agents.length === 0}
     <AgentEmptyState onCreate={() => router.visit(newAccountAgentPath(account.id))} />
