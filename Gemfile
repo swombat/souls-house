@@ -16,7 +16,7 @@ gem "railties", rails_version
 # Expose application version and environment information.
 gem "rails_app_version", "~> 1.5"
 # Use pg as the database for Active Record
-gem "pg", "~> 1.1"
+gem "pg", "~> 1.7"
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 6.6.0"
 # Build JSON APIs with ease [https://github.com/rails/jbuilder]
