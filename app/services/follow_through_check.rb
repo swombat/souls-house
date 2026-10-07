@@ -104,11 +104,13 @@ class FollowThroughCheck
     @original_messages ||= interaction.follow_through_of ? self.class.new(interaction.follow_through_of).run_messages : []
   end
 
-  # Everything the verdict could depend on that a new event would move: the
-  # newest message (any state) and the newest resident run in the room. The
-  # job compares this under the room lock before acting on a verdict.
+  # Everything the verdict could depend on that a later event would move: a
+  # new message or run, and an edit or discard of an existing message (both
+  # touch updated_at; attention bookkeeping uses update_columns and doesn't).
+  # The job compares this under the room lock before acting on a verdict.
   def evidence_boundary
-    [ chat.messages.maximum(:id), chat.agent_runtime_interactions.maximum(:id) ]
+    messages = chat.messages.unscope(:order)
+    [ messages.maximum(:id), messages.maximum(:updated_at), chat.agent_runtime_interactions.maximum(:id) ]
   end
 
   # What a nudge run is woken with. Grants nothing; points at the evidence.

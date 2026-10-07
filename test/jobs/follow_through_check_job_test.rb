@@ -1,4 +1,5 @@
 require "test_helper"
+require "webmock/minitest"
 
 class FollowThroughCheckJobTest < ActiveSupport::TestCase
 
@@ -171,6 +172,44 @@ class FollowThroughCheckJobTest < ActiveSupport::TestCase
     assert_not AgentRuntimeInteraction.exists?(follow_through_of: @run)
     assert_not @run.reload.follow_through_checked_at?
     assert_no_match "Follow-through", @chat.messages.last.content
+  end
+
+  test "an edit to stop during inference also stops the old verdict" do
+    say("I'll merge once CI is green.")
+    ask = @chat.messages.create!(role: "user", user: users(:user_1), content: "Go ahead and merge when ready.")
+    UtilityInference.stub :decide, ->(**) {
+      travel 1.second do
+        ask.update!(content: "Stop, don't merge that.")
+      end
+      { FollowThroughCheck::QUESTION_KEY => 0.9 }
+    } do
+      assert_enqueued_with(job: FollowThroughCheckJob, args: [ @run.id, { deferrals: 1 } ]) { perform }
+    end
+    assert_not AgentRuntimeInteraction.exists?(follow_through_of: @run)
+  end
+
+  test "a pause during inference wins over the nudge" do
+    say("I'll open the PR.")
+    UtilityInference.stub :decide, ->(**) {
+      Agent.where(id: @agent.id).update_all(paused: true)
+      { FollowThroughCheck::QUESTION_KEY => 0.9 }
+    } do
+      assert_no_difference(-> { Message.count }) { perform }
+    end
+    assert_not AgentRuntimeInteraction.exists?(follow_through_of: @run)
+  end
+
+  test "a pause after the nudge is reserved stops it before dispatch" do
+    say("I'll open the PR.")
+    UtilityInference.stub :decide, ->(**) { { FollowThroughCheck::QUESTION_KEY => 0.9 } } do
+      perform
+    end
+    nudge = AgentRuntimeInteraction.find_by!(follow_through_of: @run)
+    @agent.update!(paused: true)
+    trigger = stub_request(:post, %r{agent\.example\.com})
+    ManualAgentResponseJob.perform_now(@chat, @agent, runtime_interaction_id: nudge.id)
+    assert_not_requested trigger
+    assert_equal "cancelled", nudge.reload.execution_state
   end
 
   test "a failure while acting leaves the run unchecked, so a retry acts" do

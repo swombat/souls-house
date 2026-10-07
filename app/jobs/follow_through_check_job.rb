@@ -70,8 +70,11 @@ class FollowThroughCheckJob < ApplicationJob
   # woken this resident here, a second wake would be the loop we're avoiding.
   def nudge!(interaction, check)
     return unless AgentRuntimeInteraction.live_activity_enabled?
-    chat, agent = interaction.chat, interaction.agent
-    # Paused means "don't wake me"; a nudge must not route around it.
+    chat = interaction.chat
+    # Paused means "don't wake me"; a nudge must not route around it. Read it
+    # fresh under a row lock, so a pause during inference wins and a pause
+    # can't land between this check and the reservation.
+    agent = interaction.agent.lock!
     return if agent.paused? || !agent.eligible_for_conversation?
     return if chat.agent_runtime_interactions.where(agent: agent).where.not(follow_through_of_id: nil)
       .where("created_at > ?", interaction.started_at).exists?
