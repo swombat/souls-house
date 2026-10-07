@@ -726,7 +726,7 @@ class JsonAttributesTest < ActiveSupport::TestCase
     # Test User configuration
     assert_equal [ :first_name, :last_name, :timezone, :full_name, :site_admin, :avatar_url, :initials, :preferences, :chat_colour, :theme_hue ], User.json_attrs
     assert_equal({}, User.json_includes)
-    assert_equal({ except: [ :password_digest, :password_reset_token, :password_reset_sent_at ] }, User.json_options)
+    assert_equal({ except: [ :password_digest, :password_reset_token, :password_reset_sent_at, :default_account_id ] }, User.json_options)
     assert_nil User.json_enhancer
 
     # Test Membership configuration

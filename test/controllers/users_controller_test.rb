@@ -163,4 +163,37 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert Profile.validators_on(:avatar).any? { |v| v.is_a?(ActiveStorageValidations::SizeValidator) }
   end
 
+  test "PATCH update sets the default account and account-less pages use it" do
+    team = accounts(:team_account)
+    patch user_path, params: { user: { default_account_key: team.to_param } },
+      headers: { "X-Inertia" => true }
+
+    assert_redirected_to edit_user_path
+    assert_equal team.id, @user.reload.default_account_id
+
+    # Any page without an account in the URL now resolves to the chosen one.
+    get api_keys_path
+    assert_redirected_to account_api_keys_path(team)
+  end
+
+  test "PATCH update refuses a default account the user does not belong to" do
+    patch user_path, params: { user: { default_account_key: accounts(:unconfirmed_user_account).to_param } },
+      headers: { "X-Inertia" => true }
+
+    assert_nil @user.reload.default_account_id
+    assert flash[:errors].present?
+  end
+
+  test "GET edit passes the default account choice as a settings prop" do
+    team = accounts(:team_account)
+    @user.update!(default_account_key: team.to_param)
+
+    get edit_user_path
+
+    props = inertia_props["props"]
+    assert_equal team.to_param, props["default_account_key"]
+    assert_includes props["accounts"].map { |a| a["id"] }, team.to_param
+    assert_not props["user"].key?("default_account_key")
+  end
+
 end

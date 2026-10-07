@@ -3,7 +3,9 @@ class UsersController < ApplicationController
   def edit
     render inertia: "user/edit", props: {
       timezones: timezone_options,
-      colour_options: Profile::VALID_CHAT_COLOURS
+      colour_options: Profile::VALID_CHAT_COLOURS,
+      accounts: Current.user.confirmed_accounts.map { |account| { id: account.to_param, name: account.name } },
+      default_account_key: Current.user.default_account_key
     }
   end
 
@@ -79,7 +81,7 @@ class UsersController < ApplicationController
   end
 
   def user_params
-    params.require(:user).permit(:first_name, :last_name, :timezone, :avatar, :theme, :chat_colour, :theme_hue, preferences: [ :theme ], profile_attributes: [ :first_name, :last_name, :timezone, :avatar, :theme, :chat_colour, :theme_hue ])
+    params.require(:user).permit(:first_name, :last_name, :timezone, :avatar, :theme, :chat_colour, :theme_hue, :default_account_key, preferences: [ :theme ], profile_attributes: [ :first_name, :last_name, :timezone, :avatar, :theme, :chat_colour, :theme_hue ])
   end
 
   def separate_user_and_profile_params
