@@ -13,7 +13,7 @@ test.describe('touch', () => {
   test('first native tap reveals the choices without creating', async ({ mount, page }) => {
     const calls = [];
     const component = await mount(AgentIndexHeader, { props: props(calls) });
-    await component.getByRole('button', { name: 'New Resident' }).tap();
+    await component.getByRole('button', { name: 'New Resident', exact: true }).tap();
     await expect(page.getByRole('link', { name: 'Import a resident archive' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Bring an existing GitHub resident' })).toBeVisible();
     expect(calls).toEqual([]);
@@ -25,7 +25,7 @@ test.describe('touch', () => {
   test('second tap on the button creates', async ({ mount, page }) => {
     const calls = [];
     const component = await mount(AgentIndexHeader, { props: props(calls) });
-    const button = component.getByRole('button', { name: 'New Resident' });
+    const button = component.getByRole('button', { name: 'New Resident', exact: true });
     await button.tap();
     expect(calls).toEqual([]);
     await button.tap();
@@ -36,7 +36,7 @@ test.describe('touch', () => {
 test('mouse hover reveals the choices and a click still creates', async ({ mount, page }) => {
   const calls = [];
   const component = await mount(AgentIndexHeader, { props: props(calls) });
-  const button = component.getByRole('button', { name: 'New Resident' });
+  const button = component.getByRole('button', { name: 'New Resident', exact: true });
   await button.hover();
   await expect(page.getByRole('link', { name: 'Import a resident archive' })).toBeVisible();
   await page.getByRole('link', { name: 'Import a resident archive' }).hover();
@@ -48,7 +48,7 @@ test('mouse hover reveals the choices and a click still creates', async ({ mount
 test('keyboard focus opens the panel, Escape returns focus to the button closed', async ({ mount, page }) => {
   const calls = [];
   const component = await mount(AgentIndexHeader, { props: props(calls) });
-  const button = component.getByRole('button', { name: 'New Resident' });
+  const button = component.getByRole('button', { name: 'New Resident', exact: true });
   await page.keyboard.press('Tab');
   await expect(button).toBeFocused();
   await expect(button).toHaveAttribute('aria-expanded', 'true');
