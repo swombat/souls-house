@@ -97,11 +97,25 @@ class InstanceCommandTest < Minitest::Test
     # immediate exit lets the supervisor's final cleanup TERM race the
     # grandchild's first handler. The child never signals the grandchild, so
     # both acknowledgements still prove the supervisor reached the whole group.
-    child = "STDOUT.sync=true; grandchild_pid = nil; Signal.trap('TERM') { puts 'CHILD_TERM'; Process.wait(grandchild_pid) if grandchild_pid; exit }; grandchild_pid = Process.spawn(#{RUBY.inspect}, '-e', #{grandchild.inspect}); sleep 60"
+    child = <<~CODE
+      STDOUT.sync = true
+      grandchild_pid = nil
+      Signal.trap("TERM") do
+        puts "CHILD_TERM"
+        Process.wait(grandchild_pid) if grandchild_pid
+        exit
+      end
+      grandchild_pid = Process.spawn(#{RUBY.inspect}, "-e", #{grandchild.inspect})
+      puts "DIRECT_CHILD_READY"
+      sleep 60
+    CODE
     wrapper = "require #{RUNNER.inspect}; exit LocalInstance::Command.run([#{RUBY.inspect}, '-e', #{child.inspect}])"
     Open3.popen3(RUBY, "-e", wrapper) do |stdin, stdout, stderr, process|
       stdin.close
-      read_until(stdout, "GRANDCHILD_READY")
+      ready = read_until(stdout, "GRANDCHILD_READY")
+      # A scheduled grandchild can announce readiness before Process.spawn
+      # returns and assigns its PID in the direct child. Wait for both.
+      read_until(stdout, "DIRECT_CHILD_READY") unless ready.include?("DIRECT_CHILD_READY")
       Process.kill("TERM", process.pid)
       output = Timeout.timeout(10) { stdout.read }
       assert_includes output, "CHILD_TERM"
