@@ -153,9 +153,23 @@ class MessageDispatchTest < ActiveSupport::TestCase
     assert_nil run.reload.dispatch_claimed_at
   end
 
-  test "a discard after the claim won cannot recall the run, but stops the chain" do
+  test "a discard after one claim won cannot recall that run, but cancels its unclaimed sibling" do
     MessageDispatchJob.perform_now(@dispatch)
     run = @dispatch.reload.runtime_interaction
+    sibling = @dispatch.runtime_interactions.where.not(id: run.id).sole
+    assert_equal @second, sibling.agent
+    assert run.claim_dispatch!
+    @message.discard_as_author!
+
+    assert_equal "preparing", run.reload.execution_state
+    assert_nil run.finished_at
+    assert_equal "cancelled", sibling.reload.execution_state
+    assert_not sibling.claim_dispatch!
+    assert_nil sibling.reload.dispatch_claimed_at
+  end
+
+  test "a discard after the claim won cannot recall the run, but stops a legacy chain" do
+    run = reserve_legacy_chain!
     assert run.claim_dispatch!
     @message.discard_as_author!
 
@@ -248,15 +262,17 @@ class MessageDispatchTest < ActiveSupport::TestCase
     end
   end
 
-  test "a continuation reserved before the horizon cannot be claimed after it; the running first run is untouched" do
-    MessageDispatchJob.perform_now(@dispatch)
-    run = @dispatch.reload.runtime_interaction
+  test "a legacy continuation reserved before the horizon cannot be claimed after it; the running first run is untouched" do
+    run = reserve_legacy_chain!
     assert run.claim_dispatch!
     AllAgentsResponseJob.stub(:perform_later, nil) do
       @chat.messages.create!(agent: @first, role: "assistant", content: "Linked reply", runtime_interaction: run)
     end
-    AllAgentsResponseJob.perform_now(@chat, [ @second.id ], after_interaction_id: run.id)
+    assert_difference "AgentRuntimeInteraction.count", 1 do
+      AllAgentsResponseJob.perform_now(@chat, [ @second.id ], after_interaction_id: run.id)
+    end
     successor = @dispatch.runtime_interactions.order(:id).last
+    assert_not_equal run, successor
     assert_equal @second, successor.agent
 
     travel MessageDispatch::RECOVERY_HORIZON + 1.minute do
