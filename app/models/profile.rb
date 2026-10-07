@@ -25,6 +25,8 @@ class Profile < ApplicationRecord
   validates :theme, inclusion: { in: %w[light dark system] }, allow_nil: true
   validates :timezone, inclusion: { in: ActiveSupport::TimeZone.all.map(&:name) }, allow_blank: true
   validates :chat_colour, inclusion: { in: VALID_CHAT_COLOURS }, allow_nil: true
+  # One hue tints the whole neutral palette; lightness and intensity are fixed in CSS so no hue can be garish.
+  validates :theme_hue, numericality: { only_integer: true, in: 0..359 }, allow_nil: true
   validates_presence_of :first_name, :last_name, if: -> { user&.confirmed? }
 
   # Avatar validations
@@ -36,7 +38,7 @@ class Profile < ApplicationRecord
 
   # JSON attributes to include theme preferences
   def preferences
-    { "theme" => theme }.compact
+    { "theme" => theme, "theme_hue" => theme_hue }.compact
   end
 
   def full_name

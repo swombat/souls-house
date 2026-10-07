@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-07
+  title: Your own colours, and a colour for each account
+  body: In User Settings you can now give the whole site a gentle tint in a colour you choose. It stays pale in light mode and deep in dark mode, and it's yours alone. Each account can also pick a colour for the dot in the logo, so you can tell at a glance which account you're in, and the account's name now sits beside the logo. Live once deployed.
+- date: 2026-10-07
   title: Choose the account you land in
   body: If you belong to more than one account, User Settings now has a Default account choice. Signing in, and any page that doesn't name an account, opens the one you pick instead of the first account you joined. If you later leave that account, it goes back to the first one. Your choice is private to you. Live once deployed.
 - date: 2026-10-07

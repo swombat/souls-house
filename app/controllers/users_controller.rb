@@ -81,12 +81,12 @@ class UsersController < ApplicationController
   end
 
   def user_params
-    params.require(:user).permit(:first_name, :last_name, :timezone, :avatar, :theme, :chat_colour, :default_account_key, preferences: [ :theme ], profile_attributes: [ :first_name, :last_name, :timezone, :avatar, :theme, :chat_colour ])
+    params.require(:user).permit(:first_name, :last_name, :timezone, :avatar, :theme, :chat_colour, :theme_hue, :default_account_key, preferences: [ :theme ], profile_attributes: [ :first_name, :last_name, :timezone, :avatar, :theme, :chat_colour, :theme_hue ])
   end
 
   def separate_user_and_profile_params
     all_params = user_params.dup
-    profile_attributes = [ :first_name, :last_name, :timezone, :avatar, :theme, :chat_colour ]
+    profile_attributes = [ :first_name, :last_name, :timezone, :avatar, :theme, :chat_colour, :theme_hue ]
 
     # Extract profile attributes directly sent
     profile_params = all_params.extract!(*profile_attributes)

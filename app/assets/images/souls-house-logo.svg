@@ -2,5 +2,5 @@
   <title id="shl-t">souls.house</title>
   <desc id="shl-d">A roof sheltering a warm orb: a soul, housed.</desc>
   <path d="M16 100 L120 24 L224 100" fill="none" stroke="currentColor" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="120" cy="148" r="58" fill="#f15d61"/>
+  <circle cx="120" cy="148" r="58" fill="#f15d61" style="fill: var(--account-dot, #f15d61)"/>
 </svg>

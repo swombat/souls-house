@@ -9,7 +9,7 @@ class User < ApplicationRecord
   has_one :profile, dependent: :destroy
   accepts_nested_attributes_for :profile, update_only: false
   delegate :full_name, :avatar, :avatar_url, :timezone,
-           :first_name, :last_name, :chat_colour, to: :profile, allow_nil: true
+           :first_name, :last_name, :chat_colour, :theme_hue, to: :profile, allow_nil: true
 
   # Account associations through memberships
   has_many :memberships, dependent: :destroy
@@ -55,7 +55,7 @@ class User < ApplicationRecord
   after_create :ensure_membership_exists
   after_create :create_profile
 
-  json_attributes :first_name, :last_name, :timezone, :full_name, :site_admin, :avatar_url, :initials, :preferences, :chat_colour, except: [ :password_digest, :password_reset_token, :password_reset_sent_at, :default_account_id ]
+  json_attributes :first_name, :last_name, :timezone, :full_name, :site_admin, :avatar_url, :initials, :preferences, :chat_colour, :theme_hue, except: [ :password_digest, :password_reset_token, :password_reset_sent_at, :default_account_id ]
 
   # Confirmation is now handled entirely by Membership
   def confirmed?

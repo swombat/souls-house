@@ -69,6 +69,7 @@ class Account < ApplicationRecord
   # Validations (Rails-only, no SQL constraints!)
   validates :name, presence: true
   validates :account_type, presence: true
+  validates :logo_colour, inclusion: { in: ->(_) { LOGO_COLOURS } }, allow_nil: true
   validate :enforce_site_account_limit, on: :create
   validate :enforce_personal_account_limit, if: :personal?
   validate :can_invite_members, if: -> { memberships.any?(&:invitation?) }
@@ -82,6 +83,11 @@ class Account < ApplicationRecord
   after_update_commit -> { users.ids.each { |id| ReplyExpectation.refresh_for(id) } }, if: :saved_change_to_disabled_at?
 
   ACCOUNT_LIMIT_MESSAGE = "This house has reached its account limit. New signups and accounts are temporarily closed."
+
+  # Curated colours for the dot in the logo, so an account is recognisable at a glance.
+  # Each name has a hand-tuned light and dark value in application.css ([data-account-colour]).
+  # Null means the default coral, the colour the mark was drawn with.
+  LOGO_COLOURS = %w[teal plum ochre sky moss indigo slate].freeze
 
   # Scopes
   scope :personal, -> { where(account_type: :personal) }
