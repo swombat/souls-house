@@ -10,7 +10,13 @@ class FollowThroughCheckJobTest < ActiveSupport::TestCase
       trigger_bearer_token: "tr_valid", health_state: "healthy", consecutive_health_failures: 0
     )
     @chat = @agent.account.chats.create!(title: "Follow-through", manual_responses: true, agents: [ @agent, @other ])
+    @previous_setting = ENV["SOULSHOUSE_FOLLOW_THROUGH"]
+    ENV["SOULSHOUSE_FOLLOW_THROUGH"] = @agent.to_param
     @run = finished_run
+  end
+
+  teardown do
+    ENV["SOULSHOUSE_FOLLOW_THROUGH"] = @previous_setting
   end
 
   test "ending a conversation run queues one check a minute later" do
@@ -31,9 +37,16 @@ class FollowThroughCheckJobTest < ActiveSupport::TestCase
     end
   end
 
-  test "the kill switch turns the check off" do
-    with_env("SOULSHOUSE_FOLLOW_THROUGH" => "0") do
-      assert_no_enqueued_jobs(only: FollowThroughCheckJob) { running_run.finish_execution!("completed") }
+  test "the check is opt-in per resident" do
+    [ nil, "", @other.to_param ].each do |setting|
+      with_env("SOULSHOUSE_FOLLOW_THROUGH" => setting) do
+        assert_no_enqueued_jobs(only: FollowThroughCheckJob) { running_run.finish_execution!("completed") }
+      end
+    end
+    [ "all", "#{@other.to_param}, #{@agent.to_param}" ].each do |setting|
+      with_env("SOULSHOUSE_FOLLOW_THROUGH" => setting) do
+        assert_enqueued_with(job: FollowThroughCheckJob) { running_run.finish_execution!("completed") }
+      end
     end
   end
 
@@ -123,13 +136,88 @@ class FollowThroughCheckJobTest < ActiveSupport::TestCase
     assert @run.reload.follow_through_checked_at?
   end
 
-  test "a later finished run by the same resident here supersedes the check" do
+  test "a later silent run does not erase an earlier promise" do
     say("I'll open the PR.")
-    finished_run(started_at: 10.seconds.ago)
-    UtilityInference.stub :decide, ->(**) { flunk "superseded" } do
+    later = finished_run(started_at: 10.seconds.ago)
+    later.update!(execution_state: "failed")
+    calls = 0
+    UtilityInference.stub :decide, ->(state:, **) {
+      calls += 1
+      assert_equal [ "I'll open the PR." ], state[:run_messages].pluck(:content)
+      { FollowThroughCheck::QUESTION_KEY => 0.9 }
+    } do
       perform
     end
+    assert_equal 1, calls
+    assert AgentRuntimeInteraction.exists?(follow_through_of: @run)
+  end
+
+  test "a later run that lost contact recently is waited for" do
+    say("I'll open the PR.")
+    finished_run(started_at: 10.seconds.ago).update!(execution_state: "outcome_unknown", finished_at: 5.seconds.ago)
+    UtilityInference.stub :decide, ->(**) { flunk "may still be working" } do
+      assert_enqueued_with(job: FollowThroughCheckJob, args: [ @run.id, { deferrals: 1 } ]) { perform }
+    end
+  end
+
+  test "a cancellation arriving during inference stops the old verdict" do
+    say("I'll merge once CI is green.")
+    UtilityInference.stub :decide, ->(**) {
+      @chat.messages.create!(role: "user", user: users(:user_1), content: "Stop, don't merge that.")
+      { FollowThroughCheck::QUESTION_KEY => 0.9 }
+    } do
+      assert_enqueued_with(job: FollowThroughCheckJob, args: [ @run.id, { deferrals: 1 } ]) { perform }
+    end
+    assert_not AgentRuntimeInteraction.exists?(follow_through_of: @run)
     assert_not @run.reload.follow_through_checked_at?
+    assert_no_match "Follow-through", @chat.messages.last.content
+  end
+
+  test "a failure while acting leaves the run unchecked, so a retry acts" do
+    say("I'll knock Mira now.")
+    UtilityInference.stub :decide, ->(**) { { FollowThroughCheck::QUESTION_KEY => 0.9 } } do
+      AgentRuntimeInteraction.stub :reserve!, ->(**) { raise ActiveRecord::StatementInvalid, "connection lost" } do
+        assert_raises(ActiveRecord::StatementInvalid) { perform }
+      end
+      assert_not @run.reload.follow_through_checked_at?
+      assert_no_match "Follow-through", @chat.messages.last.content
+      perform
+    end
+    assert @run.reload.follow_through_checked_at?
+    assert AgentRuntimeInteraction.exists?(follow_through_of: @run)
+  end
+
+  test "a nudge run that fails silently is flagged once and never woken" do
+    say("On it. I'll post the PR link here.")
+    origin = @run
+    @run = finished_run(follow_through_of: origin, started_at: 2.minutes.ago)
+    @run.update!(execution_state: "failed")
+    UtilityInference.stub :decide, ->(state:, **) {
+      assert_empty state[:run_messages]
+      assert_equal [ "On it. I'll post the PR link here." ], state[:original_run_messages].pluck(:content)
+      { FollowThroughCheck::QUESTION_KEY => 0.9 }
+    } do
+      assert_no_difference(-> { AgentRuntimeInteraction.count }) do
+        assert_no_enqueued_jobs(only: ManualAgentResponseJob) { perform; perform }
+      end
+    end
+    assert_equal 1, @chat.messages.where("content LIKE ?", "%needs a person's eye%").count
+  end
+
+  test "a nudge that never got to run is still flagged" do
+    say("On it.")
+    nudge = finished_run(follow_through_of: @run, started_at: 2.minutes.ago)
+    nudge.update!(execution_state: "cancelled")
+    assert FollowThroughCheck.checkable?(nudge)
+    assert_not FollowThroughCheck.checkable?(finished_run.tap { |r| r.update!(execution_state: "cancelled") })
+  end
+
+  test "a resident who can't be woken gets no notice claiming they were" do
+    say("I'll open the PR.")
+    @agent.update!(paused: true)
+    UtilityInference.stub :decide, ->(**) { { FollowThroughCheck::QUESTION_KEY => 0.9 } } do
+      assert_no_difference(-> { Message.count }) { perform }
+    end
   end
 
   test "the nudge run is told what it is and that it adds no authority" do

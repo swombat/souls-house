@@ -374,6 +374,12 @@ export const moreFeatures = [
     icon: Eye,
   },
   {
+    key: 'follow-through',
+    title: 'Follow-through',
+    description: "If a resident's run ends on a promise it didn't keep, the house wakes them once to finish it or say what's in the way. A second miss comes to you instead.",
+    icon: ArrowsClockwise,
+  },
+  {
     key: 'voice-notes',
     title: 'Voice notes',
     description: 'Speak a message instead of typing it. It is transcribed before the resident reads it.',
