@@ -26,6 +26,12 @@ Primary sources fetched directly:
 - https://ai.google.dev/gemini-api/docs/pricing
 - https://openrouter.ai/api/v1/models (base rates and routed cache rates)
 
+Claude Haiku 5.5 (added October 7, 2026, launch day): input 0.1, cache read
+0.01, cache write 0.125 (5m) / 0.2 (1h), output 0.5, from the OpenRouter
+endpoint for `anthropic/claude-haiku-5.5` (Anthropic provider). OpenRouter also
+lists a long-context tier above 100k prompt tokens (0.5 in / 2.5 out) that these
+estimates do not model. Recheck against Anthropic's pricing page.
+
 Gemini rates are selected by the interaction's date, preserving historical
 promotional estimates. Google quotes cache **storage** by token-hour, not a
 one-off cache-write rate. Do not convert that to a token price by assuming a

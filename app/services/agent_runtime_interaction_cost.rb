@@ -25,6 +25,7 @@ class AgentRuntimeInteractionCost
     [ /(?:anthropic\/)?claude-opus-4[-.]5/, "anthropic/claude-opus-4.5", 5, 25 ],
     [ /(?:anthropic\/)?claude-sonnet-4[-.]6/, "anthropic/claude-sonnet-4.6", 3, 15 ],
     [ /(?:anthropic\/)?claude-sonnet-4[-.]5/, "anthropic/claude-sonnet-4.5", 3, 15 ],
+    [ /\A(?:anthropic\/)?claude-haiku-5[-.]5\z/, "anthropic/claude-haiku-5.5", 0.1, 0.5 ],
     [ /(?:anthropic\/)?claude-haiku-4[-.]5/, "anthropic/claude-haiku-4.5", 1, 5 ],
     [ /(?:anthropic\/)?claude-opus-4[-.]1/, "anthropic/claude-opus-4.1", 15, 75 ],
     [ /(?:anthropic\/)?claude-opus-4(?:-\d{8})?\z/, "anthropic/claude-opus-4", 15, 75 ],

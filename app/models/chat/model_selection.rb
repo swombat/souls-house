@@ -207,6 +207,7 @@ module Chat::ModelSelection
     # Anthropic
     { model_id: "anthropic/claude-opus-5.5", label: "Claude Opus 5.5", group: "Anthropic", provider_model_id: "claude-opus-5-5", thinking: { supported: true, requires_direct_api: true } },
     { model_id: "anthropic/claude-fable-5.1", label: "Claude Fable 5.1", group: "Anthropic", provider_model_id: "claude-fable-5-1", thinking: { supported: true, requires_direct_api: true } },
+    { model_id: "anthropic/claude-haiku-5.5", label: "Claude Haiku 5.5", group: "Anthropic", provider_model_id: "claude-haiku-5-5", thinking: { supported: true, requires_direct_api: true } },
     {
       model_id: "anthropic/claude-opus-5-fast",
       label: "Claude Opus 5 (Fast)",
@@ -777,7 +778,7 @@ module Chat::ModelSelection
         REASONING_PROFILES[:openai_legacy]
       when "anthropic/claude-fable-5"
         REASONING_PROFILES[:anthropic_fable]
-      when %r{\Aanthropic/claude-(?:sonnet-[45]|opus-[45])}
+      when %r{\Aanthropic/claude-(?:sonnet-[45]|opus-[45]|haiku-5)}
         REASONING_PROFILES[:anthropic]
       when %r{\Agoogle/gemini-(?:3\.[5-8]-flash|3\.1-flash|3-flash)}
         REASONING_PROFILES[:gemini_full]
