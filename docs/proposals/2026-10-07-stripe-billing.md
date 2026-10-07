@@ -21,8 +21,8 @@ decisions in conversation `oewbQY`. Revision 2 addresses Mira's review of
 | Container CPU shares | 1024 | 2048 |
 | Delivery | shared host container | shared host container (dedicated VM later) |
 
-Placeholders are calibrated before launch from per-resident cost (see
-*Attribution*), the host's monthly cost per realistic resident count, and
+Placeholders are calibrated before launch from per-resident cost (the new per-resident
+attribution in *Allowance and ledger*), the host's monthly cost per realistic resident count, and
 measured Stripe fees. Each tier must show a positive margin at full allowance use.
 The pricing page states plainly whether a tier is a shared-host container or a
 dedicated VM. At launch it is always the former. One-VM-per-resident
