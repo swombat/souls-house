@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_170100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_184500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -23,6 +23,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_170100) do
     t.string "github_login"
     t.text "github_pat"
     t.boolean "is_site_admin", default: false, null: false
+    t.string "logo_colour"
     t.text "minimax_api_key"
     t.text "moonshot_api_key"
     t.string "name", null: false
@@ -1053,6 +1054,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_170100) do
     t.string "last_name"
     t.jsonb "preferences", default: {}
     t.string "theme", default: "system"
+    t.integer "theme_hue"
     t.string "timezone"
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html <%= tag.attributes(html_theme_attributes) %>>
   <head>
     <title><%= content_for(:title) || Setting.instance.site_name %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1,interactive-widget=resizes-content">

@@ -8,10 +8,11 @@
   import AvatarUpload from '$lib/components/AvatarUpload.svelte';
   import Avatar from '$lib/components/Avatar.svelte';
   import ColourPicker from '$lib/components/ColourPicker.svelte';
+  import ThemeHuePicker from '$lib/components/theme/ThemeHuePicker.svelte';
 
   let { user, timezones, colour_options = [], onCancel, onSuccess } = $props();
 
-  let user_form = $state({ ...user });
+  let user_form = $state({ ...user, theme_hue: user.theme_hue ?? null });
 
   function handleAvatarUpdate() {
     // Reload the page to get updated user data
@@ -92,5 +93,15 @@
     <h3 class="text-lg font-semibold mb-2">Chat Appearance</h3>
     <p class="text-sm text-muted-foreground mb-4">Customise how your messages appear in group chats</p>
     <ColourPicker bind:value={user_form.chat_colour} options={colour_options} label="Chat Bubble Colour" />
+  </div>
+
+  <div class="border-t my-6"></div>
+
+  <div>
+    <h3 class="text-lg font-semibold mb-2">Colour Theme</h3>
+    <p class="text-sm text-muted-foreground mb-4">
+      A gentle tint for the whole site, just for you. Light mode stays pale and dark mode stays deep.
+    </p>
+    <ThemeHuePicker bind:value={user_form.theme_hue} saved={user.theme_hue ?? null} />
   </div>
 </Form>

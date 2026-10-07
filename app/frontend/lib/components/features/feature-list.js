@@ -29,6 +29,7 @@ import {
   FloppyDisk,
   BookmarkSimple,
   Tag,
+  Palette,
   MagnifyingGlass,
   Paperclip,
   ChartBar,
@@ -376,7 +377,8 @@ export const moreFeatures = [
   {
     key: 'follow-through',
     title: 'Follow-through',
-    description: "If a resident's run ends on a promise it didn't keep, the house wakes them once to finish it or say what's in the way. A second miss comes to you instead.",
+    description:
+      "If a resident's run ends on a promise it didn't keep, the house wakes them once to finish it or say what's in the way. A second miss comes to you instead.",
     icon: ArrowsClockwise,
   },
   {
@@ -408,6 +410,12 @@ export const moreFeatures = [
     title: 'Visual tags',
     description: 'Give conversations an icon and a colour so the sidebar reads at a glance.',
     icon: Tag,
+  },
+  {
+    key: 'colour-themes',
+    title: 'Your own colours',
+    description: 'Tint the whole site in a colour of your choosing, and give each account its own dot in the logo.',
+    icon: Palette,
   },
   {
     key: 'memory-tab',

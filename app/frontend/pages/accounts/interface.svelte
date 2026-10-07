@@ -9,8 +9,16 @@
   import VisualTagIcon from '$lib/components/chat/VisualTagIcon.svelte';
   import { visualTagColour } from '$lib/visual-tags';
   import { createDynamicSync } from '$lib/use-sync';
+  import AccountLogoColourPicker from '$lib/components/theme/AccountLogoColourPicker.svelte';
 
-  let { account, visual_tags = [], can_manage = false, icon_options = [], colour_options = [] } = $props();
+  let {
+    account,
+    visual_tags = [],
+    can_manage = false,
+    icon_options = [],
+    colour_options = [],
+    logo_colour_options = [],
+  } = $props();
   const updateSync = createDynamicSync();
   let editing = $state(null);
   let open = $state(false);
@@ -27,6 +35,27 @@
 
 <AccountSettingsLayout {account} active="interface" title="Interface" description="How this account looks and feels.">
   <FlashMessages flash={$page.props.flash} />
+  <section class="space-y-4" aria-labelledby="logo-colour-heading">
+    <div class="space-y-2">
+      <h2 id="logo-colour-heading" class="text-xl font-semibold">Logo colour</h2>
+      <p class="text-sm text-muted-foreground">
+        The colour of the dot in the logo while you're in this account, so you can tell at a glance where you are.
+        Everyone in the account sees it. Each colour has a light and a dark version.
+      </p>
+      {#if !can_manage}<p class="text-sm text-muted-foreground">
+          You do not have permission to change this account’s logo colour.
+        </p>{/if}
+    </div>
+    <AccountLogoColourPicker
+      accountId={account.id}
+      current={account.logo_colour ?? null}
+      options={logo_colour_options}
+      canManage={can_manage} />
+    {#if $page.props.errors?.logo_colour}
+      <p class="text-sm text-destructive">{$page.props.errors.logo_colour}</p>
+    {/if}
+  </section>
+  <div class="border-t"></div>
   <section class="space-y-4" aria-labelledby="visual-tags-heading">
     <div class="flex items-start justify-between gap-4">
       <div class="space-y-2">
