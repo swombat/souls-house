@@ -38,7 +38,7 @@ module RunnerUserData
   NFT
 
   # Reloaded on every boot, before the network comes up. Debian's own
-  # nftables.service is left disabled: its config flushes the whole ruleset.
+  # nftables.service is masked in runcmd: its config flushes the whole ruleset.
   FIREWALL_UNIT = <<~UNIT.freeze
     [Unit]
     Description=House host input firewall
@@ -98,6 +98,10 @@ module RunnerUserData
         file("/etc/souls-house-runner/config.json", JSON.generate(config), "0600")
       ],
       "runcmd" => [
+        # Debian's own nftables.service flushes the whole ruleset when it
+        # starts or stops. Masked first, so nothing can enable it later and
+        # wipe the house rules.
+        %w[systemctl mask nftables.service],
         %w[systemctl daemon-reload],
         %w[systemctl enable --now souls-house-firewall],
         %w[systemctl enable --now docker],

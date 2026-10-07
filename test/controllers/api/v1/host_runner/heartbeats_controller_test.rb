@@ -15,7 +15,7 @@ class Api::V1::HostRunner::HeartbeatsControllerTest < ActionDispatch::Integratio
   end
 
   def enroll!
-    @enrollment.enroll!(token: @token, public_key: public_key_b64(@key), reported_server_id: 4242, facts: {})
+    @enrollment.enroll!(token: @token, public_key: public_key_b64(@key), reported_server_id: 4242, facts: {}, nonce: SecureRandom.hex(16))
   end
 
   def beat(key: @key, server: 4242)
@@ -48,11 +48,13 @@ class Api::V1::HostRunner::HeartbeatsControllerTest < ActionDispatch::Integratio
 
   test "a heartbeat from another server is refused, and a revoked runner is refused" do
     enroll!
-    beat(server: 7)
-    assert_response :conflict
-    @enrollment.revoke!
-    beat
-    assert_response :forbidden
+    assert_no_difference -> { RunnerRequestNonce.count } do
+      beat(server: 7)
+      assert_response :conflict
+      @enrollment.revoke!
+      beat
+      assert_response :forbidden
+    end
     assert_equal "revoked", response.parsed_body["error"]
   end
 

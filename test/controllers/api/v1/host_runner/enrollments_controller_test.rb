@@ -106,7 +106,9 @@ class Api::V1::HostRunner::EnrollmentsControllerTest < ActionDispatch::Integrati
     enroll
     assert_response :ok
     travel 25.hours do
-      enroll
+      assert_no_difference -> { RunnerRequestNonce.count } do
+        enroll
+      end
       assert_response :gone
       assert_equal "expired", response.parsed_body["error"]
 

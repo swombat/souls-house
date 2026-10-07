@@ -9,7 +9,7 @@ class RunnerEnrollmentTest < ActiveSupport::TestCase
   end
 
   def enroll(token: @token, key: @key, server: 4242, now: Time.current)
-    @enrollment.enroll!(token:, public_key: key, reported_server_id: server, facts: { "provider_server_id" => server }, now:)
+    @enrollment.enroll!(token:, public_key: key, reported_server_id: server, facts: { "provider_server_id" => server }, nonce: SecureRandom.hex(16), now:)
   end
 
   test "mint stores only the digest and a 24 hour expiry" do
@@ -55,6 +55,34 @@ class RunnerEnrollmentTest < ActiveSupport::TestCase
     assert_equal @key, @enrollment.reload.public_key
   end
 
+  test "a refused request leaves no nonce behind; an accepted one consumes exactly one" do
+    @enrollment.confirm_provider_server!(4242)
+    enroll
+    assert_equal 1, @enrollment.request_nonces.count
+    other = Base64.strict_encode64(OpenSSL::PKey.generate_key("ED25519").raw_public_key)
+    [ -> { enroll(now: 25.hours.from_now) }, -> { enroll(key: other) }, -> { enroll(server: 5) },
+      -> { enroll(token: "wrong") },
+      -> { @enrollment.heartbeat!(reported_server_id: 5, facts: {}, nonce: SecureRandom.hex(16)) } ].each do |attempt|
+      assert_raises(RunnerEnrollment::Refused) { attempt.call }
+    end
+    @enrollment.revoke!
+    assert_raises(RunnerEnrollment::Refused) { enroll }
+    assert_raises(RunnerEnrollment::Refused) { @enrollment.heartbeat!(reported_server_id: 4242, facts: {}, nonce: SecureRandom.hex(16)) }
+    assert_equal 1, @enrollment.request_nonces.count
+  end
+
+  test "a replayed nonce rolls back the change it came with" do
+    @enrollment.confirm_provider_server!(4242)
+    enroll
+    nonce = SecureRandom.hex(16)
+    @enrollment.heartbeat!(reported_server_id: 4242, facts: { "uptime_seconds" => 1 }, nonce:)
+    error = assert_raises(RunnerSignature::Invalid) do
+      @enrollment.heartbeat!(reported_server_id: 4242, facts: { "uptime_seconds" => 2 }, nonce:)
+    end
+    assert_equal :replayed_nonce, error.code
+    assert_equal({ "uptime_seconds" => 1 }, @enrollment.reload.last_facts)
+  end
+
   test "an expired token is refused even before confirmation, so the operation goes to review" do
     assert_equal :expired, assert_raises(RunnerEnrollment::Refused) { enroll(now: 25.hours.from_now) }.code
   end
@@ -70,7 +98,7 @@ class RunnerEnrollmentTest < ActiveSupport::TestCase
     @enrollment.confirm_provider_server!(4242)
     enroll
     assert_not @enrollment.healthy?
-    @enrollment.heartbeat!(reported_server_id: 4242, facts: {})
+    @enrollment.heartbeat!(reported_server_id: 4242, facts: {}, nonce: SecureRandom.hex(16))
     assert @enrollment.healthy?
     assert_not @enrollment.healthy?(now: 4.minutes.from_now)
   end
@@ -78,7 +106,7 @@ class RunnerEnrollmentTest < ActiveSupport::TestCase
   test "enrollment and health never make the placement ready" do
     @enrollment.confirm_provider_server!(4242)
     enroll
-    @enrollment.heartbeat!(reported_server_id: 4242, facts: {})
+    @enrollment.heartbeat!(reported_server_id: 4242, facts: {}, nonce: SecureRandom.hex(16))
     assert_equal "pending", @placement.reload.state
     assert_nil @placement.runtime_endpoint
   end

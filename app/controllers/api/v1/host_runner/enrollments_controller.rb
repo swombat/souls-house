@@ -11,11 +11,9 @@ module Api
           token = payload["token"].to_s
           nonce = verify_signature!(public_key)
           # A signature by a caller-chosen key proves possession, not
-          # authority. The bound one-time token is the authority, so it is
-          # checked before anything is written.
-          enrollment.authenticate_token!(token)
-          record_nonce!(nonce)
-          result = enrollment.enroll!(token:, public_key:, reported_server_id:, facts:)
+          # authority. enroll! checks the bound token and every other
+          # condition before it writes anything, the nonce included.
+          result = enrollment.enroll!(token:, public_key:, reported_server_id:, facts:, nonce:)
           render json: { status: result.to_s }, status: result == :pending ? :accepted : :ok
         end
 

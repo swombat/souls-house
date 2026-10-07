@@ -41,6 +41,7 @@ class RunnerUserDataTest < ActiveSupport::TestCase
     assert_includes nft, "policy drop;"
     assert_equal [ "22" ], nft.scan(/tcp dport (\d+)/).flatten
     assert_equal %w[68 546], nft.scan(/udp sport \d+ udp dport (\d+)/).flatten
+    assert_equal %w[systemctl mask nftables.service], parsed["runcmd"].first
     enabled = parsed["runcmd"].select { |cmd| cmd[1] == "enable" }.map(&:last)
     assert_equal %w[souls-house-firewall docker souls-house-runner], enabled
   end
