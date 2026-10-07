@@ -178,4 +178,21 @@ class MemoryPolicyTest(unittest.TestCase):
             with patch.object(shim,'abort',side_effect=PermissionError('unauthorized')):
                 with self.assertRaises(PermissionError):shim.trigger()
 
+class SubagentTurnFloorTest(unittest.TestCase):
+    def test_helper_rows_do_not_move_the_resident_turn_floor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            trace = Path(tmp) / 'stop-events.jsonl'
+            rows = [dict(recorded_at='2026-10-07T17:00:00+02:00', journal_invited=False),
+                    dict(recorded_at='2026-10-07T17:05:00+02:00', journal_invited=False,
+                         subagent=True, parent_session_id='parent-1')]
+            trace.write_text(''.join(json.dumps(r) + '\n' for r in rows))
+            with patch.object(stop, 'TRACE_PATH', trace):
+                self.assertEqual(stop.turn_floor(), dt.datetime.fromisoformat('2026-10-07T17:00:00+02:00'))
+
+    def test_marker_detection(self):
+        self.assertTrue(stop.is_subagent({'is_subagent': True}))
+        self.assertTrue(stop.is_subagent({'parent_session_id': 'p'}))
+        self.assertFalse(stop.is_subagent({'session_id': 's', 'agent_depth': 0}))
+
+
 if __name__=='__main__':unittest.main()

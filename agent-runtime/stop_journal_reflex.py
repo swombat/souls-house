@@ -32,6 +32,17 @@ def command_reference():
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
+def is_subagent(event: dict) -> bool:
+    """A spawned helper session, not the resident.
+
+    Chaos marks child sessions in the hook payload (is_subagent,
+    parent_session_id, agent_depth). A helper is not the resident: inviting
+    it to journal buries its answer under the receipt and would let it write
+    in the resident's diary in the resident's voice.
+    """
+    return bool(event.get("is_subagent")) or bool(event.get("parent_session_id"))
+
+
 def append_trace(event: dict, assistant: str, invited: bool) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     record = {
@@ -44,6 +55,9 @@ def append_trace(event: dict, assistant: str, invited: bool) -> None:
         "journal_invited": invited,
         "assistant_excerpt": assistant[:1000],
     }
+    if is_subagent(event):
+        record["subagent"] = True
+        record["parent_session_id"] = event.get("parent_session_id")
     with TRACE_PATH.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, ensure_ascii=True) + "\n")
 
@@ -75,6 +89,10 @@ def turn_floor() -> dt.datetime | None:
         except json.JSONDecodeError:
             continue
         if record.get("recorded_at"):
+            # A helper's stop happens inside the resident's turn; it must not
+            # move the resident's turn floor.
+            if record.get("subagent"):
+                continue
             try:
                 return dt.datetime.fromisoformat(record["recorded_at"])
             except ValueError:
@@ -264,6 +282,10 @@ def main() -> None:
 
     assistant = str(event.get("last_assistant_message") or "")
     stop_hook_active = bool(event.get("stop_hook_active"))
+
+    if is_subagent(event):
+        append_trace(event, assistant, False)
+        return
 
     # Resident scripts live in identity; implementation support is runtime-owned.
     support = Path(os.environ.get("AGENT_RUNTIME_DOCS_PATH", "/usr/local/share/helixkit-agent"))
