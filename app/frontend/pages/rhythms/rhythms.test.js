@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/svelte';
 import { router } from '@inertiajs/svelte';
 import RhythmsIndex from './index.svelte';
 import RhythmForm from './form.svelte';
@@ -83,6 +83,36 @@ test('a paused rhythm names who is holding it instead of a next time', () => {
   render(RhythmsIndex, { account, rhythms: [rhythmFixture({ state: 'paused', holds })] });
   expect(screen.getByText('Paused by Mira')).toBeInTheDocument();
   expect(screen.queryByText(/Next:/)).not.toBeInTheDocument();
+});
+
+test('each rhythm lists its recent conversations as links, marking the ones in the conversation list', () => {
+  const recent_runs = [
+    {
+      id: 'o2',
+      title: 'House watch 7 Oct',
+      scheduled_for: '2026-10-07T07:30:00Z',
+      chat_url: '/accounts/acc/chats/c2',
+      listed: true,
+    },
+    {
+      id: 'o1',
+      title: 'House watch 6 Oct',
+      scheduled_for: '2026-10-06T07:30:00Z',
+      chat_url: '/accounts/acc/chats/c1',
+      listed: false,
+    },
+  ];
+  render(RhythmsIndex, { account, rhythms: [rhythmFixture({ recent_runs })] });
+  const list = screen.getByRole('list', { name: 'Recent conversations' });
+  const links = within(list).getAllByRole('link');
+  expect(links.map((link) => link.getAttribute('href'))).toEqual(['/accounts/acc/chats/c2', '/accounts/acc/chats/c1']);
+  expect(within(links[0]).getByText('in your list')).toBeInTheDocument();
+  expect(within(links[1]).queryByText('in your list')).not.toBeInTheDocument();
+});
+
+test('a rhythm with no runs yet shows no recent list', () => {
+  render(RhythmsIndex, { account, rhythms: [rhythmFixture({ recent_runs: [] })] });
+  expect(screen.queryByRole('list', { name: 'Recent conversations' })).not.toBeInTheDocument();
 });
 
 test('a resident-created invitation shows its author without granting a viewing human management', () => {

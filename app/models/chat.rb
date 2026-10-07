@@ -8,6 +8,7 @@ class Chat < ApplicationRecord
   include Chat::Archivable
   include Chat::Forkable
   include Chat::Initiable
+  include Chat::QuietRhythmRun
 
   belongs_to :ai_model, optional: true
   has_many :messages, -> { order(created_at: :asc) }, dependent: :destroy
