@@ -8,7 +8,7 @@ class Admin::SettingsController < ApplicationController
       setting: Setting.instance.as_json.merge(
         logo_url: Setting.instance.logo.attached? ? url_for(Setting.instance.logo) : nil
       ),
-      follow_through_residents: follow_through_residents(Setting.instance)
+      follow_through_residents: follow_through_residents
     }
   end
 
@@ -17,8 +17,14 @@ class Admin::SettingsController < ApplicationController
 
     setting.logo.purge if params[:setting]&.[](:remove_logo)
 
-    if setting.update(setting_params)
-      audit_with_changes("update_settings", setting)
+    saved = Setting.transaction do
+      setting.update(setting_params).tap do |ok|
+        update_follow_through_residents if ok && params[:setting]&.key?(:follow_through_resident_ids)
+      end
+    end
+
+    if saved
+      audit_with_changes("update_settings", setting, **@follow_through_changes.to_h)
       redirect_to admin_settings_path, notice: "Settings updated"
     else
       redirect_to admin_settings_path, inertia: { errors: setting.errors.to_hash }
@@ -35,23 +41,42 @@ class Admin::SettingsController < ApplicationController
       :allow_chats,
       :allow_agents,
       :show_usage_in_chat,
-      :follow_through_residents,
+      :follow_through_scope,
       :logo
     )
   end
 
-  # Resolves the ids in the follow-through setting so the admin can see who
-  # they've switched on, and which ids match no resident.
-  def follow_through_residents(setting)
-    setting.follow_through_resident_ids.map do |param|
-      agent = begin
-        Agent.find_by_obfuscated_id(param)
-      rescue StandardError
-        nil
-      end
-      agent = nil if agent && agent.to_param != param
-      { id: param, name: agent&.name, account: agent&.account&.name }
+  # Every active resident, so the admin can pick who the follow-through check
+  # covers when it is set to "selected".
+  def follow_through_residents
+    Agent.active.includes(:account).sort_by { |a| [ a.account&.name.to_s.downcase, a.name.to_s.downcase ] }.map do |agent|
+      {
+        id: agent.to_param,
+        name: agent.name,
+        account: agent.account&.name,
+        icon: agent.icon,
+        colour: agent.colour,
+        paused: agent.paused?,
+        follow_through: agent.follow_through?
+      }
     end
+  end
+
+  # The form sends the full list of picked residents; anyone not in it is off.
+  def update_follow_through_residents
+    picked = Array(params[:setting][:follow_through_resident_ids]).compact_blank.filter_map do |param|
+      Agent.find_by_obfuscated_id(param)&.id
+    rescue StandardError
+      nil
+    end
+    turned_on = Agent.active.where(id: picked, follow_through: false).pluck(:id)
+    turned_off = Agent.active.where(follow_through: true).where.not(id: picked).pluck(:id)
+    Agent.where(id: turned_on).update_all(follow_through: true, updated_at: Time.current)
+    Agent.where(id: turned_off).update_all(follow_through: false, updated_at: Time.current)
+    @follow_through_changes = {
+      follow_through_on: Agent.where(id: turned_on).map(&:to_param),
+      follow_through_off: Agent.where(id: turned_off).map(&:to_param)
+    }.compact_blank
   end
 
   def require_site_admin

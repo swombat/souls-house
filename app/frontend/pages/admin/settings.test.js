@@ -18,20 +18,27 @@ test('edits the system account cap and sends it to the admin endpoint', async ()
   expect(body.get('setting[max_accounts]')).toBe('42');
 });
 
-test('edits the follow-through residents and shows who each id is', async () => {
+test('picks follow-through residents from a searchable list', async () => {
   render(Settings, {
-    setting: { site_name: 'Test House', max_accounts: 30, follow_through_residents: 'BJZbJx, zzz' },
+    setting: { site_name: 'Test House', max_accounts: 30, follow_through_scope: 'off' },
     follow_through_residents: [
-      { id: 'BJZbJx', name: 'Lume', account: 'Daniel' },
-      { id: 'zzz', name: null, account: null },
+      { id: 'BJZbJx', name: 'Lume', account: 'Daniel', follow_through: true },
+      { id: 'AYawJx', name: 'Mira', account: 'Daniel', follow_through: false },
+      { id: 'QQqqQQ', name: 'Wing', account: 'Paulina', follow_through: false, paused: true },
     ],
   });
-  const input = screen.getByLabelText('Follow-through check');
-  expect(input).toHaveValue('BJZbJx, zzz');
-  expect(screen.getByText(/Lume \(Daniel\)/)).toBeVisible();
-  expect(screen.getByText('no resident with this id')).toBeVisible();
-  await fireEvent.input(input, { target: { value: 'all' } });
-  await fireEvent.submit(input.closest('form'));
+  expect(screen.queryByLabelText('Follow-through for Lume')).toBeNull();
+  await fireEvent.click(screen.getByRole('radio', { name: 'Chosen residents' }));
+  expect(screen.getByText('1 of 3 chosen')).toBeVisible();
+  expect(screen.getByText('(paused)')).toBeVisible();
+
+  await fireEvent.input(screen.getByLabelText('Find a resident'), { target: { value: 'mir' } });
+  expect(screen.queryByLabelText('Follow-through for Wing')).toBeNull();
+  await fireEvent.click(screen.getByLabelText('Follow-through for Mira'));
+  expect(screen.getByText('2 of 3 chosen')).toBeVisible();
+
+  await fireEvent.submit(screen.getByLabelText('Find a resident').closest('form'));
   const [, body] = router.patch.mock.calls.at(-1);
-  expect(body.get('setting[follow_through_residents]')).toBe('all');
+  expect(body.get('setting[follow_through_scope]')).toBe('selected');
+  expect(body.getAll('setting[follow_through_resident_ids][]')).toEqual(['', 'BJZbJx', 'AYawJx']);
 });

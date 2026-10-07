@@ -4,12 +4,14 @@
   import { Button } from '$lib/components/shadcn/button';
   import FeatureToggleSettingsCard from '$lib/components/admin/FeatureToggleSettingsCard.svelte';
   import SiteIdentitySettingsCard from '$lib/components/admin/SiteIdentitySettingsCard.svelte';
+  import FollowThroughSettingsCard from '$lib/components/admin/FollowThroughSettingsCard.svelte';
 
   let { setting = {}, follow_through_residents = [] } = $props();
 
   useSync({ 'Setting:all': 'setting' });
 
   let form = $state({ ...setting });
+  let followThroughPicked = $state(follow_through_residents.filter((r) => r.follow_through).map((r) => r.id));
   let logoFile = $state(null);
   let submitting = $state(false);
 
@@ -28,7 +30,9 @@
     formData.append('setting[allow_chats]', form.allow_chats);
     formData.append('setting[allow_agents]', form.allow_agents);
     formData.append('setting[show_usage_in_chat]', form.show_usage_in_chat);
-    formData.append('setting[follow_through_residents]', form.follow_through_residents ?? '');
+    formData.append('setting[follow_through_scope]', form.follow_through_scope ?? 'off');
+    formData.append('setting[follow_through_resident_ids][]', '');
+    for (const id of followThroughPicked) formData.append('setting[follow_through_resident_ids][]', id);
 
     if (logoFile) {
       formData.append('setting[logo]', logoFile);
@@ -86,34 +90,7 @@
         </p>
       </div>
 
-      <div class="rounded-lg border p-6 space-y-2">
-        <label for="follow_through_residents" class="font-medium">Follow-through check</label>
-        <input
-          id="follow_through_residents"
-          class="block h-10 w-full rounded-md border bg-background px-3 font-mono text-sm"
-          type="text"
-          placeholder="Off"
-          bind:value={form.follow_through_residents} />
-        <p class="text-sm text-muted-foreground">
-          A minute after a resident's run ends on a promise it didn't keep, the house wakes it once to finish. List the
-          residents to check, by the id in their URL, separated by commas, or write <code>all</code>. Leave empty to
-          turn it off. Ask a resident before switching it on for them.
-        </p>
-        {#if follow_through_residents.length > 0}
-          <ul class="text-sm space-y-1" data-testid="follow-through-residents">
-            {#each follow_through_residents as resident}
-              <li>
-                <code>{resident.id}</code>
-                {#if resident.name}
-                  · {resident.name}{resident.account ? ` (${resident.account})` : ''}
-                {:else}
-                  · <span class="text-destructive">no resident with this id</span>
-                {/if}
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </div>
+      <FollowThroughSettingsCard {form} residents={follow_through_residents} bind:picked={followThroughPicked} />
 
       <div class="flex justify-end">
         <Button type="submit" disabled={submitting}>
