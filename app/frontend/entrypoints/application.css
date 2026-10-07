@@ -35,8 +35,9 @@
      chroma multipliers are fixed here, so no choice of hue can produce a loud page. */
   --tint-h: 0;
   --tint-c: 0;
-  /* The dot in the logo; overridden per account by [data-account-colour] below. */
-  --account-dot: #f15d61;
+  /* The dot in the logo; overridden per account by [data-account-colour] below.
+     Untinted this is exactly #f15d61; a tint darkens it a touch so it keeps 3:1. */
+  --account-dot: oklch(calc(0.6715 - var(--tint-c)) 0.1825 21.87);
   --background: oklch(calc(1 - var(--tint-c) * 1.2) var(--tint-c) var(--tint-h));
   --foreground: oklch(0.145 0 0);
   --card: oklch(calc(1 - var(--tint-c) * 0.5) calc(var(--tint-c) * 0.5) var(--tint-h));
@@ -72,6 +73,7 @@
 }
 
 .dark {
+  --account-dot: #f15d61;
   --background: oklch(0.145 var(--tint-c) var(--tint-h));
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 var(--tint-c) var(--tint-h));

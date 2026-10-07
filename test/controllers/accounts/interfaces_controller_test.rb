@@ -39,6 +39,12 @@ class Accounts::InterfacesControllerTest < ActionDispatch::IntegrationTest
     assert_not_equal "Renamed", @account.name
   end
 
+  test "a malformed parameter envelope is a bad request, not a crash" do
+    patch account_interface_path(@account), params: { account: "teal" }
+    assert_response :bad_request
+    assert_nil @account.reload.logo_colour
+  end
+
   test "nonmembers cannot change another account's logo colour" do
     other = accounts(:other)
     patch account_interface_path(other), params: { account: { logo_colour: "teal" } }

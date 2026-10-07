@@ -12,7 +12,7 @@
 
   let { user, timezones, colour_options = [], onCancel, onSuccess } = $props();
 
-  let user_form = $state({ ...user });
+  let user_form = $state({ ...user, theme_hue: user.theme_hue ?? null });
 
   function handleAvatarUpdate() {
     // Reload the page to get updated user data

@@ -47,13 +47,15 @@ test('personal tint, account logo colour and account name in the navbar', async 
     // Default look is untouched.
     await expect(page.locator('body')).toHaveCSS('background-color', 'oklch(1 0 0)');
     const dot = page.locator('nav svg circle').first();
-    await expect(dot).toHaveCSS('fill', 'rgb(241, 93, 97)');
+    // The default coral; theme.test.js checks this OKLCH value renders exactly #f15d61.
+    const coral = /rgb\(241, 93, 97\)|oklch\(0\.6715 0\.1825 21\.87\)/;
+    await expect(dot).toHaveCSS('fill', coral);
 
     // Account logo colour, set on the Interface page.
     await page.goto(`/accounts/${setup.account_id}/interface`);
     await page.getByRole('radio', { name: 'Teal' }).click();
     await expect(page.locator('html')).toHaveAttribute('data-account-colour', 'teal');
-    await expect(dot).not.toHaveCSS('fill', 'rgb(241, 93, 97)');
+    await expect(dot).not.toHaveCSS('fill', coral);
     const tealLight = await dot.evaluate((el) => getComputedStyle(el).fill);
     await page.screenshot({ path: testInfo.outputPath('interface-teal-light.png') });
 

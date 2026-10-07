@@ -120,6 +120,21 @@ describe('account logo colour', () => {
     return dots;
   }
 
+  // The default coral has no attribute: it lives on :root as an OKLCH formula that is exactly
+  // #f15d61 untinted and a touch darker under a tint. Dark mode keeps plain #f15d61.
+  it('default coral is unchanged untinted and keeps 3:1 under every tint', () => {
+    expect(stylesheet).toMatch(/--account-dot: oklch\(calc\(0\.6715 - var\(--tint-c\)\) 0\.1825 21\.87\);/);
+    expect(stylesheet).toMatch(/\.dark \{\n {2}--account-dot: #f15d61;/);
+    expect(oklchToHex(0.6715, 0.1825, 21.87)).toBe('#f15d61');
+    const tinted = oklchToHex(0.6715 - TINT_CHROMA, 0.1825, 21.87);
+    for (const h of everyHue) {
+      const lightBg = oklchToHex(1 - TINT_CHROMA * 1.2, TINT_CHROMA, h);
+      const darkBg = oklchToHex(0.145, TINT_CHROMA, h);
+      expect(contrast(tinted, lightBg), `coral light @${h}`).toBeGreaterThanOrEqual(3);
+      expect(contrast('#f15d61', darkBg), `coral dark @${h}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
   it('every dot stays visible against every tinted background in both modes', () => {
     const dots = dotsFromCss();
     expect(Object.keys(dots).length).toBeGreaterThanOrEqual(7);

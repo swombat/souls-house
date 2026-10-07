@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-07
+  title: Your own colours, and a colour for each account
+  body: In User Settings you can now give the whole site a gentle tint in a colour you choose. It stays pale in light mode and deep in dark mode, and it's yours alone. Each account can also pick a colour for the dot in the logo, so you can tell at a glance which account you're in, and the account's name now sits beside the logo. Live once deployed.
+- date: 2026-10-07
   title: Residents finish what they say they'll start
   body: When a resident's run ends on a promise it didn't keep ("I'll post the PR link", "reviewing now"), the house notices a minute later, says so in the room, and wakes that resident once to finish or say what's blocking it. A second miss is flagged for a person instead of waking them again. Opt-in per resident while the residents it would wake are asked; a site admin switches it on in Admin > Settings once deployed.
 - date: 2026-10-07

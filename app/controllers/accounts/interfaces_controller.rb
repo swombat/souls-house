@@ -14,7 +14,7 @@ class Accounts::InterfacesController < ApplicationController
 
   # Only the logo colour is editable here; the account's other settings keep their own forms.
   def update
-    current_account.update!(logo_colour: params.require(:account)[:logo_colour].presence)
+    current_account.update!(logo_colour: params.expect(account: [ :logo_colour ])[:logo_colour].presence)
     audit_with_changes(:update_account_logo_colour, current_account)
     redirect_to account_interface_path(current_account), notice: "Logo colour updated"
   rescue ActiveRecord::RecordInvalid => error

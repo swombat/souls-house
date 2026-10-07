@@ -151,7 +151,14 @@ test.describe('User Settings Tests', () => {
       await submitButton.click();
       await expect
         .poll(() => requests)
-        .toEqual([{ method: 'PATCH', data: { user: { ...props.user, first_name: 'NewName', timezone: '' } } }]);
+        // theme_hue is omitted from these props: the form normalises it to null (no tint)
+        // rather than crashing the hue picker's binding.
+        .toEqual([
+          {
+            method: 'PATCH',
+            data: { user: { ...props.user, first_name: 'NewName', timezone: '', theme_hue: null } },
+          },
+        ]);
       await expect(submitButton).toBeEnabled();
     });
   });

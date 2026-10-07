@@ -5,7 +5,9 @@
 
   // value: an integer hue 0-359, or null for the default (untinted) look.
   // saved: the hue currently stored, restored if the form is left without saving.
-  let { value = $bindable(null), saved = null } = $props();
+  // No fallback on the binding: a form may hold the field as undefined (never set), and
+  // Svelte rejects binding undefined to a prop with a non-undefined fallback.
+  let { value = $bindable(), saved = null } = $props();
 
   const hue = $derived(normaliseHue(value));
 
