@@ -173,9 +173,10 @@ Built in v1:
 
 **Open, for someone who knows the law:** whether recognising non-members
 needs more than the uploader's word (Art. 9 explicit consent of the person
-named). It's not mine to settle. The design keeps the cheap exit: with the
-toggle off by default, v1 still works fully as transcription with manual
-naming.
+named). It's not mine to settle. The design keeps the cheap exit: the toggle
+defaults to on (recognition only ever uses prints someone created by naming),
+and if the answer is no, flipping that default to off leaves v1 working fully
+as transcription with manual naming.
 
 ## The weekly allowance
 
