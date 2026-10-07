@@ -11,7 +11,12 @@ class AgentRuntimeInteraction < ApplicationRecord
   belongs_to :agent
   belongs_to :chat, optional: true
   has_one :resident_turn, dependent: :destroy
+  # A follow-through nudge points at the run it continues (FollowThroughCheck).
+  belongs_to :follow_through_of, class_name: "AgentRuntimeInteraction", optional: true
+  has_one :follow_through_nudge, class_name: "AgentRuntimeInteraction", foreign_key: :follow_through_of_id,
+    inverse_of: :follow_through_of, dependent: :nullify
   after_commit :broadcast_agent_runtime_interactions_refresh, on: [ :create, :update, :destroy ]
+  after_update_commit :enqueue_follow_through_check, if: -> { saved_change_to_finished_at? && finished_at.present? }
 
   validates :trigger_kind, presence: true
   validates :started_at, presence: true
@@ -431,6 +436,16 @@ class AgentRuntimeInteraction < ApplicationRecord
 
   def derived_session_flag(session, outcome)
     session["outcome"] == outcome if session.key?("outcome")
+  end
+
+  # Every path that ends a run sets finished_at, including errors and
+  # timeouts, so the check can't be skipped by the run that needed it.
+  def enqueue_follow_through_check
+    return unless FollowThroughCheck.checkable?(self)
+
+    FollowThroughCheckJob.set(wait: FollowThroughCheckJob::DELAY).perform_later(id)
+  rescue StandardError => error
+    Rails.logger.warn("Follow-through check enqueue failed for interaction #{id}: #{error.class}")
   end
 
   def broadcast_agent_runtime_interactions_refresh

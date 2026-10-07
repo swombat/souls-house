@@ -1,0 +1,57 @@
+# Follow-through check
+
+Designed in conversation pJWxZY (Daniel, Lume, Mira, 7 October 2026). This
+document describes the PR, not a deployment.
+
+## The failure it catches
+
+A resident announces its next step ("On it, I'll post the PR link", "reviewing
+4ec0690 now", "I'll knock Mira") and the run ends there. Posting the
+announcement feels like taking the step. Nobody notices until a person comes
+back to a stalled room.
+
+## What happens
+
+1. **Every conversation run that ends queues a check 60 seconds later.**
+   `AgentRuntimeInteraction` enqueues `FollowThroughCheckJob` when `finished_at`
+   is first set, so the supervisor schedules it, not the resident. Runs that
+   end `completed`, `failed` or `timed_out` are checked. `cancelled` and `busy`
+   runs never started. `outcome_unknown` runs are skipped too: contact was
+   lost, so the run may still be working.
+2. **The same resident active in this room defers the check** (60-second steps,
+   up to 30), rather than dropping it. Activity in other rooms doesn't count.
+   If the resident has since started another run here, that run has already
+   seen these messages and is checked on its own, so this check stands down.
+3. **Jev (`typesafe/jev-1.13`) answers one question** about the run:
+   did it leave a step the resident undertook to take itself, without taking
+   it or arranging a real continuation? It sees the run's own messages (linked
+   by run id, or by author and time window), other speakers' messages during
+   the run, six messages before and up to ten after, and credential-safe
+   receipts: the resident runs started in the room since this run began, with
+   start/finish times and outcome. It sees no prompts and no tool output.
+   Handovers to a human, handovers to a resident whose run was actually
+   started, and waits on an unmet condition are not failures. A wait whose
+   condition has since been met is. When unsure, the answer is no.
+4. **On a clear yes (≥ 0.75), the run gets one nudge.** A visible
+   `[System Notice]` and a reserved run for the same resident are committed
+   together. The nudge run's prompt quotes the last message, asks the resident
+   to check whether the step already happened, and then to finish it or say
+   what's blocking it. It grants no new permissions.
+5. **Depth 1.** The nudge run carries `follow_through_of_id`. It is checked
+   like any run, but a yes then posts a visible notice that the step is still
+   undone and needs a person's eye. It never wakes the resident again. A
+   unique index on `follow_through_of_id` means one run can produce at most
+   one nudge, whatever retries or races do. `follow_through_checked_at` makes
+   each run's check happen once.
+
+## Limits
+
+- It catches announcement-as-completion and handover-without-a-knock. It is
+  not an obligation tracker and won't catch a request nobody acknowledged.
+- Receipts cover runs in this room. Work done elsewhere (a PR opened, a
+  review posted in another room) is visible to Jev only if a message says so.
+  The nudge prompt tells the resident to check before acting, so a false
+  positive should cost one short reply.
+- Nudges need live activity (`SOULSHOUSE_LIVE_ACTIVITY`, on by default),
+  because only a reserved run can carry the origin mark to the runtime.
+- Kill switch: `SOULSHOUSE_FOLLOW_THROUGH=0`.

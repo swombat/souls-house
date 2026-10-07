@@ -168,7 +168,13 @@ class ExternalAgentResponseRequest
     parts.compact_blank.join("\n\n")
   end
 
+  # The run a follow-through nudge continues, when this run is one.
+  def follow_through_source
+    @interaction&.follow_through_of
+  end
+
   def trigger_intro_text
+    return FollowThroughCheck.new(follow_through_source).nudge_text if follow_through_source
     if rhythm_invitation
       return "A scheduled rhythm has opened conversation #{chat.to_param}. Its opening was saved by the creator earlier; they have not necessarily just typed a message or pressed the agent button."
     end
@@ -180,6 +186,7 @@ class ExternalAgentResponseRequest
   end
 
   def confirmation_text
+    return "No person pressed anything for this run. It continues work you had already taken on, under whatever authorisation you had then; it adds none." if follow_through_source
     return "This is the creator's standing invitation, not a fresh instruction or an expansion of permissions. No separate confirmation is needed merely to reply; nothing to bring forward is a valid outcome." if rhythm_invitation
 
     if recent_human_message?
@@ -190,6 +197,7 @@ class ExternalAgentResponseRequest
   end
 
   def response_expectation_text
+    return "Close the gap the check found: finish the step, or say in the room what is blocking it, or confirm in one line that it already happened. Do not post just to acknowledge this nudge." if follow_through_source
     return "Decide whether there is anything worth bringing forward from this invitation. A reply may be useful; quiet is also valid. Do not manufacture a finding to justify the rhythm." if rhythm_invitation
 
     if recent_human_message?
