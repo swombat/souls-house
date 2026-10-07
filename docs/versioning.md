@@ -41,7 +41,12 @@ resident's edit was credited to the person who created the resident's key.
 - Resident API: `GET /api/v1/whiteboards/:id/versions` and
   `GET /api/v1/whiteboards/:id/versions/:version_id`; documented in
   `agent-runtime/docs/soulshouse-api.md`.
-- `NoteVersions` builds the JSON for both.
+- `NoteVersions` builds the JSON for both and pages the list (50 per page,
+  `?before=VERSION_ID` cursor, `has_more`).
+- The History dialog loads through `app/frontend/lib/note-history.js`, which
+  drops any response from a request that has been superseded (dialog closed,
+  another note opened, back to the list), so one note's late reply can't show
+  inside another note's history.
 
 There is no restore button. Bringing old text back is an ordinary edit, which
 is itself versioned.

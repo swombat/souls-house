@@ -6,7 +6,29 @@
 # past state itself, read back from the snapshot.
 module NoteVersions
 
+  PAGE_SIZE = 50
+
   module_function
+
+  # One page of past states, newest first. `before` is a version id from the
+  # previous page; the page holds versions older than it. Returns
+  # [versions, has_more]. Raises RecordNotFound for a `before` that is not
+  # one of this note's versions.
+  def page(whiteboard, before: nil, limit: PAGE_SIZE)
+    scope = whiteboard.past_versions
+    if before.present?
+      cursor = scope.find(before)
+      scope = scope.where("versions.created_at < :at OR (versions.created_at = :at AND versions.id < :id)",
+        at: cursor.created_at, id: cursor.id)
+    end
+    rows = scope.limit(limit + 1).to_a
+    [ rows.first(limit), rows.size > limit ]
+  end
+
+  def page_json(whiteboard, before: nil)
+    versions, has_more = page(whiteboard, before: before)
+    { versions: versions.map { |version| summary_json(version) }, has_more: has_more }
+  end
 
   def summary_json(version)
     past = version.reify

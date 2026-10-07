@@ -51,6 +51,18 @@ module Api
         assert_not versions.first.key?("content"), "the list stays light; read one version for its text"
       end
 
+      test "the list continues from a before cursor" do
+        edit(@user_token, "Second text")
+        edit(@user_token, "Third text")
+        newest = @whiteboard.past_versions.first
+
+        get api_v1_whiteboard_versions_url(@whiteboard, before: newest.to_param), headers: auth(@resident_token)
+        assert_response :success
+        json = JSON.parse(response.body)
+        assert_equal [ @first_revision ], json["versions"].map { |v| v["revision"] }
+        assert_equal false, json["has_more"]
+      end
+
       test "reads one past version in full" do
         edit(@user_token, "Second text")
         version = @whiteboard.past_versions.first

@@ -5,8 +5,7 @@ class WhiteboardVersionsController < ApplicationController
   require_feature_enabled :agents
 
   def index
-    versions = whiteboard.past_versions
-    render json: { versions: versions.map { |version| NoteVersions.summary_json(version) } }
+    render json: NoteVersions.page_json(whiteboard, before: params[:before])
   end
 
   def show

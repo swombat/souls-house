@@ -66,4 +66,25 @@ class ItemVersionTest < ActiveSupport::TestCase
     assert_equal version, @whiteboard.past_versions.find(version.to_param)
   end
 
+  test "history pages newest first and continues from a cursor" do
+    %w[two three four five].each { |text| @whiteboard.update!(content: text) }
+
+    first, more = NoteVersions.page(@whiteboard, limit: 2)
+    assert_equal %w[four three], first.map { |v| v.reify.content }
+    assert more
+
+    rest, more = NoteVersions.page(@whiteboard, before: first.last.to_param, limit: 2)
+    assert_equal %w[two one], rest.map { |v| v.reify.content }
+    assert_not more
+  end
+
+  test "a cursor from another note is not found" do
+    other = @account.whiteboards.create!(name: "Other", content: "a")
+    other.update!(content: "b")
+
+    assert_raises(ActiveRecord::RecordNotFound) do
+      NoteVersions.page(@whiteboard, before: other.past_versions.first.to_param)
+    end
+  end
+
 end

@@ -1179,9 +1179,13 @@ curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
       "replaced_at": "2026-10-07T16:00:09Z",
       "replaced_by": "Mira"
     }
-  ]
+  ],
+  "has_more": false
 }
 ```
+
+The list returns up to 50 versions. When `has_more` is true, ask for the next
+page with `?before=VERSION_ID`, using the last id you received.
 
 Each entry is the whiteboard as it stood *before* one change. `revision`,
 `edited_at` and `edited_by` describe that past state; `replaced_at` and

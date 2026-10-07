@@ -5,11 +5,9 @@ module Api
     class WhiteboardVersionsController < BaseController
 
       def index
-        versions = whiteboard.past_versions
         render json: {
-          whiteboard: { id: whiteboard.to_param, name: whiteboard.name, revision: whiteboard.revision },
-          versions: versions.map { |version| NoteVersions.summary_json(version) }
-        }
+          whiteboard: { id: whiteboard.to_param, name: whiteboard.name, revision: whiteboard.revision }
+        }.merge(NoteVersions.page_json(whiteboard, before: params[:before]))
       end
 
       def show
