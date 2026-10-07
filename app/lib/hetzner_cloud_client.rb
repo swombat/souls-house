@@ -23,6 +23,11 @@ class HetznerCloudClient
   BASE_URL = "https://api.hetzner.cloud/v1".freeze
   MANAGED_LABEL = "souls-house/managed".freeze
   PLACEMENT_LABEL = "souls-house/placement".freeze
+  # Discovery only, like the placement label: never idempotency or proof.
+  OPERATION_LABEL = "souls-house/operation".freeze
+  LIST_PAGE_SIZE = 50
+  # More pages than this for one label selector is not a listing we trust.
+  LIST_MAX_PAGES = 20
   RETRYABLE_CODES = %w[rate_limit_exceeded locked conflict timeout unavailable].freeze
   CAPACITY_CODES = %w[resource_unavailable resource_limit_exceeded placement_error].freeze
   NETWORK_ERRORS = [SystemCallError, IOError, Timeout::Error, SocketError, OpenSSL::SSL::SSLError].freeze
@@ -57,6 +62,9 @@ class HetznerCloudClient
   class CapacityUnavailable < Error; end
   # A server with this name already exists in the project.
   class NameTaken < Error; end
+  # A paginated listing could not be read completely. Callers must not treat
+  # the pages they did get as the whole answer.
+  class IncompleteListing < Error; end
 
   # The create request may or may not have produced a server. Never retryable
   # from here: a blind retry can buy a second machine.
@@ -66,7 +74,7 @@ class HetznerCloudClient
 
   end
 
-  Server = Data.define(:id, :name, :status, :server_type, :location, :ipv4, :ipv6, :labels) do
+  Server = Data.define(:id, :name, :status, :server_type, :location, :image_id, :ipv4, :ipv6, :labels) do
     def self.from_api(json)
       new(
         id: json.fetch("id"),
@@ -74,6 +82,7 @@ class HetznerCloudClient
         status: json["status"],
         server_type: json.dig("server_type", "name"),
         location: json.dig("datacenter", "location", "name") || json.dig("location", "name"),
+        image_id: json["image"].is_a?(Hash) ? json["image"]["id"] : nil,
         ipv4: json.dig("public_net", "ipv4", "ip"),
         ipv6: json.dig("public_net", "ipv6", "ip"),
         labels: json["labels"] || {}
@@ -87,7 +96,18 @@ class HetznerCloudClient
     def placement_id
       labels[PLACEMENT_LABEL]
     end
+
+    def operation_id
+      labels[OPERATION_LABEL]
+    end
   end
+
+  # A create returns its server and the action that boots it. The action id is
+  # kept so reconciliation can tell "still starting" from "failed to start".
+  Created = Data.define(:server, :action_id, :action_status)
+
+  # Hetzner action states are running, success and error.
+  Action = Data.define(:id, :command, :status, :error_code)
 
   # Hetzner accepted the delete; the server is gone only once the action
   # finishes, which a caller must reconcile (find_server returning nil).
@@ -111,7 +131,12 @@ class HetznerCloudClient
   end
 
   # Creates one resident server labelled with the house's placement record id.
-  def create_server(name:, placement_id:, server_type:, location:, image:, ssh_keys:, user_data: nil, labels: {})
+  # Returns the Server; use create_server_with_action for the boot action too.
+  def create_server(**kwargs)
+    create_server_with_action(**kwargs).server
+  end
+
+  def create_server_with_action(name:, placement_id:, server_type:, location:, image:, ssh_keys:, user_data: nil, labels: {})
     refuse!("Server type is not on the allowlist") unless @allowed_server_types.include?(server_type.to_s)
     refuse!("Location is not on the allowlist") unless @allowed_locations.include?(location.to_s)
     refuse!("At least one SSH key is required") if Array(ssh_keys).empty?
@@ -128,13 +153,16 @@ class HetznerCloudClient
     }
     payload[:user_data] = user_data if user_data.present?
 
-    server = request(:post, "/servers", payload)["server"]
+    body = request(:post, "/servers", payload)
+    server = body["server"]
     unless server.is_a?(Hash) && server["id"].is_a?(Integer) && server["id"].positive?
       raise CreateOutcomeUnknown.new("Hetzner Cloud create returned success without a valid server id", code: "outcome_unknown")
     end
 
     begin
-      Server.from_api(server)
+      action = body["action"].is_a?(Hash) ? body["action"] : {}
+      action_id = action["id"].is_a?(Integer) && action["id"].positive? ? action["id"] : nil
+      Created.new(server: Server.from_api(server), action_id:, action_status: action["status"])
     rescue TypeError, NoMethodError, KeyError
       # A server may have been bought even though its description is malformed.
       raise CreateOutcomeUnknown.new("Hetzner Cloud create returned a malformed server", code: "outcome_unknown")
@@ -149,8 +177,20 @@ class HetznerCloudClient
 
   # Servers this house created for one placement (normally zero or one).
   def find_by_placement(placement_id)
-    selector = "#{MANAGED_LABEL}=true,#{PLACEMENT_LABEL}=#{placement_id}"
-    request(:get, "/servers", nil, label_selector: selector).fetch("servers").map { |json| Server.from_api(json) }
+    list_servers("#{MANAGED_LABEL}=true,#{PLACEMENT_LABEL}=#{placement_id}")
+  end
+
+  # Servers this house created for one procurement operation, every page.
+  def find_by_operation(operation_id)
+    list_servers("#{MANAGED_LABEL}=true,#{OPERATION_LABEL}=#{operation_id}")
+  end
+
+  def find_action(id)
+    json = request(:get, "/actions/#{Integer(id)}").fetch("action")
+    error = json["error"].is_a?(Hash) ? json["error"]["code"] : nil
+    Action.new(id: json.fetch("id"), command: json["command"], status: json["status"], error_code: error)
+  rescue NotFound
+    nil
   end
 
   # Asks Hetzner to delete a server that belongs to the given placement.
@@ -171,6 +211,34 @@ class HetznerCloudClient
   end
 
   private
+
+  # Follows Hetzner's pagination to the end. Any page that cannot be read,
+  # or pagination metadata that does not add up, raises rather than returning
+  # a partial list: an absent server must never be inferred from a short read.
+  def list_servers(selector)
+    servers = []
+    page = 1
+    loop do
+      raise IncompleteListing.new("Hetzner Cloud listing has too many pages", code: "incomplete_listing") if page > LIST_MAX_PAGES
+
+      body = request(:get, "/servers", nil, label_selector: selector, page:, per_page: LIST_PAGE_SIZE)
+      batch = body["servers"]
+      pagination = body.dig("meta", "pagination")
+      unless batch.is_a?(Array) && pagination.is_a?(Hash) && pagination["page"] == page
+        raise IncompleteListing.new("Hetzner Cloud listing is missing pagination", code: "incomplete_listing")
+      end
+
+      servers.concat(batch.map { |json| Server.from_api(json) })
+      next_page = pagination["next_page"]
+      break if next_page.nil?
+      raise IncompleteListing.new("Hetzner Cloud listing pagination is inconsistent", code: "incomplete_listing") unless next_page == page + 1
+
+      page = next_page
+    end
+    servers
+  rescue TypeError, NoMethodError, KeyError
+    raise IncompleteListing.new("Hetzner Cloud listing is malformed", code: "incomplete_listing")
+  end
 
   def refuse!(message)
     raise Refused.new(message, code: "refused")

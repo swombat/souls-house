@@ -4,7 +4,10 @@ class RunnerEnrollmentTest < ActiveSupport::TestCase
 
   setup do
     @placement = AgentPlacement.create!(agent: agents(:research_assistant), backend: "hetzner_cloud", state: "pending")
-    @enrollment, @token = RunnerEnrollment.mint!(placement: @placement, operation_id: 77)
+    @operation = CloudProcurementOperation.create!(agent_placement: @placement, requested_by: users(:site_admin_user),
+      public_id: "cpo-test", provider_name: "souls-house-cpo-test", approval_reference: "test", server_type: "cx23",
+      location: "fsn1", image_id: 1, ssh_key_ids: [ 1 ], state: "create_in_flight")
+    @enrollment, @token = RunnerEnrollment.mint!(placement: @placement, operation_id: @operation.id)
     @key = Base64.strict_encode64(OpenSSL::PKey.generate_key("ED25519").raw_public_key)
   end
 
