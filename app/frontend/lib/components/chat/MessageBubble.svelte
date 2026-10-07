@@ -12,6 +12,8 @@
   import RhythmProvenanceBadge from '$lib/components/chat/RhythmProvenanceBadge.svelte';
 
   import { Streamdown } from 'svelte-streamdown';
+  import CommitRef from '$lib/components/chat/CommitRef.svelte';
+  import { commitRefExtensions } from '$lib/commit-refs.js';
   import { formatTime, formatDateTime } from '$lib/utils';
 
   import { elapsedBetween } from '$lib/progress-messages';
@@ -43,6 +45,12 @@
 
 {#snippet expressionTag({ token })}
   <span class="expression-tag">{token.text}</span>
+{/snippet}
+
+{#snippet commitRefs({ token, streamdown })}
+  {#if token.type === 'commitRef'}
+    <CommitRef {token} theme={streamdown.theme} live={message.streaming !== true} />
+  {/if}
 {/snippet}
 
 <div class="space-y-1">
@@ -86,6 +94,8 @@
                 content={message.content}
                 parseIncompleteMarkdown={message.streaming === true}
                 inlineCitation={expressionTag}
+                extensions={commitRefExtensions}
+                children={commitRefs}
                 baseTheme="shadcn"
                 {shikiTheme}
                 shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']}
