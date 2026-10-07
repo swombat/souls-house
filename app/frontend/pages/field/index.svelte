@@ -8,6 +8,7 @@
   import { Label } from '$lib/components/shadcn/label/index.js';
   import WhiteboardViewer from '$lib/components/whiteboards/WhiteboardViewer.svelte';
   import FieldFileViewer from '$lib/components/field/FieldFileViewer.svelte';
+  import NoteHistory from '$lib/components/field/NoteHistory.svelte';
   import { fieldItemLink, formatBytes, formatWhen } from '$lib/field';
   import { FileArrowUp, File, Notepad, NotePencil, Plant } from 'phosphor-svelte';
 
@@ -193,6 +194,8 @@
     saveNote();
   }
 
+  let historyOpen = $state(false);
+
   function copyNoteLink() {
     navigator.clipboard?.writeText(fieldItemLink(account.id, current.key));
   }
@@ -313,6 +316,9 @@
           <FieldFileViewer file={current} link={fieldItemLink(account.id, current.key)} onDelete={deleteFile} />
         {:else if current?.kind === 'note'}
           <div class="mb-2 flex justify-end gap-1">
+            <Button size="sm" variant="ghost" onclick={() => (historyOpen = true)} data-testid="note-history-open">
+              History
+            </Button>
             <Button size="sm" variant="ghost" onclick={copyNoteLink}>Copy link</Button>
             <Button size="sm" variant="ghost" onclick={deleteNote}>Delete note</Button>
           </div>
@@ -407,3 +413,5 @@
     </form>
   </Dialog.Content>
 </Dialog.Root>
+
+<NoteHistory bind:open={historyOpen} accountId={account.id} note={current?.kind === 'note' ? current : null} />

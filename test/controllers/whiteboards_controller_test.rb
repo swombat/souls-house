@@ -135,4 +135,36 @@ class WhiteboardsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "a web edit keeps the old text and credits the person" do
+    patch account_whiteboard_path(@account, @whiteboard),
+      params: { whiteboard: { content: "Rewritten" } }, as: :json
+    assert_response :success
+
+    version = @whiteboard.reload.versions.last
+    assert_equal "User:#{@user.id}", version.whodunnit
+    assert_equal "# Test Content\n\nThis is test content.", version.reify.content
+  end
+
+  test "the note history lists past states and reads one" do
+    @whiteboard.update!(content: "Second")
+
+    get account_whiteboard_versions_path(@account, @whiteboard), as: :json
+    assert_response :success
+    versions = JSON.parse(response.body)["versions"]
+    assert_equal 1, versions.length
+    assert_equal @whiteboard.revision - 1, versions.first["revision"]
+
+    get account_whiteboard_version_path(@account, @whiteboard, versions.first["id"]), as: :json
+    assert_response :success
+    assert_equal "# Test Content\n\nThis is test content.", JSON.parse(response.body)["version"]["content"]
+  end
+
+  test "a deleted note's history is not served" do
+    @whiteboard.update!(content: "Second")
+    @whiteboard.soft_delete!
+
+    get account_whiteboard_versions_path(@account, @whiteboard), as: :json
+    assert_response :not_found
+  end
+
 end
