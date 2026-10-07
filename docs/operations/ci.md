@@ -96,6 +96,10 @@ changing parallelism or splitting it. Asset reuse must be tied to all relevant
 build inputs; a generic "skip build" flag risks serving stale code.
 
 Container jobs connect to the service hostname `postgres`, not host loopback.
+The instance guard permits that exact alias only for `test` with both GitHub
+Actions and CI markers set to `true`. Development, arbitrary remote hosts,
+PGSERVICE and database URL overrides remain rejected; checkout claims and
+runner locks are unchanged.
 They use `--ipc=host` for Chromium. Browser tests run in an ephemeral root
 container using Playwright's normal sandbox-disabled launch, with no production
 or provider credentials; this is not a production-browser security policy.
