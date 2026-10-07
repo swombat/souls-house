@@ -93,7 +93,11 @@ class InstanceCommandTest < Minitest::Test
 
   def test_term_reaches_headless_child_and_grandchild
     grandchild = 'STDOUT.sync=true; Signal.trap("TERM") { puts "GRANDCHILD_TERM"; exit }; puts "GRANDCHILD_READY"; sleep 60'
-    child = "STDOUT.sync=true; Signal.trap('TERM') { puts 'CHILD_TERM'; exit }; Process.spawn(#{RUBY.inspect}, '-e', #{grandchild.inspect}); sleep 60"
+    # Keep the child alive until its grandchild acknowledges group TERM. An
+    # immediate exit lets the supervisor's final cleanup TERM race the
+    # grandchild's first handler. The child never signals the grandchild, so
+    # both acknowledgements still prove the supervisor reached the whole group.
+    child = "STDOUT.sync=true; grandchild_pid = nil; Signal.trap('TERM') { puts 'CHILD_TERM'; Process.wait(grandchild_pid) if grandchild_pid; exit }; grandchild_pid = Process.spawn(#{RUBY.inspect}, '-e', #{grandchild.inspect}); sleep 60"
     wrapper = "require #{RUNNER.inspect}; exit LocalInstance::Command.run([#{RUBY.inspect}, '-e', #{child.inspect}])"
     Open3.popen3(RUBY, "-e", wrapper) do |stdin, stdout, stderr, process|
       stdin.close
