@@ -44,4 +44,27 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal original_threshold, Setting.instance.safeguard_owner_notice_threshold
   end
 
+  test "admin switches follow-through on for residents and sees who they are" do
+    agent = agents(:research_assistant)
+    sign_in @admin
+    patch admin_settings_path, params: { setting: { follow_through_residents: "#{agent.to_param}, nosuchid" } }
+
+    assert_redirected_to admin_settings_path
+    setting = Setting.instance.reload
+    assert setting.follow_through_enabled_for?(agent)
+    assert_not setting.follow_through_enabled_for?(agents(:code_reviewer))
+
+    get admin_settings_path
+    residents = inertia_shared_props["follow_through_residents"]
+    assert_equal [ agent.to_param, "nosuchid" ], residents.map { |r| r["id"] }
+    assert_equal agent.name, residents.first["name"]
+    assert_nil residents.second["name"]
+  end
+
+  test "follow-through is off until an admin switches it on" do
+    assert_not Setting.instance.follow_through_enabled_for?(agents(:research_assistant))
+    Setting.instance.update!(follow_through_residents: "all")
+    assert Setting.instance.follow_through_enabled_for?(agents(:research_assistant))
+  end
+
 end

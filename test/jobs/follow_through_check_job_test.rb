@@ -11,13 +11,8 @@ class FollowThroughCheckJobTest < ActiveSupport::TestCase
       trigger_bearer_token: "tr_valid", health_state: "healthy", consecutive_health_failures: 0
     )
     @chat = @agent.account.chats.create!(title: "Follow-through", manual_responses: true, agents: [ @agent, @other ])
-    @previous_setting = ENV["SOULSHOUSE_FOLLOW_THROUGH"]
-    ENV["SOULSHOUSE_FOLLOW_THROUGH"] = @agent.to_param
+    Setting.instance.update!(follow_through_residents: @agent.to_param)
     @run = finished_run
-  end
-
-  teardown do
-    ENV["SOULSHOUSE_FOLLOW_THROUGH"] = @previous_setting
   end
 
   test "ending a conversation run queues one check a minute later" do
@@ -39,13 +34,13 @@ class FollowThroughCheckJobTest < ActiveSupport::TestCase
   end
 
   test "the check is opt-in per resident" do
-    [ nil, "", @other.to_param ].each do |setting|
-      with_env("SOULSHOUSE_FOLLOW_THROUGH" => setting) do
+    [ nil, "", "  ", @other.to_param ].each do |setting|
+      with_follow_through(setting) do
         assert_no_enqueued_jobs(only: FollowThroughCheckJob) { running_run.finish_execution!("completed") }
       end
     end
-    [ "all", "#{@other.to_param}, #{@agent.to_param}" ].each do |setting|
-      with_env("SOULSHOUSE_FOLLOW_THROUGH" => setting) do
+    [ "all", " all ", "#{@other.to_param}, #{@agent.to_param}" ].each do |setting|
+      with_follow_through(setting) do
         assert_enqueued_with(job: FollowThroughCheckJob) { running_run.finish_execution!("completed") }
       end
     end
@@ -298,12 +293,9 @@ class FollowThroughCheckJobTest < ActiveSupport::TestCase
     )
   end
 
-  def with_env(values)
-    old = values.to_h { |k, _| [ k, ENV[k] ] }
-    values.each { |k, v| ENV[k] = v }
+  def with_follow_through(residents)
+    Setting.instance.update!(follow_through_residents: residents.to_s)
     yield
-  ensure
-    old.each { |k, v| ENV[k] = v }
   end
 
 end

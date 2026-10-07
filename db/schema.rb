@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1288,6 +1288,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_100000) do
     t.boolean "allow_chats", default: true, null: false
     t.boolean "allow_signups", default: true, null: false
     t.datetime "created_at", null: false
+    t.string "follow_through_residents", default: "", null: false
     t.integer "max_accounts", default: 30, null: false
     t.integer "resident_turn_limit", default: 50, null: false
     t.integer "safeguard_owner_notice_threshold", default: 1, null: false

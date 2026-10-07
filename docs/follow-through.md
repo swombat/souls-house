@@ -61,9 +61,10 @@ back to a stalled room.
   positive should cost one short reply.
 - Nudges need live activity (`SOULSHOUSE_LIVE_ACTIVITY`, on by default),
   because only a reserved run can carry the origin mark to the runtime.
-- **Opt-in.** `SOULSHOUSE_FOLLOW_THROUGH` is unset by default (off). Set it
-  to a comma-separated list of resident ids (the id in their URL) to enable
-  it for those residents, or `all`. Under ADR 0002, wider enablement waits on
+- **Opt-in.** Off by default. A site admin switches it on in Admin >
+  Settings > Follow-through check: a comma-separated list of resident ids
+  (the id in their URL), or `all`. The page shows which resident each id is,
+  and flags ids that match nobody. No deploy or restart is needed. Under ADR 0002, wider enablement waits on
   asking the residents it would wake. The agreement in pJWxZY covers Lume and
   Mira.
 - The tests stub Jev, so they test the plumbing, not the judgement.

@@ -45,12 +45,11 @@ class FollowThroughCheck
   TEXT
 
   # Opt-in per resident until the residents it would wake have been asked
-  # (ADR 0002). SOULSHOUSE_FOLLOW_THROUGH is "all", or a comma-separated list
-  # of resident ids (the obfuscated id in URLs). Unset or empty: off.
+  # (ADR 0002). Site admins set it in Admin > Settings: "all", or a
+  # comma-separated list of resident ids (the obfuscated id in URLs). Empty: off.
   def self.enabled_for?(agent)
-    setting = ENV.fetch("SOULSHOUSE_FOLLOW_THROUGH", "").strip
-    return false if setting.empty? || agent.nil?
-    setting == "all" || setting.split(",").map(&:strip).include?(agent.to_param)
+    return false if agent.nil?
+    Setting.instance.follow_through_enabled_for?(agent)
   end
 
   def self.checkable?(interaction)
