@@ -41,6 +41,7 @@ bun run test
 bun run test:ct
 python3 -m unittest discover -s test -p '*_test.py'
 python3 -m unittest discover -s test/runtime -p '*_test.py'
+python3 -m unittest discover -s test/host_runner -p '*_test.py'  # needs the cryptography package
 ```
 
 Install libvips and FFmpeg as well as PostgreSQL and the pinned Ruby/Bun tools.

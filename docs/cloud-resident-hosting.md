@@ -69,3 +69,48 @@ restart. This code is not a production rollout or approval to buy capacity.
 Once real remote placements exist, reverting to code that ignores placements
 would be unsafe; rollback must preserve the refusal boundary. The foundation
 creates no such production placements.
+
+## Host runner enrollment (pilot telemetry, #192)
+
+A VM ordered for the pilot runs a small host runner
+(`host-runner/souls_house_runner.py`) that **dials out** to Rails. This is a
+deliberate, bounded deviation from the architecture page, which has Rails
+calling the runner over a private network. It covers enrollment and telemetry
+only; the transport for resident turns is still undecided.
+
+- **Boot.** Procurement renders cloud-init with `RunnerUserData.render` and
+  sends it in its single create request. The document installs Docker,
+  `python3-cryptography` and nftables, embeds the runner source, and writes a
+  0600 config holding the one-time enrollment token. That token is the only
+  secret in it.
+- **Token.** `RunnerEnrollment.mint!` is called inside procurement's create
+  intent transaction. It stores only the SHA-256 digest and a 24-hour expiry.
+  There is no re-mint. A lost plaintext or an expired token means operator
+  review.
+- **Enrollment.** `POST /api/v1/host_runner/enrollment` is signed with the
+  key it asks Rails to pin, which proves possession. Until procurement calls
+  `confirm_provider_server!`, the answer is 202 and the token is not burned.
+  After that, the reported Hetzner server ID must match. A repeated request
+  with the same key is answered "already enrolled", which is how a lost reply
+  recovers. A different key is refused.
+- **Signing.** Ed25519 over `souls-house-runner-v1`, method, path, the body's
+  SHA-256, the runner ID, the timestamp and a nonce. The runner uses Debian's
+  `python3-cryptography` and Rails uses Ruby's OpenSSL. No crypto is
+  hand-written. Rails allows ±120 s of skew, caps bodies at 64 KB and rejects
+  reused nonces through a unique index.
+  `test/fixtures/files/runner_signature_vector.json` is produced by the Python
+  runner and verified by Rails, which pins the format in both languages.
+- **Heartbeats.** `POST /api/v1/host_runner/heartbeat` is signed with the
+  pinned key and stores a fixed list of host facts. Health is derived from
+  heartbeat age and lapses on its own.
+- **What it cannot do.** The runner knows two actions, `report_facts` and
+  `heartbeat`, and refuses anything else locally. Rails has no command queue.
+  Enrollment and health never make a placement ready or permit dispatch.
+- **Network.** Host input is dropped except loopback, established traffic,
+  ICMP and SSH. SSH exists for Daniel's offline break-glass key; Rails holds
+  only the public half or its Hetzner key ID. Rails stays root-equivalent over
+  the VM through the Hetzner project token (rebuild, rescue, user_data at
+  create). The firewall limits the network, not Rails.
+
+`RunnerEnrollment` is separate from procurement's states. Provisioned is not
+enrolled, enrolled is not healthy, and healthy is not runtime-ready.
