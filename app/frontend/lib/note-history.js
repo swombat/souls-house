@@ -2,6 +2,8 @@
 // a generation number; reset() and each new request bump it, and a response
 // from an older generation is dropped. Without this, reading note A, closing,
 // and opening B's history could let A's late response land in B's dialog.
+// Each request also clears the other request's busy flag, since starting it
+// cancels that one, so no button is left disabled by a request that died.
 
 import { noteVersionsPath } from './field';
 
@@ -48,7 +50,7 @@ export function createNoteHistoryLoader({ fetch: fetchFn = (...args) => fetch(..
 
     async load(accountId, noteId, { before = null } = {}) {
       const { mine, signal } = begin();
-      set({ loading: true, error: '', reading: null });
+      set({ loading: true, readingLoading: false, error: '', reading: null });
       const url = noteVersionsPath(accountId, noteId) + (before ? `?before=${encodeURIComponent(before)}` : '');
       try {
         const data = await getJson(url, signal);
@@ -66,7 +68,7 @@ export function createNoteHistoryLoader({ fetch: fetchFn = (...args) => fetch(..
 
     async read(accountId, noteId, versionId) {
       const { mine, signal } = begin();
-      set({ readingLoading: true, error: '' });
+      set({ readingLoading: true, loading: false, error: '' });
       try {
         const data = await getJson(noteVersionsPath(accountId, noteId, versionId), signal);
         if (mine !== generation) return;
@@ -80,7 +82,7 @@ export function createNoteHistoryLoader({ fetch: fetchFn = (...args) => fetch(..
     back() {
       generation += 1;
       controller?.abort();
-      set({ reading: null, readingLoading: false, error: '' });
+      set({ reading: null, readingLoading: false, loading: false, error: '' });
     },
   };
 }

@@ -76,4 +76,44 @@ describe('note history loader', () => {
     expect(loader.state.versions.map((v) => v.id)).toEqual(['v3', 'v2', 'v1']);
     expect(loader.state.hasMore).toBe(false);
   });
+
+  it('a read cancelled by Older versions leaves the version rows enabled', async () => {
+    const { fetch, pending } = deferredFetch();
+    const loader = createNoteHistoryLoader({ fetch });
+
+    loader.load('acc', 'A');
+    pending[0].respond({ versions: [{ id: 'v3' }, { id: 'v2' }], has_more: true });
+    await flush();
+    loader.read('acc', 'A', 'v3');
+    loader.load('acc', 'A', { before: 'v2' });
+    pending[1].respond({ version: { id: 'v3', content: 'late' } });
+    pending[2].respond({ versions: [{ id: 'v1' }], has_more: false });
+    await flush();
+
+    expect(loader.state.readingLoading).toBe(false);
+    expect(loader.state.loading).toBe(false);
+    expect(loader.state.reading).toBeNull();
+    expect(loader.state.versions.map((v) => v.id)).toEqual(['v3', 'v2', 'v1']);
+  });
+
+  it('Older versions cancelled by a read and then Back leaves Older versions enabled', async () => {
+    const { fetch, pending } = deferredFetch();
+    const loader = createNoteHistoryLoader({ fetch });
+
+    loader.load('acc', 'A');
+    pending[0].respond({ versions: [{ id: 'v3' }, { id: 'v2' }], has_more: true });
+    await flush();
+    loader.load('acc', 'A', { before: 'v2' });
+    loader.read('acc', 'A', 'v3');
+    expect(loader.state.loading).toBe(false);
+    loader.back();
+    pending[1].respond({ versions: [{ id: 'v1' }], has_more: false });
+    pending[2].respond({ version: { id: 'v3', content: 'late' } });
+    await flush();
+
+    expect(loader.state.loading).toBe(false);
+    expect(loader.state.readingLoading).toBe(false);
+    expect(loader.state.hasMore).toBe(true);
+    expect(loader.state.versions.map((v) => v.id)).toEqual(['v3', 'v2']);
+  });
 });
