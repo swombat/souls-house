@@ -30,53 +30,63 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
+  /* Personal tint (see app/frontend/lib/theme.js). One hue tints the neutrals; with
+     --tint-c at 0 every value below is exactly the original grey. Lightness and the
+     chroma multipliers are fixed here, so no choice of hue can produce a loud page. */
+  --tint-h: 0;
+  --tint-c: 0;
+  /* The dot in the logo; overridden per account by [data-account-colour] below.
+     Untinted this is exactly #f15d61; a tint darkens it a touch so it keeps 3:1. */
+  --account-dot: oklch(calc(0.6715 - var(--tint-c)) 0.1825 21.87);
+  --background: oklch(calc(1 - var(--tint-c) * 1.2) var(--tint-c) var(--tint-h));
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: oklch(calc(1 - var(--tint-c) * 0.5) calc(var(--tint-c) * 0.5) var(--tint-h));
   --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
+  --popover: oklch(calc(1 - var(--tint-c) * 0.5) calc(var(--tint-c) * 0.5) var(--tint-h));
   --popover-foreground: oklch(0.145 0 0);
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
+  --secondary: oklch(calc(0.97 - var(--tint-c) * 1.5) calc(var(--tint-c) * 1.5) var(--tint-h));
   --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
+  --muted: oklch(calc(0.97 - var(--tint-c) * 1.5) calc(var(--tint-c) * 1.5) var(--tint-h));
+  /* Darkened a touch when tinted so it never loses contrast against the tinted panels. */
+  --muted-foreground: oklch(calc(0.556 - var(--tint-c) * 2) 0 0);
+  --accent: oklch(calc(0.97 - var(--tint-c) * 1.5) calc(var(--tint-c) * 1.5) var(--tint-h));
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
+  --border: oklch(0.922 calc(var(--tint-c) * 1.5) var(--tint-h));
+  --input: oklch(0.922 calc(var(--tint-c) * 1.5) var(--tint-h));
   --ring: oklch(0.708 0 0);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: oklch(calc(0.985 - var(--tint-c)) var(--tint-c) var(--tint-h));
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent: oklch(calc(0.97 - var(--tint-c) * 1.5) calc(var(--tint-c) * 1.5) var(--tint-h));
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-border: oklch(0.922 calc(var(--tint-c) * 1.5) var(--tint-h));
   --sidebar-ring: oklch(0.708 0 0);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
+  --account-dot: #f15d61;
+  --background: oklch(0.145 var(--tint-c) var(--tint-h));
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
+  --card: oklch(0.205 var(--tint-c) var(--tint-h));
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
+  --popover: oklch(0.205 var(--tint-c) var(--tint-h));
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.922 0 0);
   --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
+  --secondary: oklch(0.269 calc(var(--tint-c) * 1.2) var(--tint-h));
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
+  --muted: oklch(0.269 calc(var(--tint-c) * 1.2) var(--tint-h));
   --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
+  --accent: oklch(0.269 calc(var(--tint-c) * 1.2) var(--tint-h));
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
@@ -87,14 +97,67 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
+  --sidebar: oklch(0.205 var(--tint-c) var(--tint-h));
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent: oklch(0.269 calc(var(--tint-c) * 1.2) var(--tint-h));
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* Account logo colours: names match Account::LOGO_COLOURS (no attribute = the default coral). Light values sit on pale
+   backgrounds and dark values on deep ones, so the dot reads in either mode. The attribute sits
+   on <html> for the logo; swatches carry it themselves to preview each colour. */
+[data-account-colour='teal'] {
+  --account-dot: oklch(0.6 0.1 190);
+}
+.dark[data-account-colour='teal'],
+.dark [data-account-colour='teal'] {
+  --account-dot: oklch(0.74 0.11 190);
+}
+[data-account-colour='plum'] {
+  --account-dot: oklch(0.52 0.14 330);
+}
+.dark[data-account-colour='plum'],
+.dark [data-account-colour='plum'] {
+  --account-dot: oklch(0.7 0.13 330);
+}
+[data-account-colour='ochre'] {
+  --account-dot: oklch(0.62 0.14 75);
+}
+.dark[data-account-colour='ochre'],
+.dark [data-account-colour='ochre'] {
+  --account-dot: oklch(0.78 0.13 80);
+}
+[data-account-colour='sky'] {
+  --account-dot: oklch(0.6 0.13 240);
+}
+.dark[data-account-colour='sky'],
+.dark [data-account-colour='sky'] {
+  --account-dot: oklch(0.74 0.12 240);
+}
+[data-account-colour='moss'] {
+  --account-dot: oklch(0.58 0.12 140);
+}
+.dark[data-account-colour='moss'],
+.dark [data-account-colour='moss'] {
+  --account-dot: oklch(0.74 0.13 140);
+}
+[data-account-colour='indigo'] {
+  --account-dot: oklch(0.5 0.16 275);
+}
+.dark[data-account-colour='indigo'],
+.dark [data-account-colour='indigo'] {
+  --account-dot: oklch(0.7 0.14 275);
+}
+[data-account-colour='slate'] {
+  --account-dot: oklch(0.5 0.03 250);
+}
+.dark[data-account-colour='slate'],
+.dark [data-account-colour='slate'] {
+  --account-dot: oklch(0.74 0.03 250);
 }
 
 @theme inline {

@@ -6,10 +6,23 @@
   import Navbar from '$lib/components/navigation/navbar.svelte'; // Adjust the path as necessary
   import Footer from '$lib/components/navigation/Footer.svelte';
   import { ModeWatcher, setMode, resetMode, mode } from 'mode-watcher';
+  import { applyPersonalTint, applyAccountColour, browserChromeColours } from '$lib/theme';
 
   let { children } = $props();
   let themeInitialized = false;
   const showFooter = $derived(!$page.component?.startsWith('chats/'));
+  const themeHue = $derived($page.props?.user?.theme_hue ?? null);
+  const accountColour = $derived($page.props?.account?.logo_colour ?? null);
+  const chromeColours = $derived(browserChromeColours(themeHue));
+
+  // The server renders these on <html> for first paint; keep them current across
+  // Inertia navigations (switching account, saving a new tint).
+  $effect(() => {
+    applyPersonalTint(document.documentElement, themeHue);
+  });
+  $effect(() => {
+    applyAccountColour(document.documentElement, accountColour);
+  });
 
   $effect(() => {
     let flash = $page.props?.flash || {};
@@ -32,8 +45,8 @@
   });
 </script>
 
-<!-- Match --background in application.css using browser-chrome-safe sRGB colours. -->
-<ModeWatcher themeColors={{ light: '#ffffff', dark: '#0a0a0a' }} />
+<!-- Match --background in application.css (including the personal tint) in browser-chrome-safe sRGB. -->
+<ModeWatcher themeColors={chromeColours} />
 <div
   use:chatViewport={!showFooter}
   class:chat-viewport={!showFooter}
