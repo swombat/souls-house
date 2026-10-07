@@ -8,6 +8,7 @@ module Backup
     module_function
 
     def docker_environment(agent)
+      Agents::RuntimeLocation.require_local!(agent)
       return LocalRepository.new(agent).environment if LocalRepository.enabled?
       if LocalInstance.current.namespace
         raise ArgumentError, "Remote agent backups/restores are disabled for isolated local instances"

@@ -26,6 +26,7 @@ class Agent < ApplicationRecord
   end
 
   belongs_to :account
+  has_one :placement, class_name: "AgentPlacement", dependent: :destroy, inverse_of: :agent
   belongs_to :github_resident_import, optional: true, inverse_of: :agent
   has_one :house_inference_grant, dependent: :nullify
   has_one :memory_vault, class_name: "Mnemodyne::Vault", dependent: :restrict_with_error, inverse_of: :agent

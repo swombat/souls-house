@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_170000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_170100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -169,6 +169,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_170000) do
     t.index ["agent_id", "memory_type"], name: "index_agent_memories_on_agent_id_and_memory_type"
     t.index ["agent_id"], name: "index_agent_memories_on_agent_id"
     t.index ["discarded_at"], name: "index_agent_memories_on_discarded_at"
+  end
+
+  create_table "agent_placements", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.string "backend", default: "local", null: false
+    t.string "state", default: "pending", null: false
+    t.bigint "provider_server_id"
+    t.string "runtime_endpoint"
+    t.integer "generation", default: 1, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_agent_placements_on_agent_id", unique: true
+    t.index ["provider_server_id"], name: "index_agent_placements_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
+    t.check_constraint "generation >= 1", name: "agent_placements_positive_generation"
+    t.check_constraint "provider_server_id > 0", name: "agent_placements_positive_server_id"
   end
 
   create_table "agent_runtime_attempts", force: :cascade do |t|
@@ -1464,6 +1479,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_170000) do
   add_foreign_key "agent_backup_snapshots", "agents"
   add_foreign_key "agent_bookmarks", "chat_agents", on_delete: :cascade
   add_foreign_key "agent_memories", "agents"
+  add_foreign_key "agent_placements", "agents"
   add_foreign_key "agent_runtime_attempts", "agent_runtime_interactions"
   add_foreign_key "agent_runtime_events", "agent_runtime_attempts"
   add_foreign_key "agent_runtime_interactions", "agent_runtime_interactions", column: "follow_through_of_id", on_delete: :nullify

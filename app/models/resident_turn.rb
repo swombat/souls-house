@@ -82,6 +82,7 @@ class ResidentTurn < ApplicationRecord
 
   def eligible?
     return false unless agent.active? && !agent.paused? && agent.external?
+    return false unless Agents::RuntimeLocation.local?(agent)
     interaction = agent_runtime_interaction
     if interaction.chat
       return false unless interaction.chat.respondable? && interaction.chat.agents.exists?(agent_id)
@@ -112,7 +113,7 @@ class ResidentTurn < ApplicationRecord
   # records it and capacity is released only by the runtime's answer, never
   # by this local decision.
   def withdraw_unless_deliverable!
-    return if cancel_requested_at? || dispatch_deliverable?
+    return if cancel_requested_at? || (Agents::RuntimeLocation.local?(agent) && dispatch_deliverable?)
 
     with_lock { update!(cancel_requested_at: Time.current) unless cancel_requested_at? || finished_at? }
   end

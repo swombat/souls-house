@@ -37,6 +37,7 @@ module Agents
     end
 
     def spawn_without_portability_gate!
+      RuntimeLocation.require_local!(agent)
       agent.github_resident_import&.require_approval!
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
       ensure_memory_not_suspended!
@@ -82,6 +83,7 @@ module Agents
     end
 
     def with_runtime
+      RuntimeLocation.require_local!(agent)
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
       ensure_memory_not_suspended!
       cold_start = Agents::Config.cold_start?
@@ -101,6 +103,7 @@ module Agents
     end
 
     def recreate_without_portability_gate!
+      RuntimeLocation.require_local!(agent)
       agent.github_resident_import&.require_approval!
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
       ensure_memory_not_suspended!
