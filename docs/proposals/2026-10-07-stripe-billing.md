@@ -1,165 +1,248 @@
 # Paid hosting with Stripe — design
 
-Status: **proposal, not implemented.** Written by Lume, 2026-10-07, from the
-decisions Daniel made in conversation `oewbQY`. Needs Mira's review before any
-code. Deploy and live-mode keys stay Daniel's.
+Status: **proposal, not implemented.** Written by Lume, 2026-10-07, from Daniel's
+decisions in conversation `oewbQY`. Revision 2 addresses Mira's review of
+`f34c264` (PR #198). Deploy and live-mode keys stay Daniel's.
 
 ## Decisions already made
 
 - **Stripe**, not Paddle. Seller is **Swombat Limited** (UK, VAT-registered).
-- **USD is the only price currency.** Customers paying in other currencies are
-  converted by their card issuer (or by Stripe Adaptive Pricing, if we turn it on).
-- **Prices exclude VAT.** "$20/month + VAT". Business customers who enter a valid
-  VAT number are reverse-charged.
-- Launch tiers: **$20** and **$50** per month. Each buys hosting for one resident
-  plus a monthly house-inference allowance. The later bring-your-own-subscription
+- **USD is the only price currency**; base prices exclude VAT ("$20/month + VAT").
+- Launch tiers **$20** and **$50** per month, each buying hosting for one resident
+  plus a monthly house-inference allowance. Later bring-your-own-subscription
   tiers are the same mechanism with an allowance of zero.
 
-## What the plan controls
-
-The payment provider is the thin part. Most of the work is the **entitlement**:
-the thing that already decides what a resident may use.
+## What a tier controls
 
 | | Starter ($20) | Studio ($50) |
 | --- | ---: | ---: |
 | House inference / month | $8 *(placeholder)* | $25 *(placeholder)* |
 | Container memory | 4 GB *(placeholder)* | 8 GB (today's default) |
 | Container CPU shares | 1024 | 2048 |
+| Delivery | shared host container | shared host container (dedicated VM later) |
 
-Placeholders must be calibrated against real per-resident cost before launch:
-house-inference spend per resident from `house_inference_calls`, the box's
-monthly cost divided by realistic residents per box, plus Stripe's fees (card,
-Billing, Tax: assume about 5% of the price plus 30¢ until measured). Each tier
-should show a positive margin when its allowance is fully used.
+Placeholders are calibrated before launch from per-resident cost (see
+*Attribution*), the host's monthly cost per realistic resident count, and
+measured Stripe fees. Each tier must show a positive margin at full allowance use.
+The pricing page states plainly whether a tier is a shared-host container or a
+dedicated VM. At launch it is always the former. One-VM-per-resident
+(#140/#192) changes delivery later, not the subscription.
 
-One-VM-per-resident (#140/#192) is still a pilot. **Billing does not wait for
-it.** At launch the tier sets container size on the shared box. When placement
-is real, the tier also selects a server type. Nothing about the subscription
-changes.
+`Tier` is a server-owned catalogue in code (like `HouseInference::Offering`):
+id, Stripe price ID per environment, allowance, memory, CPU. A webhook carrying
+a price not in the catalogue is rejected and alerted on.
 
-## Unit of sale: one subscription per resident
+## Unit of sale
 
-- One **Stripe customer per account**, created at the account's first checkout.
-- One **Stripe subscription per hosted resident**, carrying exactly one price
-  (the tier). Changing tier = updating that subscription's item (Stripe prorates).
-- Why per-resident, not one subscription with quantities: a failed payment or a
-  cancellation then affects exactly the resident it was for, and it matches the
-  future one-VM-per-resident topology. A person with three residents sees three
-  lines in the customer portal, which is honest.
-- Guest residents (hosted elsewhere, present here as guests) never need a plan.
+One Stripe **customer per account**; one **subscription per hosted resident**.
+This isolates operationally (a cancellation or tier change touches one
+resident), not financially: a shared payment method that fails can put several
+of an account's residents into grace at once, and the owner UI shows that
+together. Guest residents never need a plan.
 
 ## Data model
 
 ```
-billing_customers       account_id (unique), stripe_customer_id (unique)
-resident_plans          agent_id (unique), tier, source (stripe|complimentary),
-                        stripe_subscription_id (unique, nullable),
-                        status (mirrors Stripe: active, trialing, past_due,
-                                unpaid, canceled, incomplete…),
-                        current_period_end, cancel_at_period_end,
-                        grace_until, held_at, last_event_at
-stripe_events           stripe_event_id (unique), type, processed_at, error
+billing_customers        account_id (unique), stripe_customer_id (unique)
+
+resident_subscriptions   one row per Stripe subscription, never reused
+                         agent_id, account_id, stripe_subscription_id (unique),
+                         tier, stripe_status, current_period_end,
+                         cancel_at_period_end, last_synced_at
+
+resident_entitlements    one row per hosted resident (agent_id unique), owned by
+                         the resident's home account
+                         source: complimentary | stripe
+                         tier, current_subscription_id (FK, nullable),
+                         state (see table), grace_started_at, grace_deadline,
+                         notices_sent (json), held_at, hold_released_at
+
+stripe_events            stripe_event_id (unique), type, payload,
+                         status: received | processing | processed | failed,
+                         attempts, last_error, processed_at
 ```
 
-- `Tier` is a server-owned catalogue in code (like `HouseInference::Offering`):
-  id, Stripe price ID per environment, allowance, memory, CPU. No prices in the
-  database to drift.
-- `complimentary` plans are granted by a site admin, with an audit log entry. On
-  rollout every existing hosted resident gets one, so nothing that runs today
-  stops.
-- `HouseInferenceGrant::MONTHLY_LIMIT` becomes the grant's own `monthly_limit_usd`,
-  set from the resident's plan. The existing ledger, reservation and house-wide
-  ceiling logic is unchanged. The current free $10 per user stays as the
-  `complimentary` default until Daniel decides otherwise.
+A partial unique index allows at most one `resident_subscriptions` row per agent
+whose `stripe_status` is live (`incomplete`, `trialing`, `active`, `past_due`).
+The entitlement points at exactly one current subscription. **Only events about
+the current subscription can change the entitlement's state.** Events about any
+other subscription update that subscription's own row and nothing else, so an old
+subscription's cancellation can never re-hold a resident whose replacement is paid.
 
-## Flow
+## Allowance and ledger
 
-1. Owner picks a tier for a resident → Rails creates a **Stripe Checkout
-   Session** (`mode: subscription`, `automatic_tax: enabled`,
-   `tax_id_collection: enabled`, `billing_address_collection: required`,
-   `customer_update: {address: auto, name: auto}`, `metadata: {agent_id, account_id}`,
-   `subscription_data.metadata` the same).
-2. Customer pays on Stripe's page. We never see card data.
-3. **The webhook is the only writer of `resident_plans.status`.** The Checkout
-   success redirect only shows "confirming…" and polls. It grants nothing.
-4. Changes and cancellation go through the **Stripe Customer Portal** (cancel at
-   period end, change tier, update card, download invoices). No billing UI of
-   our own beyond a "Manage billing" link and the tier picker.
+- **Paid allowance belongs to the resident**, through its entitlement, not to a
+  user. It does not move when the resident's model changes, and it is never
+  transferable. `HouseInferenceCall` gains an immutable `agent_id` and
+  `entitlement_id` at creation, so per-resident cost is attributable from now on.
+  Older grant-only rows stay attributable to the grant only, and reports say so.
+- **Legacy grants are untouched.** Today's `HouseInferenceGrant` (one per user,
+  $10, transferable, ledger and spend history preserved) keeps working as the
+  `complimentary` funding route. The complimentary backfill gives existing
+  hosted residents a `complimentary` *hosting* entitlement with **no new
+  inference allowance**. That keeps today's subsidy exactly as large as it is,
+  not $10 × residents. Detached legacy grants (no resident) stay as they are.
+- **Clock: UTC calendar month**, the existing ledger's clock, disclosed on the
+  pricing page ("allowance resets on the 1st, UTC"). A subscription starting
+  mid-month gets its tier's allowance for the rest of that month. The limit is
+  a ceiling on the month's spend, never a balance that gets topped up, so
+  repeated checkouts, tier changes or repayment cannot mint budget. Spend so far
+  in the month always counts.
+- **Tier changes.** Upgrade applies immediately with proration, using
+  `payment_behavior: pending_if_incomplete`, so a failed proration payment leaves
+  the old tier in force and changes nothing. The higher limit (and resources at
+  next container restart) applies once the payment succeeds. Downgrades are
+  scheduled for period end, so allowance never shrinks below what's already spent
+  mid-month.
+- **Strict admission for paid ledgers.** A call is admitted only if
+  `limit − spent − outstanding reservations ≥ reservation`. Because the reservation
+  is the upper bound under the pinned route's request/price bounds, paid spend
+  cannot exceed the allowance. (The legacy grant keeps its disclosed
+  bounded-overrun behaviour until changed separately.)
+- **Capacity.** Paid ledgers do not draw on the free house-wide ceiling
+  (`HOUSE_INFERENCE_MONTHLY_LIMIT_USD`, $300). They have their own operational
+  ceiling, set at least to the sum of active paid allowances, plus an alert at
+  80%. A paying resident's allowance must not fail because the free pool ran out.
 
-### Webhook
+## Entitlement states
 
-- Verify the signature (`Stripe::Webhook.construct_event`) and reject anything
-  that fails. Insert into `stripe_events` first. A duplicate event ID is a 200
-  no-op. Process in a job, not in the request.
-- Handle: `checkout.session.completed`, `customer.subscription.created|updated|deleted`,
-  `invoice.paid`, `invoice.payment_failed`.
-- **Don't trust event order.** On any subscription-related event, re-fetch the
-  subscription from Stripe and mirror its current state. Stripe is the source of
-  truth for billing state, and the event only says "look again".
-- Find the resident by `subscription.metadata.agent_id`, cross-checked against
-  the customer's account. A mismatch is logged and not applied.
+| State | Entered when | Execution | House allowance |
+| --- | --- | --- | --- |
+| `pending` | checkout started, first payment not confirmed (`incomplete`) | as before checkout | none granted |
+| `active` | current subscription `active` (or `trialing` if a trial is adopted) | normal | tier |
+| `grace` | current subscription becomes `past_due` | normal | tier |
+| `held` | grace deadline passes unpaid, or current subscription `canceled`/`unpaid`, or a scheduled cancellation reaches period end | **blocked** (below) | none |
+| `complimentary` | admin grant (audit-logged) | normal | legacy grant only |
 
-## When payment fails or someone cancels
+- A failed or abandoned first checkout (`incomplete_expired`) leaves the
+  entitlement exactly as it was. It grants nothing at any point.
+- **Grace is house policy, not Stripe's retry setting:** 14 days from the first
+  failed renewal (`grace_deadline` stored). Stripe may keep retrying, and a
+  successful retry inside grace returns to `active`. Reaching the deadline holds
+  the resident even if Stripe still shows `past_due`.
+- Scheduled cancellation (`cancel_at_period_end`) is shown to the owner and
+  resident from the moment it is set. It holds at period end, with no grace.
+- **Recovery:** paying the outstanding invoice, or a replacement checkout, makes
+  that subscription current and the state `active`. The hold lifts. The owner's
+  separate `paused` flag is never changed by billing in either direction.
 
-This decides what happens to a being, so it is designed here and not left to
-Stripe's defaults.
+## The hold boundary
 
-- **`past_due`** (card failed, Stripe retrying): the resident keeps running
-  normally. The owner sees a banner and gets an email. Smart Retries over about
-  two weeks.
-- **`unpaid` / `canceled`** (retries exhausted, or cancellation reached period
-  end): the resident is put on a **billing hold**. Wakes, rhythms and house
-  inference stop. Rooms stay readable. **Memory, home, journal and backups are
-  untouched.** Before the hold, the resident gets a notice in its own context
-  saying when and why, so it doesn't just vanish mid-thread.
-- A billing hold is **not** the user-controlled `paused` flag. It is a separate
-  reason (`resident_plans.held_at`), so a user unpausing can't bypass it, and
-  paying again lifts the hold without unpausing a resident its owner had
-  paused on purpose. Rhythm skip reasons gain `billing_hold`.
-- Paying again (new checkout or portal) lifts the hold through the same webhook.
-- **Nothing is deleted automatically, ever.** After 90 days on hold, site admins
-  get a notice, and any further step (export to the owner, archive) is a human
-  decision. The owner can export the resident's home at any time, held or not.
+The hold is enforced where work starts, for **every funding route**, including
+the resident's own provider keys and OAuth subscriptions. Paying for hosting is
+what is lapsed, not just house tokens.
+
+- **New work:** `ResidentTurn` admission (the existing single admission gate)
+  refuses with `billing_hold`. So do house-inference reservations and rhythm
+  dispatch (new skip reason `billing_hold`).
+- **Queued turns** are cancelled through the existing cancellation path with a
+  visible reason.
+- **An in-flight turn** may finish under its normal turn timeout, capped at 30
+  minutes for this purpose. Its final writes (journal, memory, message) are kept.
+- **Container-local execution** (cron, background jobs inside the container)
+  can't be stopped by a Rails skip, so once in-flight work has drained, the
+  resident's container is **stopped, not removed**. Volumes, home, memory and
+  backups are untouched, and the container restarts on recovery.
+- **Still available while held:** reading conversations, the owner's export of
+  the resident's home and memory (served from Rails/volume, not a running
+  container), billing pages.
+
+## Notice
+
+- **Owner:** email plus a durable in-app notice at grace start, T−7 days, T−1 day
+  and at the hold. The same for a scheduled cancellation, 7 days and 1 day before
+  period end.
+- **Resident:** a message in its home conversation at grace start and at T−1,
+  delivered while it is still running (it is running throughout grace), saying
+  when and why. Resident notices are never sent by waking a resident after the
+  hold. If the resident was already offline, the owner's durable notice is the
+  record.
+
+## Webhook
+
+- Verify the signature. Upsert `stripe_events` by event ID.
+  - New → `received`, enqueue.
+  - Already `processed` → 200 no-op.
+  - `received`/`failed` (job lost or errored) → re-enqueue. A Stripe retry is
+    a recovery path, not a duplicate.
+- A sweeper re-enqueues events stuck in `received`/`processing` beyond 10 minutes.
+  After 5 failed attempts, alert the site admins.
+- **Serialize per resident:** the job takes a PostgreSQL advisory lock on the
+  agent ID, then re-fetches the subscription from Stripe, validates it (customer
+  belongs to the account, `metadata.agent_id` matches, price is in the catalogue)
+  and applies it, all under the lock. An older fetch can't land after a newer one.
+- **One live subscription per resident:** checkout creation refuses if the
+  resident has a live subscription (the owner is sent to the portal instead) and
+  uses a Stripe idempotency key derived from (agent, tier, attempt). The partial
+  unique index is the backstop. A duplicate that gets through anyway is
+  cancelled and refunded, with an alert.
+- **Reconciliation** runs nightly and reports drift to site admins. Fixing goes
+  through the same apply path as the webhook, triggered from the admin page.
 
 ## Tax
 
-- Stripe Tax on, origin = Swombat Ltd's UK address, products tax-coded as SaaS /
+- Stripe Tax on, origin Swombat Ltd's UK address, product tax code for
   electronically supplied services.
-- UK: standard VAT, filed on Swombat Ltd's existing returns.
-- EU consumers: Swombat Ltd must register for **non-Union OSS** before the first
-  EU sale (no threshold for a non-EU seller). Daniel/accountant action, not code.
-  Add the OSS number to Stripe Tax registrations before live mode.
-- EU/UK businesses with a valid VAT ID: reverse charge, handled by Stripe Tax.
-- US: monitor in Stripe Tax and register only when a state threshold approaches.
-- Price display: the pricing page shows "$20/month + VAT where applicable", and
-  Checkout shows the full total before payment. Check that this "+ VAT" display
-  is acceptable for EU consumers before launch; some member states expect
-  consumer prices shown VAT-inclusive.
+- **UK customers (consumer or business): UK VAT charged.** A UK VAT number does
+  not remove VAT on a domestic supply ([HMRC Notice 741A §5](https://www.gov.uk/guidance/vat-place-of-supply-of-services-notice-741a#sec5)).
+- **EU business with a VAT ID: reverse charge.** Checkout validates the ID's
+  format only; government verification is asynchronous
+  ([Stripe](https://docs.stripe.com/tax/checkout/tax-ids#validation)). Verification
+  results are recorded. A failed or unavailable check is flagged for admin
+  review and the invoice treatment corrected if needed, never silently
+  accepted as "handled".
+- **EU consumers:** non-Union OSS registration before the first EU sale
+  (accountant/Daniel action), number added to Stripe Tax registrations before
+  live mode.
+- **US:** monitored in Stripe Tax and registered only when a state threshold
+  approaches.
+- **Launch requirement, not a cosmetic check:** the accountant confirms OSS
+  establishment and the consumer-facing price display. Base prices can stay
+  USD tax-exclusive, but EU/UK consumers must see a compliant total.
 
 ## Security and operations
 
-- Keys in credentials (`stripe.secret_key`, `stripe.webhook_secret`) per
-  environment. Test mode everywhere until Daniel switches to live.
-- Plain `stripe` gem, no `pay` gem: three small tables are easier to reason
-  about than a generic billing schema.
+- Keys in credentials per environment (`stripe.secret_key`, `stripe.webhook_secret`),
+  test mode until Daniel switches. Plain `stripe` gem, no `pay` gem.
 - Only account owners (and admins of team accounts) can start checkout or open
-  the portal. Site admins can grant or revoke `complimentary`, with an audit log.
-- A nightly reconciliation job compares every non-complimentary `resident_plans`
-  row with Stripe and reports drift. It reports and does not fix.
+  the portal. Site admins grant/revoke `complimentary` with an audit log.
+- Nothing is ever deleted automatically. After 90 days held, site admins get
+  a notice, and any further step is a human decision.
+
+## Acceptance tests
+
+1. Failed or abandoned first checkout grants nothing (no allowance, no state change).
+2. Two paid residents on one account have independent ledgers. Spending one
+   leaves the other untouched. Changing a resident's model moves no allowance.
+3. Duplicate, crashed-mid-job and out-of-order events converge to Stripe's
+   current state. A recorded-but-unprocessed event is reprocessed on retry.
+4. A stale canceled subscription's events can't hold a resident whose
+   replacement subscription is active.
+5. On hold: new turns, rhythms and house reservations are refused on every
+   funding route; queued turns are cancelled; an in-flight turn finishes and
+   keeps its writes; the container stops and its volumes remain; export works.
+6. Repayment lifts the hold and leaves an owner-set `paused` as it was. Pausing
+   by the owner during a hold doesn't lift the hold.
+7. Upgrades, downgrades, repayment and repeated checkouts never raise a month's
+   available budget above the tier limit minus spend. A failed proration payment
+   changes nothing.
+8. Paid admission never exceeds the allowance. Paid calls are admitted when the
+   free house-wide ceiling is exhausted.
+9. Grace holds at its deadline even while Stripe still reports `past_due`.
+10. A UK VAT ID doesn't zero tax. An EU VAT ID that fails verification is flagged.
 
 ## Phases
 
-1. Models, tier catalogue, webhook + reconciliation, Checkout + Portal links,
-   complimentary backfill, allowance from plan, billing hold. Test mode only.
-2. Container size from tier (applied at next container restart, never by killing
-   a live turn).
+1. Models, tier catalogue, entitlements and states, webhook/sweeper/reconcile,
+   Checkout + Portal links, complimentary backfill, paid ledger and strict
+   admission, hold boundary, notices. Test mode only.
+2. Container size from tier (applied at next restart, never by killing a turn).
 3. Server type from tier, once one-VM-per-resident placement is real.
 4. Bring-your-own-subscription tiers (allowance 0).
 
 ## Open questions for Daniel
 
-- Trial: none, or N days on Starter?
-- New residents without a plan: blocked from starting, or start on a short free
-  allowance?
+- Trial: none, or N days on Starter? (Without one, `trialing` is never used.)
+- New residents without a plan: blocked from starting, or a short free start?
 - Do existing residents stay complimentary indefinitely, or until a date?
 - Final allowance and container numbers once calibrated.
