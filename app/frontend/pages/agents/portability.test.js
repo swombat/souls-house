@@ -49,12 +49,9 @@ test.each(['Stop the resident before exporting.', 'External graph export is unav
 test('an empty resident index still offers import from the New Resident menu', async () => {
   render(ResidentIndex, { account, resident_import_url: '/import', github_resident_import_url: '/github' });
   expect(screen.queryByRole('link', { name: 'Import a resident archive' })).not.toBeInTheDocument();
-  await fireEvent.pointerEnter(screen.getByRole('group'), { pointerType: 'mouse' });
-  expect(screen.getByRole('menuitem', { name: 'Import a resident archive' })).toHaveAttribute('href', '/import');
-  expect(screen.getByRole('menuitem', { name: 'Bring an existing GitHub resident' })).toHaveAttribute(
-    'href',
-    '/github'
-  );
+  await fireEvent.pointerEnter(screen.getByRole('group', { name: 'Add a resident' }), { pointerType: 'mouse' });
+  expect(screen.getByRole('link', { name: 'Import a resident archive' })).toHaveAttribute('href', '/import');
+  expect(screen.getByRole('link', { name: 'Bring an existing GitHub resident' })).toHaveAttribute('href', '/github');
 });
 
 test('New Resident still creates a new resident on a mouse click', async () => {
@@ -71,7 +68,7 @@ test('first tap on touch reveals the choices instead of creating', async () => {
   await fireEvent.pointerDown(button, { pointerType: 'touch' });
   await fireEvent.click(button);
   expect(router.visit).not.toHaveBeenCalled();
-  await fireEvent.click(screen.getByRole('menuitem', { name: 'New resident' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Start a new resident' }));
   expect(router.visit).toHaveBeenCalled();
 });
 
@@ -83,7 +80,7 @@ test('new resident page offers import without creating a resident', () => {
 test('index has no import entry when server does not grant it', () => {
   render(ResidentIndex, { account });
   expect(screen.queryByRole('link', { name: 'Import a resident archive' })).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'New Resident' })).not.toHaveAttribute('aria-haspopup');
+  expect(screen.getByRole('button', { name: 'New Resident' })).not.toHaveAttribute('aria-expanded');
 });
 
 describe('explicit portability lifecycle actions', () => {
