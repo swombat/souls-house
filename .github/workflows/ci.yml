@@ -40,7 +40,7 @@ jobs:
       PGHOST: 127.0.0.1
       PGUSER: postgres
       PGPASSWORD: postgres
-      PARALLEL_WORKERS: '2'
+      PARALLEL_WORKERS: '4'
     steps:
       - uses: actions/checkout@v5
         with:

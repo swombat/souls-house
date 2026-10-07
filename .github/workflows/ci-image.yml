@@ -1,0 +1,82 @@
+name: CI tooling image
+
+on:
+  pull_request:
+    paths:
+      - '.github/ci/**'
+      - '.github/workflows/ci-image.yml'
+      - 'test/ci/ci_image_test.py'
+      - '.ruby-version'
+      - 'package.json'
+      - 'bun.lock'
+  push:
+    branches: [master]
+    paths:
+      - '.github/ci/**'
+      - '.github/workflows/ci-image.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s test/ci -p ci_image_test.py
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .github/ci
+          load: true
+          tags: ci-tooling:check
+      - name: Smoke-test tools and Chromium
+        run: |
+          docker run --rm --ipc=host ci-tooling:check sh -ec '
+            ruby --version
+            bun --version
+            node --version
+            node /opt/playwright/node_modules/playwright/cli.js --version
+            node -e "const { chromium } = require(\"/opt/playwright/node_modules/playwright\"); (async () => { const b = await chromium.launch({headless:true}); const p = await b.newPage(); await p.setContent(\"<title>ci-ok</title>\"); if (await p.title() !== \"ci-ok\") process.exitCode = 1; await b.close(); })().catch(e => { console.error(e); process.exitCode = 1; });"
+          '
+
+  publish:
+    # Only trusted mainline or an explicit mainline dispatch. Never PR code.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s test/ci -p ci_image_test.py
+      - name: Image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}-ci" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .github/ci
+          push: true
+          tags: ${{ steps.image.outputs.name }}:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - name: Record immutable reference
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          printf 'CI tooling image: `%s@%s`\n\nSet the package to public and verify an anonymous pull before updating CI consumers.\n' "$IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
