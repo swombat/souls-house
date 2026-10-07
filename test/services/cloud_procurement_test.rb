@@ -117,9 +117,10 @@ class CloudProcurementTest < ActiveSupport::TestCase
 
     @config = @config.with(ssh_key_ids: [])
     assert_raises(CloudProcurement::NotAllowed) { plan! }
-    @config = @config.with(rails_url: nil)
-    assert_raises(CloudProcurement::NotAllowed) { plan! }
-    @config = @config.with(rails_url: "https://souls.example", ssh_key_ids: [ 101 ], locations: %w[ash])
+    @config = @config.with(ssh_key_ids: [ 101 ], rails_url: nil)
+    error = assert_raises(CloudProcurement::NotAllowed) { plan! }
+    assert_match(/house domain/, error.message)
+    @config = @config.with(rails_url: "https://souls.example", locations: %w[ash])
     assert_raises(CloudProcurement::NotAllowed) { plan! }
     assert_equal 0, CloudProcurementOperation.count
   end
