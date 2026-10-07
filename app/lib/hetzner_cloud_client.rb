@@ -199,10 +199,13 @@ class HetznerCloudClient
   def create_actions_for(server_id)
     body = request(:get, "/servers/#{Integer(server_id)}/actions", nil, command: "create_server", per_page: LIST_PAGE_SIZE)
     actions = body["actions"]
-    raise Error.new("Hetzner Cloud actions listing is malformed", code: "invalid_response") unless actions.is_a?(Array)
     pagination = body.dig("meta", "pagination")
-    unless pagination.is_a?(Hash) && pagination.key?("next_page") && pagination["next_page"].nil?
-      raise IncompleteListing.new("Hetzner Cloud actions listing is not complete", code: "incomplete_listing")
+    incomplete!("of actions is missing pagination") unless actions.is_a?(Array) && pagination.is_a?(Hash)
+    incomplete!("of actions is missing pagination") unless PAGINATION_KEYS.all? { |key| pagination.key?(key) }
+    # One page only, and it must say it holds everything.
+    unless pagination["page"] == 1 && pagination["next_page"].nil? && pagination["last_page"] == 1 &&
+        pagination["total_entries"] == actions.size && actions.size <= LIST_PAGE_SIZE
+      incomplete!("of actions is not complete")
     end
 
     actions.map { |json| action_from(json) }

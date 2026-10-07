@@ -165,6 +165,10 @@ class HetznerCloudClientTest < ActiveSupport::TestCase
     { servers:, meta: { pagination: { page:, per_page:, previous_page: nil, next_page:, last_page:, total_entries: total } } }.to_json
   end
 
+  def actions_body(actions, next_page: nil, last_page: 1, total: actions.size)
+    { actions:, meta: { pagination: { page: 1, per_page: 50, previous_page: nil, next_page:, last_page:, total_entries: total } } }.to_json
+  end
+
   def fifty(start)
     (start...(start + 50)).map { |id| server_json(id:) }
   end
@@ -251,14 +255,21 @@ class HetznerCloudClientTest < ActiveSupport::TestCase
 
   test "recovers a server's create actions only from a complete listing" do
     stub_request(:get, "#{API}/servers/42/actions").with(query: { command: "create_server", per_page: "50" })
-      .to_return(status: 200, body: { actions: [ { id: 88, command: "create_server", status: "success" } ],
-                                      meta: { pagination: { page: 1, next_page: nil } } }.to_json)
+      .to_return(status: 200, body: actions_body([ { id: 88, command: "create_server", status: "success" } ]))
     assert_equal [ 88 ], @client.create_actions_for(42).map(&:id)
 
-    WebMock.reset!
-    stub_request(:get, "#{API}/servers/42/actions").with(query: hash_including(command: "create_server"))
-      .to_return(status: 200, body: { actions: [] }.to_json)
-    assert_raises(HetznerCloudClient::IncompleteListing) { @client.create_actions_for(42) }
+    {
+      "no pagination" => { actions: [] }.to_json,
+      "next_page missing" => { actions: [], meta: { pagination: { page: 1, per_page: 50, last_page: 1, total_entries: 0 } } }.to_json,
+      # Mira's case for the server listing, repeated for actions.
+      "empty page claiming more" => actions_body([], last_page: 2, total: 1),
+      "more pages" => actions_body([ { id: 88, command: "create_server", status: "success" } ], next_page: 2, last_page: 2, total: 2)
+    }.each do |name, body|
+      WebMock.reset!
+      stub_request(:get, "#{API}/servers/42/actions").with(query: hash_including(command: "create_server"))
+        .to_return(status: 200, body:)
+      assert_raises(HetznerCloudClient::IncompleteListing, name) { @client.create_actions_for(42) }
+    end
   end
 
   test "create reports the boot action and the image, and reads actions" do

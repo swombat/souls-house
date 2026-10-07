@@ -11,8 +11,10 @@
 # * intent (location, spec, enrollment authority) is committed before HTTP
 # * there is exactly one create POST per operation, ever; ambiguity is
 #   reconciled against the provider, never retried
-# * an empty discovery is not proof of absence; only an operator closes a
-#   purchase that might exist
+# * an empty discovery is not proof of absence, and nothing in the app closes
+#   a purchase that might exist: a submitted operation leaves the unresolved
+#   set only through a validated provider refusal or verified deletion. No
+#   worker, clock or operator action can free its placement for a second order
 # * provisioned does not make the placement ready or dispatchable
 class CloudProcurement
 
@@ -33,12 +35,8 @@ class CloudProcurement
 
   ADMISSION_LOCK = 0x50c5_191
   # A claimed submit that has not sent its POST by this deadline never sends
-  # it. The request itself is bounded by the client's timeouts (5s open, 60s
-  # write, 30s read).
+  # it. A stale worker is then stopped before it buys, not reconciled after.
   SUBMIT_DEADLINE = 2.minutes
-  # An operator may close a purchase only after any submit that could still be
-  # alive is certainly over: the deadline, the request bound, and a margin.
-  CLOSE_FENCE = 15.minutes
   # Provider error codes that mean the create was rejected before anything
   # was bought. Anything else, including an unrecognised 4xx, stays unknown.
   REFUSAL_CODES = %w[
@@ -107,8 +105,7 @@ class CloudProcurement
     end
     return operation unless claimed
 
-    # The fence close_without_server! relies on: a worker that stalled after
-    # its claim long enough for an operator to act never sends the POST.
+    # A worker that stalled after its claim does not send a stale POST.
     if now > operation.create_sent_at + SUBMIT_DEADLINE
       settle!(operation, "create_in_flight", "needs_review", review_reason: "submit_deadline_passed")
       return operation.reload
@@ -179,39 +176,12 @@ class CloudProcurement
     operation.reload
   end
 
-  # Operator escape from an unresolved purchase with no server on record, after
-  # checking the provider console. Refuses if discovery can see any server.
-  def close_without_server!(operation, requested_by:, reason:)
-    require_admin!(requested_by)
-    raise NotAllowed, "a reason is required" if reason.to_s.strip.length < 10
-    closable!(operation)
-    raise NotAllowed, "the provider still lists a server for this operation" if @client.find_by_operation(operation.public_id).any?
-
-    operation.with_lock do
-      # Re-checked under the lock: the state, the server and the fence.
-      closable!(operation)
-
-      operation.update!(state: "refused", review_reason: "closed by operator: #{reason.to_s.strip}", last_reconciled_at: now)
-      operation.runner_enrollment&.revoke!(now:)
-    end
-    operation
-  end
-
   private
 
   def now = @clock.call
 
   def require_admin!(user)
     raise NotAuthorized, "installation admin required" unless user.is_a?(User) && user.is_site_admin?
-  end
-
-  def closable!(operation)
-    unless %w[unknown needs_review create_in_flight].include?(operation.state) && operation.provider_server_id.nil?
-      raise NotAllowed, "only an unresolved purchase without a recorded server can be closed"
-    end
-    if operation.create_sent_at && now < operation.create_sent_at + CLOSE_FENCE
-      raise NotAllowed, "a create request may still be in progress; try again after #{(operation.create_sent_at + CLOSE_FENCE).iso8601}"
-    end
   end
 
   # Only a validated provider refusal releases the reservation.
@@ -258,8 +228,8 @@ class CloudProcurement
     server = created.server
     operation.with_lock do
       unless %w[create_in_flight unknown].include?(operation.state)
-        # Defence in depth behind the submit deadline and the close fence: a
-        # server that arrives for a closed purchase is recorded, never dropped.
+        # Defence in depth: a server that arrives for an operation no longer
+        # waiting for one is recorded, never dropped.
         if operation.provider_server_id.nil?
           operation.update_columns(provider_server_id: server.id, review_reason: "server_arrived_after_close:#{operation.state}",
             last_reconciled_at: now)

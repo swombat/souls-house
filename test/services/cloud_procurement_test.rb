@@ -478,26 +478,6 @@ class CloudProcurementTest < ActiveSupport::TestCase
     assert_raises(CloudProcurement::NotAllowed) { service.request_delete!(unknown, requested_by: @admin) }
   end
 
-  test "an operator can close an unresolved purchase only when no server is visible" do
-    operation = plan!
-    operation.update!(state: "unknown")
-    RunnerEnrollment.mint!(placement: @placement, operation_id: operation.id, now: @now)
-
-    assert_raises(CloudProcurement::NotAllowed) { service.close_without_server!(operation, requested_by: @admin, reason: "short") }
-    @client.servers[4242] = server_for(operation)
-    assert_raises(CloudProcurement::NotAllowed) do
-      service.close_without_server!(operation, requested_by: @admin, reason: "checked the Hetzner console")
-    end
-
-    @client.servers.clear
-    service.close_without_server!(operation, requested_by: @admin, reason: "checked the Hetzner console")
-    assert_equal "refused", operation.reload.state
-    assert operation.runner_enrollment.revoked_at
-    assert plan!.persisted?
-  end
-
-  # --- review repairs (Mira, 143abd62) ----------------------------------------
-
   test "ambiguous or unrecognised provider errors keep the reservation" do
     [
       HetznerCloudClient::Error.new("timeout", status: 408, code: "http_408"),
@@ -534,21 +514,18 @@ class CloudProcurementTest < ActiveSupport::TestCase
     assert_empty @client.creates
   end
 
-  test "an operator cannot close a purchase while its submit could still be live" do
+  test "nothing frees a submitted purchase that might exist: it waits for the provider or an operator outside the app" do
     operation = plan!
     @client.on_create = ->(_) { raise HetznerCloudClient::CreateOutcomeUnknown.new("timeout", code: "outcome_unknown") }
     service.submit!(operation)
-    assert_equal "unknown", operation.reload.state
 
-    inside = service(clock: -> { @now + CloudProcurement::CLOSE_FENCE - 1.second })
-    error = assert_raises(CloudProcurement::NotAllowed) do
-      inside.close_without_server!(operation, requested_by: @admin, reason: "checked the Hetzner console")
-    end
-    assert_match(/may still be in progress/, error.message)
-
-    after = service(clock: -> { @now + CloudProcurement::CLOSE_FENCE + 1.second })
-    after.close_without_server!(operation, requested_by: @admin, reason: "checked the Hetzner console")
-    assert_equal "refused", operation.reload.state
+    much_later = service(clock: -> { @now + 30.days })
+    3.times { much_later.reconcile!(operation) }
+    assert_equal "needs_review", operation.reload.state
+    assert_raises(CloudProcurement::NotAllowed) { plan! }
+    assert_raises(CloudProcurement::NotAllowed) { much_later.request_delete!(operation, requested_by: @admin) }
+    assert_not_respond_to much_later, :close_without_server!
+    assert_equal 1, @client.creates.size
   end
 
   test "a server that arrives for a closed purchase is recorded, not dropped" do
