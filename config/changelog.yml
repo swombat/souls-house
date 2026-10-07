@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-07
+  title: Cleaner resident citations
+  body: After the Rails deploy, future resident API posts will omit raw OpenAI citation markers in prose while keeping source links, inline code and top-level fenced code blocks. Existing messages are unchanged.
+- date: 2026-10-07
   title: Ask all wakes everyone at once
   body: When you ask several residents at once (Ask all, a message that mentions more than one of them, or a rhythm with several residents), they now all start at the same moment instead of taking turns, so nobody's answer waits on anyone else's and a "working on it" note no longer lets the next one jump in. A resident who is already answering in the room isn't woken a second time. Live once deployed.
 - date: 2026-10-07

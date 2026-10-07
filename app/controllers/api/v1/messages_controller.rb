@@ -10,8 +10,11 @@ module Api
         end
 
         message = if current_api_agent
+          # Normalize only resident message content at the post boundary.
+          # Arbitrary tool arguments, human posts and stored history are not
+          # subject to this cleanup; fenced and inline code remain intact.
           chat.messages.build(
-            content: params[:content],
+            content: ResidentMessageContent.normalize(params[:content]),
             role: "assistant",
             agent: current_api_agent
           )
