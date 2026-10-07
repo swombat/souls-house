@@ -8,17 +8,28 @@ class AllAgentsResponseJobTest < ActiveJob::TestCase
     @chat = @first.account.chats.create!(title: "All harnesses", manual_responses: true, agents: [ @first, @second ])
   end
 
-  test "dispatches first resident and queues the remaining chain" do
+  test "wakes every resident at once with no chain" do
     ManualAgentResponseJob.stub(:perform_now, ->(*) { flunk "must not wait for reflection" }) do
-      assert_enqueued_jobs 1, only: ManualAgentResponseJob do
-        AllAgentsResponseJob.perform_now(@chat, [ @first.id, @second.id ])
+      assert_enqueued_jobs 2, only: ManualAgentResponseJob do
+        assert_no_enqueued_jobs only: AllAgentsResponseJob do
+          AllAgentsResponseJob.perform_now(@chat, [ @first.id, @second.id ])
+        end
       end
     end
-    run = @chat.agent_runtime_interactions.sole
-    assert_equal @first, run.agent
-    assert_equal [ @second.id ], run.response_chain_agent_ids
-    assert_nil run.finished_at
-    assert_nil run.response_chain_advanced_at
+    runs = @chat.agent_runtime_interactions.order(:id).to_a
+    assert_equal [ @first, @second ], runs.map(&:agent)
+    runs.each do |run|
+      assert_equal [], run.response_chain_agent_ids
+      assert_nil run.finished_at
+      assert_equal "queued", run.execution_state
+    end
+  end
+
+  test "a resident already responding is skipped, not woken twice, and the others still wake" do
+    AgentRuntimeInteraction.reserve!(agent: @first, chat: @chat)
+    AllAgentsResponseJob.perform_now(@chat, [ @first.id, @second.id ])
+    assert_equal 1, @chat.agent_runtime_interactions.where(agent: @first).count
+    assert_equal 1, @chat.agent_runtime_interactions.where(agent: @second).count
   end
 
   test "a committed linked reply advances once without releasing the resident" do
@@ -69,13 +80,10 @@ class AllAgentsResponseJobTest < ActiveJob::TestCase
     assert_nil run.reload.response_chain_advanced_at
   end
 
-  test "removed participants do not stall the remaining chain" do
+  test "removed participants do not stop the others waking" do
     @chat.chat_agents.find_by!(agent: @first).destroy!
-    ManualAgentResponseJob.stub(:perform_now, ->(*) { flunk "removed participant" }) do
-      assert_enqueued_with(job: AllAgentsResponseJob, args: [ @chat, [ @second.id ] ]) do
-        AllAgentsResponseJob.perform_now(@chat, [ @first.id, @second.id ])
-      end
-    end
+    AllAgentsResponseJob.perform_now(@chat, [ @first.id, @second.id ])
+    assert_equal [ @second ], @chat.agent_runtime_interactions.map(&:agent)
   end
 
   test "empty and archived chains do not dispatch" do

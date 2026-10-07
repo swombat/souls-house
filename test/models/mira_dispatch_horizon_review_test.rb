@@ -3,8 +3,7 @@ require_relative "message_dispatch_test"
 class MessageDispatchTest
 
   test "review retry recovery cannot bypass the horizon before the sweeper arrives" do
-    MessageDispatchJob.perform_now(@dispatch)
-    run = @dispatch.reload.runtime_interaction
+    run = reserve_legacy_chain!
     assert run.claim_dispatch!
     AllAgentsResponseJob.stub(:perform_later, nil) { run.finish_execution!("completed") }
     clear_enqueued_jobs

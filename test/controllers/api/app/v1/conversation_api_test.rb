@@ -142,7 +142,7 @@ class Api::App::V1::ConversationApiTest < ActionDispatch::IntegrationTest
     assert_equal [ run.run_id ], body["runs"].pluck("run_id")
   end
 
-  test "invoke of everyone reserves the first resident with the rest as its chain, not an unkeyed job" do
+  test "invoke of everyone reserves every resident at once, not an unkeyed job" do
     chat = conversation_with(@agent, @other)
     assert_no_enqueued_jobs only: AllAgentsResponseJob do
       invoke(chat, "invoke-00000001")
@@ -151,7 +151,9 @@ class Api::App::V1::ConversationApiTest < ActionDispatch::IntegrationTest
     dispatch = MessageDispatch.find_by!(client_invocation_id: "invoke-00000001")
     ordered = [ @agent, @other ].map(&:id).sort
     assert_equal ordered, dispatch.target_agent_ids
-    assert_equal [ ordered.first, ordered.drop(1) ], [ dispatch.runtime_interaction.agent_id, dispatch.runtime_interaction.response_chain_agent_ids ]
+    assert_equal ordered.first, dispatch.runtime_interaction.agent_id
+    assert_equal ordered, dispatch.runtime_interactions.order(:id).map(&:agent_id)
+    assert dispatch.runtime_interactions.all? { |run| run.response_chain_agent_ids.empty? }
   end
 
   test "invoke without a valid client_invocation_id is 422 and starts nothing" do
