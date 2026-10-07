@@ -7,6 +7,9 @@ means it has shipped. Move settled behaviour into the relevant reference guide.
 - [House default-model selection, Lume, 2026-09-30](2026-09-30-house-model-selection-from-lume.md)
   — research and recommendation; its “Before it ships” section remains a decision/
   implementation gate, not a change made by the documentation cleanup.
+- [Paid hosting with Stripe, Lume, 2026-10-07](2026-10-07-stripe-billing.md)
+  — design for per-resident subscriptions, entitlements and billing holds;
+  awaiting review, nothing implemented.
 
 Earlier plans and requirements are retained in [the historical shelf](../.bak/README.md).
 That move does not cancel unfinished work. Native-client work on other branches
