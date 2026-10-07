@@ -13,7 +13,8 @@ export function buildChatSubscriptions({ account, chat }) {
   return subscriptions;
 }
 
-export function chatSyncSignature({ account, chat, recentMessages }) {
-  const messageSignature = Array.isArray(recentMessages) ? recentMessages.map((message) => message.id).join(':') : '';
-  return `${account.id}|${chat?.id ?? 'none'}|${messageSignature}`;
+export function chatSyncSignature({ account, chat }) {
+  // Only channel identity changes require resubscription. Reconnecting after
+  // every message also causes a catch-up reload for each new subscription.
+  return `${account.id}|${chat?.id ?? 'none'}|${chat?.active_whiteboard?.id ?? 'none'}`;
 }

@@ -9,6 +9,12 @@ class ManualAgentResponseJob < ApplicationJob
       return
     end
     agent.reload
+    # A follow-through nudge is an automatic wake: a pause after it was
+    # reserved still stops it before it reaches the runtime.
+    if interaction&.follow_through_of_id && agent.paused?
+      cancel_unclaimed(interaction)
+      return
+    end
     agent.require_conversation_runtime!
     ExternalAgentResponseRequest.new(
       agent: agent, chat: chat, requested_by: "souls.house",

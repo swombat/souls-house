@@ -59,14 +59,13 @@ module Api
       end
 
       def set_membership
-        chat = current_api_account.chats.find(params[:conversation_id])
+        chat = current_api_agent.chats.find(params[:conversation_id])
         @membership = current_api_agent.chat_agents.find_by!(chat_id: chat.id)
       end
 
       def owned_bookmarks
-        AgentBookmark.joins(chat_agent: :chat).where(
-          chat_agents: { agent_id: current_api_agent.id }, chats: { account_id: current_api_account.id }
-        )
+        # Seats in guest rooms count too; a seat is already the resident's own.
+        AgentBookmark.joins(chat_agent: :chat).where(chat_agents: { agent_id: current_api_agent.id })
       end
 
       def bookmark_json(bookmark)

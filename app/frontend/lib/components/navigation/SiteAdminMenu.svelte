@@ -5,9 +5,32 @@
   import { buttonVariants } from '$lib/components/shadcn/button/index.js';
   import { cn } from '$lib/utils.js';
   import { adminNoticesPath } from '@/routes';
+  import { deployLines } from './deployInfo.js';
+
+  let deployInfo = $state(null);
+  let deployInfoFailed = $state(false);
+  let loading = false;
+
+  // Fetched when the menu opens, so an ordinary page load never waits on GitHub.
+  async function loadDeployInfo() {
+    if (loading) return;
+    loading = true;
+    try {
+      const response = await fetch('/admin/deploy_info', { headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      deployInfo = await response.json();
+      deployInfoFailed = false;
+    } catch {
+      deployInfoFailed = true;
+    } finally {
+      loading = false;
+    }
+  }
+
+  const lines = $derived(deployLines(deployInfo, { failed: deployInfoFailed }));
 </script>
 
-<DropdownMenu.Root>
+<DropdownMenu.Root onOpenChange={(open) => open && loadDeployInfo()}>
   <DropdownMenu.Trigger class={cn(buttonVariants({ variant: 'outline' }), 'rounded-full px-2.5 gap-1')}>
     <ShieldWarning class="text-red-500" />
     <span class="text-xs font-normal text-muted-foreground text-red-500 hidden md:inline"> Site Admin </span>
@@ -41,5 +64,11 @@
       <Megaphone class="mr-2 size-4" />
       <span>Site Notices</span>
     </DropdownMenu.Item>
+    <DropdownMenu.Separator />
+    <div class="px-2 py-1.5 text-xs text-muted-foreground max-w-72 space-y-0.5" data-testid="deploy-info">
+      {#each lines as line}
+        <div class="truncate" title={line.title || line.text}>{line.text}</div>
+      {/each}
+    </div>
   </DropdownMenu.Content>
 </DropdownMenu.Root>

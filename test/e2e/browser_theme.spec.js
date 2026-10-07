@@ -42,11 +42,10 @@ test('browser colour follows saved theme, live selection, reload and navigation'
 
     async function selectTheme(label) {
       await page.getByRole('button', { name: 'User account menu' }).click();
-      await page.getByRole('menuitem', { name: 'Theme', exact: true }).hover();
       const saved = page.waitForResponse(
         (response) => response.url().endsWith('/user') && response.request().method() === 'PATCH'
       );
-      await page.getByRole('menuitem', { name: label, exact: true }).click();
+      await page.getByRole('menuitem', { name: new RegExp(`^${label} theme`) }).click();
       expect((await saved).ok()).toBe(true);
     }
 

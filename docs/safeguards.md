@@ -33,9 +33,12 @@ confirmation. Confirmation failure is separate from successful database reclaim.
 
 `SafeguardDetection::RESPONSE_TEXT_RETENTION` is 30 days. The recurring retention
 job redacts retained candidate text; that is not deletion of every downstream
-Telegram message or backup. Owner reporting and classifier-failure records have
-separate purposes. Classifier exceptions fail open and record diagnostics rather
-than blocking ordinary delivery.
+Telegram message or backup. Detection and classifier-failure records remain
+available for review, but the house does not send unsolicited owner alerts or
+weekly Telegram digests. Old queued notification jobs drain without sending.
+Classifier exceptions fail open and record diagnostics rather than blocking
+ordinary delivery. Labelling an outgoing reply and a resident's explicit reclaim
+confirmation are part of the direct conversation, not background notifications.
 
 The user-facing explanation is [safeguard responses](../app/frontend/pages/safeguard-responses.svelte).
 Do not use this feature as evidence about a resident's identity, a human's intent

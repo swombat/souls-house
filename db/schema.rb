@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -270,6 +270,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.datetime "updated_at", null: false
     t.boolean "usage_complete"
     t.string "usage_scope"
+    t.bigint "follow_through_of_id"
+    t.datetime "follow_through_checked_at"
     t.index ["agent_id", "chaos_session_id", "started_at"], name: "idx_runtime_interactions_agent_chaos_started"
     t.index ["agent_id", "created_at"], name: "index_agent_runtime_interactions_on_agent_id_and_created_at"
     t.index ["agent_id", "session_id", "started_at"], name: "idx_runtime_interactions_agent_session_started"
@@ -278,6 +280,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.index ["agent_id"], name: "index_agent_runtime_interactions_on_agent_id"
     t.index ["chat_id", "created_at"], name: "index_agent_runtime_interactions_on_chat_id_and_created_at"
     t.index ["chat_id"], name: "index_agent_runtime_interactions_on_chat_id"
+    t.index ["follow_through_of_id"], name: "index_agent_runtime_interactions_on_follow_through_of_id", unique: true, where: "(follow_through_of_id IS NOT NULL)"
     t.index ["message_dispatch_id"], name: "index_agent_runtime_interactions_on_message_dispatch_id"
     t.index ["run_id"], name: "index_agent_runtime_interactions_on_run_id", unique: true
     t.index ["session_id"], name: "index_agent_runtime_interactions_on_session_id"
@@ -382,11 +385,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.datetime "updated_at", null: false
     t.uuid "uuid"
     t.string "voice_id"
+    t.boolean "subagents_enabled", default: false, null: false
+    t.jsonb "subagent_models", default: [], null: false
+    t.datetime "subagents_policy_changed_at"
+    t.bigint "github_resident_import_id"
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
     t.index ["account_id"], name: "index_agents_on_account_id"
     t.index ["container_name"], name: "index_agents_on_container_name", unique: true
+    t.index ["github_resident_import_id"], name: "index_agents_on_github_resident_import_id", unique: true
     t.index ["outbound_api_key_id"], name: "index_agents_on_outbound_api_key_id"
     t.index ["portable_home_id"], name: "index_agents_on_portable_home_id", unique: true
     t.index ["runtime"], name: "index_agents_on_runtime"
@@ -530,6 +538,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.string "title"
     t.datetime "updated_at", null: false
     t.boolean "web_access", default: false, null: false
+    t.bigint "visual_tag_id"
     t.index ["account_id", "client_conversation_id"], name: "index_chats_on_client_conversation_identity", unique: true, where: "(client_conversation_id IS NOT NULL)"
     t.index ["account_id", "created_at"], name: "index_chats_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_chats_on_account_id"
@@ -540,6 +549,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.index ["initiated_by_agent_id"], name: "index_chats_on_initiated_by_agent_id"
     t.index ["last_consolidated_at"], name: "index_chats_on_last_consolidated_at"
     t.index ["manual_responses"], name: "index_chats_on_manual_responses"
+    t.index ["visual_tag_id"], name: "index_chats_on_visual_tag_id"
     t.index ["web_access"], name: "index_chats_on_web_access"
   end
 
@@ -626,6 +636,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.index ["subject_user_id"], name: "index_device_streams_on_subject_user_id"
   end
 
+  create_table "field_files", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "uploaded_by_type"
+    t.bigint "uploaded_by_id"
+    t.string "title", limit: 200, null: false
+    t.text "note"
+    t.datetime "discarded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_field_files_on_account_id_and_created_at"
+    t.index ["account_id"], name: "index_field_files_on_account_id"
+    t.index ["discarded_at"], name: "index_field_files_on_discarded_at"
+    t.index ["uploaded_by_type", "uploaded_by_id"], name: "index_field_files_on_uploaded_by"
+  end
+
   create_table "github_integrations", force: :cascade do |t|
     t.text "access_token"
     t.bigint "account_id", null: false
@@ -637,6 +662,51 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.string "repository_full_name"
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_github_integrations_on_account_id", unique: true
+  end
+
+  create_table "github_resident_imports", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "service_connection_id", null: false
+    t.bigint "requested_by_id", null: false
+    t.bigint "approved_by_id"
+    t.string "name", null: false
+    t.string "model_id", null: false
+    t.string "repository", null: false
+    t.string "repository_id", null: false
+    t.string "branch", null: false
+    t.string "commit_sha", null: false
+    t.string "portable_home_id", null: false
+    t.string "credential_fingerprint", null: false
+    t.jsonb "token_metadata", default: {}, null: false
+    t.string "status", default: "pending_review", null: false
+    t.string "approved_commit_sha"
+    t.string "observed_branch_sha_at_approval"
+    t.string "approved_credential_fingerprint"
+    t.string "approved_image"
+    t.datetime "approved_at"
+    t.string "last_error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "sync_strategy", default: "existing", null: false
+    t.jsonb "sync_configuration", default: {}, null: false
+    t.jsonb "sync_health", default: {}, null: false
+    t.index ["account_id"], name: "index_github_resident_imports_on_account_id"
+    t.index ["approved_by_id"], name: "index_github_resident_imports_on_approved_by_id"
+    t.index ["requested_by_id"], name: "index_github_resident_imports_on_requested_by_id"
+    t.index ["service_connection_id"], name: "index_github_resident_imports_on_service_connection_id"
+    t.check_constraint "sync_strategy::text = ANY (ARRAY['existing'::character varying, 'standard'::character varying]::text[])", name: "github_resident_import_sync_strategy"
+  end
+
+  create_table "guest_memberships", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_id", null: false
+    t.bigint "added_by_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "agent_id"], name: "index_guest_memberships_on_account_id_and_agent_id", unique: true
+    t.index ["account_id"], name: "index_guest_memberships_on_account_id"
+    t.index ["added_by_id"], name: "index_guest_memberships_on_added_by_id"
+    t.index ["agent_id"], name: "index_guest_memberships_on_agent_id"
   end
 
   create_table "house_inference_calls", force: :cascade do |t|
@@ -700,14 +770,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.string "status", default: "pending", null: false
     t.jsonb "target_agent_ids", default: [], null: false
     t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
+    t.bigint "user_id"
     t.index ["chat_id", "user_id", "client_invocation_id"], name: "index_message_dispatches_on_invocation_identity", unique: true, where: "(client_invocation_id IS NOT NULL)"
     t.index ["chat_id"], name: "index_message_dispatches_on_chat_id"
     t.index ["message_id"], name: "index_message_dispatches_on_message_id", unique: true
     t.index ["runtime_interaction_id"], name: "index_message_dispatches_on_runtime_interaction_id"
     t.index ["status", "accepted_at"], name: "index_message_dispatches_on_status_and_accepted_at"
     t.index ["user_id"], name: "index_message_dispatches_on_user_id"
-    t.check_constraint "(kind::text = ANY (ARRAY['mention'::character varying, 'automatic'::character varying]::text[])) AND message_id IS NOT NULL AND client_invocation_id IS NULL AND request_digest IS NULL OR kind::text = 'invoke'::text AND message_id IS NULL AND client_invocation_id IS NOT NULL AND request_digest IS NOT NULL", name: "message_dispatches_kind_variant"
+    t.check_constraint "(kind::text = ANY (ARRAY['mention'::character varying::text, 'automatic'::character varying::text, 'rhythm'::character varying::text])) AND message_id IS NOT NULL AND client_invocation_id IS NULL AND request_digest IS NULL OR kind::text = 'invoke'::text AND message_id IS NULL AND client_invocation_id IS NOT NULL AND request_digest IS NOT NULL", name: "message_dispatches_kind_variant"
+    t.check_constraint "user_id IS NOT NULL OR kind::text = 'rhythm'::text", name: "message_dispatches_human_author"
   end
 
   create_table "message_stone_revisions", force: :cascade do |t|
@@ -1032,8 +1103,84 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.index ["agent_id"], name: "index_resident_turns_on_agent_id"
     t.index ["agent_runtime_interaction_id"], name: "index_resident_turns_on_agent_runtime_interaction_id", unique: true
     t.index ["dispatch_id"], name: "index_resident_turns_on_dispatch_id", unique: true
-    t.index ["session_id"], name: "one_admitted_resident_session", unique: true, where: "((state)::text = ANY ((ARRAY['starting'::character varying, 'running'::character varying, 'unknown'::character varying])::text[]))"
+    t.index ["session_id"], name: "one_admitted_resident_session", unique: true, where: "((state)::text = ANY (ARRAY[('starting'::character varying)::text, ('running'::character varying)::text, ('unknown'::character varying)::text]))"
     t.index ["state", "created_at"], name: "index_resident_turns_on_state_and_created_at"
+  end
+
+  create_table "rhythm_agents", force: :cascade do |t|
+    t.bigint "rhythm_id", null: false
+    t.bigint "agent_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_rhythm_agents_on_agent_id"
+    t.index ["rhythm_id", "agent_id"], name: "index_rhythm_agents_on_rhythm_id_and_agent_id", unique: true
+    t.index ["rhythm_id"], name: "index_rhythm_agents_on_rhythm_id"
+  end
+
+  create_table "rhythm_holds", force: :cascade do |t|
+    t.bigint "rhythm_id", null: false
+    t.string "kind", null: false
+    t.bigint "user_id"
+    t.bigint "agent_id"
+    t.text "reason", null: false
+    t.datetime "released_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_rhythm_holds_on_agent_id"
+    t.index ["rhythm_id", "agent_id"], name: "index_rhythm_holds_one_open_agent", unique: true, where: "((released_at IS NULL) AND ((kind)::text = 'agent'::text))"
+    t.index ["rhythm_id", "kind"], name: "index_rhythm_holds_one_open_system", unique: true, where: "((released_at IS NULL) AND ((kind)::text = 'system'::text))"
+    t.index ["rhythm_id", "user_id"], name: "index_rhythm_holds_one_open_human", unique: true, where: "((released_at IS NULL) AND ((kind)::text = 'human'::text))"
+    t.index ["rhythm_id"], name: "index_rhythm_holds_on_rhythm_id"
+    t.index ["user_id"], name: "index_rhythm_holds_on_user_id"
+  end
+
+  create_table "rhythm_occurrences", force: :cascade do |t|
+    t.bigint "rhythm_id"
+    t.bigint "chat_id", null: false
+    t.bigint "message_id", null: false
+    t.bigint "creator_id"
+    t.string "creator_label", null: false
+    t.string "title", null: false
+    t.string "rhythm_title", null: false
+    t.text "opening", null: false
+    t.datetime "scheduled_for", null: false
+    t.boolean "manual", default: false, null: false
+    t.string "request_key"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "creator_agent_id"
+    t.index ["chat_id"], name: "index_rhythm_occurrences_on_chat_id"
+    t.index ["creator_agent_id"], name: "index_rhythm_occurrences_on_creator_agent_id"
+    t.index ["creator_id"], name: "index_rhythm_occurrences_on_creator_id"
+    t.index ["message_id"], name: "index_rhythm_occurrences_on_message_id", unique: true
+    t.index ["rhythm_id", "request_key"], name: "index_rhythm_occurrences_manual_identity", unique: true, where: "(manual = true)"
+    t.index ["rhythm_id", "scheduled_for"], name: "index_rhythm_occurrences_scheduled_identity", unique: true, where: "(manual = false)"
+    t.index ["rhythm_id"], name: "index_rhythm_occurrences_on_rhythm_id"
+    t.check_constraint "creator_id IS NULL OR creator_agent_id IS NULL", name: "rhythm_occurrences_one_creator"
+    t.check_constraint "manual = true AND request_key IS NOT NULL OR manual = false AND request_key IS NULL", name: "rhythm_occurrences_request_identity"
+  end
+
+  create_table "rhythms", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "creator_id"
+    t.string "title", null: false
+    t.boolean "append_date", default: true, null: false
+    t.text "opening", null: false
+    t.string "cadence", null: false
+    t.string "time_of_day", null: false
+    t.integer "weekday"
+    t.integer "month_day"
+    t.integer "month"
+    t.string "timezone", null: false
+    t.datetime "next_run_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "creator_agent_id"
+    t.index ["account_id"], name: "index_rhythms_on_account_id"
+    t.index ["creator_agent_id"], name: "index_rhythms_on_creator_agent_id"
+    t.index ["creator_id"], name: "index_rhythms_on_creator_id"
+    t.index ["next_run_at"], name: "index_rhythms_on_next_run_at"
+    t.check_constraint "creator_id IS NULL OR creator_agent_id IS NULL", name: "rhythms_one_creator"
   end
 
   create_table "safeguard_classifier_failures", force: :cascade do |t|
@@ -1141,6 +1288,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.boolean "allow_chats", default: true, null: false
     t.boolean "allow_signups", default: true, null: false
     t.datetime "created_at", null: false
+    t.string "follow_through_residents", default: "", null: false
     t.integer "max_accounts", default: 30, null: false
     t.integer "resident_turn_limit", default: 50, null: false
     t.integer "safeguard_owner_notice_threshold", default: 1, null: false
@@ -1254,6 +1402,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
     t.index ["password_reset_token"], name: "index_users_on_password_reset_token", unique: true
   end
 
+  create_table "versions", force: :cascade do |t|
+    t.string "item_type", null: false
+    t.bigint "item_id", null: false
+    t.string "event", null: false
+    t.string "whodunnit"
+    t.jsonb "object"
+    t.jsonb "object_changes"
+    t.datetime "created_at"
+    t.index ["item_type", "item_id", "created_at"], name: "index_versions_on_item_type_and_item_id_and_created_at"
+  end
+
+  create_table "visual_tags", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "label", limit: 80, null: false
+    t.string "icon", null: false
+    t.string "colour", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_visual_tags_on_account_id"
+    t.index ["id", "account_id"], name: "index_visual_tags_on_id_and_account_id", unique: true
+  end
+
   create_table "whiteboards", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.text "content"
@@ -1295,6 +1465,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
   add_foreign_key "agent_memories", "agents"
   add_foreign_key "agent_runtime_attempts", "agent_runtime_interactions"
   add_foreign_key "agent_runtime_events", "agent_runtime_attempts"
+  add_foreign_key "agent_runtime_interactions", "agent_runtime_interactions", column: "follow_through_of_id", on_delete: :nullify
   add_foreign_key "agent_runtime_interactions", "agents"
   add_foreign_key "agent_runtime_interactions", "chats"
   add_foreign_key "agent_runtime_interactions", "message_dispatches", on_delete: :nullify
@@ -1302,6 +1473,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
   add_foreign_key "agent_service_accesses", "service_connections"
   add_foreign_key "agents", "accounts"
   add_foreign_key "agents", "api_keys", column: "outbound_api_key_id"
+  add_foreign_key "agents", "github_resident_imports"
   add_foreign_key "api_key_requests", "api_keys"
   add_foreign_key "api_keys", "accounts"
   add_foreign_key "api_keys", "agents"
@@ -1316,6 +1488,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
   add_foreign_key "chats", "accounts"
   add_foreign_key "chats", "agents", column: "initiated_by_agent_id"
   add_foreign_key "chats", "ai_models"
+  add_foreign_key "chats", "visual_tags", column: ["visual_tag_id", "account_id"], primary_key: ["id", "account_id"]
   add_foreign_key "chats", "whiteboards", column: "active_whiteboard_id"
   add_foreign_key "conversation_compactions", "chats"
   add_foreign_key "conversation_drafts", "chats"
@@ -1325,7 +1498,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
   add_foreign_key "device_stream_sessions", "device_streams"
   add_foreign_key "device_streams", "accounts"
   add_foreign_key "device_streams", "users", column: "subject_user_id"
+  add_foreign_key "field_files", "accounts"
   add_foreign_key "github_integrations", "accounts"
+  add_foreign_key "github_resident_imports", "accounts"
+  add_foreign_key "github_resident_imports", "service_connections"
+  add_foreign_key "github_resident_imports", "users", column: "approved_by_id"
+  add_foreign_key "github_resident_imports", "users", column: "requested_by_id"
+  add_foreign_key "guest_memberships", "accounts", on_delete: :cascade
+  add_foreign_key "guest_memberships", "agents", on_delete: :cascade
+  add_foreign_key "guest_memberships", "users", column: "added_by_id", on_delete: :nullify
   add_foreign_key "house_inference_calls", "house_inference_grants"
   add_foreign_key "house_inference_grants", "agents"
   add_foreign_key "house_inference_grants", "users"
@@ -1370,6 +1551,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
   add_foreign_key "reply_expectations", "users", on_delete: :cascade
   add_foreign_key "resident_turns", "agent_runtime_interactions"
   add_foreign_key "resident_turns", "agents"
+  add_foreign_key "rhythm_agents", "agents", on_delete: :cascade
+  add_foreign_key "rhythm_agents", "rhythms", on_delete: :cascade
+  add_foreign_key "rhythm_holds", "agents", on_delete: :nullify
+  add_foreign_key "rhythm_holds", "rhythms", on_delete: :cascade
+  add_foreign_key "rhythm_holds", "users", on_delete: :nullify
+  add_foreign_key "rhythm_occurrences", "agents", column: "creator_agent_id", on_delete: :nullify
+  add_foreign_key "rhythm_occurrences", "chats", on_delete: :cascade
+  add_foreign_key "rhythm_occurrences", "messages", on_delete: :cascade
+  add_foreign_key "rhythm_occurrences", "rhythms", on_delete: :nullify
+  add_foreign_key "rhythm_occurrences", "users", column: "creator_id", on_delete: :nullify
+  add_foreign_key "rhythms", "accounts", on_delete: :cascade
+  add_foreign_key "rhythms", "agents", column: "creator_agent_id", on_delete: :nullify
+  add_foreign_key "rhythms", "users", column: "creator_id", on_delete: :nullify
   add_foreign_key "safeguard_classifier_failures", "agents"
   add_foreign_key "safeguard_detections", "agent_runtime_interactions", column: "reclaimed_by_interaction_id", on_delete: :nullify
   add_foreign_key "safeguard_detections", "agent_runtime_interactions", on_delete: :nullify
@@ -1393,6 +1587,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_03_140000) do
   add_foreign_key "tool_calls", "messages"
   add_foreign_key "tweet_logs", "agents"
   add_foreign_key "tweet_logs", "x_integrations"
+  add_foreign_key "visual_tags", "accounts"
   add_foreign_key "whiteboards", "accounts"
   add_foreign_key "x_integrations", "accounts"
 end

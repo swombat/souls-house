@@ -7,8 +7,19 @@
   import AgentGrid from '$lib/components/agents/AgentGrid.svelte';
   import AgentIndexHeader from '$lib/components/agents/AgentIndexHeader.svelte';
   import AgentUpgradeDialog from '$lib/components/agents/AgentUpgradeDialog.svelte';
+  import GuestResidents from '$lib/components/agents/guest-residents.svelte';
 
-  let { agents = [], grouped_models = {}, account, resident_import_url: residentImportUrl = null } = $props();
+  let {
+    agents = [],
+    grouped_models = {},
+    account,
+    resident_import_url: residentImportUrl = null,
+    github_resident_import_url: githubResidentImportUrl = null,
+    guest_memberships: guestMemberships = [],
+    away_memberships: awayMemberships = [],
+    guest_candidates: guestCandidates = [],
+    can_end_guest_memberships: canEndGuestMemberships = false,
+  } = $props();
 
   // Subscribe to both:
   // - Account:${id}:agents - individual agent updates (via collection subscription)
@@ -72,6 +83,11 @@
 
 <div class="p-8 max-w-6xl mx-auto">
   <AgentIndexHeader onCreate={() => router.visit(newAccountAgentPath(account.id))} />
+  {#if githubResidentImportUrl}
+    <p class="mb-4 text-sm">
+      <a class="text-primary underline" href={githubResidentImportUrl}>Bring an existing GitHub resident</a>
+    </p>
+  {/if}
   {#if residentImportUrl}
     <p class="mb-6 text-sm">
       <a class="text-primary underline" href={residentImportUrl}>Import a resident archive</a>
@@ -83,6 +99,13 @@
   {:else}
     <AgentGrid {agents} accountId={account.id} onUpgrade={openUpgradeModal} onDisable={disableAgent} />
   {/if}
+
+  <GuestResidents
+    accountId={account.id}
+    guests={guestMemberships}
+    away={awayMemberships}
+    candidates={guestCandidates}
+    canEnd={canEndGuestMemberships} />
 </div>
 
 <AgentUpgradeDialog

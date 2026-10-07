@@ -68,7 +68,7 @@
   const updateSync = createDynamicSync();
   let syncSignature = null;
   $effect(() => {
-    const signature = chatSyncSignature({ account, chat, recentMessages });
+    const signature = chatSyncSignature({ account, chat });
     if (signature !== syncSignature) {
       syncSignature = signature;
       updateSync(buildChatSubscriptions({ account, chat }));

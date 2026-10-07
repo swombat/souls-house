@@ -4,7 +4,7 @@ module Api
 
       # POST /api/v1/conversations/:conversation_id/participants
       def create
-        chat = current_api_account.chats.find(params[:conversation_id])
+        chat = actionable_chats.find(params[:conversation_id])
 
         unless chat.group_chat?
           return render json: { error: "Can only add residents to group chats" }, status: :unprocessable_entity
@@ -14,7 +14,7 @@ module Api
           return render json: { error: "Conversation is archived or deleted" }, status: :unprocessable_entity
         end
 
-        agent = current_api_account.agents.eligible_for_conversation.find_by(id: Agent.decode_id(params[:agent_id]))
+        agent = chat.account.conversation_agents.eligible_for_conversation.find_by(id: Agent.decode_id(params[:agent_id]))
         unless agent
           return render json: { error: "Resident not found or inactive" }, status: :not_found
         end

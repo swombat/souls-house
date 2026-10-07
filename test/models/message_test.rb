@@ -692,6 +692,7 @@ class MessageTest < ActiveSupport::TestCase
 
   test "human message reopens closed agents in group chat" do
     agent = agents(:research_assistant)
+    agent.update_columns(account_id: @account.id) # seat a resident hosted in this room's account
     chat = @account.chats.new(
       title: "Group Chat",
       manual_responses: true,
@@ -709,6 +710,7 @@ class MessageTest < ActiveSupport::TestCase
 
   test "agent message does not reopen closed agents" do
     agent = agents(:research_assistant)
+    agent.update_columns(account_id: @account.id) # seat a resident hosted in this room's account
     chat = @account.chats.new(
       title: "Group Chat",
       manual_responses: true,

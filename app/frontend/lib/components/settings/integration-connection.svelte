@@ -1,7 +1,7 @@
 <script>
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
-  import { DropboxLogo, GithubLogo, GoogleLogo, Heartbeat } from 'phosphor-svelte';
+  import { DropboxLogo, GithubLogo, Funnel, ShareNetwork, GoogleLogo, Heartbeat } from 'phosphor-svelte';
   import { serviceIconClass } from '$lib/service-presentation';
   import ConnectionGoogleAuthority from './connection-google-authority.svelte';
   import ConnectionResidentAccess from './connection-resident-access.svelte';
@@ -16,7 +16,11 @@
     const warning =
       connection.provider === 'github'
         ? `Disconnect ${connection.label}? This removes the token from residents but does not revoke it on GitHub.`
-        : `Disconnect ${connection.label}?`;
+        : connection.provider === 'pipedrive'
+          ? `Disconnect ${connection.label}? This removes the token from residents. To revoke it, regenerate your API token in Pipedrive.`
+          : connection.provider === 'tailscale'
+            ? `Disconnect ${connection.label}? Residents leave the tailnet when they are next rebuilt, which can wait for an active turn. To cut access now, remove their nodes in the Tailscale admin console; revoke the auth key there too.`
+            : `Disconnect ${connection.label}?`;
     if (confirm(warning)) {
       router.delete(`/accounts/${account.id}/service_connections/${connection.id}`);
     }
@@ -35,6 +39,10 @@
             <GoogleLogo size={26} weight="bold" />
           {:else if connection.provider === 'github'}
             <GithubLogo size={26} weight="fill" />
+          {:else if connection.provider === 'pipedrive'}
+            <Funnel size={26} weight="bold" />
+          {:else if connection.provider === 'tailscale'}
+            <ShareNetwork size={26} weight="bold" />
           {:else}
             <Heartbeat size={26} weight="fill" />
           {/if}

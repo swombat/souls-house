@@ -106,6 +106,8 @@
           {@const message = item.message}
           <MessageBubble
             {message}
+            {accountId}
+            chatId={chat?.id}
             progressMessages={item.group.runKey ? item.group.messages : []}
             progressContinued={item.group.continued}
             isLastVisible={index === timelineItems.length - 1}

@@ -11,7 +11,13 @@ class AgentsController < ApplicationController
 
     render inertia: "agents/index", props: {
       resident_import_url: current_account.owned_by?(Current.user) ? import_account_agents_path(current_account) : nil,
+      github_resident_import_url: GithubResidentImport.requestable_by?(current_account, Current.user) ? new_account_github_resident_import_path(current_account) : nil,
       agents: Agents::ResidentDirectory.new(current_account).call,
+      can_end_guest_memberships: current_account.owned_by?(Current.user),
+      guest_memberships: current_account.guest_memberships.includes(agent: :account).order(:created_at).as_json,
+      away_memberships: GuestMembership.where(agent: current_account.agents).includes(:account, agent: :account).order(:created_at).as_json,
+      guest_candidates: GuestMembership.candidates_for(account: current_account, user: Current.user)
+        .includes(:account).by_name.map { |agent| { id: agent.to_param, name: agent.name, home_account_name: agent.account.name } },
       grouped_models: grouped_models,
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,
@@ -23,6 +29,7 @@ class AgentsController < ApplicationController
     render inertia: "agents/new", props: {
       grouped_models: grouped_models,
       resident_import_url: current_account.owned_by?(Current.user) ? import_account_agents_path(current_account) : nil,
+      github_resident_import_url: GithubResidentImport.requestable_by?(current_account, Current.user) ? new_account_github_resident_import_path(current_account) : nil,
       default_model_id: Agents::HostedBirth.default_model_id(account: current_account, creator: Current.user),
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,
@@ -56,10 +63,14 @@ class AgentsController < ApplicationController
       limit: 25
     )
 
+    catalog = @agent.subagent_catalog
     render inertia: "agents/edit", props: {
       portability: portability_props,
       agent: @agent.as_json,
       house_allowance: HouseInferenceGrant.find_by(agent: @agent)&.presentation,
+      subagent_catalog: catalog.options,
+      subagent_providers: catalog.providers,
+      subagent_catalog_empty_reason: catalog.empty_reason,
       telegram_deep_link: @agent.telegram_configured? ? @agent.telegram_deep_link_for(Current.user) : nil,
       telegram_subscriber_count: @agent.telegram_subscriptions.active.count,
       memories: memories_for_display,
@@ -95,7 +106,8 @@ class AgentsController < ApplicationController
     audit("update_agent", @agent, **agent_audit_data(attrs))
     redirect_to account_agents_path(current_account), notice: update_notice(model_changed)
   rescue ActiveRecord::RecordInvalid => e
-    redirect_to edit_account_agent_path(current_account, @agent),
+    tab = "subagents" if e.record.errors.attribute_names.intersect?(%i[subagents_enabled subagent_models])
+    redirect_to edit_account_agent_path(current_account, @agent, tab: tab),
                 inertia: { errors: e.record.errors.to_hash }
   end
 
@@ -139,7 +151,8 @@ class AgentsController < ApplicationController
       :telegram_bot_token, :telegram_bot_username,
       :voice_id, :persistent_session, :persistent_wake_session, :scheduled_wakes_enabled,
       :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
-      :session_context_budget_tokens, :turn_timeout_minutes
+      :session_context_budget_tokens, :turn_timeout_minutes, :subagents_enabled,
+      subagent_models: []
     )
 
     permitted.delete(:telegram_bot_token) if permitted[:telegram_bot_token].blank?
@@ -217,7 +230,8 @@ class AgentsController < ApplicationController
         connection.as_connection_json(current_user: Current.user).merge(
           enabled: access&.enabled? || false,
           provisioning_status: access&.provisioning_status,
-          access_update_url: account_agent_service_access_path(current_account, @agent, connection.public_id)
+          access_update_url: account_agent_service_access_path(current_account, @agent, connection.public_id),
+          tailnet_url: connection.provider == "tailscale" ? account_agent_tailnet_path(current_account, @agent) : nil
         )
       end
   end

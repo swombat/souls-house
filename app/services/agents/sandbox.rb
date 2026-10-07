@@ -37,6 +37,7 @@ module Agents
     end
 
     def spawn_without_portability_gate!
+      agent.github_resident_import&.require_approval!
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
       ensure_memory_not_suspended!
       raise SandboxError, "agent uuid missing" if agent.uuid.blank?
@@ -100,6 +101,7 @@ module Agents
     end
 
     def recreate_without_portability_gate!
+      agent.github_resident_import&.require_approval!
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
       ensure_memory_not_suspended!
       if container_exists?
@@ -199,6 +201,7 @@ module Agents
     end
 
     def start_without_portability_gate!
+      agent.github_resident_import&.require_approval!
       ensure_memory_not_suspended!
       update_restart_policy!
       docker_system("start", agent.container_name, out: File::NULL, err: File::NULL) || raise(SandboxError, "failed to start #{agent.container_name}")
@@ -211,6 +214,53 @@ module Agents
 
     def stopped?
       container_exists? && !running?
+    end
+
+    # Verification only. No SQL writes, interactive approvals or project code.
+    # A site operator grants trust through Chaos's supported interactive screen.
+    def imported_runtime_trusted?
+      return true unless agent.github_resident_import
+      verify_resources!
+      chaos_volume = Agents::Resources.new(agent).volumes.fetch(:chaos)
+      unless volume_exists?(chaos_volume)
+        docker_system("volume", "create", *Agents::Resources.new(agent).labels, chaos_volume) ||
+          raise(SandboxError, "failed to create Chaos home")
+        return false
+      end
+      check = <<~PYTHON
+        from pathlib import Path
+        import sys
+        try:
+            import github_import_approval
+            import imported_home
+            import os
+            if os.environ.get('SOULSHOUSE_HOME_SYNC_STRATEGY') == 'standard':
+                import standard_home_sync
+                assert callable(imported_home.standard_sync_configuration)
+            entrypoint = Path('/usr/local/bin/entrypoint.sh').read_text()
+            assert entrypoint.index('github_import_approval.py') < entrypoint.index('runtime_hooks.py')
+            assert entrypoint.index('--runtime-trust-check') < entrypoint.index('home_sync_loop.py')
+        except (ImportError, OSError, ValueError, AssertionError):
+            print('unsupported-managed-import-runtime')
+            sys.exit(79)
+        try:
+            imported_home.main(['imported_home.py', '--runtime-trust-check'])
+        except (ValueError, KeyError, OSError):
+            sys.exit(78)
+      PYTHON
+      result = docker_capture("run", "--rm",
+        "-v", "#{Agents::Volume.new(agent).volume_name}:#{IDENTITY_PATH}:ro",
+        "-v", "#{chaos_volume}:/home/agent/.chaos:ro",
+        "-e", "SOULSHOUSE_HOME_PROFILE=portable_v1",
+        "-e", "SOULSHOUSE_HOME_ROOT=#{IDENTITY_PATH}",
+        "-e", "SOULSHOUSE_PORTABLE_HOME_ID=#{agent.portable_home_id}",
+        "-e", "SOULSHOUSE_HOME_SYNC_STRATEGY=#{agent.github_resident_import.sync_strategy}",
+        "-e", "SOULSHOUSE_HOME_SYNC_CONFIGURATION=#{agent.github_resident_import.sync_configuration.to_json}",
+        "-e", "SOULSHOUSE_GITHUB_IMPORT_REQUIRE_OAUTH_TRUST=#{managed_import_oauth_trust_required? ? '1' : '0'}",
+        "--entrypoint", "python3", agent.container_image,
+        "-c", check)
+      raise SandboxError, "Runtime image does not support managed GitHub imports" if result[:stdout].to_s.include?("unsupported-managed-import-runtime")
+      result[:ok]
     end
 
     def stop_if_idle!
@@ -232,6 +282,17 @@ module Agents
           docker_system("volume", "rm", "-f", Agents::Resources.new(agent).volumes.fetch(:chaos), out: File::NULL, err: File::NULL)
         end
       end
+    end
+
+    # Runs a command inside the running container as the agent user and
+    # returns { stdout:, stderr:, ok: }. Never starts the container.
+    def exec_as_agent(*command, timeout_seconds: 60)
+      raise SandboxError, "#{agent.container_name} is not running" unless running?
+
+      docker_capture(
+        "exec", "-u", "agent", "-e", "HOME=/home/agent", agent.container_name,
+        "timeout", timeout_seconds.to_s, *command
+      )
     end
 
     def healthy?
@@ -605,6 +666,17 @@ module Agents
                "-e", "TZ=Europe/Madrid" ]
       # Default off. Only the Anthropic-subscription clamp combination reads it.
       args += [ "-e", "SOULSHOUSE_IMPORTED_CLAMP_OMIT_FORCED_LOGIN=1" ] if Agents::Config.imported_clamp_omit_forced_login?
+      if (request = agent.github_resident_import)
+        request.require_approval!
+        args += [ "-e", "SOULSHOUSE_GITHUB_IMPORT_ID=#{request.id}",
+          "-e", "SOULSHOUSE_GITHUB_IMPORT_FINGERPRINT=#{request.approved_credential_fingerprint}",
+          "-e", "SOULSHOUSE_GITHUB_IMPORT_REPOSITORY=#{request.repository}",
+          "-e", "SOULSHOUSE_GITHUB_IMPORT_BRANCH=#{request.branch}",
+          "-e", "SOULSHOUSE_HOME_SYNC_STRATEGY=#{request.sync_strategy}",
+          "-e", "SOULSHOUSE_HOME_SYNC_CONFIGURATION=#{request.sync_configuration.to_json}",
+          "-e", "SOULSHOUSE_GITHUB_IMPORT_CONNECTION=#{request.service_connection.public_id}" ]
+        args += [ "-e", "SOULSHOUSE_GITHUB_IMPORT_REQUIRE_OAUTH_TRUST=1" ] if managed_import_oauth_trust_required?
+      end
       args
     end
 
@@ -621,6 +693,11 @@ module Agents
       agent.account.ai_provider_keys.filter_map do |name, value|
         value.present? ? [ "-e", "#{name}=#{value}" ] : nil
       end.flatten
+    end
+
+    def managed_import_oauth_trust_required?
+      provider = self.class.subscription_provider_for(agent)
+      provider.in?(%w[openai xai]) && agent.provider_auth_mode(provider) == "oauth_account"
     end
 
   end

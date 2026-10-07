@@ -52,28 +52,6 @@ class TelegramNotifiableTest < ActiveSupport::TestCase
     assert_empty agent.errors[:telegram_bot_username]
   end
 
-  test "notify_subscribers! enqueues jobs for active subscriptions only" do
-    agent = create_telegram_agent
-    chat = create_test_chat(agent)
-    message = chat.messages.create!(role: "assistant", agent: agent, content: "Hello")
-
-    agent.telegram_subscriptions.create!(user: @user, telegram_chat_id: 111)
-    agent.telegram_subscriptions.create!(user: users(:existing_user), telegram_chat_id: 222, blocked: true)
-
-    assert_enqueued_jobs 1, only: TelegramNotificationJob do
-      agent.notify_subscribers!(message, chat)
-    end
-  end
-
-  test "notify_subscribers! does nothing when not configured" do
-    agent = @account.agents.create!(name: "Unconfigured")
-    chat = create_test_chat(agent)
-
-    assert_no_enqueued_jobs only: TelegramNotificationJob do
-      agent.notify_subscribers!(chat.messages.create!(role: "assistant", agent: agent, content: "Hi"), chat)
-    end
-  end
-
   test "telegram_send_message raises TelegramError on non-ok response" do
     agent = create_telegram_agent
     fake_error = OpenStruct.new(body: { "ok" => false, "description" => "Bad Request" }.to_json)
@@ -178,17 +156,6 @@ class TelegramNotifiableTest < ActiveSupport::TestCase
         telegram_bot_username: "test_bot"
       )
     end
-  end
-
-  def create_test_chat(agent)
-    chat = @account.chats.new(
-      title: "Test",
-      model_id: "openrouter/auto",
-      manual_responses: true
-    )
-    chat.agent_ids = [ agent.id ]
-    chat.save!
-    chat
   end
 
 end

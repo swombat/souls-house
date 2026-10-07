@@ -33,7 +33,7 @@ test('account services leads to account-scoped device controls and separate reco
     await page.getByRole('link', { name: 'Synthetic H10' }).click();
     await expect(page.getByRole('button', { name: 'Create append-only device credential' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Save readers and ingestion choice' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Permanently erase all data and close stream' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Delete all sessions and close stream' })).toBeVisible();
   } finally {
     await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
   }

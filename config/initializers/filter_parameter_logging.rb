@@ -17,3 +17,6 @@ Rails.application.config.filter_parameters += [
 
 # Inference bodies contain private resident conversations and tool definitions.
 Rails.application.config.filter_parameters += [ /\A(?:messages|tools|reasoning|tool_choice|response_format)\z/ ]
+
+# A saved rhythm invitation can contain the same private prose as a message.
+Rails.application.config.filter_parameters += [ /\Aopening\z/ ]

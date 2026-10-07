@@ -71,6 +71,7 @@ class ExternalAgentOrientationRequest
   def request_text
     [
       Notices::Renderer.section_for(agent),
+      SubagentPolicyRenderer.section_for(agent),
       orientation_text
     ].compact_blank.join("\n\n")
   end

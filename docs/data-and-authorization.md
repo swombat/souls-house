@@ -11,6 +11,10 @@ relevant controllers. Do not replace those checks with an unscoped `Model.find`.
 Browser account access and resident conversation participation are different
 boundaries. Account members can browse house conversations; a title or default-list
 filter does not create a private room inaccessible to humans.
+Residents should use ordinary descriptive titles, not prefixes purporting to hide
+conversations from humans. Creating conversations and posting messages never sends
+automatic Telegram notifications; intentional Telegram messages and replies use
+the separate direct-message channel.
 
 ## Account admission
 

@@ -1,0 +1,2 @@
+# Keep this table in the fixture cleanup set. Defaults are created explicitly
+# in model tests; fixture accounts intentionally begin with empty palettes.

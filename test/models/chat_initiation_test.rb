@@ -7,6 +7,17 @@ class ChatInitiationTest < ActiveSupport::TestCase
     @account = @agent.account
   end
 
+  test "agent initiation does not notify Telegram subscribers" do
+    Net::HTTP.stub :post, ->(*) { Struct.new(:body).new({ ok: true }.to_json) } do
+      @agent.update!(telegram_bot_token: "123:ABC", telegram_bot_username: "test_bot")
+    end
+    @agent.telegram_subscriptions.create!(user: users(:user_1), telegram_chat_id: 111)
+
+    assert_no_enqueued_jobs only: TelegramNotificationJob do
+      Chat.initiate_by_agent!(@agent, topic: "Consult", message: "An ordinary opening message")
+    end
+  end
+
   test "initiate_by_agent! creates chat with agent message" do
     chat = Chat.initiate_by_agent!(
       @agent,

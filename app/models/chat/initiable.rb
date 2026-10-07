@@ -33,7 +33,6 @@ module Chat::Initiable
         chat.messages.create!(role: "assistant", agent: agent, content: message)
         chat
       end.tap do |chat|
-        agent.notify_subscribers!(chat.messages.last, chat)
         invited_agents.each_with_index do |invited_agent, index|
           delay = (index + 1).minutes
           ManualAgentResponseJob.set(wait: delay).perform_later(chat, invited_agent)
@@ -44,7 +43,7 @@ module Chat::Initiable
     def resolve_invited_agents(account, obfuscated_ids)
       return [] if obfuscated_ids.blank?
       real_ids = obfuscated_ids.filter_map { |obfuscated_id| Agent.decode_id(obfuscated_id) }
-      account.agents.eligible_for_conversation.where(id: real_ids).to_a
+      account.conversation_agents.eligible_for_conversation.where(id: real_ids).to_a
     end
   end
 

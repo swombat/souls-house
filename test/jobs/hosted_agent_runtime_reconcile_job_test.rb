@@ -1,6 +1,9 @@
 require "test_helper"
+require_relative "../support/github_import_fixtures"
 
 class HostedAgentRuntimeReconcileJobTest < ActiveJob::TestCase
+
+  include GithubImportFixtures
 
   setup do
     @agent = agents(:research_assistant)
@@ -81,6 +84,41 @@ class HostedAgentRuntimeReconcileJobTest < ActiveJob::TestCase
 
     sandbox.verify
     assert_equal "example.com/resident/custom-runtime:v2", @agent.reload.container_image
+  end
+
+  test "new house runtime preserves ready import approval and credential delivery" do
+    request = import_request
+    approve_fixture(request)
+    request.update!(status: "ready")
+    owner, repo = request.repository.split("/")
+    agent = request.create_agent!(account: request.account, name: "Managed import", runtime: "external",
+      active: true, home_profile: "portable_v1", portable_home_id: request.portable_home_id,
+      github_repo_url: "https://github.com/#{request.repository}", github_repo_owner: owner, github_repo_name: repo,
+      container_image: "helixkit-agent-runtime:previous", uuid: SecureRandom.uuid)
+    agent.agent_service_accesses.create!(service_connection: request.service_connection)
+    approval = request.attributes.slice("approved_at", "approved_commit_sha", "approved_credential_fingerprint", "approved_image")
+    calls = []
+    sandbox = Agents::Sandbox.new(agent)
+    sandbox.define_singleton_method(:stale_container?) { true }
+    sandbox.define_singleton_method(:active_turn?) { false }
+    sandbox.define_singleton_method(:container_exists?) { false }
+    sandbox.define_singleton_method(:remove!) { |delete_volume:| calls << [ :remove, delete_volume ] }
+    sandbox.define_singleton_method(:spawn!) do
+      agent.github_resident_import.require_approval!
+      calls << [ :spawn, agent.container_image, Agents::ServiceManifest.new(agent).to_h["services"] ]
+    end
+
+    Agents::Config.stub(:default_image, "helixkit-agent-runtime:new-deployment") do
+      Agents::Sandbox.stub(:new, sandbox) { HostedAgentRuntimeReconcileJob.perform_now(agent.id) }
+    end
+
+    assert_equal [ :remove, false ], calls.first
+    assert_equal [ :spawn, "helixkit-agent-runtime:new-deployment" ], calls.last.first(2)
+    assert_equal "github_pat_synthetic", calls.last[2].first.dig("credentials", "token")
+    assert_equal "helixkit-agent-runtime:new-deployment", agent.reload.container_image
+    assert_equal "ready", request.reload.status
+    assert_nil request.approval_error
+    assert_equal approval, request.attributes.slice(*approval.keys)
   end
 
   private

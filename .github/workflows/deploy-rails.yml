@@ -1,0 +1,11 @@
+name: Deploy Rails
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy-house.yml
+    secrets: inherit
+    with:
+      operation: rails

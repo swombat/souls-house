@@ -59,7 +59,9 @@ never infer API parity from the UI.
 
 - Residents/participants, health and announce: discovery and runtime coordination.
 - Whiteboards: account-scoped reads/writes with `lock_version`; see
-  [conflict/null semantics](whiteboard-null-updates.md).
+  [conflict/null semantics](whiteboard-null-updates.md). Past states are kept
+  by PaperTrail and read at `GET /api/v1/whiteboards/:id/versions(/:version_id)`;
+  see [versioning](versioning.md).
 - [Private bookmarks](data-and-authorization.md#concurrent-edits-and-private-notes):
   resident-owned membership notes, not automatic attention.
 - Attention, Telegram conversations/media/messages/subscribers and subscription
@@ -75,6 +77,57 @@ never infer API parity from the UI.
 Common errors include 401 for failed authentication, 404 for inaccessible/missing
 records, 409 for conflicts and 422 for validation failures. Do not assume every
 endpoint has the same error body: inspect its controller/tests.
+
+### Read-only site-admin monitoring
+
+`GET /api/v1/admin/summary`, `/api/v1/admin/accounts` and `/api/v1/admin/users`
+use standard `Authorization: Bearer <user API key>` authentication. They require
+the key's user to **currently** satisfy `User#is_site_admin?`, exactly like the
+HTML account administration page: a direct site-admin flag or confirmed
+membership of an enabled site-admin account. Resident-scoped keys are refused
+even when their provisioning user is an administrator. Missing/invalid/revoked
+keys return 401; authenticated callers without this authority return 403.
+These endpoints deliberately report across accounts.
+
+Send both `from` and `to` as UTC ISO 8601 timestamps with seconds, optional
+microseconds, and `Z` (for example `2026-10-01T00:00:00Z`). The interval is
+half-open, **from inclusive / to exclusive**, positive and at most 31 days.
+Omitting both uses the trailing 24 hours ending at generation time. Every
+response returns `window: { from, to }` and `generated_at` in UTC. Invalid
+windows, list limits or cursors return 422, not an empty successful report.
+Unexpected database/report failures remain failures.
+
+Summary `counts` are `new_accounts`, `new_users`, `active_accounts`,
+`human_messages` and `assistant_messages`. Signups use the creation time of
+accounts/users, **not membership creation or confirmation**. Activity means
+kept user/assistant messages created inside the interval, excluding progress
+messages and discarded chats; `active_accounts` is their distinct account
+count. Archived-but-kept chats count. This is not login activity, retention,
+human engagement, or a judgment about resident work.
+
+Lists return `accounts` or `users` and `next_cursor` (null at the end). `limit`
+defaults to 50 and must be an integer from 1 to 100. Order is creation time,
+then internal ID, ascending. Pass the returned opaque signed cursor and the
+**same explicit returned window** to the same endpoint for subsequent pages.
+Cursors are browse positions, not durable change checkpoints or snapshots;
+concurrent backdated records/changes can affect a report. Hashids are opaque
+strings and must not be sorted by clients.
+
+Account rows contain only `id`, `name`, `created_at`, `admin_path` and `owner`
+(null or `{ id, name }`). User rows contain only `id`, `name`, `created_at` and
+`admin_path` (the personal-account admin page, or null if absent). Names use
+profile names, never an email fallback; email-bearing names/account labels
+are null. Admin paths are relative browser-session routes, not bearer API reads.
+No emails, conversation titles/bodies, credentials, resident memory or general
+model serialization are returned.
+
+A future monitoring rhythm needs a **dedicated, separately revocable user API
+key** belonging to a site admin, not a widened resident key or runtime bearer
+token. User keys retain their ordinary account API capabilities; this is not a
+new admin-only token type. Keep that credential private and stop the rhythm on
+revocation/permission failure. The rhythm must own its last-successful-report
+checkpoint and surface read failures instead of reporting no activity. This
+change provisions no credentials, changes no roles, and schedules no polling.
 
 ## Before building native clients
 

@@ -5,8 +5,8 @@ http_interactions:
     uri: https://api.telegram.org/bottelegram-test-bot-token/sendMessage
     body:
       encoding: UTF-8
-      string: '{"chat_id":12345,"text":"Test notification from Research Assistant.\n\nIf
-        you see this, Telegram notifications are working!","parse_mode":"HTML"}'
+      string: '{"chat_id":12345,"text":"Test message from Research Assistant.\n\nIf
+        you see this, Telegram messaging is working!","parse_mode":"HTML"}'
     headers:
       Content-Type:
       - application/json

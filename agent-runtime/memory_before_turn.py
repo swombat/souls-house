@@ -35,6 +35,9 @@ def main():
     context = []
     try:
         event = json.loads(sys.stdin.read(65536))
+        # Spawned helpers are not the resident: no memory reference, no recall.
+        if event.get("is_subagent") or event.get("parent_session_id"):
+            return
         messages = event.get("input_messages") or []
         text = input_text(messages[-1] if messages else event.get("input") or event.get("prompt") or event.get("last_user_message") or "")
         if "<mnemodyne-command-reference/>" not in text:

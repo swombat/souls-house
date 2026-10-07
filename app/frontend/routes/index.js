@@ -585,6 +585,60 @@ export const __route = __jsr.__route;
 
 /**
  * Generates rails route to
+ * /accounts/:account_id/guest_memberships/:id(.:format)
+ * @param {any} accountId
+ * @param {any} id
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountGuestMembershipPath = /*#__PURE__*/ __route(
+  { account_id: { r: true }, id: { r: true }, format: {} },
+  [
+    2,
+    [7, '/'],
+    [
+      2,
+      [6, 'accounts'],
+      [
+        2,
+        [7, '/'],
+        [
+          2,
+          [3, 'account_id'],
+          [
+            2,
+            [7, '/'],
+            [2, [6, 'guest_memberships'], [2, [7, '/'], [2, [3, 'id'], [1, [2, [8, '.'], [3, 'format']]]]]],
+          ],
+        ],
+      ],
+    ],
+  ]
+);
+
+/**
+ * Generates rails route to
+ * /accounts/:account_id/guest_memberships(.:format)
+ * @param {any} accountId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountGuestMembershipsPath = /*#__PURE__*/ __route({ account_id: { r: true }, format: {} }, [
+  2,
+  [7, '/'],
+  [
+    2,
+    [6, 'accounts'],
+    [
+      2,
+      [7, '/'],
+      [2, [3, 'account_id'], [2, [7, '/'], [2, [6, 'guest_memberships'], [1, [2, [8, '.'], [3, 'format']]]]]],
+    ],
+  ],
+]);
+
+/**
+ * Generates rails route to
  * /accounts/:id(.:format)
  * @param {any} id
  * @param {object | undefined} options

@@ -266,6 +266,10 @@ export const router = {
     window.location.reload();
   },
 
+  // Global router events (used by $lib/cable to keep background refreshes off in-flight visits).
+  // This adapter has no visit lifecycle, so nothing ever fires.
+  on: () => () => {},
+
   request: async (method, url, data = {}, options = {}) => {
     try {
       const response = await fetch(url, {

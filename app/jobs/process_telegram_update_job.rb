@@ -52,7 +52,7 @@ class ProcessTelegramUpdateJob < ApplicationJob
 
     agent.telegram_send_message(
       chat_id,
-      "Connected! You'll receive notifications from <b>#{ERB::Util.html_escape(agent.name)}</b> here."
+      "Connected! You can message <b>#{ERB::Util.html_escape(agent.name)}</b> directly here."
     )
   end
 

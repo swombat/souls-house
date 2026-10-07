@@ -21,16 +21,16 @@ session annotations and derived findings are **not** accepted by `rr.v1`.
 5. Implement the bridge POST adapter below. The existing local-only recorder
    does not magically start uploading when the endpoint deploys.
 6. With synthetic data first, check 201, identical retry 200, conflict 409,
-   read access, revocation, session erasure and rejected late replay.
+   read access, revocation, session deletion and rejected late replay.
 
 Only the subject controls readers, devices and deletion through the browser,
 with standard session authentication and CSRF protection. An account admin or
 an agent owned by the subject does not inherit these application permissions.
 Infrastructure administrators can still access storage. If subject membership
 becomes inactive, ingestion and reads stop; the subject's direct control URL
-still permits revoke/erase. Account/user deletion also removes owned streams.
+still permits revoke/delete. Account/user deletion also removes owned streams.
 `/device_streams` is a separate personal recovery index across accounts, not a
-creation or reader-management page. It retains subject-only revoke/erase controls
+creation or reader-management page. It retains subject-only revoke/delete controls
 after membership loss without exposing the former account's resident roster.
 
 ## Append API
@@ -72,11 +72,11 @@ Operators should configure a matching upstream limit.
 
 201 new; 200 identical normalized retry; 409 changed reuse of sequence;
 401 invalid/revoked/wrong-stream credential; 403 disabled/inactive membership;
-410 erased stream/session when authenticated; 413 capacity/body limit;
+410 deleted stream/session when authenticated; 413 capacity/body limit;
 422 invalid schema/data; 429 rolling-minute admission limit.
-Revoked credentials get 401 even if their former stream was erased.
+Revoked credentials get 401 even if their former stream was deleted.
 Retry only transport failures/5xx/429 with capped exponential backoff and jitter.
-Pause and surface other failures; do not spin on revoked/erased streams.
+Pause and surface other failures; do not spin on revoked/deleted streams.
 
 ## Read API
 
@@ -89,33 +89,66 @@ client clock lead), up to 1,200 batches in observation order, with session,
 sequence, observed and server-received timestamps. `truncated` indicates the cap;
 an empty window does not mean no historical data is stored. `server_time` and
 `latest_received_at` support freshness checks; no completeness guarantee is made.
-There is no historical download API in this first slice.
+
+`GET /api/v1/streams/:stream_key/sessions` discovers up to 50 non-deleted sessions
+with stored batches under the same reader grants and no-store policy. The
+response contains `stream_key`, `server_time`, `truncated` and `sessions`; each
+entry has only `session_id`, `first_observed_at`, `last_observed_at` and
+`batch_count`, never RR values. Newest means highest stored observation time,
+with ties broken by descending internal session ID, not latest upload time.
+Empty sessions are omitted. `truncated: true` means older sessions exist beyond
+this discovery window; this endpoint is not a complete archive index.
+
+`GET /api/v1/streams/:stream_key/sessions/:session_id` reads a known client
+session UUID, including historical uploads, under the same current reader grants
+and account scope as `latest`. Device credentials cannot read. It returns
+`schema`, `stream_key`, `session_id`, `server_time`, `batches` (the same fields as
+latest) and `next_cursor`. Pages contain at most 200 batches in ascending sequence
+order. Follow `?cursor=<next_cursor>` until it is null; treat the cursor as opaque.
+Missing, deleted and inaccessible sessions return 404. Malformed cursors return
+422. Responses use `Cache-Control: no-store`; grants are checked on every request.
+
+Pagination is not a snapshot or a completeness certificate. Uploads may arrive
+out of order: a late lower sequence can land behind an already-read cursor.
+For a final analysis, wait for the Mac uploader to finish, then read again from
+the first page and reconcile against its locally persisted sequence manifest.
+Null `next_cursor` only means no further rows at that request, not that recording
+or upload has finished. The client supplies the session UUID; this endpoint does
+not wake residents or add a session-finalization protocol. The bounded session
+list above supplies UUIDs for recent recordings without an out-of-band handoff.
 
 UTC deltas cannot reproduce monotonic integrity calculations. Keep monotonic
 timing, disconnect/contact evidence, interval boundaries, algorithm version and
 signed deficit diagnostics locally. A suspected gap is not proven transport
 loss; `ok` is not proof of completeness.
 
-## Erasure and retention
+## Deletion and retention
 
-No automatic TTL: samples stay until subject erasure, account/user deletion or
-an explicitly implemented future policy. The browser has per-session deletion,
-including a UUID field for older/not-yet-uploaded sessions, and permanent bulk
-erasure. Bulk erasure closes the stream and revokes all devices; create a new
-stream to record again.
+House rule: deletion marks, it does not remove. That applies here as everywhere
+else in souls.house. No automatic TTL: samples stay stored until account/user
+deletion or an explicitly implemented future policy.
 
-Per-session erasure deletes sample rows physically, keeping only a session UUID
-and erasure timestamp tombstone. All appends, erasures and credential revocations
-serialize on the stream row. An append committed before deletion is removed;
-one ordered after it is rejected. Tombstones reject late retries indefinitely.
+The browser has per-session deletion, including a UUID field for
+older/not-yet-uploaded sessions, and bulk deletion. Per-session deletion sets the
+session's `erased_at` tombstone. Its batches stay in the database but disappear
+from every read path (`latest`, session discovery and session reads); readers
+must go through `DeviceStream#visible_batches`, never the raw association. Bulk
+deletion tombstones every session, revokes all devices and closes the stream;
+create a new stream to record again. `batches_count` counts stored rows, so
+deleting does not free capacity toward the 2,000,000-batch limit.
+
+All appends, deletions and credential revocations serialize on the stream row.
+An append committed before deletion is hidden with the rest of its session; one
+ordered after it is rejected. Tombstones reject late retries indefinitely.
 Credential revocation is checked again inside the append lock.
 
-These operations do not erase local Mac files, prior downloads, derived
-findings, logs made outside this application, PostgreSQL WAL or backups.
-Before real upload the operator must state backup retention. Before restoring a
-backup, reconcile subsequent erasures and revocations **before** making it
-accessible or reopening ingestion. This slice does not automate that process.
-Database row deletion is not a promise of forensic media erasure.
+Because nothing is removed, deleted samples remain in the database, PostgreSQL
+WAL and backups, as do local Mac files, prior downloads, derived findings and
+logs made outside this application. The UI says so. Anyone who needs data truly
+destroyed should run their own house. Before restoring a backup, reconcile
+subsequent deletions and revocations **before** making it accessible or
+reopening ingestion, so a revoked credential or hidden session does not come
+back. This slice does not automate that process.
 
 RR/timestamp request parameters and authorization headers are filtered from
 application logs; do not enable proxy body/header logging. Responses use no-store.

@@ -61,6 +61,9 @@ module Api
 
       test "account keys and resident membership cannot cross account boundaries" do
         other = accounts(:team_account).chats.create!(title: "Elsewhere", model_id: "openrouter/auto", agents: [ agents(:other_account_agent) ])
+        # Seated there as a guest resident: guests still cannot publish stones
+        # from a guest account's rooms; stones stay with the key's home account.
+        accounts(:team_account).guest_memberships.create!(agent: @agent, added_by: users(:user_1))
         other.agents << @agent
         other_path = "/api/v1/conversations/#{other.to_param}/stones"
         [ @headers, @agent_headers ].each do |headers|

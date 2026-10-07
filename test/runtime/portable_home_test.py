@@ -200,6 +200,26 @@ class ProfileTest(HomeFixture):
         with self.lume_env(), self.assertRaises(ValueError):
             imported_home.validate()
 
+    def test_standard_is_explicit_and_only_portable_can_omit_legacy_sync(self):
+        manifest = self.set_sync(None)
+        manifest['standard_sync'] = {'auto_commit_paths': ['notes'], 'append_only_paths': ['notes']}
+        (self.lume / 'resident-home.json').write_text(json.dumps(manifest))
+        with self.lume_env(SOULSHOUSE_HOME_SYNC_STRATEGY='standard'):
+            self.assertEqual(imported_home.validate()[0], self.lume)
+            self.assertEqual(imported_home.standard_sync_configuration(manifest)['append_only_paths'], ['notes'])
+        with self.lume_env(), self.assertRaises(ValueError):
+            imported_home.validate()
+        with self.mira_env(), patch.dict(os.environ, SOULSHOUSE_HOME_SYNC_STRATEGY='standard'), self.assertRaises(ValueError):
+            imported_home.validate()
+
+    def test_standard_uses_reviewed_configuration_not_future_manifest_changes(self):
+        manifest = self.set_sync(None)
+        manifest['standard_sync'] = {'auto_commit_paths': ['private']}
+        (self.lume / 'resident-home.json').write_text(json.dumps(manifest))
+        with self.lume_env(SOULSHOUSE_HOME_SYNC_STRATEGY='standard',
+                           SOULSHOUSE_HOME_SYNC_CONFIGURATION='{"auto_commit_paths":["notes"]}'):
+            self.assertEqual(imported_home.standard_sync_configuration(manifest)['auto_commit_paths'], ['notes'])
+
     def test_mira_default_sync_path_is_the_compatibility_default(self):
         manifest = json.loads((self.mira / 'resident-home.json').read_text())
         self.assertNotIn('sync', manifest)
@@ -316,6 +336,35 @@ class SyncLoopTest(HomeFixture):
         with self.mira_env():
             home_sync_loop.run_once(runner=lambda args, **kw: calls.append(args) or Completed(0), path=self.status)
         self.assertEqual(calls, [['python3', str(self.mira / 'shared/automation/scripts/git_sync.py')]])
+
+    def test_standard_loop_confirms_json_and_never_executes_legacy_script(self):
+        from types import SimpleNamespace
+        calls = []
+        def runner(args, **kwargs):
+            calls.append(args)
+            return SimpleNamespace(returncode=0, stdout=json.dumps({
+                'state': 'ok', 'checked_at': local_now(), 'last_success_at': local_now(),
+                'reason_code': 'synced', 'rescue_ref': None, 'rescue_status': 'not_needed'}))
+        with self.lume_env(SOULSHOUSE_HOME_SYNC_STRATEGY='standard',
+                           SOULSHOUSE_GITHUB_IMPORT_BRANCH='main',
+                           SOULSHOUSE_HOME_SYNC_CONFIGURATION='{"auto_commit_paths":["notes"]}'):
+            status = home_sync_loop.run_once(runner=runner, path=self.status)
+        self.assertEqual(status['state'], 'ok')
+        self.assertIn(str(RUNTIME / 'standard_home_sync.py'), calls[0])
+        self.assertNotIn(str(self.lume / 'automation/scripts/home_sync.py'), calls[0])
+        self.assertEqual(calls[0][-2:], ['--auto-commit-path', 'notes'])
+
+    def test_standard_partial_rescue_never_confirms_success(self):
+        from types import SimpleNamespace
+        previous = {'state': 'ok', 'last_success_at': '2026-10-01T00:00:00+00:00'}
+        home_sync_loop.write_status(previous, self.status)
+        result = SimpleNamespace(returncode=1, stdout=json.dumps({
+            'state': 'needs_attention', 'checked_at': local_now(), 'last_success_at': None,
+            'reason_code': 'merge_conflict', 'rescue_ref': 'rescue/synthetic/x', 'rescue_status': 'pushed'}))
+        with self.lume_env(SOULSHOUSE_HOME_SYNC_STRATEGY='standard', SOULSHOUSE_GITHUB_IMPORT_BRANCH='main'):
+            status = home_sync_loop.run_once(runner=lambda *a, **k: result, path=self.status)
+        self.assertEqual(status['state'], 'needs_attention')
+        self.assertEqual(status['last_success_at'], previous['last_success_at'])
 
     def assert_failure(self, runner, expected):
         with self.lume_env(), self.assertLogs('home-sync', level=logging.ERROR) as logs:

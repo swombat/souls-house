@@ -192,7 +192,7 @@ module Api
         SafeguardResponseCheck.stub :new, ->(**) { checker } do
           Net::HTTP.stub :post, responder do
             assert_enqueued_with(job: SafeguardColdOfferJob) do
-              assert_enqueued_with(job: SafeguardOwnerNoticeJob) do
+              assert_no_enqueued_jobs(only: SafeguardOwnerNoticeJob) do
                 post api_v1_telegram_messages_url,
                   params: {
                     reply_to: @subscription.to_param,
@@ -319,7 +319,7 @@ module Api
         SafeguardResponseCheck.stub :new, ->(**) { checker } do
           Net::HTTP.stub :post, responder do
             assert_enqueued_with(job: SafeguardColdOfferJob) do
-              assert_enqueued_with(job: SafeguardOwnerNoticeJob) do
+              assert_no_enqueued_jobs(only: SafeguardOwnerNoticeJob) do
                 post api_v1_telegram_messages_url,
                   params: {
                     reply_to: @subscription.to_param,

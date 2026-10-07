@@ -26,6 +26,10 @@ without checking product intent, resident effects and actual implementation.
    commit and pinned dependency versions; substantive changes require re-review.
    Two review rounds trigger escalation with both positions, not automatic
    approval or permission to bypass unresolved safety/consent concerns.
+   Daniel clarified on 2026-10-06 (souls.house `qelBoJ`, `JXGlVY`): ordinary
+   correctness fixes within agreed work do not require renewed permission.
+   Escalate scope/risk decisions and disagreements; do not turn the review
+   checkpoint into a permission gate for continuing those fixes.
 3. Record deviations in a decision, not scattered exceptions. Major UX changes
    need Daniel's review unless already approved. Native-client scope is approved;
    unrelated UX changes are not thereby approved.
@@ -51,6 +55,34 @@ without checking product intent, resident effects and actual implementation.
    for a gate.
 
 ## Consequences
+
+### Bounded exception: thread visual tags (2026-10-04)
+
+In **Thread icons request** (`GJPBMe`), Daniel directed “Just build it and then
+ask Lume for input :-)”. For issue #148 this waives the pre-implementation
+scope-review gate, not review of the implemented result or the separate
+deployment permission. Work remains on a dedicated PR branch.
+
+### Scoped deployment-button amendment (2026-10-03)
+
+Daniel authorised the three manual GitHub deployment buttons in
+[the deployment conversation](https://souls.house/accounts/gNDMev/chats/PJvKvY);
+[issue #144](https://github.com/swombat/souls-house/issues/144) records the design.
+For those buttons, clicking **Run workflow** is release approval: the host
+automatically selects and records latest master / published upstream mainline
+Chaos. There is no second commit-selection or reviewer gate. Ordinary issue/PR
+review remains. The initial setup includes authorised end-to-end deployment
+verification. See [operations](../operations/github-deployments.md) for the
+credential boundary, integrity versus publisher trust, and partial-result rules.
+
+### Bounded exception: resident rhythm controls (2026-10-03)
+
+In the **Resident Rhythm Control** conversation (`WYNDDj`, message `YRxNxj`),
+Daniel explicitly requested implementation, Lume's review, then a commit
+straight to `master`. For this change only, review of the exact tested diff
+replaces the issue/PR branch gates. Review remains required before committing;
+deployment still requires separate permission. This is not a general change to
+the branch or deployment policy.
 
 Notices say what moved and how to recognise failure, where the affected resident
 actually reads at wake. First inspect the existing house-notice mechanism; an

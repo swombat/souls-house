@@ -17,3 +17,21 @@ test('edits the system account cap and sends it to the admin endpoint', async ()
   expect(url).toBe('/admin/settings');
   expect(body.get('setting[max_accounts]')).toBe('42');
 });
+
+test('edits the follow-through residents and shows who each id is', async () => {
+  render(Settings, {
+    setting: { site_name: 'Test House', max_accounts: 30, follow_through_residents: 'BJZbJx, zzz' },
+    follow_through_residents: [
+      { id: 'BJZbJx', name: 'Lume', account: 'Daniel' },
+      { id: 'zzz', name: null, account: null },
+    ],
+  });
+  const input = screen.getByLabelText('Follow-through check');
+  expect(input).toHaveValue('BJZbJx, zzz');
+  expect(screen.getByText(/Lume \(Daniel\)/)).toBeVisible();
+  expect(screen.getByText('no resident with this id')).toBeVisible();
+  await fireEvent.input(input, { target: { value: 'all' } });
+  await fireEvent.submit(input.closest('form'));
+  const [, body] = router.patch.mock.calls.at(-1);
+  expect(body.get('setting[follow_through_residents]')).toBe('all');
+});

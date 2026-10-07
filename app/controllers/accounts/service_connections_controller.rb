@@ -9,7 +9,7 @@ class Accounts::ServiceConnectionsController < ApplicationController
     management_scope = params.require(:management_scope)
     authorize_management_scope!(definition, management_scope)
     result = definition.adapter.connection_attributes(
-      credentials: credential_params.to_h,
+      credentials: credential_params(definition).to_h,
       user: Current.user
     )
     existing = current_account.service_connections.find_by(
@@ -72,7 +72,9 @@ class Accounts::ServiceConnectionsController < ApplicationController
 
     @connection.disconnect!
     audit(:disconnect_service, @connection, provider: @connection.provider)
-    @connection.destroy!
+    # Keep reviewed provenance and its revoked reference. This does not retain
+    # the credential: disconnect! has already erased the encrypted payload.
+    @connection.destroy! unless @connection.github_resident_imports.exists?
     redirect_back fallback_location: account_integrations_path(current_account), notice: "Service disconnected"
   end
 
@@ -86,8 +88,12 @@ class Accounts::ServiceConnectionsController < ApplicationController
     params.require(:service_connection).permit(:label, :enabled_for_new_agents, :freely_provisionable)
   end
 
-  def credential_params
-    params.require(:credentials).permit(:token, :repository)
+  # Each credentials provider declares its own fields; nothing else passes.
+  def credential_params(definition)
+    keys = definition.credential_fields.map { |field| field.fetch("key") }
+    return ActionController::Parameters.new.permit if keys.empty?
+
+    params.require(:credentials).permit(*keys)
   end
 
   def authorize_management_scope!(definition, scope)

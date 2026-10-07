@@ -2,6 +2,8 @@ module Api
   module V1
     class ConversationsController < BaseController
 
+      wrap_parameters false
+
       PAGE_SIZE = 100
       SEARCH_PAGE_SIZE = 50
       TITLE_MAX_LENGTH = 255
@@ -55,6 +57,7 @@ module Api
           conversation: {
             id: chat.to_param,
             title: chat.title_or_default,
+            visual_tag: chat.visual_tag&.as_json,
             model: chat.model_label,
             group_chat: chat.group_chat?,
             agents: chat.group_chat? ? chat.agents.map { |a| { id: a.to_param, name: a.name } } : [],
@@ -66,6 +69,7 @@ module Api
       end
 
       def create
+        @destination = requested_account
         agent_ids = resolve_agent_ids
         return if performed?
 
@@ -85,7 +89,7 @@ module Api
         end
 
         chat_attrs = {
-          account: current_api_account,
+          account: @destination,
           model_id: params[:model_id] || "openrouter/auto",
           title: params[:title],
           manual_responses: true
@@ -107,27 +111,49 @@ module Api
             created_at: chat.created_at.iso8601
           }
         }, status: :created
+      rescue ActiveRecord::RecordInvalid => error
+        # A guest that departed between the account check and the insert is
+        # refused by the seat lock; say so rather than raising.
+        record = error.record
+        seat_errors = record.respond_to?(:chat_agents) ? record.chat_agents.flat_map { |seat| seat.errors.full_messages } : []
+        render json: { error: (seat_errors.presence || record.errors.full_messages).to_sentence }, status: :unprocessable_entity
       end
 
-      # Rename only. The title is read from the top level; any other shape
-      # (for example a nested {"conversation": {...}}) gets 422 rather than a
-      # silent success, so a caller can never mistake a no-op for a rename.
+      # Top-level, atomic metadata changes; title-only clients keep working.
       def update
         chat = conversations_scope.kept.find(params[:id])
-        title = params[:title]
-
-        unless title.is_a?(String) && title.strip.present? && title.strip.length <= TITLE_MAX_LENGTH
-          render json: { error: "Provide a top-level title: nonblank text of at most #{TITLE_MAX_LENGTH} characters" },
-                 status: :unprocessable_entity
+        changes = params.except(:controller, :action, :id, :account_id, :format).to_unsafe_h
+        unless changes.any? && (changes.keys - %w[title visual_tag_id]).empty?
+          render json: { error: "Provide top-level title and/or visual_tag_id; no other fields are accepted" }, status: :unprocessable_entity
           return
         end
-        title = title.strip
+        if changes.key?("title")
+          title = changes["title"]
+          unless title.is_a?(String) && title.strip.present? && title.strip.length <= TITLE_MAX_LENGTH && !title.include?("\0")
+            render json: { error: "title must be nonblank text of at most #{TITLE_MAX_LENGTH} characters, without NUL" }, status: :unprocessable_entity
+            return
+          end
+          changes["title"] = title.strip
+        end
+        if changes.key?("visual_tag_id")
+          tag_id = changes.delete("visual_tag_id")
+          unless tag_id.nil? || (tag_id.is_a?(String) && tag_id.present?)
+            render json: { error: "visual_tag_id must be a nonblank public ID string or null" }, status: :unprocessable_entity
+            return
+          end
+          changes["visual_tag"] = VisualTag.resolve_for(chat.account, tag_id)
+        end
 
-        if chat.update(title: title)
+        if chat.update(changes)
           render json: { conversation: conversation_json(chat) }
         else
           render json: { error: chat.errors.full_messages.to_sentence }, status: :unprocessable_entity
         end
+      rescue ActiveRecord::InvalidForeignKey
+        render json: {
+          error: "This tag is no longer available. Refresh the palette and try again.",
+          code: "visual_tag_unavailable"
+        }, status: :conflict
       end
 
       private
@@ -161,7 +187,7 @@ module Api
       end
 
       def paginated_conversations
-        scope = conversations_scope.kept.active.reorder(updated_at: :desc, id: :desc)
+        scope = conversations_scope.kept.active.includes(:visual_tag).reorder(updated_at: :desc, id: :desc)
         return scope if params[:cursor].blank?
 
         cursor = conversations_scope.find(params[:cursor])
@@ -180,10 +206,11 @@ module Api
 
       def create_agent_scoped_conversation!(invited_agent_ids)
         agent_ids = ([ current_api_agent.id ] + invited_agent_ids).uniq
-        opening_message = nil
 
-        current_api_account.chats.transaction do
-          chat = current_api_account.chats.new(
+        # In a guest account, the creator's own seat is admitted under the
+        # membership lock (ChatAgent#agent_takes_part_in_account), like any seat.
+        @destination.chats.transaction do
+          chat = @destination.chats.new(
             model_id: params[:model_id] || current_api_agent.model_id || "openrouter/auto",
             title: params[:title],
             manual_responses: true,
@@ -194,7 +221,7 @@ module Api
           chat.save!
 
           if params[:message].present?
-            opening_message = chat.messages.create!(
+            chat.messages.create!(
               role: "assistant",
               agent: current_api_agent,
               content: params[:message]
@@ -202,9 +229,6 @@ module Api
           end
 
           chat
-        end.tap do |chat|
-          # Match Chat.initiate_by_agent! without notifying message-less rooms.
-          current_api_agent.notify_subscribers!(opening_message, chat) if opening_message
         end
       end
 
@@ -221,7 +245,7 @@ module Api
 
         obfuscated_ids = ids.uniq
         real_ids = obfuscated_ids.filter_map { |oid| Agent.decode_id(oid) }
-        agents = current_api_account.agents.eligible_for_conversation.where(id: real_ids)
+        agents = @destination.conversation_agents.eligible_for_conversation.where(id: real_ids)
 
         if agents.length != obfuscated_ids.length
           missing = obfuscated_ids.length - agents.length
@@ -235,6 +259,7 @@ module Api
         {
           id: chat.to_param,
           title: chat.title_or_default,
+          visual_tag: chat.visual_tag&.as_json,
           summary: chat.summary,
           summary_stale: chat.summary_stale?,
           model: chat.model_label,

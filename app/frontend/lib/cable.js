@@ -27,13 +27,70 @@ export function debounce(fn, delay) {
   };
 }
 
+// A background refresh is an async Inertia visit to the URL that was current when it was sent.
+// Inertia 2 still applies it if the user has navigated meanwhile, as long as the pathname
+// matches. It ignores the query string, takes the response's (stale) URL and pushes a history
+// entry for it. On /admin/accounts that quietly undid an account selection whenever any account
+// changed while the admin was clicking. So a refresh never moves the URL; a refresh still in
+// flight when a navigation starts (a visit or the browser's back/forward) is cancelled and
+// re-queued; and no refresh is sent while a visit is in flight, because the URL it would read is
+// about to stop being true.
+export function backgroundReloadOptions(props) {
+  return { only: props, preserveState: true, preserveScroll: true, preserveUrl: true };
+}
+
+const inFlightRefreshes = new Set();
+const deferredProps = new Set();
+let navigating = 0;
+let navigationStartedAt = 0;
+// If a visit never reports finishing, stop deferring refreshes after this long rather than forever.
+const NAVIGATION_GRACE_MS = 10_000;
+const isNavigating = () => navigating > 0 && Date.now() - navigationStartedAt < NAVIGATION_GRACE_MS;
+
+function flushDeferred() {
+  if (isNavigating() || deferredProps.size === 0) return;
+  const props = Array.from(deferredProps);
+  deferredProps.clear();
+  reloadProps(props);
+}
+
+const cancelRefreshes = () => inFlightRefreshes.forEach((refresh) => refresh.cancel());
+
+if (browser) {
+  router.on('before', (event) => {
+    if (event.detail.visit.async) return;
+    cancelRefreshes();
+  });
+  router.on('start', (event) => {
+    if (event.detail.visit.async) return;
+    navigating += 1;
+    navigationStartedAt = Date.now();
+  });
+  router.on('finish', (event) => {
+    if (event.detail.visit.async) return;
+    navigating = Math.max(0, navigating - 1);
+    if (navigating === 0) flushDeferred();
+  });
+  window.addEventListener('popstate', cancelRefreshes);
+}
+
 // Global debounced reload (shared across all subscriptions)
 export const reloadProps = debounce((props) => {
+  if (isNavigating()) {
+    props.forEach((prop) => deferredProps.add(prop));
+    setTimeout(flushDeferred, NAVIGATION_GRACE_MS);
+    return;
+  }
   logging.debug('Reloading props:', props);
+  let refresh = null;
   router.reload({
-    only: props,
-    preserveState: true,
-    preserveScroll: true,
+    ...backgroundReloadOptions(props),
+    onCancelToken: (token) => {
+      refresh = token;
+      inFlightRefreshes.add(token);
+    },
+    onCancel: () => reloadProps(props),
+    onFinish: () => inFlightRefreshes.delete(refresh),
   });
 }, 300);
 

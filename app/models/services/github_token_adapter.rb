@@ -19,6 +19,7 @@ module Services
     def connection_attributes(credentials:, user:)
       token = credentials["token"].to_s.strip
       repository_name = credentials["repository"].to_s.strip
+      @oauth_scopes = nil
       raise Error, "GitHub token is required" if token.blank?
       raise Error, "Repository must use the owner/repository format" unless repository_name.match?(REPOSITORY_PATTERN)
 
@@ -37,12 +38,14 @@ module Services
         },
         credential_metadata: {
           "credential_strategy" => definition.credential_strategy,
+          "authority_fingerprint" => credential_fingerprint(token),
           "repository" => full_name,
           "repository_id" => repository.fetch("id").to_s,
           "clone_url" => repository["clone_url"],
           "default_branch" => repository["default_branch"],
           "private" => repository["private"],
-          "authority_summary" => "Direct GitHub access intended for #{full_name}. The token's GitHub permissions are the actual authority."
+          **self.class.authority_metadata(token, scopes: @oauth_scopes),
+          "authority_summary" => "Direct GitHub access intended for #{full_name}. Format and repository access do not prove the token is restricted to this repository; its GitHub permissions are the actual authority."
         }.compact
       }
     rescue KeyError
@@ -56,6 +59,27 @@ module Services
       true
     end
 
+    def self.authority_metadata(token, scopes: nil)
+      kind = if token.to_s.start_with?("github_pat_")
+        "fine_grained"
+      elsif token.to_s.start_with?("ghp_")
+        "classic"
+      else
+        "unknown"
+      end
+      {
+        "token_kind" => kind,
+        "oauth_scopes" => scopes,
+        "authority_source" => scopes.nil? ? (kind == "unknown" ? "unknown" : "token_format") : "X-OAuth-Scopes",
+        "authority_warnings" => [ "Token format is not proof of least privilege. Exact fine-grained permissions are not reported by these endpoints." ]
+      }
+    end
+
+    def self.fingerprint(token)
+      key = Rails.application.key_generator.generate_key("service-credential-fingerprint", 32)
+      OpenSSL::HMAC.hexdigest("SHA256", key, token)
+    end
+
     private
 
     def get_json(path, token)
@@ -66,6 +90,8 @@ module Services
       request["X-GitHub-Api-Version"] = "2022-11-28"
       request["User-Agent"] = "souls.house service connection"
       response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
+      header = response["X-OAuth-Scopes"]
+      @oauth_scopes = header.split(",").map(&:strip).reject(&:blank?).uniq if path == "/user" && !header.nil?
 
       case response
       when Net::HTTPSuccess
@@ -84,8 +110,7 @@ module Services
     end
 
     def credential_fingerprint(token)
-      key = Rails.application.key_generator.generate_key("service-credential-fingerprint", 32)
-      OpenSSL::HMAC.hexdigest("SHA256", key, token)
+      self.class.fingerprint(token)
     end
 
   end

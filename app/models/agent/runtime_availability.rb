@@ -32,17 +32,19 @@ module Agent::RuntimeAvailability
   end
 
   def eligible_for_conversation?
-    active? && runtime.in?(CONVERSATION_RUNTIMES)
+    active? && runtime.in?(CONVERSATION_RUNTIMES) && github_resident_import&.approval_error.nil?
   end
 
   def unavailability_reason
     return "agent_deprecated" if deprecated?
     return "agent_inactive" unless active?
+    return "github_import_approval_required" if github_resident_import&.approval_error
     return "agent_provisioning" if provisioning?
     "agent_unavailable" unless eligible_for_conversation?
   end
 
   def require_conversation_runtime!
+    github_resident_import&.require_approval!
     return if eligible_for_conversation?
 
     raise Unavailable.new(

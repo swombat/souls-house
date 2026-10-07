@@ -76,6 +76,34 @@ export const __route: RouterExposedMethods['__route'];
 
 /**
  * Generates rails route to
+ * /accounts/:account_id/guest_memberships/:id(.:format)
+ * @param {any} accountId
+ * @param {any} id
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountGuestMembershipPath: ((
+  accountId: RequiredRouteParameter,
+  id: RequiredRouteParameter,
+  options?: { format?: OptionalRouteParameter } & RouteOptions
+) => string) &
+  RouteHelperExtras;
+
+/**
+ * Generates rails route to
+ * /accounts/:account_id/guest_memberships(.:format)
+ * @param {any} accountId
+ * @param {object | undefined} options
+ * @returns {string} route path
+ */
+export const accountGuestMembershipsPath: ((
+  accountId: RequiredRouteParameter,
+  options?: { format?: OptionalRouteParameter } & RouteOptions
+) => string) &
+  RouteHelperExtras;
+
+/**
+ * Generates rails route to
  * /accounts/:id(.:format)
  * @param {any} id
  * @param {object | undefined} options

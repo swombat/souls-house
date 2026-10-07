@@ -40,11 +40,12 @@ class DeviceStreamTest < ActiveSupport::TestCase
     assert_equal 3, @stream.reload.batches_count
   end
 
-  test "erasure physically removes samples and tombstone rejects replay" do
+  test "deletion hides samples without removing them and tombstone rejects replay" do
     @stream.append!(@credential, @payload)
     @stream.erase_session!(@payload["session_id"])
-    assert_equal 0, @stream.device_stream_batches.count
-    assert_equal 0, @stream.reload.batches_count
+    assert_empty @stream.visible_batches
+    assert_equal 1, @stream.device_stream_batches.count
+    assert_equal 1, @stream.reload.batches_count
     assert @stream.device_stream_sessions.first.erased_at
     error = assert_raises(DeviceStream::Rejected) { @stream.append!(@credential, @payload) }
     assert_equal :gone, error.status
@@ -58,7 +59,8 @@ class DeviceStreamTest < ActiveSupport::TestCase
   test "bulk erasure revokes devices and forbids new sessions and credentials" do
     @stream.append!(@credential, @payload)
     @stream.erase!
-    assert_empty @stream.device_stream_batches
+    assert_empty @stream.visible_batches
+    assert_equal 1, @stream.device_stream_batches.count
     assert_nil DeviceStreamCredential.authenticate(@token)
     assert_raises(DeviceStream::Rejected) { @stream.issue_credential! }
     assert_raises(DeviceStream::Rejected) { @stream.append!(@credential, @payload.merge("session_id" => SecureRandom.uuid)) }

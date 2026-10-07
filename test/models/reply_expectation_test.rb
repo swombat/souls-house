@@ -108,6 +108,16 @@ class ReplyExpectationTest < ActiveSupport::TestCase
     assert_equal 0, summary[:total]
   end
 
+  test "message flags are personal and scoped to the viewed chat in the current account" do
+    record(@ask)
+    assert_equal [ @ask.to_param ], ReplyExpectation.summary_for(@user, account: @chat.account, chat: @chat)[:messages]
+    assert_empty summary[:messages]
+    assert_empty ReplyExpectation.summary_for(@user, account: accounts(:team_account), chat: @chat)[:messages]
+    assert_empty ReplyExpectation.summary_for(users(:existing_user), account: @chat.account, chat: @chat)[:messages]
+    @ask.discard!
+    assert_empty ReplyExpectation.summary_for(@user, account: @chat.account, chat: @chat)[:messages]
+  end
+
   test "tool streaming progress and metadata updates do not queue inference" do
     clear_enqueued_jobs
     @chat.messages.create!(role: "tool", content: "Test User?")

@@ -252,6 +252,9 @@ GEM
       json
       uri
       yaml
+    paper_trail (17.0.0)
+      activerecord (>= 7.1)
+      request_store (~> 1.4)
     parallel (1.27.0)
     parser (3.3.8.0)
       ast (~> 2.4.1)
@@ -315,6 +318,8 @@ GEM
     regexp_parser (2.10.0)
     reline (0.7.0)
       io-console (~> 0.5)
+    request_store (1.7.0)
+      rack (>= 1.4)
     rexml (3.4.4)
     rubocop (1.78.0)
       json (~> 2.3)
@@ -472,6 +477,7 @@ DEPENDENCIES
   letter_opener
   minitest (~> 5.27)
   pagy (~> 43.6.1)
+  paper_trail (~> 17.0)
   pg (~> 1.1)
   puma (>= 6.6.0)
   rails_app_version (~> 1.5)

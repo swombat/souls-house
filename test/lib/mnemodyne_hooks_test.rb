@@ -71,6 +71,38 @@ class MnemodyneHooksTest < ActiveSupport::TestCase
     end
   end
 
+  test "spawned helpers get no recall and no journal invitation, and do not move the turn floor" do
+    before = Rails.root.join("agent-runtime/memory_before_turn.py").to_s
+    stop = Rails.root.join("agent-runtime/stop_journal_reflex.py").to_s
+    [ { is_subagent: true }, { parent_session_id: "parent-1" } ].each do |marker|
+      out, error, result = Open3.capture3("python3", before,
+        stdin_data: { input_messages: [ { content: "Count the entries" } ] }.merge(marker).to_json)
+      assert result.success?
+      assert_empty out
+      assert_empty error
+
+      Dir.mktmpdir do |dir|
+        env = { "AGENT_IDENTITY_PATH" => dir }
+        out, error, result = Open3.capture3(env, "python3", stop,
+          stdin_data: { last_assistant_message: "11" }.merge(marker).to_json)
+        assert_equal 0, result.exitstatus
+        assert_empty out
+        assert_empty error
+        trace = File.join(dir, "memory/automation/state/stop-events.jsonl")
+        row = JSON.parse(File.readlines(trace).last)
+        assert_equal false, row.fetch("journal_invited")
+        assert_equal true, row.fetch("subagent")
+
+        # The resident's own stop afterwards still gets the full invitation:
+        # the helper's row is not the end of the previous resident turn.
+        _, prompt, result = Open3.capture3(env, "python3", stop,
+          stdin_data: { last_assistant_message: "Synthetic meaningful turn" }.to_json)
+        assert_equal 2, result.exitstatus
+        assert_includes prompt, "decide whether the just-completed turn has narrative shape"
+      end
+    end
+  end
+
   test "completed reflection receipts do not invite another turn or write memories" do
     [ "no shape", "journaled: A small moment", "journaled: A small moment; graph pending" ].each do |receipt|
       Dir.mktmpdir do |dir|

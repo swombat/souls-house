@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import { useForm } from '@inertiajs/svelte';
 import NewResident from './new.svelte';
 
@@ -15,6 +15,19 @@ const props = {
 
 beforeEach(() => localStorage.clear());
 afterEach(() => localStorage.clear());
+
+test('existing GitHub residents have a separate server-authorized entry point', () => {
+  render(NewResident, { ...props, github_resident_import_url: '/github-import/new' });
+  expect(screen.getByRole('link', { name: 'Bring an existing GitHub resident instead' })).toHaveAttribute(
+    'href',
+    '/github-import/new'
+  );
+});
+
+test('the GitHub import entry is absent without a server-provided URL', () => {
+  render(NewResident, props);
+  expect(screen.queryByRole('link', { name: 'Bring an existing GitHub resident instead' })).not.toBeInTheDocument();
+});
 
 test('a fresh resident defaults to the house offering, not the first grouped model', async () => {
   render(NewResident, props);

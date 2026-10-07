@@ -20,9 +20,9 @@ class MiraDiscardTelegramReviewTest < ActiveSupport::TestCase
 
 end
 
-class DiscardTelegramStillSendsTest < ActiveSupport::TestCase
+class KeptTelegramNotificationDisabledTest < ActiveSupport::TestCase
 
-  test "a kept message is still sent" do
+  test "a kept message is not sent by a legacy notification job" do
     agent = agents(:research_assistant)
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Notify kept")
     message = chat.messages.create!(role: "assistant", agent: agent, content: "Kept body")
@@ -34,7 +34,7 @@ class DiscardTelegramStillSendsTest < ActiveSupport::TestCase
         TelegramNotificationJob.perform_now(subscription, message, chat)
       end
     end
-    assert_includes captured.last, "Kept body"
+    assert_nil captured
   end
 
 end
