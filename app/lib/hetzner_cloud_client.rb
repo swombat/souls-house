@@ -28,6 +28,7 @@ class HetznerCloudClient
   LIST_PAGE_SIZE = 50
   # More pages than this for one label selector is not a listing we trust.
   LIST_MAX_PAGES = 20
+  PAGINATION_KEYS = %w[page per_page next_page last_page total_entries].freeze
   RETRYABLE_CODES = %w[rate_limit_exceeded locked conflict timeout unavailable].freeze
   CAPACITY_CODES = %w[resource_unavailable resource_limit_exceeded placement_error].freeze
   NETWORK_ERRORS = [SystemCallError, IOError, Timeout::Error, SocketError, OpenSSL::SSL::SSLError].freeze
@@ -185,12 +186,26 @@ class HetznerCloudClient
     list_servers("#{MANAGED_LABEL}=true,#{OPERATION_LABEL}=#{operation_id}")
   end
 
+  # Returns the action, or nil when Hetzner says it does not exist. An answer
+  # about a different action is an error, never a substitute.
   def find_action(id)
-    json = request(:get, "/actions/#{Integer(id)}").fetch("action")
-    error = json["error"].is_a?(Hash) ? json["error"]["code"] : nil
-    Action.new(id: json.fetch("id"), command: json["command"], status: json["status"], error_code: error)
+    action_from(request(:get, "/actions/#{Integer(id)}").fetch("action"), expected_id: Integer(id))
   rescue NotFound
     nil
+  end
+
+  # The create_server actions Hetzner holds for one server (normally one),
+  # for recovering a boot action whose id the house never received.
+  def create_actions_for(server_id)
+    body = request(:get, "/servers/#{Integer(server_id)}/actions", nil, command: "create_server", per_page: LIST_PAGE_SIZE)
+    actions = body["actions"]
+    raise Error.new("Hetzner Cloud actions listing is malformed", code: "invalid_response") unless actions.is_a?(Array)
+    pagination = body.dig("meta", "pagination")
+    unless pagination.is_a?(Hash) && pagination.key?("next_page") && pagination["next_page"].nil?
+      raise IncompleteListing.new("Hetzner Cloud actions listing is not complete", code: "incomplete_listing")
+    end
+
+    actions.map { |json| action_from(json) }
   end
 
   # Asks Hetzner to delete a server that belongs to the given placement.
@@ -212,6 +227,16 @@ class HetznerCloudClient
 
   private
 
+  def action_from(json, expected_id: nil)
+    raise Error.new("Hetzner Cloud action is malformed", code: "invalid_response") unless json.is_a?(Hash) && json["id"].is_a?(Integer)
+    if expected_id && json["id"] != expected_id
+      raise Error.new("Hetzner Cloud returned a different action", code: "mismatched_action")
+    end
+
+    error = json["error"].is_a?(Hash) ? json["error"]["code"] : nil
+    Action.new(id: json["id"], command: json["command"], status: json["status"], error_code: error)
+  end
+
   # Follows Hetzner's pagination to the end. Any page that cannot be read,
   # or pagination metadata that does not add up, raises rather than returning
   # a partial list: an absent server must never be inferred from a short read.
@@ -224,20 +249,37 @@ class HetznerCloudClient
       body = request(:get, "/servers", nil, label_selector: selector, page:, per_page: LIST_PAGE_SIZE)
       batch = body["servers"]
       pagination = body.dig("meta", "pagination")
-      unless batch.is_a?(Array) && pagination.is_a?(Hash) && pagination["page"] == page
-        raise IncompleteListing.new("Hetzner Cloud listing is missing pagination", code: "incomplete_listing")
+      incomplete!("is missing pagination") unless batch.is_a?(Array) && pagination.is_a?(Hash)
+      incomplete!("is missing pagination") unless PAGINATION_KEYS.all? { |key| pagination.key?(key) }
+
+      total = pagination["total_entries"]
+      last_page = pagination["last_page"]
+      next_page = pagination["next_page"]
+      unless pagination["page"] == page && pagination["per_page"] == LIST_PAGE_SIZE &&
+          total.is_a?(Integer) && total >= 0 && last_page.is_a?(Integer) && last_page >= 1 &&
+          batch.size <= LIST_PAGE_SIZE
+        incomplete!("pagination is inconsistent")
       end
 
       servers.concat(batch.map { |json| Server.from_api(json) })
-      next_page = pagination["next_page"]
-      break if next_page.nil?
-      raise IncompleteListing.new("Hetzner Cloud listing pagination is inconsistent", code: "incomplete_listing") unless next_page == page + 1
+      if next_page.nil?
+        # The last page must be the last page, and everything must be here.
+        incomplete!("ended early") unless page == last_page && servers.size == total
+        break
+      end
+      unless next_page == page + 1 && next_page <= last_page && batch.size == LIST_PAGE_SIZE
+        incomplete!("pagination is inconsistent")
+      end
 
       page = next_page
     end
     servers
   rescue TypeError, NoMethodError, KeyError
     raise IncompleteListing.new("Hetzner Cloud listing is malformed", code: "incomplete_listing")
+  end
+
+  def incomplete!(detail)
+    raise IncompleteListing.new("Hetzner Cloud listing #{detail}", code: "incomplete_listing")
   end
 
   def refuse!(message)
@@ -277,7 +319,11 @@ class HetznerCloudClient
     error = body["error"].is_a?(Hash) ? body["error"] : {}
     code = error["code"].to_s.match?(/\A[a-z_]{1,64}\z/) ? error["code"] : "http_#{status}"
     message = "Hetzner Cloud #{code} (HTTP #{status})"
-    raise CreateOutcomeUnknown.new(message, status:, code: "outcome_unknown") if method == :post && status >= 500
+    # A create that timed out or failed server-side may still have bought
+    # something, whatever error code came with it.
+    if method == :post && (status >= 500 || status == 408)
+      raise CreateOutcomeUnknown.new(message, status:, code: "outcome_unknown")
+    end
 
     raise error_class(code, status).new(message, status:, code:)
   rescue JSON::ParserError
@@ -288,8 +334,11 @@ class HetznerCloudClient
     raise Error.new("Hetzner Cloud returned an unreadable response (HTTP #{status})", status:, code: "invalid_response")
   end
 
+  # The status decides first: a server-side failure is never read as
+  # "absent" or "refused" because of the code that came with it.
   def error_class(code, status)
-    return NotFound if code == "not_found" || status == 404
+    return Error unless status.between?(400, 499) && status != 408
+    return NotFound if status == 404 && [ "not_found", "http_404" ].include?(code)
     return CapacityUnavailable if CAPACITY_CODES.include?(code)
     return NameTaken if code == "uniqueness_error"
 

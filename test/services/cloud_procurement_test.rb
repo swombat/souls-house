@@ -9,7 +9,7 @@ class CloudProcurementTest < ActiveSupport::TestCase
   class FakeClient
 
     attr_reader :creates, :deletes
-    attr_accessor :on_create, :servers, :actions, :on_delete, :on_list
+    attr_accessor :on_create, :servers, :actions, :on_delete, :on_list, :create_actions
 
     def initialize
       @creates = []
@@ -35,6 +35,10 @@ class CloudProcurementTest < ActiveSupport::TestCase
 
     def find_action(id)
       actions[id]
+    end
+
+    def create_actions_for(server_id)
+      (create_actions || {}).fetch(server_id, [])
     end
 
     def delete_server(id, placement_id:)
@@ -67,6 +71,10 @@ class CloudProcurementTest < ActiveSupport::TestCase
     HetznerCloudClient::Server.new(**{ id:, name: operation.provider_name, status:, server_type: operation.server_type,
                                        location: operation.location, image_id: operation.image_id, ipv4: "203.0.113.9",
                                        ipv6: "2001:db8::/64", labels: }.merge(overrides))
+  end
+
+  def action(id, status, command: "create_server", error_code: nil)
+    HetznerCloudClient::Action.new(id:, command:, status:, error_code:)
   end
 
   def created_for(operation, **)
@@ -403,6 +411,7 @@ class CloudProcurementTest < ActiveSupport::TestCase
   test "a server confirmed after the token expired needs review instead of enrollment" do
     operation = reconciling!
     @client.servers[4242] = server_for(operation)
+    @client.actions[77] = action(77, "success")
     service(clock: -> { @now + RunnerEnrollment::TOKEN_TTL + 1.second }).reconcile!(operation)
 
     assert_equal "needs_review", operation.reload.state
@@ -415,6 +424,7 @@ class CloudProcurementTest < ActiveSupport::TestCase
   def provisioned!
     operation = reconciling!
     @client.servers[4242] = server_for(operation)
+    @client.actions[77] = action(77, "success")
     service.reconcile!(operation)
     operation.reload
   end
@@ -484,6 +494,115 @@ class CloudProcurementTest < ActiveSupport::TestCase
     assert_equal "refused", operation.reload.state
     assert operation.runner_enrollment.revoked_at
     assert plan!.persisted?
+  end
+
+  # --- review repairs (Mira, 143abd62) ----------------------------------------
+
+  test "ambiguous or unrecognised provider errors keep the reservation" do
+    [
+      HetznerCloudClient::Error.new("timeout", status: 408, code: "http_408"),
+      HetznerCloudClient::Error.new("odd", status: 400, code: "something_new"),
+      HetznerCloudClient::Error.new("conflict", status: 409, code: "conflict"),
+      HetznerCloudClient::Error.new("contradiction", status: 503, code: "invalid_input")
+    ].each do |error|
+      operation = plan!
+      @client.on_create = ->(_) { raise error }
+      service.submit!(operation)
+
+      assert_equal "unknown", operation.reload.state, "#{error.status} #{error.code}"
+      assert_nil operation.runner_enrollment.revoked_at
+      assert_raises(CloudProcurement::NotAllowed) { plan! }
+      operation.update_columns(state: "refused")
+    end
+  end
+
+  test "a worker that stalls past the submit deadline after its claim never sends the create" do
+    operation = plan!
+    clock = @now
+    @client.on_create = ->(_) { flunk "no create after the deadline" }
+    stalling = Object.new
+    renderer = RunnerUserData
+    stalling.define_singleton_method(:render) do |**kwargs|
+      rendered = renderer.render(**kwargs)
+      clock += CloudProcurement::SUBMIT_DEADLINE + 1.second
+      rendered
+    end
+    CloudProcurement.new(client: @client, config: @config, renderer: stalling, clock: -> { clock }).submit!(operation)
+
+    assert_equal "needs_review", operation.reload.state
+    assert_equal "submit_deadline_passed", operation.review_reason
+    assert_empty @client.creates
+  end
+
+  test "an operator cannot close a purchase while its submit could still be live" do
+    operation = plan!
+    @client.on_create = ->(_) { raise HetznerCloudClient::CreateOutcomeUnknown.new("timeout", code: "outcome_unknown") }
+    service.submit!(operation)
+    assert_equal "unknown", operation.reload.state
+
+    inside = service(clock: -> { @now + CloudProcurement::CLOSE_FENCE - 1.second })
+    error = assert_raises(CloudProcurement::NotAllowed) do
+      inside.close_without_server!(operation, requested_by: @admin, reason: "checked the Hetzner console")
+    end
+    assert_match(/may still be in progress/, error.message)
+
+    after = service(clock: -> { @now + CloudProcurement::CLOSE_FENCE + 1.second })
+    after.close_without_server!(operation, requested_by: @admin, reason: "checked the Hetzner console")
+    assert_equal "refused", operation.reload.state
+  end
+
+  test "a server that arrives for a closed purchase is recorded, not dropped" do
+    operation = plan!
+    operation.update!(state: "refused", create_sent_at: @now)
+    created = created_for(operation)
+    service.send(:record_created!, operation, created)
+
+    operation.reload
+    assert_equal "refused", operation.state
+    assert_equal 4242, operation.provider_server_id
+    assert_equal "server_arrived_after_close:refused", operation.review_reason
+  end
+
+  test "a recorded boot action must be found, match and succeed explicitly" do
+    operation = reconciling!
+    @client.servers[4242] = server_for(operation)
+
+    service.reconcile!(operation)
+    assert_equal "create_action_missing", operation.reload.review_reason
+
+    operation.update_columns(state: "reconciling", review_reason: nil)
+    @client.actions[77] = action(77, "paused")
+    service.reconcile!(operation)
+    assert_equal "create_action_unrecognised", operation.reload.review_reason
+
+    operation.update_columns(state: "reconciling", review_reason: nil)
+    @client.actions[77] = action(77, "success")
+    @client.servers[4242] = server_for(operation, status: "starting")
+    service.reconcile!(operation)
+    assert_equal "reconciling", operation.reload.state
+  end
+
+  test "a discovered server's boot action is recovered from its history before boot is accepted" do
+    operation = plan!
+    operation.update!(state: "unknown")
+    RunnerEnrollment.mint!(placement: @placement, operation_id: operation.id, now: @now)
+    @client.servers[4242] = server_for(operation)
+    service.reconcile!(operation)
+    assert_nil operation.reload.create_action_id
+
+    # Running, but no boot action on record: not provisioned.
+    service.reconcile!(operation)
+    assert_equal "create_action_unverifiable", operation.reload.review_reason
+
+    operation.update_columns(state: "reconciling", review_reason: nil)
+    @client.create_actions = { 4242 => [ action(88, "success") ] }
+    service.reconcile!(operation)
+    assert_equal 88, operation.reload.create_action_id
+    assert_equal "reconciling", operation.state
+
+    @client.actions[88] = action(88, "success")
+    service.reconcile!(operation)
+    assert_equal "provisioned", operation.reload.state
   end
 
   test "the reconcile job reschedules only while an operation is settling" do

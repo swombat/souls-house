@@ -115,7 +115,7 @@ class HetznerCloudClientTest < ActiveSupport::TestCase
     stub_request(:get, "#{API}/servers/9").to_return(status: 404, body: { error: { code: "not_found", message: "nope" } }.to_json)
     stub_request(:get, "#{API}/servers")
       .with(query: { label_selector: "souls-house/managed=true,souls-house/placement=p-7", page: "1", per_page: "50" })
-      .to_return(status: 200, body: { servers: [server_json], meta: { pagination: { page: 1, next_page: nil } } }.to_json)
+      .to_return(status: 200, body: page_body([ server_json ], page: 1, next_page: nil, last_page: 1, total: 1))
 
     assert_nil @client.find_server(9)
     assert_equal [42], @client.find_by_placement("p-7").map(&:id)
@@ -160,22 +160,27 @@ class HetznerCloudClientTest < ActiveSupport::TestCase
 
   OPERATION_SELECTOR = "souls-house/managed=true,souls-house/operation=cpo-1".freeze
 
-  def page_body(servers, page:, next_page:)
-    { servers:, meta: { pagination: { page:, next_page: } } }.to_json
+  def page_body(servers, page:, next_page:, last_page: next_page || page, total: nil, per_page: 50)
+    total ||= servers.size
+    { servers:, meta: { pagination: { page:, per_page:, previous_page: nil, next_page:, last_page:, total_entries: total } } }.to_json
+  end
+
+  def fifty(start)
+    (start...(start + 50)).map { |id| server_json(id:) }
   end
 
   test "operation discovery reads every page" do
     stub_request(:get, "#{API}/servers").with(query: { label_selector: OPERATION_SELECTOR, page: "1", per_page: "50" })
-      .to_return(status: 200, body: page_body([ server_json(id: 1) ], page: 1, next_page: 2))
+      .to_return(status: 200, body: page_body(fifty(1), page: 1, next_page: 2, last_page: 2, total: 51))
     stub_request(:get, "#{API}/servers").with(query: { label_selector: OPERATION_SELECTOR, page: "2", per_page: "50" })
-      .to_return(status: 200, body: page_body([ server_json(id: 2) ], page: 2, next_page: nil))
+      .to_return(status: 200, body: page_body([ server_json(id: 51) ], page: 2, next_page: nil, last_page: 2, total: 51))
 
-    assert_equal [ 1, 2 ], @client.find_by_operation("cpo-1").map(&:id)
+    assert_equal (1..51).to_a, @client.find_by_operation("cpo-1").map(&:id)
   end
 
   test "a missing page, missing pagination or skipped page is an incomplete listing, never a short answer" do
     stub_request(:get, "#{API}/servers").with(query: hash_including(page: "1"))
-      .to_return(status: 200, body: page_body([ server_json(id: 1) ], page: 1, next_page: 2))
+      .to_return(status: 200, body: page_body(fifty(1), page: 1, next_page: 2, last_page: 2, total: 51))
     stub_request(:get, "#{API}/servers").with(query: hash_including(page: "2")).to_return(status: 503, body: "{}")
     error = assert_raises(HetznerCloudClient::Error) { @client.find_by_operation("cpo-1") }
     assert error.retryable?
@@ -187,13 +192,73 @@ class HetznerCloudClientTest < ActiveSupport::TestCase
 
     WebMock.reset!
     stub_request(:get, "#{API}/servers").with(query: hash_including(page: "1"))
-      .to_return(status: 200, body: page_body([], page: 1, next_page: 3))
+      .to_return(status: 200, body: page_body(fifty(1), page: 1, next_page: 3, last_page: 3, total: 120))
     assert_raises(HetznerCloudClient::IncompleteListing) { @client.find_by_operation("cpo-1") }
 
     WebMock.reset!
     stub_request(:get, "#{API}/servers").with(query: hash_including(page: "1"))
-      .to_return(status: 200, body: { servers: [ { "name" => "no id" } ], meta: { pagination: { page: 1, next_page: nil } } }.to_json)
+      .to_return(status: 200, body: page_body([ { "name" => "no id" } ], page: 1, next_page: nil))
     assert_raises(HetznerCloudClient::IncompleteListing) { @client.find_by_operation("cpo-1") }
+
+    # Mira's reproduction: an empty "last" page that says there are 51.
+    WebMock.reset!
+    stub_request(:get, "#{API}/servers").with(query: hash_including(page: "1"))
+      .to_return(status: 200, body: page_body([], page: 1, next_page: nil, last_page: 2, total: 51))
+    assert_raises(HetznerCloudClient::IncompleteListing) { @client.find_by_operation("cpo-1") }
+
+    # next_page missing entirely, rather than null.
+    WebMock.reset!
+    stub_request(:get, "#{API}/servers").with(query: hash_including(page: "1"))
+      .to_return(status: 200, body: { servers: [], meta: { pagination: { page: 1, per_page: 50, last_page: 1, total_entries: 0 } } }.to_json)
+    assert_raises(HetznerCloudClient::IncompleteListing) { @client.find_by_operation("cpo-1") }
+
+    # A short page that claims a next page.
+    WebMock.reset!
+    stub_request(:get, "#{API}/servers").with(query: hash_including(page: "1"))
+      .to_return(status: 200, body: page_body([ server_json ], page: 1, next_page: 2, last_page: 2, total: 2))
+    assert_raises(HetznerCloudClient::IncompleteListing) { @client.find_by_operation("cpo-1") }
+
+    # And the honest empty answer is accepted.
+    WebMock.reset!
+    stub_request(:get, "#{API}/servers").with(query: hash_including(page: "1"))
+      .to_return(status: 200, body: page_body([], page: 1, next_page: nil, last_page: 1, total: 0))
+    assert_equal [], @client.find_by_operation("cpo-1")
+  end
+
+  test "a server-side failure is never read as absent, and a 408 create is unknown" do
+    stub_request(:get, "#{API}/servers/9").to_return(status: 503, body: { error: { code: "not_found" } }.to_json)
+    error = assert_raises(HetznerCloudClient::Error) { @client.find_server(9) }
+    assert_not_kind_of HetznerCloudClient::NotFound, error
+    assert error.retryable?
+
+    stub_request(:get, "#{API}/servers/10").to_return(status: 500, body: { error: { code: "resource_unavailable" } }.to_json)
+    error = assert_raises(HetznerCloudClient::Error) { @client.find_server(10) }
+    assert_equal HetznerCloudClient::Error, error.class
+
+    stub_request(:post, "#{API}/servers").to_return(status: 408, body: "{}")
+    assert_raises(HetznerCloudClient::CreateOutcomeUnknown) { create! }
+
+    stub_request(:post, "#{API}/servers").to_return(status: 503, body: { error: { code: "resource_unavailable" } }.to_json)
+    assert_raises(HetznerCloudClient::CreateOutcomeUnknown) { create! }
+  end
+
+  test "an action reply about a different action is an error, not a substitute" do
+    stub_request(:get, "#{API}/actions/77").to_return(status: 200,
+      body: { action: { id: 78, command: "create_server", status: "success" } }.to_json)
+    error = assert_raises(HetznerCloudClient::Error) { @client.find_action(77) }
+    assert_equal "mismatched_action", error.code
+  end
+
+  test "recovers a server's create actions only from a complete listing" do
+    stub_request(:get, "#{API}/servers/42/actions").with(query: { command: "create_server", per_page: "50" })
+      .to_return(status: 200, body: { actions: [ { id: 88, command: "create_server", status: "success" } ],
+                                      meta: { pagination: { page: 1, next_page: nil } } }.to_json)
+    assert_equal [ 88 ], @client.create_actions_for(42).map(&:id)
+
+    WebMock.reset!
+    stub_request(:get, "#{API}/servers/42/actions").with(query: hash_including(command: "create_server"))
+      .to_return(status: 200, body: { actions: [] }.to_json)
+    assert_raises(HetznerCloudClient::IncompleteListing) { @client.create_actions_for(42) }
   end
 
   test "create reports the boot action and the image, and reads actions" do
