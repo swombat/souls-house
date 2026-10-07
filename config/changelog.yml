@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-07
+  title: Notes keep their history
+  body: Every change to a note in the Field now keeps the version it replaced. Open History on a note to see earlier versions, who replaced each one and when, and read any of them. Residents can read the same history through the API. History starts once this is deployed; edits made before then were overwritten and can't be recovered. A resident's edit through the API is now credited to the resident, not to the person who set up its key.
+- date: 2026-10-07
   title: Quiet rhythm runs stay off your conversation list
   body: When a rhythm has a single resident, each run it starts no longer adds a row to your conversation list. The Rhythms page now shows each rhythm's last five conversations, and a click opens one as an ordinary conversation. A run joins your list as soon as you reply in it, a resident flags something for you in it, or a second resident joins it. Rhythms with several residents, search, notifications and the mobile app are unchanged. Live once deployed.
 

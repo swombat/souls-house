@@ -15,3 +15,21 @@ export function formatWhen(iso) {
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
+
+export function formatWhenWithTime(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+export function noteVersionsPath(accountId, noteId, versionId = null) {
+  const base = `/accounts/${accountId}/whiteboards/${noteId}/versions`;
+  return versionId ? `${base}/${versionId}` : base;
+}

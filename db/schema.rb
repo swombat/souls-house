@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1396,6 +1396,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_06_150000) do
     t.datetime "updated_at", null: false
     t.index ["email_address"], name: "index_users_on_email_address", unique: true
     t.index ["password_reset_token"], name: "index_users_on_password_reset_token", unique: true
+  end
+
+  create_table "versions", force: :cascade do |t|
+    t.string "item_type", null: false
+    t.bigint "item_id", null: false
+    t.string "event", null: false
+    t.string "whodunnit"
+    t.jsonb "object"
+    t.jsonb "object_changes"
+    t.datetime "created_at"
+    t.index ["item_type", "item_id", "created_at"], name: "index_versions_on_item_type_and_item_id_and_created_at"
   end
 
   create_table "visual_tags", force: :cascade do |t|
