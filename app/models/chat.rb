@@ -325,7 +325,7 @@ class Chat < ApplicationRecord
 
     agent_ids = ordered_agents.map(&:id)
 
-    # Queue the job that will process all agents in sequence
+    # Wake every resident at once (see AllAgentsResponseJob#dispatch_all).
     AllAgentsResponseJob.perform_later(self, agent_ids)
   end
 

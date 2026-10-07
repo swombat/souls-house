@@ -12,15 +12,16 @@ class RhythmDispatchTest < ActiveSupport::TestCase
     @dispatch = @rhythm.fire!(manual: true, request_key: "round").occurrence.message_dispatch
   end
 
-  test "rhythm dispatch reserves a linked resident round only once" do
+  test "rhythm dispatch wakes its residents together, once" do
     assert @dispatch.rhythm?
     assert @dispatch.from_message?
-    assert_enqueued_jobs 1, only: ManualAgentResponseJob do
+    assert_enqueued_jobs 2, only: ManualAgentResponseJob do
       2.times { MessageDispatchJob.perform_now(@dispatch) }
     end
     run = @dispatch.reload.runtime_interaction
     assert_equal @dispatch, run.message_dispatch
-    assert_equal @dispatch.target_agent_ids.drop(1), run.response_chain_agent_ids
+    assert_equal @dispatch.target_agent_ids, @dispatch.runtime_interactions.order(:id).map(&:agent_id)
+    assert_equal [], run.response_chain_agent_ids
     assert run.claim_dispatch!
     assert_not run.claim_dispatch!
   end

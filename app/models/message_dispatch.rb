@@ -140,16 +140,17 @@ class MessageDispatch < ApplicationRecord
         next settle!(reason == "not_started_in_time" ? "expired" : "cancelled", reason)
       end
 
+      # Every target is woken at once (Daniel, MYnRwY, 2026-10-07), each from
+      # the same moment; none waits on another's reply. The dispatch records
+      # the first run it reserved; the rest are its runtime_interactions.
       busy = false
-      target_agent_ids.each_with_index do |agent_id, index|
+      target_agent_ids.each do |agent_id|
         agent = chat.agents.find_by(id: agent_id) or next
         begin
           interaction = AgentRuntimeInteraction.reserve!(
-            agent: agent, chat: chat, enqueue: true, message_dispatch: self, deadline: expires_at,
-            response_chain_agent_ids: target_agent_ids.drop(index + 1)
+            agent: agent, chat: chat, enqueue: true, message_dispatch: self, deadline: expires_at
           )
-          update!(status: "reserved", runtime_interaction: interaction)
-          break
+          update!(status: "reserved", runtime_interaction: interaction) if pending?
         rescue Agent::RuntimeAvailability::Unavailable
           # One named resident who can't run is the request's answer; in a
           # round, they are skipped as the web's round skips them.

@@ -16,16 +16,31 @@ class MessageDispatchTest < ActiveSupport::TestCase
     @dispatch = @message.message_dispatch
   end
 
-  test "acceptance captures the targets in mention order and reserves one linked, capped run" do
+  test "acceptance captures the targets in mention order and wakes every one at once, linked and capped" do
     assert_equal [ @first.id, @second.id ], @dispatch.target_agent_ids
 
-    assert_enqueued_jobs 1, only: ManualAgentResponseJob do
+    assert_enqueued_jobs 2, only: ManualAgentResponseJob do
       MessageDispatchJob.perform_now(@dispatch)
     end
     run = @dispatch.reload.runtime_interaction
-    assert_equal [ "reserved", @first, @dispatch, [ @second.id ] ],
+    assert_equal [ "reserved", @first, @dispatch, [] ],
                  [ @dispatch.status, run.agent, run.message_dispatch, run.response_chain_agent_ids ]
-    assert run.execution_deadline_at <= @dispatch.expires_at
+    runs = @dispatch.runtime_interactions.order(:id).to_a
+    assert_equal [ @first, @second ], runs.map(&:agent)
+    runs.each do |each_run|
+      assert_equal [], each_run.response_chain_agent_ids
+      assert each_run.execution_deadline_at <= @dispatch.expires_at
+    end
+  end
+
+  # A chain reserved before Ask all became concurrent (2026-10-07) still
+  # finishes as it began. Tests of that path build one directly.
+  def reserve_legacy_chain!
+    @dispatch.update_columns(target_agent_ids: [ @first.id ])
+    MessageDispatchJob.perform_now(@dispatch)
+    run = @dispatch.reload.runtime_interaction
+    run.update_columns(response_chain_agent_ids: [ @second.id ])
+    run
   end
 
   test "duplicate dispatch deliveries, even after the run completes, reserve nothing more" do
@@ -183,9 +198,8 @@ class MessageDispatchTest < ActiveSupport::TestCase
     assert_equal "cancelled", run.reload.execution_state
   end
 
-  test "the chain carries the dispatch; a lost continuation is not recovered, and is recorded at the horizon" do
-    MessageDispatchJob.perform_now(@dispatch)
-    run = @dispatch.reload.runtime_interaction
+  test "a legacy chain carries the dispatch; a lost continuation is not recovered, and is recorded at the horizon" do
+    run = reserve_legacy_chain!
     run.claim_dispatch!
     run.activity_configuration!
     AllAgentsResponseJob.stub(:perform_later, nil) do
@@ -205,9 +219,8 @@ class MessageDispatchTest < ActiveSupport::TestCase
     assert_equal [ @second, @dispatch ], [ successor.agent, successor.message_dispatch ]
   end
 
-  test "past the recovery horizon an unstarted continuation is recorded, and nothing is started" do
-    MessageDispatchJob.perform_now(@dispatch)
-    run = @dispatch.reload.runtime_interaction
+  test "past the recovery horizon a legacy chain's unstarted continuation is recorded, and nothing is started" do
+    run = reserve_legacy_chain!
     run.claim_dispatch!
     AllAgentsResponseJob.stub(:perform_later, nil) { run.finish_execution!("completed") }
     clear_enqueued_jobs
@@ -358,27 +371,30 @@ class MessageDispatchTest < ActiveSupport::TestCase
     assert_raises(ActiveRecord::StatementInvalid) { @dispatch.update_columns(client_invocation_id: "k-0000001", request_digest: "v1:x") }
   end
 
-  test "an invoke-all chain is swept like a mention's: past the horizon its unstarted continuation is recorded, nothing started" do
+  test "an invoke-all wakes everyone at once and is swept like a mention's, with no continuation owed" do
     @message.message_dispatch.update!(status: "cancelled", reason: "test", settled_at: Time.current)
     dispatch = MessageDispatch.invoke!(chat: @chat, user: @user, client_invocation_id: "invoke-00000001", agent: nil)
-    run = dispatch.runtime_interaction
-    assert_equal @chat.agents.order(:id).ids.drop(1), run.response_chain_agent_ids
-    run.claim_dispatch!
-    AllAgentsResponseJob.stub(:perform_later, nil) { run.finish_execution!("completed") }
+    runs = dispatch.runtime_interactions.order(:id).to_a
+    assert_equal @chat.agents.order(:id).ids, runs.map(&:agent_id)
+    assert runs.all? { |run| run.response_chain_agent_ids.empty? }
+    runs.each do |run|
+      run.claim_dispatch!
+      run.finish_execution!("completed")
+    end
     clear_enqueued_jobs
 
     travel MessageDispatch::RECOVERY_HORIZON + 1.minute do
       assert_no_enqueued_jobs { MessageDispatchSweepJob.perform_now }
-      assert_equal [ "expired", "continuation_not_started_in_time" ], dispatch.reload.values_at(:status, :reason)
+      assert_equal "reserved", dispatch.reload.status
+      assert dispatch.settled_at
     end
   end
 
-  test "an invoke's continuation carries the dispatch and is gated by it" do
+  test "every run of an invoke-all carries the dispatch and is gated by it" do
     dispatch = MessageDispatch.invoke!(chat: @chat, user: @user, client_invocation_id: "invoke-00000001", agent: nil)
     run = dispatch.runtime_interaction
     run.claim_dispatch!
     run.finish_execution!("completed")
-    perform_enqueued_jobs(only: AllAgentsResponseJob)
     successor = dispatch.runtime_interactions.order(:id).last
     assert_not_equal run, successor
     assert_equal dispatch, successor.message_dispatch

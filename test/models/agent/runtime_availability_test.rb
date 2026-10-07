@@ -97,15 +97,14 @@ class Agent::RuntimeAvailabilityTest < ActiveSupport::TestCase
     assert_empty chat.mentioned_agent_ids("@#{@agent.name}")
   end
 
-  test "skipping a member advances the all agent chain" do
+  test "an unavailable member is skipped and the others still wake" do
     @agent.update_columns(runtime: "deprecated")
     other = agents(:code_reviewer)
     other.update_columns(runtime: "external")
     chat = @agent.account.chats.create!(manual_responses: true, agents: [ @agent, other ])
     clear_enqueued_jobs
-    assert_enqueued_with(job: AllAgentsResponseJob, args: [ chat, [ other.id ] ]) do
-      AllAgentsResponseJob.perform_now(chat, [ @agent.id, other.id ])
-    end
+    AllAgentsResponseJob.perform_now(chat, [ @agent.id, other.id ])
+    assert_equal [ other ], chat.agent_runtime_interactions.map(&:agent)
   end
 
   test "retired sandbox admission does not inspect or clean up containers" do

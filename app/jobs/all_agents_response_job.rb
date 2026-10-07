@@ -16,11 +16,46 @@ class AllAgentsResponseJob < ApplicationJob
         continue_chain(chat, agent_ids, previous, dispatch)
       end
     else
-      dispatch_next(chat, agent_ids)
+      dispatch_all(chat, agent_ids)
     end
   end
 
   private
+
+  # Ask all wakes every resident at once (Daniel, MYnRwY, 2026-10-07). Each
+  # starts from the room as it is now, not from whoever finished first; a
+  # resident who wants to read the others' answers can wait and read them.
+  # A resident already responding is skipped, never woken as a second copy.
+  def dispatch_all(chat, agent_ids)
+    reserved = live_reservations?
+    busy = []
+    chat.agents.where(id: agent_ids).sort_by { |agent| agent_ids.index(agent.id) }.each do |agent|
+      unless reserved
+        ManualAgentResponseJob.perform_later(chat, agent)
+        next
+      end
+      begin
+        AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, enqueue: true)
+      rescue Agent::RuntimeAvailability::Unavailable
+        # Removed/disabled residents do not hold up the others.
+        next
+      rescue ArgumentError
+        busy << agent.name
+      end
+    end
+    return if busy.empty?
+
+    ActionCable.server.broadcast("Chat:#{chat.to_param}", {
+      action: "error", message: "Not woken again: #{busy.to_sentence} #{busy.one? ? "is" : "are"} already responding."
+    })
+  end
+
+  def live_reservations?
+    AgentRuntimeInteraction.live_activity_enabled? || ResidentTurn.enabled?
+  end
+
+  # Only chains started before Ask all became concurrent reach here: each
+  # finishes as it began, one resident after another.
 
   def continue_chain(chat, agent_ids, previous, dispatch = nil)
     previous.with_lock do
@@ -34,7 +69,7 @@ class AllAgentsResponseJob < ApplicationJob
 
   def dispatch_next(chat, agent_ids, dispatch = nil)
     agent = chat.agents.find_by(id: agent_ids.first)
-    if agent && (AgentRuntimeInteraction.live_activity_enabled? || ResidentTurn.enabled?)
+    if agent && live_reservations?
       begin
         AgentRuntimeInteraction.reserve!(agent: agent, chat: chat, enqueue: true,
           response_chain_agent_ids: agent_ids.drop(1), message_dispatch: dispatch)
