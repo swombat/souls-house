@@ -28,6 +28,14 @@ class CiImageTest(unittest.TestCase):
         self.assertTrue(copies)
         self.assertTrue(all(line.startswith("COPY --from=") for line in copies))
 
+    def test_native_gem_validation_uses_only_readonly_manifests(self):
+        workflow = (ROOT / ".github/workflows/ci-image.yml").read_text()
+        for manifest in ("Gemfile", "Gemfile.lock", ".ruby-version"):
+            self.assertIn(f"source=$PWD/{manifest},target=/check/{manifest},readonly", workflow)
+        self.assertIn("ci-tooling:check bundle install --jobs 4 --retry 3", workflow)
+        self.assertIn("--env BUNDLE_FROZEN=true", workflow)
+        self.assertNotIn('source=$PWD,target=', workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
