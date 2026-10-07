@@ -120,3 +120,10 @@ jobs:
       - name: Resident runtime contracts
         if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s test/runtime -p '*_test.py'
+      - name: Host runner contracts
+        if: ${{ !cancelled() }}
+        # The VM runner uses Debian's python3-cryptography for Ed25519; CI pins
+        # a version from PyPI. The shared vector pins the wire format.
+        run: |
+          python3 -m pip install 'cryptography==46.0.3'
+          python3 -m unittest discover -s test/host_runner -p '*_test.py'

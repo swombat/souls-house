@@ -1,0 +1,15 @@
+{
+  "body": "{\"facts\":{\"provider_server_id\":4242},\"public_key\":\"A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=\",\"token\":\"example-token\"}",
+  "headers": {
+    "Content-Type": "application/json",
+    "X-Runner-Id": "rnr_0123456789abcdef",
+    "X-Runner-Nonce": "00112233445566778899aabbccddeeff",
+    "X-Runner-Signature": "WcBM1jWSAtLlVP+hxtTlUuKicALoA0+9hqYmPQTZJ9OwnEqYeD+Bt+lx4Dd+xOftv6FbcLDbVVpzKVAweRDmDw==",
+    "X-Runner-Timestamp": "1790000000"
+  },
+  "method": "POST",
+  "path": "/api/v1/host_runner/enrollment",
+  "public_key_b64": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+  "seed_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "signing_string": "souls-house-runner-v1\nPOST\n/api/v1/host_runner/enrollment\nff0ee8106da800722ea2bfdab55075305c8468683034d3c148ae1aa265f9a41e\nrnr_0123456789abcdef\n1790000000\n00112233445566778899aabbccddeeff"
+}

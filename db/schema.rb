@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_193000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1201,6 +1201,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_193000) do
     t.check_constraint "creator_id IS NULL OR creator_agent_id IS NULL", name: "rhythms_one_creator"
   end
 
+  create_table "runner_enrollments", force: :cascade do |t|
+    t.bigint "agent_placement_id", null: false
+    t.bigint "procurement_operation_id"
+    t.string "public_id", null: false
+    t.string "token_digest", null: false
+    t.datetime "expires_at", null: false
+    t.bigint "expected_provider_server_id"
+    t.string "public_key"
+    t.datetime "enrolled_at"
+    t.datetime "last_heartbeat_at"
+    t.jsonb "last_facts", default: {}, null: false
+    t.datetime "revoked_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_placement_id"], name: "index_runner_enrollments_on_agent_placement_id"
+    t.index ["procurement_operation_id"], name: "index_runner_enrollments_on_procurement_operation_id", unique: true, where: "(procurement_operation_id IS NOT NULL)"
+    t.index ["public_id"], name: "index_runner_enrollments_on_public_id", unique: true
+    t.index ["token_digest"], name: "index_runner_enrollments_on_token_digest", unique: true
+    t.check_constraint "expected_provider_server_id > 0", name: "runner_enrollments_positive_server_id"
+  end
+
+  create_table "runner_request_nonces", force: :cascade do |t|
+    t.bigint "runner_enrollment_id", null: false
+    t.string "nonce", null: false
+    t.datetime "created_at", null: false
+    t.index ["created_at"], name: "index_runner_request_nonces_on_created_at"
+    t.index ["runner_enrollment_id", "nonce"], name: "index_runner_request_nonces_on_runner_enrollment_id_and_nonce", unique: true
+  end
+
   create_table "safeguard_classifier_failures", force: :cascade do |t|
     t.bigint "agent_id", null: false
     t.datetime "created_at", null: false
@@ -1585,6 +1614,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_193000) do
   add_foreign_key "rhythms", "accounts", on_delete: :cascade
   add_foreign_key "rhythms", "agents", column: "creator_agent_id", on_delete: :nullify
   add_foreign_key "rhythms", "users", column: "creator_id", on_delete: :nullify
+  add_foreign_key "runner_enrollments", "agent_placements"
+  add_foreign_key "runner_request_nonces", "runner_enrollments", on_delete: :cascade
   add_foreign_key "safeguard_classifier_failures", "agents"
   add_foreign_key "safeguard_detections", "agent_runtime_interactions", column: "reclaimed_by_interaction_id", on_delete: :nullify
   add_foreign_key "safeguard_detections", "agent_runtime_interactions", on_delete: :nullify
