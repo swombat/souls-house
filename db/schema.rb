@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -181,6 +181,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_200000) do
     t.integer "generation", default: 1, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "location"
     t.index ["agent_id"], name: "index_agent_placements_on_agent_id", unique: true
     t.index ["provider_server_id"], name: "index_agent_placements_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
     t.check_constraint "generation >= 1", name: "agent_placements_positive_generation"
@@ -568,6 +569,42 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_200000) do
     t.index ["manual_responses"], name: "index_chats_on_manual_responses"
     t.index ["visual_tag_id"], name: "index_chats_on_visual_tag_id"
     t.index ["web_access"], name: "index_chats_on_web_access"
+  end
+
+  create_table "cloud_procurement_operations", force: :cascade do |t|
+    t.bigint "agent_placement_id", null: false
+    t.bigint "requested_by_id", null: false
+    t.string "public_id", null: false
+    t.string "state", default: "planned", null: false
+    t.string "approval_reference", null: false
+    t.string "location", null: false
+    t.string "server_type", null: false
+    t.bigint "image_id", null: false
+    t.jsonb "ssh_key_ids", default: [], null: false
+    t.string "provider_name", null: false
+    t.bigint "provider_server_id"
+    t.bigint "create_action_id"
+    t.bigint "delete_action_id"
+    t.string "ipv4"
+    t.string "ipv6"
+    t.string "last_error_code"
+    t.string "review_reason"
+    t.datetime "create_sent_at"
+    t.datetime "provisioned_at"
+    t.datetime "delete_requested_at"
+    t.datetime "deleted_at"
+    t.datetime "last_reconciled_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_placement_id"], name: "index_cloud_procurement_operations_one_unresolved", unique: true, where: "((state)::text <> ALL ((ARRAY['refused'::character varying, 'deleted'::character varying])::text[]))"
+    t.index ["location", "state"], name: "index_cloud_procurement_operations_on_location_and_state"
+    t.index ["provider_name"], name: "index_cloud_procurement_operations_on_provider_name", unique: true
+    t.index ["provider_server_id"], name: "index_cloud_procurement_operations_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
+    t.index ["public_id"], name: "index_cloud_procurement_operations_on_public_id", unique: true
+    t.index ["requested_by_id"], name: "index_cloud_procurement_operations_on_requested_by_id"
+    t.check_constraint "image_id > 0", name: "cloud_procurement_operations_positive_image_id"
+    t.check_constraint "provider_server_id > 0", name: "cloud_procurement_operations_positive_server_id"
+    t.check_constraint "state::text = ANY (ARRAY['planned'::character varying, 'create_in_flight'::character varying, 'reconciling'::character varying, 'provisioned'::character varying, 'unknown'::character varying, 'refused'::character varying, 'needs_review'::character varying, 'deleting'::character varying, 'deleted'::character varying]::text[])", name: "cloud_procurement_operations_state"
   end
 
   create_table "conversation_compactions", force: :cascade do |t|
@@ -1540,6 +1577,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_200000) do
   add_foreign_key "chats", "ai_models"
   add_foreign_key "chats", "visual_tags", column: ["visual_tag_id", "account_id"], primary_key: ["id", "account_id"]
   add_foreign_key "chats", "whiteboards", column: "active_whiteboard_id"
+  add_foreign_key "cloud_procurement_operations", "agent_placements"
+  add_foreign_key "cloud_procurement_operations", "users", column: "requested_by_id"
   add_foreign_key "conversation_compactions", "chats"
   add_foreign_key "conversation_drafts", "chats"
   add_foreign_key "conversation_drafts", "users"
@@ -1615,6 +1654,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_200000) do
   add_foreign_key "rhythms", "agents", column: "creator_agent_id", on_delete: :nullify
   add_foreign_key "rhythms", "users", column: "creator_id", on_delete: :nullify
   add_foreign_key "runner_enrollments", "agent_placements"
+  add_foreign_key "runner_enrollments", "cloud_procurement_operations", column: "procurement_operation_id"
   add_foreign_key "runner_request_nonces", "runner_enrollments", on_delete: :cascade
   add_foreign_key "safeguard_classifier_failures", "agents"
   add_foreign_key "safeguard_detections", "agent_runtime_interactions", column: "reclaimed_by_interaction_id", on_delete: :nullify

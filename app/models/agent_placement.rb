@@ -6,10 +6,15 @@ class AgentPlacement < ApplicationRecord
   STATES = %w[pending ready failed retired].freeze
 
   belongs_to :agent, inverse_of: :placement
+  # Purchases are history: a placement that has had one is never deleted.
+  has_many :cloud_procurement_operations, dependent: :restrict_with_exception
 
   validates :agent_id, uniqueness: true
   validates :backend, inclusion: { in: BACKENDS }
   validates :state, inclusion: { in: STATES }
+  # Confirmed hosting geography, set when procurement verifies a server.
+  validates :location, inclusion: { in: CloudProcurementOperation::EU_LOCATIONS }, allow_nil: true
+  validates :location, absence: true, if: -> { backend == "local" }
   # Reserved for future fencing; no runtime currently enforces this generation.
   validates :generation, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :provider_server_id,
