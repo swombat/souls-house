@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -270,6 +270,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_090000) do
     t.datetime "updated_at", null: false
     t.boolean "usage_complete"
     t.string "usage_scope"
+    t.bigint "follow_through_of_id"
+    t.datetime "follow_through_checked_at"
     t.index ["agent_id", "chaos_session_id", "started_at"], name: "idx_runtime_interactions_agent_chaos_started"
     t.index ["agent_id", "created_at"], name: "index_agent_runtime_interactions_on_agent_id_and_created_at"
     t.index ["agent_id", "session_id", "started_at"], name: "idx_runtime_interactions_agent_session_started"
@@ -278,6 +280,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_090000) do
     t.index ["agent_id"], name: "index_agent_runtime_interactions_on_agent_id"
     t.index ["chat_id", "created_at"], name: "index_agent_runtime_interactions_on_chat_id_and_created_at"
     t.index ["chat_id"], name: "index_agent_runtime_interactions_on_chat_id"
+    t.index ["follow_through_of_id"], name: "index_agent_runtime_interactions_on_follow_through_of_id", unique: true, where: "(follow_through_of_id IS NOT NULL)"
     t.index ["message_dispatch_id"], name: "index_agent_runtime_interactions_on_message_dispatch_id"
     t.index ["run_id"], name: "index_agent_runtime_interactions_on_run_id", unique: true
     t.index ["session_id"], name: "index_agent_runtime_interactions_on_session_id"
@@ -1461,6 +1464,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_090000) do
   add_foreign_key "agent_memories", "agents"
   add_foreign_key "agent_runtime_attempts", "agent_runtime_interactions"
   add_foreign_key "agent_runtime_events", "agent_runtime_attempts"
+  add_foreign_key "agent_runtime_interactions", "agent_runtime_interactions", column: "follow_through_of_id", on_delete: :nullify
   add_foreign_key "agent_runtime_interactions", "agents"
   add_foreign_key "agent_runtime_interactions", "chats"
   add_foreign_key "agent_runtime_interactions", "message_dispatches", on_delete: :nullify
