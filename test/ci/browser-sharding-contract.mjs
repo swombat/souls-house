@@ -60,6 +60,12 @@ try {
   for (const test of assigned) {
     assert.equal(test.project === 'admission', test.file === 'account_capacity.spec.js');
   }
+  const admissionShard = shards.find((shard) => shard.some((test) => test.project === 'admission'));
+  const firstAdmission = admissionShard.findIndex((test) => test.project === 'admission');
+  assert(
+    admissionShard.slice(firstAdmission).every((test) => test.project === 'admission'),
+    'Admission must be last on its shard; a rebalance must not put ordinary tests after global-setting changes'
+  );
   // Ordinary E2E files remain whole; single worker serializes admission with
   // the other files on its private backend. No dependency project is replayed.
   for (const file of new Set(baseline.map((test) => test.file))) {

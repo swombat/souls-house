@@ -50,6 +50,7 @@ jobs:
       PGPASSWORD: postgres
       PARALLEL_WORKERS: '4'
       BUNDLE_PATH: vendor/bundle
+      BUNDLE_FROZEN: 'true'
     steps:
       - uses: actions/checkout@v5
         with:
@@ -64,6 +65,7 @@ jobs:
           path: vendor/bundle
           key: ${{ runner.os }}-ci-gems-v1-${{ hashFiles('.github/ci/Dockerfile', 'Gemfile.lock') }}
       - name: Install application dependencies
+        id: dependencies
         run: |
           bundle install --jobs 4 --retry 3
           bun install --frozen-lockfile
@@ -77,13 +79,14 @@ jobs:
         if: matrix.suite == 'rails'
         run: bin/rails db:prepare
       - name: Build test assets
+        id: assets
         if: matrix.suite == 'rails'
         run: bin/vite build --mode test
       - name: Rails tests
         if: matrix.suite == 'rails'
         run: ruby scripts/run-rails-shard.rb ${{ matrix.shard }} ${{ matrix.total }}
       - name: Rails system tests
-        if: ${{ !cancelled() && matrix.suite == 'rails' && matrix.shard == 1 }}
+        if: ${{ !cancelled() && matrix.suite == 'rails' && matrix.shard == 1 && steps.dependencies.outcome == 'success' && steps.assets.outcome == 'success' }}
         run: bin/rails test:system
       - name: Browser end-to-end tests
         if: matrix.suite == 'e2e'

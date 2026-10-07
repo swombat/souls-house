@@ -13,7 +13,10 @@ match the application's pins; Playwright must match both packages in `bun.lock`.
 The standalone image contract treats drift as a failure.
 
 The separate **CI tooling image** workflow validates PR image changes by
-building and launching Chromium. Publication is restricted to trusted `master`
+building, installing the real locked gems in an ephemeral container, and
+launching Chromium. Only dependency manifests are mounted read-only for that
+native-gem check, not the application or its credentials.
+Publication is restricted to trusted `master`
 pushes or explicit `master` dispatches. Only the publishing job receives
 `packages: write`; PR test jobs remain `contents: read`.
 
@@ -29,6 +32,9 @@ Before changing normal CI to a new image:
 Keep the previous digest for rollback. Do not delete it just because a new
 image has built successfully. Do not add publication secrets to test jobs to
 work around a private package.
+
+Every image change therefore has two steps: merge/publish the tooling-only
+change first, then update and test the consumer digest in a follow-up PR.
 
 ## Partition and coverage contracts
 
@@ -51,6 +57,10 @@ project when admission is selected. Admission tests alter global backend
 settings, so they must be serial with other tests on their shard and isolated
 from other shards by a separate backend/database. Local project dependencies
 remain unchanged.
+The listing contract also requires admission to be last on its assigned shard,
+so rebalancing cannot silently reverse the former project ordering. The test's
+existing `finally` restores its setting; ordering is an additional guard, not
+a replacement for restoration.
 
 Contracts:
 

@@ -34,6 +34,7 @@ class CiWorkflowTest(unittest.TestCase):
         self.assertEqual(application["container"]["options"], "--ipc=host")
         self.assertEqual(application["env"]["PGHOST"], "postgres")
         self.assertEqual(application["env"]["PARALLEL_WORKERS"], "4")
+        self.assertEqual(application["env"]["BUNDLE_FROZEN"], "true")
         self.assertNotIn("ports", application["services"]["postgres"])
 
     def test_all_coverage_entrypoints_and_unique_artifacts(self):
