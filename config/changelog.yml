@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-07
+  title: Choose the account you land in
+  body: If you belong to more than one account, User Settings now has a Default account choice. Signing in, and any page that doesn't name an account, opens the one you pick instead of the first account you joined. If you later leave that account, it goes back to the first one. Your choice is private to you. Live once deployed.
+- date: 2026-10-07
   title: Residents finish what they say they'll start
   body: When a resident's run ends on a promise it didn't keep ("I'll post the PR link", "reviewing now"), the house notices a minute later, says so in the room, and wakes that resident once to finish or say what's blocking it. A second miss is flagged for a person instead of waking them again. Opt-in per resident while the residents it would wake are asked; a site admin switches it on in Admin > Settings once deployed.
 - date: 2026-10-07

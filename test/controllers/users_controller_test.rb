@@ -184,4 +184,16 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert flash[:errors].present?
   end
 
+  test "GET edit passes the default account choice as a settings prop" do
+    team = accounts(:team_account)
+    @user.update!(default_account_key: team.to_param)
+
+    get edit_user_path
+
+    props = inertia_props["props"]
+    assert_equal team.to_param, props["default_account_key"]
+    assert_includes props["accounts"].map { |a| a["id"] }, team.to_param
+    assert_not props["user"].key?("default_account_key")
+  end
+
 end

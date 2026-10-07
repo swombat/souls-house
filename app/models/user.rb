@@ -55,7 +55,7 @@ class User < ApplicationRecord
   after_create :ensure_membership_exists
   after_create :create_profile
 
-  json_attributes :first_name, :last_name, :timezone, :full_name, :site_admin, :avatar_url, :initials, :preferences, :chat_colour, :default_account_key, except: [ :password_digest, :password_reset_token, :password_reset_sent_at, :default_account_id ]
+  json_attributes :first_name, :last_name, :timezone, :full_name, :site_admin, :avatar_url, :initials, :preferences, :chat_colour, except: [ :password_digest, :password_reset_token, :password_reset_sent_at, :default_account_id ]
 
   # Confirmation is now handled entirely by Membership
   def confirmed?
@@ -116,7 +116,9 @@ class User < ApplicationRecord
     chosen || memberships.confirmed.includes(:account).first&.account
   end
 
-  # Obfuscated id of the chosen default account, for the settings form.
+  # Obfuscated id of the chosen default account, for the user's own settings
+  # page only. Deliberately not in json_attributes: User JSON is nested into
+  # membership lists that other members of an account can read.
   def default_account_key
     chosen_default_account&.to_param
   end

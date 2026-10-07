@@ -854,4 +854,18 @@ class UserTest < ActiveSupport::TestCase
     assert_nil user.reload.default_account_id
   end
 
+  test "the default account choice stays out of user and membership JSON" do
+    user = users(:user_1)
+    user.update!(default_account_key: accounts(:team_account).to_param)
+
+    assert_not user.as_json.key?("default_account_key")
+    assert_not user.as_json.key?("default_account_id")
+
+    membership_json = memberships(:daniel_personal).as_json
+    nested_user = membership_json["user"] || {}
+    assert_not nested_user.key?("default_account_key")
+    assert_not nested_user.key?("default_account_id")
+    assert_not membership_json.to_json.include?(accounts(:team_account).to_param)
+  end
+
 end

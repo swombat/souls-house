@@ -156,6 +156,72 @@ test.describe('User Settings Tests', () => {
     });
   });
 
+  test.describe('Default account', () => {
+    const baseUser = {
+      id: 1,
+      email_address: 'test@example.com',
+      first_name: 'Test',
+      last_name: 'User',
+      chat_colour: null,
+    };
+    const accounts = [
+      { id: 'aaaaaa', name: 'Nexus' },
+      { id: 'bbbbbb', name: 'Our Account' },
+    ];
+
+    async function recordPatches(page) {
+      const requests = [];
+      await page.route('**/user', async (route) => {
+        requests.push(route.request().postDataJSON());
+        await route.fulfill({ status: 200, json: {} });
+      });
+      return requests;
+    }
+
+    test('is hidden with a single account and not sent', async ({ mount, page }) => {
+      const requests = await recordPatches(page);
+      const component = await mount(UserEditPage, {
+        props: { user: baseUser, timezones: [], accounts: [accounts[0]] },
+      });
+
+      await expect(component.locator('#default_account')).toHaveCount(0);
+      await component.locator('button[type="submit"]').click();
+      await expect.poll(() => requests.length).toBe(1);
+      expect(requests[0].user).not.toHaveProperty('default_account_key');
+    });
+
+    test('sends the chosen account', async ({ mount, page }) => {
+      const requests = await recordPatches(page);
+      const component = await mount(UserEditPage, {
+        props: { user: baseUser, timezones: [], accounts },
+      });
+
+      await expect(component.locator('#default_account')).toContainText('First account you joined');
+      await component.locator('#default_account').click();
+      await page.getByRole('option', { name: 'Our Account', exact: true }).click();
+      await expect(component.locator('#default_account')).toContainText('Our Account');
+
+      await component.locator('button[type="submit"]').click();
+      await expect.poll(() => requests.length).toBe(1);
+      expect(requests[0].user.default_account_key).toBe('bbbbbb');
+    });
+
+    test('clears back to automatic', async ({ mount, page }) => {
+      const requests = await recordPatches(page);
+      const component = await mount(UserEditPage, {
+        props: { user: baseUser, timezones: [], accounts, default_account_key: 'bbbbbb' },
+      });
+
+      await expect(component.locator('#default_account')).toContainText('Our Account');
+      await component.locator('#default_account').click();
+      await page.getByRole('option', { name: 'First account you joined', exact: true }).click();
+
+      await component.locator('button[type="submit"]').click();
+      await expect.poll(() => requests.length).toBe(1);
+      expect(requests[0].user.default_account_key).toBe('');
+    });
+  });
+
   test.describe('Change Password Page', () => {
     test('should render change password page with all elements', async ({ mount }) => {
       const props = {

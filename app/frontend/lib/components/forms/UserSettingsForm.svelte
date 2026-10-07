@@ -1,6 +1,6 @@
 <script>
   import { userPath } from '@/routes';
-  import { router, page } from '@inertiajs/svelte';
+  import { router } from '@inertiajs/svelte';
   import Form from './Form.svelte';
   import Input from '$lib/components/shadcn/input/input.svelte';
   import Label from '$lib/components/shadcn/label/label.svelte';
@@ -9,17 +9,26 @@
   import Avatar from '$lib/components/Avatar.svelte';
   import ColourPicker from '$lib/components/ColourPicker.svelte';
 
-  let { user, timezones, colour_options = [], onCancel, onSuccess } = $props();
+  let {
+    user,
+    timezones,
+    colour_options = [],
+    accounts = [],
+    default_account_key = null,
+    onCancel,
+    onSuccess,
+  } = $props();
 
   const AUTOMATIC = 'automatic';
-  const accounts = $derived($page.props?.accounts || []);
+  const choosesDefaultAccount = $derived(accounts.length > 1);
 
-  let user_form = $state({ ...user, default_account_key: user.default_account_key || AUTOMATIC });
+  let user_form = $state({ ...user });
+  let defaultAccountChoice = $state(default_account_key || AUTOMATIC);
+  // The default account is only sent when the choice is on screen.
   const formData = () => ({
-    user: {
-      ...user_form,
-      default_account_key: user_form.default_account_key === AUTOMATIC ? '' : user_form.default_account_key,
-    },
+    user: choosesDefaultAccount
+      ? { ...user_form, default_account_key: defaultAccountChoice === AUTOMATIC ? '' : defaultAccountChoice }
+      : user_form,
   });
 
   function handleAvatarUpdate() {
@@ -94,15 +103,15 @@
     <p class="text-sm text-gray-500 mt-1">Type to search for your timezone (e.g., "London")</p>
   </div>
 
-  {#if accounts.length > 1}
+  {#if choosesDefaultAccount}
     <div>
       <Label for="default_account">Default account</Label>
-      <Select.Root type="single" name="default_account" bind:value={user_form.default_account_key}>
+      <Select.Root type="single" name="default_account" bind:value={defaultAccountChoice}>
         <Select.Trigger class="w-full" id="default_account">
-          {#if user_form.default_account_key === AUTOMATIC}
+          {#if defaultAccountChoice === AUTOMATIC}
             First account you joined
           {:else}
-            {accounts.find((a) => a.id === user_form.default_account_key)?.name || 'Account'}
+            {accounts.find((a) => a.id === defaultAccountChoice)?.name || 'Account'}
           {/if}
         </Select.Trigger>
         <Select.Content>
