@@ -82,6 +82,10 @@ subscription's cancellation can never re-hold a resident whose replacement is pa
   hosted residents a `complimentary` *hosting* entitlement with **no new
   inference allowance**. That keeps today's subsidy exactly as large as it is,
   not $10 × residents. Detached legacy grants (no resident) stay as they are.
+- **Paid replaces, never stacks.** While a resident's entitlement is `active` or
+  `grace` with `source: stripe`, every house call is charged to its paid ledger
+  only. A legacy grant attached to that resident is not drawn on, and its
+  sponsor may reassign it to another resident as today.
 - **Clock: UTC calendar month**, the existing ledger's clock, disclosed on the
   pricing page ("allowance resets on the 1st, UTC"). A subscription starting
   mid-month gets its tier's allowance for the rest of that month. The limit is
@@ -92,8 +96,11 @@ subscription's cancellation can never re-hold a resident whose replacement is pa
   `payment_behavior: pending_if_incomplete`, so a failed proration payment leaves
   the old tier in force and changes nothing. The higher limit (and resources at
   next container restart) applies once the payment succeeds. Downgrades are
-  scheduled for period end, so allowance never shrinks below what's already spent
-  mid-month.
+  scheduled in Stripe for subscription period end, which is generally **not** a
+  calendar-month boundary. The downgrade changes resources at period end, but
+  the allowance limit for the current UTC month stays at the highest tier paid
+  in that month. The lower limit starts on the 1st after. Remaining allowance is
+  always `max(0, limit − spent − reserved)`, and spend is never reset or refunded.
 - **Strict admission for paid ledgers.** A call is admitted only if
   `limit − spent − outstanding reservations ≥ reservation`. Because the reservation
   is the upper bound under the pinned route's request/price bounds, paid spend
@@ -120,11 +127,21 @@ subscription's cancellation can never re-hold a resident whose replacement is pa
   failed renewal (`grace_deadline` stored). Stripe may keep retrying, and a
   successful retry inside grace returns to `active`. Reaching the deadline holds
   the resident even if Stripe still shows `past_due`.
+- **The deadline is imposed by our own job**, not by a Stripe event (Stripe may
+  send nothing at that moment). A job is scheduled at `grace_deadline`, and the
+  sweeper also holds any `grace` entitlement past its deadline. Transitions are
+  monotonic: `grace_started_at` is set only on `active → grace`, so replaying or
+  re-fetching `past_due` never restarts grace. A `held` entitlement leaves `held`
+  only when the current subscription is `active` (invoice paid). `past_due`
+  seen while held changes nothing.
 - Scheduled cancellation (`cancel_at_period_end`) is shown to the owner and
   resident from the moment it is set. It holds at period end, with no grace.
 - **Recovery:** paying the outstanding invoice, or a replacement checkout, makes
-  that subscription current and the state `active`. The hold lifts. The owner's
-  separate `paused` flag is never changed by billing in either direction.
+  that subscription current and the state `active`. The hold lifts. Lifting the
+  hold removes **only** the billing stop reason. The container restarts and
+  work resumes only if no other stop reason remains: the owner's `paused` flag,
+  a disabled account or resident, a memory suspension, unsupported placement.
+  Billing never changes `paused` in either direction.
 
 ## The hold boundary
 
@@ -138,7 +155,12 @@ what is lapsed, not just house tokens.
 - **Queued turns** are cancelled through the existing cancellation path with a
   visible reason.
 - **An in-flight turn** may finish under its normal turn timeout, capped at 30
-  minutes for this purpose. Its final writes (journal, memory, message) are kept.
+  minutes from the hold (its *drain deadline*). Its final writes (journal,
+  memory, message) are kept. Because a turn makes several inference calls, the
+  reservation check has exactly one exception: a call carrying the ID of a
+  turn admitted *before* `held_at` is admitted until that turn's drain deadline
+  (and, for house inference, only within the remaining allowance). Background
+  jobs, rhythms, subagents spawned after the hold and new turns get no exception.
 - **Container-local execution** (cron, background jobs inside the container)
   can't be stopped by a Rails skip, so once in-flight work has drained, the
   resident's container is **stopped, not removed**. Volumes, home, memory and
@@ -230,8 +252,21 @@ what is lapsed, not just house tokens.
    free house-wide ceiling is exhausted.
 9. Grace holds at its deadline even while Stripe still reports `past_due`.
 10. A UK VAT ID doesn't zero tax. An EU VAT ID that fails verification is flagged.
+11. Replaying `past_due` neither restarts grace nor releases a hold. The deadline
+    job holds without any Stripe event.
+12. A turn admitted before the hold completes its later inference calls until
+    its drain deadline. A call without such a turn ID is refused at once.
+13. A downgrade at mid-month period end after heavy spend leaves remaining at
+    zero (not negative, not refilled). The lower limit applies from the 1st.
+14. Recovery leaves an owner-paused or disabled resident stopped. A resident
+    with a paid entitlement never draws on its attached legacy grant.
 
 ## Phases
+
+Size: a medium integration, not three tables and a webhook. The first build
+excludes dedicated VMs, bring-your-own tiers and any custom billing UI. This
+revision closes the design; further changes come from implementation findings,
+not more architecture.
 
 1. Models, tier catalogue, entitlements and states, webhook/sweeper/reconcile,
    Checkout + Portal links, complimentary backfill, paid ledger and strict
