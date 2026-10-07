@@ -121,10 +121,18 @@
 
 <nav>
   <div class="flex items-center justify-between p-4 px-4 md:px-10 border-b gap-2 md:gap-4">
-    <div class="flex items-center gap-4 md:gap-8">
-      <Link href="/" class="flex items-center gap-2">
-        <Logo class="h-8 w-8 md:h-10 md:w-10" />
-        <span class="hidden sm:inline">{siteSettings?.site_name || DEFAULT_SITE_NAME}</span>
+    <div class="flex min-w-0 items-center gap-4 md:gap-8">
+      <Link href="/" class="flex min-w-0 items-center gap-2">
+        <Logo class="h-8 w-8 shrink-0 md:h-10 md:w-10" />
+        {#if currentUser && currentAccount?.name}
+          <!-- The logo already names the site; signed in, this slot names the account you are in. -->
+          <span
+            class="truncate max-w-[45vw] md:max-w-[16rem]"
+            title={currentAccount.name}
+            data-testid="nav-account-name">{currentAccount.name}</span>
+        {:else}
+          <span class="hidden sm:inline">{siteSettings?.site_name || DEFAULT_SITE_NAME}</span>
+        {/if}
       </Link>
       <div class="hidden md:flex items-center">
         <!-- Remount Inertia links when their account-scoped href changes so the click handler cannot retain the previous URL. -->
