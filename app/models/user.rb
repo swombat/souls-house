@@ -24,6 +24,9 @@ class User < ApplicationRecord
 
   # API keys for external access
   has_many :api_keys, dependent: :destroy
+  # The account a signed-in user lands in when no account is in the URL.
+  # Nil means "the first confirmed membership", the behaviour before the setting.
+  belongs_to :chosen_default_account, class_name: "Account", foreign_key: :default_account_id, optional: true
   has_many :requested_github_resident_imports, class_name: "GithubResidentImport",
     foreign_key: :requested_by_id, dependent: :restrict_with_error
   has_many :approved_github_resident_imports, class_name: "GithubResidentImport",
@@ -47,11 +50,12 @@ class User < ApplicationRecord
   validates :email_address, presence: true,
     uniqueness: { case_sensitive: false },
     format: { with: URI::MailTo::EMAIL_REGEXP }
+  validate :default_account_must_be_confirmed, if: -> { default_account_id_changed? || @default_account_key_unreadable }
 
   after_create :ensure_membership_exists
   after_create :create_profile
 
-  json_attributes :first_name, :last_name, :timezone, :full_name, :site_admin, :avatar_url, :initials, :preferences, :chat_colour, except: [ :password_digest, :password_reset_token, :password_reset_sent_at ]
+  json_attributes :first_name, :last_name, :timezone, :full_name, :site_admin, :avatar_url, :initials, :preferences, :chat_colour, :default_account_key, except: [ :password_digest, :password_reset_token, :password_reset_sent_at, :default_account_id ]
 
   # Confirmation is now handled entirely by Membership
   def confirmed?
@@ -108,7 +112,26 @@ class User < ApplicationRecord
   end
 
   def default_account
-    memberships.confirmed.includes(:account).first&.account
+    chosen = confirmed_accounts.find_by(id: default_account_id) if default_account_id
+    chosen || memberships.confirmed.includes(:account).first&.account
+  end
+
+  # Obfuscated id of the chosen default account, for the settings form.
+  def default_account_key
+    chosen_default_account&.to_param
+  end
+
+  def default_account_key=(key)
+    @default_account_key_unreadable = false
+    return self.default_account_id = nil if key.blank?
+
+    decoded = begin
+      Account.decode_id(key.to_s)
+    rescue Hashids::InputError
+      nil
+    end
+    @default_account_key_unreadable = decoded.nil?
+    self.default_account_id = decoded if decoded
   end
 
   # For finding or creating invited users
@@ -157,6 +180,14 @@ class User < ApplicationRecord
   end
 
   private
+
+  def default_account_must_be_confirmed
+    return errors.add(:default_account, "is not an account you belong to") if @default_account_key_unreadable
+    return if default_account_id.nil?
+    return if confirmed_accounts.exists?(id: default_account_id)
+
+    errors.add(:default_account, "is not an account you belong to")
+  end
 
   def create_profile
     # Create a profile for the user with default theme

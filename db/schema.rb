@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_170100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_183000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1414,6 +1414,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_170100) do
     t.datetime "password_reset_sent_at"
     t.string "password_reset_token"
     t.datetime "updated_at", null: false
+    t.bigint "default_account_id"
+    t.index ["default_account_id"], name: "index_users_on_default_account_id"
     t.index ["email_address"], name: "index_users_on_email_address", unique: true
     t.index ["password_reset_token"], name: "index_users_on_password_reset_token", unique: true
   end
@@ -1604,6 +1606,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_170100) do
   add_foreign_key "tool_calls", "messages"
   add_foreign_key "tweet_logs", "agents"
   add_foreign_key "tweet_logs", "x_integrations"
+  add_foreign_key "users", "accounts", column: "default_account_id", on_delete: :nullify
   add_foreign_key "visual_tags", "accounts"
   add_foreign_key "whiteboards", "accounts"
   add_foreign_key "x_integrations", "accounts"

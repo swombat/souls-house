@@ -79,7 +79,7 @@ class UsersController < ApplicationController
   end
 
   def user_params
-    params.require(:user).permit(:first_name, :last_name, :timezone, :avatar, :theme, :chat_colour, preferences: [ :theme ], profile_attributes: [ :first_name, :last_name, :timezone, :avatar, :theme, :chat_colour ])
+    params.require(:user).permit(:first_name, :last_name, :timezone, :avatar, :theme, :chat_colour, :default_account_key, preferences: [ :theme ], profile_attributes: [ :first_name, :last_name, :timezone, :avatar, :theme, :chat_colour ])
   end
 
   def separate_user_and_profile_params

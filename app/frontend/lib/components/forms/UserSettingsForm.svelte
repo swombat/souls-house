@@ -1,6 +1,6 @@
 <script>
   import { userPath } from '@/routes';
-  import { router } from '@inertiajs/svelte';
+  import { router, page } from '@inertiajs/svelte';
   import Form from './Form.svelte';
   import Input from '$lib/components/shadcn/input/input.svelte';
   import Label from '$lib/components/shadcn/label/label.svelte';
@@ -11,7 +11,16 @@
 
   let { user, timezones, colour_options = [], onCancel, onSuccess } = $props();
 
-  let user_form = $state({ ...user });
+  const AUTOMATIC = 'automatic';
+  const accounts = $derived($page.props?.accounts || []);
+
+  let user_form = $state({ ...user, default_account_key: user.default_account_key || AUTOMATIC });
+  const formData = () => ({
+    user: {
+      ...user_form,
+      default_account_key: user_form.default_account_key === AUTOMATIC ? '' : user_form.default_account_key,
+    },
+  });
 
   function handleAvatarUpdate() {
     // Reload the page to get updated user data
@@ -22,7 +31,7 @@
 <Form
   action={userPath()}
   method="patch"
-  data={() => ({ user: user_form })}
+  data={formData}
   title="Personal Information"
   submitLabel="Save Changes"
   submitLabelProcessing="Saving..."
@@ -84,6 +93,28 @@
     </Select.Root>
     <p class="text-sm text-gray-500 mt-1">Type to search for your timezone (e.g., "London")</p>
   </div>
+
+  {#if accounts.length > 1}
+    <div>
+      <Label for="default_account">Default account</Label>
+      <Select.Root type="single" name="default_account" bind:value={user_form.default_account_key}>
+        <Select.Trigger class="w-full" id="default_account">
+          {#if user_form.default_account_key === AUTOMATIC}
+            First account you joined
+          {:else}
+            {accounts.find((a) => a.id === user_form.default_account_key)?.name || 'Account'}
+          {/if}
+        </Select.Trigger>
+        <Select.Content>
+          <Select.Item value={AUTOMATIC}>First account you joined</Select.Item>
+          {#each accounts as account}
+            <Select.Item value={account.id}>{account.name}</Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
+      <p class="text-sm text-gray-500 mt-1">The account you land in after signing in.</p>
+    </div>
+  {/if}
 
   <!-- Separator line -->
   <div class="border-t my-6"></div>

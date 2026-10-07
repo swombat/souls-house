@@ -813,4 +813,45 @@ class UserTest < ActiveSupport::TestCase
     assert_not_nil medium_variant
   end
 
+  test "default_account honours a chosen confirmed account" do
+    user = users(:user_1)
+    team = accounts(:team_account)
+    user.update!(default_account_key: team.to_param)
+
+    assert_equal team, user.reload.default_account
+    assert_equal team.to_param, user.default_account_key
+  end
+
+  test "default_account falls back when the chosen account is no longer mine" do
+    user = users(:user_1)
+    team = accounts(:team_account)
+    user.update!(default_account_key: team.to_param)
+    memberships(:team_account_owner).update_columns(confirmed_at: nil)
+
+    assert_equal user.personal_account, user.reload.default_account
+  end
+
+  test "default_account cannot be an account the user does not belong to" do
+    user = users(:user_1)
+    user.default_account_key = accounts(:unconfirmed_user_account).to_param
+
+    assert_not user.valid?
+    assert user.errors[:default_account].any?
+  end
+
+  test "an unreadable default account key is rejected, not silently cleared" do
+    user = users(:user_1)
+    user.default_account_key = "!!!"
+
+    assert_not user.valid?
+  end
+
+  test "a blank default account key clears the choice" do
+    user = users(:user_1)
+    user.update!(default_account_key: accounts(:team_account).to_param)
+    user.update!(default_account_key: "")
+
+    assert_nil user.reload.default_account_id
+  end
+
 end
