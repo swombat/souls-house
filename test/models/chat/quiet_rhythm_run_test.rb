@@ -1,6 +1,9 @@
 require "test_helper"
+require "action_cable/test_helper"
 
 class Chat::QuietRhythmRunTest < ActiveSupport::TestCase
+
+  include ActionCable::TestHelper
 
   setup do
     @user = users(:user_1)
@@ -53,24 +56,20 @@ class Chat::QuietRhythmRunTest < ActiveSupport::TestCase
     assert_not chat.quiet_rhythm_run?
   end
 
-  test "the eye touches the run so the sidebar refreshes" do
+  test "the eye on a run broadcasts to the account so the sidebar refetches" do
     chat = fire(resident_rhythm)
     message = chat.messages.create!(role: "assistant", agent: @agent, content: "Daniel?", suppress_automatic_dispatch: true)
-    before = chat.reload.updated_at
-    travel 1.minute do
+    assert_broadcasts("Account:#{@account.obfuscated_id}", 1) do
       ReplyExpectation.record!(message: message, user: @user, score: 0.9, classifier_version: "test")
     end
-    assert_operator chat.reload.updated_at, :>, before
   end
 
   test "a second resident taking a seat brings the run in" do
     chat = fire(resident_rhythm)
-    before = chat.reload.updated_at
-    travel 1.minute do
+    assert_broadcasts("Account:#{@account.obfuscated_id}", 1) do
       chat.chat_agents.create!(agent: @other_agent)
     end
     assert_not chat.quiet_rhythm_run?
-    assert_operator chat.reload.updated_at, :>, before
   end
 
   test "a rhythm with two residents is never quiet" do
