@@ -144,6 +144,8 @@ class ChatsController < ApplicationController
     if params[:show_deleted].present? && can_manage_account?
       chats.latest
     else
+      # Quiet rhythm runs live on their rhythm's page (Chat::QuietRhythmRun).
+      chats = chats.listed
       chats.active.latest + chats.archived.latest
     end
   end

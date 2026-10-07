@@ -1401,6 +1401,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_090000) do
     t.index ["password_reset_token"], name: "index_users_on_password_reset_token", unique: true
   end
 
+  create_table "versions", force: :cascade do |t|
+    t.string "item_type", null: false
+    t.bigint "item_id", null: false
+    t.string "event", null: false
+    t.string "whodunnit"
+    t.jsonb "object"
+    t.jsonb "object_changes"
+    t.datetime "created_at"
+    t.index ["item_type", "item_id", "created_at"], name: "index_versions_on_item_type_and_item_id_and_created_at"
+  end
+
   create_table "visual_tags", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "label", limit: 80, null: false

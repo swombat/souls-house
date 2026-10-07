@@ -16,6 +16,8 @@ class ReplyExpectation < ApplicationRecord
   }
 
   after_commit -> { self.class.refresh_for(user_id) }
+  # The eye on a quiet rhythm run brings it into the list (Chat::QuietRhythmRun).
+  after_create_commit -> { message.chat.announce_listing_change }
 
   def self.summary_for(user, account:, chat: nil)
     counts = visible_to(user).state_open.group("chats.account_id", "chats.id")

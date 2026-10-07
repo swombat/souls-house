@@ -6,6 +6,8 @@ class ApplicationController < ActionController::Base
   include AccountScoping
   include FeatureToggleable
   allow_browser versions: :modern
+  # PaperTrail 17 no longer adds this callback itself.
+  before_action :set_paper_trail_whodunnit
 
   rescue_from ActiveRecord::RecordNotFound, with: :record_not_found
 
@@ -34,6 +36,12 @@ class ApplicationController < ActionController::Base
   wrap_parameters false # Disable default wrapping of parameters in JSON requests (Helpful with Inertia js)
 
   private
+
+  # Who made a versioned change, as "User:12". A Proc, so it is read when the
+  # version is written rather than when the callback runs.
+  def user_for_paper_trail
+    -> { ItemVersion.whodunnit_for(Current.user) }
+  end
 
   def record_not_found
     if request.headers["X-Inertia"]

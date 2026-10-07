@@ -9,6 +9,9 @@ class ChatAgent < ApplicationRecord
   validates :agent_id, uniqueness: { scope: :chat_id }
   validate :agent_takes_part_in_account, on: :create
 
+  # A second seat ends a quiet rhythm run's solitude (Chat::QuietRhythmRun).
+  after_create_commit -> { chat.announce_listing_change }
+
   scope :closed_for_initiation, -> { where.not(closed_for_initiation_at: nil) }
   scope :open_for_initiation, -> { where(closed_for_initiation_at: nil) }
 

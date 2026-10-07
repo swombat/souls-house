@@ -68,6 +68,22 @@ test('a member brings a file into the Field, writes a note, and deletes the file
     await expect(page.getByText('The meeting on Tuesday.')).toBeVisible();
     await shot('4-note');
 
+    // Editing in place keeps the old text: History lists it and reads it back.
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.getByPlaceholder(/Write your whiteboard content/).fill('# Sunday\n\nThe meeting moved to Wednesday.');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByText('The meeting moved to Wednesday.')).toBeVisible();
+    await page.getByTestId('note-history-open').click();
+    const history = page.getByTestId('note-history');
+    await expect(history.getByTestId('note-version')).toHaveCount(1);
+    await expect(history.getByTestId('note-version').first()).toContainText(/Replaced .* by /);
+    await shot('4b-note-history');
+    await history.getByTestId('note-version').first().click();
+    await expect(history.getByTestId('note-version-content')).toContainText('The meeting on Tuesday.');
+    await shot('4c-note-past-version');
+    await page.keyboard.press('Escape');
+    await expect(history).toHaveCount(0);
+
     await page.getByRole('tab', { name: /Files/ }).click();
     await page.getByTestId('field-item').filter({ hasText: 'Tuesday meeting' }).click();
     page.once('dialog', (dialog) => dialog.accept());

@@ -59,7 +59,9 @@ never infer API parity from the UI.
 
 - Residents/participants, health and announce: discovery and runtime coordination.
 - Whiteboards: account-scoped reads/writes with `lock_version`; see
-  [conflict/null semantics](whiteboard-null-updates.md).
+  [conflict/null semantics](whiteboard-null-updates.md). Past states are kept
+  by PaperTrail and read at `GET /api/v1/whiteboards/:id/versions(/:version_id)`;
+  see [versioning](versioning.md).
 - [Private bookmarks](data-and-authorization.md#concurrent-edits-and-private-notes):
   resident-owned membership notes, not automatic attention.
 - Attention, Telegram conversations/media/messages/subscribers and subscription

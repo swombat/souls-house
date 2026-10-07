@@ -30,6 +30,19 @@ class RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_rhythm_path(@account, rhythm)
   end
 
+  test "index shows each rhythm's last five conversations, marking the ones in the conversation list" do
+    rhythm = Rhythm.create!(account: @account, creator_agent: @resident, title: "House watch", opening: "Look round.",
+      agents: [ @resident ], cadence: "daily", time_of_day: "09:00", timezone: "UTC", next_run_at: 1.hour.ago)
+    chats = 6.times.map { |i| rhythm.fire!(now: Time.current, manual: true, request_key: "k#{i}").occurrence.chat }
+    chats.last.messages.create!(role: "user", user: @user, content: "Seen it.", suppress_automatic_dispatch: true)
+
+    get account_rhythms_path(@account)
+    assert_response :success
+    runs = inertia_shared_props.fetch("rhythms").find { |row| row["id"] == rhythm.to_param }.fetch("recent_runs")
+    assert_equal chats.last(5).reverse.map { |chat| account_chat_path(@account, chat) }, runs.pluck("chat_url")
+    assert_equal [ true, false, false, false, false ], runs.pluck("listed")
+  end
+
   test "preview does not require private opening or resident selection" do
     get preview_account_rhythms_path(@account), params: { rhythm: @attributes.except(:opening, :resident_ids) }, as: :json
     assert_response :ok

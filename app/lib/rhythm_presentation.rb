@@ -2,11 +2,13 @@ class RhythmPresentation
 
   include Rails.application.routes.url_helpers
 
+  RECENT_RUNS = 5
+
   def initialize(rhythm, user: nil, agent: nil)
     @rhythm, @user, @agent = rhythm, user, agent
   end
 
-  def as_json(history: false)
+  def as_json(history: false, recent: false)
     manageable = @rhythm.manageable_by?(@user) || @rhythm.manageable_by_agent?(@agent)
     holds = @rhythm.persisted? ? @rhythm.open_holds.includes(:user, :agent).to_a : []
     at = @rhythm.next_run_at
@@ -36,7 +38,8 @@ class RhythmPresentation
       start_request_key: SecureRandom.uuid, errors: @rhythm.errors.to_hash(true),
       holds: holds.map { |hold| hold_payload(hold) },
       occurrences: history ? @rhythm.occurrences.includes(:chat, message: :message_dispatch)
-        .order(created_at: :desc).limit(30).map { |occurrence| occurrence_payload(occurrence) } : []
+        .order(created_at: :desc).limit(30).map { |occurrence| occurrence_payload(occurrence) } : [],
+      recent_runs: recent ? recent_runs : []
     }
   end
 
@@ -53,6 +56,22 @@ class RhythmPresentation
   end
 
   private
+
+  # The last few conversations, shown inline on the Rhythms page. Quiet runs
+  # are off the conversation list (Chat::QuietRhythmRun), so this is where
+  # they are seen; `listed` says a run has been brought into the list.
+  def recent_runs
+    return [] unless @rhythm.persisted?
+
+    occurrences = @rhythm.occurrences.joins(:chat).merge(Chat.kept).includes(:chat)
+      .order(created_at: :desc).limit(RECENT_RUNS).to_a
+    quiet = Chat.quiet_rhythm_runs.where(id: occurrences.map(&:chat_id)).pluck(:id).to_set
+    occurrences.map do |occurrence|
+      chat = occurrence.chat
+      { id: occurrence.id.to_s, title: chat.title_or_default, scheduled_for: occurrence.scheduled_for.iso8601,
+        chat_url: account_chat_path(@rhythm.account, chat), listed: !quiet.include?(chat.id) }
+    end
+  end
 
   # Names can be blank for people who never filled in a profile.
   def display_name(user)

@@ -10,7 +10,7 @@ class RhythmsController < ApplicationController
   def index
     render inertia: "rhythms/index", props: shared_props.merge(
       rhythms: Rhythm.where(account: current_account).includes(:creator, :agents, :open_holds)
-        .order(:title).map { |rhythm| rhythm_payload(rhythm) }
+        .order(:title).map { |rhythm| rhythm_payload(rhythm, recent: true) }
     )
   end
 
@@ -125,8 +125,8 @@ class RhythmsController < ApplicationController
     redirect_to account_rhythm_path(current_account, @rhythm), **options
   end
 
-  def rhythm_payload(rhythm, history: false)
-    RhythmPresentation.new(rhythm, user: Current.user).as_json(history: history)
+  def rhythm_payload(rhythm, history: false, recent: false)
+    RhythmPresentation.new(rhythm, user: Current.user).as_json(history: history, recent: recent)
   end
 
   def shared_props
