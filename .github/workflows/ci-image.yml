@@ -6,6 +6,8 @@ on:
       - '.github/ci/**'
       - '.github/workflows/ci-image.yml'
       - 'test/ci/ci_image_test.py'
+      - 'Gemfile'
+      - 'Gemfile.lock'
       - '.ruby-version'
       - 'package.json'
       - 'bun.lock'
@@ -35,6 +37,17 @@ jobs:
           context: .github/ci
           load: true
           tags: ci-tooling:check
+      - name: Install the real locked native gems
+        # Only manifests are mounted, read-only; no app credentials/source
+        # become image layers or enter the isolated bundle-install environment.
+        run: |
+          docker run --rm \
+            --mount "type=bind,source=$PWD/Gemfile,target=/check/Gemfile,readonly" \
+            --mount "type=bind,source=$PWD/Gemfile.lock,target=/check/Gemfile.lock,readonly" \
+            --mount "type=bind,source=$PWD/.ruby-version,target=/check/.ruby-version,readonly" \
+            --workdir /check \
+            --env BUNDLE_PATH=/tmp/bundle --env BUNDLE_FROZEN=true \
+            ci-tooling:check bundle install --jobs 4 --retry 3
       - name: Smoke-test tools and Chromium
         run: |
           docker run --rm --ipc=host ci-tooling:check sh -ec '
