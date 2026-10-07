@@ -62,7 +62,7 @@ class CloudProcurementTest < ActiveSupport::TestCase
   end
 
   def plan!(placement: @placement)
-    service.plan!(placement:, requested_by: @admin, approval_reference: "souls.house KjXOAe/YkaQnj", server_type: "cx23")
+    service.plan!(placement:, requested_by: @admin, approval_reference: "house room KjXOAe/YkaQnj", server_type: "cx23")
   end
 
   def server_for(operation, id: 4242, status: "running", **overrides)
@@ -117,7 +117,9 @@ class CloudProcurementTest < ActiveSupport::TestCase
 
     @config = @config.with(ssh_key_ids: [])
     assert_raises(CloudProcurement::NotAllowed) { plan! }
-    @config = @config.with(ssh_key_ids: [ 101 ], locations: %w[ash])
+    @config = @config.with(rails_url: nil)
+    assert_raises(CloudProcurement::NotAllowed) { plan! }
+    @config = @config.with(rails_url: "https://souls.example", ssh_key_ids: [ 101 ], locations: %w[ash])
     assert_raises(CloudProcurement::NotAllowed) { plan! }
     assert_equal 0, CloudProcurementOperation.count
   end

@@ -28,7 +28,8 @@ class CloudProcurement
         image_id: settings[:image_id].presence && Integer(settings[:image_id]),
         ssh_key_ids: Array(settings[:ssh_key_ids]).map { |id| Integer(id) },
         locations: Array(settings[:allowed_locations]).map(&:to_s),
-        rails_url: "https://#{ENV.fetch("SOULSHOUSE_DOMAIN", "souls.house")}"
+        # The installation's own domain; no default, so an unset one refuses.
+        rails_url: ENV["SOULSHOUSE_DOMAIN"].presence&.then { |domain| "https://#{domain}" }
       )
     end
   end
@@ -60,6 +61,7 @@ class CloudProcurement
   def plan!(placement:, requested_by:, approval_reference:, server_type:)
     require_admin!(requested_by)
     raise NotAllowed, "image and SSH keys must be configured" if @config.image_id.nil? || @config.ssh_key_ids.empty?
+    raise NotAllowed, "the house domain must be configured" if @config.rails_url.blank?
 
     CloudProcurementOperation.transaction do
       # Admissions are serialised so concurrent plans see each other's
