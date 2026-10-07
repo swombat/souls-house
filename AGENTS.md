@@ -26,6 +26,7 @@ a coherent section to become a component; keep Inertia pages as pages.
 Minitest lives in `test/`; mirror Rails naming such as `accounts_controller_test.rb` and lean on fixtures in `test/fixtures`. Co-locate Vitest specs beside Svelte sources as `*.test.ts`. Playwright journeys reside in `playwright/tests`; always run them via the provided scripts and never touch the dev database destructively. Expand coverage with each feature and share factories instead of hard-coded records.
 
 ## Commit & Pull Request Guidelines
+Every user-visible change adds an entry to `config/changelog.yml` in the same PR, and new capabilities also go on the features page; see `CONTRIBUTING.md`.
 Use short, imperative commit subjects (<72 chars) like `Add chats index pagination`, grouping related work. Reference issues in the body when useful. PRs need a problem summary, UI screenshots when visuals change, and explicit notes on migrations or secrets. Run `bin/rubocop`, `bun run format:check`, `bin/rails test`, and `bun run test` before requesting review.
 
 ## Branch Policy

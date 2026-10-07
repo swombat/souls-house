@@ -1,6 +1,16 @@
 <script>
   import TelegramSettings from '$lib/components/agents/telegram-settings.svelte';
-  import { CheckCircle, TelegramLogo, DropboxLogo, GoogleLogo, GithubLogo, Heartbeat } from 'phosphor-svelte';
+  import TailnetAccess from '$lib/components/agents/tailnet-access.svelte';
+  import {
+    CheckCircle,
+    TelegramLogo,
+    DropboxLogo,
+    GoogleLogo,
+    GithubLogo,
+    Funnel,
+    ShareNetwork,
+    Heartbeat,
+  } from 'phosphor-svelte';
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
 
@@ -77,57 +87,72 @@
 
     <div class="divide-y rounded-lg border">
       {#each serviceConnections as connection}
-        <div class="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div class="flex items-center gap-4">
-            <div
-              class={connection.provider === 'dropbox'
-                ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white'
-                : connection.provider === 'google_workspace'
-                  ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white'
-                  : connection.provider === 'github'
-                    ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white'
-                    : 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white'}>
-              {#if connection.provider === 'dropbox'}
-                <DropboxLogo size={24} weight="fill" />
-              {:else if connection.provider === 'google_workspace'}
-                <GoogleLogo size={24} weight="bold" />
-              {:else if connection.provider === 'github'}
-                <GithubLogo size={24} weight="fill" />
-              {:else}
-                <Heartbeat size={24} weight="fill" />
-              {/if}
-            </div>
-            <div>
-              <div class="flex flex-wrap items-center gap-2">
-                <h3 class="font-semibold">{connection.label}</h3>
-                <span class="rounded-full bg-muted px-2 py-0.5 text-xs"
-                  >{connection.management_scope === 'personal' ? 'Personal' : 'Account'}</span>
-                {#if connection.enabled}
-                  <span
-                    class="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                    <CheckCircle size={13} weight="fill" /> Enabled
-                  </span>
+        <div class="p-5">
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex items-center gap-4">
+              <div
+                class={connection.provider === 'dropbox'
+                  ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white'
+                  : connection.provider === 'google_workspace'
+                    ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white'
+                    : connection.provider === 'github'
+                      ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white'
+                      : connection.provider === 'pipedrive'
+                        ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-emerald-700 text-white'
+                        : connection.provider === 'tailscale'
+                          ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-slate-700 text-white'
+                          : 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white'}>
+                {#if connection.provider === 'dropbox'}
+                  <DropboxLogo size={24} weight="fill" />
+                {:else if connection.provider === 'google_workspace'}
+                  <GoogleLogo size={24} weight="bold" />
+                {:else if connection.provider === 'github'}
+                  <GithubLogo size={24} weight="fill" />
+                {:else if connection.provider === 'pipedrive'}
+                  <Funnel size={24} weight="bold" />
+                {:else if connection.provider === 'tailscale'}
+                  <ShareNetwork size={24} weight="bold" />
+                {:else}
+                  <Heartbeat size={24} weight="fill" />
                 {/if}
               </div>
-              <p class="text-sm text-muted-foreground">{connection.provider_name} · {connection.identity}</p>
-              <p class="mt-1 text-xs text-muted-foreground">
-                This toggle provisions the complete credential authority: {authorityDescription(connection)}
-              </p>
-              {#each connection.authority_warnings || [] as warning}
-                <p class="mt-1 text-xs text-amber-700">{warning}</p>
-              {/each}
-              {#if connection.provisioning_status}
-                <p class="mt-1 text-xs text-muted-foreground">Runtime: {connection.provisioning_status}</p>
-              {/if}
+              <div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="font-semibold">{connection.label}</h3>
+                  <span class="rounded-full bg-muted px-2 py-0.5 text-xs"
+                    >{connection.management_scope === 'personal' ? 'Personal' : 'Account'}</span>
+                  {#if connection.enabled}
+                    <span
+                      class="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                      <CheckCircle size={13} weight="fill" /> Enabled
+                    </span>
+                  {/if}
+                </div>
+                <p class="text-sm text-muted-foreground">{connection.provider_name} · {connection.identity}</p>
+                <p class="mt-1 text-xs text-muted-foreground">
+                  This toggle provisions the complete credential authority: {authorityDescription(connection)}
+                </p>
+                {#each connection.authority_warnings || [] as warning}
+                  <p class="mt-1 text-xs text-amber-700">{warning}</p>
+                {/each}
+                {#if connection.provisioning_status}
+                  <p class="mt-1 text-xs text-muted-foreground">Runtime: {connection.provisioning_status}</p>
+                {/if}
+              </div>
             </div>
+            <Button
+              type="button"
+              variant={connection.enabled ? 'outline' : 'default'}
+              disabled={connection.enabled ? !connection.can_manage : !connection.can_provision}
+              onclick={() => toggleService(connection, !connection.enabled)}>
+              {connection.enabled ? 'Disable' : 'Enable'}
+            </Button>
           </div>
-          <Button
-            type="button"
-            variant={connection.enabled ? 'outline' : 'default'}
-            disabled={connection.enabled ? !connection.can_manage : !connection.can_provision}
-            onclick={() => toggleService(connection, !connection.enabled)}>
-            {connection.enabled ? 'Disable' : 'Enable'}
-          </Button>
+          {#if connection.provider === 'tailscale' && connection.enabled && connection.tailnet_url}
+            <div class="mt-4">
+              <TailnetAccess url={connection.tailnet_url} agentName={agent.name} />
+            </div>
+          {/if}
         </div>
       {/each}
       <div class="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -147,7 +172,7 @@
               {/if}
             </div>
             <p class="text-sm text-muted-foreground">
-              Chat with the resident and receive notifications through a Telegram bot.
+              Exchange direct messages with the resident through a Telegram bot.
             </p>
           </div>
         </div>

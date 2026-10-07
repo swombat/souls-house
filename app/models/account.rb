@@ -6,7 +6,7 @@ class Account < ApplicationRecord
 
   # Broadcasting configuration
   broadcasts_to :all # Admin collection
-  skip_broadcasts_on_destroy :memberships, :agents, :chats, :whiteboards
+  skip_broadcasts_on_destroy :memberships, :agents, :chats, :whiteboards, :field_files
 
   # Enums
   enum :account_type, { personal: 0, team: 1 }
@@ -48,7 +48,9 @@ class Account < ApplicationRecord
           class_name: "Membership"
   has_one :owner, through: :owner_membership, source: :user
   has_many :chats, dependent: :destroy
+  has_many :visual_tags, dependent: :destroy
   has_many :agents, dependent: :destroy
+  has_many :github_resident_imports, dependent: :restrict_with_error
   # Residents hosted elsewhere and present here as guests. Removal callbacks
   # close seats; when the whole account goes, its rooms go with it.
   has_many :guest_memberships, dependent: :delete_all
@@ -57,6 +59,7 @@ class Account < ApplicationRecord
   has_many :api_keys, dependent: :destroy
   has_many :metered_action_events, dependent: :destroy
   has_many :whiteboards, dependent: :destroy
+  has_many :field_files, dependent: :destroy
   has_many :device_streams, dependent: :destroy
   has_many :service_connections, dependent: :destroy
   has_many :service_authorization_attempts, dependent: :destroy
@@ -73,6 +76,7 @@ class Account < ApplicationRecord
   # Callbacks
   before_validation :set_default_name, on: :create
   before_validation :generate_slug, on: :create
+  after_create :create_default_visual_tags
   before_destroy :mark_memberships_for_skip_check, prepend: true
   after_update_commit :disconnect_members_app_cable, if: -> { saved_change_to_disabled_at? && disabled? }
   after_update_commit -> { users.ids.each { |id| ReplyExpectation.refresh_for(id) } }, if: :saved_change_to_disabled_at?
@@ -286,6 +290,12 @@ class Account < ApplicationRecord
   class NotAuthorized < StandardError; end
 
   private
+
+  def create_default_visual_tags
+    VisualTag::DEFAULTS.each do |label, icon, colour|
+      visual_tags.create!(label: label, icon: icon, colour: colour)
+    end
+  end
 
   # A disabled account leaves its members' confirmed accounts, so their
   # native-app cable connections are dropped (issue #94 B, step 6).

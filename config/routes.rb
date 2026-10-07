@@ -67,6 +67,14 @@ Rails.application.routes.draw do
   post "telegram/webhook/:token", to: "telegram_webhooks#receive", as: :telegram_webhook
 
   resources :accounts, only: [ :new, :create, :show, :edit, :update ] do
+    resources :rhythms do
+      get :preview, on: :collection
+      member do
+        post :pause
+        post :resume
+        post :start
+      end
+    end
     resources :device_streams, only: [ :index, :create, :show, :update, :destroy ] do
       member do
         post :credential
@@ -89,8 +97,15 @@ Rails.application.routes.draw do
     resources :services, only: :index, module: :accounts
     resource :personal_services, only: :show, module: :accounts
     resource :integrations, only: :show, module: :accounts
+    resource :interface, only: :show, module: :accounts
+    resources :visual_tags, only: [ :create, :update, :destroy ], module: :accounts
     resources :service_authorizations, only: :create
     resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts
+    resources :github_resident_imports, only: [ :new, :create, :show ] do
+      post :approve, on: :member
+      post :refresh, on: :member
+      post :retry_activation, on: :member
+    end
 
     resources :chats do
       get :activity, on: :member
@@ -99,6 +114,7 @@ Rails.application.routes.draw do
         post :transcription, to: "chats/transcriptions#create"
       end
       scope module: :chats do
+        resource :visual_tag, only: :update
         resource :reply_dismissal, only: :create
         resource :draft, only: [ :show, :update ]
         resource :archive, only: [ :create, :destroy ]
@@ -150,6 +166,7 @@ Rails.application.routes.draw do
         end
         resource :provider_subscription_usage, only: :show
         resources :service_accesses, only: :update
+        resource :tailnet, only: [ :show, :create ]
         resources :memories, only: [ :create ] do
           resource :discard, only: [ :create, :destroy ], module: :memories
           resource :protection, only: [ :create, :destroy ], module: :memories
@@ -157,8 +174,12 @@ Rails.application.routes.draw do
       end
     end
 
-      resources :agents, only: [ :index, :show ]
-    resources :whiteboards, only: [ :index, :update ]
+    resources :agents, only: [ :index, :show ]
+    get "field", to: "field#index", as: :field
+    resources :field_files, path: "field/files", only: [ :create, :update, :destroy ]
+    resources :whiteboards, only: [ :index, :create, :update, :destroy ] do
+      resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
+    end
   end
 
   resources :messages, only: [ :update, :destroy ] do
@@ -169,6 +190,7 @@ Rails.application.routes.draw do
   end
 
   namespace :admin do
+    resource :deploy_info, only: :show
     patch "resident_turns/capacity", to: "resident_turns#update"
     resources :resident_turns, only: [ :index, :destroy ]
     resources :runtime_sessions, only: :index, controller: "agent_runtime_sessions"
@@ -223,13 +245,30 @@ Rails.application.routes.draw do
     end
 
     namespace :v1 do
+      namespace :admin do
+        resource :summary, only: :show, controller: "summaries"
+        resources :accounts, only: :index
+        resources :users, only: :index
+      end
+      resources :visual_tags, only: :index
+      resources :rhythms, only: %i[index show create update destroy] do
+        member do
+          post :join
+          post :leave
+          post :pause
+          post :resume
+        end
+      end
       get "house_inference/models", to: "house_inference#models"
       post "house_inference/chat/completions", to: "house_inference#create"
       post "streams/:stream_key/samples", to: "stream_samples#create"
       get "streams/:stream_key/latest", to: "streams#latest"
+      get "streams/:stream_key/sessions", to: "streams#sessions"
+      get "streams/:stream_key/sessions/:session_id", to: "streams#show_session"
       post "runtime_runs/:run_id/events", to: "runtime_events#create"
       get "agent/bookmarks", to: "agent_bookmarks#index", as: :agent_bookmarks
       patch "agent/activity_preferences", to: "agents#activity_preferences"
+      get "agent/github_import_approval", to: "github_import_approvals#show"
       namespace :memory do
         resources :formations, only: :create
         resource :export, only: :show
@@ -278,7 +317,14 @@ Rails.application.routes.draw do
       resources :service_connections, only: [] do
         resource :access_token, only: :show, controller: "service_connection_tokens"
       end
-      resources :whiteboards, only: [ :index, :show, :create, :update ]
+      resources :whiteboards, only: [ :index, :show, :create, :update ] do
+        resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
+      end
+      namespace :field do
+        resources :files, only: [ :index, :show, :create, :destroy ] do
+          get :download, on: :member
+        end
+      end
     end
   end
 
@@ -306,6 +352,8 @@ Rails.application.routes.draw do
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
   # Defines the root path route ("/")
+  get "features" => "pages#features", as: :features
+  get "changelog" => "pages#changelog", as: :changelog
   get "privacy" => "pages#privacy", as: :privacy
   get "self-host" => "pages#self_host", as: :self_host
   get "self-host/technical" => "pages#self_host_technical", as: :self_host_technical

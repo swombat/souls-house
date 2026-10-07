@@ -12,6 +12,7 @@
     Heart,
     TelegramLogo,
     GithubLogo,
+    ShareNetwork,
     DropboxLogo,
     GoogleLogo,
     Circle,
@@ -25,6 +26,7 @@
   const integrationIcons = {
     telegram: TelegramLogo,
     github: GithubLogo,
+    tailscale: ShareNetwork,
     dropbox: DropboxLogo,
     google_workspace: GoogleLogo,
     oura: Circle,

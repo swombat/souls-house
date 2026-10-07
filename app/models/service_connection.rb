@@ -8,6 +8,7 @@ class ServiceConnection < ApplicationRecord
   belongs_to :legacy_oura_integration, class_name: "OuraIntegration", optional: true
   has_many :agent_service_accesses, dependent: :destroy
   has_many :agents, through: :agent_service_accesses
+  has_many :github_resident_imports, dependent: :restrict_with_error
 
   encrypts :credential_payload
 
@@ -211,6 +212,7 @@ class ServiceConnection < ApplicationRecord
   def apply_default_accesses
     return unless enabled_for_new_agents?
     account.agents.find_each do |agent|
+      next if agent.github_resident_import_id.present?
       agent_service_accesses.find_or_create_by!(agent: agent) do |access|
         access.enabled = true
         access.follows_default = true

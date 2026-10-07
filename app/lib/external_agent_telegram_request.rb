@@ -103,6 +103,7 @@ class ExternalAgentTelegramRequest
   def request_text
     [
       Notices::Renderer.section_for(agent),
+      SubagentPolicyRenderer.section_for(agent),
       safeguard_notice,
       <<~TEXT
       souls.house received a Telegram direct message for you.
@@ -131,6 +132,7 @@ class ExternalAgentTelegramRequest
   def request_delta_text
     [
       Notices::Renderer.section_for(agent),
+      SubagentPolicyRenderer.section_for(agent),
       <<~TEXT
       New Telegram DMs from #{subscription.subscriber_name} (thread #{subscription.to_param}), oldest first:
       #{messages_prompt}

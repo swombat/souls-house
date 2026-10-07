@@ -126,7 +126,7 @@
           size="sm"
           onclick={() => triggerAgent(agent)}
           disabled={disabled || isTriggering || activeAgentIds.has(agent.id) || Boolean(agent.unavailability_reason)}
-          class="gap-2 {agent.colour
+          class="relative gap-2 {agent.colour
             ? `border-${agent.colour}-300 dark:border-${agent.colour}-700 hover:bg-${agent.colour}-50 dark:hover:bg-${agent.colour}-950`
             : ''}"
           title={agent.unavailability_reason
@@ -142,7 +142,7 @@
               weight="duotone"
               class={agent.colour ? `text-${agent.colour}-600 dark:text-${agent.colour}-400` : ''} />
           {/if}
-          <span class="hidden md:inline"><AgentUsageName {accountId} {agent} {showUsage} /></span>
+          <AgentUsageName {accountId} {agent} {showUsage} mobileGauge />
         </Button>
       {/each}
       {#if agents.length > 1}

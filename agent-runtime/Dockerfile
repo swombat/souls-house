@@ -179,6 +179,26 @@ RUN case "${TARGETARCH}" in \
     && rm /tmp/codexbar.tar.gz \
     && codexbar --version | grep -F "${CODEXBAR_VERSION}"
 
+# Tailscale for the Tailscale integration. Residents run tailscaled in
+# userspace-networking mode as the agent user (no NET_ADMIN, no /dev/net/tun);
+# soulshouse-tailnet manages it. Static binaries from Tailscale's stable
+# channel, checksums from pkgs.tailscale.com/stable/<artifact>.sha256.
+ARG TAILSCALE_VERSION=1.102.4
+ARG TAILSCALE_AMD64_SHA256=50748df1045e60b5b695f19f4c56b0da36c019948b440fb456b6584a50f0d8b9
+ARG TAILSCALE_ARM64_SHA256=9dd1e6a592a014bbaea0103167ffe299adeda4ba14e078ce9c2895364f6c4c3f
+RUN case "${TARGETARCH}" in \
+      amd64) checksum="${TAILSCALE_AMD64_SHA256}" ;; \
+      arm64) checksum="${TAILSCALE_ARM64_SHA256}" ;; \
+      *) echo "Unsupported Tailscale architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && artifact="tailscale_${TAILSCALE_VERSION}_${TARGETARCH}" \
+    && curl -fsSL "https://pkgs.tailscale.com/stable/${artifact}.tgz" -o /tmp/tailscale.tgz \
+    && echo "${checksum}  /tmp/tailscale.tgz" | sha256sum -c - \
+    && tar -xzf /tmp/tailscale.tgz -C /tmp \
+    && install -m 0755 "/tmp/${artifact}/tailscale" "/tmp/${artifact}/tailscaled" /usr/local/bin/ \
+    && rm -rf /tmp/tailscale.tgz "/tmp/${artifact}" \
+    && tailscale version | head -1 | grep -Fx "${TAILSCALE_VERSION}"
+
 COPY --from=builder /usr/local/bin/chaos /usr/local/bin/chaos
 COPY --from=builder /usr/local/bin/chaos_journald /usr/local/bin/chaos_journald
 # Verify the binaries in the final runtime, not only the download stage.
@@ -213,13 +233,16 @@ COPY soulshouse-usage /usr/local/bin/soulshouse-usage
 COPY soulshouse-youtube /usr/local/bin/soulshouse-youtube
 COPY soulshouse-x /usr/local/bin/soulshouse-x
 COPY soulshouse-gws /usr/local/bin/soulshouse-gws
+COPY soulshouse-tailnet /usr/local/bin/soulshouse-tailnet
 COPY antigravity-browser-open /usr/local/libexec/helixkit-antigravity-login/xdg-open
 # Imported Git homes use repo-scoped SSH deploy keys.
 RUN apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*
-COPY imported_home.py home_sync_loop.py /home/agent/
+COPY imported_home.py home_sync_loop.py standard_home_sync.py /home/agent/
+COPY github_import_approval.py github_import_credential.py /home/agent/
+COPY --chmod=0755 github-import-trust-setup /usr/local/bin/github-import-trust-setup
 COPY runtime_settings.py runtime_hooks.py /usr/local/share/helixkit-agent/
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/soulshouse-post-message /usr/local/bin/soulshouse-send-telegram /usr/local/bin/soulshouse-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/soulshouse-youtube /usr/local/bin/soulshouse-x /usr/local/bin/soulshouse-gws \
+RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/soulshouse-post-message /usr/local/bin/soulshouse-send-telegram /usr/local/bin/soulshouse-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/soulshouse-youtube /usr/local/bin/soulshouse-x /usr/local/bin/soulshouse-gws /usr/local/bin/soulshouse-tailnet \
     /usr/local/libexec/helixkit-antigravity-login/xdg-open \
     && chmod 0644 /usr/local/share/helixkit-agent/*.md /usr/local/share/helixkit-agent/stop_journal_reflex.py
 

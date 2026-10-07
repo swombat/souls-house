@@ -1,0 +1,618 @@
+#!/usr/bin/env python3
+"""
+Join this resident to its account's tailnet and reach machines there over SSH.
+
+Usage:
+  soulshouse-tailnet status [--json]   whether this resident is on the tailnet,
+                                       and which machines it can see
+  soulshouse-tailnet up [--json]       start the daemon, start sign-in if the
+                                       node isn't joined yet, and write an SSH
+                                       alias for every machine (idempotent)
+  soulshouse-tailnet pubkey            the SSH public key a machine's owner
+                                       adds to authorized_keys
+  soulshouse-tailnet down              disconnect, staying joined
+  soulshouse-tailnet boot              what the container runs at start: `up`
+                                       when granted, `forget` when not
+  soulshouse-tailnet forget            log this node out and delete its state
+                                       (the SSH key is kept)
+
+After `up`, every machine on the tailnet is `ssh <name>`, where <name> is its
+MagicDNS name (the first label, e.g. `ssh dell` or `ssh user@dell`).
+
+Joining: a node normally joins by a person signing in. `up` asks the daemon for
+a login link (https://login.tailscale.com/a/…) and the account's integrations
+page shows it; once someone signs in there, the node is theirs on their tailnet.
+An integration that carries an auth key joins with the key instead.
+
+tailscaled runs in userspace networking mode as the agent user; its node state
+lives in ~/state/tailscale so the resident stays the same node across rebuilds.
+The node state is bound to the integration that created it: if a different
+Tailscale integration is granted later, the old node logs out first. An auth
+key, when there is one, is read from the runtime service manifest and only
+spent when the node is not yet logged in. It is passed to tailscale through a
+0600 file, never on a command line. The resident's SSH key lives separately in ~/state/tailnet-ssh, so
+disabling and re-enabling the integration doesn't invalidate the machines that
+already trust it.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+
+import yaml
+
+
+SERVICES_FILE = Path(os.environ.get("HELIXKIT_SERVICES_FILE", "/run/helixkit/services.yml"))
+STATE_DIR = Path(os.environ.get("SOULSHOUSE_TAILNET_STATE", Path.home() / "state" / "tailscale"))
+SSH_DIR = Path(os.environ.get("SOULSHOUSE_TAILNET_SSH_DIR", Path.home() / "state" / "tailnet-ssh"))
+SSH_CONFIG = Path(os.environ.get("SOULSHOUSE_TAILNET_SSH_CONFIG", Path.home() / ".ssh" / "config"))
+TAILSCALE = os.environ.get("SOULSHOUSE_TAILSCALE_BINARY", "tailscale")
+TAILSCALED = os.environ.get("SOULSHOUSE_TAILSCALED_BINARY", "tailscaled")
+DAEMON_WAIT_SECONDS = float(os.environ.get("SOULSHOUSE_TAILNET_DAEMON_WAIT", "15"))
+LOGIN_WAIT_SECONDS = float(os.environ.get("SOULSHOUSE_TAILNET_LOGIN_WAIT", "10"))
+ADMIN_MACHINES_URL = "https://login.tailscale.com/admin/machines"
+
+BEGIN_MARK = "# BEGIN soulshouse-tailnet (managed; edits here are overwritten)"
+END_MARK = "# END soulshouse-tailnet"
+
+# Same rules as Services::TailscaleAdapter. Checked again here because these
+# values are written into ssh_config, where ProxyCommand expands %h.
+ALIAS_PATTERN = re.compile(r"\A[a-z0-9][a-z0-9_-]{0,31}\Z")
+USER_PATTERN = re.compile(r"\A[a-z_][a-z0-9_.-]{0,31}\Z", re.I)
+MACHINE_PATTERN = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?\Z")
+
+KEY_REJECTED_HINT = (
+    "Tailscale rejected the auth key. Reusable auth keys expire (at most 90 days) even though nodes "
+    "already joined with them keep working; ask the account admin for a fresh tagged key."
+)
+
+
+class TailnetError(Exception):
+    pass
+
+
+def main(argv: list[str]) -> int:
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0 if argv else 64
+
+    command, rest = argv[0], argv[1:]
+    try:
+        if command == "status":
+            return status(as_json="--json" in rest)
+        if command == "up":
+            return up(as_json="--json" in rest)
+        if command == "pubkey":
+            return pubkey()
+        if command == "down":
+            return down()
+        if command == "boot":
+            return boot()
+        if command == "forget":
+            return forget()
+    except TailnetError as error:
+        print(f"soulshouse-tailnet: {error}", file=sys.stderr)
+        return 1
+
+    print(f"soulshouse-tailnet: unknown command {command!r}\n", file=sys.stderr)
+    print(__doc__.strip(), file=sys.stderr)
+    return 64
+
+
+# ── manifest ───────────────────────────────────────────────────────────────
+
+def tailnet_entries() -> list[dict]:
+    try:
+        manifest = yaml.safe_load(SERVICES_FILE.read_text()) or {}
+    except FileNotFoundError:
+        return []
+    return [s for s in manifest.get("services") or [] if s.get("provider") == "tailscale"]
+
+
+def tailnet_entry() -> dict | None:
+    entries = tailnet_entries()
+    if len(entries) > 1:
+        labels = ", ".join(str(e.get("label") or e.get("connection_id")) for e in entries)
+        raise TailnetError(
+            f"{len(entries)} Tailscale integrations are granted to this resident ({labels}); "
+            "a resident is one node on one tailnet, so disable all but one"
+        )
+    return entries[0] if entries else None
+
+
+def require_entry() -> dict:
+    entry = tailnet_entry()
+    if entry is None:
+        raise TailnetError("no Tailscale integration is granted to this resident")
+    return entry
+
+
+def auth_key_of(entry: dict) -> str | None:
+    return (entry.get("credentials") or {}).get("auth_key") or None
+
+
+def hosts_of(entry: dict) -> list[dict]:
+    hosts = list((entry.get("metadata") or {}).get("hosts") or [])
+    for host in hosts:
+        valid = (
+            ALIAS_PATTERN.match(str(host.get("alias", "")))
+            and MACHINE_PATTERN.match(str(host.get("machine", "")))
+            and (host.get("user") is None or USER_PATTERN.match(str(host["user"])))
+        )
+        if not valid:
+            raise TailnetError(f"refusing a malformed host entry from the manifest: {host!r}")
+    return hosts
+
+
+# ── daemon ─────────────────────────────────────────────────────────────────
+
+def socket_path() -> Path:
+    return STATE_DIR / "tailscaled.sock"
+
+
+def cli(*args: str, timeout: float = 30) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [TAILSCALE, f"--socket={socket_path()}", *args],
+        capture_output=True, text=True, timeout=timeout,
+    )
+
+
+def backend_status() -> dict | None:
+    if not socket_path().exists():
+        return None
+    try:
+        result = cli("status", "--json", timeout=10)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    if not result.stdout.strip():
+        return None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+
+def ensure_daemon() -> dict:
+    current = backend_status()
+    if current is not None:
+        return current
+
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    STATE_DIR.chmod(0o700)
+    with contextlib.suppress(FileNotFoundError):
+        socket_path().unlink()
+    log = open(STATE_DIR / "tailscaled.log", "ab")
+    try:
+        daemon = subprocess.Popen(
+            [
+                TAILSCALED,
+                "--tun=userspace-networking",
+                f"--statedir={STATE_DIR}",
+                f"--socket={socket_path()}",
+            ],
+            stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+            start_new_session=True,
+        )
+    except FileNotFoundError as error:
+        raise TailnetError(f"cannot start tailscaled: {error}") from error
+    finally:
+        log.close()
+    (STATE_DIR / "tailscaled.pid").write_text(f"{daemon.pid}\n")
+
+    deadline = time.monotonic() + DAEMON_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        current = backend_status()
+        if current is not None:
+            return current
+        time.sleep(0.2)
+    raise TailnetError(f"tailscaled did not answer within {DAEMON_WAIT_SECONDS:g}s (log: {STATE_DIR / 'tailscaled.log'})")
+
+
+def node_hostname() -> str:
+    slug = re.sub(r"[^a-z0-9-]+", "-", os.environ.get("AGENT_SLUG", "resident").lower()).strip("-") or "resident"
+    return f"soulshouse-{slug}"[:63].rstrip("-")
+
+
+@contextlib.contextmanager
+def state_lock():
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    STATE_DIR.chmod(0o700)
+    with open(STATE_DIR / ".lock", "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+
+
+# ── commands ───────────────────────────────────────────────────────────────
+
+def up(as_json: bool = False) -> int:
+    entry = require_entry()
+    hosts_of(entry)  # refuse malformed manifest hosts before touching anything
+    with state_lock():
+        bound_to = bound_connection()
+        if bound_to is not None and bound_to != entry.get("connection_id"):
+            # The node belongs to an integration that is no longer granted.
+            # Leave that tailnet before joining this one.
+            leave_tailnet()
+        state = ensure_daemon()
+        # Bind before joining, so a node still waiting for sign-in is already
+        # recognised as this integration's on the next run.
+        (STATE_DIR / "connection").write_text(f"{entry.get('connection_id')}\n")
+        if state.get("BackendState") != "Running":
+            if auth_key_of(entry):
+                join_with_key(entry, state)
+            else:
+                start_sign_in(state)
+            state = backend_status() or state
+        ensure_ssh_key()
+        write_ssh_config(all_hosts(entry, state) if state.get("BackendState") == "Running" else [])
+
+    report = build_report(entry, state, ping=False)
+    if as_json:
+        print(json.dumps(report, indent=2))
+        return 0
+    if report["backend_state"] == "Running":
+        print(f"on the tailnet as {report['node'] or node_hostname()}")
+        for host in report["hosts"]:
+            print(f"  ssh {host['alias']}  →  {host['target']}")
+    elif report["auth_url"]:
+        print(f"waiting for sign-in: {report['auth_url']}")
+        print("  (the resident's integrations page shows this link; open it and sign in to Tailscale)")
+    else:
+        print(f"not joined yet (state: {report['backend_state']})")
+    return 0
+
+
+def join_with_key(entry: dict, state: dict) -> None:
+    args = ["up", f"--hostname={node_hostname()}", "--accept-dns=false", "--timeout=60s"]
+    key_file = None
+    if state.get("BackendState") in (None, "NeedsLogin", "NoState"):
+        key_file = STATE_DIR / ".auth-key"
+        fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            handle.write(auth_key_of(entry))
+        args.append(f"--auth-key=file:{key_file}")
+    try:
+        result = cli(*args, timeout=90)
+    finally:
+        if key_file is not None:
+            with contextlib.suppress(FileNotFoundError):
+                key_file.unlink()
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip().splitlines()
+        message = detail[-1] if detail else f"exit {result.returncode}"
+        if key_file is not None and "invalid key" in message.lower():
+            message += f"\n{KEY_REJECTED_HINT}"
+        raise TailnetError("tailscale up failed: " + message)
+
+
+def start_sign_in(state: dict) -> str:
+    """Ask the daemon for a login link, or return the one it already has.
+
+    `tailscale up` without a key prints the link and waits for the sign-in; we
+    let it time out quickly. The daemon keeps the pending login (and the link,
+    in `status --json` as AuthURL) after the CLI exits, and finishes joining
+    when someone signs in, whether or not anything is watching."""
+    if state.get("AuthURL"):
+        return state["AuthURL"]
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        cli(
+            "up", f"--hostname={node_hostname()}", "--accept-dns=false",
+            f"--timeout={LOGIN_WAIT_SECONDS:g}s",
+            timeout=LOGIN_WAIT_SECONDS + 20,
+        )
+    current = backend_status() or {}
+    if current.get("BackendState") == "Running":
+        return ""
+    if not current.get("AuthURL"):
+        raise TailnetError(
+            f"tailscaled did not produce a login link (state: {current.get('BackendState')}); "
+            f"see {STATE_DIR / 'tailscaled.log'}"
+        )
+    return current["AuthURL"]
+
+
+def bound_connection() -> str | None:
+    """The integration this node state was joined with, or None if no node state.
+
+    State without a record (from a build before binding existed) counts as bound
+    to nothing, so it is left before rejoining rather than trusted."""
+    if not (STATE_DIR / "tailscaled.state").exists():
+        return None
+    try:
+        return (STATE_DIR / "connection").read_text().strip() or "unrecorded"
+    except FileNotFoundError:
+        return "unrecorded"
+
+
+def down() -> int:
+    if backend_status() is None:
+        print("tailscaled is not running")
+        return 0
+    result = cli("down")
+    if result.returncode != 0:
+        raise TailnetError("tailscale down failed: " + result.stderr.strip())
+    print("disconnected (still joined; `soulshouse-tailnet up` reconnects)")
+    return 0
+
+
+def boot() -> int:
+    if tailnet_entries():
+        return up()
+    return forget()
+
+
+def forget() -> int:
+    # Remove the SSH aliases first: whatever happens to the logout, nothing in
+    # this resident should route to those machines any more.
+    write_ssh_config([])
+    if not STATE_DIR.exists():
+        return 0
+    had_node = (STATE_DIR / "tailscaled.state").exists()
+    with state_lock():
+        leave_tailnet()
+    if had_node:
+        print("left the tailnet and removed this resident's node state")
+    return 0
+
+
+def leave_tailnet() -> None:
+    """Log the saved node out, stop its daemon, delete the node state.
+
+    Must be called with the state lock held. Node state is deleted only after
+    the logout is confirmed and the daemon is confirmed gone. Otherwise the
+    state is kept so the next boot retries, and the error says exactly what is
+    and isn't known."""
+    if (STATE_DIR / "tailscaled.state").exists():
+        try:
+            state = ensure_daemon()
+            if state.get("BackendState") not in ("NeedsLogin", "NoState"):
+                result = cli("logout", timeout=30)
+                if result.returncode != 0:
+                    raise TailnetError("tailscale logout failed: " + (result.stderr or result.stdout).strip())
+        except (TailnetError, subprocess.TimeoutExpired) as error:
+            stopped = stop_daemon()
+            daemon = "The daemon is stopped" if stopped else "The daemon could NOT be confirmed stopped and may still be connected"
+            raise TailnetError(
+                f"could not confirm logout ({error}). {daemon}; the node state is kept so the next boot retries. "
+                "The node may still be listed on the tailnet: remove it in the Tailscale admin console if access "
+                "must end now."
+            ) from error
+    if not stop_daemon():
+        raise TailnetError(
+            "logged out, but the daemon could not be confirmed stopped; the node state is kept so the next "
+            "boot retries"
+        )
+    for child in STATE_DIR.iterdir():
+        if child.name == ".lock":
+            continue
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child, ignore_errors=True)
+        else:
+            child.unlink(missing_ok=True)
+
+
+def stop_daemon() -> bool:
+    """Stop the daemon this helper started. True only when nothing serves our
+    socket afterwards.
+
+    Ownership is the recorded PID, accepted only while that PID is still a
+    tailscaled on our socket. Never a pattern match: a pattern also matches
+    whatever shell happens to mention the socket path. A daemon answering on
+    our socket that we can't tie to an owned PID is never signalled, and the
+    result is False: we can't claim it stopped."""
+    pid = owned_daemon_pid()
+    if pid is not None:
+        for sig, wait in ((signal.SIGTERM, 5.0), (signal.SIGKILL, 2.0)):
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, sig)
+            deadline = time.monotonic() + wait
+            while time.monotonic() < deadline and process_alive(pid):
+                time.sleep(0.1)
+            if not process_alive(pid):
+                break
+        if process_alive(pid):
+            return False
+        with contextlib.suppress(FileNotFoundError):
+            (STATE_DIR / "tailscaled.pid").unlink()
+    return backend_status() is None
+
+
+def owned_daemon_pid() -> int | None:
+    try:
+        pid = int((STATE_DIR / "tailscaled.pid").read_text().strip())
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+    except (FileNotFoundError, ProcessLookupError, ValueError):
+        return None
+    if not any(arg.endswith(b"tailscaled") for arg in cmdline[:2]):
+        return None
+    if f"--socket={socket_path()}".encode() not in cmdline:
+        return None
+    return pid
+
+
+def process_alive(pid: int) -> bool:
+    """A zombie has exited; it only waits to be reaped."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except (FileNotFoundError, ProcessLookupError):
+        return False
+    return stat.rsplit(")", 1)[-1].split()[0] != "Z"
+
+
+def pubkey() -> int:
+    require_entry()
+    with state_lock():
+        key = ensure_ssh_key()
+    print(Path(f"{key}.pub").read_text().strip())
+    return 0
+
+
+def status(as_json: bool) -> int:
+    entry = tailnet_entry()
+    state = backend_status()
+    report = build_report(entry, state, ping=True)
+
+    if as_json:
+        print(json.dumps(report, indent=2))
+        return 0
+
+    if not report["granted"]:
+        print("No Tailscale integration is granted to this resident.")
+    if not report["daemon"]:
+        print("tailscaled is not running." + ("  Run: soulshouse-tailnet up" if report["granted"] else ""))
+        return 0 if report["granted"] else 3
+    print(f"state: {report['backend_state']}")
+    if report["auth_url"]:
+        print(f"waiting for sign-in: {report['auth_url']}")
+    if report["node"]:
+        print(f"node:  {report['node']}  {' '.join(report['addresses'])}")
+    for host in report["hosts"]:
+        answer = {True: "online", False: "offline", None: "not checked"}[host["online"]]
+        print(f"  ssh {host['alias']}  →  {host['target']}  ({answer})")
+    return 0
+
+
+def build_report(entry: dict | None, state: dict | None, ping: bool) -> dict:
+    report = {
+        "granted": entry is not None,
+        "daemon": state is not None,
+        "backend_state": (state or {}).get("BackendState"),
+        "auth_url": None,
+        "node": None,
+        "addresses": [],
+        "hosts": [],
+        "pubkey": None,
+        "admin_url": ADMIN_MACHINES_URL,
+    }
+    if report["backend_state"] == "NeedsLogin":
+        report["auth_url"] = (state or {}).get("AuthURL") or None
+    me = (state or {}).get("Self") or {}
+    if me:
+        report["node"] = (me.get("DNSName") or me.get("HostName") or "").rstrip(".") or None
+        report["addresses"] = me.get("TailscaleIPs") or []
+    running = report["backend_state"] == "Running"
+    for host in all_hosts(entry or {}, state or {}) if running else hosts_of(entry or {}):
+        online = host.get("online")
+        if online is None and ping and running:
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                online = cli("ping", "-c", "1", "--timeout=3s", host["machine"], timeout=10).returncode == 0
+        report["hosts"].append({
+            "alias": host["alias"], "target": ssh_target(host), "online": online,
+            "os": host.get("os"),
+        })
+    key = ssh_dir() / "id_ed25519.pub"
+    if key.exists():
+        report["pubkey"] = key.read_text().strip()
+    return report
+
+
+def peer_hosts(state: dict) -> list[dict]:
+    """One host per machine on the tailnet, named by its MagicDNS label.
+
+    Addressed by Tailscale IP, so nothing depends on DNS inside the container.
+    Names and addresses come from the control plane; they are validated like
+    manifest entries before they reach ssh_config."""
+    hosts: dict[str, dict] = {}
+    for peer in (state.get("Peer") or {}).values():
+        name = str(peer.get("DNSName") or "").split(".", 1)[0].lower()
+        if not name:
+            name = re.sub(r"[^a-z0-9-]+", "-", str(peer.get("HostName") or "").lower()).strip("-")
+        addresses = [a for a in peer.get("TailscaleIPs") or [] if ":" not in a] or list(peer.get("TailscaleIPs") or [])
+        if not addresses or not ALIAS_PATTERN.match(name) or not MACHINE_PATTERN.match(addresses[0]):
+            continue
+        if name in hosts:
+            continue
+        hosts[name] = {
+            "alias": name, "machine": addresses[0],
+            "online": bool(peer.get("Online")), "os": peer.get("OS") or None,
+        }
+    return [hosts[name] for name in sorted(hosts)]
+
+
+def all_hosts(entry: dict, state: dict) -> list[dict]:
+    """Every machine on the tailnet, plus any aliases set on the integration
+    (those win when a name is taken by both)."""
+    configured = hosts_of(entry)
+    taken = {host["alias"] for host in configured}
+    return configured + [host for host in peer_hosts(state) if host["alias"] not in taken]
+
+
+# ── ssh ────────────────────────────────────────────────────────────────────
+
+def ssh_dir() -> Path:
+    return SSH_DIR
+
+
+def ensure_ssh_key() -> Path:
+    key = ssh_dir() / "id_ed25519"
+    if not key.exists():
+        ssh_dir().mkdir(parents=True, exist_ok=True)
+        ssh_dir().chmod(0o700)
+        subprocess.run(
+            ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", node_hostname(), "-f", str(key)],
+            check=True,
+        )
+    return key
+
+
+def ssh_target(host: dict) -> str:
+    return f"{host['user']}@{host['machine']}" if host.get("user") else host["machine"]
+
+
+def managed_block(hosts: list[dict]) -> str:
+    if not hosts:
+        return ""
+    lines = [BEGIN_MARK]
+    for host in hosts:
+        lines += [
+            f"Host {host['alias']}",
+            f"    HostName {host['machine']}",
+            *([f"    User {host['user']}"] if host.get("user") else []),
+            f"    ProxyCommand {TAILSCALE} --socket={socket_path()} nc %h %p",
+            f"    IdentityFile {ssh_dir() / 'id_ed25519'}",
+            "    IdentitiesOnly yes",
+            f"    UserKnownHostsFile {ssh_dir() / 'known_hosts'}",
+            "    StrictHostKeyChecking accept-new",
+            "    ServerAliveInterval 30",
+            "",
+        ]
+    # Return to the global scope so anything the resident wrote below this
+    # block keeps applying to every host, as it did before the block existed.
+    lines.append("Match all")
+    lines.append(END_MARK)
+    return "\n".join(lines) + "\n"
+
+
+def write_ssh_config(hosts: list[dict]) -> None:
+    try:
+        existing = SSH_CONFIG.read_text()
+    except FileNotFoundError:
+        existing = ""
+    pattern = re.compile(rf"\n?{re.escape(BEGIN_MARK)}.*?{re.escape(END_MARK)}\n?", re.S)
+    unmanaged = pattern.sub("\n", existing).strip("\n")
+    block = managed_block(hosts)
+    # Our Host blocks go first: ssh takes the first value it finds per option.
+    combined = "\n".join(part for part in (block.rstrip("\n"), unmanaged) if part)
+    combined = combined + "\n" if combined else ""
+    if combined == existing:
+        return
+    SSH_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    SSH_CONFIG.parent.chmod(0o700)
+    temp = SSH_CONFIG.with_suffix(".tmp")
+    temp.write_text(combined)
+    temp.chmod(0o600)
+    temp.replace(SSH_CONFIG)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

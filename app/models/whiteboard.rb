@@ -17,6 +17,13 @@ class Whiteboard < ApplicationRecord
 
   broadcasts_to :account
 
+  # Every change to what a note says, what it is called, or whether it is
+  # deleted keeps the state it replaced. Bookkeeping columns (revision,
+  # lock_version, timestamps) ride along in each snapshot but never make a
+  # version on their own.
+  has_paper_trail versions: { class_name: "ItemVersion" },
+                  only: %i[name summary content deleted_at]
+
   scope :active, -> { where(deleted_at: nil) }
   scope :deleted, -> { where.not(deleted_at: nil) }
   scope :by_name, -> { order(:name) }
@@ -45,6 +52,12 @@ class Whiteboard < ApplicationRecord
     when User then last_edited_by.full_name.presence || last_edited_by.email_address.split("@").first
     when Agent then last_edited_by.name
     end
+  end
+
+  # Past states, newest first. Each version holds the note as it stood just
+  # before a change; the create event has no earlier state and is left out.
+  def past_versions
+    versions.where(event: "update").reorder(created_at: :desc, id: :desc)
   end
 
   private

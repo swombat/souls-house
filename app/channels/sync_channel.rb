@@ -7,7 +7,7 @@ class SyncChannel < ApplicationCable::Channel
     },
     "Account" => {
       model: Account,
-      collections: %w[agents chats whiteboards],
+      collections: %w[agents chats whiteboards field_files],
       allow_all: true
     },
     "Agent" => {
@@ -20,6 +20,10 @@ class SyncChannel < ApplicationCable::Channel
     },
     "Whiteboard" => {
       model: Whiteboard,
+      collections: []
+    },
+    "FieldFile" => {
+      model: FieldFile,
       collections: []
     },
     "Setting" => {

@@ -1,7 +1,7 @@
 <script>
   import { Link, router } from '@inertiajs/svelte';
   import * as Select from '$lib/components/shadcn/select/index.js';
-  import { Buildings, Cpu, Plugs, PlugsConnected, Megaphone, CurrencyDollar } from 'phosphor-svelte';
+  import { Buildings, Cpu, Plugs, PlugsConnected, Megaphone, CurrencyDollar, Palette } from 'phosphor-svelte';
   import { siteName } from '$lib/branding';
   import {
     accountPath,
@@ -17,6 +17,7 @@
 
   const tabs = $derived([
     { id: 'general', label: 'General', icon: Buildings, href: accountPath(account.id) },
+    { id: 'interface', label: 'Interface', icon: Palette, href: `/accounts/${account.id}/interface` },
     { id: 'model_api_keys', label: 'Model API keys', icon: Cpu, href: accountAgentApiKeysPath(account.id) },
     { id: 'house_api', label: `${$siteName} API`, icon: PlugsConnected, href: accountApiKeysPath(account.id) },
     { id: 'integrations', label: 'Integrations', icon: Plugs, href: `/accounts/${account.id}/integrations` },

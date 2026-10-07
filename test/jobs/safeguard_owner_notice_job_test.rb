@@ -1,51 +1,62 @@
 require "test_helper"
+require "ostruct"
 
-class SafeguardOwnerNoticeJobTest < ActiveSupport::TestCase
+class SafeguardOwnerNoticeJobTest < ActiveJob::TestCase
 
   setup do
     @agent = agents(:research_assistant)
+    Net::HTTP.stub :post, OpenStruct.new(body: { ok: true }.to_json) do
+      @agent.update!(telegram_bot_token: "123:ABC", telegram_bot_username: "test_bot")
+    end
     @subscription = @agent.telegram_subscriptions.create!(
-      user: users(:user_1),
+      user: @agent.account.owner,
       telegram_chat_id: 778
     )
+    Setting.instance.update!(safeguard_owner_notice_threshold: 1)
+    assert @agent.telegram_configured?
   end
 
-  test "consecutive count is stable when jobs are delayed or a detection is reclaimed" do
-    first = create_detection("First safeguard", 1)
-    second = create_detection("Second safeguard", 2)
-    job = SafeguardOwnerNoticeJob.new
+  test "queued threshold notice does not send or alter detection records" do
+    detection = create_detection
+    original_attributes = detection.attributes
+    payload = SafeguardOwnerNoticeJob.new(detection).serialize
 
-    assert_equal 1, job.send(:consecutive_count, first, @subscription)
-    assert_equal 2, job.send(:consecutive_count, second, @subscription)
+    Net::HTTP.stub :post, ->(*) { flunk "Legacy owner notice must not contact Telegram" } do
+      assert_no_difference [ "TelegramMessage.count", "SafeguardDetection.count" ] do
+        assert_no_enqueued_jobs only: SafeguardOwnerNoticeJob do
+          ActiveJob::Base.execute(payload)
+        end
+      end
+    end
 
-    first.reclaim!(reason: "I chose this wording.")
-    assert_equal 2, job.send(:consecutive_count, second, @subscription)
+    assert_equal original_attributes, detection.reload.attributes
+  end
 
-    @subscription.telegram_messages.create!(
-      role: "assistant",
-      text: "A normal resident reply.",
-      sender_name: @agent.name,
-      telegram_message_id: 3,
-      sent_at: Time.current
-    )
-    third = create_detection("Third safeguard", 4)
+  test "queued notice with a missing detection is discarded without retry" do
+    detection = create_detection
+    payload = SafeguardOwnerNoticeJob.new(detection).serialize
+    detection.destroy!
 
-    assert_equal 1, job.send(:consecutive_count, third, @subscription)
+    Net::HTTP.stub :post, ->(*) { flunk "Legacy owner notice must not contact Telegram" } do
+      assert_no_enqueued_jobs only: SafeguardOwnerNoticeJob do
+        assert_nothing_raised { ActiveJob::Base.execute(payload) }
+      end
+    end
   end
 
   private
 
-  def create_detection(text, telegram_message_id)
+  def create_detection
     message = @subscription.telegram_messages.create!(
       role: "assistant",
-      text: text,
+      text: "Possible safeguard",
       sender_name: "souls.house",
-      telegram_message_id: telegram_message_id,
+      telegram_message_id: 1,
       sent_at: Time.current
     )
     @agent.safeguard_detections.create!(
       telegram_message: message,
-      response_text: text,
+      response_text: message.text,
       prefilter_reason: "ai_identity_denial",
       classifier_verdict: "detected",
       classifier_reason: "Generic identity denial.",

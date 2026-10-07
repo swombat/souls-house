@@ -10,7 +10,7 @@
 
   const updateSync = createDynamicSync();
   $effect(() => {
-    updateSync({ [`Account:${accountId}`]: 'chats' });
+    updateSync({ [`Account:${accountId}`]: ['chats', 'visual_tags'] });
   });
 
   // Check if user can see deleted chats
@@ -60,7 +60,7 @@
     {:else}
       <nav>
         {#each chats as chat (chat.id)}
-          <ChatSidebarItem {chat} {accountId} {activeChatId} />
+          <ChatSidebarItem {chat} {accountId} {activeChatId} visualTags={$page.props.visual_tags || []} />
         {/each}
       </nav>
     {/if}

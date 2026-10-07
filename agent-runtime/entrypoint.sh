@@ -54,11 +54,25 @@ mkdir -p "$AGENT_HOME/.chaos" \
          "$AGENT_HOME/state/antigravity"
 chmod 0700 "$AGENT_HOME/state" "$AGENT_HOME/state/claude" "$AGENT_HOME/state/antigravity"
 
+# Tailscale integration, for stock and imported homes alike, now that state is
+# agent-owned. Granted: start userspace tailscaled and join (or rejoin) the
+# tailnet. Not granted but a node is saved: log it out and delete it. Runs in
+# the background so a slow or failing tailnet never holds up the resident; the
+# outcome is in state/tailnet-boot.log and `soulshouse-tailnet status`.
+gosu agent sh -c 'soulshouse-tailnet boot >>"$HOME/state/tailnet-boot.log" 2>&1' &
+
 # Migrate before provider/account commands, journald, or incoming work. Keep
 # preferences in the database; config.toml is bootstrap-only in Chaos 47.6.
 export CHAOS_HOME="${CHAOS_HOME:-$AGENT_HOME/.chaos}"
 chown -R 1000:1000 "$CHAOS_HOME"
 gosu agent python3 /usr/local/share/helixkit-agent/runtime_settings.py
+
+# New managed imports require live server approval before any repository code.
+# Existing manually imported Mira/Lume homes do not enter this path.
+if [ -n "${SOULSHOUSE_GITHUB_IMPORT_ID:-}" ]; then
+    gosu agent python3 /home/agent/github_import_approval.py
+    gosu agent python3 /home/agent/imported_home.py --runtime-trust-check
+fi
 
 # Imported homes retain their own hooks and instructions. Stock path is unchanged.
 if [ "$HOME_CLASS" != "imported" ]; then

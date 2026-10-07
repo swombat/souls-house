@@ -24,6 +24,10 @@ class User < ApplicationRecord
 
   # API keys for external access
   has_many :api_keys, dependent: :destroy
+  has_many :requested_github_resident_imports, class_name: "GithubResidentImport",
+    foreign_key: :requested_by_id, dependent: :restrict_with_error
+  has_many :approved_github_resident_imports, class_name: "GithubResidentImport",
+    foreign_key: :approved_by_id, dependent: :nullify
   has_many :conversation_drafts, dependent: :destroy
   has_many :device_streams, foreign_key: :subject_user_id, dependent: :destroy
 

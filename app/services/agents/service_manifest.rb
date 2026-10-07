@@ -29,6 +29,7 @@ module Agents
     private
 
     def connections
+      return [] if agent.github_resident_import&.approval_error
       @connections ||= agent.agent_service_accesses
         .enabled
         .includes(:service_connection)

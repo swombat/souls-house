@@ -8,6 +8,7 @@ class Chat < ApplicationRecord
   include Chat::Archivable
   include Chat::Forkable
   include Chat::Initiable
+  include Chat::QuietRhythmRun
 
   belongs_to :ai_model, optional: true
   has_many :messages, -> { order(created_at: :asc) }, dependent: :destroy
@@ -17,12 +18,15 @@ class Chat < ApplicationRecord
   include Chat::Summarizable
 
   belongs_to :account
+  belongs_to :visual_tag, optional: true
+  validate :visual_tag_belongs_to_account
   belongs_to :active_whiteboard, class_name: "Whiteboard", optional: true
 
   has_many :chat_agents, dependent: :destroy
   has_many :agents, through: :chat_agents
   has_many :agent_runtime_interactions, dependent: :nullify
-  validates :agents, length: { minimum: 1, message: "must include at least one resident" }, if: :manual_responses?
+  validates :agents, length: { minimum: 1, message: "must include at least one resident" },
+    if: -> { new_record? && manual_responses? }
   # Public creation helpers cannot start bare-model conversations. Historical
   # rows remain readable and editable through ordinary persistence.
   validates :manual_responses, inclusion: { in: [ true ], message: "must be enabled for new resident conversations" }, on: :conversation_creation
@@ -30,6 +34,8 @@ class Chat < ApplicationRecord
   json_attributes :title_or_default, :model_id, :model_label, :ai_model_name, :updated_at_formatted,
                   :updated_at_short, :activity_at, :message_count, :context_tokens, :cost_tokens, :reasoning_tokens, :web_access, :manual_responses,
                   :participants_json, :archived_at, :discarded_at, :archived, :discarded, :respondable, :summary do |hash, options|
+    hash["visual_tag"] = visual_tag&.as_json
+    hash.delete("visual_tag_id")
     # For sidebar format, only include attributes used by the chat list UI.
     if options&.dig(:as) == :sidebar_json
       hash.slice!(
@@ -43,6 +49,7 @@ class Chat < ApplicationRecord
         "context_tokens",
         "manual_responses",
         "participants_json",
+        "visual_tag",
         "archived",
         "discarded"
       )
@@ -94,7 +101,15 @@ class Chat < ApplicationRecord
   end
 
   # Create chat with optional initial message
-  def self.create_with_message!(attributes, message_content: nil, user: nil, files: nil, agent_ids: nil, audio_signed_id: nil)
+  # The opening message wakes residents the same way a later send does: a
+  # room with one resident wakes it automatically (Message), and a room with
+  # several wakes the residents the message @mentions, through the same
+  # durable mention dispatch PostFromHuman writes. The dispatch is accepted in
+  # this transaction and enqueued once every enclosing transaction commits.
+  # While live activity is off there is no durable run to reserve, so the
+  # conversation is still created and the mention simply doesn't wake anyone
+  # (the person can ask again from the room).
+  def self.create_with_message!(attributes, message_content: nil, user: nil, files: nil, agent_ids: nil, audio_signed_id: nil, automatic_response: true)
     transaction do
       chat = new(attributes)
       chat.agent_ids = agent_ids if agent_ids.present?
@@ -105,6 +120,7 @@ class Chat < ApplicationRecord
           content: message_content || "",
           role: "user",
           user: user,
+          suppress_automatic_dispatch: !automatic_response,
           skip_content_validation: message_content.blank? && files.present? && files.any? # Skip content validation if we have files but no content
         })
         message.attachments.attach(files) if files.present? && files.any?
@@ -116,10 +132,27 @@ class Chat < ApplicationRecord
             Rails.logger.warn "Invalid audio_signed_id for initial message in chat #{chat.id}"
           end
         end
+        chat.send(:accept_opening_mention_dispatch, message) if automatic_response
       end
       chat
     end
   end
+
+  def accept_opening_mention_dispatch(message)
+    return if sole_resident
+    return unless AgentRuntimeInteraction.live_activity_enabled?
+
+    target_ids = mentioned_agent_ids(message.content.to_s)
+    return if target_ids.empty?
+
+    dispatch = MessageDispatch.accept!(message: message, target_agent_ids: target_ids)
+    ActiveRecord.after_all_transactions_commit do
+      MessageDispatchJob.perform_later(dispatch)
+    rescue StandardError => e
+      Rails.logger.warn "[Chat] opening dispatch #{dispatch.id} enqueue failed, wake will lapse: #{e.class}: #{e.message}"
+    end
+  end
+  private :accept_opening_mention_dispatch
 
   def title_or_default
     title.presence || "New Conversation"
@@ -176,9 +209,7 @@ class Chat < ApplicationRecord
   end
 
   def json_cache_key(as: nil)
-    return cache_key_with_version unless as.present?
-
-    "#{cache_key_with_version}/json/#{as}/v3"
+    "#{cache_key_with_version}/json/#{as || 'default'}/v4/#{visual_tag&.cache_key_with_version || 'untagged'}"
   end
 
   def updated_at_formatted
@@ -346,6 +377,12 @@ class Chat < ApplicationRecord
   end
 
   private
+
+  def visual_tag_belongs_to_account
+    if visual_tag && visual_tag.account_id != account_id
+      errors.add(:visual_tag, "must belong to this account")
+    end
+  end
 
   def configure_defaults
     unless ai_model_id.present? || model_id_string.present?

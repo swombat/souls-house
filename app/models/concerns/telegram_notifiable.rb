@@ -163,16 +163,6 @@ module TelegramNotifiable
     )
   end
 
-  def notify_subscribers!(message, chat)
-    return unless telegram_configured?
-
-    telegram_subscriptions.active.includes(:user).each do |subscription|
-      next unless subscription.reads_account?(chat.account_id)
-
-      TelegramNotificationJob.perform_later(subscription, message, chat)
-    end
-  end
-
   def telegram_deep_link_for(user)
     # Telegram deep link params only allow [A-Za-z0-9_] and max 64 chars,
     # so we store a short random token in Rails cache instead of signing

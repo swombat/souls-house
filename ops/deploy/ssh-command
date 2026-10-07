@@ -1,0 +1,10 @@
+#!/usr/bin/python3
+"""Installed root-owned; this account has no shell/forwarding/Docker authority."""
+import os
+import re
+import sys
+
+command = os.environ.get("SSH_ORIGINAL_COMMAND", "")
+if not re.fullmatch(r"(rails|chaos|both|runtime|status [0-9a-f]{32})", command):
+    sys.exit("Unsupported deployment command")
+os.execv("/usr/bin/sudo", ["sudo", "-n", "/opt/house-deploy/gate.py", *command.split()])

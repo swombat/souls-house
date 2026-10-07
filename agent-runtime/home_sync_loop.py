@@ -37,6 +37,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import imported_home
+import standard_home_sync
 
 SYNC_INTERVAL_SECS = 600
 SYNC_TIMEOUT_SECS = 300
@@ -126,6 +127,8 @@ def write_status(status, path=None):
 def run_once(runner=subprocess.run, path=None):
     """Run one sync attempt and record its outcome. Returns the new status."""
     previous = read_status(path) or {}
+    if imported_home.sync_strategy() == 'standard':
+        return run_standard_once(runner, path, previous)
     started = _now()
     status = {
         'profile': os.environ.get('SOULSHOUSE_HOME_PROFILE'),
@@ -183,12 +186,49 @@ def run_once(runner=subprocess.run, path=None):
     return status
 
 
+def run_standard_once(runner, path, previous):
+    """Trusted runtime only; never run the standard Git worker on Rails host."""
+    status = dict(state='failed', checked_at=standard_home_sync.now(),
+                  last_success_at=previous.get('last_success_at'),
+                  reason_code='runner_failed', rescue_ref=None, rescue_status='not_needed')
+    try:
+        root = imported_home.home_root()
+        manifest = json.loads((root / 'resident-home.json').read_text())
+        config = imported_home.standard_sync_configuration(manifest)
+        args = [PYTHON, str(Path(__file__).with_name('standard_home_sync.py')),
+                '--root', str(root), '--branch', os.environ['SOULSHOUSE_GITHUB_IMPORT_BRANCH']]
+        for key, paths in config.items():
+            for scope in paths:
+                args += ['--' + key.replace('_paths', '_path').replace('_', '-'), scope]
+        # Runner has a 180s work budget plus bounded abort/rescue budgets. Give
+        # it time to finish preservation instead of killing it during cleanup.
+        result = runner(args, cwd=root, timeout=360, check=False,
+                        capture_output=True, text=True)
+        reported = json.loads(result.stdout)
+        if (isinstance(reported, dict) and reported.get('reason_code') in standard_home_sync.REASONS and
+                ((result.returncode == 0 and reported.get('state') == 'ok') or
+                 (result.returncode == EXIT_BUSY and reported.get('state') == 'busy') or
+                 (result.returncode != 0 and reported.get('state') in ('blocked', 'failed', 'needs_attention')))):
+            status = reported
+            status['last_success_at'] = reported.get('last_success_at') or previous.get('last_success_at')
+    except subprocess.TimeoutExpired:
+        status['reason_code'] = 'timed_out'
+    except (ValueError, KeyError, OSError):
+        status['reason_code'] = 'invalid_configuration'
+    write_status(status, path)
+    return status
+
+
 def health(path=None, now=None):
     """Summarise the status file for the shim's /health response."""
     status = read_status(path)
     if status is None:
         return {'state': 'unknown', 'detail': 'no sync attempt recorded yet'}
     summary = dict(status)
+    if status.get('state') == 'ok' and 'reason_code' in status:
+        success = _parse_time(status.get('last_success_at'))
+        if success is None or ((now or datetime.now(timezone.utc)) - success).total_seconds() > 3 * SYNC_INTERVAL_SECS:
+            summary.update(state='stale', reason_code='stale')
     last_success = status.get('last_success_at')
     if status.get('state') == 'ok' and last_success:
         try:

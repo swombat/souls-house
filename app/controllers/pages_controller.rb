@@ -6,6 +6,14 @@ class PagesController < ApplicationController
     render inertia: "home"
   end
 
+  def features
+    render inertia: "features", props: { changelog: Changelog.recent }
+  end
+
+  def changelog
+    render inertia: "changelog", props: { changelog: Changelog.entries }
+  end
+
   def privacy
     render inertia: "privacy"
   end

@@ -83,6 +83,59 @@ class SendPathIntegrationTest < ActionDispatch::IntegrationTest
     assert_equal 1, MessageDispatch.where(chat: chat).count
   end
 
+  test "the opening message of a new web conversation wakes the residents it mentions" do
+    account = accounts(:personal_account)
+    account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router")
+    user = users(:user_1)
+    first = account.agents.create!(name: "First", system_prompt: "Test", runtime: "external")
+    second = account.agents.create!(name: "Second", system_prompt: "Test", runtime: "external")
+    web_login(user)
+
+    assert_enqueued_jobs 1, only: MessageDispatchJob do
+      post account_chats_path(account), params: {
+        chat: { title: "Opening mention" }, message: "Could you look at this @Second?",
+        agent_ids: [ first.to_param, second.to_param ]
+      }
+    end
+
+    chat = account.chats.order(:id).last
+    dispatch = MessageDispatch.where(chat: chat).sole
+    assert_equal "mention", dispatch.kind
+    assert_equal [ second.id ], dispatch.target_agent_ids
+    assert_equal chat.messages.sole, dispatch.message
+  end
+
+  test "an opening message with no mention in a two-resident room wakes no one" do
+    account = accounts(:personal_account)
+    account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router")
+    user = users(:user_1)
+    first = account.agents.create!(name: "First", system_prompt: "Test", runtime: "external")
+    second = account.agents.create!(name: "Second", system_prompt: "Test", runtime: "external")
+
+    chat = nil
+    assert_no_enqueued_jobs only: MessageDispatchJob do
+      chat = Chat.create_with_message!({ account: account, title: "Quiet", manual_responses: true },
+        message_content: "Just thinking out loud", user: user, agent_ids: [ first.id, second.id ])
+    end
+    assert_empty MessageDispatch.where(chat: chat)
+  end
+
+  test "an opening mention inside an outer transaction enqueues only after it commits" do
+    account = accounts(:personal_account)
+    account.update!(use_system_ai_credentials: false, openrouter_api_key: "test-only-router")
+    user = users(:user_1)
+    first = account.agents.create!(name: "First", system_prompt: "Test", runtime: "external")
+    second = account.agents.create!(name: "Second", system_prompt: "Test", runtime: "external")
+
+    assert_no_enqueued_jobs only: MessageDispatchJob do
+      Chat.transaction do
+        Chat.create_with_message!({ account: account, title: "Rolled back", manual_responses: true },
+          message_content: "@First please", user: user, agent_ids: [ first.id, second.id ])
+        raise ActiveRecord::Rollback
+      end
+    end
+  end
+
   test "the automatic wake is reserved before the send returns and never called a mention" do
     user, chat, resident = solo_room(users(:user_1), accounts(:personal_account))
     web_login(user)

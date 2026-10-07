@@ -13,10 +13,10 @@ class Agents::TelegramTestsController < ApplicationController
     end
 
     subscriptions.each do |sub|
-      @agent.telegram_send_message(sub.telegram_chat_id, "Test notification from #{@agent.name}.\n\nIf you see this, Telegram notifications are working!")
+      @agent.telegram_send_message(sub.telegram_chat_id, "Test message from #{@agent.name}.\n\nIf you see this, Telegram messaging is working!")
     end
 
-    redirect_to edit_account_agent_path(current_account, @agent), notice: "Test notification sent to #{subscriptions.count} subscriber(s)."
+    redirect_to edit_account_agent_path(current_account, @agent), notice: "Test message sent to #{subscriptions.count} subscriber(s)."
   rescue TelegramNotifiable::TelegramError => e
     redirect_to edit_account_agent_path(current_account, @agent), alert: "Telegram error: #{e.message}"
   end

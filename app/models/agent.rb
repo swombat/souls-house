@@ -10,6 +10,7 @@ class Agent < ApplicationRecord
   include Agent::Initiation
   include Agent::Memory
   include Agent::Predecessor
+  include Agent::Subagents
   include Agent::RuntimeAvailability
   include Agent::SessionPolicy
 
@@ -26,6 +27,7 @@ class Agent < ApplicationRecord
 
   belongs_to :account
   has_one :placement, class_name: "AgentPlacement", dependent: :destroy, inverse_of: :agent
+  belongs_to :github_resident_import, optional: true, inverse_of: :agent
   has_one :house_inference_grant, dependent: :nullify
   has_one :memory_vault, class_name: "Mnemodyne::Vault", dependent: :restrict_with_error, inverse_of: :agent
   belongs_to :outbound_api_key, class_name: "ApiKey", optional: true
@@ -149,6 +151,7 @@ class Agent < ApplicationRecord
                    :persistent_session?, :persistent_wake_session?, :scheduled_wakes_enabled?,
                        :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
                        :session_context_budget_tokens, :turn_timeout_minutes,
+                       :subagents_enabled?, :subagent_models,
                   except: SENSITIVE_JSON_ATTRIBUTES do |hash, options|
     # Keep credentials out even if a caller supplies runtime serialization options
     # that would otherwise override the configured `except` list.
@@ -279,7 +282,7 @@ class Agent < ApplicationRecord
   end
 
   def apply_default_service_accesses
-    return if portability_custody.present?
+    return if portability_custody.present? || github_resident_import_id.present?
     account.service_connections.where(enabled_for_new_agents: true).find_each do |connection|
       agent_service_accesses.find_or_create_by!(service_connection: connection) do |access|
         access.enabled = true

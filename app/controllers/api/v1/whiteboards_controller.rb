@@ -16,7 +16,7 @@ module Api
           name: params[:name],
           content: params[:content],
           summary: params[:summary],
-          last_edited_by: current_api_user
+          last_edited_by: current_api_editor
         )
 
         render json: {
@@ -55,7 +55,7 @@ module Api
         return render_update_error("Provided name, summary, and content must not be null") if attributes.values.any?(&:nil?)
 
         whiteboard.lock_version = lock_version
-        whiteboard.update!(attributes.merge(last_edited_by: current_api_user))
+        whiteboard.update!(attributes.merge(last_edited_by: current_api_editor))
 
         render json: { whiteboard: { id: whiteboard.to_param, lock_version: whiteboard.lock_version } }
       rescue ActiveRecord::RecordInvalid => e

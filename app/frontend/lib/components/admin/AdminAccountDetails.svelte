@@ -49,11 +49,11 @@
   }
 </script>
 
-<div class="p-8">
+<div class="p-4 sm:p-8 [overflow-wrap:anywhere]">
   <div class="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-    <div>
+    <div class="min-w-0">
       <h1 class="text-3xl font-bold mb-2">{account.name}</h1>
-      <div class="flex gap-2 text-sm text-muted-foreground">
+      <div class="flex flex-wrap gap-2 text-sm text-muted-foreground">
         <Badge variant="outline">
           {account.account_type === 'personal' ? 'Personal Account' : 'Organization'}
         </Badge>

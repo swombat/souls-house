@@ -30,6 +30,34 @@ module Agents
       end
     end
 
+    def seed_from_directory!(root)
+      ensure!
+      raise SeedError, "Identity volume is not empty; refusing to overwrite a home" unless empty?
+      entries = {}
+      Dir.glob(File.join(root, "**", "*"), File::FNM_DOTMATCH).each do |path|
+        next if [ ".", ".." ].include?(File.basename(path))
+        relative = Pathname.new(path).relative_path_from(Pathname.new(root)).to_s
+        Agents::Portability::Archive.safe_path!(relative)
+        stat = File.lstat(path)
+        raise SeedError, "Links and special files are not supported" unless stat.file? || stat.directory?
+        entries[relative] = { "type" => stat.directory? ? "directory" : "file",
+          "size" => stat.size, "mode" => stat.mode & 0755 }
+      end
+      raise SeedError, "Seed exceeds file limit" if entries.size > Agents::GithubImportSource::MAX_FILES * 2
+      Dir.mktmpdir("github-resident-seed-") do |dir|
+        archive = File.join(dir, "home.tar.gz")
+        Agents::Portability::Archive.pack(root, entries, archive)
+        cmd = [ "docker", "run", "--rm", "-i", "-v", "#{volume_name}:/identity",
+          "busybox", "sh", "-c", "tar xz -C /identity && chown -R 1000:1000 /identity" ]
+        Open3.popen3(*cmd) do |stdin, _stdout, stderr, thread|
+          File.open(archive, "rb") { |input| IO.copy_stream(input, stdin) }
+          stdin.close
+          stderr.read
+          raise SeedError, "Identity seed failed; refusing automatic overwrite" unless thread.value.success?
+        end
+      end
+    end
+
     def empty?
       Agents::Resources.new(agent).verify_existing!
       cmd = [

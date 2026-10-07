@@ -23,6 +23,23 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "sidebar leaves out quiet rhythm runs and brings them back once a person replies" do
+    resident = agents(:research_assistant)
+    rhythm = Rhythm.create!(account: @account, creator_agent: resident, title: "House watch", opening: "Look round.",
+      agents: [ resident ], cadence: "daily", time_of_day: "09:00", timezone: "UTC", next_run_at: 1.hour.ago)
+    run = rhythm.fire!(now: Time.current).occurrence.chat
+
+    get account_chats_path(@account)
+    assert_not_includes inertia_shared_props.fetch("chats").pluck("id"), run.to_param
+    get account_chat_path(@account, run)
+    assert_response :success, "a quiet run still opens as an ordinary conversation"
+
+    run.messages.create!(role: "user", user: @user, content: "Seen it.", suppress_automatic_dispatch: true)
+    @inertia_props = nil # the helper memoizes the first response's props
+    get account_chats_path(@account)
+    assert_includes inertia_shared_props.fetch("chats").pluck("id"), run.to_param
+  end
+
   test "sidebar includes legacy-prefixed threads for members and site admins by default" do
     resident_chat = @account.chats.create!(title: "[AGENT-ONLY] Old resident thread")
     archived_chat = @account.chats.create!(title: "[AGENT-ONLY] Archived", archived_at: Time.current)

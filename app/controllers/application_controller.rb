@@ -6,6 +6,8 @@ class ApplicationController < ActionController::Base
   include AccountScoping
   include FeatureToggleable
   allow_browser versions: :modern
+  # PaperTrail 17 no longer adds this callback itself.
+  before_action :set_paper_trail_whodunnit
 
   rescue_from ActiveRecord::RecordNotFound, with: :record_not_found
 
@@ -15,9 +17,9 @@ class ApplicationController < ActionController::Base
       {
         user: Current.user.as_json,
         account: current_account&.as_json,
+        visual_tags: -> { current_account ? VisualTag.palette_with_usage_for(current_account) : [] },
         accounts: Current.user.confirmed_accounts.map(&:as_json),
-        reply_attention: -> { ReplyExpectation.summary_for(Current.user, account: current_account) },
-        account_has_whiteboards: current_account&.whiteboards&.active&.exists? || false,
+        reply_attention: -> { ReplyExpectation.summary_for(Current.user, account: current_account, chat: @chat) },
         theme_preference: Current.user&.theme || cookies[:theme],
         site_settings: shared_site_settings,
         is_account_admin: current_account&.manageable_by?(Current.user) || false,
@@ -34,6 +36,12 @@ class ApplicationController < ActionController::Base
   wrap_parameters false # Disable default wrapping of parameters in JSON requests (Helpful with Inertia js)
 
   private
+
+  # Who made a versioned change, as "User:12". A Proc, so it is read when the
+  # version is written rather than when the callback runs.
+  def user_for_paper_trail
+    -> { ItemVersion.whodunnit_for(Current.user) }
+  end
 
   def record_not_found
     if request.headers["X-Inertia"]

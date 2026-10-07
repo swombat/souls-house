@@ -10,6 +10,11 @@
 #     schedule: at 5am every day
 
 production:
+  rhythms:
+    class: RhythmSweepJob
+    queue: default
+    schedule: every minute
+
   message_dispatch_sweep:
     class: MessageDispatchSweepJob
     queue: default
@@ -84,11 +89,6 @@ production:
     class: AgentHealthCheckJob
     queue: default
     schedule: every 5 minutes
-
-  safeguard_weekly_digest:
-    class: SafeguardWeeklyDigestJob
-    queue: default
-    schedule: every monday at 8am
 
   safeguard_detection_retention:
     class: SafeguardDetectionRetentionJob
