@@ -28,6 +28,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from cryptography.hazmat.primitives import serialization
@@ -49,6 +50,22 @@ ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"})
 
 class RefusedAction(Exception):
     pass
+
+
+class BadOrigin(Exception):
+    pass
+
+
+def validate_origin(url):
+    """The runner sends its one-time token to this origin, so it must be a
+    bare HTTPS origin: no credentials, path, query or fragment."""
+    parts = urllib.parse.urlsplit(url or "")
+    if (
+        parts.scheme != "https" or not parts.hostname or parts.username or parts.password
+        or parts.path not in ("", "/") or parts.query or parts.fragment
+    ):
+        raise BadOrigin(f"rails_url must be a bare https origin: {url!r}")
+    return f"https://{parts.netloc}"
 
 
 def require_allowed(action):
@@ -235,8 +252,17 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
          facts=collect_facts, max_heartbeats=None):
     with open(config_path) as handle:
         config = json.load(handle)
+    try:
+        config["rails_url"] = validate_origin(config.get("rails_url"))
+    except BadOrigin as error:
+        print(f"{error}; needs operator review", file=sys.stderr)
+        return 4
     key = load_or_create_key(state_dir)
     marker = os.path.join(state_dir, "enrolled")
+    if os.path.exists(marker) and "enrollment_token" in config:
+        # A crash between writing the marker and dropping the spent token.
+        forget_token(config_path)
+        config.pop("enrollment_token", None)
 
     attempt = 0
     while not os.path.exists(marker):
@@ -249,6 +275,12 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
             forget_token(config_path)
             break
         if outcome == "refused":
+            # A lost enrollment reply past the token's lifetime: the pinned key
+            # still works, and a signed heartbeat is how that is discovered.
+            if heartbeat(config, key, facts(config.get("runtime_image"))) == 200:
+                open(marker, "w").close()
+                forget_token(config_path)
+                break
             print("enrollment refused; needs operator review", file=sys.stderr)
             return 3
         sleep(ENROLL_BACKOFF_SECONDS[min(attempt, len(ENROLL_BACKOFF_SECONDS) - 1)])

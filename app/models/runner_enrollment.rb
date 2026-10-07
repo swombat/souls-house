@@ -60,21 +60,31 @@ class RunnerEnrollment < ApplicationRecord
     end
   end
 
+  def authenticate_token!(token)
+    return if ActiveSupport::SecurityUtils.secure_compare(self.class.digest(token), token_digest)
+
+    raise Refused.new(:invalid_token, 401)
+  end
+
   # Returns :pending, :enrolled or :already_enrolled; raises Refused.
+  # A spent token answers "already enrolled" only for the same key, the same
+  # confirmed server and inside the token's lifetime. After that, a runner
+  # whose enrollment reply was lost recovers with a signed heartbeat.
   # The caller has already verified that the request was signed with
   # public_key, so the runner holds the matching private key.
   def enroll!(token:, public_key:, reported_server_id:, facts:, now: Time.current)
     with_lock do
       raise Refused.new(:revoked, 403) if revoked_at
-      raise Refused.new(:invalid_token, 401) unless ActiveSupport::SecurityUtils.secure_compare(self.class.digest(token), token_digest)
+      authenticate_token!(token)
+      raise Refused.new(:expired, 410) if now >= expires_at
 
       if enrolled_at
-        return :already_enrolled if ActiveSupport::SecurityUtils.secure_compare(public_key.to_s, self.public_key.to_s)
+        raise Refused.new(:key_mismatch, 409) unless ActiveSupport::SecurityUtils.secure_compare(public_key.to_s, self.public_key.to_s)
+        raise Refused.new(:server_mismatch, 409) unless reported_server_id == expected_provider_server_id
 
-        raise Refused.new(:key_mismatch, 409)
+        return :already_enrolled
       end
 
-      raise Refused.new(:expired, 410) if now >= expires_at
       return :pending if expected_provider_server_id.nil?
       raise Refused.new(:server_mismatch, 409) unless reported_server_id == expected_provider_server_id
 

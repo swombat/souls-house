@@ -28,6 +28,10 @@ module RunnerUserData
         ct state established,related accept
         ct state invalid drop
         meta l4proto { icmp, ipv6-icmp } accept
+        # DHCP replies (v4 and v6) can arrive as broadcasts conntrack
+        # does not match; without these the VM can lose its address on reboot.
+        udp sport 67 udp dport 68 accept
+        udp sport 547 udp dport 546 accept
         tcp dport 22 accept
       }
     }
@@ -61,8 +65,9 @@ module RunnerUserData
     ExecStart=/usr/bin/python3 /opt/souls-house-runner/souls_house_runner.py
     Restart=on-failure
     RestartSec=30
-    # A refused enrollment exits 2 or 3 and needs an operator, not a loop.
-    RestartPreventExitStatus=2 3
+    # A refused enrollment or a bad origin exits 2, 3 or 4 and needs an
+    # operator, not a loop.
+    RestartPreventExitStatus=2 3 4
 
     [Install]
     WantedBy=multi-user.target
@@ -73,7 +78,7 @@ module RunnerUserData
   module_function
 
   def render(enrollment:, token:, rails_url:, runtime_image: nil)
-    raise ArgumentError, "rails_url must be https" unless URI.parse(rails_url).is_a?(URI::HTTPS)
+    validate_origin!(rails_url)
 
     config = {
       "rails_url" => rails_url,
@@ -104,6 +109,17 @@ module RunnerUserData
     raise TooLarge, "user_data is #{rendered.bytesize} bytes" if rendered.bytesize > HETZNER_USER_DATA_LIMIT
 
     rendered
+  end
+
+  # The runner posts its token to this origin, so it must be exactly an HTTPS
+  # origin: no credentials, path, query or fragment.
+  def validate_origin!(rails_url)
+    uri = URI.parse(rails_url)
+    valid = uri.is_a?(URI::HTTPS) && uri.host.present? && uri.userinfo.nil? &&
+      [ "", "/" ].include?(uri.path) && uri.query.nil? && uri.fragment.nil?
+    raise ArgumentError, "rails_url must be a bare https origin" unless valid
+  rescue URI::InvalidURIError
+    raise ArgumentError, "rails_url must be a bare https origin"
   end
 
   def runner_source

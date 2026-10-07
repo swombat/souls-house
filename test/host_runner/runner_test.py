@@ -143,11 +143,63 @@ class MainLoopTest(unittest.TestCase):
         self.assertNotIn("enrollment_token", config)
         self.assertTrue(os.path.exists(os.path.join(state, "enrolled")))
 
-    def test_refusal_stops_without_heartbeats(self):
+    def test_refusal_stops_after_one_unanswered_recovery_heartbeat(self):
         code, _, beats, config, _ = self.run_main(["refused"])
         self.assertEqual(code, 3)
-        self.assertEqual(beats, [])
+        self.assertEqual(len(beats), 1)
         self.assertIn("enrollment_token", config)
+
+
+class OriginTest(unittest.TestCase):
+    def test_only_a_bare_https_origin_is_accepted(self):
+        self.assertEqual(runner.validate_origin("https://house.example/"), "https://house.example")
+        self.assertEqual(runner.validate_origin("https://house.example:8443"), "https://house.example:8443")
+        for bad in ("http://house.example", "https://u:p@house.example", "https://house.example/api",
+                    "https://house.example?x=1", "https://house.example#f", "https://", "", None):
+            with self.assertRaises(runner.BadOrigin, msg=repr(bad)):
+                runner.validate_origin(bad)
+
+
+class RecoveryTest(unittest.TestCase):
+    def setUp(self):
+        self.state = tempfile.mkdtemp()
+        self.config_path = os.path.join(self.state, "config.json")
+
+    def write_config(self, **overrides):
+        with open(self.config_path, "w") as handle:
+            json.dump({**CONFIG, **overrides}, handle)
+
+    def read_config(self):
+        with open(self.config_path) as handle:
+            return json.load(handle)
+
+    def run_main(self, enroll=None, heartbeat=None):
+        return runner.main(
+            config_path=self.config_path, state_dir=self.state, sleep=lambda s: None,
+            enroll=enroll or (lambda *a: self.fail("should not enroll")),
+            heartbeat=heartbeat or (lambda *a: 200), facts=lambda image: {}, max_heartbeats=1,
+        )
+
+    def test_bad_origin_stops_before_any_request(self):
+        self.write_config(rails_url="http://house.example")
+        self.assertEqual(self.run_main(heartbeat=lambda *a: self.fail("should not send")), 4)
+
+    def test_spent_token_left_by_a_crash_is_cleaned_up_at_start(self):
+        self.write_config()
+        open(os.path.join(self.state, "enrolled"), "w").close()
+        self.assertEqual(self.run_main(), 0)
+        self.assertNotIn("enrollment_token", self.read_config())
+
+    def test_refused_enrollment_recovers_when_the_pinned_key_still_heartbeats(self):
+        self.write_config()
+        self.assertEqual(self.run_main(enroll=lambda *a: "refused", heartbeat=lambda *a: 200), 0)
+        self.assertTrue(os.path.exists(os.path.join(self.state, "enrolled")))
+        self.assertNotIn("enrollment_token", self.read_config())
+
+    def test_refused_enrollment_without_a_working_key_needs_review(self):
+        self.write_config()
+        self.assertEqual(self.run_main(enroll=lambda *a: "refused", heartbeat=lambda *a: 401), 3)
+        self.assertIn("enrollment_token", self.read_config())
 
 
 class AllowlistTest(unittest.TestCase):

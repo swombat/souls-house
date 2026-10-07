@@ -34,16 +34,22 @@ module Api
           @payload = {}
         end
 
+        # Verifies the signature and returns the nonce. Writes nothing: the
+        # nonce is recorded only once the caller is authenticated, so an
+        # unauthenticated stranger cannot fill the nonce table.
         def verify_signature!(public_key_b64)
-          nonce = RunnerSignature.verify!(
+          RunnerSignature.verify!(
             method: request.request_method, path: request.path, body: raw_body,
             headers: request.headers, public_key_b64:, expected_runner_id: enrollment.public_id
           )
-          record_nonce!(nonce)
         end
 
+        # Retained beyond the whole accepted timestamp window, including
+        # requests dated up to MAX_SKEW in the future.
+        NONCE_RETENTION = (RunnerSignature::MAX_SKEW * 2 + 60).seconds
+
         def record_nonce!(nonce)
-          enrollment.request_nonces.where(created_at: ...(RunnerSignature::MAX_SKEW * 2).seconds.ago).delete_all
+          enrollment.request_nonces.where(created_at: ...NONCE_RETENTION.ago).delete_all
           enrollment.request_nonces.create!(nonce:, created_at: Time.current)
         rescue ActiveRecord::RecordNotUnique
           raise RunnerSignature::Invalid.new(:replayed_nonce)

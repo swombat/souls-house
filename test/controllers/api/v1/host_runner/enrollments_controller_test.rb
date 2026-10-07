@@ -87,6 +87,48 @@ class Api::V1::HostRunner::EnrollmentsControllerTest < ActionDispatch::Integrati
     assert_nil @enrollment.reload.enrolled_at
   end
 
+  test "nothing is written for a caller without the token, however well it signs" do
+    assert_no_difference -> { RunnerRequestNonce.count } do
+      enroll(token: "not-the-token")
+      assert_response :unauthorized
+      enroll(runner_id: "rnr_doesnotexist0000")
+      assert_response :unauthorized
+      body = JSON.generate(token: @token, public_key: public_key_b64(@key))
+      post PATH, params: body, headers: signed_runner_headers(runner_key, path: PATH, body:, runner_id: @enrollment.public_id)
+      assert_response :unauthorized
+    end
+    enroll
+    assert_equal 1, RunnerRequestNonce.count
+  end
+
+  test "after the token's lifetime a repeated enrollment is refused, and a signed heartbeat recovers" do
+    @enrollment.confirm_provider_server!(4242)
+    enroll
+    assert_response :ok
+    travel 25.hours do
+      enroll
+      assert_response :gone
+      assert_equal "expired", response.parsed_body["error"]
+
+      body = JSON.generate(facts: { provider_server_id: 4242 })
+      post "/api/v1/host_runner/heartbeat", params: body,
+        headers: signed_runner_headers(@key, path: "/api/v1/host_runner/heartbeat", body:, runner_id: @enrollment.public_id)
+      assert_response :ok
+    end
+  end
+
+  test "a repeated enrollment must come from the confirmed server and an unrevoked runner" do
+    @enrollment.confirm_provider_server!(4242)
+    enroll
+    enroll(server: 99)
+    assert_response :conflict
+    assert_equal "server_mismatch", response.parsed_body["error"]
+    @enrollment.revoke!
+    enroll
+    assert_response :forbidden
+    assert_equal "revoked", response.parsed_body["error"]
+  end
+
   test "enrollment never makes the placement ready" do
     @enrollment.confirm_provider_server!(4242)
     enroll

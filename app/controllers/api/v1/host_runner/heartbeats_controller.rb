@@ -8,7 +8,7 @@ module Api
           # nothing about enrollment state.
           raise RunnerSignature::Invalid.new(:unknown_runner) unless enrollment.enrolled?
 
-          verify_signature!(enrollment.public_key)
+          record_nonce!(verify_signature!(enrollment.public_key))
           enrollment.heartbeat!(reported_server_id:, facts:)
           render json: { status: "ok" }
         end

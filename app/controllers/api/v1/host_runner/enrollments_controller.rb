@@ -8,10 +8,14 @@ module Api
         # confirmed by procurement; the token is not burned.
         def create
           public_key = payload["public_key"].to_s
-          verify_signature!(public_key)
-          result = enrollment.enroll!(
-            token: payload["token"].to_s, public_key:, reported_server_id:, facts:
-          )
+          token = payload["token"].to_s
+          nonce = verify_signature!(public_key)
+          # A signature by a caller-chosen key proves possession, not
+          # authority. The bound one-time token is the authority, so it is
+          # checked before anything is written.
+          enrollment.authenticate_token!(token)
+          record_nonce!(nonce)
+          result = enrollment.enroll!(token:, public_key:, reported_server_id:, facts:)
           render json: { status: result.to_s }, status: result == :pending ? :accepted : :ok
         end
 

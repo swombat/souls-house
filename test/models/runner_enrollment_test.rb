@@ -47,6 +47,14 @@ class RunnerEnrollmentTest < ActiveSupport::TestCase
     assert_nil @enrollment.reload.enrolled_at
   end
 
+  test "a spent token is idempotent only inside its lifetime and for the confirmed server" do
+    @enrollment.confirm_provider_server!(4242)
+    assert_equal :enrolled, enroll
+    assert_equal :server_mismatch, assert_raises(RunnerEnrollment::Refused) { enroll(server: 5) }.code
+    assert_equal :expired, assert_raises(RunnerEnrollment::Refused) { enroll(now: 25.hours.from_now) }.code
+    assert_equal @key, @enrollment.reload.public_key
+  end
+
   test "an expired token is refused even before confirmation, so the operation goes to review" do
     assert_equal :expired, assert_raises(RunnerEnrollment::Refused) { enroll(now: 25.hours.from_now) }.code
   end

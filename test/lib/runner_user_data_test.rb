@@ -39,13 +39,18 @@ class RunnerUserDataTest < ActiveSupport::TestCase
   test "drops inbound traffic except SSH and starts only the firewall, Docker and the runner" do
     nft = parsed["write_files"].find { |f| f["path"].end_with?(".nft") }["content"]
     assert_includes nft, "policy drop;"
-    assert_equal [ "22" ], nft.scan(/dport (\d+)/).flatten
+    assert_equal [ "22" ], nft.scan(/tcp dport (\d+)/).flatten
+    assert_equal %w[68 546], nft.scan(/udp sport \d+ udp dport (\d+)/).flatten
     enabled = parsed["runcmd"].select { |cmd| cmd[1] == "enable" }.map(&:last)
     assert_equal %w[souls-house-firewall docker souls-house-runner], enabled
   end
 
-  test "refuses a plain-http house URL" do
-    assert_raises(ArgumentError) { render(rails_url: "http://souls.example") }
+  test "refuses anything but a bare https origin for the house" do
+    [ "http://souls.example", "https://user:pw@souls.example", "https://souls.example/api",
+      "https://souls.example?x=1", "https://souls.example#f", "https://", "not a url" ].each do |url|
+      assert_raises(ArgumentError, url) { render(rails_url: url) }
+    end
+    assert render(rails_url: "https://souls.example/")
   end
 
 end
