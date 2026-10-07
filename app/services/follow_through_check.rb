@@ -45,8 +45,8 @@ class FollowThroughCheck
   TEXT
 
   # Opt-in per resident until the residents it would wake have been asked
-  # (ADR 0002). Site admins set it in Admin > Settings: "all", or a
-  # comma-separated list of resident ids (the obfuscated id in URLs). Empty: off.
+  # (ADR 0002). Site admins set it in Admin > Settings: off, picked residents
+  # (agents.follow_through), or everyone.
   def self.enabled_for?(agent)
     return false if agent.nil?
     Setting.instance.follow_through_enabled_for?(agent)

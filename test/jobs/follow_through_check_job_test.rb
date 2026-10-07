@@ -11,7 +11,7 @@ class FollowThroughCheckJobTest < ActiveSupport::TestCase
       trigger_bearer_token: "tr_valid", health_state: "healthy", consecutive_health_failures: 0
     )
     @chat = @agent.account.chats.create!(title: "Follow-through", manual_responses: true, agents: [ @agent, @other ])
-    Setting.instance.update!(follow_through_residents: @agent.to_param)
+    with_follow_through("selected", [ @agent ])
     @run = finished_run
   end
 
@@ -34,13 +34,13 @@ class FollowThroughCheckJobTest < ActiveSupport::TestCase
   end
 
   test "the check is opt-in per resident" do
-    [ nil, "", "  ", @other.to_param ].each do |setting|
-      with_follow_through(setting) do
+    [ [ "off", [ @agent ] ], [ "selected", [] ], [ "selected", [ @other ] ] ].each do |scope, picked|
+      with_follow_through(scope, picked) do
         assert_no_enqueued_jobs(only: FollowThroughCheckJob) { running_run.finish_execution!("completed") }
       end
     end
-    [ "all", " all ", "#{@other.to_param}, #{@agent.to_param}" ].each do |setting|
-      with_follow_through(setting) do
+    [ [ "all", [] ], [ "selected", [ @other, @agent ] ] ].each do |scope, picked|
+      with_follow_through(scope, picked) do
         assert_enqueued_with(job: FollowThroughCheckJob) { running_run.finish_execution!("completed") }
       end
     end
@@ -293,9 +293,12 @@ class FollowThroughCheckJobTest < ActiveSupport::TestCase
     )
   end
 
-  def with_follow_through(residents)
-    Setting.instance.update!(follow_through_residents: residents.to_s)
-    yield
+  def with_follow_through(scope, picked)
+    Setting.instance.update!(follow_through_scope: scope)
+    Agent.update_all(follow_through: false)
+    Agent.where(id: picked.map(&:id)).update_all(follow_through: true)
+    [ @agent, @other ].each(&:reload)
+    yield if block_given?
   end
 
 end

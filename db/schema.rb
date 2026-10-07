@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_07_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -404,6 +404,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_160000) do
     t.jsonb "subagent_models", default: [], null: false
     t.datetime "subagents_policy_changed_at"
     t.bigint "github_resident_import_id"
+    t.boolean "follow_through", default: false, null: false
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
@@ -1303,13 +1304,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_160000) do
     t.boolean "allow_chats", default: true, null: false
     t.boolean "allow_signups", default: true, null: false
     t.datetime "created_at", null: false
-    t.string "follow_through_residents", default: "", null: false
     t.integer "max_accounts", default: 30, null: false
     t.integer "resident_turn_limit", default: 50, null: false
     t.integer "safeguard_owner_notice_threshold", default: 1, null: false
     t.boolean "show_usage_in_chat", default: false, null: false
     t.string "site_name", default: "souls.house", null: false
     t.datetime "updated_at", null: false
+    t.string "follow_through_scope", default: "off", null: false
   end
 
   create_table "stone_revisions", force: :cascade do |t|
