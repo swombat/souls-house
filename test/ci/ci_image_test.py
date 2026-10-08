@@ -36,6 +36,15 @@ class CiImageTest(unittest.TestCase):
         self.assertIn("--env BUNDLE_FROZEN=true", workflow)
         self.assertNotIn('source=$PWD,target=', workflow)
 
+    def test_rails_runtime_tools_are_installed_and_smoked(self):
+        dockerfile = (ROOT / ".github/ci/Dockerfile").read_text()
+        workflow = (ROOT / ".github/workflows/ci-image.yml").read_text()
+        for package in ("python3", "python3-yaml", "openssh-client", "util-linux"):
+            self.assertRegex(dockerfile, r"\b" + re.escape(package) + r"\b")
+        self.assertIn("import sys, yaml, tomllib", workflow)
+        self.assertIn("sys.version_info >= (3, 11)", workflow)
+        self.assertIn("python3 git ssh-keygen /usr/bin/script ffmpeg ffprobe sh date sleep", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

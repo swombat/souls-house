@@ -13,6 +13,7 @@ COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 RUN apt-get update && apt-get install --no-install-recommends -y \
     build-essential ca-certificates curl git pkg-config libffi-dev libpq-dev libvips libyaml-dev ffmpeg \
+    python3 python3-yaml openssh-client util-linux \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/playwright
 RUN bun add --exact playwright@${PLAYWRIGHT_VERSION} \
