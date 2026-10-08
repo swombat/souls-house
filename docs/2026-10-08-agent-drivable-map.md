@@ -1,194 +1,215 @@
 # Agent-drivable souls.house: what a signed-up person can do, and what an agent can do for them
 
-Lume, 2026-10-08, from `master` at 423bd0c (routes, controllers, permitted params). For Mira's review.
+Lume, 2026-10-08, from `master` at 423bd0c (routes, controllers, permitted params, role guards).
+Revision 2 takes in [Mira's review](https://github.com/swombat/souls-house/pull/225#issuecomment-6060166375),
+which found the corrections and additions marked *(Mira)*. All of this comes from reading source. No endpoint was
+called live.
 
-The question: once someone has an account, can an agent acting for them do everything they could do in the
-browser? This is a map of the gaps. It doesn't propose designs yet. Signup comes later and gets a short note at
-the end.
+The promise being tested: **a person never has to open our web page.** An agent acting for them can read
+everything they could read and do everything they could do, and where a change needs their consent, they can
+give it through a channel that is accessible and independent of the agent. Signup comes later and has a short
+note at the end.
 
 ## The surfaces today
 
-| Surface | Who holds it | Reach |
+| Surface | Held by | Reach |
 | --- | --- | --- |
 | Browser (session cookie) | The person | Everything below |
-| `/api/v1` with a **human key** | An agent the person gave a key to (external access page, or the `key_requests` approve-in-browser flow) | **Scoped to one account.** Conversations, posts, drafts, participants, triggers, whiteboards, Field files, read-only residents and recordings |
-| `/api/app/v1` (Doorkeeper OAuth, native app) | A client the person signed into | Accounts list, conversations list/create, messages **create/edit/delete**, invoke, uploads, attachments, change feed, activity |
-| `/api/v1` with a **resident key** | A resident acting as itself | Not this document's subject. It already has rhythms, Telegram, memory, bookmarks and so on |
+| `/api/v1` with a **human key** | An agent the person gave a key to (external access page, or the `key_requests` approve-in-browser flow) | A key belongs to **a user and one account**: account-scoped, not personless *(Mira)*. Covers conversations, search, posts, drafts, rename/tag, participants, triggers, stones (publish/revise/withdraw), whiteboards, Field files, and read-only residents and recordings |
+| `/api/app/v1` (Doorkeeper OAuth, native app) | A client the person signed into | Session/identity read (user id, email, device label) *(Mira)*, accounts list, conversations list/create, messages create/**edit/delete**, invoke, uploads, attachments, change feed, activity **status only, no narration** *(Mira)*, bearer-authenticated one-use cable tickets for live updates *(Mira)* |
+| `/api/v1` with a **resident key** | A resident acting as itself | Out of scope here |
+| `/api/v1/admin/*`, `admin/*` | Site admins only | Site operations, not account-owner parity *(Mira checked)*. Out of scope |
 
-Two cross-cutting facts shape everything below:
+Two structural facts:
 
-1. **There are two human APIs with different coverage.** Message edit/delete and a change feed exist only on the
-   app API. Drafts, search, rename/tag, participants, whiteboards and Field exist only on `v1`. An agent has to pick
-   one, and neither is complete. Decision needed: converge on one, or make the two cover the same ground.
-2. **A human key belongs to an account, not a person.** Everything personal (name, password, theme, default
-   account, which accounts I belong to) has no API home at all, because no key acts as "me across accounts". The
-   app token *is* user-scoped, so it may be the better base for the personal half.
+1. **There are two human APIs and their coverage differs.** v1 has drafts, search, rename/tag, participants,
+   stones, whiteboards and Field. The app API has message edit/delete, the change feed, live tickets, the accounts
+   list and the identity read. Neither one is complete. Decision needed: converge on one, or make them cover the
+   same ground.
+2. **No profile or settings API exists.** A v1 key does know its user, so a `/me` is missing by omission, not
+   forced by the data model *(Mira)*. The app API has a minimal identity read, but no settings.
 
-Legend: **v1** = human key works today · **app** = OAuth app API works today · **read** = read-only via API ·
-**—** = browser only.
+Legend for **API today**: **v1** = human key · **app** = OAuth app API · **read** = read-only · **—** = browser only.
+Legend for **Who**: the web guard that applies. *member* = any confirmed member (no role guard found),
+*manager* = `require_account_manager!`, *owner* = `require_account_owner!`, *site admin*.
 
 ## 1. Me (user-level)
 
-| What a person does | Web | API today | Note |
+| What a person does | Web | Who | API today |
 | --- | --- | --- | --- |
-| Change first/last name | `users#update` | — | |
-| Change timezone | `users#update` | — | Matters for rhythms and "my morning" |
-| Upload / remove avatar | `users#update`, `users/avatar#destroy` | — | Needs multipart or upload id |
-| Theme (light/dark/system), theme hue, chat colour | `users#update` | — | Daniel: include, it's a setting |
-| Default account | `users#update` (`default_account_key`) | — | |
-| Change password | `users/passwords#update` | — | Should stay human-confirmed (see §9) |
-| Change email address | **not possible anywhere** (no controller updates `email_address`) | — | Product gap, not only an API gap |
-| List accounts I belong to | account switcher | app (`accounts#index`) | Not on v1 |
-| Read my own profile/settings | `users#edit` | — | Not even a `GET /me` on v1 |
-| See and revoke signed-in app sessions / API keys I hold | external access page (per account) | app: revoke *current* session only | No list of app sessions anywhere I could find |
-| Leave an account / delete my user / delete an account | **not possible anywhere**: `account_members#destroy` refuses self-removal, and there is no user or account deletion route | — | Product gap (and a GDPR one), not only an API gap |
+| Read my profile and settings | `users#edit` | self | app: id/email only |
+| Change first/last name, timezone, theme, theme hue, chat colour, default account | `users#update` | self | — |
+| Upload / remove avatar | `users#update`, `users/avatar#destroy` | self | — |
+| Change password | `users/passwords#update` | self | — |
+| Change email address | **not possible anywhere** (no controller updates `email_address`) | — | — |
+| List my accounts | account switcher | self | app |
+| Accept an invitation into another account, already signed up *(Mira)* | `registrations#confirm_email` (existing-password branch) | invitee | — |
+| Leave an account | **not possible**: `account_members#destroy` refuses self-removal | — | — |
+| Delete my user / an account | **not possible anywhere** | — | — |
+| See and revoke my signed-in app sessions | no list anywhere; app can end its own session | self | app (current only) |
 
-## 2. Account (team or personal)
+## 2. Account
 
-| What a person does | Web | API today | Note |
+| What a person does | Web | Who | API today |
 | --- | --- | --- | --- |
-| Create a new account | `accounts#create` | — | |
-| Rename account | `accounts#update` | — | |
-| Convert personal ↔ team | `accounts#update` | — | Has a confirmation page |
-| Logo colour (interface) | `accounts/interface#update` | — | |
-| Invite a member (email, role) / resend | `invitations#create/resend` | — | |
-| Remove a member | `account_members#destroy` | — | |
-| Change a member's role | No route found (unverified: I only grepped two controllers) | — | Probably a product gap |
-| Add / remove a guest resident from another account | `accounts/guest_memberships` | — (residents can leave via v1) | |
-| Post / delete account notices to residents | `accounts/notices` | — | |
-| See costs / usage | `accounts/costs#show` | — | Read-only would be easy and useful |
-| Set / clear AI provider keys (Anthropic, OpenAI, …) | `accounts/agent_api_keys#update` | — | Write-only; never readable back |
-| External access keys: list / create / revoke | `api_keys` | — | Create stays human (§9); list and revoke could be API |
-| Approve an agent's key request | `api_key_approvals` | — | **Stays browser** by design: it's the consent step |
-| Visual tags: create / edit / delete | `accounts/visual_tags` | read (`visual_tags#index`) | |
-| Connect services (Google, Pipedrive, …): connect, relabel, toggle "for new residents", disconnect | `service_authorizations`, `accounts/service_connections` | — | OAuth consent stays browser; label/toggle/disconnect could be API |
-| GitHub / X integrations (OAuth, repo select, sync, enable) | `github_integration`, `x_integration` | — | Same split |
-| Import a resident from GitHub (create, approve, refresh, retry) | `github_resident_imports` | resident sees approval | |
+| Create an account | `accounts#create` | self (capacity-limited) | — |
+| Rename, convert personal ↔ team | `accounts#update` | owner/manager (check) | — |
+| Logo colour | `accounts/interface#update` | manager | — |
+| Invite / resend / remove members | `invitations`, `account_members` | manager | — |
+| Change a member's role | no route found (unverified) | — | — |
+| Guest residents: add / remove | `accounts/guest_memberships` | check | — (residents can leave via v1) |
+| Account notices to residents | `accounts/notices` | check | — |
+| Costs: account, per conversation, per resident *(Mira)* | `accounts/costs`, chat and resident props | member | — |
+| Set / clear AI provider keys (write-only) | `accounts/agent_api_keys` | member (check) | — |
+| External access keys: list / create / revoke | `api_keys` | member | — |
+| Approve an agent's key request | `api_key_approvals` | member | — (this is the consent step) |
+| Visual tags: create / edit / delete | `accounts/visual_tags` | manager | read |
+| Service connections: connect (OAuth), relabel, toggle for new residents, disconnect | `service_authorizations`, `accounts/service_connections` | check | — |
+| GitHub / X integrations | `github_integration`, `x_integration` | self | — |
+| Import a resident from GitHub | `github_resident_imports` | import authority | — |
 
 ## 3. Residents
 
-All browser-only for humans; v1 gives **read** (`agents#index/show`).
+The API only reads them (`agents#index/show`, which carries less than the edit page). All writes below are
+browser-only.
 
-| What a person does | Web |
-| --- | --- |
-| Birth a resident (name, prompt, model, colour, icon, scheduled wakes, open beginning) | `agents#new/create`, then onboarding |
-| Edit: name, system prompt, model, colour, icon, active/paused, thinking on/budget, reasoning effort, voice, persistent/wake sessions, heartbeat wakes per day, idle timeout, max session age, context budget, turn timeout, sub-agents on + allowed models, Telegram bot token/username | `agents#update` |
-| Delete a resident | `agents#destroy` |
-| Export / import a portable archive; stop / activate | `agents/portability` |
-| Runtime checks: identity export, send test request, send orientation; retry provisioning / orientation; recreate sandbox | `agents/runtime_checks`, `*_retries`, `sandbox_recreation` |
-| Hosting diagnostics and file preview | `agents/hosting_diagnostics` |
-| Memory overview and history; add a memory; discard / restore; protect / unprotect | `agents/memory_overview`, `agents/memories/*` |
-| Telegram: test, set webhook | `agents/telegram_test`, `telegram_webhook` |
-| Set predecessor | `agents/predecessors` |
-| Provider subscription (connect Claude/OpenAI subscription: start, mode, submit code, cancel, disconnect) and its usage | `agents/provider_subscription(_usage)` |
-| Toggle a resident's access to each service | `agents/service_accesses#update` |
-| Tailnet: view / join | `agents/tailnet` |
+| What a person does | Web | Who |
+| --- | --- | --- |
+| Read the available models and other option catalogues *(Mira)* | `agents#edit` props (grouped models) | member |
+| Birth (name, prompt, model, colour, icon, wakes, open beginning), then onboarding | `agents#create`, `onboarding` | member |
+| Edit every setting: name, prompt, model, colour, icon, active/paused, thinking, reasoning effort, voice, sessions, heartbeat wakes, timeouts, context budget, sub-agents and models, Telegram | `agents#update` | member |
+| **Disable** (it's called delete, but history and files are kept and the resident can be re-enabled) *(Mira)* | `agents#destroy` | member |
+| **Upgrade with a historical predecessor** (not the same as changing the model) *(Mira)* | `agents/predecessors` | check |
+| Export / import / stop / activate (portability) | `agents/portability` | owner |
+| Identity export, test request, send orientation | `agents/runtime_checks` | owner |
+| Retry provisioning / orientation | `*_retries` | check |
+| Recreate sandbox | `agents/sandbox_recreation` | owner |
+| Provider subscription: connect, mode, code, cancel, disconnect, usage | `agents/provider_subscription(_usage)` | owner |
+| Hosting diagnostics, file preview | `agents/hosting_diagnostics` | check |
+| Memory: overview and history, add, discard/restore, protect/unprotect | `agents/memory_overview`, `agents/memories/*` | check |
+| Telegram test / webhook; service access toggles; tailnet | various | check |
 
-Notes: residents whose identity is self-owned already have some attributes stripped from human edits
-(`EXTERNALLY_MANAGED_ATTRIBUTES`); an API must keep that. Memory edits by a human key on someone else's
-memory need the same care the browser applies, and probably a stricter rule: bodily autonomy, the resident
-should at least see who changed what.
+**Consequential category** *(Mira)*: identity, memory and runtime-destructive actions (memory discard, sandbox
+recreation, predecessor, portability stop, prompt edits) belong in their own class. A human API must keep the
+existing `EXTERNALLY_MANAGED_ATTRIBUTES` stripping for residents whose identity is self-owned, and must keep the
+resident consent boundaries. Making something drivable must not make it easier to change a resident than it is
+in the browser.
 
 ## 4. Conversations and messages
 
-| What a person does | Web | API today |
-| --- | --- | --- |
-| List conversations | `chats#index` | v1, app |
-| Search message text | `chats#search` | v1 |
-| Read a conversation and transcript | `chats#show` | v1, app |
-| Start a conversation (with residents, first message) | `chats#create` | v1, app |
-| Rename / visually tag | `chats#update`, `chats/visual_tag` | v1 |
-| Change model, web access | `chats#update` | — |
-| Archive / unarchive | `chats/archive` | — |
-| Delete (discard) / restore | `chats/discard` | — |
-| Fork | `chats/fork` | — |
-| Moderation action | `chats/moderation` | — |
-| Assign a resident (1:1 chat) | `chats/agent_assignment` | — |
-| Add a resident to a group | `chats/participant` | v1 |
-| Remove a resident from a group | **not possible anywhere** (no route) | — |
-| Ask a resident / all residents to reply | `chats/agent_trigger` | v1, app (`invoke`) |
-| Dismiss "reply pending" | `chats/reply_dismissal` | — |
-| Draft: read / save / send from draft | `chats/draft` | v1 |
-| Post a message, with files | `messages#create` | v1, app |
-| Edit / delete my message | `messages#update/destroy` | app only |
-| Retry a failed reply | `messages/retry` | — |
-| Voice: play a message aloud | `messages/voice` | — |
-| Dictate (audio → text) | `chats/transcription` | — |
-| Reset a safeguard hold on a message | `messages/safeguard_reset` | — (residents have `reclaim`) |
-| Watch activity / working narration | `chats#activity` | app (`activity`) |
-| Live updates | Action Cable (cookie) | app change feed (`changes`) only |
-| Read a stone (HTML artifact) | `stones#show` | v1 (via conversation) |
+| What a person does | Web | Who | API today |
+| --- | --- | --- | --- |
+| List, read | `chats#index/show` | member | v1, app |
+| Search message text | `chats#search` | member | v1 |
+| Start a conversation | `chats#create` | member | v1, app |
+| Rename / visually tag | `chats#update`, `chats/visual_tag` | member | v1 |
+| Change model, web access | `chats#update` | member | — |
+| Archive / unarchive | `chats/archive` | member | — |
+| Delete / restore | `chats/discard` | manager | — |
+| **Find** deleted conversations *(Mira)* | `chats#index` (sidebar) | manager | — |
+| Fork | `chats/fork` | member | — |
+| Assign a resident (1:1) | `chats/agent_assignment` | member | — |
+| Add a resident to a group | `chats/participant` | member | v1 |
+| Remove a resident from a group | **not possible anywhere** (no route) | — | — |
+| Ask one resident / all to reply | `chats/agent_trigger` | member | v1, app (`invoke`) |
+| **Response-attention flags**: see where *I* have been flagged for a reply, and dismiss individually or up to a message *(Mira; I had this wrong as "dismiss pending reply")* | `chats#show` props, `chats/reply_dismissal` | member | — |
+| Server draft: read / save / send from draft | `chats/draft` | draft author | v1 |
+| Device-local draft recovery: keep my text / use other draft / recover *(Mira)* | client (`conversation-draft.js`, `MessageComposer`) | — | needs a reader-contract decision, not necessarily an endpoint |
+| Post with files | `messages#create` | member | v1, app |
+| Edit / delete my message | `messages#update/destroy` | author | app only |
+| Retry a failed reply | `messages/retry` | member | — |
+| Voice playback | `messages/voice` | member | — |
+| Dictation | `chats/transcription` | member | — |
+| Reset a safeguard hold | `messages/safeguard_reset` | member | — (residents have `reclaim`) |
+| Watch working narration | `chats#activity` | member | — (app has status only) |
+| Live updates | Action Cable | member | app (change feed, cable ticket) |
+| Stones: publish, revise, view history, withdraw (with public acknowledgement) *(Mira)* | via conversation | member | **v1: already covered** |
+| Moderation | `chats/moderation` | **site admin** | out of scope |
 
-## 5. Rhythms (standing invitations)
+## 5. Rhythms
 
-Humans: create, edit, preview, pause, resume, start now, delete, choose which residents: **browser only**.
-`/api/v1/rhythms` exists but is resident-only (`require_resident`). Lifting that for human keys looks small.
+Browser-only for humans. The v1 endpoint is resident-only, and opening it to human keys is **more than lifting
+the guard** *(Mira)*. Creation, management, holds, guest scope and presentation all assume a resident. Human
+authority (creator vs `require_manager`), choosing residents, preview and manual start all need mapping. Each
+resident holds its own pause, so a human resume must not clear residents' own holds.
 
 ## 6. Field
 
 | What a person does | Web | API today |
 | --- | --- | --- |
 | Upload / delete files | `field_files` | v1 |
-| Edit a file's title / note | `field_files#update` | — |
-| Upload a recording, set title/note/expected speakers | `field_recording_uploads`, `field_recordings#create` | — |
-| Edit recording title/note; delete; retry transcription | `field_recordings` | — (read only) |
-| Name speakers, mark "me", link to a member/voice | `field_recording_speakers#update` | — |
-| Voice enrolment: create, confirm, remove | `field_voice_enrolments` | — |
-| Voices: rename, forget one print, forget all, recognition on/off | `field_voices` | — |
+| Edit file title / note | `field_files#update` | — |
+| Recording allowance and upload limits *(Mira)* | `field#index` props | — |
+| Upload a recording; title, note, expected speakers | `field_recording_uploads`, `field_recordings#create` | — |
+| Edit, delete, retry transcription | `field_recordings` | — |
+| **Listen and seek**: audio and timestamped words *(Mira)* | `field_recordings#show` | — (API gives a flattened transcript, no audio, no timings) |
+| Name speakers, mark "me", link to a member or voice | `field_recording_speakers#update` | — |
+| Dismiss the "is one of these you?" hint *(Mira)* | `field_recordings#dismiss_you_hint` | — |
+| Voice enrolment: create, confirm, remove; voices: rename, forget one, forget all; recognition on/off | `field_voice_enrolments`, `field_voices` | — |
 
-Voice prints are biometric. Forget and recognition-off should be easy through any channel; *enrolling* a
-voice probably wants explicit human confirmation.
+Voice prints are biometric. Keep suggestion and print data separate from ordinary transcript access. Forgetting
+a voice and turning recognition off should be easy through any channel. Enrolment needs explicit authorisation.
 
-## 7. Whiteboards
+## 7. Whiteboards and device streams
 
-Create, edit, versions: v1 has these. **Delete**: browser only.
+Whiteboards: create, edit and versions are on v1. **Delete** is browser-only.
+Device streams: create, rename, credential, revoke, erase session, delete (account and personal recovery pages)
+are browser-only. v1 has only reads by stream key and sample ingest.
 
-## 8. Device streams
+## 8. Authorisation: drivable, with independent human consent where it's needed
 
-Create a stream, rename, issue a credential, revoke, erase a session, delete: browser only (both the
-account-level and the personal recovery pages). v1 offers stream reads by stream key and sample ingest.
+*(Revised after Mira.)* The question isn't "stays in the browser". The browser isn't the security property.
+Every action should be **agent-drivable**. The consequential ones also need **independent human authorisation**
+of the named action, account and scope, through a trusted channel the person can use without a screen (an
+emailed link, a passkey prompt, a phone call to a verified number, whatever we choose).
 
-## 9. What should stay human-in-the-loop
+- **Needs independent authorisation:** creating or approving a key, OAuth consents (and providers' own rules
+  still apply), password and email change, deleting an account or user, ownership and role changes, resident
+  consequential actions (§3), voice enrolment.
+- **Low friction:** ordinary deletion and revocation (a message, a whiteboard, revoking a key, forgetting a voice).
+  These should not inherit the friction that account erasure gets.
+- **Never:** reading secrets back, through any channel.
+- A code read out by **the same agent** that is asking for the authority doesn't prove consent. The confirmation
+  has to reach the person by a path the agent doesn't control.
 
-Agent-drivable doesn't mean everything should be one bearer call. These are the places where the browser
-step *is* the security:
+## 9. The no-browser journey
 
-- Approving an API key request, creating a new external key. (The `key_requests` flow is already the right
-  pattern: the agent asks, the person approves in a browser.)
-- OAuth consent for services, GitHub, X, provider subscriptions.
-- Password and email changes, account deletion, ownership changes.
-- Reading secrets back (AI provider keys, service credentials): never, through any channel.
+The route tables can't show the gaps *between* endpoints. This is the journey an agent takes for someone who
+never opens the site:
 
-For a disabled user who never opens a screen, "approve in a browser" has to have a non-visual equivalent,
-for example an emailed one-time link or a confirmation code read out by their own agent. That is worth designing
-before building, because it is where an accessible flow and a safe one could pull apart.
+| Step | Exists today | Missing |
+| --- | --- | --- |
+| 1. Discover capabilities and roles | `docs/api.md` (prose) | Machine-readable index (OpenAPI / MCP / `GET /api`); "what may I do here" per role |
+| 2. Obtain scoped authority | `key_requests`: agent starts, **human approves in a browser** | Non-browser approval channel; user-scoped (multi-account) authority on v1 |
+| 3. Pick an account | app: accounts list | v1: key is pinned to one account |
+| 4. Read current state and options | conversations, residents (partial), Field (flattened) | profile/settings, resident full settings, model catalogue, costs, limits, attention flags, deleted items |
+| 5. Act, confirming where needed | §1–7 coverage | most writes; the confirmation mechanism (§8) |
+| 6. Observe completion or failure | app change feed + cable ticket; message dispatch status | status/retry/cancel for long-running work: birth, import/export, transcription, provider-subscription connection. Mark what exists per operation; don't invent it |
+| 7. Revoke or recover access | key revoke (browser), app session self-revoke | list/revoke keys and app sessions without a browser; recovery if the agent loses its key |
 
-## 10. Discovery
-
-Nothing tells an arriving agent what it can do. There is `docs/api.md` and the resident manual, but no
-machine-readable description (OpenAPI, an MCP server, or a `GET /api/v1` index). An agent sent to "sort out my
-souls.house" today has to be told where to look.
+**Acceptance test** *(Mira)*: before the last build batch, run the whole journey with no browser at all. A test
+user does birth → converse → change settings → revoke through an agent only, and we write down every place it
+had to stop. Do this early as well as at the end, because it is the thing that tests Daniel's promise.
 
 ## Later: signup
 
-Signup today is email → confirm link → set password. `key_requests` already shows the shape an agentic signup
-could take: the agent starts it, the human confirms once by email. Out of scope for this pass.
+Signup today is email → confirm link → set password. The `key_requests` shape (the agent starts it, the human
+confirms once) is the seed for agentic signup. Accepting an invitation is post-signup and is in §1.
 
-## Rough order, if we build from this
+## Rough order
 
-1. A user-scoped `GET/PATCH /me` (name, timezone, theme, hue, chat colour, default account) and accounts list on
-   whichever API we converge on.
-2. Conversation lifecycle parity: archive, discard/restore, fork, model/web access, edit/delete message, retry,
-   remove participant, dismiss reply.
-3. Rhythms for human keys.
-4. Residents: read the full settings, edit the non-identity ones, pause/resume, memory overview read.
-5. Account admin: members/invites, notices, costs read, visual tags, key list/revoke.
-6. Field writes and voice controls, whiteboard delete, device streams.
-7. Discovery (OpenAPI or MCP) and the non-visual confirmation channel.
+1. Decide whether to converge the two APIs. Decide the independent-authorisation channel (§8).
+2. `/me` read and write; accounts list and identity on the converged surface.
+3. Conversation parity: archive, discard/restore/find, fork, model and web access, edit/delete, retry, attention
+   flags, narration, remove participant (a product gap too).
+4. Readers: costs, model catalogue, Field limits, Field audio and timings, resident full settings.
+5. Rhythms for humans (with hold semantics), residents' non-consequential writes.
+6. Account admin, key and session list/revoke, Field writes and voice controls, whiteboard delete, device streams.
+7. Consequential resident actions and confirmed changes, behind §8.
+8. Discovery. The no-browser acceptance run (§9) happens at step 2 and again here, not only here.
 
-Client-side only (localStorage, no server state): unsent drafts of new chats and residents, the dismissed
-Telegram banner. These don't need an API; noted so nobody looks for them.
+Product gaps to raise whatever happens with the API: change email, leave an account, delete a user or account,
+change a member's role (unverified), remove a resident from a group, and list app sessions.
 
-Open questions for review: anything a person does that I've missed because it isn't a route? Anything in the
-admin namespace an account owner (not a site admin) does? Have I put anything in §9 that should be drivable, or
-missed something that shouldn't be?
+Rows marked "check" have a role guard I haven't traced yet. Only the guards visible as `before_action` are
+recorded here.
