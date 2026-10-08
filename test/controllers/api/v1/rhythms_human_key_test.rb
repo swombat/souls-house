@@ -95,6 +95,51 @@ class Api::V1::RhythmsHumanKeyTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  # Mira #228 finding 1: assigning resident_ids to a saved rhythm writes the
+  # join rows at once, so a rejected edit must roll the selection back too.
+  test "a rejected update keeps the saved selection, scalars and holds" do
+    rhythm = make_rhythm
+    patch api_v1_rhythm_path(rhythm), params: { rhythm: { title: "Changed", opening: "", resident_ids: [ @peer.to_param ] } },
+      headers: @headers, as: :json
+    assert_response :unprocessable_entity
+    assert response.parsed_body.dig("errors", "opening")
+    rhythm.reload
+    assert_equal [ @resident.id ], rhythm.agent_ids
+    assert_equal "Weekly reflection", rhythm.title
+    assert_equal @attributes[:opening], rhythm.opening
+    assert_empty rhythm.open_holds
+
+    patch api_v1_rhythm_path(rhythm), params: { rhythm: { opening: "", resident_ids: [] } }, headers: @headers, as: :json
+    assert_response :unprocessable_entity
+    rhythm.reload
+    assert_equal [ @resident.id ], rhythm.agent_ids
+    assert_empty rhythm.open_holds
+  end
+
+  # Mira #228 finding 2: every resident id must decode to one resident, or
+  # nothing is saved.
+  test "undecodable or malformed resident ids fail closed without saving" do
+    undecodable = "zzzzzz"
+    assert_empty Agent.hashids.decode(undecodable)
+    malformed = [ [ @resident.to_param, undecodable ], [ @resident.to_param, "abc-!" ], [ "#{@peer.id}junk" ],
+      [ Agent.hashids.encode(@resident.id, @peer.id) ] ]
+    malformed.each do |ids|
+      assert_no_difference "Rhythm.count" do
+        post api_v1_rhythms_path, params: { rhythm: @attributes.merge(resident_ids: ids) }, headers: @headers, as: :json
+      end
+      assert_response :not_found, "create with #{ids.inspect}"
+    end
+
+    rhythm = make_rhythm
+    malformed.each do |ids|
+      patch api_v1_rhythm_path(rhythm), params: { rhythm: { title: "Changed", resident_ids: ids } }, headers: @headers, as: :json
+      assert_response :not_found, "update with #{ids.inspect}"
+      rhythm.reload
+      assert_equal [ @resident.id ], rhythm.agent_ids
+      assert_equal "Weekly reflection", rhythm.title
+    end
+  end
+
   test "owner manages a resident-authored rhythm and adds residents without taking authorship" do
     rhythm = Rhythm.create!(@attributes.except(:resident_ids).merge(account: @account, creator_agent: @resident, agents: [ @resident ]))
     patch api_v1_rhythm_path(rhythm), params: { rhythm: { title: "Renamed", resident_ids: [ @resident.to_param, @peer.to_param ] } },

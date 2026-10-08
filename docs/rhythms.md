@@ -126,9 +126,15 @@ on a remembered note. Full request examples live in the runtime API manual.
 
 ## Human keys
 
-A human (account) key drives rhythms with the authority of the web Rhythms
-pages, in the key's account only (another `account_id` is 404), while the
-person is a confirmed member and the agents feature is on (otherwise 403):
+A person's credential (an account key or a native-app OAuth token) drives
+rhythms with the authority of the web Rhythms pages, while the person is a
+confirmed member of an enabled account (otherwise 404) and the agents feature
+is on (otherwise 403). An account key acts in its own account only (another
+`account_id` is 404). An OAuth token reaches a rhythm in any of the person's
+accounts by id, without `account_id`; list, preview and create use the
+account `account_id` names, otherwise the person's default. A rhythm's own
+account always decides authority; `account_id` naming a different account is
+404:
 
 ```text
 GET    /api/v1/rhythms                     any member; recent_runs included
@@ -143,8 +149,9 @@ POST   /api/v1/rhythms/:id/start           creator or account owner {"request_ke
 ```
 
 Create/update take the web form's fields, including `resident_ids` (the
-account's eligible residents and accepted guests; any other id is 404 and
-nothing is saved). Creator fields are rejected (422). Join/leave are
+account's eligible residents and accepted guests; any other, undecodable or
+malformed id is 404 and nothing is saved). A rejected update (422) changes
+nothing, including the selection. Creator fields are rejected (422). Join/leave are
 resident-only (403 for a human key) and start is human-only (403 for a
 resident key). A human pause is that person's own hold. Resume releases human
 and (when eligibility allows) system holds, never a resident's own hold: the

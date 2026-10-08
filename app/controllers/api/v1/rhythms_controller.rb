@@ -1,12 +1,15 @@
 module Api
   module V1
-    # Rhythms for both kinds of key. Resident keys keep their own rules: self
-    # creation, self join/leave, creator-only management and holds of their
-    # own. Human keys get what the web Rhythms pages give a signed-in member:
-    # any member may list, read, preview and create (choosing residents); the
-    # creator or account owner may edit, delete, pause, resume and start.
-    # Each path is chosen once per request by `human_key?` and the two never
-    # share authority checks.
+    # Rhythms for residents and people. Resident keys keep their own rules:
+    # self creation, self join/leave, creator-only management and holds of
+    # their own. A person (account key or OAuth app token) gets what the web
+    # Rhythms pages give a signed-in member: any member may list, read,
+    # preview and create (choosing residents); the creator or account owner
+    # may edit, delete, pause, resume and start. Each path is chosen once per
+    # request by `human_key?` and the two never share authority checks. A
+    # person's authority is always checked against the rhythm's own account
+    # (ApiHumanActor), so an OAuth token reaches rhythms in every enabled
+    # account the person belongs to; account_id only narrows.
     class RhythmsController < BaseController
 
       PAGE_SIZE = 100
@@ -17,7 +20,7 @@ module Api
 
       before_action :require_human_rhythm_access, if: :human_key?
       before_action :require_resident_action, only: %i[join leave]
-      before_action :require_human_action, only: :start
+      before_action :require_human_actor!, only: :start
       before_action :set_rhythm, except: %i[index create preview]
       before_action :require_human_manager, only: HUMAN_MANAGER_ACTIONS, if: :human_key?
       before_action :require_rhythm_object, only: %i[create update preview]
@@ -137,26 +140,27 @@ module Api
 
       private
 
+      # A person, through an account key or an OAuth app token.
       def human_key?
         current_api_agent.nil?
       end
 
-      # The web Rhythms pages sit behind the agents feature switch and the
-      # person's confirmed membership of the account.
+      # The web Rhythms pages sit behind the agents feature switch. Membership
+      # is checked against the account each action acts in (human_account!).
       def require_human_rhythm_access
-        unless Setting.instance.allow_agents?
-          return render json: { error: "This feature is currently disabled" }, status: :forbidden
-        end
+        return if Setting.instance.allow_agents?
 
-        human_account
+        render json: { error: "This feature is currently disabled" }, status: :forbidden
       end
 
-      def human_account
-        @human_account ||= current_api_user.confirmed_accounts.find(requested_account.id)
+      # The account a person's list, preview or create acts in: the one
+      # account_id names, otherwise the key's account or the person's default.
+      def human_rhythm_account
+        @human_rhythm_account ||= human_account!(requested_account)
       end
 
       def rhythm_account
-        human_key? ? human_account : requested_account
+        human_key? ? human_rhythm_account : requested_account
       end
 
       def require_resident_action
@@ -166,12 +170,6 @@ module Api
           status: :forbidden
       end
 
-      def require_human_action
-        return if human_key?
-
-        render json: { error: "Manual start is only available to human API keys" }, status: :forbidden
-      end
-
       def require_human_manager
         return if @rhythm.manageable_by?(current_api_user)
 
@@ -179,7 +177,7 @@ module Api
       end
 
       def set_rhythm
-        return @rhythm = Rhythm.where(account: human_account).find(params[:id]) if human_key?
+        return set_human_rhythm if human_key?
 
         # Discovery grants no occurrence/chat access. A departed guest loses
         # this account door even when it still owns a surviving hold.
@@ -187,6 +185,19 @@ module Api
           .or(Account.where(id: current_api_agent.guest_memberships.select(:account_id)))
         reachable = reachable.where(id: requested_account.id) if params[:account_id].present?
         @rhythm = Rhythm.where(account: reachable).find(params[:id])
+      end
+
+      # An account key reaches its own account; an OAuth token reaches every
+      # account the person may act in, or only the one account_id names. Then
+      # the rhythm's own account must pass the membership check.
+      def set_human_rhythm
+        scope = if app_token_request? && params[:account_id].blank?
+          Rhythm.where(account_id: current_api_user.confirmed_accounts.select(:id))
+        else
+          Rhythm.where(account: requested_account)
+        end
+        @rhythm = scope.find(params[:id])
+        human_account!(@rhythm.account)
       end
 
       def reject_attribution_or_selection
@@ -216,28 +227,28 @@ module Api
 
       # The web form's parameters: resident_ids are resolved against the
       # account's eligible residents and accepted guests, failing closed (404).
-      def human_rhythm_params
+      def human_rhythm_params(account)
         permitted = params[:rhythm].permit(:title, :opening, :append_date, :cadence, :time_of_day,
           :weekday, :month_day, :month, :timezone, resident_ids: [])
         if permitted.key?(:resident_ids)
-          permitted[:resident_ids] = Rhythm.selectable_resident_ids(human_account, permitted.delete(:resident_ids))
+          permitted[:resident_ids] = Rhythm.selectable_resident_ids(account, permitted.delete(:resident_ids))
         end
         permitted.to_h.symbolize_keys
       end
 
       def human_create
-        @rhythm = Rhythm.new(account: human_account, creator: current_api_user)
-        @rhythm.assign_attributes(human_rhythm_params)
+        @rhythm = Rhythm.new(account: human_rhythm_account, creator: current_api_user)
+        @rhythm.assign_attributes(human_rhythm_params(human_rhythm_account))
         return render_validation_errors unless @rhythm.save_from_form
 
         render_state(status: :created, history: true)
       end
 
+      # The shared form update: a rejected edit rolls back its selection too.
       def human_update
-        @rhythm.with_lock do
-          @rhythm.assign_attributes(human_rhythm_params)
-          return render_validation_errors unless @rhythm.save_from_form
-        end
+        attributes = human_rhythm_params(@rhythm.account)
+        return render_validation_errors unless @rhythm.with_lock { @rhythm.update_from_form(attributes) }
+
         render_state(history: true)
       end
 

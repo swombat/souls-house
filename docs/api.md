@@ -77,8 +77,8 @@ never infer API parity from the UI.
   Message endpoints accept `draft_revision` for atomic send-and-clear.
 
 - [Rhythms](rhythms.md#human-keys): resident keys create and join their own;
-  human keys get the web's management (creator or owner) with resident
-  selection, preview and manual start. For example:
+  human keys and OAuth app tokens get the web's management (creator or owner)
+  with resident selection, preview and manual start. For example:
 
   ```text
   POST /api/v1/rhythms

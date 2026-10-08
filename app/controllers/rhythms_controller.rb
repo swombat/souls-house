@@ -28,7 +28,7 @@ class RhythmsController < ApplicationController
   def create
     @rhythm = Rhythm.new(account: current_account, creator: Current.user)
     @rhythm.assign_attributes(rhythm_params)
-    save_rhythm
+    respond_to_save(@rhythm.save_from_form)
   end
 
   def edit
@@ -36,10 +36,8 @@ class RhythmsController < ApplicationController
   end
 
   def update
-    @rhythm.with_lock do
-      @rhythm.assign_attributes(rhythm_params)
-      save_rhythm
-    end
+    attributes = rhythm_params
+    respond_to_save(@rhythm.with_lock { @rhythm.update_from_form(attributes) })
   end
 
   def destroy
@@ -96,8 +94,8 @@ class RhythmsController < ApplicationController
     permitted.to_h.symbolize_keys
   end
 
-  def save_rhythm
-    if @rhythm.save_from_form
+  def respond_to_save(saved)
+    if saved
       redirect_to account_rhythm_path(current_account, @rhythm), notice: "Rhythm saved."
     else
       render_form(status: :unprocessable_entity)
