@@ -34,6 +34,14 @@ class HouseDeploy
     }
   }.freeze
 
+  # Runs on its own when CI passes on master (Rails only). Listed with the
+  # manual runs so the page shows every deploy, but there is no button for it.
+  AUTOMATIC = {
+    key: "rails_auto",
+    file: "deploy-rails-on-green.yml",
+    name: "Deploy Rails (automatic, after green CI)"
+  }.freeze
+
   REF = "master"
   TIMEOUT = 10
 
@@ -81,15 +89,26 @@ class HouseDeploy
       return { configured: true, runs: [], token_expires_at: expires_at, error: failure_message(status, body) }
     end
 
+    runs = (deploy_runs(body) + automatic_runs).sort_by { |run| run[:created_at].to_s }.reverse.first(limit)
+
+    { configured: true, runs: runs, token_expires_at: expires_at, error: nil }
+  end
+
+  def self.deploy_runs(body)
     files = WORKFLOWS.to_h { |key, config| [ ".github/workflows/#{config[:file]}", key ] }
-    runs = Array(body["workflow_runs"]).filter_map { |run|
+    files[".github/workflows/#{AUTOMATIC[:file]}"] = AUTOMATIC[:key]
+    names = WORKFLOWS.transform_values { |config| config[:name] }.merge(AUTOMATIC[:key] => AUTOMATIC[:name])
+
+    Array(body.is_a?(Hash) ? body["workflow_runs"] : nil).filter_map { |run|
       key = files[run["path"].to_s.split("@").first]
       next unless key
+      # A skipped automatic run is a CI run that didn't pass: nothing deployed.
+      next if run["conclusion"] == "skipped"
 
       {
         id: run["id"],
         workflow: key,
-        name: WORKFLOWS[key][:name],
+        name: names[key],
         status: run["status"],
         conclusion: run["conclusion"],
         head_sha: run["head_sha"].to_s.first(7),
@@ -98,9 +117,17 @@ class HouseDeploy
         updated_at: run["updated_at"],
         url: run["html_url"]
       }
-    }.first(limit)
+    }
+  end
 
-    { configured: true, runs: runs, token_expires_at: expires_at, error: nil }
+  # The automatic workflow is triggered by workflow_run, so the
+  # workflow_dispatch listing never includes it. A failure here only hides
+  # those runs; it doesn't blank the manual ones.
+  def self.automatic_runs
+    status, _headers, body = transport.call(:get, "/repos/#{repo}/actions/workflows/#{AUTOMATIC[:file]}/runs?branch=#{REF}&per_page=20", nil)
+    return [] unless status == 200
+
+    deploy_runs(body).select { |run| run[:workflow] == AUTOMATIC[:key] }
   end
 
   def self.failure_message(status, body)

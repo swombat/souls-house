@@ -1,0 +1,60 @@
+name: Deploy Rails on green CI
+# A merge to master is a decision to put it live. When CI passes for a push to
+# master, deploy Rails. Chaos and resident-runtime rebuilds restart residents,
+# so they stay manual (Deploy both / Update Chaos / Rebuild residents).
+#
+# Off switch: set the repository variable AUTO_DEPLOY_RAILS to "false".
+#
+# The host deploys master as it is when the job starts, not a named commit. So
+# this only fires when the commit CI tested is still master's head; if master
+# has moved on, the newer commit's own CI run deploys it. A push landing in the
+# seconds between that check and the host's clone can still go out before its
+# own CI finishes; closing that needs the host to accept a revision.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+
+permissions:
+  contents: read
+
+# At most one waiting deploy: a burst of merges collapses to the newest.
+concurrency:
+  group: auto-deploy-rails
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master' &&
+      vars.AUTO_DEPLOY_RAILS != 'false'
+    runs-on: ubuntu-24.04
+    outputs:
+      current: ${{ steps.head.outputs.current }}
+    steps:
+      - id: head
+        name: Is the tested commit still master's head?
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TESTED: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          head="$(gh api "repos/$GITHUB_REPOSITORY/commits/master" --jq .sha)"
+          echo "Tested $TESTED; master is $head" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [[ "$head" == "$TESTED" ]]; then
+            echo current=true >> "$GITHUB_OUTPUT"
+          else
+            echo "Master has moved on; its own CI run will deploy it." >> "$GITHUB_STEP_SUMMARY"
+            echo current=false >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: check
+    if: needs.check.outputs.current == 'true'
+    uses: ./.github/workflows/deploy-house.yml
+    secrets: inherit
+    with:
+      operation: rails

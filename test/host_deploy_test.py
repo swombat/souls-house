@@ -44,6 +44,20 @@ class WorkflowAuthorityTest(unittest.TestCase):
             self.assertIn("uses: ./.github/workflows/deploy-house.yml", caller)
             self.assertNotIn("runs-on:", caller)
 
+    def test_automatic_deploy_is_rails_only_after_green_master_ci(self):
+        caller = (OPS.parents[1] / ".github/workflows/deploy-rails-on-green.yml").read_text()
+        self.assertIn("  workflow_run:\n    workflows: [CI]\n    types: [completed]\n    branches: [master]", caller)
+        for condition in ["github.event.workflow_run.conclusion == 'success'",
+                          "github.event.workflow_run.event == 'push'",
+                          "github.event.workflow_run.head_branch == 'master'",
+                          "vars.AUTO_DEPLOY_RAILS != 'false'",
+                          "needs.check.outputs.current == 'true'"]:
+            self.assertIn(condition, caller)
+        self.assertIn("uses: ./.github/workflows/deploy-house.yml", caller)
+        operations = [line.strip() for line in caller.splitlines() if line.strip().startswith("operation:")]
+        self.assertEqual(["operation: rails"], operations)
+        self.assertIn("cancel-in-progress: false", caller)
+
 
 class GateTest(unittest.TestCase):
     def setUp(self):

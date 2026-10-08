@@ -77,4 +77,40 @@ class HouseDeployTest < ActiveSupport::TestCase
     assert_empty status[:runs]
   end
 
+  test "status lists automatic Rails deploys beside manual ones, newest first, without skipped runs" do
+    manual = { "workflow_runs" => [
+      { "id" => 2, "path" => ".github/workflows/deploy-rails.yml", "status" => "completed", "conclusion" => "success",
+        "head_sha" => "aaaaaaa111", "created_at" => "2026-10-08T06:00:00Z" }
+    ] }
+    automatic = { "workflow_runs" => [
+      { "id" => 3, "path" => ".github/workflows/deploy-rails-on-green.yml", "status" => "in_progress", "conclusion" => nil,
+        "head_sha" => "bbbbbbb222", "actor" => { "login" => "swombat" }, "created_at" => "2026-10-08T07:00:00Z" },
+      { "id" => 4, "path" => ".github/workflows/deploy-rails-on-green.yml", "status" => "completed", "conclusion" => "skipped",
+        "head_sha" => "ccccccc333", "created_at" => "2026-10-08T08:00:00Z" }
+    ] }
+    HouseDeploy.transport = ->(_method, path, _body) {
+      path.include?("deploy-rails-on-green.yml/runs") ? [ 200, {}, automatic ] : [ 200, {}, manual ]
+    }
+
+    runs = HouseDeploy.status[:runs]
+
+    assert_equal [ 3, 2 ], runs.map { |run| run[:id] }
+    assert_equal [ "rails_auto", "rails" ], runs.map { |run| run[:workflow] }
+    assert_match(/automatic/, runs.first[:name])
+  end
+
+  test "a failed automatic-run lookup still shows the manual runs" do
+    manual = { "workflow_runs" => [
+      { "id" => 2, "path" => ".github/workflows/deploy-rails.yml", "status" => "completed", "created_at" => "2026-10-08T06:00:00Z" }
+    ] }
+    HouseDeploy.transport = ->(_method, path, _body) {
+      path.include?("deploy-rails-on-green.yml/runs") ? [ 404, {}, { "message" => "Not Found" } ] : [ 200, {}, manual ]
+    }
+
+    status = HouseDeploy.status
+
+    assert_nil status[:error]
+    assert_equal [ 2 ], status[:runs].map { |run| run[:id] }
+  end
+
 end

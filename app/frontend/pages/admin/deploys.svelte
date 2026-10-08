@@ -137,7 +137,7 @@
   {#if status.configured}
     <h2 class="text-lg font-semibold mt-8 mb-3">Recent runs</h2>
     {#if poll.runs.length === 0}
-      <p class="text-sm text-muted-foreground">No manual deploy runs found.</p>
+      <p class="text-sm text-muted-foreground">No deploy runs found.</p>
     {:else}
       <ul class="divide-y rounded-md border text-sm" data-testid="deploy-runs">
         {#each poll.runs as run (run.id)}
