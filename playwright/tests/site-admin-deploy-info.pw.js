@@ -24,6 +24,7 @@ test('site admin menu shows deployed and last merged commits when opened', async
   await expect(info).toContainText('Master bbbbbbb · committed');
   await expect(info).toContainText('Live build is 2 commits behind master');
   expect(requests).toBe(1);
+  await expect(page.getByRole('menuitem', { name: 'Deploy' })).toBeVisible();
   await page.screenshot({ path: 'tmp/site-admin-deploy-info.png' });
 });
 
