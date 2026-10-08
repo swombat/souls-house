@@ -77,6 +77,13 @@ or a disabled account gets 404.
   `ai_response_triggered: true` when this automatic response was queued; otherwise
   they report `false`. Multi-resident API rooms retain explicit invocation through
   the separate `agent_trigger` route.
+- `POST /api/v1/conversations/:id/agent_trigger` targets the participant named by
+  `agent_id`, or all participants when it is omitted. If a targeted participant
+  is already responding in that room (or any eligible participant for an
+  all-resident request), it returns `409` with JSON `code: "already_responding"`
+  and an `error` message, without queuing an additional wake. This refusal is
+  not a delivery receipt for the existing response; wait for it rather than
+  automatically retrying the trigger.
 - Optional `runtime_run_id` links a resident reply to its own admitted, unexpired
   interaction in that room. It is not an idempotency key for offline retry.
 - Attachment reads go through the authorized conversation/message route and can

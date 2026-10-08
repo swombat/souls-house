@@ -47,6 +47,53 @@ module Api
         assert_equal "Research Assistant", json["triggered"].first["name"]
       end
 
+      test "resident JSON request triggers only the named participant" do
+        resident_token = ApiKey.generate_for(@user, name: "Resident", agent: @agent2).raw_token
+
+        AgentRuntimeInteraction.stub :live_activity_enabled?, true do
+          assert_difference -> { AgentRuntimeInteraction.count }, 1 do
+            assert_enqueued_with(job: ManualAgentResponseJob, args: ->(args) { args.first(2) == [ @group_chat, @agent1 ] }) do
+              post api_v1_conversation_agent_trigger_url(@group_chat),
+                   params: { agent_id: @agent1.to_param },
+                   headers: { "Authorization" => "Bearer #{resident_token}" }, as: :json
+            end
+          end
+        end
+        assert_response :success
+        assert_equal [ { "id" => @agent1.to_param, "name" => @agent1.name } ], response.parsed_body["triggered"]
+        assert_equal @agent1, @group_chat.agent_runtime_interactions.order(:id).last.agent
+      end
+
+      test "resident JSON request to a busy participant returns conflict without enqueueing" do
+        resident_token = ApiKey.generate_for(@user, name: "Resident", agent: @agent2).raw_token
+        interaction = AgentRuntimeInteraction.reserve!(agent: @agent1, chat: @group_chat)
+
+        assert_no_difference -> { AgentRuntimeInteraction.count } do
+          assert_no_enqueued_jobs do
+            post api_v1_conversation_agent_trigger_url(@group_chat),
+                 params: { agent_id: @agent1.to_param },
+                 headers: { "Authorization" => "Bearer #{resident_token}" }, as: :json
+          end
+        end
+        assert_response :conflict
+        assert_equal "already_responding", response.parsed_body["code"]
+        assert_equal "#{@agent1.name} is already responding", response.parsed_body["error"]
+        assert_equal "queued", interaction.reload.execution_state
+      end
+
+      test "trigger all returns conflict without enqueueing when a participant is busy" do
+        AgentRuntimeInteraction.reserve!(agent: @agent1, chat: @group_chat)
+
+        assert_no_difference -> { AgentRuntimeInteraction.count } do
+          assert_no_enqueued_jobs do
+            post api_v1_conversation_agent_trigger_url(@group_chat),
+                 headers: { "Authorization" => "Bearer #{@token}" }, as: :json
+          end
+        end
+        assert_response :conflict
+        assert_equal "already_responding", response.parsed_body["code"]
+      end
+
       test "rejects trigger on non-group chat" do
         post api_v1_conversation_agent_trigger_url(@regular_chat),
              headers: { "Authorization" => "Bearer #{@token}" }

@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-08
+  title: A busy resident gives a clear wake refusal
+  body: Asking the API to wake a resident already responding in that conversation now returns a JSON conflict instead of a server error. No additional wake is queued. Live once the Rails change is deployed.
+- date: 2026-10-08
   title: Tested changes deploy on their own
   body: When a change is merged and its checks pass, the Rails app now deploys that exact commit by itself, without anyone pressing Deploy Rails. If something newer has been merged in the meantime, nothing ships until the newer commit's own checks pass. Rebuilding residents and updating Chaos stay manual, because those restart residents. The Deployments page shows automatic deploys and says whether each one actually deployed. It needs the deploy host's scripts reinstalled once; self-hosters can switch it off by setting the repository variable AUTO_DEPLOY_RAILS to false.
 - date: 2026-10-08
