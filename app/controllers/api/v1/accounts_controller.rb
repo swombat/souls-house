@@ -1,14 +1,15 @@
 module Api
   module V1
-    # The accounts the key's person is a confirmed member of, with their role
-    # in each. Listing grants nothing: every other request is still scoped by
-    # the key. Human keys only.
+    # The accounts the person is a confirmed member of (enabled accounts only),
+    # with their role in each. Listing grants nothing: every other request is
+    # still scoped by the credential and account_id. Needs no selected account.
+    # Person credentials only.
     class AccountsController < BaseController
 
-      include ApiV1HumanSelf
+      include ApiV1SelfEndpoints
 
       def index
-        render json: { accounts: confirmed_memberships_for(current_api_user).map { |membership| account_json(membership) } }
+        render json: { accounts: self_usable_memberships(current_api_user).map { |membership| self_listed_account_json(membership) } }
       end
 
     end

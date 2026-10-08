@@ -32,6 +32,31 @@ module Api
         assert_not @user.reload.avatar.attached?
       end
 
+      # Mira, #227: a non-file avatar used to reach Active Storage, where a
+      # string is read as a signed blob id (InvalidSignature) and a hash as
+      # attachable attributes. Only a multipart upload is accepted.
+      test "a string or structured avatar is 422 and changes nothing" do
+        @user.profile.update!(first_name: "Before")
+        profile_updated_at = @user.profile.reload.updated_at
+
+        [
+          [ { avatar: "not-a-signed-blob" }, {} ],
+          [ { avatar: { io: "x", filename: "a.png" } }, {} ],
+          [ { avatar: [ "a", "b" ] }, {} ],
+          [ { avatar: "not-a-signed-blob" }, { as: :json } ],
+          [ { avatar: { filename: "a.png", content_type: "image/png" } }, { as: :json } ]
+        ].each do |params, options|
+          assert_no_difference [ -> { AuditLog.count }, -> { ActiveStorage::Attachment.count }, -> { ActiveStorage::Blob.count } ] do
+            put api_v1_me_avatar_path, headers: @headers, params: params, **options
+          end
+          assert_response :unprocessable_entity, params.inspect
+          assert_equal [ "Avatar must be an uploaded image file" ], response.parsed_body["errors"], params.inspect
+        end
+
+        assert_not @user.reload.avatar.attached?
+        assert_equal profile_updated_at, @user.profile.reload.updated_at
+      end
+
       test "delete removes the avatar and audits remove_avatar" do
         @user.avatar.attach(fixture_file_upload("test_avatar.png", "image/png"))
 

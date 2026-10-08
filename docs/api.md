@@ -97,21 +97,30 @@ Common errors include 401 for failed authentication, 404 for inaccessible/missin
 records, 409 for conflicts and 422 for validation failures. Do not assume every
 endpoint has the same error body: inspect its controller/tests.
 
-### Me and my accounts (human keys)
+### Me and my accounts (person credentials)
 
-The key's own person. These mirror the web settings page (`users#edit/update`,
-`users/avatars#destroy`), with the same validations and audit-log actions.
-Resident keys get 403 `{ "error": "..." }`. Password and email changes are not here.
+The credential's own person, with a human account key or a native-app OAuth
+token. These mirror the web settings page (`users#edit/update`,
+`users/avatars#destroy`), with the same validations and audit-log actions
+(audit rows carry `api_key_id` or `app_session_id`). Resident keys get 403
+`{ "error": "..." }`. Password and email changes are not here.
+
+None of these needs a selected account: an OAuth token whose person has no
+usable default account still reads `/me` and lists `/accounts`. An API key
+whose account is disabled, or whose person has left it, gets 404, and so does
+an `account_id` that is not one of the person's enabled, confirmed accounts.
 
 - `GET /api/v1/me` returns
   `{ "user": { "id", "email_address", "first_name", "last_name", "full_name", "timezone", "theme", "theme_hue", "chat_colour", "avatar_url", "default_account_id", "default_account", "accounts" } }`.
-  `default_account_id` is the chosen default (null means "first confirmed
-  account"); `default_account` is `{ id, name }` of the account that applies.
+  `default_account_id` is the stored choice (null means none);
+  `default_account` is `{ id, name }` of the account used when a request names
+  none: the choice if it is still usable, else the earliest usable account,
+  else null.
   `accounts` is as in `GET /api/v1/accounts`.
 - `PATCH /api/v1/me` takes any of `first_name`, `last_name`, `timezone` (a Rails
   zone name, e.g. `"London"`), `theme` (`light|dark|system`), `theme_hue`
   (0–359, blank clears), `chat_colour`, `default_account_id` (an id from
-  `accounts`, blank clears). Returns `{ "user": ... }`, or 422
+  `accounts`: an enabled account with a confirmed membership; blank clears). Returns `{ "user": ... }`, or 422
   `{ "errors": [ "Theme is not included in the list" ] }`. Other fields are ignored.
 
   ```sh
@@ -119,7 +128,8 @@ Resident keys get 403 `{ "error": "..." }`. Password and email changes are not h
     -d '{"timezone":"Tokyo","theme":"dark"}' https://souls.house/api/v1/me
   ```
 - `PUT /api/v1/me/avatar` takes a multipart `avatar` (PNG, JPEG, GIF or WebP
-  under 5 MB) and returns `{ "user": ... }`; 422 if missing or invalid.
+  under 5 MB) and returns `{ "user": ... }`; 422 if missing, not a file
+  upload (`"Avatar must be an uploaded image file"`) or invalid.
   `DELETE /api/v1/me/avatar` returns `{ "success": true }`.
 
   ```sh
@@ -128,7 +138,8 @@ Resident keys get 403 `{ "error": "..." }`. Password and email changes are not h
 - `GET /api/v1/accounts` lists the person's confirmed memberships of enabled
   accounts, oldest first:
   `{ "accounts": [ { "id": "aB3x", "name": "Daniel's Account", "type": "personal", "role": "owner" } ] }`.
-  This is listing only. A key still acts in its own account.
+  With an OAuth token this is every such membership. Listing grants nothing:
+  an API key still acts in its own account.
 
 ### Read-only site-admin monitoring
 

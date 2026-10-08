@@ -1,16 +1,17 @@
 module Api
   module V1
-    # The key's own person: GET reads their profile and settings, PATCH
-    # changes them. Mirrors UsersController#edit/#update. Human keys only.
-    # Password and email are deliberately not here.
+    # The credential's own person: GET reads their profile and settings, PATCH
+    # changes them. Mirrors UsersController#edit/#update. Person credentials
+    # only; needs no selected account. Password and email are deliberately not
+    # here.
     class MeController < BaseController
 
-      include ApiV1HumanSelf
+      include ApiV1SelfEndpoints
 
       wrap_parameters false
 
       def show
-        render json: { user: me_json(current_api_user) }
+        render json: { user: self_user_json(current_api_user) }
       end
 
       def update
@@ -18,8 +19,8 @@ module Api
         params_for_user, params_for_profile = User.split_settings_params(settings_params)
 
         if user.update_settings(params_for_user, params_for_profile)
-          audit_with_changes(user.settings_audit_action(avatar_updated: false), user)
-          render json: { user: me_json(user) }
+          self_audit_with_changes(user.settings_audit_action(avatar_updated: false), user)
+          render json: { user: self_user_json(user) }
         else
           render json: { errors: user.errors.full_messages }, status: :unprocessable_entity
         end
