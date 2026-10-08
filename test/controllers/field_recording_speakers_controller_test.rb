@@ -93,6 +93,36 @@ class FieldRecordingSpeakersControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "confirming a suggestion names the speaker; dismissing clears it; neither leaks to residents" do
+    @second.update!(suggested_name: "Priya", suggestion_quote: "there", suggestion_quote_ms: 2000, suggestion_source: "utility")
+
+    get account_field_recording_path(@account, @recording)
+    shown = inertia_props["props"]["speakers"].last["suggestion"]
+    assert_equal "Priya", shown["name"]
+    assert_equal "Suggested from what's said", shown["label"]
+
+    name_speaker(@second, confirm_suggestion: true)
+    @second.reload
+    assert_equal "Priya", @second.display_name
+    assert_equal "confirmed_suggestion", @second.naming_source
+    assert_nil @second.suggested_name, "a confirmed suggestion is used up"
+
+    @first.update!(suggested_name: "Tomás", suggestion_quote: "hello", suggestion_quote_ms: 0, suggestion_source: "utility")
+    name_speaker(@first, dismiss_suggestion: true)
+    assert_nil @first.reload.suggested_name
+    assert_nil @first.field_voice
+  end
+
+  test "confirming a suggestion whose name matches an existing voice asks first" do
+    @account.field_voices.create!(name: "Priya")
+    @second.update!(suggested_name: "Priya", suggestion_quote: "there", suggestion_quote_ms: 2000, suggestion_source: "utility")
+
+    name_speaker(@second, confirm_suggestion: true)
+    assert_nil @second.reload.field_voice
+    name_speaker(@second, confirm_suggestion: true, link_existing: true)
+    assert_equal "Priya", @second.reload.display_name
+  end
+
   test "the transcript page carries words, speakers and voices, and the 'you' hint once" do
     @account.field_voices.create!(name: "Tomás")
     get account_field_recording_path(@account, @recording)

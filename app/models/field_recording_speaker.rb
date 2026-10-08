@@ -10,6 +10,10 @@ class FieldRecordingSpeaker < ApplicationRecord
   belongs_to :field_recording
   belongs_to :field_voice, optional: true
   belongs_to :named_by, polymorphic: true, optional: true
+  belongs_to :suggested_voice, class_name: "FieldVoice", optional: true
+
+  SUGGESTION_FIELDS = { suggested_voice: nil, suggested_name: nil, suggestion_quote: nil,
+                        suggestion_quote_ms: nil, suggestion_source: nil, suggested_at: nil }.freeze
 
   validates :label, presence: true
   validates :naming_source, inclusion: { in: NAMING_SOURCES }, allow_nil: true
@@ -27,9 +31,15 @@ class FieldRecordingSpeaker < ApplicationRecord
     field_recording.with_lock do
       raise ActiveRecord::RecordNotFound unless field_recording.kept? && field_recording.ready?
 
-      update!(field_voice: voice, naming_source: source, named_by: by, named_at: Time.current)
+      update!(field_voice: voice, naming_source: source, named_by: by, named_at: Time.current, **SUGGESTION_FIELDS)
       field_recording.update!(transcript_text: field_recording.render_transcript_text)
     end
+  end
+
+  def suggestion? = suggested_name.present? && !field_voice&.kept?
+
+  def dismiss_suggestion!
+    field_recording.with_lock { update!(**SUGGESTION_FIELDS) }
   end
 
   def unname!

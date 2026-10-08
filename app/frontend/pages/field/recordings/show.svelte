@@ -165,6 +165,7 @@
             {speaker}
             {totalTalkMs}
             onPlayClip={playClip}
+            onSeek={seek}
             url={`/accounts/${account.id}/field/recordings/${recording.id}/speakers/${speaker.id}`}
             {voices}
             members={members_without_voice}

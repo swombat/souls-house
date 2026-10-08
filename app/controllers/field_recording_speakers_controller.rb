@@ -14,10 +14,20 @@ class FieldRecordingSpeakersController < ApplicationController
   before_action :set_speaker
 
   def update
-    attributes = params.require(:speaker).permit(:me, :voice_id, :member_user_id, :name, :link_existing, :unname)
+    attributes = params.require(:speaker).permit(:me, :voice_id, :member_user_id, :name, :link_existing, :unname,
+      :confirm_suggestion, :dismiss_suggestion)
 
     if truthy?(attributes[:unname])
       @speaker.unname!
+    elsif truthy?(attributes[:dismiss_suggestion])
+      @speaker.dismiss_suggestion!
+    elsif truthy?(attributes[:confirm_suggestion])
+      return redirect_to(recording_path) unless @speaker.suggestion?
+
+      voice = suggested_voice(attributes)
+      return if performed?
+
+      @speaker.name_as!(voice, by: Current.user, source: "confirmed_suggestion")
     else
       voice = resolve_voice(attributes)
       return if performed?
@@ -60,6 +70,15 @@ class FieldRecordingSpeakersController < ApplicationController
       redirect_to recording_path, inertia: { errors: { name: "Choose who this is." } }
       nil
     end
+  end
+
+  # The suggestion's own voice if it named one this Field knows; otherwise the
+  # suggested name goes through the same "same Priya?" check as a typed name.
+  def suggested_voice(attributes)
+    voice = @speaker.suggested_voice
+    return voice if voice&.kept? && voice.account_id == current_account.id
+
+    resolve_voice(attributes.merge(name: @speaker.suggested_name))
   end
 
   def match_json(voice)
