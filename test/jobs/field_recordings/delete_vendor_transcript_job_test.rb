@@ -45,4 +45,50 @@ class FieldRecordings::DeleteVendorTranscriptJobTest < ActiveJob::TestCase
     assert_match "403", @dispatch.vendor_delete_error
   end
 
+  test "abandoned attempt, late id, no webhook: cleanup starts, waits through early 404s, then deletes" do
+    @recording.attempt_failed!(@dispatch, "no result", permanent: false) # the sweep gave up; no id yet
+
+    assert_enqueued_with(job: FieldRecordings::DeleteVendorTranscriptJob, args: [ @dispatch.id ]) do
+      @recording.record_submission!(@dispatch, ElevenLabsScribe::Submission.new(request_id: "req_late", transcription_id: "tr_late"))
+    end
+
+    client = FakeScribe.new(delete_results: [ :not_found ])
+    assert_enqueued_with(job: FieldRecordings::DeleteVendorTranscriptJob, args: [ @dispatch.id ]) do
+      FieldRecordings::DeleteVendorTranscriptJob.perform_now(@dispatch.id, client:)
+    end
+    @dispatch.reload
+    assert_nil @dispatch.vendor_deleted_at, "an early 404 is not proof of deletion"
+    assert_equal 1, @dispatch.vendor_delete_attempts
+
+    FieldRecordings::DeleteVendorTranscriptJob.perform_now(@dispatch.id, client:) # the transcript exists now
+    assert @dispatch.reload.vendor_deleted_at
+  end
+
+  test "repeated 404s for an attempt we never accepted stop after a bounded number of tries, visibly" do
+    @recording.attempt_failed!(@dispatch, "no result", permanent: false)
+    @dispatch.learn_ids!(transcription_id: "tr_ghost")
+    attempts = FieldRecordings::DeleteVendorTranscriptJob::NOT_FOUND_WAITS.size + 1
+    client = FakeScribe.new(delete_results: [ :not_found ] * attempts)
+
+    attempts.times { FieldRecordings::DeleteVendorTranscriptJob.perform_now(@dispatch.id, client:) }
+
+    @dispatch.reload
+    assert_nil @dispatch.vendor_deleted_at
+    assert_equal FieldRecordings::DeleteVendorTranscriptJob::NOT_FOUND, @dispatch.vendor_delete_error
+    assert_equal attempts, client.deleted.size
+  end
+
+  test "a 404 for a transcript we accepted means it's already gone" do
+    @recording.accept_transcript!(@dispatch, scribe_transcription(transcription_id: "tr_1"))
+    FieldRecordings::DeleteVendorTranscriptJob.perform_now(@dispatch.id, client: FakeScribe.new(delete_results: [ :not_found ]))
+    assert @dispatch.reload.vendor_deleted_at
+  end
+
+  test "abandoning an attempt whose id is already known queues its cleanup" do
+    @dispatch.learn_ids!(transcription_id: "tr_known")
+    assert_enqueued_with(job: FieldRecordings::DeleteVendorTranscriptJob, args: [ @dispatch.id ]) do
+      @recording.attempt_failed!(@dispatch, "no result", permanent: false)
+    end
+  end
+
 end

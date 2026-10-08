@@ -31,7 +31,10 @@ class FieldRecordingDispatch < ApplicationRecord
   end
 
   # Under this row's lock, the same lock the cleanup job takes, so "cleanup
-  # found no id" and "the id arrived" can't miss each other.
+  # found no id" and "the id arrived" can't miss each other. A transcription
+  # id learned for an attempt that is no longer in flight (abandoned, failed or
+  # superseded) queues cleanup at once: nothing else will come for it. So
+  # does an id that arrives after a cleanup already ran without one.
   def learn_ids!(request_id: nil, transcription_id: nil)
     with_lock do
       changes = {}
@@ -39,12 +42,24 @@ class FieldRecordingDispatch < ApplicationRecord
       changes[:transcription_id] = transcription_id if transcription_id.present? && self.transcription_id.blank?
       next if changes.empty?
 
-      retrigger = changes.key?(:transcription_id) && vendor_delete_error == NO_ID
-      changes[:vendor_delete_error] = nil if retrigger
+      learned_id = changes.key?(:transcription_id)
+      cleanup_waited = learned_id && vendor_delete_error == NO_ID
+      changes[:vendor_delete_error] = nil if cleanup_waited
       update!(changes)
-      FieldRecordings::DeleteVendorTranscriptJob.perform_later(id) if retrigger
+      queue_cleanup if learned_id && vendor_deleted_at.nil? && (cleanup_waited || outcome != "in_flight")
     end
   end
+
+  def queue_cleanup
+    FieldRecordings::DeleteVendorTranscriptJob.perform_later(id)
+  end
+
+  # Abandoned or superseded attempts whose transcript id is known but whose
+  # cleanup never started: the sweep's safety net for any missed trigger.
+  scope :awaiting_cleanup, -> {
+    where(outcome: %w[failed superseded], vendor_deleted_at: nil, vendor_delete_error: nil, vendor_delete_attempts: 0)
+      .where.not(transcription_id: nil)
+  }
 
   # A finished vendor transcript exists for this dispatch, whatever happened
   # to the recording, so it should be deleted at the vendor.

@@ -716,6 +716,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_090000) do
     t.string "outcome", default: "in_flight", null: false
     t.string "error"
     t.datetime "vendor_deleted_at"
+    t.integer "vendor_delete_attempts", default: 0, null: false
     t.string "vendor_delete_error"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false

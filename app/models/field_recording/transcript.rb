@@ -58,13 +58,13 @@ module FieldRecording::Transcript
     end
   end
 
-  # The longest turn with nobody else speaking within a second of it, or the
-  # longest turn when none is that clean.
+  # The longest turn with nobody else speaking within a second of it. nil when
+  # no turn is that clean: the page then offers no clip rather than one that
+  # may be someone else (and C must never take a sample from a fallback).
   def clip_for(own_turns, others)
-    by_length = own_turns.sort_by { |turn| -(turn[:e] - turn[:s]) }
-    by_length.find do |turn|
+    own_turns.sort_by { |turn| -(turn[:e] - turn[:s]) }.find do |turn|
       others.none? { |word| word["e"] > turn[:s] - CLIP_ISOLATION_MS && word["s"] < turn[:e] + CLIP_ISOLATION_MS }
-    end || by_length.first
+    end
   end
 
   # Plain text for residents and search: "[mm:ss] Name: words". Names come from

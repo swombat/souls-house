@@ -65,6 +65,15 @@ class FieldRecordings::StuckSweepJobTest < ActiveJob::TestCase
     assert_equal "consumed", sent.reservation.reload.state
   end
 
+  test "the sweep starts cleanup for any abandoned attempt with a known id that was missed" do
+    @dispatch.update_columns(outcome: "failed", transcription_id: "tr_missed", updated_at: 1.hour.ago)
+    @recording.update_columns(status: "queued", attempt_token: nil, updated_at: Time.current)
+
+    assert_enqueued_with(job: FieldRecordings::DeleteVendorTranscriptJob, args: [ @dispatch.id ]) do
+      FieldRecordings::StuckSweepJob.perform_now(client: FakeScribe.new)
+    end
+  end
+
   test "queued recordings with no live job are sent again" do
     orphan = queued_recording(account: @account, user: @user)
     orphan.update_columns(updated_at: 45.minutes.ago)

@@ -57,7 +57,11 @@ module FieldRecording::Transcription
   def attempt_failed!(dispatch, message, permanent:)
     with_lock do
       dispatch.reload
-      dispatch.update!(outcome: "failed", error: message.to_s.truncate(255)) if dispatch.outcome == "in_flight"
+      if dispatch.outcome == "in_flight"
+        dispatch.update!(outcome: "failed", error: message.to_s.truncate(255))
+        # The vendor may still finish it; if we know its id, clean it up.
+        dispatch.queue_cleanup if dispatch.transcription_id.present?
+      end
       next :stale unless current_attempt?(dispatch)
 
       if permanent || dispatch_count >= FieldRecording::MAX_DISPATCHES

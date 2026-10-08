@@ -44,10 +44,13 @@ class ElevenLabsScribe
     perform(Net::HTTP::Get.new(URI("#{BASE_URL}/v1/speech-to-text/transcripts/#{CGI.escape(transcription_id)}")), expect: [ 200 ])
   end
 
+  # :deleted, or :not_found. Not found is ambiguous for a transcript that may
+  # still be running, so the caller decides what it means.
   def delete(transcription_id)
+    status = nil
     perform(Net::HTTP::Delete.new(URI("#{BASE_URL}/v1/speech-to-text/transcripts/#{CGI.escape(transcription_id)}")),
-      expect: [ 200, 204, 404 ])
-    true
+      expect: [ 200, 204, 404 ]) { |code| status = code }
+    status == 404 ? :not_found : :deleted
   end
 
   # ElevenLabs-Signature: "t=<unix seconds>,v0=<hex hmac-sha256(secret, "t.body")>",
@@ -89,12 +92,13 @@ class ElevenLabsScribe
 
   private
 
-  def perform(request, expect:)
+  def perform(request, expect:, &)
     request["xi-api-key"] = api_key
     uri = request.uri
     response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true,
       open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT) { |http| http.request(request) }
     code = response.code.to_i
+    yield code if block_given?
 
     unless expect.include?(code)
       raise TransientError, "Scribe returned #{code}" if code == 429 || code >= 500

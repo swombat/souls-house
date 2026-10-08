@@ -13,6 +13,7 @@ class CreateFieldRecordingDispatches < ActiveRecord::Migration[8.1]
       t.string :outcome, null: false, default: "in_flight"
       t.string :error
       t.datetime :vendor_deleted_at
+      t.integer :vendor_delete_attempts, null: false, default: 0
       t.string :vendor_delete_error
       t.timestamps
     end

@@ -51,10 +51,11 @@ module FieldRecordingHelpers
 
     attr_reader :submissions, :deleted, :fetched
 
-    def initialize(submit: nil, fetch: nil, delete_error: nil)
+    def initialize(submit: nil, fetch: nil, delete_error: nil, delete_results: nil)
       @submit_result = submit || ElevenLabsScribe::Submission.new(request_id: "req_1", transcription_id: nil)
       @fetch_result = fetch
       @delete_error = delete_error
+      @delete_results = Array(delete_results)
       @submissions, @deleted, @fetched = [], [], []
     end
 
@@ -76,7 +77,7 @@ module FieldRecordingHelpers
       raise @delete_error if @delete_error
 
       @deleted << id
-      true
+      @delete_results.shift || :deleted
     end
 
   end

@@ -2,6 +2,8 @@
 #
 # - a recording transcribing too long with no webhook: fetch the transcript if
 #   its id is known, otherwise abandon the attempt (requeue within the cap);
+# - abandoned or superseded attempts with a known transcript id and no
+#   cleanup started get one (vendor deletion's safety net);
 # - pending reservations stranded on rejected or failed recordings are
 #   released; on discarded ones they settle by the discard rule (consumed if
 #   anything was dispatched, released if not);
@@ -13,10 +15,12 @@ module FieldRecordings
 
     MIN_WAIT = 20.minutes
     ORPHAN_QUEUED_AFTER = 30.minutes
+    RECONCILE_AFTER = 30.minutes
     NO_RESULT = "No result arrived from the transcriber."
 
     def perform(now: Time.current, client: ElevenLabsScribe.new)
       chase_stuck(now, client)
+      reconcile_cleanup(now)
       settle_stranded(now)
       requeue_orphans(now)
     end
@@ -47,6 +51,12 @@ module FieldRecordings
       true
     rescue ElevenLabsScribe::Error
       false
+    end
+
+    # Safety net for vendor cleanup (spec §5): any abandoned or superseded
+    # attempt with a known transcript id and no cleanup started gets one.
+    def reconcile_cleanup(now)
+      FieldRecordingDispatch.awaiting_cleanup.where(updated_at: ...(now - RECONCILE_AFTER)).find_each(&:queue_cleanup)
     end
 
     def wait_for(recording)

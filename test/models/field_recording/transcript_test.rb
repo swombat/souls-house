@@ -39,4 +39,13 @@ class FieldRecording::TranscriptTest < ActiveSupport::TestCase
     assert_equal "[00:00] Speaker 1: Hello there.\n[01:05] Speaker 2: Hi.", text
   end
 
+  test "a speaker who is never heard alone gets no clip rather than someone else's voice" do
+    words = FieldRecording::Transcript.compact(scribe_words(
+      [ "speaker_0", 0.0, 2.0, "talking" ], [ "speaker_1", 2.3, 2.6, "yes" ], [ "speaker_0", 2.9, 4.0, "over" ]
+    ))
+    quiet = FieldRecording::Transcript.speakers(words).find { |s| s[:label] == "speaker_1" }
+    assert_nil quiet[:clip_start_ms]
+    assert_nil quiet[:clip_end_ms]
+  end
+
 end
