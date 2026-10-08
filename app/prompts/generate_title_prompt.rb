@@ -36,6 +36,8 @@ class GenerateTitlePrompt
   def format_message_line(message)
     content = message.content.to_s.strip
     return if content.blank?
+    # A labelled safeguard script should not name the conversation.
+    return if message.safeguard_labelled?
 
     label = case message.role
     when "user" then "User"

@@ -42,7 +42,7 @@ class AgentAttentionFeed
     latest_messages = Message.kept
       .where(id: latest_helixkit_message_ids)
       .where("messages.agent_id IS NULL OR messages.agent_id != ?", agent.id)
-      .includes(:chat, :agent, user: :profile)
+      .includes(:chat, :agent, :safeguard_detection, user: :profile)
       .to_a
     messages_with_attachments = ActiveStorage::Attachment
       .where(record_type: "Message", record_id: latest_messages.map(&:id), name: "attachments")
@@ -112,6 +112,7 @@ class AgentAttentionFeed
   end
 
   def helixkit_author_type(message)
+    return "system" if message.safeguard_labelled?
     return "human" if message.user_id.present?
     return "resident" if message.agent_id.present?
 
@@ -119,6 +120,7 @@ class AgentAttentionFeed
   end
 
   def helixkit_author_name(message)
+    return message.author_name if message.safeguard_labelled?
     return message.user.full_name.presence || message.user.email_address.split("@").first if message.user
     return message.agent.name if message.agent
 

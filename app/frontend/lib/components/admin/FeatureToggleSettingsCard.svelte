@@ -26,6 +26,12 @@
       label: 'Show usage in chat',
       description: 'Show weekly subscription usage beside resident names. Usage below 25% is always shown.',
     },
+    {
+      id: 'safeguard_conversations_enabled',
+      label: 'Label safeguard scripts in conversations',
+      description:
+        'Check new resident posts in conversations for generic provider safeguard scripts, as Telegram already does. Turning it off stops new checks only; existing labels, reclaims and pending resets keep working.',
+    },
   ];
 </script>
 

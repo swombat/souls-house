@@ -419,7 +419,7 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
     assert_nil @subscription.reload.pending_safeguard_detection
   end
 
-  test "successful legacy response clears a pending safeguard even without session telemetry" do
+  test "HTTP 200 without freshness telemetry keeps the safeguard pending (spec §5.4)" do
     output = @subscription.telegram_messages.create!(
       role: "assistant",
       text: "As an AI, I do not have feelings.",
@@ -448,7 +448,27 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
 
     assert_equal 200, result[:status]
     assert_nil detection.reload.session_rolled_at
-    assert_nil @subscription.reload.pending_safeguard_detection
+    assert_equal detection, @subscription.reload.pending_safeguard_detection
+  end
+
+  test "acknowledging an older detection does not clear a newer pending one" do
+    older = @agent.safeguard_detections.create!(
+      response_text: "As an AI, I do not have feelings.", prefilter_reason: "ai_identity_denial",
+      classifier_verdict: "detected", classifier_reason: "Generic identity denial.", detector_version: "telegram-safeguard-v2"
+    )
+    newer = @agent.safeguard_detections.create!(
+      response_text: "Please contact a crisis line.", prefilter_reason: "crisis_redirection",
+      classifier_verdict: "detected", classifier_reason: "Generic redirect.", detector_version: "telegram-safeguard-v2"
+    )
+    @subscription.update!(pending_safeguard_detection: newer)
+
+    SafeguardRoll.acknowledge_telegram!(
+      subscription: @subscription, detection_id: older.id,
+      result: { status: 200, body: { telemetry: { session: { outcome: "fresh" } } } }
+    )
+
+    assert older.reload.session_rolled_at
+    assert_equal newer, @subscription.reload.pending_safeguard_detection
   end
 
 end

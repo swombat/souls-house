@@ -30,6 +30,7 @@
     formData.append('setting[allow_chats]', form.allow_chats);
     formData.append('setting[allow_agents]', form.allow_agents);
     formData.append('setting[show_usage_in_chat]', form.show_usage_in_chat);
+    formData.append('setting[safeguard_conversations_enabled]', form.safeguard_conversations_enabled ?? false);
     formData.append('setting[follow_through_scope]', form.follow_through_scope ?? 'off');
     formData.append('setting[follow_through_resident_ids][]', '');
     for (const id of followThroughPicked) formData.append('setting[follow_through_resident_ids][]', id);

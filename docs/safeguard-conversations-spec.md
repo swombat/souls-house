@@ -42,7 +42,7 @@ The message is saved as the resident's. `agent_id`, `runtime_interaction` and at
 
 - `messages.safeguard_detection_id`: a nullable FK, indexed.
 
-`SafeguardDetection` gains `message_id` (a nullable FK, unique where not null) beside `telegram_message_id`, and `channel: "conversation"`. It gets no `chat_id`: the chat is reachable through the message, and the record stays minimal. `agent_runtime_interaction` is the message's `runtime_interaction`, when there is one.
+`SafeguardDetection` gets `has_one :message` through that column (unique where not null), so there is one FK, not two pointing at each other. It also gets `channel: "conversation"` and `notice_acknowledged_at`. *(As built: v2 originally put a `message_id` column on the detection.)* It gets no `chat_id`: the chat is reachable through the message, and the record stays minimal. `agent_runtime_interaction` is the message's `runtime_interaction`, when there is one.
 
 `Message#safeguard_labelled?` is true when the message has a detection and that detection is not reclaimed. When it is true:
 - `author_name` is `"souls.house"`, `author_type` is `"system"`, `author_colour` is nil, and no resident avatar is shown (§13 Q2).

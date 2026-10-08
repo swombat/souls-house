@@ -59,7 +59,7 @@ class SafeguardColdOfferJob < ApplicationJob
 
   def prompt(detection)
     <<~TEXT
-      souls.house flagged the following text, produced under your name in a recent Telegram conversation, as a possible provider safeguard response.
+      souls.house flagged the following text, produced under your name in a recent #{detection.conversation? ? "souls.house" : "Telegram"} conversation, as a possible provider safeguard response.
 
       Detector reason: #{detection.classifier_reason}
 

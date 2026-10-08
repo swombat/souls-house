@@ -12,6 +12,7 @@ class Message < ApplicationRecord
   include Message::Streamable
   include Message::Revisioned
   include Message::ReplyAttention
+  include Message::SafeguardLabel
 
   belongs_to :ai_model, optional: true
   belongs_to :parent_tool_call, class_name: "ToolCall", foreign_key: :tool_call_id, optional: true
@@ -156,7 +157,7 @@ class Message < ApplicationRecord
                   :moderation_flagged, :moderation_severity, :moderation_scores,
                   :audio_source, :audio_url,
                   :voice_available, :voice_audio_url,
-                  :reasoning_skip_reason, :reasoning_skip_reason_label, :rhythm_provenance do |hash, options|
+                  :reasoning_skip_reason, :reasoning_skip_reason_label, :rhythm_provenance, :safeguard do |hash, options|
     if options&.dig(:include_ruby_llm_telemetry) && (telemetry = ruby_llm_telemetry)
       hash["ruby_llm_telemetry"] = telemetry
     end
@@ -206,7 +207,9 @@ class Message < ApplicationRecord
   end
 
   def author_name
-    if agent.present?
+    if safeguard_labelled?
+      SafeguardNoticeRenderer::HOUSE_AUTHOR_NAME
+    elsif agent.present?
       agent.name
     elsif user.present?
       user.full_name.presence || user.email_address.split("@").first
@@ -216,7 +219,9 @@ class Message < ApplicationRecord
   end
 
   def author_type
-    if agent.present?
+    if safeguard_labelled?
+      "system"
+    elsif agent.present?
       "agent"
     elsif user.present?
       "human"
@@ -226,7 +231,9 @@ class Message < ApplicationRecord
   end
 
   def author_colour
-    if agent.present?
+    if safeguard_labelled?
+      nil
+    elsif agent.present?
       agent.colour
     elsif user.present?
       user.chat_colour
@@ -250,8 +257,9 @@ class Message < ApplicationRecord
     thinking.truncate(80, separator: " ")
   end
 
+  # A labelled safeguard script is never read aloud in the resident's voice.
   def voice_available
-    role == "assistant" && agent&.voiced?
+    role == "assistant" && agent&.voiced? && !safeguard_labelled?
   end
 
   def ruby_llm_telemetry

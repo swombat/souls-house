@@ -206,6 +206,8 @@ module Api
 
       def create_agent_scoped_conversation!(invited_agent_ids)
         agent_ids = ([ current_api_agent.id ] + invited_agent_ids).uniq
+        # The safeguard check is a network call: run it before the transaction.
+        safeguard_check = SafeguardConversationPost.check(agent: current_api_agent, content: params[:message])
 
         # In a guest account, the creator's own seat is admitted under the
         # membership lock (ChatAgent#agent_takes_part_in_account), like any seat.
@@ -221,11 +223,13 @@ module Api
           chat.save!
 
           if params[:message].present?
-            chat.messages.create!(
+            opening = chat.messages.build(
               role: "assistant",
               agent: current_api_agent,
               content: params[:message]
             )
+            SafeguardConversationPost.save(opening, check: safeguard_check) or
+              raise ActiveRecord::RecordInvalid, opening
           end
 
           chat

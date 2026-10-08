@@ -10,6 +10,7 @@
   import ModerationIndicator from '$lib/components/chat/ModerationIndicator.svelte';
   import AudioPlayer from '$lib/components/chat/AudioPlayer.svelte';
   import RhythmProvenanceBadge from '$lib/components/chat/RhythmProvenanceBadge.svelte';
+  import SafeguardNoticeBand from '$lib/components/chat/SafeguardNoticeBand.svelte';
 
   import { Streamdown } from 'svelte-streamdown';
   import { formatTime, formatDateTime } from '$lib/utils';
@@ -137,6 +138,9 @@
                     </div>
                   {/if}
                   <ReplyAttentionEye {accountId} {chatId} messageId={section.id} />
+                  {#if section.safeguard}
+                    <SafeguardNoticeBand safeguard={section.safeguard} />
+                  {/if}
                   <AssistantMessageSection
                     message={section}
                     streamingThinking={sectionThinking[section.id] ||
