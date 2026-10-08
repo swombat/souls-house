@@ -66,6 +66,9 @@ Rails.application.routes.draw do
   # Telegram webhook (called by Telegram, no auth)
   post "telegram/webhook/:token", to: "telegram_webhooks#receive", as: :telegram_webhook
 
+  # ElevenLabs speech-to-text results for Field recordings (HMAC-signed, no session)
+  post "webhooks/elevenlabs/stt", to: "eleven_labs_stt_webhooks#create", as: :eleven_labs_stt_webhook
+
   resources :accounts, only: [ :new, :create, :show, :edit, :update ] do
     resources :rhythms do
       get :preview, on: :collection

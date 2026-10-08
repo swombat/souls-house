@@ -15,6 +15,7 @@ class FieldRecording < ApplicationRecord
   include Broadcastable
   include ObfuscatesId
   include SyncAuthorizable
+  include FieldRecording::Transcription
 
   class NotRetryable < StandardError; end
 
@@ -99,6 +100,7 @@ class FieldRecording < ApplicationRecord
   def discard_and_settle!(now: Time.current)
     with_lock do
       next false if discarded?
+      supersede_in_flight_dispatches!
       self.attempt_token = nil
       discard!
       settle_reservation_after_discard!(now:)

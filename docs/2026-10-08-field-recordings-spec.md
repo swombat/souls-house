@@ -309,26 +309,53 @@ the attempt** under the lock: the dispatch becomes `failed`,
 `attempt_token` is cleared, and the recording goes back to `queued` if
 `dispatch_count < 3`, or to `failed` (with release) if not. A webhook that
 arrives later for the abandoned attempt is `superseded`: its content is
-ignored, but it is still deleted at the vendor. Every dispatch costs vendor
-money, so the cap of 3 bounds spend separately from the allowance.
+ignored, but it is still deleted at the vendor. The per-recording cap of 3
+bounds one recording's attempts; the account-wide exposure bound below bounds
+spend across recordings and retries.
 
-The same sweep **settles stranded reservations** after a crash: any
-`pending` reservation whose recording is discarded, `rejected` or `failed`
-is released. A `queued` recording with no live job for 30 min is
-re-enqueued; claiming it still respects the dispatch cap.
+**Account-wide dispatch exposure (added in build, Mira on #212).** Refunded
+failures must not buy unbounded vendor work, so dispatching has its own
+bound, independent of the allowance. Every committed dispatch records the
+audio it sent (`field_recording_dispatches.audio_ms`). A claim, taken under
+the account lock and then the recording lock, refuses to send if the audio
+already sent for this account in the last 7 days plus this recording would
+exceed **2 × the weekly allowance**. Every attempt counts, whatever became of
+it, because a timed-out or failed attempt may still have been billed. A
+refused claim fails the recording with "This Field has sent as much audio to
+the transcriber as it can this week" and releases its reservation. "Try
+again" later goes through the same check. `dispatch_count` counts attempts
+we *committed* to sending. It isn't proof the vendor received or billed
+them, which is why the bound is deliberately conservative.
+
+**Fail closed on configuration.** Nothing is sent unless the API key, the
+webhook id and the webhook secret are all configured: without them a result
+could not come back verifiably. A recording then waits in `queued` and no
+attempt is used. The sweep doesn't re-send queued recordings while
+configuration is missing.
+
+The same sweep **settles stranded reservations** after a crash: a `pending`
+reservation on a `rejected` or `failed` recording is released; on a discarded
+one it settles by the discard rule below. A `queued` recording with no live
+job for 30 min is re-enqueued; claiming it still respects both bounds.
 
 **Errors at dispatch** (only for `my_attempt`, under the lock, guarded as in
-step 3): a 4xx other than 429 → `failed`, with Scribe's message, and the
-reservation released. A 429, a 5xx or a transport error → the dispatch is
+step 3): a 4xx other than 429 → `failed`, with our own wording and the status
+code (vendor text is never stored or logged), and the reservation released.
+A 429, a 5xx or a transport error → the dispatch is
 `failed`, `attempt_token` is cleared, and the recording goes back to
 `queued` with a backoff (1, 5, 15 min), or to `failed` once the cap is
 reached. A late error for an attempt that's no longer current changes
 nothing on the recording.
 
-**Discarding a recording.** Under the recording lock: discard, clear
-`attempt_token`, and release the reservation **immediately** if it's still
-`pending`. Everything still in flight then fails its attempt guard. A
-reservation already consumed stays consumed: the vendor did the work.
+**Discarding a recording** (amended in build; accepted by Mira on #210).
+Under the recording lock: discard, clear `attempt_token`, and settle the
+reservation. **If nothing was ever dispatched, it is released. Once a
+dispatch has been committed, it is consumed**, because the vendor work may
+already be paid for, and otherwise upload → discard → repeat would buy
+unbounded transcription. A reservation already consumed stays consumed.
+Everything still in flight then fails its attempt guard. The page says so
+before deleting: "Deleting a recording that has started transcribing
+doesn't give its minutes back."
 
 ## 5a. The lifecycle contract
 
@@ -391,8 +418,9 @@ same recording impossible, even outside the lock.
 duplicate does nothing:
 - **consume**: on an accepted transcript (§5 step 3). Exactly once. Later
   failures (suggestions, recognition) never refund it.
-- **release**: on `failed` or `rejected`, immediately on discard, or by the
-  sweep for a stranded reservation. A released recording can't be re-queued;
+- **release**: on `failed` or `rejected`, on discard before any dispatch, or
+  by the sweep for a stranded reservation. Discard after a dispatch consumes
+  instead (§5). A released recording can't be re-queued;
   "Try again" is `retry!` (§4), with a new recording and a new reservation.
 
 **What people see.**

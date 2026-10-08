@@ -15,7 +15,7 @@ module FieldRecordings
 
       duration_ms = recording.audio.blob.open { |file| FieldRecording::Probe.duration_ms(file.path) }
       if duration_ms
-        recording.admit!(duration_ms)
+        TranscribeJob.perform_later(recording.id) if recording.admit!(duration_ms) == :admitted
       else
         recording.reject_unreadable!(UNREADABLE)
       end
