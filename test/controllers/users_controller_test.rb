@@ -184,6 +184,22 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert flash[:errors].present?
   end
 
+  test "PATCH update with a valid default account and a bad theme saves neither" do
+    theme_before = @user.theme
+
+    assert_no_difference -> { AuditLog.where(user: @user).count } do
+      patch user_path, params: {
+        user: { default_account_key: accounts(:team_account).to_param, preferences: { theme: "invalid" } }
+      }, headers: { "X-Inertia" => true }
+    end
+
+    assert_redirected_to edit_user_path
+    assert flash[:errors].present?
+    @user.reload
+    assert_nil @user.default_account_id
+    assert_equal theme_before, @user.theme
+  end
+
   test "GET edit passes the default account choice as a settings prop" do
     team = accounts(:team_account)
     @user.update!(default_account_key: team.to_param)

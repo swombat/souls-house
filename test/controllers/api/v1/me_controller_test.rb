@@ -109,6 +109,21 @@ module Api
         assert_nil @user.reload.default_account_id
       end
 
+      test "a valid default account with a bad theme saves neither" do
+        theme_before = @user.theme
+
+        assert_no_difference -> { AuditLog.count } do
+          patch api_v1_me_path, headers: @human_headers, as: :json,
+            params: { default_account_id: @team.to_param, theme: "neon" }
+        end
+
+        assert_response :unprocessable_entity
+        assert response.parsed_body.fetch("errors").any?
+        @user.reload
+        assert_nil @user.default_account_id
+        assert_equal theme_before, @user.theme
+      end
+
       test "password email and unknown fields are ignored" do
         digest = @user.password_digest
         patch api_v1_me_path, headers: @human_headers, as: :json,

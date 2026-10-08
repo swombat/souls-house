@@ -211,21 +211,26 @@ class User < ApplicationRecord
   # Updates the user, then the profile. Profile errors are copied onto the
   # user so callers report one error list. Returns true or false.
   def update_settings(user_attributes, profile_attributes)
-    User.transaction do
-      return false unless update(user_attributes)
+    saved = false
 
-      if profile_attributes.present?
-        unless profile.update(profile_attributes)
-          # Add profile errors to user errors
-          profile.errors.each do |error|
-            errors.add(error.attribute, error.message)
-          end
-          return false
+    # A plain `return` inside a transaction block commits it (Rails 7.1+), so a
+    # profile failure must raise Rollback, or the user half would be saved.
+    # requires_new keeps the Rollback effective if a caller is already in a transaction.
+    User.transaction(requires_new: true) do
+      raise ActiveRecord::Rollback unless update(user_attributes)
+
+      if profile_attributes.present? && !profile.update(profile_attributes)
+        # Add profile errors to user errors
+        profile.errors.each do |error|
+          errors.add(error.attribute, error.message)
         end
+        raise ActiveRecord::Rollback
       end
+
+      saved = true
     end
 
-    true
+    saved
   end
 
   # The audit action for a successful update_settings, read from what it saved.
