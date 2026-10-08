@@ -1,0 +1,3 @@
+corpus*/
+*.tgz
+__pycache__/
