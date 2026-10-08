@@ -6,6 +6,13 @@ module Api
       class FilesController < BaseController
 
         include AttachmentDownloads
+        include ApiHumanReach
+
+        # Editing a file's title and note is the person's control on the
+        # Field page (FieldFilesController#update): any member, any file, in
+        # the file's own account.
+        before_action :require_human_actor!, only: :update
+        require_api_feature_enabled :agents, only: :update
 
         def index
           files = current_api_account.field_files.kept.includes(:uploaded_by, file_attachment: :blob).newest_first
@@ -47,6 +54,18 @@ module Api
 
           file.discard!
           head :no_content
+        end
+
+        def update
+          file = find_human_record!(FieldFile.kept, params[:id])
+          attributes = params.permit(:title, :note)
+          return render json: { error: "Provide title or note" }, status: :unprocessable_entity if attributes.empty?
+
+          if file.update(attributes)
+            render json: { file: file_json(file) }
+          else
+            render json: { error: file.errors.full_messages.to_sentence }, status: :unprocessable_entity
+          end
         end
 
         private

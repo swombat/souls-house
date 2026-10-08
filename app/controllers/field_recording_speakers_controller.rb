@@ -54,24 +54,19 @@ class FieldRecordingSpeakersController < ApplicationController
   end
 
   def resolve_voice(attributes)
-    voices = current_account.field_voices.kept
-    if truthy?(attributes[:me])
-      FieldVoice.for_member!(account: current_account, user: Current.user, by: Current.user)
-    elsif attributes[:voice_id].present?
-      voices.find_by!(id: FieldVoice.decode_id(attributes[:voice_id]))
-    elsif attributes[:member_user_id].present?
-      FieldVoice.for_member!(account: current_account, user: current_account.users.find(attributes[:member_user_id]), by: Current.user)
-    elsif attributes[:name].present?
-      existing = voices.named_like(attributes[:name]).first
-      return voices.create!(name: attributes[:name], created_by: Current.user) unless existing
-      return existing if truthy?(attributes[:link_existing])
+    choice = FieldVoice::Choice.resolve(
+      account: current_account, user: Current.user,
+      me: truthy?(attributes[:me]), voice_id: attributes[:voice_id], member_user_id: attributes[:member_user_id],
+      name: attributes[:name], link_existing: truthy?(attributes[:link_existing])
+    )
+    return choice.voice if choice.voice
 
-      redirect_to recording_path, inertia: { errors: { name_match: match_json(existing) } }
-      nil
+    if choice.match
+      redirect_to recording_path, inertia: { errors: { name_match: match_json(choice.match) } }
     else
       redirect_to recording_path, inertia: { errors: { name: "Choose who this is." } }
-      nil
     end
+    nil
   end
 
   # Under account → recording (the naming order, never recording first): the chip the person saw must still be the live
