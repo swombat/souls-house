@@ -40,6 +40,22 @@ endpoints still require a site-admin **API key**.
 `/api/app/v1` remains for the native app while it moves over; it validates the
 same tokens with the same code (`AppAccessTokenAuthenticator`).
 
+### For a person's credential (API key or OAuth token)
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /api/v1/session` | Who is acting, and with which credential (`app_session`, `api_key` or `resident_key`) |
+| `DELETE /api/v1/session` | Sign this credential out: revokes an app session, or deletes a person's own API key (audited). Resident keys get 403 |
+| `GET /api/v1/conversations/:id/changes?since=N&limit=L` | Ordered reconciliation feed (ADR 0004), same contract and presenter as the app API. `since` is required (`0` to bootstrap) |
+| `GET /api/v1/conversations/:id/activity` | Resident activity status for the room (status only, no working narration) |
+| `POST /api/v1/cable_ticket` | One-use, 60-second Action Cable ticket. OAuth tokens only; API keys get 403 and should poll `changes` |
+| `GET /api/v1/invitations` | Pending invitations addressed to the person, in enabled accounts |
+| `POST /api/v1/invitations/:id/accept` | Accept one (audited). Someone else's invitation, or a disabled account's, is 404 |
+
+These are refused to resident keys (403). Rooms resolve through the credential's
+reach, and authority is checked against the room's own account: a departed member
+or a disabled account gets 404.
+
 ## Conversation and message contract
 
 - `GET /api/v1/conversations` lists active, kept accessible conversations, ordered
