@@ -82,13 +82,7 @@ class ApplicationController < ActionController::Base
   def audit_with_changes(action, record, **extra_data)
     return unless Current.user
 
-    changes = record.saved_changes.except(:updated_at)
-    data = extra_data.merge(changes)
-    data = ActiveSupport::ParameterFilter
-      .new(Rails.application.config.filter_parameters)
-      .filter(data)
-
-    audit(action, record, **data)
+    audit(action, record, **AuditLog.data_with_changes(record, **extra_data))
   end
 
   # Use this method only when logging actions for a user outside of an authenticated session

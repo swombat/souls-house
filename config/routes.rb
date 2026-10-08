@@ -280,6 +280,11 @@ Rails.application.routes.draw do
         resources :accounts, only: :index
         resources :users, only: :index
       end
+      # The key's own person: profile, settings, avatar and accounts. Human keys only.
+      resource :me, only: %i[show update], controller: "me" do
+        resource :avatar, only: %i[update destroy], controller: "me/avatars"
+      end
+      resources :accounts, only: :index
       resources :visual_tags, only: :index
       resources :rhythms, only: %i[index show create update destroy] do
         get :preview, on: :collection
