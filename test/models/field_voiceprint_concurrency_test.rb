@@ -52,6 +52,37 @@ class FieldVoiceprintConcurrencyTest < ActiveSupport::TestCase
     end
   end
 
+  def dispatched_enrolment
+    enrolment = nil
+    FieldVoiceprints::Sample.stub(:cut, ->(_r, _s, &block) { Tempfile.create([ "s", ".wav" ]) { |f| block.call(f.path) } }) do
+      enrolment = FieldVoiceprints::Enrolments.start!(@speaker, by: @user)
+    end
+    FieldVoiceprints::Enrolments.dispatch!(enrolment, client: FakePyannote.new)
+  end
+
+  test "deleting a name racing a write-back never leaves a print on the deleted voice" do
+    with_recognition(@account) do
+      enrolment = dispatched_enrolment
+      concurrently(2) do |i|
+        i.zero? ? FieldVoice.find(@voice.id).delete_identity! : FieldVoiceprints::Enrolments.write_back!(enrolment.id, "PRINT")
+      end
+      assert @voice.reload.discarded?
+      assert_nil FieldVoiceprint.find_by(field_voice_id: @voice.id)
+    end
+  end
+
+  test "un-naming racing a write-back: either the print predates the correction or nothing is stored" do
+    with_recognition(@account) do
+      enrolment = dispatched_enrolment
+      results = concurrently(2) do |i|
+        i.zero? ? FieldRecordingSpeaker.find(@speaker.id).unname! : FieldVoiceprints::Enrolments.write_back!(enrolment.id, "PRINT")
+      end
+      assert_nil @speaker.reload.field_voice
+      stored = FieldVoiceprint.find_by(field_voice_id: @voice.id)
+      assert_equal results.last == true, stored.present?, "a print exists only if its write-back committed before the un-name"
+    end
+  end
+
   private
 
   def concurrently(count)

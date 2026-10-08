@@ -38,14 +38,18 @@
     {/if}
   </p>
   <div class="flex gap-1">
-    <Button size="sm" variant="outline" disabled={busy} onclick={() => send({ confirm_recognition: true })}>
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={busy}
+      onclick={() => send({ confirm_recognition: true, recognition: recognition.token })}>
       That's {recognition.name}
     </Button>
     <Button
       size="sm"
       variant="ghost"
       disabled={busy}
-      onclick={() => send({ dismiss_recognition: true })}
+      onclick={() => send({ dismiss_recognition: true, recognition: recognition.token })}
       aria-label="Dismiss this suggestion">Not them</Button>
   </div>
   {#if error}<p class="text-xs text-destructive" role="alert">{error}</p>{/if}

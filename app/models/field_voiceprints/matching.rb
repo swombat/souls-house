@@ -1,11 +1,19 @@
 # Turning an identify result into recognitions (spec §9, "Diarization when
 # both run"; Mira's B, provisionally, as an experiment, not a calibration).
-# Scribe's words and speakers are the user's view and are never changed. Work
-# only on non-overlapping speech: words that overlap another speaker's words
-# and stretches where identify segments overlap are left out, so crosstalk
-# can't inflate coverage. A Scribe speaker is recognised as a voice only if at
-# least 70% of their remaining word time lies in segments matched to that
-# voice and none lies in a segment matched to another. Otherwise nothing.
+# Scribe's words and speakers are the user's view and are never changed.
+#
+# Everything is computed on time intervals, never word midpoints:
+#
+# - a speaker's speech is the union of their word intervals;
+# - crosstalk is removed: wherever words from two Scribe speakers overlap, and
+#   wherever two or more identify segments are active at once (every overlap,
+#   nested ones included);
+# - a voice covers the part of the remaining speech that intersects segments
+#   matched to it; speech in unmatched segments, or in no segment, stays as
+#   unknown and counts towards the total only.
+#
+# A speaker is recognised as a voice only if that voice covers at least 70% of
+# their remaining speech and no other voice covers any of it.
 module FieldVoiceprints::Matching
 
   COVERAGE = 0.7
@@ -15,33 +23,38 @@ module FieldVoiceprints::Matching
   # valid_labels: {label => [voice_id, generation]} for labels still usable.
   # Returns {scribe_label => {voice_id:, generation:, confidence:}}.
   def recognitions(words, output, valid_labels)
+    output = {} unless output.is_a?(Hash)
     segments = Array(output["identification"]).filter_map do |segment|
       next unless segment.is_a?(Hash)
 
-      { s: ms(segment["start"]), e: ms(segment["end"]), match: segment["match"], diar: segment["diarizationSpeaker"] }
-    end
-    overlaps = overlap_intervals(segments)
-    confidences = confidence_table(output)
-    spoken = words.select { |word| word["k"] == "w" && word["spk"] && word["e"] > word["s"] }
-    crosstalk = crosstalk_words(spoken)
+      from, to = ms(segment["start"]), ms(segment["end"])
+      next unless from && to && to > from
 
-    spoken.reject { |word| crosstalk.include?(word.object_id) }.group_by { |word| word["spk"] }.filter_map do |label, own|
-      total = 0
+      { s: from, e: to, match: segment["match"].is_a?(String) ? segment["match"] : nil, diar: segment["diarizationSpeaker"] }
+    end
+    confidences = confidence_table(output)
+    spoken = words.select { |word| word["k"] == "w" && word["spk"] && word["e"].to_i > word["s"].to_i }
+
+    excluded = union(crowded(segments.map { |seg| [ seg[:s], seg[:e] ] }) +
+                     crowded_between_speakers(spoken))
+
+    spoken.group_by { |word| word["spk"] }.filter_map do |label, own|
+      speech = subtract(union(own.map { |word| [ word["s"], word["e"] ] }), excluded)
+      total = length(speech)
+      next if total.zero?
+
       covered = Hash.new(0)
       weighted = Hash.new(0.0)
-      own.each do |word|
-        middle = (word["s"] + word["e"]) / 2
-        next if overlaps.any? { |from, to| middle >= from && middle < to }
+      segments.each do |segment|
+        next unless segment[:match] && valid_labels.key?(segment[:match])
 
-        length = word["e"] - word["s"]
-        total += length
-        segment = segments.find { |candidate| middle >= candidate[:s] && middle < candidate[:e] }
-        next unless segment && segment[:match] && valid_labels.key?(segment[:match])
+        time = length(intersect(speech, [ [ segment[:s], segment[:e] ] ]))
+        next if time.zero?
 
-        covered[segment[:match]] += length
-        weighted[segment[:match]] += length * confidences.dig(segment[:diar], segment[:match]).to_f
+        covered[segment[:match]] += time
+        weighted[segment[:match]] += time * confidences.dig(segment[:diar], segment[:match]).to_f
       end
-      next if total.zero? || covered.size != 1
+      next unless covered.size == 1
 
       match, time = covered.first
       next if time < COVERAGE * total
@@ -51,26 +64,67 @@ module FieldVoiceprints::Matching
     end.to_h
   end
 
-  def overlap_intervals(segments)
-    sorted = segments.sort_by { |segment| segment[:s] }
-    sorted.each_cons(2).filter_map do |first, second|
-      [ second[:s], [ first[:e], second[:e] ].min ] if second[:s] < first[:e]
-    end
-  end
-
-  def crosstalk_words(spoken)
-    marked = Set.new
-    sorted = spoken.sort_by { |word| word["s"] }
-    sorted.each_with_index do |word, index|
-      sorted[(index + 1)..].each do |other|
-        break if other["s"] >= word["e"]
-        next if other["spk"] == word["spk"]
-
-        marked << word.object_id << other.object_id
+  # Where two or more intervals are active at once.
+  def crowded(intervals)
+    events = intervals.flat_map { |from, to| [ [ from, 1 ], [ to, -1 ] ] }.sort_by { |at, delta| [ at, delta ] }
+    active = 0
+    start = nil
+    result = []
+    events.each do |at, delta|
+      active += delta
+      if active >= 2 && start.nil?
+        start = at
+      elsif active < 2 && start
+        result << [ start, at ] if at > start
+        start = nil
       end
     end
-    marked
+    result
   end
+
+  # Where words from two different Scribe speakers overlap.
+  def crowded_between_speakers(spoken)
+    per_speaker = spoken.group_by { |word| word["spk"] }.values.map { |own| union(own.map { |w| [ w["s"], w["e"] ] }) }
+    crowded(per_speaker.flatten(1))
+  end
+
+  def union(intervals)
+    intervals.sort.each_with_object([]) do |(from, to), merged|
+      if merged.any? && from <= merged.last[1]
+        merged.last[1] = [ merged.last[1], to ].max
+      else
+        merged << [ from, to ]
+      end
+    end
+  end
+
+  def intersect(a, b)
+    result = []
+    i = j = 0
+    while i < a.size && j < b.size
+      from = [ a[i][0], b[j][0] ].max
+      to = [ a[i][1], b[j][1] ].min
+      result << [ from, to ] if to > from
+      a[i][1] < b[j][1] ? i += 1 : j += 1
+    end
+    result
+  end
+
+  def subtract(a, b)
+    a.flat_map do |from, to|
+      pieces = [ [ from, to ] ]
+      b.each do |cut_from, cut_to|
+        pieces = pieces.flat_map do |p_from, p_to|
+          next [ [ p_from, p_to ] ] if cut_to <= p_from || cut_from >= p_to
+
+          [ ([ p_from, cut_from ] if cut_from > p_from), ([ cut_to, p_to ] if cut_to < p_to) ].compact
+        end
+      end
+      pieces
+    end
+  end
+
+  def length(intervals) = intervals.sum { |from, to| to - from }
 
   def confidence_table(output)
     Array(output["voiceprints"]).each_with_object({}) do |row, table|
@@ -80,6 +134,9 @@ module FieldVoiceprints::Matching
     end
   end
 
-  def ms(seconds) = (seconds.to_f * 1000).round
+  def ms(seconds)
+    value = Float(seconds, exception: false)
+    value&.finite? ? (value * 1000).round : nil
+  end
 
 end

@@ -14,14 +14,18 @@ module FieldVoices
       return unless enrolment
 
       result = client.job(enrolment.vendor_job_id)
-      case result["status"]
+      status = result.is_a?(Hash) ? result["status"] : nil
+      case status
       when "succeeded"
-        print = result.dig("output", "voiceprint")
+        output = result["output"]
+        print = output.is_a?(Hash) ? output["voiceprint"] : nil
         print.is_a?(String) && print.present? ? FieldVoiceprints::Enrolments.write_back!(enrolment.id, print) : enrolment.destroy!
       when "failed", "canceled"
         enrolment.destroy!
-      else
+      when "pending", "created", "running"
         poll_again(enrolment)
+      else
+        enrolment.destroy! # an answer we don't understand ends here, with the sample
       end
     rescue PyannoteClient::TransientError
       poll_again(enrolment) if enrolment

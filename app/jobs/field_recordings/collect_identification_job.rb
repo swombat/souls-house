@@ -14,14 +14,17 @@ module FieldRecordings
       return unless identification
 
       result = client.job(identification.vendor_job_id)
-      case result["status"]
+      status = result.is_a?(Hash) ? result["status"] : nil
+      case status
       when "succeeded"
         output = result["output"]
         output.is_a?(Hash) ? FieldVoiceprints::Identification.apply!(identification, output) : identification.update!(status: "failed")
       when "failed", "canceled"
         identification.update!(status: "failed")
-      else
+      when "pending", "created", "running"
         poll_again(identification)
+      else
+        identification.update!(status: "failed")
       end
     rescue PyannoteClient::TransientError
       poll_again(identification) if identification

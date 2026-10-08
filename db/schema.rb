@@ -732,6 +732,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_120000) do
     t.bigint "field_recording_id", null: false
     t.string "vendor_job_id", null: false
     t.jsonb "snapshot", default: {}, null: false
+    t.jsonb "speaker_decisions", default: {}, null: false
     t.string "status", default: "dispatched", null: false
     t.integer "poll_count", default: 0, null: false
     t.datetime "created_at", null: false
@@ -780,6 +781,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_120000) do
     t.bigint "recognised_voice_id"
     t.integer "recognition_confidence"
     t.bigint "recognition_print_generation"
+    t.integer "recognition_decision_generation"
     t.index ["field_recording_id", "label"], name: "index_field_recording_speakers_on_field_recording_id_and_label", unique: true
     t.index ["field_recording_id"], name: "index_field_recording_speakers_on_field_recording_id"
     t.index ["field_voice_id"], name: "index_field_recording_speakers_on_field_voice_id"
@@ -822,6 +824,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_120000) do
     t.bigint "field_voice_id", null: false
     t.bigint "field_recording_speaker_id", null: false
     t.bigint "start_generation", null: false
+    t.integer "decision_generation", default: 0, null: false
     t.integer "sample_ms", null: false
     t.string "consented_by_type"
     t.bigint "consented_by_id"

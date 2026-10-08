@@ -163,8 +163,9 @@
       {/if}
       {#if suggestions_enabled}
         <p class="text-xs text-muted-foreground" data-testid="suggestions-disclosure">
-          Names may be suggested from what's said: the transcript, title and note are sent to Google Gemini (through
-          OpenRouter) for that. A suggestion is only ever shown here, for a person to confirm or dismiss.
+          Names may be suggested from what's said: the transcript, title and note, with the names of this Field's voices
+          and members, are sent to Google Gemini (through OpenRouter) for that. A suggestion is only ever shown here,
+          for a person to confirm or dismiss.
         </p>
       {/if}
       <div class="flex justify-end">

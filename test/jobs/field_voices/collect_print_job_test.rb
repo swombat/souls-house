@@ -50,4 +50,14 @@ class FieldVoices::CollectPrintJobTest < ActiveJob::TestCase
     assert_nil @voice.reload.voiceprint
   end
 
+  test "malformed successes and unknown statuses end cleanly, sample and all" do
+    [ { "status" => "succeeded", "output" => [] }, { "status" => "succeeded", "output" => { "voiceprint" => 3 } },
+      { "status" => "weird" }, [], "junk" ].each do |answer|
+      enrolment = dispatched_enrolment
+      FieldVoices::CollectPrintJob.perform_now(enrolment.id, client: FakePyannote.new(jobs: { "vp_job" => answer }))
+      assert_not FieldVoiceEnrolment.exists?(enrolment.id), answer.inspect
+    end
+    assert_nil @voice.reload.voiceprint
+  end
+
 end

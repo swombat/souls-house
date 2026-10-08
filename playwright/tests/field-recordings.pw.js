@@ -479,7 +479,11 @@ const recognitionSpeakers = [
   {
     ...speakers[1],
     suggestion: null,
-    recognition: { name: 'Tomás', confidence: 82 },
+    recognition: {
+      name: 'Tomás',
+      confidence: 82,
+      token: { voice_id: 'v9', print_generation: 3, decision_generation: 0 },
+    },
     can_remember: false,
     remembered: false,
     remembering: false,

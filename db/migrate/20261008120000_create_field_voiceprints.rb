@@ -28,6 +28,7 @@ class CreateFieldVoiceprints < ActiveRecord::Migration[8.1]
       t.references :field_voice, null: false, foreign_key: true
       t.references :field_recording_speaker, null: false, foreign_key: true
       t.bigint :start_generation, null: false
+      t.integer :decision_generation, null: false, default: 0
       t.integer :sample_ms, null: false
       t.references :consented_by, polymorphic: true
       t.string :consent_text_version, null: false
@@ -42,6 +43,7 @@ class CreateFieldVoiceprints < ActiveRecord::Migration[8.1]
       t.references :field_recording, null: false, foreign_key: true
       t.string :vendor_job_id, null: false
       t.jsonb :snapshot, null: false, default: {}
+      t.jsonb :speaker_decisions, null: false, default: {}
       t.string :status, null: false, default: "dispatched"
       t.integer :poll_count, null: false, default: 0
       t.timestamps
@@ -50,6 +52,7 @@ class CreateFieldVoiceprints < ActiveRecord::Migration[8.1]
     add_reference :field_recording_speakers, :recognised_voice, foreign_key: { to_table: :field_voices, on_delete: :nullify }
     add_column :field_recording_speakers, :recognition_confidence, :integer
     add_column :field_recording_speakers, :recognition_print_generation, :bigint
+    add_column :field_recording_speakers, :recognition_decision_generation, :integer
   end
 
 end

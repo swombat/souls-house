@@ -53,7 +53,7 @@ class FieldRecordingSpeaker < ApplicationRecord
   # Returns false when the chip was out of date (and changes nothing).
   def dismiss_suggestion!(shown_generation)
     field_recording.with_lock do
-      next false unless suggestion_current?(shown_generation)
+      next false unless field_recording.kept? && field_recording.ready? && suggestion_current?(shown_generation)
 
       update!(decision_generation: decision_generation + 1, **SUGGESTION_FIELDS)
       true
@@ -62,32 +62,56 @@ class FieldRecordingSpeaker < ApplicationRecord
 
   def recognition? = recognised_voice_id.present? && !field_voice&.kept? && recognised_voice&.kept?
 
-  # A person confirms "Tomás?" (spec §9). Recording lock, then the voice lock,
-  # then every check again: both gates, the voice kept, its print still the one
-  # this guess was made from. A guess left over from before a forget or a
-  # replacement is refused and cleared. Confirming never builds a print.
-  def confirm_recognition!(by:)
-    field_recording.with_lock do
-      voice = recognised_voice
-      raise ActiveRecord::RecordNotFound unless voice
+  # The guess a chip showed: which voice, from which print, against which
+  # decision generation. Confirm and dismiss must send it back unchanged.
+  def recognition_token
+    return nil unless recognition?
 
-      voice.with_lock do
-        current = FieldVoiceprints.enabled_for?(field_recording.account.reload) && voice.kept? && !field_voice&.kept? &&
-          recognition_print_generation == voice.print_generation &&
-          FieldVoiceprint.where(field_voice: voice, generation: voice.print_generation).exists?
-        unless current
-          update!(**RECOGNITION_FIELDS)
-          next false
-        end
+    { voice_id: recognised_voice.to_param, print_generation: recognition_print_generation,
+      decision_generation: recognition_decision_generation }
+  end
 
-        name_as!(voice, by:, source: "confirmed_recognition")
-        true
-      end
+  # A person confirms "Tomás?" (spec §9). Under account → recording → voice
+  # locks, with the speaker reloaded: both gates open, the guess still exactly
+  # the one the chip showed (same voice, same print generation, no decision
+  # since), the voice kept and its print still current. Anything stale is
+  # refused and changes nothing. Confirming never builds a print.
+  def confirm_recognition!(by:, shown:)
+    with_recognition_locks(shown) do |account, voice|
+      next false unless FieldVoiceprints.enabled_for?(account) && voice&.kept? &&
+                        recognition_print_generation == voice.print_generation &&
+                        FieldVoiceprint.where(field_voice: voice, generation: voice.print_generation).exists?
+
+      name_as!(voice, by:, source: "confirmed_recognition")
+      true
     end
   end
 
-  def dismiss_recognition!
-    field_recording.with_lock { update!(decision_generation: decision_generation + 1, **RECOGNITION_FIELDS) }
+  # Dismissing is allowed with the gates shut (it only removes a guess), but
+  # only for the guess the chip showed.
+  def dismiss_recognition!(shown:)
+    with_recognition_locks(shown) do
+      update!(decision_generation: decision_generation + 1, **RECOGNITION_FIELDS)
+      true
+    end
+  end
+
+  def with_recognition_locks(shown)
+    shown = (shown || {}).to_h.symbolize_keys
+    voice = FieldVoice.find_by(id: FieldVoice.decode_id(shown[:voice_id].to_s))
+    recording = field_recording
+    FieldVoiceprints::Locks.with(account: recording.account, recording:, voices: [ voice ].compact) do |account, locked_recording, voices|
+      reload
+      live_voice = voices.first
+      current = locked_recording.kept? && locked_recording.ready? && live_voice && !field_voice&.kept? &&
+        recognised_voice_id == live_voice.id &&
+        recognition_print_generation.to_s == shown[:print_generation].to_s &&
+        recognition_decision_generation.to_s == shown[:decision_generation].to_s &&
+        decision_generation.to_s == shown[:decision_generation].to_s
+      next false unless current
+
+      yield account, live_voice
+    end
   end
 
   def unname!

@@ -76,7 +76,8 @@ module FieldItems
       clip_start_ms: speaker.clip_start_ms,
       clip_end_ms: speaker.clip_end_ms,
       recognition: (if speaker.recognition?
-                      { name: speaker.recognised_voice.name, confidence: speaker.recognition_confidence }
+                      { name: speaker.recognised_voice.name, confidence: speaker.recognition_confidence,
+                        token: speaker.recognition_token }
                     end),
       suggestion: (if speaker.suggestion?
                      { name: speaker.suggested_name, quote: speaker.suggestion_quote,

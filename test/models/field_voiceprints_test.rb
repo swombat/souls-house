@@ -3,6 +3,8 @@ require "support/field_recording_helpers"
 
 class FieldVoiceprintsTest < ActiveSupport::TestCase
 
+  include ActiveJob::TestHelper
+
   include FieldRecordingHelpers
 
   setup do
@@ -131,96 +133,192 @@ class FieldVoiceprintsTest < ActiveSupport::TestCase
     assert_nil @voice.reload.voiceprint
   end
 
-  test "identify sends opaque labels and only current prints, then recognises an unnamed speaker" do
+  # A recording nobody has touched: identify may guess at its speakers.
+  def untouched_recording = long_ready_recording(account: @account, user: @user)
+
+  def identify!(recording, client = FakePyannote.new)
+    identification = with_recognition(@account) { FieldVoiceprints::Identification.dispatch!(recording, client:) }
+    [ identification, client.identify_calls.last&.dig(:voiceprints, 0, :label), client ]
+  end
+
+  def segment(from, to, label, diar: "SPEAKER_00") = { "start" => from, "end" => to, "match" => label, "diarizationSpeaker" => diar }
+
+  test "identify sends opaque labels and only current prints, then recognises an untouched speaker" do
     store_print!(@voice, print: "TOMAS")
     stale = @account.field_voices.create!(name: "Stale")
     store_print!(stale).update_columns(generation: 0) # no longer current
-    @speaker.unname!
-    client = FakePyannote.new
+    fresh = untouched_recording
+    identification, label, client = identify!(fresh)
 
-    identification = with_recognition(@account) { FieldVoiceprints::Identification.dispatch!(@recording, client:) }
     sent = client.identify_calls.first[:voiceprints]
     assert_equal [ "TOMAS" ], sent.map { |v| v[:voiceprint] }
     assert_no_match "Tomás", sent.to_json
-    label = sent.first[:label]
 
-    output = {
-      "identification" => [ { "start" => 0.0, "end" => 12.5, "match" => label, "diarizationSpeaker" => "SPEAKER_00" },
-                            { "start" => 16.5, "end" => 23.0, "match" => label, "diarizationSpeaker" => "SPEAKER_00" } ],
-      "voiceprints" => [ { "speaker" => "SPEAKER_00", "confidence" => { label => 84 } } ]
-    }
+    output = { "identification" => [ segment(0.0, 12.5, label), segment(16.5, 23.0, label) ],
+               "voiceprints" => [ { "speaker" => "SPEAKER_00", "confidence" => { label => 84 } } ] }
     with_recognition(@account) { assert FieldVoiceprints::Identification.apply!(identification, output) }
 
-    @speaker.reload
-    assert_equal @voice, @speaker.recognised_voice
-    assert_equal 84, @speaker.recognition_confidence
-    assert_equal "Speaker 1", @speaker.display_name, "a recognition is a guess, not a name"
-    assert_nil @other.reload.recognised_voice_id
+    speaker = fresh.speakers.first.reload
+    assert_equal @voice, speaker.recognised_voice
+    assert_equal 84, speaker.recognition_confidence
+    assert_equal 0, speaker.recognition_decision_generation
+    assert_equal "Speaker 1", speaker.display_name, "a recognition is a guess, not a name"
   end
 
   test "a late identify result for a forgotten, re-enrolled voice is ignored" do
     store_print!(@voice)
-    @speaker.unname!
-    client = FakePyannote.new
-    identification = with_recognition(@account) { FieldVoiceprints::Identification.dispatch!(@recording, client:) }
-    label = client.identify_calls.first[:voiceprints].first[:label]
-
+    fresh = untouched_recording
+    identification, label = identify!(fresh)
     @voice.forget!
-    store_print!(@voice) # re-enrolled: a new print, a newer generation
+    store_print!(@voice)
 
-    output = { "identification" => [ { "start" => 0.0, "end" => 23.0, "match" => label, "diarizationSpeaker" => "S" } ] }
+    output = { "identification" => [ segment(0.0, 23.0, label) ] }
     with_recognition(@account) { FieldVoiceprints::Identification.apply!(identification, output) }
-    assert_nil @speaker.reload.recognised_voice_id
+    assert_nil fresh.speakers.first.reload.recognised_voice_id
   end
 
-  test "named speakers are never touched by recognition" do
+  test "a late identify result honours what a person decided meanwhile: named, then un-named" do
     store_print!(@voice)
-    client = FakePyannote.new
-    identification = with_recognition(@account) { FieldVoiceprints::Identification.dispatch!(@recording, client:) }
-    label = client.identify_calls.first[:voiceprints].first[:label]
-    output = { "identification" => [ { "start" => 0.0, "end" => 23.0, "match" => label, "diarizationSpeaker" => "S" } ] }
+    fresh = untouched_recording
+    identification, label = identify!(fresh)
+    speaker = fresh.speakers.first
+    speaker.name_as!(@account.field_voices.create!(name: "Someone"), by: @user)
+    speaker.reload.unname!
+
+    output = { "identification" => [ segment(0.0, 23.0, label) ] }
+    with_recognition(@account) { FieldVoiceprints::Identification.apply!(identification, output) }
+    assert_nil speaker.reload.recognised_voice_id, "a correction back to 'Speaker 1' is respected"
+  end
+
+  test "speakers anyone has decided about are never guessed at, named or not" do
+    store_print!(@voice)
+    identification, label = identify!(@recording) # @speaker is named in setup
+    output = { "identification" => [ segment(0.0, 23.0, label) ] }
     with_recognition(@account) { FieldVoiceprints::Identification.apply!(identification, output) }
     assert_nil @speaker.reload.recognised_voice_id
     assert_equal @voice, @speaker.field_voice
   end
 
-  test "matching: 70% of clean speech in one voice's segments, none in another's; crosstalk left out" do
-    words = FieldRecording::Transcript.compact(scribe_words(
-      [ "speaker_0", 0.0, 4.0, "a" ], [ "speaker_0", 4.0, 8.0, "b" ], [ "speaker_0", 8.0, 10.0, "c" ]
-    ))
+  test "matching works on intervals: partial words, conflicts and nested overlaps" do
+    one_word = [ { "s" => 0, "e" => 1000, "t" => "x", "k" => "w", "spk" => "a" } ]
     valid = { "A" => [ 1, 1 ], "B" => [ 2, 1 ] }
-    seg = ->(s, e, m) { { "start" => s, "end" => e, "match" => m, "diarizationSpeaker" => "X" } }
+    out = ->(*segs) { { "identification" => segs } }
 
-    assert_equal 1, FieldVoiceprints::Matching.recognitions(words, { "identification" => [ seg.(0, 8, "A") ] }, valid)
-      .dig("speaker_0", :voice_id), "8 of 10 s"
-    assert_empty FieldVoiceprints::Matching.recognitions(words, { "identification" => [ seg.(0, 6, "A") ] }, valid),
-      "6 of 10 s is not enough"
-    assert_empty FieldVoiceprints::Matching.recognitions(words,
-      { "identification" => [ seg.(0, 8, "A"), seg.(8, 10, "B") ] }, valid), "a conflicting voice means no guess"
-    assert_empty FieldVoiceprints::Matching.recognitions(words, { "identification" => [ seg.(0, 10, "Z") ] }, valid),
+    assert_empty FieldVoiceprints::Matching.recognitions(one_word, out.(segment(0.49, 0.51, "A")), valid),
+      "2% real coverage is not a recognition"
+    assert_empty FieldVoiceprints::Matching.recognitions(one_word, out.(segment(0, 0.6, "A"), segment(0.6, 1.0, "B")), valid),
+      "40% conflicting time means no guess"
+    assert_equal [ [ 1, 2 ], [ 3, 4 ] ], FieldVoiceprints::Matching.crowded([ [ 0, 10 ], [ 1, 2 ], [ 3, 4 ] ]),
+      "every nested overlap counts, not just adjacent ones"
+    assert_equal 1, FieldVoiceprints::Matching.recognitions(one_word, out.(segment(0, 0.8, "A")), valid).dig("a", :voice_id)
+    assert_empty FieldVoiceprints::Matching.recognitions(one_word, out.(segment(0, 0.6, "A")), valid), "60% is not enough"
+    assert_empty FieldVoiceprints::Matching.recognitions(one_word, out.(segment(0, 1.0, "Z")), valid),
       "a label no longer valid counts for nothing"
   end
 
-  test "confirming a current recognition names the speaker and builds nothing; a stale one is refused" do
-    store_print!(@voice)
-    @speaker.unname!
-    @speaker.update!(recognised_voice: @voice, recognition_confidence: 80, recognition_print_generation: @voice.reload.print_generation)
-
-    with_recognition(@account) { assert @speaker.confirm_recognition!(by: @user) }
-    assert_equal "confirmed_recognition", @speaker.reload.naming_source
-    assert_equal 1, FieldVoiceprint.count, "confirming never builds a print"
-
-    @other.update!(recognised_voice: @voice, recognition_confidence: 80, recognition_print_generation: @voice.print_generation - 1)
-    with_recognition(@account) { assert_not @other.confirm_recognition!(by: @user) }
-    assert_nil @other.reload.recognised_voice_id
-    assert_nil @other.field_voice
+  test "matching leaves real crosstalk out of the count" do
+    words = [ { "s" => 0, "e" => 10_000, "t" => "long", "k" => "w", "spk" => "a" },
+              { "s" => 2_000, "e" => 5_000, "t" => "over", "k" => "w", "spk" => "b" } ]
+    valid = { "A" => [ 1, 1 ] }
+    # A covers 0–2 s and 5–10 s: all of a's speech once the 2–5 s crosstalk is removed.
+    found = FieldVoiceprints::Matching.recognitions(words, { "identification" => [ segment(0, 2, "A"), segment(5, 10, "A") ] }, valid)
+    assert_equal 1, found.dig("a", :voice_id)
+    assert_nil found["b"], "b only ever spoke over someone"
   end
 
-  test "confirming with a gate shut is refused" do
+  test "malformed identify output is handled, not raised" do
+    words = [ { "s" => 0, "e" => 1000, "t" => "x", "k" => "w", "spk" => "a" } ]
+    [ nil, [], { "identification" => "junk" }, { "identification" => [ { "start" => "x" }, nil, 3 ] } ].each do |output|
+      assert_equal({}, FieldVoiceprints::Matching.recognitions(words, output, { "A" => [ 1, 1 ] }))
+    end
+  end
+
+  def guess!(speaker, generation: @voice.reload.print_generation)
+    speaker.update!(recognised_voice: @voice, recognition_confidence: 80, recognition_print_generation: generation,
+      recognition_decision_generation: speaker.decision_generation)
+    speaker.reload.recognition_token
+  end
+
+  test "confirming the guess the chip showed names the speaker and builds nothing" do
     store_print!(@voice)
-    @speaker.unname!
-    @speaker.update!(recognised_voice: @voice, recognition_print_generation: @voice.reload.print_generation)
-    assert_not @speaker.confirm_recognition!(by: @user)
+    speaker = untouched_recording.speakers.first
+    token = guess!(speaker)
+
+    with_recognition(@account) { assert speaker.confirm_recognition!(by: @user, shown: token) }
+    assert_equal "confirmed_recognition", speaker.reload.naming_source
+    assert_equal 1, FieldVoiceprint.count, "confirming never builds a print"
+  end
+
+  test "a stale chip can't confirm or dismiss: different guess, decision since, print moved, gate shut" do
+    store_print!(@voice)
+    speaker = untouched_recording.speakers.first
+    old_token = guess!(speaker)
+    other = @account.field_voices.create!(name: "Priya")
+    store_print!(other)
+    speaker.update!(recognised_voice: other, recognition_print_generation: other.reload.print_generation)
+
+    with_recognition(@account) do
+      assert_not speaker.confirm_recognition!(by: @user, shown: old_token), "the chip showed Tomás, the guess is now Priya"
+      assert_not speaker.dismiss_recognition!(shown: old_token)
+    end
+    assert_equal other, speaker.reload.recognised_voice, "a refused stale request changes nothing"
+
+    token = guess!(speaker, generation: @voice.reload.print_generation - 1) # print replaced since
+    with_recognition(@account) { assert_not speaker.confirm_recognition!(by: @user, shown: token) }
+    assert_nil speaker.reload.field_voice
+
+    token = guess!(speaker)
+    assert_not speaker.confirm_recognition!(by: @user, shown: token), "gate shut"
+    assert speaker.dismiss_recognition!(shown: token), "dismissing a guess works with the gate shut"
+    assert_nil speaker.reload.recognised_voice_id
+  end
+
+  test "a forget during the cut leaves no preview behind" do
+    with_recognition(@account) do
+      FieldVoiceprints::Sample.stub(:cut, ->(_r, _s, &block) {
+        @voice.forget! # lands between the snapshot and the store
+        Tempfile.create([ "s", ".wav" ]) { |f| block.call(f.path) }
+      }) do
+        assert_raises(FieldVoiceprints::Enrolments::Refused) { FieldVoiceprints::Enrolments.start!(@speaker, by: @user) }
+      end
+    end
+    assert_equal 0, FieldVoiceEnrolment.count
+  end
+
+  test "un-naming, discarding or shutting the gate between preview and send stops the send" do
+    client = FakePyannote.new
+    with_recognition(@account) do
+      enrolment = fake_cut { FieldVoiceprints::Enrolments.start!(@speaker, by: @user) }
+      @speaker.reload.unname!
+      @speaker.reload.name_as!(@voice, by: @user) # same voice again, but a new decision
+      assert_raises(FieldVoiceprints::Enrolments::Refused) { FieldVoiceprints::Enrolments.dispatch!(enrolment, client:) }
+
+      enrolment = fake_cut { FieldVoiceprints::Enrolments.start!(@speaker.reload, by: @user) }
+      @recording.discard_and_settle!
+      assert_raises(FieldVoiceprints::Enrolments::Refused) { FieldVoiceprints::Enrolments.dispatch!(enrolment, client:) }
+    end
+    assert_empty client.voiceprint_calls
+  end
+
+  test "an uncertain send ends the enrolment for good; the same consent is never sent twice" do
+    failing = Object.new
+    def failing.voiceprint(url:) = raise(PyannoteClient::TransientError, "pyannote transport failure (Net::ReadTimeout)")
+    with_recognition(@account) do
+      enrolment = fake_cut { FieldVoiceprints::Enrolments.start!(@speaker, by: @user) }
+      assert_raises(FieldVoiceprints::Enrolments::Uncertain) { FieldVoiceprints::Enrolments.dispatch!(enrolment, client: failing) }
+      assert_not FieldVoiceEnrolment.exists?(enrolment.id)
+      assert_raises(FieldVoiceprints::Enrolments::Refused) { FieldVoiceprints::Enrolments.dispatch!(enrolment, client: FakePyannote.new) }
+    end
+  end
+
+  test "expired previews are swept away with their samples" do
+    enrolment = with_recognition(@account) { fake_cut { FieldVoiceprints::Enrolments.start!(@speaker, by: @user) } }
+    blob = enrolment.sample.blob
+    travel FieldVoiceprints::ENROLMENT_TTL + 1.minute do
+      perform_enqueued_jobs { FieldVoices::EnrolmentSweepJob.perform_now }
+    end
+    assert_not FieldVoiceEnrolment.exists?(enrolment.id)
+    assert_not ActiveStorage::Blob.exists?(blob.id)
   end
 
   test "switching the gate on builds nothing for voices named before" do
@@ -235,7 +333,7 @@ class FieldVoiceprintsTest < ActiveSupport::TestCase
 
   test "the restore reset clears every print, enrolment and guess, keeps names, and moves every generation" do
     store_print!(@voice)
-    @other.update!(recognised_voice: @voice, recognition_print_generation: 1)
+    @other.update!(recognised_voice: @voice, recognition_print_generation: 1, recognition_decision_generation: 0)
     before = @voice.reload.print_generation
 
     FieldVoiceprints.reset_all!

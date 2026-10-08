@@ -211,8 +211,8 @@
       <Dialog.Title>Bring in a recording</Dialog.Title>
       <Dialog.Description>
         {sharedLine} It's transcribed by ElevenLabs so you can read it together.{#if suggestionsEnabled}
-          The transcript, title and note are also sent to Google Gemini (through OpenRouter) to suggest who's speaking;
-          a person always confirms.{/if}
+          The transcript, title and note, with the names of this Field's voices and members, are also sent to Google
+          Gemini (through OpenRouter) to suggest who's speaking; a person always confirms.{/if}
       </Dialog.Description>
     </Dialog.Header>
     <form onsubmit={submit} class="space-y-4" data-testid="recording-upload-form">

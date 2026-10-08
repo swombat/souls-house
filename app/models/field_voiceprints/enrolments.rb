@@ -1,36 +1,51 @@
-# "Remember this voice" (spec §9), as three explicit steps:
+# "Remember this voice" (spec §9), as three explicit steps, each under the
+# full lock order (FieldVoiceprints::Locks: account → recording → voice):
 #
-#   start!    the person ticked the box: a sample is chosen and cut, and kept
-#             as a pending enrolment so they can hear it. Nothing is sent.
-#   dispatch! they said "use it": rechecked under the account and voice locks,
-#             then the sample goes to pyannote.
-#   write_back! the print came back: rechecked again under the same locks;
-#             only then is the print stored, with a new generation.
-#
-# Every recheck: both gates open, the voice kept and still the same
-# generation it was when consent was given, the enrolment still present
-# (forget deletes it), the speaker still named to that voice.
+#   start!      the person ticked the box. Under the locks, a snapshot is taken
+#               of what they consented to: the voice's print generation and the
+#               speaker's decision generation, with both gates open and the
+#               speaker named to that voice. The sample is cut outside the
+#               locks, then the same snapshot is rechecked under the locks
+#               before the preview is stored. If anything moved (a forget, a
+#               rename, a discard, a gate shut), the sample is thrown away.
+#               Nothing is sent.
+#   dispatch!   they said "use it". Rechecked under the locks, then sent while
+#               they're held. Any vendor error ends the enrolment for good: an
+#               uncertain send is never retried silently on the same consent.
+#   write_back! the print came back. Rechecked under the locks again,
+#               including that the enrolment is still dispatched; only then is
+#               the print stored with a new generation.
 module FieldVoiceprints::Enrolments
 
   class Refused < StandardError; end
+
+  # dispatch! couldn't confirm the vendor received the sample. Nothing will be
+  # stored from it; the person can tick the box again.
+  class Uncertain < StandardError; end
 
   module_function
 
   def start!(speaker, by:)
     recording = speaker.field_recording
-    voice = speaker.field_voice
-    raise Refused, "Voice recognition is off in this Field." unless FieldVoiceprints.enabled_for?(recording.account.reload)
-    raise Refused, "Name this speaker first." unless voice&.kept?
-    raise Refused, "This recording isn't ready." unless recording.kept? && recording.ready?
+    snapshot = locked(speaker) do |account, live_recording, voice, live_speaker|
+      check_consentable!(account, live_recording, voice, live_speaker)
+      { voice_id: voice.id, print_generation: voice.print_generation, decision_generation: live_speaker.decision_generation,
+        segments: FieldVoiceprints::Sample.segments_for(live_speaker) }
+    end
+    sample_ms = snapshot[:segments].sum { |from, to| to - from }
 
-    segments = FieldVoiceprints::Sample.segments_for(speaker)
-    sample_ms = segments.sum { |from, to| to - from }
+    FieldVoiceprints::Sample.cut(recording, snapshot[:segments]) do |path|
+      locked(speaker) do |account, live_recording, voice, live_speaker|
+        check_consentable!(account, live_recording, voice, live_speaker)
+        unless voice.id == snapshot[:voice_id] && voice.print_generation == snapshot[:print_generation] &&
+               live_speaker.decision_generation == snapshot[:decision_generation]
+          raise Refused, "Something changed while the sample was being prepared. Nothing was kept; please try again."
+        end
 
-    FieldVoiceprints::Sample.cut(recording, segments) do |path|
-      voice.with_lock do
-        voice.enrolments.where(field_recording_speaker: speaker).destroy_all
-        enrolment = voice.enrolments.create!(
-          account: recording.account, field_recording_speaker: speaker, start_generation: voice.print_generation,
+        FieldVoiceEnrolment.where(field_voice: voice, field_recording_speaker: live_speaker).find_each(&:destroy!)
+        enrolment = FieldVoiceEnrolment.create!(
+          account:, field_voice: voice, field_recording_speaker: live_speaker,
+          start_generation: snapshot[:print_generation], decision_generation: snapshot[:decision_generation],
           sample_ms:, consented_by: by, consent_text_version: FieldVoiceprints::CONSENT_TEXT_VERSION,
           expires_at: FieldVoiceprints::ENROLMENT_TTL.from_now
         )
@@ -42,38 +57,38 @@ module FieldVoiceprints::Enrolments
     raise Refused, e.message
   end
 
-  # Returns the dispatched enrolment, or raises Refused.
   def dispatch!(enrolment, client: PyannoteClient.new)
-    account = enrolment.account
-    account.with_lock do
-      voice = enrolment.field_voice
-      voice.lock!
-      live = FieldVoiceEnrolment.lock.find_by(id: enrolment.id)
+    result = locked_enrolment(enrolment) do |live, account, recording, voice|
       raise Refused, "This is no longer waiting to be remembered." unless live&.status == "previewing" && !live.expired?
 
-      check!(live, voice)
-      job_id = client.voiceprint(url: live.sample.url(expires_in: 1.hour))
+      check!(live, account, recording, voice)
+      begin
+        job_id = client.voiceprint(url: live.sample.url(expires_in: 1.hour))
+      rescue PyannoteClient::Error
+        live.destroy! # committed with the transaction; raising here would roll it back
+        next :uncertain
+      end
       live.update!(status: "dispatched", vendor_job_id: job_id)
       live
     end
+    raise Uncertain if result == :uncertain
+
+    result
   end
 
   # The vendor answered with a print. Returns true if it was stored.
   def write_back!(enrolment_id, print)
-    stored = false
     enrolment = FieldVoiceEnrolment.find_by(id: enrolment_id)
     return false unless enrolment
 
-    enrolment.account.with_lock do
-      voice = FieldVoice.lock.find_by(id: enrolment.field_voice_id)
-      live = FieldVoiceEnrolment.lock.find_by(id: enrolment_id)
-      next unless voice && live
+    locked_enrolment(enrolment) do |live, account, recording, voice|
+      next false unless live&.status == "dispatched"
 
       begin
-        check!(live, voice)
+        check!(live, account, recording, voice)
       rescue Refused
         live.destroy!
-        next
+        next false
       end
 
       generation = voice.print_generation + 1
@@ -86,18 +101,41 @@ module FieldVoiceprints::Enrolments
       )
       record.save!
       live.destroy!
-      stored = true
+      true
     end
-    stored
   end
 
-  def check!(enrolment, voice)
-    speaker = enrolment.field_recording_speaker
-    recording = speaker.field_recording
-    raise Refused, "Voice recognition is off in this Field." unless FieldVoiceprints.enabled_for?(enrolment.account.reload)
+  # Every check, against the freshly locked rows.
+  def check!(enrolment, account, recording, voice)
+    speaker = enrolment.field_recording_speaker.reload
+    raise Refused, "This voice has been forgotten or changed." unless voice
+    raise Refused, "Voice recognition is off in this Field." unless FieldVoiceprints.enabled_for?(account)
     raise Refused, "This voice has been forgotten or changed." unless voice.kept? && voice.print_generation == enrolment.start_generation
-    raise Refused, "This speaker is named differently now." unless speaker.reload.field_voice_id == voice.id
-    raise Refused, "This recording is gone." unless recording.kept?
+    raise Refused, "This speaker is named differently now." unless speaker.field_voice_id == voice.id &&
+                                                                  speaker.decision_generation == enrolment.decision_generation
+    raise Refused, "This recording is gone." unless recording.kept? && recording.ready?
+  end
+
+  def check_consentable!(account, recording, voice, speaker)
+    raise Refused, "Voice recognition is off in this Field." unless FieldVoiceprints.enabled_for?(account)
+    raise Refused, "Name this speaker first." unless voice&.kept? && speaker.field_voice_id == voice.id
+    raise Refused, "This recording isn't ready." unless recording.kept? && recording.ready?
+  end
+
+  # account → recording → voice, with the speaker reloaded under them.
+  def locked(speaker, &)
+    recording = speaker.field_recording
+    voice = speaker.reload.field_voice
+    FieldVoiceprints::Locks.with(account: recording.account, recording:, voices: [ voice ].compact) do |account, rec, voices|
+      yield account, rec, voices.first, speaker.reload
+    end
+  end
+
+  def locked_enrolment(enrolment)
+    recording = enrolment.field_recording_speaker.field_recording
+    FieldVoiceprints::Locks.with(account: enrolment.account, recording:, voices: [ enrolment.field_voice ]) do |account, rec, voices|
+      yield FieldVoiceEnrolment.lock.find_by(id: enrolment.id), account, rec, voices.first
+    end
   end
 
 end

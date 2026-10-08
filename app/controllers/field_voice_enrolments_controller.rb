@@ -26,9 +26,10 @@ class FieldVoiceEnrolmentsController < ApplicationController
       notice: "Remembering #{enrolment.field_voice.name}'s voice. It's ready in a minute or two."
   rescue FieldVoiceprints::Enrolments::Refused => e
     redirect_to recording_path(enrolment.field_recording_speaker.field_recording), inertia: { errors: { enrolment: e.message } }
-  rescue PyannoteClient::Error
+  rescue FieldVoiceprints::Enrolments::Uncertain
     redirect_to recording_path(enrolment.field_recording_speaker.field_recording),
-      inertia: { errors: { enrolment: "The voice service couldn't be reached. Nothing was sent; try again later." } }
+      inertia: { errors: { enrolment: "We couldn't confirm the voice service received the sample. Nothing will be " \
+                                      "remembered from it. You can tick the box again to try once more." } }
   end
 
   def destroy

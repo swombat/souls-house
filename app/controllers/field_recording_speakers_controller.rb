@@ -15,16 +15,15 @@ class FieldRecordingSpeakersController < ApplicationController
 
   def update
     attributes = params.require(:speaker).permit(:me, :voice_id, :member_user_id, :name, :link_existing, :unname,
-      :confirm_suggestion, :dismiss_suggestion, :suggestion_generation, :confirm_recognition, :dismiss_recognition)
+      :confirm_suggestion, :dismiss_suggestion, :suggestion_generation, :confirm_recognition, :dismiss_recognition,
+      recognition: %i[voice_id print_generation decision_generation])
 
     if truthy?(attributes[:unname])
       @speaker.unname!
     elsif truthy?(attributes[:dismiss_recognition])
-      @speaker.dismiss_recognition!
+      return out_of_date unless @speaker.dismiss_recognition!(shown: attributes[:recognition])
     elsif truthy?(attributes[:confirm_recognition])
-      unless @speaker.confirm_recognition!(by: Current.user)
-        return redirect_to recording_path, inertia: { errors: { name: "This suggestion is out of date." } }
-      end
+      return out_of_date unless @speaker.confirm_recognition!(by: Current.user, shown: attributes[:recognition])
     elsif truthy?(attributes[:dismiss_suggestion])
       return out_of_date unless @speaker.dismiss_suggestion!(attributes[:suggestion_generation])
     elsif truthy?(attributes[:confirm_suggestion])
