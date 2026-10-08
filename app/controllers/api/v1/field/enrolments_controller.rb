@@ -6,13 +6,13 @@ module Api
       # enrolment is biometric consent and stays on the page.
       class EnrolmentsController < BaseController
 
-        include ApiHumanKey
+        include ApiHumanReach
 
-        require_human_member
+        before_action :require_human_actor!
         require_api_feature_enabled :agents
 
         def destroy
-          current_api_account.field_voice_enrolments.find_by!(id: FieldVoiceEnrolment.decode_id(params[:id])).destroy!
+          find_human_record!(FieldVoiceEnrolment.all, params[:id]).destroy!
           head :no_content
         end
 

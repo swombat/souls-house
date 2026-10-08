@@ -5,14 +5,14 @@ module Api
       # recording allowance and the size limits (FieldController#index props).
       class LimitsController < BaseController
 
-        include ApiHumanKey
+        include ApiHumanReach
 
-        require_human_member
+        before_action :require_human_actor!
         require_api_feature_enabled :agents
 
         def show
           render json: {
-            recording_allowance: FieldItems.allowance_json(current_api_account),
+            recording_allowance: FieldItems.allowance_json(human_request_account!),
             max_recording_bytes: FieldRecording::MAX_BYTES,
             max_recording_label: FieldRecording::MAX_BYTES_LABEL,
             max_file_bytes: FieldFile::MAX_FILE_SIZE,

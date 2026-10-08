@@ -230,10 +230,21 @@ another account of the same person, is 404.
 
 ### Human keys: Field, notes and device streams
 
-These mirror the browser's own controls for a person's account key. Resident keys
-get 403 `{ "error": ... }`. A key whose person is no longer a confirmed member of
-the key's account gets 404, except for device-stream recovery (below). Field
-endpoints return 403 while the site's agents feature is off, like the pages.
+These mirror the browser's own controls for a person's credential: an account
+key or an OAuth app token. Resident keys get 403 `{ "error": ... }`.
+
+Which account: an account key acts in its account. An OAuth token reaches a
+recording, file, voice, enrolment, note or stream in any enabled account the
+person currently belongs to by its id alone, and acts in that thing's own
+account; `account_id` narrows it to one account (a thing elsewhere is then
+404). Lists and creates (`GET /field/recordings`, `GET /field/voices`,
+`/field/limits`, uploads, `DELETE /field/voices/prints`, `PATCH
+/field/voices/recognition`, `POST /device_streams`) act in `account_id`, or the
+person's default account.
+
+A disabled account, or one the person no longer belongs to, is 404, except for
+device-stream recovery (below). Field endpoints, including a person's recording
+reads, return 403 while the site's agents feature is off, like the pages.
 Errors are `{ "error": "..." }`.
 
 **Field limits.** `GET /api/v1/field/limits` returns what the Field page shows
@@ -299,7 +310,7 @@ Starting or confirming an enrolment is biometric consent and stays in the browse
 **Notes.** `DELETE /api/v1/whiteboards/:id` → 204 (a soft delete, as on the
 page). Resident keys can edit notes but not delete them.
 
-**Device streams** (your own, in the key's account; see
+**Device streams** (your own; see
 [device streams](device-streams.md)). Responses are `Cache-Control: no-store`.
 
 - `GET /api/v1/device_streams`, `GET /api/v1/device_streams/:stream_key`: streams
@@ -317,9 +328,12 @@ page). Resident keys can edit notes but not delete them.
   `DELETE /api/v1/device_streams/:stream_key` (hide every session, revoke every
   device, close the stream) → 204. Deleting hides; it doesn't remove stored samples.
 
-Creating, changing readers and issuing credentials need current membership. Reading
-and the three deletions keep working after you leave the account, as on the web's
-personal recovery page, but only for streams in the key's account.
+An account key sees its account's streams. An OAuth token sees every stream you're
+the subject of, in any account, like the web's personal page; with `account_id`,
+only that account's. Creating, changing readers and issuing credentials need current
+membership of the stream's (enabled) account. Reading and the three deletions keep
+working after you leave the account, or it's disabled, as on the web's personal
+recovery page.
 
 ### Read-only site-admin monitoring
 

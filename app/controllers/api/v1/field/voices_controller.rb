@@ -12,22 +12,23 @@ module Api
       # be removed with DELETE /api/v1/field/enrolments/:id.
       class VoicesController < BaseController
 
-        include ApiHumanKey
+        include ApiHumanReach
 
-        require_human_member
+        before_action :require_human_actor!
         require_api_feature_enabled :agents
 
         def index
-          voices = current_api_account.field_voices.kept.includes(:user, :voiceprint).order(Arel.sql("lower(name)"))
+          account = human_request_account!
+          voices = account.field_voices.kept.includes(:user, :voiceprint).order(Arel.sql("lower(name)"))
           used = FieldRecordingSpeaker.where(field_voice_id: voices.map(&:id)).group(:field_voice_id).count
           render json: {
             voices: voices.map { |voice| FieldItems.voice_page_json(voice, used.fetch(voice.id, 0)) },
-            members_without_voice: FieldItems.members_without_voice_json(current_api_account, except: current_api_user),
-            my_voice_id: current_api_account.field_voices.kept.find_by(user: current_api_user)&.to_param,
-            pending_enrolments: pending_enrolments_json,
-            recognise_voices: current_api_account.recognise_voices,
+            members_without_voice: FieldItems.members_without_voice_json(account, except: current_api_user),
+            my_voice_id: account.field_voices.kept.find_by(user: current_api_user)&.to_param,
+            pending_enrolments: pending_enrolments_json(account),
+            recognise_voices: account.recognise_voices,
             house_recognition: FieldVoiceprints.house_enabled?,
-            can_change_setting: current_api_account.manageable_by?(current_api_user),
+            can_change_setting: account.manageable_by?(current_api_user),
             backup_retention_days: FieldVoiceprints.backup_retention_days
           }
         end
@@ -52,14 +53,15 @@ module Api
         end
 
         def forget_all
-          FieldVoiceprints.forget_all!(current_api_account)
+          FieldVoiceprints.forget_all!(human_request_account!)
           head :no_content
         end
 
         # Same lock as the page: the account row, which identify and print
         # write-back also take. Off keeps stored prints, unused.
         def recognition
-          unless current_api_account.manageable_by?(current_api_user)
+          account = human_request_account!
+          unless account.manageable_by?(current_api_user)
             return render json: { error: "You don't have permission to manage this account" }, status: :forbidden
           end
           unless params.key?(:recognise_voices)
@@ -67,18 +69,18 @@ module Api
           end
 
           enabled = ActiveModel::Type::Boolean.new.cast(params[:recognise_voices])
-          current_api_account.with_lock { current_api_account.update!(recognise_voices: enabled) }
-          render json: { recognise_voices: current_api_account.recognise_voices }
+          account.with_lock { account.update!(recognise_voices: enabled) }
+          render json: { recognise_voices: account.recognise_voices }
         end
 
         private
 
         def find_voice
-          current_api_account.field_voices.kept.find_by!(id: FieldVoice.decode_id(params[:id]))
+          find_human_record!(FieldVoice.kept, params[:id])
         end
 
-        def pending_enrolments_json
-          current_api_account.field_voice_enrolments.includes(:field_voice, field_recording_speaker: :field_recording)
+        def pending_enrolments_json(account)
+          account.field_voice_enrolments.includes(:field_voice, field_recording_speaker: :field_recording)
             .order(:id).map do |enrolment|
               {
                 id: enrolment.to_param,

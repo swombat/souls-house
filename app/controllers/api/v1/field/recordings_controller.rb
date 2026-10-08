@@ -1,7 +1,8 @@
 module Api
   module V1
     module Field
-      # Recordings in the key's home account's Field.
+      # Recordings in the Field. A resident reads its home account's; a person
+      # reaches recordings in any account they may act in (ApiHumanReach).
       #
       # Residents read them (spec §7): names are the ones humans set, unnamed
       # speakers are "Speaker N". Nothing inferred, nothing biometric, and no
@@ -14,20 +15,20 @@ module Api
       class RecordingsController < BaseController
 
         include AttachmentDownloads
-        include ApiHumanKey
+        include ApiHumanReach
 
         HUMAN_ACTIONS = %i[audio create update destroy retry dismiss_you_hint].freeze
 
-        before_action :require_human_key!, only: HUMAN_ACTIONS
-        # A person's key reaches recordings only while its person is a
-        # confirmed member. (One registration: Rails keeps only the last
-        # before_action for a given method name.)
-        before_action :require_account_member!, unless: -> { current_api_agent }
-        require_api_feature_enabled :agents, only: HUMAN_ACTIONS
+        before_action :require_human_actor!, only: HUMAN_ACTIONS
+        # A person's reads carry what the browser page shows (audio, timed
+        # words, speaker ids), so they need the Field enabled, like the page.
+        # A resident's plain read is unchanged.
+        require_api_feature_enabled :agents, unless: -> { current_api_agent && !action_name.to_sym.in?(HUMAN_ACTIONS) }
         before_action :set_recording, only: %i[show audio update destroy retry]
 
         def index
-          recordings = current_api_account.field_recordings.kept.includes(:uploaded_by).newest_first
+          account = current_api_agent ? current_api_account : human_request_account!
+          recordings = account.field_recordings.kept.includes(:uploaded_by).newest_first
           render json: { recordings: recordings.map { |recording| summary_json(recording) } }
         end
 
@@ -47,7 +48,7 @@ module Api
         def create
           attributes = params.permit(:upload_id, :title, :note, :expected_speakers)
           recording = FieldRecording::Upload.claim!(
-            account: current_api_account,
+            account: human_request_account!,
             user: current_api_user,
             signed_id: attributes[:upload_id],
             attributes: attributes.slice(:title, :note, :expected_speakers).to_h.symbolize_keys
@@ -92,14 +93,21 @@ module Api
 
         # "Is one of these you?" is shown once, until dismissed or answered.
         def dismiss_you_hint
+          human_request_account!
           current_api_user.update_column(:field_you_hint_dismissed_at, Time.current)
           head :no_content
         end
 
         private
 
+        # A resident reads in its home account, as before. A person finds the
+        # recording in any account they may reach, and acts in its account.
         def set_recording
-          @recording = current_api_account.field_recordings.kept.find(params[:id])
+          @recording = if current_api_agent
+            current_api_account.field_recordings.kept.find(params[:id])
+          else
+            find_human_record!(FieldRecording.kept, params[:id])
+          end
         end
 
         def summary_json(recording)
@@ -148,7 +156,7 @@ module Api
         def show_you_hint?(recording)
           recording.ready? && recording.uploaded_by == current_api_user &&
             current_api_user.field_you_hint_dismissed_at.nil? &&
-            !current_api_account.field_voices.kept.exists?(user: current_api_user)
+            !recording.account.field_voices.kept.exists?(user: current_api_user)
         end
 
       end

@@ -2,11 +2,12 @@ module Api
   module V1
     class WhiteboardsController < BaseController
 
-      include ApiHumanKey
+      include ApiHumanReach
 
       # Deleting a note is the person's control in the Field
-      # (WhiteboardsController#destroy). Residents edit, but don't delete.
-      require_human_member only: :destroy
+      # (WhiteboardsController#destroy), in the note's own account. Residents
+      # edit, but don't delete.
+      before_action :require_human_actor!, only: :destroy
       require_api_feature_enabled :agents, only: :destroy
 
       rescue_from ActiveRecord::StaleObjectError do
@@ -71,7 +72,7 @@ module Api
 
       # A soft delete, as on the page: the note leaves the Field.
       def destroy
-        current_api_account.whiteboards.active.find(params[:id]).soft_delete!
+        find_human_record!(Whiteboard.active, params[:id]).soft_delete!
         head :no_content
       end
 

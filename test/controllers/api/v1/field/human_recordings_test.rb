@@ -45,6 +45,19 @@ class Api::V1::Field::HumanRecordingsTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
+  test "with the Field off a person's read is closed, like the page; a resident's plain read is not" do
+    Setting.instance.update!(allow_agents: false)
+    get api_v1_field_recording_path(@recording), headers: @headers
+    assert_response :forbidden
+    %w[audio words].each { |key| assert_not_includes response.body, "\"#{key}" }
+    get api_v1_field_recordings_path, headers: @headers
+    assert_response :forbidden
+
+    get api_v1_field_recording_path(@recording), headers: resident_headers(@user, agents(:research_assistant))
+    assert_response :success
+    assert_equal "Board call", response.parsed_body.dig("recording", "title")
+  end
+
   test "a person brings in a recording by claiming their direct upload" do
     blob = pinned_blob(account: @account, user: @user)
     assert_enqueued_with(job: FieldRecordings::ProbeJob) do

@@ -9,12 +9,13 @@ module Api
       class RecordingUploadsController < BaseController
 
         include ActiveStorage::SetCurrent # storage URLs need the request host
-        include ApiHumanKey
+        include ApiHumanReach
 
-        require_human_member
+        before_action :require_human_actor!
         require_api_feature_enabled :agents
 
         def create
+          account = human_request_account!
           declared = params.require(:blob).permit(:filename, :content_type, :byte_size, :checksum)
           declaration = {
             filename: declared[:filename],
@@ -28,7 +29,7 @@ module Api
               status: :unprocessable_entity
           end
 
-          blob = FieldRecording::Upload.create_blob!(account: current_api_account, user: current_api_user, **declaration)
+          blob = FieldRecording::Upload.create_blob!(account: account, user: current_api_user, **declaration)
           render json: blob.as_json(root: false, methods: :signed_id, only: %i[id key filename content_type byte_size checksum])
             .merge(direct_upload: { url: blob.service_url_for_direct_upload, headers: blob.service_headers_for_direct_upload }),
             status: :created

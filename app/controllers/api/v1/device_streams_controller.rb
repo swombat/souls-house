@@ -1,7 +1,6 @@
 module Api
   module V1
-    # A person's own device streams in the key's account, as on the web
-    # (DeviceStreamsController). Only the stream's subject reaches a stream;
+    # A person's own device streams, as on the web (DeviceStreamsController). Only the stream's subject reaches a stream;
     # everyone else gets 404. Resident keys are refused.
     #
     # Two levels, mirroring the web's two sets of routes:
@@ -13,17 +12,21 @@ module Api
     #   and close the stream) stays open to the subject after they leave the
     #   account, so they can always revoke devices and delete their data.
     #
-    # A key reaches only streams in its own account. The web's personal page
-    # also lists streams in the person's other accounts; a key pinned to one
-    # account doesn't.
+    # Which streams a request sees:
+    #
+    # - an OAuth token without account_id: every stream the person is the
+    #   subject of, in any account (the personal page, /device_streams);
+    # - an OAuth token with account_id: that account's (the account page;
+    #   the account must be one they currently belong to, else 404);
+    # - an account key: its own account's.
+    #
+    # Managing is authorised against the stream's own account.
     class DeviceStreamsController < BaseController
 
-      include ApiHumanKey
-
-      before_action :require_human_key!
+      before_action :require_human_actor!
       before_action -> { response.headers["Cache-Control"] = "no-store" }
-      before_action :require_confirmed_member!, only: %i[create update credential]
       before_action :find_owned_stream, except: %i[index create]
+      before_action -> { human_account!(@stream.account) }, only: %i[update credential]
 
       rescue_from DeviceStream::Rejected do |error|
         render json: { error: error.message }, status: error.status
@@ -44,7 +47,7 @@ module Api
 
       # Starts disabled with no readers other than the subject, as on the web.
       def create
-        stream = DeviceStream.create!(account: current_api_account, subject_user: current_api_user,
+        stream = DeviceStream.create!(account: human_account!(current_api_account), subject_user: current_api_user,
           name: params[:name], enabled: false)
         render json: { device_stream: detail_json(stream) }, status: :created
       end
@@ -92,14 +95,13 @@ module Api
 
       private
 
-      def require_confirmed_member!
-        return if current_api_user.confirmed_accounts.exists?(id: current_api_account.id)
-
-        render json: { error: "Not found" }, status: :not_found
-      end
-
+      # Recovery never needs current membership: the subject keeps the right
+      # to revoke devices and erase data after leaving (or losing) an account.
       def owned_streams
-        DeviceStream.where(subject_user: current_api_user, account: current_api_account)
+        streams = DeviceStream.where(subject_user: current_api_user)
+        return streams if app_token_request? && params[:account_id].blank?
+
+        streams.where(account: current_api_account)
       end
 
       def find_owned_stream

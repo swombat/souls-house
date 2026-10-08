@@ -15,9 +15,9 @@ module Api
       # here: those answer biometric and inferred data the API doesn't show.
       class SpeakersController < BaseController
 
-        include ApiHumanKey
+        include ApiHumanReach
 
-        require_human_member
+        before_action :require_human_actor!
         require_api_feature_enabled :agents
 
         def update
@@ -28,7 +28,7 @@ module Api
             speaker.unname!
           else
             choice = FieldVoice::Choice.resolve(
-              account: current_api_account, user: current_api_user,
+              account: speaker.field_recording.account, user: current_api_user,
               me: truthy?(attributes[:me]), voice_id: attributes[:voice_id],
               member_user_id: attributes[:member_user_id], name: attributes[:name],
               link_existing: truthy?(attributes[:link_existing])
@@ -47,7 +47,7 @@ module Api
         private
 
         def find_speaker
-          recording = current_api_account.field_recordings.kept.find(params[:recording_id])
+          recording = find_human_record!(FieldRecording.kept, params[:recording_id])
           # Association finders decode with the owner's salt, so decode explicitly.
           recording.speakers.find_by!(id: FieldRecordingSpeaker.decode_id(params[:id]))
         end
