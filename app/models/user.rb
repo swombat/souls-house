@@ -181,6 +181,62 @@ class User < ApplicationRecord
     profile&.preferences || {}
   end
 
+  # Settings a person changes about themselves (web settings page and
+  # /api/v1/me). The attributes that live on Profile rather than User.
+  PROFILE_SETTINGS = %i[first_name last_name timezone avatar theme chat_colour theme_hue].freeze
+
+  # Splits permitted settings params into [user attributes, profile
+  # attributes]. Accepts profile attributes sent directly, the legacy
+  # preferences: { theme: } form and nested profile_attributes.
+  def self.split_settings_params(permitted)
+    all_params = permitted.dup
+
+    # Extract profile attributes directly sent
+    profile_params = all_params.extract!(*PROFILE_SETTINGS)
+
+    # Handle preferences format (legacy)
+    if all_params[:preferences].present?
+      preferences = all_params.delete(:preferences)
+      profile_params[:theme] = preferences[:theme] if preferences[:theme].present?
+    end
+
+    # Also handle nested profile_attributes format
+    if all_params[:profile_attributes].present?
+      profile_params.merge!(all_params.delete(:profile_attributes))
+    end
+
+    [ all_params, profile_params ]
+  end
+
+  # Updates the user, then the profile. Profile errors are copied onto the
+  # user so callers report one error list. Returns true or false.
+  def update_settings(user_attributes, profile_attributes)
+    User.transaction do
+      return false unless update(user_attributes)
+
+      if profile_attributes.present?
+        unless profile.update(profile_attributes)
+          # Add profile errors to user errors
+          profile.errors.each do |error|
+            errors.add(error.attribute, error.message)
+          end
+          return false
+        end
+      end
+    end
+
+    true
+  end
+
+  # The audit action for a successful update_settings, read from what it saved.
+  def settings_audit_action(avatar_updated:)
+    profile_changes = profile&.saved_changes || {}
+    return :change_theme if profile_changes.key?("theme")
+    return :update_timezone if profile_changes.key?("timezone")
+    return :set_avatar if avatar_updated
+    :update_profile
+  end
+
   private
 
   def default_account_must_be_confirmed

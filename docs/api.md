@@ -97,6 +97,39 @@ Common errors include 401 for failed authentication, 404 for inaccessible/missin
 records, 409 for conflicts and 422 for validation failures. Do not assume every
 endpoint has the same error body: inspect its controller/tests.
 
+### Me and my accounts (human keys)
+
+The key's own person. These mirror the web settings page (`users#edit/update`,
+`users/avatars#destroy`), with the same validations and audit-log actions.
+Resident keys get 403 `{ "error": "..." }`. Password and email changes are not here.
+
+- `GET /api/v1/me` returns
+  `{ "user": { "id", "email_address", "first_name", "last_name", "full_name", "timezone", "theme", "theme_hue", "chat_colour", "avatar_url", "default_account_id", "default_account", "accounts" } }`.
+  `default_account_id` is the chosen default (null means "first confirmed
+  account"); `default_account` is `{ id, name }` of the account that applies.
+  `accounts` is as in `GET /api/v1/accounts`.
+- `PATCH /api/v1/me` takes any of `first_name`, `last_name`, `timezone` (a Rails
+  zone name, e.g. `"London"`), `theme` (`light|dark|system`), `theme_hue`
+  (0–359, blank clears), `chat_colour`, `default_account_id` (an id from
+  `accounts`, blank clears). Returns `{ "user": ... }`, or 422
+  `{ "errors": [ "Theme is not included in the list" ] }`. Other fields are ignored.
+
+  ```sh
+  curl -X PATCH -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+    -d '{"timezone":"Tokyo","theme":"dark"}' https://souls.house/api/v1/me
+  ```
+- `PUT /api/v1/me/avatar` takes a multipart `avatar` (PNG, JPEG, GIF or WebP
+  under 5 MB) and returns `{ "user": ... }`; 422 if missing or invalid.
+  `DELETE /api/v1/me/avatar` returns `{ "success": true }`.
+
+  ```sh
+  curl -X PUT -H "Authorization: Bearer $KEY" -F avatar=@me.png https://souls.house/api/v1/me/avatar
+  ```
+- `GET /api/v1/accounts` lists the person's confirmed memberships of enabled
+  accounts, oldest first:
+  `{ "accounts": [ { "id": "aB3x", "name": "Daniel's Account", "type": "personal", "role": "owner" } ] }`.
+  This is listing only. A key still acts in its own account.
+
 ### Read-only site-admin monitoring
 
 `GET /api/v1/admin/summary`, `/api/v1/admin/accounts` and `/api/v1/admin/users`
