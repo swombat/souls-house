@@ -33,6 +33,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -342,7 +343,16 @@ def validate_resident_spec(payload):
         _require(isinstance(value, str) and "\n" not in value and "\r" not in value and "\0" not in value,
                  f"bad env value for {key}")
     _require(env.get("TRIGGER_BEARER_TOKEN"), "TRIGGER_BEARER_TOKEN required")
-    return {"container_name": name, "image": image, "memory_mb": memory, "cpu_shares": shares, "env": dict(env)}
+    auth = payload.get("registry_auth")
+    if auth is not None:
+        # A pull-only credential for exactly the image's registry, used for
+        # one pull and never written to Docker's global config.
+        _require(isinstance(auth, dict) and set(auth) == {"registry", "username", "password"}, "bad registry_auth")
+        _require(auth["registry"] == image.split("/", 1)[0], "registry_auth must be for the image's registry")
+        for field in ("username", "password"):
+            _require(isinstance(auth[field], str) and auth[field] and "\n" not in auth[field], f"bad registry_auth {field}")
+    return {"container_name": name, "image": image, "memory_mb": memory, "cpu_shares": shares, "env": dict(env),
+            "registry_auth": auth}
 
 
 def volume_name(container_name, role):
@@ -389,12 +399,26 @@ class CommandState:
     def stale(self, generation):
         return generation < self.data["highest_generation"]
 
+    def started(self, command_id):
+        return command_id in self.data.get("in_flight", {})
+
+    def begin(self, command_id, generation):
+        """Written before anything runs. If the runner dies mid-command, the
+        redelivery finds this and answers "unknown" instead of running the
+        command a second time; Rails reconciles the same turn by its id."""
+        self.data.setdefault("in_flight", {})[command_id] = generation
+        self._save()
+
     def record(self, command_id, generation, result):
+        self.data.setdefault("in_flight", {}).pop(command_id, None)
         self.data["highest_generation"] = max(self.data["highest_generation"], generation)
         self.data["results"][command_id] = result
         self.data["order"].append(command_id)
         while len(self.data["order"]) > REMEMBERED_RESULTS:
             self.data["results"].pop(self.data["order"].pop(0), None)
+        self._save()
+
+    def _save(self):
         tmp = self.path + ".tmp"
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as handle:
@@ -404,9 +428,10 @@ class CommandState:
         os.rename(tmp, self.path)
 
 
-def _docker(argv, timeout=120):
+def _docker(argv, timeout=120, env=None):
     try:
-        completed = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        completed = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
+                                   env=None if env is None else {**os.environ, **env})
     except (OSError, subprocess.SubprocessError) as error:
         return False, str(error)
     return completed.returncode == 0, (completed.stdout if completed.returncode == 0 else completed.stderr).strip()
@@ -486,9 +511,7 @@ class ResidentHost:
             ok, error = self.docker(["docker", "volume", "create", volume_name(name, role)])
             if not ok:
                 raise CommandFailed(f"could not create volume {role}: {error}")
-        ok, error = self.docker(["docker", "pull", spec["image"]], timeout=900)
-        if not ok:
-            raise CommandFailed(f"could not pull image: {error}")
+        self._pull(spec)
         env_text = "".join(f"{key}={value}\n" for key, value in sorted(spec["env"].items()))
         self._write_private(self._env_path(name), env_text)
         public_spec = {key: spec[key] for key in ("container_name", "image", "memory_mb", "cpu_shares")}
@@ -519,6 +542,23 @@ class ResidentHost:
                 pass
             self.sleep(2)
         raise CommandFailed("resident started but never answered /health")
+
+    def _pull(self, spec):
+        auth = spec["registry_auth"]
+        if auth is None:
+            ok, error = self.docker(["docker", "pull", spec["image"]], timeout=900)
+        else:
+            config_dir = tempfile.mkdtemp(prefix="pull-", dir=self.state_dir)
+            try:
+                token = base64.b64encode(f"{auth['username']}:{auth['password']}".encode()).decode("ascii")
+                self._write_private(os.path.join(config_dir, "config.json"),
+                                    json.dumps({"auths": {auth["registry"]: {"auth": token}}}))
+                ok, error = self.docker(["docker", "pull", spec["image"]], timeout=900,
+                                        env={"DOCKER_CONFIG": config_dir})
+            finally:
+                shutil.rmtree(config_dir, ignore_errors=True)
+        if not ok:
+            raise CommandFailed(f"could not pull image: {error}")
 
     def stop_resident(self, payload):
         name = payload.get("container_name")
@@ -563,15 +603,20 @@ def execute_command(command, state, host):
     remembered = state.result_for(command["id"])
     if remembered is not None:
         return command["id"], remembered
-    if state.stale(command["generation"]):
+    if state.started(command["id"]):
+        result = {"outcome": "unknown", "error": "runner restarted while this command was running"}
+    elif state.stale(command["generation"]):
         result = {"outcome": "refused", "error": "stale generation"}
     else:
+        state.begin(command["id"], command["generation"])
         try:
             result = {"outcome": "done", "result": getattr(host, command["kind"])(command["payload"])}
         except BadCommand as error:
             result = {"outcome": "refused", "error": str(error)}
         except CommandFailed as error:
             result = {"outcome": "failed", "error": str(error)}
+        except Exception as error:  # the effect may or may not have happened
+            result = {"outcome": "unknown", "error": f"{type(error).__name__}: {error}"}
     state.record(command["id"], command["generation"], result)
     return command["id"], result
 

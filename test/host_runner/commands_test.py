@@ -38,12 +38,18 @@ class FakeDocker:
 
     def __init__(self, existing=(), address="172.18.0.2", fail=()):
         self.calls = []
+        self.envs = []
         self.existing = set(existing)
         self.address = address
         self.fail = set(fail)
 
-    def __call__(self, argv, timeout=120):
+    def __call__(self, argv, timeout=120, env=None):
         self.calls.append(argv)
+        self.envs.append(env)
+        if env and "DOCKER_CONFIG" in env:
+            with open(os.path.join(env["DOCKER_CONFIG"], "config.json")) as handle:
+                self.pull_config = json.load(handle)
+            self.pull_config_mode = os.stat(os.path.join(env["DOCKER_CONFIG"], "config.json")).st_mode & 0o777
         verb = " ".join(argv[1:3])
         if argv[1] in self.fail or verb in self.fail:
             return False, "boom"
@@ -169,6 +175,23 @@ class ExecuteTest(unittest.TestCase):
         self.assertEqual(command_id, "a" * 32)
         self.assertEqual(result["outcome"], "refused")
 
+    def test_a_restart_mid_command_answers_unknown_and_never_reruns(self):
+        host = self.CountingHost()
+        self.state.begin("a" * 32, 1)  # the runner died after this point
+        _, result = runner.execute_command(command(), runner.CommandState(self.dir), host)
+        self.assertEqual(result["outcome"], "unknown")
+        self.assertEqual(host.calls, 0)
+        _, again = runner.execute_command(command(), runner.CommandState(self.dir), host)
+        self.assertEqual(again["outcome"], "unknown")
+        self.assertEqual(host.calls, 0)
+
+    def test_an_unexpected_error_is_unknown_not_failed(self):
+        class Exploding:
+            def start_resident(self, payload):
+                raise OSError("disk vanished")
+        _, result = runner.execute_command(command(), self.state, Exploding())
+        self.assertEqual(result["outcome"], "unknown")
+
     def test_the_result_file_is_private(self):
         runner.execute_command(command(), self.state, self.CountingHost())
         self.assertEqual(os.stat(os.path.join(self.dir, "commands.json")).st_mode & 0o777, 0o600)
@@ -195,6 +218,25 @@ class ResidentHostTest(unittest.TestCase):
         self.assertEqual(os.stat(env_path).st_mode & 0o777, 0o600)
         with open(env_path) as handle:
             self.assertIn("TRIGGER_BEARER_TOKEN=trig\n", handle.read())
+
+    def test_a_registry_credential_is_scoped_to_one_pull(self):
+        auth = {"registry": "registry.example", "username": "pull-only", "password": "pw"}
+        self.host.start_resident(spec(registry_auth=auth))
+        pull_env = next(env for argv, env in zip(self.docker.calls, self.docker.envs) if argv[1] == "pull")
+        self.assertEqual(list(self.docker.pull_config["auths"]), ["registry.example"])
+        self.assertEqual(self.docker.pull_config_mode, 0o600)
+        self.assertFalse(os.path.exists(pull_env["DOCKER_CONFIG"]))
+        others = [env for argv, env in zip(self.docker.calls, self.docker.envs) if argv[1] != "pull"]
+        self.assertTrue(all(env is None for env in others))
+        self.assertFalse(any("pw" in value for argv in self.docker.calls for value in argv))
+
+    def test_a_registry_credential_for_another_registry_is_refused(self):
+        for auth in ({"registry": "evil.example", "username": "u", "password": "p"},
+                     {"registry": "registry.example", "username": "u"},
+                     {"registry": "registry.example", "username": "u", "password": "p", "extra": 1},
+                     {"registry": "registry.example", "username": "u", "password": "p\nx"}):
+            with self.assertRaises(runner.BadCommand, msg=repr(auth)):
+                runner.validate_resident_spec(spec(registry_auth=auth))
 
     def test_starting_again_unchanged_keeps_the_container(self):
         self.host.start_resident(spec())
