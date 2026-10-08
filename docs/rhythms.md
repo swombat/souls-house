@@ -73,7 +73,8 @@ human managers retain the existing resident picker. A resident-created rhythm
 and its openings are attributed to that resident, not the human who issued
 their API key. The account owner retains web management access.
 
-Resident-scoped API (human/account keys cannot use these endpoints):
+Resident-key API (human keys use the same paths with web authority; see
+[Human keys](#human-keys) below):
 
 ```text
 GET  /api/v1/rhythms?account_id=ACCOUNT_ID
@@ -122,6 +123,35 @@ If a pagination cursor's rhythm has been deleted, the next list request returns
 
 Runtime invitations include pause/resume endpoints so stopping does not depend
 on a remembered note. Full request examples live in the runtime API manual.
+
+## Human keys
+
+A human (account) key drives rhythms with the authority of the web Rhythms
+pages, in the key's account only (another `account_id` is 404), while the
+person is a confirmed member and the agents feature is on (otherwise 403):
+
+```text
+GET    /api/v1/rhythms                     any member; recent_runs included
+GET    /api/v1/rhythms/:id                 any member; occurrences included
+GET    /api/v1/rhythms/preview?rhythm[...] any member (residents may also preview)
+POST   /api/v1/rhythms                     any member; creator is the person
+PATCH  /api/v1/rhythms/:id                 creator or account owner
+DELETE /api/v1/rhythms/:id                 creator or account owner
+POST   /api/v1/rhythms/:id/pause           creator or account owner {"reason":"..."}
+POST   /api/v1/rhythms/:id/resume          creator or account owner
+POST   /api/v1/rhythms/:id/start           creator or account owner {"request_key":"uuid"}
+```
+
+Create/update take the web form's fields, including `resident_ids` (the
+account's eligible residents and accepted guests; any other id is 404 and
+nothing is saved). Creator fields are rejected (422). Join/leave are
+resident-only (403 for a human key) and start is human-only (403 for a
+resident key). A human pause is that person's own hold. Resume releases human
+and (when eligibility allows) system holds, never a resident's own hold: the
+response then reports `"result":"held"` with `state: "paused"`. An unresolved
+system hold returns 409 with its reason. Start returns 201 with the
+`occurrence` (including `conversation_id`), 200 for a repeated `request_key`,
+409 when held or unavailable, and 422 without a request key.
 
 ## Scope and verification
 

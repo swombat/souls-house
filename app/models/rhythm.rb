@@ -40,10 +40,27 @@ class Rhythm < ApplicationRecord
 
   scope :due, ->(now = Time.current) { where(next_run_at: ..now) }
 
+  # The residents a human may select: eligible residents of the account or
+  # its accepted guests. An id outside that set raises RecordNotFound, so a
+  # foreign or ineligible selection fails closed rather than being dropped.
+  def self.selectable_resident_ids(account, ids)
+    ids = Array(ids).reject(&:blank?)
+    account.conversation_agents.eligible_for_conversation.find(Agent.decode_id(ids)).map(&:id)
+  end
+
   def resident_ids = agent_ids
 
   def resident_ids=(ids)
     self.agent_ids = ids
+  end
+
+  # How a human's form save lands: validate, then restart the schedule from
+  # now. Returns false, with errors, when the rhythm is invalid.
+  def save_from_form
+    return false unless valid?
+
+    self.next_run_at = next_occurrence(after: Time.current)
+    save!
   end
 
   def manageable_by?(user)
