@@ -54,6 +54,13 @@ class RunnerUserDataTest < ActiveSupport::TestCase
     assert_equal %w[souls-house-firewall docker souls-house-runner], enabled
   end
 
+  # Debian 13 split the client out of docker.io; without docker-cli the
+  # runner reports no docker_version (seen on the first pilot VM, 2026-10-08).
+  test "installs the Docker client as well as the daemon" do
+    assert_includes parsed["packages"], "docker.io"
+    assert_includes parsed["packages"], "docker-cli"
+  end
+
   test "refuses anything but a bare https origin for the house" do
     [ "http://souls.example", "https://user:pw@souls.example", "https://souls.example/api",
       "https://souls.example?x=1", "https://souls.example#f", "https://", "not a url" ].each do |url|

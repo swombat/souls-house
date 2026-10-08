@@ -89,7 +89,7 @@ module RunnerUserData
 
     document = {
       "package_update" => true,
-      "packages" => %w[docker.io python3-cryptography nftables],
+      "packages" => %w[docker.io docker-cli python3-cryptography nftables],
       "write_files" => [
         file("/etc/nftables.d/souls-house-input.nft", NFTABLES, "0644"),
         file("/etc/systemd/system/souls-house-firewall.service", FIREWALL_UNIT, "0644"),

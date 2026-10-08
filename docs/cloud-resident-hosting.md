@@ -79,7 +79,8 @@ calling the runner over a private network. It covers enrollment and telemetry
 only; the transport for resident turns is still undecided.
 
 - **Boot.** Procurement renders cloud-init with `RunnerUserData.render` and
-  sends it in its single create request. The document installs Docker,
+  sends it in its single create request. The document installs Docker (daemon
+  and `docker-cli`, which Debian 13 packages separately),
   `python3-cryptography` and nftables, embeds the runner source, and writes a
   0600 config holding the one-time enrollment token. That token is the only
   secret in it.
