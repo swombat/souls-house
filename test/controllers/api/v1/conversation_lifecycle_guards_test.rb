@@ -64,6 +64,56 @@ class Api::V1::ConversationLifecycleGuardsTest < ActionDispatch::IntegrationTest
     assert @chat.reload.web_access
   end
 
+  # -- an account key stays inside its own account ---------------------------
+
+  test "a key minted for one account gets 404 on a room in another account the person also belongs to" do
+    team = accounts(:team_account)
+    # The person is a confirmed member (owner) of both accounts; the key is for one.
+    assert Membership.confirmed.exists?(user: @user, account: team)
+    room = team.chats.new(model_id: "openrouter/auto", title: "Team room", manual_responses: true)
+    room.agent_ids = [ agents(:other_account_agent).id ]
+    room.save!
+    bare = team.chats.create!(model_id: "openrouter/auto", title: "Team bare")
+    mine = room.messages.create!(role: "user", user: @user, content: "Team words")
+    flagged = room.messages.create!(role: "assistant", content: "Please reply")
+    room.with_lock { ReplyExpectation.record!(message: flagged, user: @user, score: 0.95) }
+
+    [ {}, { account_id: team.to_param } ].each do |narrowing|
+      requests = {
+        archive: -> { post api_v1_conversation_archive_path(room, narrowing), headers: @headers, as: :json },
+        discard: -> { post api_v1_conversation_discard_path(room, narrowing), headers: @headers, as: :json },
+        fork: -> { post api_v1_conversation_fork_path(room, narrowing), headers: @headers, as: :json },
+        assign: -> { post api_v1_conversation_agent_assignment_path(bare, narrowing), params: { agent_id: agents(:other_account_agent).to_param }, headers: @headers, as: :json },
+        web_access: -> { patch api_v1_conversation_path(room, narrowing), params: { web_access: true }, headers: @headers, as: :json },
+        model: -> { patch api_v1_conversation_path(room, narrowing), params: { model_id: "anthropic/claude-opus-4" }, headers: @headers, as: :json },
+        edit: -> { patch api_v1_conversation_message_path(room, mine, narrowing), params: { content: "Changed" }, headers: @headers, as: :json },
+        delete: -> { delete api_v1_conversation_message_path(room, mine, narrowing), headers: @headers, as: :json },
+        dismiss: -> { post api_v1_conversation_reply_dismissal_path(room, narrowing), params: { message_id: flagged.to_param }, headers: @headers, as: :json },
+        reset: -> { post api_v1_conversation_message_safeguard_reset_path(room, flagged, narrowing), headers: @headers, as: :json }
+      }
+      assert_no_difference [ -> { Chat.with_discarded.count }, -> { AuditLog.count }, -> { Message.count } ] do
+        requests.each do |name, request|
+          request.call
+          assert_response :not_found, "#{name} #{narrowing}"
+        end
+      end
+    end
+
+    room.archive!
+    get api_v1_conversations_path, params: { filter: "archived" }, headers: @headers
+    assert_response :success
+    assert_not_includes response.parsed_body["conversations"].map { |c| c["id"] }, room.to_param
+    room.unarchive!
+
+    room.reload
+    assert_not room.discarded?
+    assert_not room.web_access
+    assert_equal "openrouter/auto", room.model_id
+    assert_not bare.reload.manual_responses?
+    assert_equal "Team words", mine.reload.content
+    assert_not mine.discarded?
+  end
+
   # -- 2. message editing stops at deleted rooms ------------------------------
 
   test "editing a message in a deleted conversation is 404 and changes nothing" do
