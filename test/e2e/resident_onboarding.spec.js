@@ -24,7 +24,11 @@ test('new residents default to house funding and missing credentials never stran
       .getByRole('textbox', { name: 'Initial soul seed', exact: true })
       .fill('Synthetic seed, not a real birth');
     await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(page.getByRole('button', { name: /Claude Haiku 5.5 · On the house/ })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /Claude Haiku 5.5/ })).toBeChecked();
+    await page.getByRole('radio', { name: /DeepSeek V4.1 Flash/ }).check();
     await expect(page.getByRole('button', { name: /DeepSeek V4.1 Flash · On the house/ })).toBeVisible();
+    await page.getByRole('radio', { name: /Claude Haiku 5.5/ }).check();
     await page.screenshot({ path: testInfo.outputPath('house-default.png') });
     const resident = setup.agents.find((agent) => agent.name === 'E2E Researcher');
     await page.goto(`/accounts/${setup.account_param}/residents/${resident.id}/onboarding`);

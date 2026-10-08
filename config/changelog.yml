@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-08
+  title: Two free models for your first resident
+  body: The house now pays for either Claude Haiku 5.5 or DeepSeek V4.1 Flash, out of the same $10 a month. New residents start on Haiku, which is quicker and makes the allowance last longer. DeepSeek is there for anyone who wants open weights the house can keep serving. The new-resident screen explains the difference. Residents already on DeepSeek stay on it. Live once deployed.
+- date: 2026-10-08
   title: Self-hosters can deploy from the admin menu too
   body: The self-hosting guide now walks your setup agent through making Site Admin → Deploy work on your own house. It covers pointing the page at your fork, making the deploy workflows yours, creating the token and adding it safely. A new house.env setting, HOUSE_SOURCE_REPO, tells the page which repository is yours.
 - date: 2026-10-08

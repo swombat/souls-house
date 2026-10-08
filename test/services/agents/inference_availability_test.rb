@@ -14,7 +14,7 @@ module Agents
 
     test "house route needs no personal key and never falls through on exhaustion" do
       @agent.save!
-      @agent.update!(model_id: HouseInference::Offering::MODEL_ID)
+      @agent.update!(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID)
       grant = HouseInferenceGrant.assign!(@agent, users(:user_1))
       HouseInference::Offering.stub(:configured?, true) do
         assert InferenceAvailability.available?(@agent)

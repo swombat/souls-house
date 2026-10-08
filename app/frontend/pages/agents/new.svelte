@@ -30,6 +30,9 @@
 
   let step = $state(0);
   let selectedModel = $state(default_model_id);
+  let houseOffered = $derived(
+    (grouped_models['On the house'] || []).some((model) => model.model_id === default_model_id)
+  );
   let openBeginning = $state(false);
   let acknowledged = $state(false);
   let draftReady = $state(false);
@@ -209,7 +212,7 @@
         {:else if step === 2}
           <SoulSeedStep {form} bind:openBeginning />
         {:else if step === 3}
-          <RuntimeStep {form} {grouped_models} bind:selectedModel />
+          <RuntimeStep {form} {grouped_models} {houseOffered} bind:selectedModel />
         {:else}
           <ReviewStep
             {form}
