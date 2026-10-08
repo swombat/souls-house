@@ -2,11 +2,19 @@ module Api
   module V1
     class ConversationsController < BaseController
 
+      include ApiConversationJson
+      include ApiHumanActions
+
       wrap_parameters false
 
       PAGE_SIZE = 100
       SEARCH_PAGE_SIZE = 50
       TITLE_MAX_LENGTH = 255
+      MODEL_ID_MAX_LENGTH = 255
+      LIST_FILTERS = %w[active archived deleted].freeze
+      UPDATABLE_FIELDS = %w[title visual_tag_id model_id web_access].freeze
+      # The web's chats#update also changes these; a resident's key may not.
+      HUMAN_ONLY_FIELDS = %w[model_id web_access].freeze
 
       def search
         response.headers["Cache-Control"] = "no-store"
@@ -41,7 +49,10 @@ module Api
       end
 
       def index
-        chats = paginated_conversations.limit(PAGE_SIZE + 1).to_a
+        scope = listing_scope
+        return if performed?
+
+        chats = paginated_conversations(scope).limit(PAGE_SIZE + 1).to_a
         next_cursor = chats.length > PAGE_SIZE ? chats[PAGE_SIZE - 1].to_param : nil
         chats = chats.first(PAGE_SIZE)
 
@@ -123,8 +134,23 @@ module Api
       def update
         chat = conversations_scope.kept.find(params[:id])
         changes = params.except(:controller, :action, :id, :account_id, :format).to_unsafe_h
-        unless changes.any? && (changes.keys - %w[title visual_tag_id]).empty?
-          render json: { error: "Provide top-level title and/or visual_tag_id; no other fields are accepted" }, status: :unprocessable_entity
+        unless changes.any? && (changes.keys - UPDATABLE_FIELDS).empty?
+          render json: { error: "Provide top-level #{UPDATABLE_FIELDS.to_sentence(last_word_connector: ", and/or ")}; no other fields are accepted" }, status: :unprocessable_entity
+          return
+        end
+        if current_api_agent && (changes.keys & HUMAN_ONLY_FIELDS).any?
+          render json: { error: "model_id and web_access can only be changed with a person's API key" }, status: :forbidden
+          return
+        end
+        if changes.key?("model_id")
+          model_id = changes["model_id"]
+          unless model_id.is_a?(String) && model_id.strip.present? && model_id.length <= MODEL_ID_MAX_LENGTH && !model_id.include?("\0")
+            render json: { error: "model_id must be nonblank text of at most #{MODEL_ID_MAX_LENGTH} characters, without NUL" }, status: :unprocessable_entity
+            return
+          end
+        end
+        if changes.key?("web_access") && ![ true, false ].include?(changes["web_access"])
+          render json: { error: "web_access must be true or false" }, status: :unprocessable_entity
           return
         end
         if changes.key?("title")
@@ -186,8 +212,33 @@ module Api
         human_chats
       end
 
-      def paginated_conversations
-        scope = conversations_scope.kept.active.includes(:visual_tag).reorder(updated_at: :desc, id: :desc)
+      # active (default) is what the API has always listed. archived and
+      # deleted mirror the web sidebar: archived rooms for any member, deleted
+      # ones only for someone who can manage the account (chats#index).
+      def listing_scope
+        filter = params[:filter].presence || "active"
+        unless LIST_FILTERS.include?(filter)
+          render json: { error: "filter must be one of #{LIST_FILTERS.join(", ")}" }, status: :unprocessable_entity
+          return
+        end
+        return conversations_scope.kept.active if filter == "active"
+
+        require_human_key
+        return if performed?
+
+        if filter == "deleted"
+          unless member_account.manageable_by?(current_api_user)
+            render json: { error: "Only someone who can manage this account can list deleted conversations" }, status: :forbidden
+            return
+          end
+          return conversations_scope.discarded
+        end
+
+        conversations_scope.kept.archived
+      end
+
+      def paginated_conversations(listed)
+        scope = listed.includes(:visual_tag).reorder(updated_at: :desc, id: :desc)
         return scope if params[:cursor].blank?
 
         cursor = conversations_scope.find(params[:cursor])
@@ -257,20 +308,6 @@ module Api
         end
 
         agents.pluck(:id)
-      end
-
-      def conversation_json(chat)
-        {
-          id: chat.to_param,
-          title: chat.title_or_default,
-          visual_tag: chat.visual_tag&.as_json,
-          summary: chat.summary,
-          summary_stale: chat.summary_stale?,
-          model: chat.model_label,
-          group_chat: chat.group_chat?,
-          message_count: chat.message_count,
-          updated_at: chat.updated_at.iso8601
-        }
       end
 
     end

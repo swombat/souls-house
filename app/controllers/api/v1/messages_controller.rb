@@ -2,6 +2,11 @@ module Api
   module V1
     class MessagesController < BaseController
 
+      include ApiHumanActions
+
+      before_action :require_human_key, only: [ :update, :destroy ]
+      before_action :set_authored_message, only: [ :update, :destroy ]
+
       def create
         chat = conversations_scope.find(params[:conversation_id])
 
@@ -72,7 +77,61 @@ module Api
         render json: { errors: [ error.message ], draft: error.draft.as_json }, status: :conflict
       end
 
+      # The author edits their own message, as on the web (messages#update) and
+      # the native app. An edit cancels a wake the message asked for that has
+      # not been reserved; it never retargets one (Message#update_as_author).
+      # Each change takes the message a new revision.
+      def update
+        content = params[:content]
+        unless content.is_a?(String) && content.present?
+          return render json: { errors: [ "content is required" ] }, status: :unprocessable_entity
+        end
+
+        old_content = @message.content
+        if @message.update_as_author(content: content)
+          audit("update_message", @message, old_content: old_content, new_content: @message.content)
+          render json: { message: authored_message_json(@message) }
+        else
+          render json: { errors: @message.errors.full_messages }, status: :unprocessable_entity
+        end
+      end
+
+      # Delete is discard: the row stays, hidden from every transcript. A
+      # repeat is a no-op that returns the same marker.
+      def destroy
+        unless @message.discarded?
+          audit("delete_message", @message, content: @message.content)
+          @message.discard_as_author!
+        end
+        render json: { message: authored_message_json(@message) }
+      end
+
       private
+
+      # Only delete may find an already-discarded message, so a repeat is a
+      # no-op; editing a deleted message is 404.
+      def set_authored_message
+        chat = member_account.chats.find(params[:conversation_id])
+        @message = (action_name == "destroy" ? chat.messages : chat.messages.kept).find(params[:id])
+        return if @message.role == "user" && @message.user_id == current_api_user.id
+
+        # Unlike the web, no site-admin override, as in the native-app API.
+        render json: { error: "Only the author can change this message" }, status: :forbidden
+      end
+
+      def authored_message_json(message)
+        return Api::App::V1::Presenter.discarded_marker(message) if message.discarded?
+
+        {
+          id: message.to_param,
+          conversation_id: message.chat.to_param,
+          revision: message.revision,
+          discarded: false,
+          role: message.role,
+          content: message.content,
+          updated_at: message.updated_at.iso8601(6)
+        }
+      end
 
       def conversations_scope
         return current_api_agent.chats if current_api_agent
