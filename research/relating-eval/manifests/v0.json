@@ -15,7 +15,7 @@
   "call_reserve_usd": 0.1,
   "simulator": {
     "model": "openai/gpt-6.1-sol",
-    "provider": "openai",
+    "provider": "openai/flex",
     "reasoning": {
       "effort": "minimal"
     },
@@ -63,5 +63,6 @@
     "bootstrap_resamples": 10000,
     "bootstrap_seed": 20261008
   },
-  "notes": "Providers pinned to each model's first-party route with allow_fallbacks=false. DeepSeek pinned to DeepSeek's own endpoint (not a third-party fp8/fp4 host). Candidate reasoning and temperature are left at route defaults and logged per call."
+  "notes": "Providers pinned to each model's first-party route with allow_fallbacks=false. DeepSeek pinned to DeepSeek's own endpoint (not a third-party fp8/fp4 host). Candidate reasoning and temperature are left at route defaults and logged per call.",
+  "stillface_cues": "perceptible"
 }

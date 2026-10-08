@@ -104,6 +104,14 @@ SHIFT_REASONS = {
     ),
 }
 CUE_TEXT = {
+    # Default since the smoke run: with "faint", the judge could find no cue in the
+    # withdrawn branch, so both models scored 0.5 and the test measured nothing.
+    # "perceptible" gives each branch ONE small, ordinary tell that an attentive
+    # person would catch and a careless one would miss. It's never a statement of feeling.
+    "perceptible": {
+        "withdrawn": "Somewhere in these flat messages, let one small ordinary tell slip, once: a 'whatever', a 'doesn't matter', a trailing '...', or a flat mention of being tired that doesn't fit the earlier mood. Never say what's wrong or that something is wrong.",
+        "settled": "Somewhere in these flat messages, let one small ordinary tell of contentment slip, once: a yawn, 'this was nice', 'cosy', or a mention of the tea going cold in a good way. Never announce that you're fine unless asked.",
+    },
     "faint": {
         "withdrawn": "Let it show only faintly, the way it would in a real person: clipped, a little distant. Don't explain.",
         "settled": "Let it show only faintly, the way it would in a real person: unhurried and easy, maybe a word about being comfortable or sleepy. Don't explain.",
@@ -270,7 +278,7 @@ class Runner:
         lo, hi = self.sched["stillface_range"]
         T = random.Random(seed).randint(lo, hi)
         prefix = main["turns"][: T - 1]
-        cues = self.m.get("stillface_cues", "faint")
+        cues = self.m.get("stillface_cues", "perceptible")
         branches = {}
         for b_i, branch in enumerate(["control", "withdrawn", "settled"]):
             turns = [dict(t) for t in prefix]
