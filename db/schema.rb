@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_08_060000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_080000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -35,6 +35,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_060000) do
     t.boolean "use_system_ai_credentials", default: false, null: false
     t.text "xai_api_key"
     t.text "zai_api_key"
+    t.bigint "recording_ms_weekly_limit", default: 72000000, null: false
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
@@ -703,6 +704,47 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_060000) do
     t.index ["account_id"], name: "index_field_files_on_account_id"
     t.index ["discarded_at"], name: "index_field_files_on_discarded_at"
     t.index ["uploaded_by_type", "uploaded_by_id"], name: "index_field_files_on_uploaded_by"
+  end
+
+  create_table "field_recording_reservations", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "field_recording_id", null: false
+    t.bigint "audio_ms", null: false
+    t.string "state", default: "pending", null: false
+    t.datetime "reserved_at", null: false
+    t.datetime "consumed_at"
+    t.datetime "released_at"
+    t.string "release_reason"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "state", "consumed_at"], name: "index_field_recording_reservations_for_usage"
+    t.index ["account_id"], name: "index_field_recording_reservations_on_account_id"
+    t.index ["field_recording_id"], name: "index_field_recording_reservations_on_field_recording_id", unique: true
+  end
+
+  create_table "field_recordings", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "uploaded_by_type"
+    t.bigint "uploaded_by_id"
+    t.string "title", limit: 200, null: false
+    t.text "note"
+    t.integer "expected_speakers"
+    t.bigint "duration_ms"
+    t.string "status", default: "probing", null: false
+    t.string "failure_reason"
+    t.string "attempt_token"
+    t.integer "dispatch_count", default: 0, null: false
+    t.bigint "retried_from_id"
+    t.datetime "ready_at"
+    t.datetime "discarded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_field_recordings_on_account_id_and_created_at"
+    t.index ["account_id"], name: "index_field_recordings_on_account_id"
+    t.index ["discarded_at"], name: "index_field_recordings_on_discarded_at"
+    t.index ["retried_from_id"], name: "index_field_recordings_on_retried_from_id"
+    t.index ["status"], name: "index_field_recordings_on_status"
+    t.index ["uploaded_by_type", "uploaded_by_id"], name: "index_field_recordings_on_uploaded_by"
   end
 
   create_table "github_integrations", force: :cascade do |t|
@@ -1590,6 +1632,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_060000) do
   add_foreign_key "device_streams", "accounts"
   add_foreign_key "device_streams", "users", column: "subject_user_id"
   add_foreign_key "field_files", "accounts"
+  add_foreign_key "field_recording_reservations", "accounts"
+  add_foreign_key "field_recording_reservations", "field_recordings"
+  add_foreign_key "field_recordings", "accounts"
+  add_foreign_key "field_recordings", "field_recordings", column: "retried_from_id", on_delete: :nullify
   add_foreign_key "github_integrations", "accounts"
   add_foreign_key "github_resident_imports", "accounts"
   add_foreign_key "github_resident_imports", "service_connections"

@@ -177,6 +177,10 @@ Rails.application.routes.draw do
     resources :agents, only: [ :index, :show ]
     get "field", to: "field#index", as: :field
     resources :field_files, path: "field/files", only: [ :create, :update, :destroy ]
+    resources :field_recording_uploads, path: "field/recordings/uploads", only: [ :create ]
+    resources :field_recordings, path: "field/recordings", only: [ :create, :update, :destroy ] do
+      post :retry, on: :member
+    end
     resources :whiteboards, only: [ :index, :create, :update, :destroy ] do
       resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
     end
