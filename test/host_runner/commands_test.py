@@ -479,5 +479,113 @@ class RelayRedirectTest(unittest.TestCase):
         self.assertEqual(hits["elsewhere"], 0)
 
 
+class ImageFetchRedirectTest(unittest.TestCase):
+    def test_an_image_fetch_never_follows_a_redirect_to_another_host(self):
+        import http.server
+        import threading
+
+        hits = {"elsewhere": 0}
+
+        class Elsewhere(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                hits["elsewhere"] += 1
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"foreign-archive")
+
+            def log_message(self, *args):
+                pass
+
+        elsewhere = http.server.HTTPServer(("127.0.0.1", 0), Elsewhere)
+
+        class House(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{elsewhere.server_port}/image.tar")
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        house = http.server.HTTPServer(("127.0.0.1", 0), House)
+        for server in (elsewhere, house):
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+        written = []
+        config = {"rails_url": f"http://127.0.0.1:{house.server_port}", "runner_id": "rnr_" + "0" * 20}
+        try:
+            ok, error = runner.fetch_image(config, Ed25519PrivateKey.generate(), IMAGE, written.append)
+        finally:
+            for server in (house, elsewhere):
+                server.shutdown()
+                server.server_close()
+        self.assertFalse(ok)
+        self.assertIn("302", error)
+        self.assertEqual(written, [])
+        self.assertEqual(hits["elsewhere"], 0)
+
+
+class DockerLoadTest(unittest.TestCase):
+    """docker_load_from_house itself, with a Python child standing in for
+    docker load."""
+
+    def child(self, script):
+        def popen(argv, **kwargs):
+            self.assertEqual(argv, ["docker", "load"])
+            self.process = runner.subprocess.Popen([sys.executable, "-c", script], **kwargs)
+            return self.process
+        return popen
+
+    def test_a_failed_fetch_returns_at_once_and_reaps_the_child(self):
+        import time
+        load = runner.docker_load_from_house({}, None, popen=self.child("import time; time.sleep(30)"),
+                                             fetch=lambda *args: (False, "house answered 404"), deadline=60)
+        started = time.monotonic()
+        ok, error = load(IMAGE)
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertEqual((ok, error), (False, "house answered 404"))
+        self.assertIsNotNone(self.process.poll())
+
+    def test_a_chatty_child_cannot_deadlock_the_writer(self):
+        import time
+        script = ("import sys; sys.stderr.write('x' * (2 * 1024 * 1024)); sys.stderr.flush(); "
+                  "data = sys.stdin.buffer.read(); sys.exit(0 if len(data) == 1024 * 1024 else 3)")
+
+        def fetch(config, key, image_id, write):
+            for _ in range(16):
+                write(b"y" * (64 * 1024))
+            return True, ""
+
+        load = runner.docker_load_from_house({}, None, popen=self.child(script), fetch=fetch, deadline=60)
+        started = time.monotonic()
+        self.assertEqual(load(IMAGE), (True, ""))
+        self.assertLess(time.monotonic() - started, 30)
+
+    def test_a_child_that_stops_reading_is_killed_at_the_deadline(self):
+        import time
+
+        def fetch(config, key, image_id, write):
+            try:
+                for _ in range(64):
+                    write(b"y" * (1024 * 1024))
+            except OSError as error:
+                return False, str(error)
+            return True, ""
+
+        load = runner.docker_load_from_house({}, None, popen=self.child("import time; time.sleep(60)"),
+                                             fetch=fetch, deadline=1)
+        started = time.monotonic()
+        ok, error = load(IMAGE)
+        self.assertLess(time.monotonic() - started, 15)
+        self.assertFalse(ok)
+        self.assertIn("did not finish", error)
+        self.assertIsNotNone(self.process.poll())
+
+    def test_a_failing_load_reports_the_tail_of_stderr(self):
+        script = "import sys; sys.stdin.buffer.read(); sys.stderr.write('no space left on device'); sys.exit(1)"
+        load = runner.docker_load_from_house({}, None, popen=self.child(script),
+                                             fetch=lambda c, k, i, write: (write(b"z") or True, ""), deadline=60)
+        self.assertEqual(load(IMAGE), (False, "no space left on device"))
+
+
 if __name__ == "__main__":
     unittest.main()

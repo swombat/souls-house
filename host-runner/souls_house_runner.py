@@ -33,6 +33,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -637,7 +638,13 @@ IMAGE_PATH = "/api/v1/host_runner/images/{id}"
 IMAGE_CHUNK = 1024 * 1024
 
 
-def fetch_image(config, key, image_id, write, opener=urllib.request.urlopen):
+# The image comes from the house and nowhere else: a redirect is answered as
+# the 3xx it is, so no redirected byte reaches docker load and the signature
+# headers never leave for another host.
+_IMAGE_OPENER = urllib.request.build_opener(_RefuseRedirects)
+
+
+def fetch_image(config, key, image_id, write, opener=_IMAGE_OPENER.open):
     """Signed GET of one image from the house, streamed into write().
     Returns (ok, error)."""
     if not IMAGE_RE.match(image_id or ""):
@@ -658,26 +665,66 @@ def fetch_image(config, key, image_id, write, opener=urllib.request.urlopen):
         return False, str(error)
 
 
-def docker_load_from_house(config, key):
+# docker load runs inside the command loop, which also carries heartbeats and
+# later stop commands, so it is bounded: an absolute deadline kills it, stderr
+# is drained concurrently (keeping only its tail) so neither side can block on
+# a full pipe, and a failed fetch kills the child instead of waiting for it.
+LOAD_DEADLINE = 30 * 60
+LOAD_STDERR_TAIL = 4096
+
+
+def _drain_tail(stream, keep):
+    tail = bytearray()
+
+    def run():
+        for chunk in iter(lambda: stream.read(4096), b""):
+            tail.extend(chunk)
+            del tail[:-keep]
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return thread, tail
+
+
+def docker_load_from_house(config, key, popen=subprocess.Popen, fetch=fetch_image, deadline=LOAD_DEADLINE):
     def load(image_id):
         try:
-            process = subprocess.Popen(["docker", "load"], stdin=subprocess.PIPE,
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            process = popen(["docker", "load"], stdin=subprocess.PIPE,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         except OSError as error:
             return False, str(error)
+        drainer, tail = _drain_tail(process.stderr, LOAD_STDERR_TAIL)
+        expired = threading.Event()
+
+        def expire():
+            expired.set()
+            process.kill()
+
+        timer = threading.Timer(deadline, expire)
+        timer.daemon = True
+        timer.start()
         try:
-            ok, error = fetch_image(config, key, image_id, process.stdin.write)
-        except BrokenPipeError:
-            ok, error = False, "docker load stopped reading"
-        finally:
+            try:
+                ok, error = fetch(config, key, image_id, process.stdin.write)
+            except OSError:
+                ok, error = False, "docker load stopped reading"
+            if not ok:
+                process.kill()
             try:
                 process.stdin.close()
             except OSError:
                 pass
-        stderr = process.stderr.read().decode("utf-8", "replace")[-500:]
-        if process.wait() != 0:
-            return False, error or stderr or "docker load failed"
-        return ok, error
+            code = process.wait()
+        finally:
+            timer.cancel()
+        drainer.join(timeout=5)
+        if expired.is_set():
+            return False, f"docker load did not finish within {deadline} seconds"
+        if not ok:
+            return False, error or "image fetch failed"
+        if code != 0:
+            return False, bytes(tail[-500:]).decode("utf-8", "replace") or "docker load failed"
+        return True, ""
     return load
 
 
