@@ -87,6 +87,7 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/frontend/pages/changelog.svelte" => "public changelog page copy",
     "app/frontend/pages/decisions/index.svelte" => "public decisions page copy",
     "app/frontend/pages/decisions/show.svelte" => "public decisions page copy",
+    "app/content/decisions/free-resident-model.md" => "decision entry linking to its published method page on souls.house",
     "config/changelog.yml" => "changelog entries naming the product (e.g. the HelixKit rename)",
     "app/frontend/pages/privacy.svelte" => "privacy page copy",
     "app/frontend/pages/terms.svelte" => "terms page copy",
