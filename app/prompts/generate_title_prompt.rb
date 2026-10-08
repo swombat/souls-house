@@ -21,8 +21,7 @@ class GenerateTitlePrompt
 
   def render
     %i[system user].index_with do |role|
-      template = Rails.root.join("app", "prompts", "generate_title", "#{role}.prompt.erb")
-      ERB.new(template.read).result_with_hash(messages: build_conversation_lines, model: @model)
+      PromptTemplate.render("generate_title", role, messages: build_conversation_lines, model: @model)
     end
   end
 
