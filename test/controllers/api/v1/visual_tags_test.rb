@@ -69,7 +69,7 @@ module Api
         get api_v1_visual_tags_path, params: { account_id: destination.to_param }, headers: @resident_headers
         assert_response :success
         assert_equal [ unused.as_json, used.as_json ], response.parsed_body.fetch("visual_tags")
-        assert response.parsed_body.fetch("visual_tags").all? { |tag| tag.keys.sort == %w[colour icon id label] }
+        assert response.parsed_body.fetch("visual_tags").all? { |tag| tag.keys.sort == %w[colour icon id label pinned] }
       end
 
       test "human account key can select a room tag" do
