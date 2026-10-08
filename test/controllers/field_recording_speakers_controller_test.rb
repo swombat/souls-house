@@ -72,6 +72,14 @@ class FieldRecordingSpeakersControllerTest < ActionDispatch::IntegrationTest
     assert_match "Speaker 1: hello", @recording.reload.transcript_text
   end
 
+  test "a discard that lands first stops a later un-name" do
+    @first.name_as!(@account.field_voices.create!(name: "Priya"), by: @user)
+    stale = FieldRecordingSpeaker.find(@first.id) # loaded before the discard
+    @recording.discard_and_settle!
+    assert_raises(ActiveRecord::RecordNotFound) { stale.unname! }
+    assert_equal "Priya", @first.reload.display_name
+  end
+
   test "another account's voice can't be used" do
     theirs = accounts(:another_team).field_voices.create!(name: "Them")
     name_speaker(@first, voice_id: theirs.to_param)

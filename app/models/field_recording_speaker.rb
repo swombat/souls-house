@@ -34,6 +34,10 @@ class FieldRecordingSpeaker < ApplicationRecord
 
   def unname!
     field_recording.with_lock do
+      # Same guard as name_as!: a request that found the recording before a
+      # discard must not change it after waiting for the lock.
+      raise ActiveRecord::RecordNotFound unless field_recording.kept? && field_recording.ready?
+
       update!(field_voice: nil, naming_source: nil, named_by: nil, named_at: nil)
       field_recording.update!(transcript_text: field_recording.render_transcript_text)
     end

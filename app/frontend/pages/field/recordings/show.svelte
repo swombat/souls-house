@@ -53,29 +53,39 @@
 
   let audio = $state(null);
   let currentMs = $state(null);
-  let clipEndMs = null;
+  // A "Hear" clip: play from start, pause at end. The seek the clip makes for
+  // itself fires a `seeking` event too; only a seek that lands somewhere else
+  // (the user dragging the player, or clicking a turn) ends the clip.
+  let clip = null;
+  const CLIP_SEEK_TOLERANCE_MS = 50;
   const activeIndex = $derived(activeWordIndex(wordList, currentMs));
 
   function timeUpdate() {
     if (!audio) return;
     currentMs = Math.round(audio.currentTime * 1000);
-    if (clipEndMs != null && currentMs >= clipEndMs) {
+    if (clip && currentMs >= clip.endMs) {
       audio.pause();
-      clipEndMs = null;
+      clip = null;
     }
+  }
+
+  function seeking() {
+    if (!audio || !clip) return;
+    if (Math.abs(audio.currentTime * 1000 - clip.startMs) <= CLIP_SEEK_TOLERANCE_MS) return;
+    clip = null;
   }
 
   function seek(ms) {
     if (!audio) return;
-    clipEndMs = null;
+    clip = null;
     audio.currentTime = ms / 1000;
     audio.play().catch(() => {});
   }
 
   function playClip(speaker) {
     if (!audio) return;
+    clip = { startMs: speaker.clip_start_ms, endMs: speaker.clip_end_ms };
     audio.currentTime = speaker.clip_start_ms / 1000;
-    clipEndMs = speaker.clip_end_ms;
     audio.play().catch(() => {});
   }
 
@@ -119,7 +129,7 @@
       preload="metadata"
       class="w-full"
       ontimeupdate={timeUpdate}
-      onseeking={() => (clipEndMs = null)}
+      onseeking={seeking}
       data-testid="recording-audio"></audio>
   {/if}
 

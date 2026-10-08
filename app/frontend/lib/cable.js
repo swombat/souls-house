@@ -110,9 +110,11 @@ export function subscribeToModel(model, id, props) {
     {
       connected() {
         logging.debug(`Sync connected: ${model}:${id}`);
-        if (model === 'Chat' || model === 'Account' || model === 'ReplyAttention') {
+        if (model === 'Chat' || model === 'Account' || model === 'ReplyAttention' || model === 'FieldRecording') {
           // Broadcasts are not replayed. Catch up changes missed before the
           // subscription or during a disconnect, without needing another change.
+          // A FieldRecording that finished transcribing meanwhile would
+          // otherwise sit on "Transcribing…" until a manual refresh.
           reloadProps(props);
           if (model === 'Chat') window.dispatchEvent(new CustomEvent('runtime-activity-refresh'));
         }
