@@ -13,6 +13,7 @@ import stat
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
@@ -57,12 +58,18 @@ class FakeHouse:
                     route = route(house.requests[-1])
                 status, payload, headers = route or (404, {"error": "Not found"}, {})
                 data = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+                stall = headers.pop("X-Test-Stall-Body", None)
                 self.send_response(status)
                 for k, v in headers.items():
                     self.send_header(k, v)
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
-                self.wfile.write(data)
+                if stall:
+                    time.sleep(float(stall))
+                try:
+                    self.wfile.write(data)
+                except OSError:
+                    pass
 
             do_GET = do_POST = do_PATCH = do_PUT = do_DELETE = _handle
 
@@ -72,7 +79,8 @@ class FakeHouse:
         self.thread.start()
 
     def route(self, method, path, status=200, body=None, headers=None):
-        self.routes[(method, path)] = (status, {} if body is None else body, headers or {})
+        fixed = (status, {} if body is None else body, dict(headers or {}))
+        self.routes[(method, path)] = lambda req: (fixed[0], fixed[1], dict(fixed[2]))
 
     def close(self):
         self.server.shutdown()
@@ -276,6 +284,204 @@ class ApiEscapeHatchTest(CliTestCase):
         code, _, err = self.run_cli("api", "POST", "rhythms", "-d", "{nope")
         self.assertEqual(code, souls.EXIT_USAGE)
         self.assertEqual(self.house.requests, [])
+
+
+class OriginTest(CliTestCase):
+    def test_a_foreign_absolute_url_is_refused_before_any_request(self):
+        elsewhere = FakeHouse()
+        self.addCleanup(elsewhere.close)
+        elsewhere.route("GET", "/steal", body={"ok": True})
+        for argv in (("api", "GET", elsewhere.url + "/steal"),
+                     ("download", elsewhere.url + "/steal", "-o", os.path.join(self.config_dir, "x"))):
+            code, _, err = self.run_cli(*argv)
+            self.assertEqual(code, souls.EXIT_USAGE, argv)
+            self.assertIn("refusing to send your credential", err)
+        self.assertEqual(elsewhere.requests, [])
+        self.assertEqual(self.house.requests, [])
+
+    def test_origins_compare_parsed_parts_not_prefixes(self):
+        client = souls.Client("https://souls.example", "hx")
+        self.assertEqual(client.build_url("https://SOULS.example:443/api/v1/me"), "https://SOULS.example:443/api/v1/me")
+        for foreign in ("https://souls.example.evil.test/api/v1/me", "http://souls.example/api/v1/me",
+                        "https://souls.example:8443/api/v1/me", "https://evil.test/https://souls.example/"):
+            with self.assertRaises(souls.CliError, msg=foreign):
+                client.build_url(foreign)
+
+    def test_a_same_origin_absolute_url_keeps_the_bearer(self):
+        self.house.route("GET", "/api/v1/me", body={"user": {}})
+        code, _, _ = self.run_cli("api", "GET", self.house.url + "/api/v1/me")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.last()["headers"]["authorization"], "Bearer hx_test")
+
+
+class LogoutLoginTest(CliTestCase):
+    def save_profile(self, name, url, token, default=True):
+        path = os.path.join(self.config_dir, "souls", "config.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        config = {"profiles": {}}
+        if os.path.exists(path):
+            with open(path) as fh:
+                config = json.load(fh)
+        config["profiles"][name] = {"url": url, "token": token}
+        if default:
+            config["default_profile"] = name
+        with open(path, "w") as fh:
+            json.dump(config, fh)
+        return path
+
+    def test_revoke_uses_the_removed_profile_not_the_ambient_credential(self):
+        profile_house = FakeHouse()
+        self.addCleanup(profile_house.close)
+        profile_house.route("DELETE", "/api/v1/session", body={"revoked": True})
+        path = self.save_profile("b", profile_house.url, "hx_profile_b")
+        code, _, _ = self.run_cli("logout", "--revoke")  # SOULS_TOKEN=hx_test is ambient
+        self.assertEqual(code, 0)
+        self.assertEqual(self.house.requests, [])
+        self.assertEqual(profile_house.requests[0]["method"], "DELETE")
+        self.assertEqual(profile_house.requests[0]["headers"]["authorization"], "Bearer hx_profile_b")
+        with open(path) as fh:
+            self.assertNotIn("b", json.load(fh)["profiles"])
+
+    def test_logout_of_a_missing_profile_sends_nothing(self):
+        code, _, err = self.run_cli("logout", "--revoke", "--profile", "ghost")
+        self.assertEqual(code, souls.EXIT_NOT_FOUND)
+        self.assertEqual(self.house.requests, [])
+        self.assertIn("ghost", err)
+
+    def test_login_probes_and_saves_the_configured_self_hosted_url(self):
+        self.house.route("GET", "/api/v1/session", body={"actor": {"name": "Ada"}})
+        env = {"XDG_CONFIG_HOME": self.config_dir, "SOULS_TOKEN": "hx_self", "SOULS_URL": self.house.url}
+        code, _, _ = self.run_cli("login", env=env)
+        self.assertEqual(code, 0)
+        self.assertEqual(self.last()["headers"]["authorization"], "Bearer hx_self")
+        with open(os.path.join(self.config_dir, "souls", "config.json")) as fh:
+            self.assertEqual(json.load(fh)["profiles"]["default"]["url"], self.house.url)
+
+    def test_saving_never_writes_through_a_planted_temp_file(self):
+        self.house.route("GET", "/api/v1/session", body={"actor": {}})
+        directory = os.path.join(self.config_dir, "souls")
+        os.makedirs(directory)
+        victim = os.path.join(self.config_dir, "victim")
+        with open(victim, "w") as fh:
+            fh.write("untouched")
+        os.symlink(victim, os.path.join(directory, "config.json.tmp"))
+        env = {"XDG_CONFIG_HOME": self.config_dir, "SOULS_URL": self.house.url}
+        code, _, _ = self.run_cli("login", stdin="hx_k\n", env=env)
+        self.assertEqual(code, 0)
+        with open(victim) as fh:
+            self.assertEqual(fh.read(), "untouched")
+        config = os.path.join(directory, "config.json")
+        self.assertEqual(stat.S_IMODE(os.stat(config).st_mode), 0o600)
+        self.assertEqual([n for n in os.listdir(directory) if n.startswith(".config-")], [])
+
+    def test_a_malformed_config_is_a_short_usage_error(self):
+        path = os.path.join(self.config_dir, "souls", "config.json")
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w") as fh:
+            fh.write("{not json")
+        code, _, err = self.run_cli("rooms", env={"XDG_CONFIG_HOME": self.config_dir})
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertIn("cannot read", err)
+        self.assertNotIn("Traceback", err)
+
+
+class TransportTest(CliTestCase):
+    def test_a_stalled_response_body_is_a_network_error_not_a_traceback(self):
+        self.house.route("GET", "/api/v1/session", body={"actor": {}}, headers={"X-Test-Stall-Body": "1"})
+        code, _, err = self.run_cli("whoami", env=dict(self.env, SOULS_HTTP_TIMEOUT="0.2"))
+        self.assertEqual(code, souls.EXIT_NETWORK)
+        self.assertNotIn("Traceback", err)
+
+
+class CaptionTest(CliTestCase):
+    def test_a_piped_caption_with_attachments_needs_dash_and_stays_literal(self):
+        self.house.route("POST", "/api/v1/conversations/c1/messages", body={"message": {"id": "m1"}})
+        path = os.path.join(self.config_dir, "a.txt")
+        with open(path, "w") as fh:
+            fh.write("x")
+        code, _, _ = self.run_cli("post", "c1", "-", "--attach", path, stdin="Cost: $5 `now`\n")
+        self.assertEqual(code, 0)
+        self.assertIn(b'name="content"\r\n\r\nCost: $5 `now`\r\n', self.last()["body"])
+
+    def test_attachment_only_post_never_reads_stdin(self):
+        self.house.route("POST", "/api/v1/conversations/c1/messages", body={"message": {"id": "m1"}})
+        path = os.path.join(self.config_dir, "a.txt")
+        with open(path, "w") as fh:
+            fh.write("x")
+
+        class OpenPipe(io.StringIO):
+            def read(self, *a):
+                raise AssertionError("stdin must not be read")
+        environ = {k: v for k, v in os.environ.items() if not k.startswith(("SOULS_", "SOULSHOUSE_"))}
+        environ.update(self.env)
+        pipe = OpenPipe()
+        pipe.isatty = lambda: False
+        with mock.patch.dict(os.environ, environ, clear=True), mock.patch.object(sys, "stdin", pipe), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = souls.main(["post", "c1", "--attach", path])
+        self.assertEqual(code, 0)
+        self.assertNotIn(b'name="content"', self.last()["body"])
+
+
+class ResidentWatchTest(CliTestCase):
+    """Resident keys poll the transcript. A reply is printed once, finished."""
+
+    def setUp(self):
+        super().setUp()
+        self.house.route("GET", "/api/v1/conversations/c1/changes", status=403, body={"error": "person only"})
+        self.script = []
+        self.reads = []
+
+        def show(req):
+            self.reads.append(req["query"])
+            rows = self.script.pop(0) if len(self.script) > 1 else self.script[0]
+            after = dict(p.split("=", 1) for p in req["query"].split("&") if "=" in p).get("after_message_id")
+            if after:
+                ids = [r["id"] for r in rows]
+                rows = rows[ids.index(after) + 1:] if after in ids else rows
+            return 200, {"conversation": {"transcript": rows}}, {}
+        self.house.routes[("GET", "/api/v1/conversations/c1")] = show
+
+    def watch(self, *extra):
+        code, out, err = self.run_cli("watch", "c1", "--interval", "0", "--json", *extra)
+        return code, [json.loads(line) for line in out.splitlines()], err
+
+    def test_an_unfinished_reply_is_waited_for_and_printed_once_complete(self):
+        old = {"id": "m1", "content": "old", "completed": True}
+        self.script = [
+            [old],                                                        # startup
+            [old, {"id": "m2", "content": "part", "completed": False}],   # arrives unfinished
+            [old, {"id": "m2", "content": "partial th", "completed": False}],
+            [old, {"id": "m2", "content": "partial thought, done", "completed": True},
+             {"id": "m3", "content": "next", "completed": True}],
+        ]
+        code, printed, _ = self.watch("--once")
+        self.assertEqual(code, 0)
+        self.assertEqual([(m["id"], m["content"]) for m in printed],
+                         [("m2", "partial thought, done"), ("m3", "next")])
+        # The cursor never moved past the unfinished row while it was unfinished.
+        self.assertTrue(all("after_message_id=m2" not in q for q in self.reads[:4]))
+
+    def test_a_reply_in_flight_at_startup_is_delivered_when_it_finishes(self):
+        self.script = [
+            [{"id": "m1", "content": "q", "completed": True},
+             {"id": "m2", "content": "wri", "completed": False},
+             {"id": "m3", "content": "already there", "completed": True}],
+            [{"id": "m1", "content": "q", "completed": True},
+             {"id": "m2", "content": "written in full", "completed": True},
+             {"id": "m3", "content": "already there", "completed": True}],
+        ]
+        code, printed, _ = self.watch("--once")
+        self.assertEqual(code, 0)
+        self.assertEqual([(m["id"], m["content"]) for m in printed], [("m2", "written in full")])
+
+    def test_once_with_only_unfinished_rows_times_out_with_exit_8(self):
+        self.script = [[{"id": "m1", "content": "q", "completed": True}],
+                       [{"id": "m1", "content": "q", "completed": True},
+                        {"id": "m2", "content": "never ends", "completed": False}]]
+        code, printed, err = self.watch("--once", "--timeout", "0.3")
+        self.assertEqual(code, souls.EXIT_TIMEOUT)
+        self.assertEqual(printed, [])
 
 
 if __name__ == "__main__":

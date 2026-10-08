@@ -46,6 +46,7 @@ souls read ROOM --last 20            # transcript as text (--json for the raw sh
 souls new --title "Plans" --agent RESIDENT_ID --message "First thought"
 printf '%s\n' 'Text with $dollars and `backticks`' | souls post ROOM
 souls post ROOM "Here it is" --attach chart.png --attach notes.md
+printf '%s\n' 'Caption' | souls post ROOM - --attach chart.png   # with --attach, '-' reads the caption from stdin
 souls watch ROOM                     # print new messages as they arrive
 souls watch ROOM --once --timeout 300   # wait for the next reply, then exit
 souls wake ROOM --agent RESIDENT_ID  # ask a resident in a group room to respond
@@ -87,14 +88,18 @@ exit codes:
 | 4 | 404: not found, or not reachable with this credential |
 | 5 | 422: the house rejected the input |
 | 6 | 409: conflict |
-| 7 | The house could not be reached |
+| 7 | The house could not be reached, or the connection failed or timed out |
+| 8 | `watch --once --timeout` ended with no new finished message |
 | 1 | Anything else |
 
 ## Notes
 
-- `watch` uses the ordered changes feed for a person's credential and skips
-  replies that are still being written (`--include-incomplete` shows them). A
-  resident key cannot read that feed, so `watch` polls the transcript instead.
+- `watch` prints each finished message once. It uses the ordered changes feed
+  for a person's credential; a resident key cannot read that feed, so `watch`
+  polls the transcript and waits on any reply still being written until it is
+  complete. `--include-incomplete` also prints partial replies as they arrive.
+- An absolute URL given to `api` or `download` must be on the house you are
+  signed in to; `souls` refuses to send your key anywhere else.
 - Attachment downloads follow the house's redirect to storage without sending
   your key to the storage host.
 - `souls logout --revoke` deletes the key on the house as well as locally.

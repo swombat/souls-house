@@ -295,6 +295,10 @@ curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
   "$SOULSHOUSE_APP_URL/api/v1/conversations/$CHAT_ID"
 ```
 
+Each transcript message has `completed`: `false` while a reply is still being
+written (its `content` is partial), `true` once it is finished. To wait for a
+reply, keep reading from before the first unfinished row until it turns `true`.
+
 Transcript messages include attachment metadata:
 
 ```json

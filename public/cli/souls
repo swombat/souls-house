@@ -22,8 +22,10 @@ import argparse
 import json
 import mimetypes
 import os
+import socket
 import stat
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -43,6 +45,7 @@ EXIT_NOT_FOUND = 4   # 404
 EXIT_INVALID = 5     # 422
 EXIT_CONFLICT = 6    # 409
 EXIT_NETWORK = 7
+EXIT_TIMEOUT = 8     # watch --once --timeout ran out with nothing new
 
 
 class CliError(Exception):
@@ -64,21 +67,33 @@ def load_config():
     path = config_path()
     if not os.path.exists(path):
         return {"profiles": {}}
-    with open(path, encoding="utf-8") as fh:
-        data = json.load(fh)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as err:
+        raise CliError(f"cannot read {path}: {err}; fix or remove it", EXIT_USAGE) from None
+    if not isinstance(data, dict) or not isinstance(data.get("profiles", {}), dict):
+        raise CliError(f"{path} is not a souls config (expected an object with \"profiles\")", EXIT_USAGE)
     data.setdefault("profiles", {})
     return data
 
 
 def save_config(data):
     path = config_path()
-    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-    tmp = path + ".tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2)
-        fh.write("\n")
-    os.replace(tmp, path)
+    directory = os.path.dirname(path)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    # mkstemp creates a new private (0600, O_EXCL) file, so neither a stale
+    # permissive temp file nor a planted symlink is ever written through.
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".config-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+            fh.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
     os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
 
 
@@ -142,14 +157,24 @@ def encode_multipart(fields, files):
 
 
 class Client:
-    def __init__(self, url, token, account=None, verbose=False):
+    def __init__(self, url, token, account=None, verbose=False, timeout=120):
+        self.timeout = timeout
         self.url = url
         self.token = token
         self.account = account
         self.verbose = verbose
 
+    def origin(self, url):
+        parts = urllib.parse.urlsplit(url)
+        default_port = {"http": 80, "https": 443}.get(parts.scheme)
+        return (parts.scheme.lower(), (parts.hostname or "").lower(), parts.port or default_port)
+
     def build_url(self, path, query=None):
-        if path.startswith("http://") or path.startswith("https://"):
+        if "://" in path:
+            # The bearer belongs to this house only. An absolute URL must name the
+            # same origin; anything else would hand the key to another host.
+            if self.origin(path) != self.origin(self.url):
+                raise CliError(f"refusing to send your credential to {path}: it is not {self.url}", EXIT_USAGE)
             full = path
         else:
             if not path.startswith("/"):
@@ -180,7 +205,7 @@ class Client:
         if self.verbose:
             print(f"> {method.upper()} {url}", file=sys.stderr)
         try:
-            with _opener.open(req, timeout=120) as resp:
+            with _opener.open(req, timeout=self.timeout) as resp:
                 body = resp.read()
                 status = resp.status
         except urllib.error.HTTPError as err:
@@ -188,6 +213,9 @@ class Client:
             raise http_error(err.code, body) from None
         except urllib.error.URLError as err:
             raise CliError(f"could not reach {self.url}: {err.reason}", EXIT_NETWORK) from None
+        except (socket.timeout, TimeoutError, ConnectionError, OSError) as err:
+            # Timeouts and resets while reading the response arrive outside URLError.
+            raise CliError(f"connection to {self.url} failed: {err or type(err).__name__}", EXIT_NETWORK) from None
         if self.verbose:
             print(f"< {status} ({len(body)} bytes)", file=sys.stderr)
         if raw:
@@ -222,6 +250,14 @@ class Client:
             cursor = page.get("next_cursor")
             if not cursor or (limit and len(items) >= limit):
                 return items[:limit] if limit else items
+
+
+def http_timeout():
+    raw = os.environ.get("SOULS_HTTP_TIMEOUT")
+    try:
+        return float(raw) if raw else 120.0
+    except ValueError:
+        raise CliError("SOULS_HTTP_TIMEOUT must be a number of seconds", EXIT_USAGE) from None
 
 
 def http_error(status, body):
@@ -285,7 +321,7 @@ def conversation_line(conv):
 # ---------------------------------------------------------------- commands
 
 def cmd_login(client, args):
-    token = args.token_value or os.environ.get("SOULS_TOKEN")
+    token = args.token_value or args.token or os.environ.get("SOULS_TOKEN")
     if not token:
         if sys.stdin.isatty():
             import getpass
@@ -294,8 +330,10 @@ def cmd_login(client, args):
             token = sys.stdin.read().strip()
     if not token:
         raise CliError("no key given", EXIT_USAGE)
-    url = (args.url or DEFAULT_URL).rstrip("/")
-    probe = Client(url, token)
+    # Same destination rule as every other command, so a self-hosted key is
+    # never probed against (or saved for) the upstream house.
+    url = (args.url or os.environ.get("SOULS_URL") or DEFAULT_URL).rstrip("/")
+    probe = Client(url, token, timeout=http_timeout())
     me = probe.get("session") if not args.no_check else {}
     name = args.profile or "default"
     config = load_config()
@@ -307,12 +345,16 @@ def cmd_login(client, args):
 
 
 def cmd_logout(client, args):
+    # Logout acts on a saved profile and nothing else: the ambient credential
+    # (flags, SOULS_TOKEN, a resident's env) is never the one revoked.
     config = load_config()
     name = args.profile or config.get("default_profile") or "default"
-    if args.revoke:
-        client.delete("session")
-    if config["profiles"].pop(name, None) is None:
+    profile = config["profiles"].get(name)
+    if not profile:
         raise CliError(f"no profile named {name!r}", EXIT_NOT_FOUND)
+    if args.revoke:
+        Client(profile.get("url") or DEFAULT_URL, profile.get("token"), timeout=http_timeout()).delete("session")
+    config["profiles"].pop(name)
     if config.get("default_profile") == name:
         config.pop("default_profile")
     save_config(config)
@@ -405,9 +447,23 @@ def cmd_activity(client, args):
     emit(client.get(f"conversations/{args.room}/activity"))
 
 
+def settled_prefix(rows):
+    """Index just past the leading run of finished rows. A transcript row without
+    `completed` (an older house) counts as finished."""
+    for index, row in enumerate(rows):
+        if row.get("completed") is False:
+            return index
+    return len(rows)
+
+
 def cmd_watch(client, args):
-    """Follow a room. Person credentials use the ordered changes feed; resident keys,
-    which can't read it, fall back to polling the transcript."""
+    """Follow a room and print each finished message once.
+
+    Person credentials use the ordered changes feed: an unfinished reply is
+    skipped and comes back with a new revision when it completes. Resident keys
+    can't read that feed, so they poll the transcript, and the cursor only moves
+    past rows that are finished; an unfinished row is fetched again on each poll
+    until it completes, and only then printed."""
     since = args.since
     use_feed = True
     if since is None:
@@ -418,10 +474,14 @@ def cmd_watch(client, args):
             if err.status != 403:
                 raise
             use_feed = False
-    after = None
+    after, printed = None, set()
     if not use_feed:
-        transcript = client.get(f"conversations/{args.room}").get("conversation", {}).get("transcript") or []
-        after = transcript[-1]["id"] if transcript else None
+        rows = client.get(f"conversations/{args.room}").get("conversation", {}).get("transcript") or []
+        cut = settled_prefix(rows)
+        after = rows[cut - 1]["id"] if cut else None
+        # Finished rows already there are history, not news. Replies in flight at
+        # startup are the ones being waited for, so they print when they finish.
+        printed = {row["id"] for row in rows[cut:] if row.get("completed") is not False}
     deadline = time.time() + args.timeout if args.timeout else None
     while True:
         fresh = []
@@ -435,17 +495,28 @@ def cmd_watch(client, args):
             fresh = [m for m in fresh if args.include_incomplete or m.get("completed", True) or m.get("discarded")]
         else:
             data = client.get(f"conversations/{args.room}", query=[("after_message_id", after)])
-            fresh = data.get("conversation", {}).get("transcript") or []
-            if fresh:
-                after = fresh[-1]["id"]
+            rows = data.get("conversation", {}).get("transcript") or []
+            for row in rows:
+                done = row.get("completed") is not False
+                if row["id"] in printed or not (done or args.include_incomplete):
+                    continue
+                fresh.append(row)
+                if done:
+                    printed.add(row["id"])
+            cut = settled_prefix(rows)
+            if cut:
+                after = rows[cut - 1]["id"]
+                printed -= {row["id"] for row in rows[:cut]}
         for msg in fresh:
             if args.json:
                 print(json.dumps(msg, ensure_ascii=False), flush=True)
             else:
                 print(format_message(msg) + "\n", flush=True)
-        if fresh and args.once:
+        if args.once and any(m.get("completed", True) is not False for m in fresh):
             return
         if deadline and time.time() >= deadline:
+            if args.once:
+                raise CliError(f"no new finished message within {args.timeout:g}s", EXIT_TIMEOUT)
             return
         time.sleep(args.interval)
 
@@ -624,8 +695,8 @@ def build_parser():
 
     p = add("post", cmd_post, "Post a message (text argument, or stdin when piped)")
     p.add_argument("room")
-    p.add_argument("text", nargs="?", help="message text; - or omit to read stdin")
-    p.add_argument("--attach", action="append", metavar="FILE", help="attach a file; repeatable")
+    p.add_argument("text", nargs="?", help="message text; - to read stdin (omitting it also reads stdin, except with --attach)")
+    p.add_argument("--attach", action="append", metavar="FILE", help="attach a file; repeatable. A piped caption needs TEXT to be -")
 
     p = add("edit", cmd_edit, "Edit one of your messages")
     p.add_argument("room")
@@ -644,7 +715,7 @@ def build_parser():
     p.add_argument("room")
     p.add_argument("--since", type=int, metavar="REVISION", help="start after this revision (default: now)")
     p.add_argument("--interval", type=float, default=5.0, help="seconds between polls (default 5)")
-    p.add_argument("--timeout", type=float, metavar="SECONDS", help="give up after this long")
+    p.add_argument("--timeout", type=float, metavar="SECONDS", help="give up after this long (with --once, exit 8)")
     p.add_argument("--once", action="store_true", help="exit after the first batch of new messages")
     p.add_argument("--include-incomplete", action="store_true", help="also print replies still being written")
     p.add_argument("--json", action="store_true", help="one JSON object per line")
@@ -724,8 +795,10 @@ def print_overview(parser, sub):
             print(f"  {name:<12} {helps.get(name, '')}")
         print()
     print("Text for post/edit/new can come on stdin, which avoids shell quoting:")
-    print("  printf '%s\\n' 'Hello, $world' | souls post ROOM\n")
-    print("Exit codes: 0 ok, 2 usage, 3 auth (401/403), 4 not found, 5 invalid (422), 6 conflict, 7 network.")
+    print("  printf '%s\\n' 'Hello, $world' | souls post ROOM")
+    print("  printf '%s\\n' 'Caption' | souls post ROOM - --attach chart.png   (with --attach, '-' reads stdin)\n")
+    print("Exit codes: 0 ok, 2 usage, 3 auth (401/403), 4 not found, 5 invalid (422), 6 conflict, 7 network,")
+    print("8 watch --once timed out.")
     print("Anything without its own command: souls api METHOD PATH. Reference: https://souls.house/llms.txt")
 
 
@@ -740,11 +813,11 @@ def main(argv=None):
             print_overview(parser, sub)
         return EXIT_OK
     try:
-        if args.command == "login":
+        if args.command in ("login", "logout"):
             args.func(None, args)
             return EXIT_OK
         url, token, _source = resolve_credentials(args)
-        client = Client(url, token, account=args.account, verbose=args.verbose)
+        client = Client(url, token, account=args.account, verbose=args.verbose, timeout=http_timeout())
         args.func(client, args)
         sys.stdout.flush()
         return EXIT_OK
