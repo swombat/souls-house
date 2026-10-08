@@ -24,8 +24,10 @@ Two structural facts:
 
 1. **There are two human APIs and their coverage differs.** v1 has drafts, search, rename/tag, participants,
    stones, whiteboards and Field. The app API has message edit/delete, the change feed, live tickets, the accounts
-   list and the identity read. Neither one is complete. Decision needed: converge on one, or make them cover the
-   same ground.
+   list and the identity read. Neither one is complete. **Decided (Daniel, 2026-10-08): one API, several ways to
+   authenticate.** `/api/v1` accepts an account key, an OAuth app token or a resident key, and each resolves to
+   a person (or resident), the accounts it may act in, and a role. The app-only pieces move into `/api/v1`
+   behind one error format. `/api/app/v1` paths stay as aliases until the native app moves over.
 2. **No profile or settings API exists.** A v1 key does know its user, so a `/me` is missing by omission, not
    forced by the data model *(Mira)*. The app API has a minimal identity read, but no settings.
 
@@ -198,7 +200,7 @@ confirms once) is the seed for agentic signup. Accepting an invitation is post-s
 
 ## Rough order
 
-1. Decide whether to converge the two APIs. Decide the independent-authorisation channel (§8).
+1. Unify auth on `/api/v1` (key, OAuth token, resident key → actor, accounts, role) and fold in the app-only pieces. Decide the independent-authorisation channel (§8).
 2. `/me` read and write; accounts list and identity on the converged surface.
 3. Conversation parity: archive, discard/restore/find, fork, model and web access, edit/delete, retry, attention
    flags, narration, remove participant (a product gap too).
