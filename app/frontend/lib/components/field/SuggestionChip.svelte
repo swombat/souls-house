@@ -48,20 +48,20 @@
   {#if match}
     <p class="text-xs">Same {match.name}{match.last_named_in ? ` as in ${match.last_named_in}` : ' as before'}?</p>
     <div class="flex gap-1">
-      <Button size="sm" disabled={busy} onclick={() => send({ confirm_suggestion: true, link_existing: true })}
+      <Button size="sm" disabled={busy} onclick={() => send({ confirm_suggestion: true, link_existing: true, suggestion_generation: suggestion.generation })}
         >Yes</Button>
       <Button size="sm" variant="ghost" disabled={busy} onclick={() => (match = null)}>No</Button>
     </div>
   {:else}
     <div class="flex gap-1">
-      <Button size="sm" variant="outline" disabled={busy} onclick={() => send({ confirm_suggestion: true })}>
+      <Button size="sm" variant="outline" disabled={busy} onclick={() => send({ confirm_suggestion: true, suggestion_generation: suggestion.generation })}>
         That's {suggestion.name}
       </Button>
       <Button
         size="sm"
         variant="ghost"
         disabled={busy}
-        onclick={() => send({ dismiss_suggestion: true })}
+        onclick={() => send({ dismiss_suggestion: true, suggestion_generation: suggestion.generation })}
         aria-label="Dismiss this suggestion">Not them</Button>
     </div>
   {/if}

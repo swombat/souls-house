@@ -77,7 +77,8 @@ module FieldItems
       clip_end_ms: speaker.clip_end_ms,
       suggestion: (if speaker.suggestion?
                      { name: speaker.suggested_name, quote: speaker.suggestion_quote,
-                       quote_ms: speaker.suggestion_quote_ms, label: "Suggested from what's said" }
+                       quote_ms: speaker.suggestion_quote_ms, generation: speaker.suggestion_generation,
+                       label: "Suggested from what's said" }
                    end)
     }
   end

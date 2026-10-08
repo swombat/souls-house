@@ -15,19 +15,16 @@ class FieldRecordingSpeakersController < ApplicationController
 
   def update
     attributes = params.require(:speaker).permit(:me, :voice_id, :member_user_id, :name, :link_existing, :unname,
-      :confirm_suggestion, :dismiss_suggestion)
+      :confirm_suggestion, :dismiss_suggestion, :suggestion_generation)
 
     if truthy?(attributes[:unname])
       @speaker.unname!
     elsif truthy?(attributes[:dismiss_suggestion])
-      @speaker.dismiss_suggestion!
+      return out_of_date unless @speaker.dismiss_suggestion!(attributes[:suggestion_generation])
     elsif truthy?(attributes[:confirm_suggestion])
-      return redirect_to(recording_path) unless @speaker.suggestion?
-
-      voice = suggested_voice(attributes)
+      confirmed = confirm_suggestion(attributes)
       return if performed?
-
-      @speaker.name_as!(voice, by: Current.user, source: "confirmed_suggestion")
+      return out_of_date unless confirmed
     else
       voice = resolve_voice(attributes)
       return if performed?
@@ -72,13 +69,24 @@ class FieldRecordingSpeakersController < ApplicationController
     end
   end
 
-  # The suggestion's own voice if it named one this Field knows; otherwise the
-  # suggested name goes through the same "same Priya?" check as a typed name.
-  def suggested_voice(attributes)
-    voice = @speaker.suggested_voice
-    return voice if voice&.kept? && voice.account_id == current_account.id
+  # Under the recording lock: the chip the person saw must still be the live
+  # suggestion (same generation, no decision since). The suggested name then
+  # goes through exactly the same check as a typed one, so a name matching a
+  # known voice asks "same Priya?" before linking.
+  def confirm_suggestion(attributes)
+    @speaker.field_recording.with_lock do
+      next false unless @speaker.suggestion_current?(attributes[:suggestion_generation])
 
-    resolve_voice(attributes.merge(name: @speaker.suggested_name))
+      voice = resolve_voice(attributes.merge(name: @speaker.suggested_name))
+      next nil if performed?
+
+      @speaker.name_as!(voice, by: Current.user, source: "confirmed_suggestion")
+      true
+    end
+  end
+
+  def out_of_date
+    redirect_to recording_path, inertia: { errors: { name: "This suggestion is out of date." } }
   end
 
   def match_json(voice)

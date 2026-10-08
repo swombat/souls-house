@@ -1,9 +1,19 @@
 # "Suggested from what's said" (spec §8): one small model call per recording
 # proposes who the unnamed speakers might be, each with a line they said. The
-# model's answer is only a proposal; validation is ours. A suggestion survives
-# only if its quote is really in that speaker's words and its name is one this
-# Field already knows or that appears in the title, note or transcript. A
-# failure here does nothing visible and refunds nothing.
+# model's answer is only a proposal; validation is ours:
+#
+# - the call is gated (FieldSuggestions.enabled?) and claimed once, durably,
+#   before it is made: duplicate jobs never call again, whatever the result;
+# - only speakers no person has decided anything about (named, un-named,
+#   dismissed) are considered, and their decision generation is snapshotted
+#   before the call; a suggestion is stored only if it hasn't moved since;
+# - the name must be one this Field knows, or appear as whole words in the
+#   title, note or transcript;
+# - the quote must be found in that speaker's own words, and what is stored and
+#   shown is the source excerpt itself, with its true time, not the model's
+#   rendering of it.
+#
+# A failure does nothing visible and refunds nothing.
 module FieldRecordings
   class SuggestSpeakersJob < ApplicationJob
 
@@ -11,6 +21,7 @@ module FieldRecordings
 
     MODEL = "google/gemini-2.5-flash"
     MAX_TRANSCRIPT_CHARS = 20_000
+    MAX_NAMES = 50
     SOURCE = "utility"
 
     SYSTEM = <<~PROMPT.freeze
@@ -40,19 +51,43 @@ module FieldRecordings
     }.freeze
 
     def perform(recording_id, inference: UtilityInference)
-      recording = FieldRecording.kept.find_by(id: recording_id)
-      return unless recording&.ready?
+      return unless FieldSuggestions.enabled?
 
-      unnamed = recording.speakers.reject { |speaker| speaker.field_voice&.kept? }
-      return if unnamed.empty?
+      recording, snapshot = claim(recording_id)
+      return unless recording
 
-      answer = inference.structured(model: MODEL, effort: "low", system: SYSTEM, state: state_for(recording), schema: SCHEMA)
-      store(recording, validated(recording, answer))
-    rescue UtilityInference::Error
-      nil
+      answer = begin
+        inference.structured(model: MODEL, effort: "low", system: SYSTEM, state: state_for(recording), schema: SCHEMA)
+      rescue UtilityInference::Error
+        recording.update_columns(suggestions_state: "failed")
+        return
+      end
+      store(recording, validated(recording, answer), snapshot)
     end
 
     private
+
+    # Under the recording lock: claim the one call, and snapshot each unnamed
+    # speaker's decision generation. nil when there is nothing to do.
+    def claim(recording_id)
+      recording = FieldRecording.find_by(id: recording_id)
+      return unless recording
+
+      recording.with_lock do
+        next nil unless recording.kept? && recording.ready? && recording.suggestions_state.nil?
+
+        # Only speakers no person has made any decision about. A dismissal, a
+        # name or a correction back to "Speaker N" is final for suggestions.
+        unnamed = recording.speakers.select { |speaker| !speaker.field_voice&.kept? && speaker.decision_generation.zero? }
+        if unnamed.empty?
+          recording.update_columns(suggestions_state: "done")
+          next nil
+        end
+
+        recording.update_columns(suggestions_state: "claimed")
+        [ recording, unnamed.to_h { |speaker| [ speaker.id, speaker.decision_generation ] } ]
+      end
+    end
 
     def state_for(recording)
       {
@@ -68,101 +103,88 @@ module FieldRecordings
       FieldRecording::Transcript.render(recording.transcript_words || [], labels)
     end
 
+    # Only names that could be the answer: this Field's voices and members,
+    # capped. Nothing else about the account is sent.
     def known_names(recording)
       account = recording.account
-      (account.field_voices.kept.pluck(:name) +
-        account.users.map { |user| user.full_name.presence || user.email_address.split("@").first }).uniq
+      (account.field_voices.kept.order(updated_at: :desc).limit(MAX_NAMES).pluck(:name) +
+        account.users.map { |user| user.full_name.presence || user.email_address.split("@").first })
+        .uniq.first(MAX_NAMES)
     end
 
-    # [{speaker:, name:, quote:, at_ms:, voice:}] that pass every check.
     def validated(recording, answer)
       suggestions = answer.is_a?(Hash) ? Array(answer["suggestions"]) : []
       by_tag = recording.speakers.index_by { |speaker| "S#{speaker.position + 1}" }
-      known = known_names(recording)
-      haystack = normalise([ recording.title, recording.note, recording.transcript_text ].join(" "))
+      known = known_names(recording).map { |name| tokens(name) }
+      haystack = tokens([ recording.title, recording.note, recording.transcript_text ].join(" "))
 
       suggestions.filter_map do |suggestion|
         next unless suggestion.is_a?(Hash)
 
         speaker = by_tag[suggestion["speaker"].to_s.strip]
         name = suggestion["name"].to_s.squish
-        quote = suggestion["quote"].to_s.squish
-        next if speaker.nil? || speaker.field_voice&.kept? || name.blank? || name.length > FieldVoice::MAX_NAME_LENGTH
-        next if quote.length < 3 || quote.length > 300
-        next unless known.any? { |known_name| known_name.casecmp?(name) } || haystack.include?(normalise(name))
+        name_tokens = tokens(name)
+        next if speaker.nil? || speaker.field_voice&.kept? || name_tokens.empty? || name.length > FieldVoice::MAX_NAME_LENGTH
+        next unless known.include?(name_tokens) || contains_sequence?(haystack, name_tokens)
 
-        at_ms = quote_position(recording.transcript_words || [], speaker.label, quote)
-        next unless at_ms
+        excerpt = source_excerpt(recording.transcript_words || [], speaker.label, suggestion["quote"].to_s)
+        next unless excerpt
 
-        voice = recording.account.field_voices.kept.named_like(name).first
-        { speaker:, name: voice&.name || name, quote:, at_ms:, voice: }
+        { speaker:, name: canonical_name(recording, name), quote: excerpt[:text], at_ms: excerpt[:at_ms] }
       end.uniq { |suggestion| suggestion[:speaker].id }
     end
 
-    # Where the quote starts within one of this speaker's turns, or nil when
-    # the speaker never said it.
-    def quote_position(words, label, quote)
-      target = normalise(quote)
+    def canonical_name(recording, name)
+      recording.account.field_voices.kept.named_like(name).pick(:name) || name
+    end
+
+    # The speaker's own words that the quote matches (compared on letters and
+    # digits only), returned as the source text itself with its start time.
+    def source_excerpt(words, label, quote)
+      target = tokens(quote)
+      return nil if target.size < 2 || quote.length > 300
+
       FieldRecording::Transcript.turns(words).each do |turn|
         next unless turn[:spk] == label
 
-        spoken = turn[:words].reject { |word| word["k"] == "a" }
-        text = +""
-        starts = []
-        spoken.each do |word|
-          starts << [ text.length, word["s"] ]
-          text << word["t"]
-        end
-        normalised, map = normalise_with_map(text)
-        index = normalised.index(target)
-        next unless index
+        spoken = turn[:words].select { |word| word["k"] == "w" }
+        spoken_tokens = spoken.map { |word| tokens(word["t"]) }
+        flat = spoken_tokens.each_with_index.flat_map { |list, index| list.map { |token| [ token, index ] } }
+        start = (0..(flat.size - target.size)).find { |i| flat[i, target.size].map(&:first) == target }
+        next unless start
 
-        original = map[index]
-        return starts.select { |offset, _| offset <= original }.last&.last || turn[:s]
+        first_word = flat[start].last
+        last_word = flat[start + target.size - 1].last
+        text = spoken[first_word..last_word].map { |word| word["t"] }.join(" ").squish
+        return { text: text.truncate(300), at_ms: spoken[first_word]["s"] }
       end
       nil
     end
 
-    def store(recording, suggestions)
-      return if suggestions.empty?
-
+    def store(recording, suggestions, snapshot)
       recording.with_lock do
-        next unless recording.kept? && recording.ready?
+        if recording.kept? && recording.ready?
+          suggestions.each do |suggestion|
+            speaker = suggestion[:speaker].reload
+            generation = snapshot[speaker.id]
+            next if generation.nil? || speaker.decision_generation != generation || speaker.field_voice&.kept?
 
-        suggestions.each do |suggestion|
-          speaker = suggestion[:speaker].reload
-          next if speaker.field_voice&.kept?
-
-          speaker.update!(suggested_voice: suggestion[:voice], suggested_name: suggestion[:name],
-            suggestion_quote: suggestion[:quote], suggestion_quote_ms: suggestion[:at_ms],
-            suggestion_source: SOURCE, suggested_at: Time.current)
+            speaker.update!(suggested_voice: nil, suggested_name: suggestion[:name], suggestion_quote: suggestion[:quote],
+              suggestion_quote_ms: suggestion[:at_ms], suggestion_source: SOURCE, suggested_at: Time.current,
+              suggestion_generation: generation)
+          end
         end
+        recording.update_columns(suggestions_state: "done")
         recording.touch
       end
     end
 
-    def normalise(text) = text.to_s.downcase.gsub(/[^\p{L}\p{N}]+/, " ").squish
+    def tokens(text) = text.to_s.downcase.scan(/[\p{L}\p{N}]+/)
 
-    # The normalised text, and for each of its characters the index of the
-    # character it came from in the original.
-    def normalise_with_map(text)
-      out = +""
-      map = []
-      pending_space = false
-      text.each_char.with_index do |char, index|
-        if char.match?(/[\p{L}\p{N}]/)
-          if pending_space && !out.empty?
-            out << " "
-            map << index
-          end
-          pending_space = false
-          out << char.downcase
-          map << index
-        else
-          pending_space = true
-        end
-      end
-      [ out, map ]
+    def contains_sequence?(haystack, needle)
+      return false if needle.empty? || needle.size > haystack.size
+
+      haystack.each_cons(needle.size).any? { |window| window == needle }
     end
 
   end

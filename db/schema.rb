@@ -763,6 +763,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_110000) do
     t.bigint "suggestion_quote_ms"
     t.string "suggestion_source"
     t.datetime "suggested_at"
+    t.integer "decision_generation", default: 0, null: false
+    t.integer "suggestion_generation"
     t.index ["field_recording_id", "label"], name: "index_field_recording_speakers_on_field_recording_id_and_label", unique: true
     t.index ["field_recording_id"], name: "index_field_recording_speakers_on_field_recording_id"
     t.index ["field_voice_id"], name: "index_field_recording_speakers_on_field_voice_id"
@@ -790,6 +792,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_110000) do
     t.jsonb "transcript_words"
     t.text "transcript_text"
     t.string "language_code"
+    t.string "suggestions_state"
     t.index ["account_id", "created_at"], name: "index_field_recordings_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_field_recordings_on_account_id"
     t.index ["discarded_at"], name: "index_field_recordings_on_discarded_at"
