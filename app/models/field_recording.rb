@@ -30,7 +30,11 @@ class FieldRecording < ApplicationRecord
 
   belongs_to :account
   belongs_to :uploaded_by, polymorphic: true, optional: true
+  # Provenance only: destroying the original (e.g. with its account) leaves a
+  # retry standing with no back-reference, in the model and in the database.
   belongs_to :retried_from, class_name: "FieldRecording", optional: true
+  has_many :retries, class_name: "FieldRecording", foreign_key: :retried_from_id,
+    inverse_of: :retried_from, dependent: :nullify
   has_one :reservation, class_name: "FieldRecordingReservation", dependent: :destroy
 
   has_one_attached :audio
@@ -39,7 +43,10 @@ class FieldRecording < ApplicationRecord
   validates :note, length: { maximum: MAX_NOTE_LENGTH }
   validates :status, inclusion: { in: STATUSES }
   validates :expected_speakers, numericality: { only_integer: true, in: 1..MAX_SPEAKERS }, allow_nil: true
-  validate :audio_present_and_bounded
+  # Bytes are required when a recording is made. A rejected recording's audio
+  # is later purged on purpose (OrphanSweepJob) while the row stays, and its
+  # title and note must remain editable.
+  validate :audio_present_and_bounded, on: :create
 
   before_validation :default_title_from_filename
 
@@ -84,14 +91,28 @@ class FieldRecording < ApplicationRecord
   end
 
   # Discard and settle in one locked step (§5): clear the attempt so every
-  # in-flight step fails its guard, and give back allowance not yet consumed.
-  def discard_and_settle!
+  # in-flight step fails its guard, then settle the reservation. Allowance is
+  # given back only if nothing was ever sent to the transcriber. Once a
+  # dispatch has gone out the vendor work is paid for, so the reservation is
+  # consumed: otherwise upload, discard mid-transcription, repeat would buy
+  # unbounded transcription with an allowance that never runs down.
+  def discard_and_settle!(now: Time.current)
     with_lock do
       next false if discarded?
       self.attempt_token = nil
       discard!
-      reservation&.release!(reason: "discarded")
+      settle_reservation_after_discard!(now:)
       true
+    end
+  end
+
+  def settle_reservation_after_discard!(now: Time.current)
+    return unless reservation
+
+    if dispatch_count.positive?
+      reservation.consume!(now:)
+    else
+      reservation.release!(reason: "discarded", now:)
     end
   end
 

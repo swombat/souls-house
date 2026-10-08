@@ -1635,7 +1635,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_080000) do
   add_foreign_key "field_recording_reservations", "accounts"
   add_foreign_key "field_recording_reservations", "field_recordings"
   add_foreign_key "field_recordings", "accounts"
-  add_foreign_key "field_recordings", "field_recordings", column: "retried_from_id"
+  add_foreign_key "field_recordings", "field_recordings", column: "retried_from_id", on_delete: :nullify
   add_foreign_key "github_integrations", "accounts"
   add_foreign_key "github_resident_imports", "accounts"
   add_foreign_key "github_resident_imports", "service_connections"

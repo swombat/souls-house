@@ -63,10 +63,10 @@ class FieldRecordingTest < ActiveSupport::TestCase
     assert_equal 1, FieldRecordingReservation.where(field_recording: r).count
   end
 
-  test "discarding releases unconsumed allowance immediately and clears the attempt" do
+  test "discarding before anything was sent releases the allowance and clears the attempt" do
     r = recording
     r.admit!(60_000)
-    r.update_columns(status: "transcribing", attempt_token: "abc")
+    r.update_columns(attempt_token: "abc")
 
     assert r.discard_and_settle!
     r.reload
@@ -75,6 +75,18 @@ class FieldRecordingTest < ActiveSupport::TestCase
     assert_equal "released", r.reservation.state
     assert_equal "discarded", r.reservation.release_reason
     assert_not r.discard_and_settle!
+  end
+
+  test "discarding after a dispatch went out consumes the allowance: the vendor work is paid for" do
+    r = recording
+    r.admit!(60_000)
+    r.update_columns(status: "transcribing", attempt_token: "abc", dispatch_count: 1)
+
+    assert r.discard_and_settle!
+    reservation = r.reload.reservation
+    assert_equal "consumed", reservation.state
+    assert reservation.consumed_at
+    assert_nil r.attempt_token
   end
 
   test "discarding after consumption leaves it consumed" do
@@ -114,6 +126,37 @@ class FieldRecordingTest < ActiveSupport::TestCase
     r.update_columns(status: "failed")
     r.discard_and_settle!
     assert_raises(FieldRecording::NotRetryable) { FieldRecording.find(r.id).retry!(by: @user) }
+  end
+
+  test "destroying an account with an original and its retry works whichever goes first" do
+    account = Account.create!(name: "Leaving", account_type: "team")
+    original = claimed_recording(account:, user: @user)
+    original.update_columns(status: "failed")
+    again = original.retry!(by: @user)
+
+    assert_nothing_raised { account.destroy! }
+    assert_not FieldRecording.exists?(original.id)
+    assert_not FieldRecording.exists?(again.id)
+  end
+
+  test "destroying the original leaves the retry with no back-reference" do
+    original = recording
+    original.update_columns(status: "failed")
+    again = original.retry!(by: @user)
+
+    original.destroy!
+    assert_nil again.reload.retried_from_id
+  end
+
+  test "a rejected recording whose audio was swept keeps an editable title, but can't be retried" do
+    r = recording
+    r.update_columns(status: "rejected", updated_at: 25.hours.ago)
+    FieldRecordings::OrphanSweepJob.perform_now
+    r.reload
+    assert_not r.audio.attached?
+
+    assert r.update(title: "Renamed after the sweep", note: "still here")
+    assert_raises(FieldRecording::NotRetryable) { r.retry!(by: @user) }
   end
 
 end

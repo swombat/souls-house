@@ -49,4 +49,14 @@ class FieldRecordings::OrphanSweepJobTest < ActiveJob::TestCase
     assert ActiveStorage::Blob.exists?(retried.audio.blob.id)
   end
 
+  test "an upload whose pin has really expired is purged and can no longer be claimed" do
+    blob = pinned_blob(account: @account, user: @user)
+
+    travel FieldRecording::Upload::TTL + 1.minute do
+      perform_enqueued_jobs { FieldRecordings::OrphanSweepJob.perform_now }
+      assert_not ActiveStorage::Blob.exists?(blob.id)
+      assert_nil FieldRecording::Upload.claim!(account: @account, user: @user, signed_id: blob.signed_id, attributes: {})
+    end
+  end
+
 end

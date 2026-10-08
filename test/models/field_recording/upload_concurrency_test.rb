@@ -30,7 +30,7 @@ class FieldRecording::UploadConcurrencyTest < ActiveSupport::TestCase
     assert_equal 1, ActiveStorage::Attachment.where(blob_id: blob.id).count
   end
 
-  test "a claim racing the orphan purge: either claimed and kept, or purged and unclaimed" do
+  test "a claim racing the orphan purge of a purge-eligible row: either claimed and kept, or purged and unclaimed" do
     blob = pinned_blob(account: @account, user: @user)
     blob.update_columns(created_at: 7.hours.ago)
 
@@ -41,8 +41,9 @@ class FieldRecording::UploadConcurrencyTest < ActiveSupport::TestCase
           FieldRecordings::OrphanSweepJob.perform_now
           :swept
         else
-          # The pin itself is still valid for 6 h from creation; backdating the
-          # row only makes it a purge candidate.
+          # Artificial on purpose: the pin is still valid while the row looks
+          # old enough to purge, to force the lock to decide. Real pin expiry is
+          # covered in OrphanSweepJobTest.
           FieldRecording::Upload.claim!(account: @account, user: @user, signed_id: blob.signed_id, attributes: { title: "x" })
         end
       end

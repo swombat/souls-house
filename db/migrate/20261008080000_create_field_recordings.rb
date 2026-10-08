@@ -15,7 +15,7 @@ class CreateFieldRecordings < ActiveRecord::Migration[8.1]
       t.string :failure_reason
       t.string :attempt_token
       t.integer :dispatch_count, null: false, default: 0
-      t.references :retried_from, foreign_key: { to_table: :field_recordings }
+      t.references :retried_from, foreign_key: { to_table: :field_recordings, on_delete: :nullify }
       t.datetime :ready_at
       t.datetime :discarded_at
       t.timestamps
