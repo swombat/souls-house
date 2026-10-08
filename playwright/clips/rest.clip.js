@@ -7,6 +7,7 @@ import ModelsClip from './ModelsClip.svelte';
 import SubscriptionsClip from './SubscriptionsClip.svelte';
 import GoogleClip from './GoogleClip.svelte';
 import GithubClip from './GithubClip.svelte';
+import GithubResidentClip from './GithubResidentClip.svelte';
 import TailscaleClip from './TailscaleClip.svelte';
 import OpenSourceClip from './OpenSourceClip.svelte';
 import { renderClip } from './render.js';
@@ -20,6 +21,7 @@ const clips = [
   ['subscriptions', SubscriptionsClip, 15],
   ['google', GoogleClip, 15],
   ['github', GithubClip, 16],
+  ['github-resident', GithubResidentClip, 16],
   ['tailscale', TailscaleClip, 16],
   ['open-source', OpenSourceClip, 16],
 ];
