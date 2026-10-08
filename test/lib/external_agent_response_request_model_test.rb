@@ -44,6 +44,20 @@ class ExternalAgentResponseRequestModelTest < ActiveSupport::TestCase
     assert_equal @fable, AgentRuntimeInteraction.last.model
   end
 
+  test "an answer keeps the model that produced it after the selection changes" do
+    @seat.select_model!("anthropic/claude-fable-5.1", by: users(:user_1))
+    stub_request(:post, "https://agent.example.com/trigger").to_return(status: 200, body: ok_body(@fable))
+    ExternalAgentResponseRequest.new(agent: @agent, chat: @chat).call
+    interaction = AgentRuntimeInteraction.last
+    answer = @chat.messages.create!(role: "assistant", agent: @agent, content: "Read it.", runtime_interaction: interaction)
+
+    @seat.select_model!("default", by: users(:user_1))
+
+    assert_equal "Claude Fable 5.1", answer.reload.runtime_model_label
+    assert_equal "Claude Fable 5.1", answer.as_json["runtime_model_label"]
+    assert_nil @chat.messages.where(role: "system").last.runtime_model_label
+  end
+
   test "a change made while a turn runs applies to the next turn, not this one" do
     sent = []
     stub_request(:post, "https://agent.example.com/trigger").to_return do |request|

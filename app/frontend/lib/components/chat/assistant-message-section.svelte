@@ -100,6 +100,10 @@
       <span>{message.author_name}</span>
       <span>·</span>
     {/if}
+    {#if message.runtime_model_label}
+      <span data-testid="answer-model" title="The model that produced this answer">{message.runtime_model_label}</span>
+      <span>·</span>
+    {/if}
     {#if message.interaction_cost?.amount_usd}
       <span
         class:line-through={message.interaction_cost.applies_to_billing === false}

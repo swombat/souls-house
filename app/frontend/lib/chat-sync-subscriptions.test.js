@@ -13,7 +13,7 @@ describe('chat sync subscriptions', () => {
         chat: { id: 34, active_whiteboard: { id: 56 } },
       })
     ).toEqual({
-      'Chat:34': ['chat', 'messages', 'runtime_interactions', 'cost_breakdown'],
+      'Chat:34': ['chat', 'messages', 'runtime_interactions', 'cost_breakdown', 'agents'],
       'Chat:34:messages': 'messages',
       'Whiteboard:56': ['chat', 'messages'],
     });

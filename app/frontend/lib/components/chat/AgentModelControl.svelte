@@ -17,6 +17,11 @@
     selection.seat_model_id ?? (selection.selected_by_conversation ? selection.model_id : DEFAULT_VALUE)
   );
   const triggerText = $derived(running ? `Next: ${nextLabel}` : nextLabel);
+  const effortText = $derived(
+    selection.reasoning_effort && selection.reasoning_effort !== 'default'
+      ? `Reasoning effort: ${selection.reasoning_effort}${selection.selected_by_conversation ? ` (${nextLabel}'s default)` : ''}`
+      : null
+  );
 
   const triggerTitle = $derived.by(() => {
     if (selection.problem) return `${selection.problem}. Choose another model or use ${agent.name}'s default.`;
@@ -31,7 +36,9 @@
   });
 
   function choose(value) {
-    if (saving || value === currentValue) return;
+    // The server treats a repeat selection as a no-op, so don't second-guess
+    // it here: this browser's idea of the current value may be stale.
+    if (saving) return;
     onselect?.(value);
   }
 </script>
@@ -58,6 +65,9 @@
     <DropdownMenu.Label class="text-xs font-normal text-muted-foreground">
       {agent.name}'s model in this conversation
     </DropdownMenu.Label>
+    {#if effortText && !selection.problem}
+      <p class="px-2 pb-1.5 text-xs text-muted-foreground" data-testid="model-effort">{effortText}</p>
+    {/if}
     {#if running}
       <p class="px-2 pb-1.5 text-xs text-muted-foreground">
         {runningLabel ? `Running now on ${runningLabel}.` : 'A turn is running now.'} A change applies from the next turn.

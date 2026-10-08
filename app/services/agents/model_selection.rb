@@ -90,17 +90,14 @@ module Agents
       @problem = "cannot be reached with this account's connections (#{e.message})"
     end
 
-    # The resident's own effort applies to its default model. A selected model
-    # keeps that effort when it offers it, and otherwise uses its own default.
+    # The resident's configured effort belongs to its default model. A model
+    # selected for a conversation runs at that model's own profile default
+    # (agreed in pJWRRj): low effort on Sol is not carried over to Astra.
     def resolved_effort
       return agent.reasoning_effort unless selected_by_conversation
-      return "default" if agent.reasoning_effort == "default"
 
       config = Chat.reasoning_effort_config(model_id)
-      return "default" unless config
-
-      offered = config[:options].map { |option| option[:value].to_s }
-      offered.include?(agent.reasoning_effort) ? agent.reasoning_effort : config[:default].to_s
+      config ? config[:default].to_s : "default"
     end
 
     def effort_clause

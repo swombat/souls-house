@@ -29,6 +29,17 @@ class Agents::ModelSelectionTest < ActiveSupport::TestCase
     assert_equal Agents::Sandbox.chaos_model_for(@agent), selection.model
   end
 
+  test "a selected model runs at its own profile default, not the resident's configured effort" do
+    @agent.update!(reasoning_effort: "low")
+    seat(@room_a).select_model!("anthropic/claude-fable-5.1", by: users(:user_1))
+
+    assert_equal "low", Agents::ModelSelection.for(@agent, chat: @room_b).reasoning_effort
+    selected = Agents::ModelSelection.for(@agent, chat: @room_a)
+    assert_equal Chat.reasoning_effort_config("anthropic/claude-fable-5.1")[:default].to_s, selected.reasoning_effort
+    assert_not_equal "low", selected.reasoning_effort
+    assert_equal selected.reasoning_effort, selected.as_json[:reasoning_effort]
+  end
+
   test "a selection applies to its own room only" do
     seat(@room_a).select_model!("anthropic/claude-fable-5.1", by: users(:user_1))
 

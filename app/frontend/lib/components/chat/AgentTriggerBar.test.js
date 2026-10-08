@@ -258,6 +258,73 @@ test('choosing a model PATCHes the selection and shows the server response', asy
   }
 });
 
+// Cross-client: another browser or the resident itself changes the model.
+// The room reloads `agents` on its channel; the bar must show that newer
+// selection, even over a value this browser saved earlier, and must still let
+// this person pick the model it had shown as current.
+test('a selection changed elsewhere replaces what this browser saved, and can be re-chosen', async () => {
+  const { fireEvent, waitFor } = await import('@testing-library/svelte');
+  const astra = selection({
+    model_id: 'openai/gpt-6-astra',
+    label: 'GPT-6 Astra',
+    selected_by_conversation: true,
+    seat_model_id: 'openai/gpt-6-astra',
+  });
+  const sol = selection({
+    model_id: 'openai/gpt-6.1-sol',
+    label: 'GPT-6.1 Sol',
+    selected_by_conversation: false,
+    seat_model_id: 'openai/gpt-6.1-sol',
+  });
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue({ ok: true, json: async () => ({ model_selection: astra }) });
+  try {
+    const { rerender } = render(AgentTriggerBar, {
+      accountId: 'account',
+      chatId: 'chat',
+      agents: [{ id: 'one', name: 'One', model_selection: selection() }],
+    });
+    await openModelMenu('One');
+    await fireEvent.click(screen.getByRole('menuitemradio', { name: 'GPT-6 Astra' }));
+    await waitFor(() => expect(modelTrigger('One')).toHaveTextContent('GPT-6 Astra'));
+
+    // Someone else pins Sol; the room's agents prop reloads with it.
+    await rerender({ agents: [{ id: 'one', name: 'One', model_selection: sol }] });
+    expect(modelTrigger('One')).toHaveTextContent('GPT-6.1 Sol');
+
+    // This browser may still be stale (the server could hold another model by
+    // now). Picking the model it shows as current must still reach the server.
+    await openModelMenu('One');
+    await fireEvent.click(screen.getByRole('menuitemradio', { name: 'GPT-6.1 Sol' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ agent_id: 'one', model_id: 'openai/gpt-6.1-sol' });
+  } finally {
+    fetchMock.mockRestore();
+  }
+});
+
+test('the effective reasoning effort is shown in the model details', async () => {
+  render(AgentTriggerBar, {
+    accountId: 'account',
+    chatId: 'chat',
+    agents: [
+      {
+        id: 'one',
+        name: 'One',
+        model_selection: selection({
+          model_id: 'openai/gpt-6-astra',
+          label: 'GPT-6 Astra',
+          selected_by_conversation: true,
+          reasoning_effort: 'medium',
+        }),
+      },
+    ],
+  });
+  await openModelMenu('One');
+  expect(screen.getByTestId('model-effort')).toHaveTextContent("Reasoning effort: medium (GPT-6 Astra's default)");
+});
+
 test('a refused selection shows the server error', async () => {
   const { fireEvent } = await import('@testing-library/svelte');
   const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({

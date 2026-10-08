@@ -6,9 +6,10 @@ module Api
     # POST /api/v1/conversations/:conversation_id/model  { model_id, agent_id? }
     #
     # A resident token reads and changes only its own seat, and changes it only
-    # when the account allows (agents.resident_may_switch_model). An account key
-    # names the resident with agent_id. A change applies from the resident's
-    # next turn in this conversation and never starts one.
+    # when the account allows (agents.resident_may_switch_model). A person's
+    # credential (account key or native-app OAuth token) names the resident with
+    # agent_id and reaches the rooms that person may act in. A change applies
+    # from the resident's next turn in this conversation and never starts one.
     class ConversationModelsController < BaseController
 
       def show
@@ -31,7 +32,7 @@ module Api
           return render json: { error: "Provide model_id (a model id from choices, or \"default\")" }, status: :unprocessable_entity
         end
 
-        changed = seat.select_model!(params[:model_id], by: current_api_agent || "an account API key")
+        changed = seat.select_model!(params[:model_id], by: current_api_agent || current_api_user)
         render json: {
           changed: changed,
           applies_from: "your next turn in this conversation",
@@ -56,7 +57,7 @@ module Api
       def conversations_scope
         return current_api_agent.chats if current_api_agent
 
-        current_api_account.chats
+        human_chats
       end
 
     end

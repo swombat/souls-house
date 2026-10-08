@@ -1,8 +1,12 @@
 require "test_helper"
+require "support/app_oauth_test_helper"
 
 module Api
   module V1
     class ConversationModelsControllerTest < ActionDispatch::IntegrationTest
+
+      include AppOauthTestHelper
+      include ActionCable::TestHelper
 
       setup do
         @user = users(:user_1)
@@ -76,6 +80,44 @@ module Api
 
         assert_response :success
         assert_equal "anthropic/claude-fable-5.1", seat.model_id
+        assert_match(/Changed by #{Regexp.escape(@user.full_name.presence || @user.email_address)}/,
+          @chat.messages.where(role: "system").last.content)
+      end
+
+      test "a person's native-app OAuth token names the resident and is credited as that person" do
+        @client = create_app_client
+        tokens = sign_in_device
+
+        post api_v1_conversation_model_url(@chat),
+          params: { model_id: "anthropic/claude-fable-5.1", agent_id: @agent.to_param }, as: :json, headers: bearer(tokens)
+
+        assert_response :success
+        assert_equal "anthropic/claude-fable-5.1", seat.model_id
+        assert_match(/Changed by #{Regexp.escape(@user.full_name.presence || @user.email_address)}/,
+          @chat.messages.where(role: "system").last.content)
+      end
+
+      # Cross-client: a resident's own switch must reach a browser that already
+      # has the room open. The switch posts a platform line, which broadcasts on
+      # the room's channel; the room reloads `agents` on that channel, and the
+      # reloaded prop carries the new selection.
+      test "a resident's switch broadcasts to the room and the room's agents prop reflects it" do
+        @agent.update!(resident_may_switch_model: true)
+
+        stream = "Chat:#{@chat.obfuscated_id}"
+        before = broadcasts(stream).size
+        post api_v1_conversation_model_url(@chat), params: { model_id: "anthropic/claude-fable-5.1" }, as: :json, headers: auth(@agent_token)
+        assert_operator broadcasts(stream).size, :>, before, "the room's channel must hear about the switch"
+        assert_response :success
+
+        sign_in @user
+        get account_chat_path(@account, @chat),
+          headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest,
+                     "X-Inertia-Partial-Component" => "chats/show", "X-Inertia-Partial-Data" => "agents" }
+        assert_response :success
+        agent_json = response.parsed_body.dig("props", "agents").find { |a| a["id"] == @agent.to_param }
+        assert_equal "anthropic/claude-fable-5.1", agent_json.dig("model_selection", "model_id")
+        assert agent_json.dig("model_selection", "selected_by_conversation")
       end
 
     end
