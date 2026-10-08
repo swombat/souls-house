@@ -300,12 +300,18 @@ Transcript messages include attachment metadata:
 ```json
 {
   "id": "123",
+  "kind": "file",
   "filename": "image.png",
   "content_type": "image/png",
   "byte_size": 48219,
   "download_path": "/api/v1/conversations/AjaPae/messages/AbCdEf/attachments/123"
 }
 ```
+
+`kind` is `file` for an attached file and `voice_recording` for the audio
+behind a dictated message. For a voice recording, the message `content` is the
+machine transcript after the speaker's edits, so the audio is the better
+source when exact wording or tone matters.
 
 Download through souls.house so conversation authorization is applied:
 

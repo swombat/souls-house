@@ -307,11 +307,11 @@ class ExternalAgentResponseRequest
     if (occurrence = message.rhythm_occurrence)
       line = "[Scheduled rhythm opening: #{occurrence.rhythm_title.to_json}; #{occurrence.scheduled_for.iso8601}; manual=#{occurrence.manual}]\n#{line}"
     end
-    return line unless message.attachments.attached?
+    return line unless message.attachments.attached? || message.audio_recording.attached?
 
     attachments = message.attachments_for_api.map do |attachment|
       <<~ATTACHMENT.strip
-        - filename: #{attachment.fetch(:filename)}
+        - filename: #{attachment.fetch(:filename)}#{" (voice recording; the message text is its edited transcript)" if attachment[:kind] == "voice_recording"}
           content_type: #{attachment.fetch(:content_type)}
           byte_size: #{attachment.fetch(:byte_size)}
           authenticated_download_path: #{attachment.fetch(:download_path)}
@@ -341,7 +341,7 @@ class ExternalAgentResponseRequest
     return @full_window_entries if defined?(@full_window_entries)
 
     candidates = chat.messages.kept
-      .includes(:user, :agent, attachments_attachments: :blob)
+      .includes(:user, :agent, attachments_attachments: :blob, audio_recording_attachment: :blob)
       .order(:created_at)
       .last(TRANSCRIPT_MESSAGE_LIMIT)
     entries = []
@@ -396,7 +396,7 @@ class ExternalAgentResponseRequest
 
     @delta_messages = if prior_cursor_message_id
       chat.messages.kept
-        .includes(:user, :agent, attachments_attachments: :blob)
+        .includes(:user, :agent, attachments_attachments: :blob, audio_recording_attachment: :blob)
         .where("id > ?", prior_cursor_message_id)
         .order(:id)
         .to_a

@@ -612,4 +612,17 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes request.send(:request_delta_text), "Conversation notice"
   end
 
+
+  test "a dictated message's voice recording is listed with a download path in the transcript" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Voice")
+    message = chat.messages.create!(role: "user", user: users(:confirmed_user), content: "Okay, so we can merge this.")
+    message.audio_recording.attach(io: StringIO.new("audio"), filename: "recording.webm", content_type: "audio/webm")
+
+    text = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:request_text)
+
+    assert_includes text, "recording.webm (voice recording; the message text is its edited transcript)"
+    assert_includes text, "authenticated_download_path: /api/v1/conversations/#{chat.to_param}/messages/#{message.to_param}/attachments/#{message.audio_recording_attachment.id}"
+  end
+
 end

@@ -9,7 +9,7 @@ module Chat::Summarizable
   end
 
   def transcript_for_api(after_message_id: nil, since: nil)
-    scope = messages.kept.includes(:user, :agent, attachments_attachments: :blob)
+    scope = messages.kept.includes(:user, :agent, attachments_attachments: :blob, audio_recording_attachment: :blob)
                      .where(role: %w[user assistant])
                      .order(:created_at)
     scope = scope.where("messages.id > ?", after_message_id) if after_message_id.present?
