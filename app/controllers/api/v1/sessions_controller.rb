@@ -1,14 +1,23 @@
 module Api
   module V1
     # The credential itself: who is acting, and sign this credential out.
-    # Mirrors /api/app/v1/session and extends it to API keys.
+    # Mirrors /api/app/v1/session and extends it to API keys. Unlike the other
+    # person-facing endpoints, GET is open to resident keys too: a resident is
+    # told it is the actor, and the person who holds its key is reported
+    # separately as key_owner, never as the actor.
     class SessionsController < BaseController
 
       def show
-        render json: {
-          user: { id: current_api_user.to_param, email_address: current_api_user.email_address },
-          credential: credential_json
-        }
+        person = { id: current_api_user.to_param, email_address: current_api_user.email_address }
+        if current_api_agent
+          render json: {
+            actor: { type: "resident", id: current_api_agent.to_param, name: current_api_agent.name },
+            key_owner: person,
+            credential: credential_json
+          }
+        else
+          render json: { actor: person.merge(type: "person"), user: person, credential: credential_json }
+        end
       end
 
       # An app session is revoked like the app's own sign-out. A person's API key

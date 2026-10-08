@@ -144,7 +144,7 @@ class Api::V1::AppParityTest < ActionDispatch::IntegrationTest
 
     closed = Account.create!(name: "Closed", account_type: :team, disabled_at: Time.current)
     mine = Membership.create!(account: closed, user: @user, role: "member", invited_by: users(:owner))
-    post accept_api_v1_invitation_url(mine), headers: @key_headers
+    post accept_api_v1_invitation_url(mine), headers: bearer(@tokens)
     assert_response :not_found
     assert_not mine.reload.confirmed?
   end
@@ -152,6 +152,71 @@ class Api::V1::AppParityTest < ActionDispatch::IntegrationTest
   test "a resident key cannot accept invitations" do
     get api_v1_invitations_url, headers: @resident_headers
     assert_response :forbidden
+  end
+
+
+  test "an API key for one account cannot join another; only the person's OAuth sign-in can" do
+    inviting = Account.create!(name: "Inviting team", account_type: :team)
+    invitation = Membership.create!(account: inviting, user: @user, role: "member", invited_by: users(:owner))
+
+    get api_v1_invitations_url, headers: @key_headers
+    assert_empty response.parsed_body["invitations"], "a key for the personal account does not see another account's invitation"
+
+    assert_no_difference -> { AuditLog.where(action: "accept_invitation").count } do
+      post accept_api_v1_invitation_url(invitation), headers: @key_headers
+      assert_response :not_found
+      post accept_api_v1_invitation_url(invitation), params: { account_id: inviting.to_param }, headers: @key_headers
+      assert_response :not_found
+    end
+    assert_not invitation.reload.confirmed?
+    refute_includes @user.reload.confirmed_accounts, inviting
+  end
+
+  test "accepting twice is safe: the retry answers accepted and changes nothing" do
+    inviting = Account.create!(name: "Inviting team", account_type: :team)
+    invitation = Membership.create!(account: inviting, user: @user, role: "member", invited_by: users(:owner))
+
+    post accept_api_v1_invitation_url(invitation), headers: bearer(@tokens)
+    assert_response :success
+    first_confirmed_at = invitation.reload.confirmed_at
+
+    assert_no_difference -> { AuditLog.where(action: "accept_invitation").count } do
+      post accept_api_v1_invitation_url(invitation), headers: bearer(@tokens)
+    end
+    assert_response :success
+    assert_equal true, response.parsed_body.dig("invitation", "accepted")
+    assert_equal first_confirmed_at, invitation.reload.confirmed_at
+  end
+
+  test "a resident key may ask who it is, and is told it is the actor, not its key's owner" do
+    get api_v1_session_url, headers: @resident_headers
+    assert_response :success
+    body = response.parsed_body
+    assert_equal "resident", body.dig("actor", "type")
+    assert_equal agents(:research_assistant).to_param, body.dig("actor", "id")
+    assert_equal users(:user_1).email_address, body.dig("key_owner", "email_address")
+    assert_nil body["user"]
+    assert_equal "resident_key", body.dig("credential", "type")
+  end
+
+  test "an API key reads the changes feed in its own account and can fetch the attachment paths it is given" do
+    chat = @personal.chats.create!(model_id: "openrouter/auto", title: "Files")
+    message = chat.messages.build(role: "user", user: @user, content: "see attached")
+    message.attachments.attach(io: StringIO.new("hello"), filename: "note.txt", content_type: "text/plain")
+    message.save!
+
+    get api_v1_conversation_changes_url(chat), params: { since: 0 }, headers: @key_headers
+    assert_response :success
+    files = response.parsed_body["changes"].flat_map { |c| c["attachments"] }
+    assert_equal [ "note.txt" ], files.map { |f| f["filename"] }
+    path = files.first["download_path"]
+    assert path.start_with?("/api/v1/"), "an /api/v1 feed advertises /api/v1 download paths, got #{path}"
+
+    get path, headers: @key_headers
+    assert_response :redirect
+
+    get path, headers: { "Authorization" => "Bearer #{ApiKey.generate_for(users(:user_1), name: 'Other', account: accounts(:team_account)).raw_token}" }
+    assert_response :not_found
   end
 
 end

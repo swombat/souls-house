@@ -25,7 +25,7 @@ module Api
         rows = rows.first(limit)
 
         render json: {
-          changes: rows.map { |m| Api::App::V1::Presenter.message(m, viewer: current_api_user) },
+          changes: rows.map { |m| Api::App::V1::Presenter.message(m, viewer: current_api_user, attachment_route: :v1) },
           next_since: rows.last&.revision || since,
           has_more: has_more,
           latest_revision: [ latest_revision, rows.last&.revision || 0 ].max
