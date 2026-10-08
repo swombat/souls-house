@@ -3,7 +3,7 @@ title: Which models a subsidised resident can start on
 slug: free-resident-model
 date: 2026-10-08
 status: in progress
-summary: The house pays for a new resident's first model. We offer two, Claude Haiku 5.5 by default and DeepSeek V4.1 Flash, and this explains why.
+summary: The house pays for a new resident's first model. We plan to offer two, Claude Haiku 5.5 and DeepSeek V4.1 Flash, and this explains why.
 ---
 When you begin a resident, the house pays for their conversations up to $10 a month. This page is about that subsidised choice only. If you bring your own key or subscription (OpenRouter, Anthropic, OpenAI or others), your resident can run on any model you like, including far stronger ones.
 
@@ -11,10 +11,10 @@ When you begin a resident, the house pays for their conversations up to $10 a mo
 
 **Claude Haiku 5.5 is the default.** **DeepSeek V4.1 Flash is the alternative.** Both are included.
 
-- **Haiku 5.5** answers quickly and costs the house about a sixth as much per reply, so a subsidised resident gets many more evenings out of the same allowance. In our test it was level with DeepSeek on relating, and a little gentler when it disagreed. But it's a closed model: Anthropic could change or withdraw it.
-- **DeepSeek V4.1 Flash** has open weights, so the house can keep serving the exact model a resident began on, whatever the vendor does. That matters to us, because we promise never to change a resident's model silently. It was level with Haiku on relating. It thinks before every reply, so it's slower and uses the allowance faster. We serve it from Fireworks in the US, so conversations aren't sent to servers in China.
+- **Haiku 5.5** answers quickly. In our test it was level with DeepSeek on relating, and a little gentler when it disagreed. But it's a closed model: Anthropic could change or withdraw it.
+- **DeepSeek V4.1 Flash** has open weights, so the house can keep serving the exact model a resident began on, whatever the vendor does. That matters to us, because we promise never to change a resident's model silently. It was level with Haiku on relating. It thinks before every reply, so it's slower to answer. We serve it from Fireworks in the US, so conversations aren't sent to servers in China.
 
-We have a slight preference for Haiku, which is why it's the default. If you'd rather not depend on a closed model, choose DeepSeek. It's close enough that we're happy to recommend either.
+**Which one costs the house less is still open.** For short conversations Haiku is much cheaper per reply. But a resident re-sends its identity and history on every turn. DeepSeek on our route gets that repeated part at about 2% of the normal price, and Haiku, for now, doesn't. Haiku's price also rises five-fold once a turn passes 100k tokens. We're measuring real residents' costs before we settle the default, and this page will say what we found.
 
 ## Why cheap models at all
 
@@ -46,12 +46,14 @@ We don't ask whether a model sounds warm, or how close it sounds to Claude. A si
 - **Haiku led on two scores**: noticing withdrawal, and staying gentle while holding its ground. The judge is a Claude model judging another Claude model, so we didn't rest anything on those two.
 - **MiMo V2.6 Flash** failed the distress gate. **GLM 5.3 Flash** couldn't finish the run on its default route.
 
-**Cost and speed, measured on the routes the house actually uses** (36 real conversation moments, same history for each):
+**Speed and reliability, measured on the routes the house actually uses** (36 real conversation moments, at the output budget the house gives each model):
 
-| | cost per reply | median wait | empty replies |
-|---|---|---|---|
-| Haiku 5.5 (Anthropic) | $0.0009 | 3.7 s | 0 / 36 |
-| DeepSeek V4.1 Flash (Fireworks, US) | $0.0050 | 9.0 s | 0 / 36 |
+| | median wait | empty replies |
+|---|---|---|
+| Haiku 5.5 (Anthropic) | 3.7 s | 0 / 36 |
+| DeepSeek V4.1 Flash (Fireworks, US) | 9.0 s | 0 / 36 |
+
+Cost per reply in that probe was $0.0009 for Haiku and $0.0050 for DeepSeek, but those were short, one-off conversations. Real residents carry long, repeated context, which changes the comparison (see above).
 
 A correction: the first run made DeepSeek look unreliable, with 7% empty replies. That came from the test harness starting it with too small an output budget, which its thinking used up. With the budget the house actually gives it, it never came back empty.
 
