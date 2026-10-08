@@ -181,9 +181,12 @@ Rails.application.routes.draw do
     get "field", to: "field#index", as: :field
     resources :field_files, path: "field/files", only: [ :create, :update, :destroy ]
     resources :field_recording_uploads, path: "field/recordings/uploads", only: [ :create ]
-    resources :field_recordings, path: "field/recordings", only: [ :create, :update, :destroy ] do
+    resources :field_recordings, path: "field/recordings", only: [ :show, :create, :update, :destroy ] do
       post :retry, on: :member
+      post :dismiss_you_hint, on: :collection
+      resources :speakers, only: [ :update ], controller: "field_recording_speakers"
     end
+    resources :field_voices, path: "field/voices", only: [ :update ]
     resources :whiteboards, only: [ :index, :create, :update, :destroy ] do
       resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
     end
@@ -340,6 +343,7 @@ Rails.application.routes.draw do
         resources :files, only: [ :index, :show, :create, :destroy ] do
           get :download, on: :member
         end
+        resources :recordings, only: [ :index, :show ]
       end
     end
   end

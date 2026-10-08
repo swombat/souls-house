@@ -60,3 +60,48 @@ test('a refresh requested while a visit is in flight waits for the visit to fini
   expect(router.reload).toHaveBeenCalledWith(expect.objectContaining({ only: ['selected_account'] }));
   vi.useRealTimers();
 });
+
+// Field recordings: transcription finishes on the server and is broadcast once. A page that
+// subscribes after that broadcast, or was disconnected when it went out, must still leave
+// "Transcribing…" without a manual refresh. The catch-up is one reload per (re)connect.
+test('a field recording that finished before the page subscribed is caught up on connect', () => {
+  vi.useFakeTimers();
+  router.reload.mockReset();
+  const unsubscribe = subscribeToModel('FieldRecording', 'r1', ['recording', 'speakers']);
+  const callbacks = create.mock.calls.at(-1)[1];
+  expect(create.mock.calls.at(-1)[0]).toEqual({ channel: 'SyncChannel', model: 'FieldRecording', id: 'r1' });
+  // No broadcast arrives (it went out before the subscription); connecting alone reloads.
+  callbacks.connected();
+  vi.advanceTimersByTime(300);
+  expect(router.reload).toHaveBeenCalledOnce();
+  expect(router.reload).toHaveBeenLastCalledWith(
+    expect.objectContaining({ only: ['recording', 'speakers'], preserveState: true, preserveUrl: true })
+  );
+  unsubscribe();
+  vi.useRealTimers();
+});
+
+test('a field recording that finished during a disconnect is caught up on reconnect, without polling', () => {
+  vi.useFakeTimers();
+  router.reload.mockReset();
+  const unsubscribe = subscribeToModel('FieldRecording', 'r2', ['recording', 'speakers']);
+  const callbacks = create.mock.calls.at(-1)[1];
+  callbacks.connected();
+  vi.advanceTimersByTime(300);
+  router.reload.mockReset();
+
+  callbacks.disconnected();
+  // The completion broadcast is missed while disconnected; nothing reloads on a timer.
+  vi.advanceTimersByTime(60_000);
+  expect(router.reload).not.toHaveBeenCalled();
+
+  callbacks.connected();
+  vi.advanceTimersByTime(300);
+  expect(router.reload).toHaveBeenCalledOnce();
+  expect(router.reload).toHaveBeenLastCalledWith(expect.objectContaining({ only: ['recording', 'speakers'] }));
+  router.reload.mockReset();
+  vi.advanceTimersByTime(60_000);
+  expect(router.reload).not.toHaveBeenCalled();
+  unsubscribe();
+  vi.useRealTimers();
+});

@@ -113,7 +113,7 @@ module FieldRecording::Transcription
   end
 
   def render_transcript_text
-    names = speakers.to_h { |speaker| [ speaker.label, speaker.display_name ] }
+    names = speakers.includes(:field_voice).to_h { |speaker| [ speaker.label, speaker.display_name ] }
     FieldRecording::Transcript.render(transcript_words || [], names)
   end
 
