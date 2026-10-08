@@ -15,62 +15,84 @@ concurrency:
 
 jobs:
   application:
-    name: ${{ matrix.suite }}
+    name: ${{ matrix.suite }} (${{ matrix.shard }}/${{ matrix.total }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/swombat/souls-house-ci@sha256:69f4d2446766d944c71ffc06ed0d574abb4259e43ad7db7c1dc2fd5dd91bf7bc
+      options: --ipc=host
     strategy:
       fail-fast: false
       matrix:
-        suite: [rails, e2e, components]
+        include:
+          - { suite: rails, shard: 1, total: 2 }
+          - { suite: rails, shard: 2, total: 2 }
+          - { suite: e2e, shard: 1, total: 3 }
+          - { suite: e2e, shard: 2, total: 3 }
+          - { suite: e2e, shard: 3, total: 3 }
+          - { suite: components, shard: 1, total: 1 }
     services:
       postgres:
         image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-        ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
+          --health-interval 2s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
     env:
       RAILS_ENV: test
       SOULSHOUSE_INSTANCE: '1'
-      PGHOST: 127.0.0.1
+      PGHOST: postgres
       PGUSER: postgres
       PGPASSWORD: postgres
       PARALLEL_WORKERS: '4'
+      BUNDLE_PATH: vendor/bundle
+      BUNDLE_FROZEN: 'true'
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libpq-dev libvips libyaml-dev ffmpeg
-      - uses: ruby/setup-ruby@v1
+      - name: Check actual tool versions
+        run: |
+          test "$(ruby -e 'print RUBY_VERSION')" = "$(cat .ruby-version)"
+          test "$(bun --version)" = "$(node -p 'JSON.parse(require("fs").readFileSync("package.json")).packageManager.replace("bun@", "")')"
+          test "$(node /opt/playwright/node_modules/playwright/cli.js --version)" = "Version $(sed -n 's/^ARG PLAYWRIGHT_VERSION=//p' .github/ci/Dockerfile)"
+      - uses: actions/cache@v4
         with:
-          bundler-cache: true
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-      - run: bun install --frozen-lockfile
-      - name: Install Chromium
-        if: matrix.suite != 'rails'
-        run: bunx playwright install --with-deps chromium
+          path: vendor/bundle
+          key: ${{ runner.os }}-ci-gems-v1-${{ hashFiles('.github/ci/Dockerfile', 'Gemfile.lock') }}
+      - name: Install application dependencies
+        id: dependencies
+        run: |
+          bundle install --jobs 4 --retry 3
+          bun install --frozen-lockfile
+      - name: Rails partition contracts
+        if: matrix.suite == 'rails' && matrix.shard == 1
+        run: bundle exec ruby test/ci/rails_sharding_contract.rb
+      - name: Browser coverage contracts
+        if: matrix.suite == 'e2e' && matrix.shard == 1
+        run: node test/ci/browser-sharding-contract.mjs
       - name: Prepare test database
+        if: matrix.suite == 'rails'
         run: bin/rails db:prepare
       - name: Build test assets
+        id: assets
         if: matrix.suite == 'rails'
         run: bin/vite build --mode test
       - name: Rails tests
         if: matrix.suite == 'rails'
-        run: bin/rails test
+        run: ruby scripts/run-rails-shard.rb ${{ matrix.shard }} ${{ matrix.total }}
       - name: Rails system tests
-        if: ${{ !cancelled() && matrix.suite == 'rails' }}
+        if: ${{ !cancelled() && matrix.suite == 'rails' && matrix.shard == 1 && steps.dependencies.outcome == 'success' && steps.assets.outcome == 'success' }}
         run: bin/rails test:system
       - name: Browser end-to-end tests
         if: matrix.suite == 'e2e'
-        run: bun run test
+        # No dependency replay. One worker serializes admission with the
+        # other files on this shard's private backend/database.
+        run: bun run test --no-deps --workers=1 --shard=${{ matrix.shard }}/${{ matrix.total }}
       - name: Browser component tests
         if: matrix.suite == 'components'
         run: bun run test:ct
@@ -78,7 +100,7 @@ jobs:
         if: failure() && matrix.suite != 'rails'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.suite }}-failure-reports
+          name: ${{ matrix.suite }}-${{ matrix.shard }}-failure-reports
           path: |
             playwright-report/
             test-results/
@@ -117,6 +139,8 @@ jobs:
         run: |
           python3 -m pip install 'Flask==3.1.2' 'PyYAML==6.0.2'
           python3 -m unittest discover -s test -p '*_test.py'
+      - name: CI contracts
+        run: python3 -m unittest discover -s test/ci -p '*_test.py'
       - name: Resident runtime contracts
         if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s test/runtime -p '*_test.py'
@@ -127,3 +151,23 @@ jobs:
         run: |
           python3 -m pip install 'cryptography==46.0.3'
           python3 -m unittest discover -s test/host_runner -p '*_test.py'
+
+  result:
+    name: CI result
+    if: always()
+    needs: [application, frontend, runtime]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every suite to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ["RESULTS"])
+          failed = {name: job["result"] for name, job in results.items() if job["result"] != "success"}
+          if failed:
+              raise SystemExit(f"CI did not fully pass: {failed}")
+          print("All suites and shards passed.")
+          PY
