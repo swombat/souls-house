@@ -185,6 +185,19 @@ class ExecuteTest(unittest.TestCase):
         self.assertEqual(again["outcome"], "unknown")
         self.assertEqual(host.calls, 0)
 
+    def test_dying_during_a_command_leaves_it_marked_in_flight(self):
+        class Dying:
+            calls = 0
+
+            def start_resident(self, payload):
+                Dying.calls += 1
+                raise SystemExit("killed")  # not caught: the process is gone
+        with self.assertRaises(SystemExit):
+            runner.execute_command(command(), self.state, Dying())
+        _, result = runner.execute_command(command(), runner.CommandState(self.dir), Dying())
+        self.assertEqual(result["outcome"], "unknown")
+        self.assertEqual(Dying.calls, 1)
+
     def test_an_unexpected_error_is_unknown_not_failed(self):
         class Exploding:
             def start_resident(self, payload):
