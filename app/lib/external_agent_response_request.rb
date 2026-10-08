@@ -37,6 +37,7 @@ class ExternalAgentResponseRequest
 
   def perform
     return notify_unreachable if agent.offline? || agent_unhealthy?
+    return notify_model_unavailable unless selection.ok?
 
     endpoint_url = Agents::Endpoint.url_for(agent)
     session_id = "#{agent.uuid}-#{chat.id}"
@@ -56,7 +57,9 @@ class ExternalAgentResponseRequest
       endpoint_url: endpoint_url,
       request_text: request,
       last_included_message_id: computed_last_included_message_id,
-      provider_auth_mode: auth_mode
+      provider_auth_mode: auth_mode,
+      provider: provider,
+      model: selection.model
     }
     invoke = -> {
       ChaosTriggerClient.new(endpoint_url, agent.trigger_bearer_token).request_response(
@@ -69,8 +72,8 @@ class ExternalAgentResponseRequest
         persistent_session: agent.persistent_session?,
         session_policy: agent.runtime_session_policy,
         provider: provider,
-        model: Agents::Sandbox.chaos_model_for(agent),
-        reasoning_effort: agent.reasoning_effort,
+        model: selection.model,
+        reasoning_effort: selection.reasoning_effort,
         auth_mode: auth_mode,
         activity: (@interaction&.activity_configuration! unless ResidentTurn.enabled?),
         interaction: @interaction,
@@ -115,8 +118,22 @@ class ExternalAgentResponseRequest
     { memory: { enabled: true, query: message.content.to_s.first(2_000) } }
   end
 
+  # Resolved once per execution; a change made while this turn runs applies
+  # to the next one.
+  def selection
+    @selection ||= Agents::ModelSelection.for(agent, chat: chat)
+  end
+
   def provider
-    @provider ||= Agents::Sandbox.chaos_provider_for(agent)
+    selection.provider
+  end
+
+  # The selected model can no longer be used. Say so in the room rather than
+  # running on a model nobody chose.
+  def notify_model_unavailable
+    @interaction&.finish_execution!("failed")
+    ConversationModelEvent.unavailable!(chat: chat, agent: agent, selection: selection)
+    { status: 409, error: "selected model unavailable", body: { "status" => "model_unavailable" } }
   end
 
   def surface_subscription_auth_failure!
@@ -164,6 +181,7 @@ class ExternalAgentResponseRequest
     parts = [
       Notices::Renderer.section_for(agent),
       SubagentPolicyRenderer.section_for(agent),
+      selection.prompt_section,
       safeguard_notice_text,
       trigger_intro_text,
       rhythm_invitation_context,
@@ -319,6 +337,8 @@ class ExternalAgentResponseRequest
       message.agent.name
     elsif message.user
       message.user.email_address
+    elsif message.role == "system"
+      "souls.house (platform)"
     else
       message.role
     end
@@ -454,6 +474,7 @@ class ExternalAgentResponseRequest
     parts = [
       Notices::Renderer.section_for(agent),
       SubagentPolicyRenderer.section_for(agent),
+      selection.prompt_section,
       trigger_intro_text,
       rhythm_invitation_context,
       "Requested by: #{requested_by}.",

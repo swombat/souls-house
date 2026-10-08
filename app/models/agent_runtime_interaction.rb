@@ -26,7 +26,7 @@ class AgentRuntimeInteraction < ApplicationRecord
   scope :timeline_order, -> { order(Arel.sql("COALESCE(finished_at, started_at, created_at) ASC"), :id) }
   scope :active, -> { where(finished_at: nil).where("run_id IS NOT NULL OR started_at >= ?", ACTIVE_WINDOW.ago) }
 
-  def self.record_trigger!(agent:, chat:, trigger_kind:, conversation_id:, requested_by:, session_id:, endpoint_url:, request_text:, last_included_message_id: nil, provider_auth_mode: "api_key")
+  def self.record_trigger!(agent:, chat:, trigger_kind:, conversation_id:, requested_by:, session_id:, endpoint_url:, request_text:, last_included_message_id: nil, provider_auth_mode: "api_key", provider: nil, model: nil)
     interaction = agent.with_lock do
       raise Agent::RuntimeAvailability::Unavailable, "Resident is inactive" unless agent.active?
       create!(
@@ -40,6 +40,8 @@ class AgentRuntimeInteraction < ApplicationRecord
         request_text: request_text,
         last_included_message_id: last_included_message_id,
         provider_auth_mode: provider_auth_mode,
+        provider: provider,
+        model: model,
         started_at: Time.current
       )
     end
@@ -103,8 +105,8 @@ class AgentRuntimeInteraction < ApplicationRecord
       chaos_telemetry_status: telemetry["chaos_telemetry_status"],
       unsupported_chaos_telemetry_schema_version: telemetry["unsupported_chaos_telemetry_schema_version"],
       chaos_version: runtime["chaos_version"],
-      provider: runtime["provider"],
-      model: runtime["model"],
+      provider: runtime["provider"] || provider,
+      model: runtime["model"] || model,
       cache_ttl: runtime["cache_ttl"],
       persistent_session_requested: session["persistent_requested"],
       session_mapping_found: session["mapping_found"],
@@ -298,6 +300,15 @@ class AgentRuntimeInteraction < ApplicationRecord
     }
   end
 
+  # The catalogue label for a runtime model id ("claude-fable-5-1"), which
+  # is what the shim reports, or the id itself when the catalogue lacks it.
+  def self.model_label_for(model)
+    return if model.blank?
+
+    entry = Chat::MODELS.find { |m| m[:provider_model_id] == model || m[:model_id] == model }
+    entry ? entry[:label] : model
+  end
+
   def as_chat_activity_json
     safe = {
       id: to_param,
@@ -316,7 +327,9 @@ class AgentRuntimeInteraction < ApplicationRecord
       started_at: started_at&.iso8601,
       finished_at: finished_at&.iso8601,
       duration_ms: duration_ms,
-      created_at: created_at&.iso8601
+      created_at: created_at&.iso8601,
+      model: model,
+      model_label: self.class.model_label_for(model)
     }
     live_activity? ? safe.merge(live_activity_json) : safe
   end

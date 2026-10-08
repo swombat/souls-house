@@ -16,7 +16,7 @@
   {#snippet children({ checked })}
     <span class="absolute left-2 flex size-3.5 items-center justify-center">
       {#if checked}
-        <Circle class="size-2 fill-current" />
+        <Circle weight="fill" class="size-2" />
       {/if}
     </span>
     {@render childrenProp?.({ checked })}

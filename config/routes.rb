@@ -127,6 +127,7 @@ Rails.application.routes.draw do
         resource :agent_assignment, only: :create
         resource :participant, only: :create
         resource :agent_trigger, only: :create
+        resource :model_selection, only: :update
         resource :transcription, only: :create
       end
       resources :messages, only: [ :index, :create ]
@@ -323,6 +324,7 @@ Rails.application.routes.draw do
           resources :attachments, only: :show
         end
         resource :agent_trigger, only: :create
+        resource :model, only: [ :show, :create ], controller: "conversation_models"
         resources :participants, only: :create
       end
       resources :agents, only: [ :index, :show ]

@@ -1245,7 +1245,7 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_match(/\A[0-9a-f]{64}\z/, checks.dig("soul_fingerprint", "sha256"))
     assert_match(/\A[0-9a-f]{64}\z/, checks.dig("runtime_fingerprint", "sha256"))
     assert_nil checks["same_model"]
-    assert_equal "model-changed", checks["other_model"]
+    assert_nil checks["other_model"], "a model-only change resumes the session"
     assert_equal "provider-changed", checks["other_provider"]
     assert_nil checks["same_content_touch"]
     assert_nil checks["legacy_runtime_edit"]
@@ -1692,22 +1692,54 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_nil result["record"]
   end
 
-  test "model change rolls the session instead of resuming" do
+  test "model-only change resumes the same session and records the new model" do
     out = run_shim_python(<<~PY, fake_chaos: :echo_resumed_pid)
       first, _ = mod.persistent_trigger("sess-4", "REQUEST ONE", None, "claude-opus-4-7", 30)
       second, _ = mod.persistent_trigger("sess-4", "REQUEST TWO", "DELTA ONLY", "claude-haiku-4-5", 30)
-      print(json.dumps({"first": first, "second": second}))
+      record = mod.load_session_record("sess-4")
+      print(json.dumps({"first": first, "second": second, "record": record}))
     PY
 
     result = JSON.parse(out)
     second = result["second"]
-    assert_equal false, second["session_resumed"]
-    assert_equal "model-changed", second["session_roll_reason"]
-    assert_equal "rolled", second.dig("telemetry", "session", "outcome")
-    assert_equal true, second.dig("telemetry", "session", "mapping_found")
-    assert_equal false, second.dig("telemetry", "session", "resume_attempted")
-    assert_includes second["full_invocation_text"], "SOUL FIRST"
-    assert_not_equal result.dig("first", "chaos_session_id"), second["chaos_session_id"]
+    assert_equal true, second["session_resumed"]
+    assert_nil second["session_roll_reason"]
+    assert_equal "resumed", second.dig("telemetry", "session", "outcome")
+    assert_equal "claude-haiku-4-5", second.dig("telemetry", "runtime", "model")
+    assert_equal result.dig("first", "chaos_session_id"), second["chaos_session_id"]
+    assert_equal "claude-haiku-4-5", result.dig("record", "model")
+    assert_equal "claude-opus-4-7", result.dig("record", "previous_model")
+  end
+
+  test "provider change still rolls the session" do
+    out = run_shim_python(<<~PY, fake_chaos: :echo_resumed_pid)
+      first, _ = mod.persistent_trigger("sess-5", "REQUEST ONE", None, "claude-opus-4-7", 30, provider="anthropic")
+      second, _ = mod.persistent_trigger("sess-5", "REQUEST TWO", "DELTA ONLY", "gpt-6.1-sol", 30, provider="openai")
+      print(json.dumps({"first": first, "second": second}))
+    PY
+
+    result = JSON.parse(out)
+    assert_equal "provider-changed", result.dig("second", "session_roll_reason")
+    assert_not_equal result.dig("first", "chaos_session_id"), result.dig("second", "chaos_session_id")
+  end
+
+  # Chaos reports a model change on resume as an item of type "error". It is
+  # advice, not a failure: the turn completes on the new model.
+  test "the model-change advisory item does not count as a turn error" do
+    out = run_shim_python(<<~PY)
+      lines = [
+          json.dumps({"type": "process.started", "process_id": "pid-1"}),
+          json.dumps({"type": "item.completed", "item": {"id": "item_0", "type": "error",
+              "message": "This session was recorded with model `a` but is resuming with `b`."}}),
+          json.dumps({"type": "item.completed", "item": {"id": "2", "type": "agent_message", "text": "ok"}}),
+      ]
+      events = mod.parse_events(chr(10).join(lines))
+      print(json.dumps({"errors": events["errors"], "messages": events["agent_messages"]}))
+    PY
+
+    result = JSON.parse(out)
+    assert_empty result["errors"]
+    assert_equal [ "ok" ], result["messages"]
   end
 
   test "graph preview subprocess is bounded and fails open" do

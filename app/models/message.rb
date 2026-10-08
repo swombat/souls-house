@@ -213,6 +213,8 @@ class Message < ApplicationRecord
       agent.name
     elsif user.present?
       user.full_name.presence || user.email_address.split("@").first
+    elsif role == "system"
+      SafeguardNoticeRenderer::HOUSE_AUTHOR_NAME
     else
       "System"
     end
