@@ -18,7 +18,10 @@ module FieldRecordings
       case status
       when "succeeded"
         output = result["output"]
-        output.is_a?(Hash) ? FieldVoiceprints::Identification.apply!(identification, output) : identification.update!(status: "failed")
+        applied = output.is_a?(Hash) && FieldVoiceprints::Identification.apply!(identification, output)
+        # Not applied (malformed output, or the recording went away meanwhile):
+        # end it, rather than leave it dispatched with nothing polling it.
+        finish_failed(identification) unless applied
       when "failed", "canceled"
         identification.update!(status: "failed")
       when "pending", "created", "running"
@@ -33,6 +36,10 @@ module FieldRecordings
     end
 
     private
+
+    def finish_failed(identification)
+      FieldRecordingIdentification.where(id: identification.id, status: "dispatched").update_all(status: "failed", updated_at: Time.current)
+    end
 
     def poll_again(identification)
       return identification.update!(status: "failed") if identification.poll_count >= POLL_LIMIT

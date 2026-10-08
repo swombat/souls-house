@@ -321,6 +321,24 @@ class FieldVoiceprintsTest < ActiveSupport::TestCase
     assert_not ActiveStorage::Blob.exists?(blob.id)
   end
 
+  # Mira's non-blocking note on 7a19009: a dispatch that began before expiry
+  # commits after the sweep selected the preview. The sweep rechecks the
+  # locked row and leaves the now-dispatched enrolment and its sample alone.
+  test "the sweep leaves a preview that was dispatched after it was selected" do
+    enrolment = with_recognition(@account) { fake_cut { FieldVoiceprints::Enrolments.start!(@speaker, by: @user) } }
+    job = FieldVoices::EnrolmentSweepJob.new
+    original = job.method(:destroy_if_still)
+    racing_dispatch = lambda do |id, &check|
+      FieldVoiceEnrolment.where(id:).update_all(status: "dispatched", vendor_job_id: "vp_job", updated_at: Time.current)
+      original.call(id, &check)
+    end
+    travel FieldVoiceprints::ENROLMENT_TTL + 1.minute do
+      job.stub(:destroy_if_still, racing_dispatch) { job.perform_now }
+    end
+    assert_equal "dispatched", enrolment.reload.status
+    assert enrolment.sample.attached?
+  end
+
   test "switching the gate on builds nothing for voices named before" do
     with_recognition(@account) { assert_equal 0, FieldVoiceprint.count + FieldVoiceEnrolment.count }
   end

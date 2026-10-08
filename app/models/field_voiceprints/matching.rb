@@ -17,6 +17,11 @@
 module FieldVoiceprints::Matching
 
   COVERAGE = 0.7
+  # Anything outside these is malformed output and ignored, never scaled:
+  # a timestamp past a week can't belong to one recording, and confidence is
+  # a percentage.
+  MAX_SECONDS = 7 * 24 * 3600
+  CONFIDENCE_RANGE = (0..100)
 
   module_function
 
@@ -33,6 +38,7 @@ module FieldVoiceprints::Matching
       { s: from, e: to, match: segment["match"].is_a?(String) ? segment["match"] : nil, diar: segment["diarizationSpeaker"] }
     end
     confidences = confidence_table(output)
+    return {} unless confidences # malformed scores: no guess from this output at all
     spoken = words.select { |word| word["k"] == "w" && word["spk"] && word["e"].to_i > word["s"].to_i }
 
     excluded = union(crowded(segments.map { |seg| [ seg[:s], seg[:e] ] }) +
@@ -126,17 +132,28 @@ module FieldVoiceprints::Matching
 
   def length(intervals) = intervals.sum { |from, to| to - from }
 
+  # {diarization speaker => {label => score}}, or nil if any score present is
+  # not a real number in range: a result that scores in arrays, hashes,
+  # booleans or infinities isn't one to guess from.
   def confidence_table(output)
     Array(output["voiceprints"]).each_with_object({}) do |row, table|
       next unless row.is_a?(Hash) && row["confidence"].is_a?(Hash)
+      return nil unless row["confidence"].values.all? { |value| confidence?(value) }
 
       table[row["speaker"]] = row["confidence"]
     end
   end
 
+  # A real number in range. Strings, booleans, arrays and hashes are not.
+  def confidence?(value)
+    value.is_a?(Numeric) && !value.is_a?(Complex) && value.to_f.finite? && CONFIDENCE_RANGE.cover?(value.to_f)
+  end
+
   def ms(seconds)
     value = Float(seconds, exception: false)
-    value&.finite? ? (value * 1000).round : nil
+    return nil unless value&.finite? && value >= 0 && value <= MAX_SECONDS
+
+    (value * 1000).round
   end
 
 end

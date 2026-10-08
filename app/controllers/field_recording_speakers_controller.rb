@@ -74,12 +74,12 @@ class FieldRecordingSpeakersController < ApplicationController
     end
   end
 
-  # Under the recording lock: the chip the person saw must still be the live
+  # Under account → recording (the naming order, never recording first): the chip the person saw must still be the live
   # suggestion (same generation, no decision since). The suggested name then
   # goes through exactly the same check as a typed one, so a name matching a
   # known voice asks "same Priya?" before linking.
   def confirm_suggestion(attributes)
-    @speaker.field_recording.with_lock do
+    @speaker.with_decision_locks do
       next false unless @speaker.suggestion_current?(attributes[:suggestion_generation])
 
       voice = resolve_voice(attributes.merge(name: @speaker.suggested_name))

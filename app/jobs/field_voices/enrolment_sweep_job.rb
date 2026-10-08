@@ -10,8 +10,22 @@ module FieldVoices
     DISPATCHED_LIMIT = 1.day
 
     def perform(now: Time.current)
-      FieldVoiceEnrolment.where(status: "previewing").where(expires_at: ..now).find_each(&:destroy!)
-      FieldVoiceEnrolment.where(status: "dispatched").where(updated_at: ...(now - DISPATCHED_LIMIT)).find_each(&:destroy!)
+      expired = FieldVoiceEnrolment.where(status: "previewing").where(expires_at: ..now)
+      stale = FieldVoiceEnrolment.where(status: "dispatched").where(updated_at: ...(now - DISPATCHED_LIMIT))
+      expired.pluck(:id).each { |id| destroy_if_still(id) { |live| live.status == "previewing" && live.expires_at <= now } }
+      stale.pluck(:id).each { |id| destroy_if_still(id) { |live| live.status == "dispatched" && live.updated_at < now - DISPATCHED_LIMIT } }
+    end
+
+    private
+
+    # Rechecked on the locked row: a dispatch that began before expiry holds
+    # this lock across its send, and once it commits the row is no longer the
+    # preview that was selected, so the sweep leaves it alone.
+    def destroy_if_still(id)
+      FieldVoiceEnrolment.transaction do
+        live = FieldVoiceEnrolment.lock.find_by(id:)
+        live.destroy! if live && yield(live)
+      end
     end
 
   end

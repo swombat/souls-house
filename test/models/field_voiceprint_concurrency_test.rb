@@ -1,6 +1,20 @@
 require "test_helper"
 require "support/field_recording_helpers"
 
+# A barrier inside delete-name, after it has taken the account lock and
+# gathered its recordings. Inert unless a test sets the hook.
+module DeletePause
+  mattr_accessor :hook
+
+  private
+
+  def forget_locked!
+    DeletePause.hook&.call
+    super
+  end
+end
+FieldVoice.prepend(DeletePause)
+
 # Forget racing a print write-back (spec §11, C): if the forget commits first,
 # no print survives; whichever wins, a forgotten voice ends with no print.
 class FieldVoiceprintConcurrencyTest < ActiveSupport::TestCase
@@ -81,6 +95,61 @@ class FieldVoiceprintConcurrencyTest < ActiveSupport::TestCase
       stored = FieldVoiceprint.find_by(field_voice_id: @voice.id)
       assert_equal results.last == true, stored.present?, "a print exists only if its write-back committed before the un-name"
     end
+  end
+
+  # Mira's interleaving on 7a19009: delete has gathered its recordings and is
+  # mid-way; a request names a speaker in a recording that wasn't linked yet.
+  # Naming now waits on the account lock, then finds the voice discarded.
+  test "naming a previously unrelated recording while delete-name is mid-way leaves no stale name" do
+    other = long_ready_recording(account: @account, user: @user)
+    other_speaker = other.speakers.first
+    paused, release = Queue.new, Queue.new
+    DeletePause.hook = -> { paused << true; release.pop }
+    begin
+      deleter = Thread.new do
+        ActiveRecord::Base.connection_pool.with_connection { FieldVoice.find(@voice.id).delete_identity! }
+      end
+      paused.pop # delete holds the account lock and has gathered its recordings
+
+      namer = Thread.new do
+        ActiveRecord::Base.connection_pool.with_connection do
+          FieldRecordingSpeaker.find(other_speaker.id).name_as!(@voice, by: @user)
+          :named
+        rescue ActiveRecord::RecordNotFound
+          :refused
+        end
+      end
+      refute namer.join(0.5), "naming must wait for the delete, not link around it"
+
+      release << true
+      deleter.value
+      assert_equal :refused, namer.value
+    ensure
+      DeletePause.hook = nil
+    end
+
+    assert @voice.reload.discarded?
+    assert_nil other_speaker.reload.field_voice_id
+    refute_includes other.reload.transcript_text.to_s, "Tomás"
+    refute_includes @recording.reload.transcript_text.to_s, "Tomás"
+  end
+
+  test "a voice resolved before delete-name can't be linked after it" do
+    other = long_ready_recording(account: @account, user: @user)
+    stale = FieldVoice.find(@voice.id)
+    FieldVoice.find(@voice.id).delete_identity!
+
+    assert_raises(ActiveRecord::RecordNotFound) { other.speakers.first.name_as!(stale, by: @user) }
+    assert_nil other.speakers.first.reload.field_voice_id
+    refute_includes other.reload.transcript_text.to_s, "Tomás"
+  end
+
+  test "a stale speaker object doesn't reuse a decision generation" do
+    stale = FieldRecordingSpeaker.find(@speaker.id)
+    FieldRecordingSpeaker.find(@speaker.id).unname!
+    before = @speaker.reload.decision_generation
+    stale.name_as!(@voice, by: @user)
+    assert_equal before + 1, @speaker.reload.decision_generation
   end
 
   private

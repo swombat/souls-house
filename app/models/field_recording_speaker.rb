@@ -27,17 +27,29 @@ class FieldRecordingSpeaker < ApplicationRecord
   def default_name = "Speaker #{position + 1}"
   def display_name = field_voice&.kept? ? field_voice.name : default_name
 
-  # A human names this speaker. Under the recording lock; the transcript text
-  # is re-rendered in the same transaction.
+  # A human names this speaker. Every speaker decision (naming, un-naming,
+  # confirming or dismissing a suggestion or a guess) takes the one lock order,
+  # account → recording → voice, and reloads the speaker under it, so it is
+  # serialized with delete-name (which holds the account lock while it gathers
+  # and clears every linked recording). The voice must still be kept once
+  # locked: a request that resolved it before a delete can't link it after.
   def name_as!(voice, by:, source: "human")
     raise ArgumentError, "voice from another account" unless voice.account_id == field_recording.account_id
 
-    field_recording.with_lock do
-      raise ActiveRecord::RecordNotFound unless field_recording.kept? && field_recording.ready?
+    FieldVoiceprints::Locks.with(account: field_recording.account, recording: field_recording, voices: [ voice ]) do |_account, recording, voices|
+      raise ActiveRecord::RecordNotFound unless recording.kept? && recording.ready? && voices.first&.kept?
 
-      update!(field_voice: voice, naming_source: source, named_by: by, named_at: Time.current,
+      reload
+      update!(field_voice: voices.first, naming_source: source, named_by: by, named_at: Time.current,
         decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **RECOGNITION_FIELDS)
-      field_recording.update!(transcript_text: field_recording.render_transcript_text)
+      recording.update!(transcript_text: recording.render_transcript_text)
+    end
+  end
+
+  # account → recording, the naming order, for decisions that link no voice.
+  def with_decision_locks(&)
+    FieldVoiceprints::Locks.with(account: field_recording.account, recording: field_recording) do |_account, recording, _voices|
+      yield recording
     end
   end
 
@@ -52,8 +64,8 @@ class FieldRecordingSpeaker < ApplicationRecord
 
   # Returns false when the chip was out of date (and changes nothing).
   def dismiss_suggestion!(shown_generation)
-    field_recording.with_lock do
-      next false unless field_recording.kept? && field_recording.ready? && suggestion_current?(shown_generation)
+    with_decision_locks do |recording|
+      next false unless recording.kept? && recording.ready? && suggestion_current?(shown_generation)
 
       update!(decision_generation: decision_generation + 1, **SUGGESTION_FIELDS)
       true
@@ -115,14 +127,15 @@ class FieldRecordingSpeaker < ApplicationRecord
   end
 
   def unname!
-    field_recording.with_lock do
+    with_decision_locks do |recording|
       # Same guard as name_as!: a request that found the recording before a
       # discard must not change it after waiting for the lock.
-      raise ActiveRecord::RecordNotFound unless field_recording.kept? && field_recording.ready?
+      raise ActiveRecord::RecordNotFound unless recording.kept? && recording.ready?
 
+      reload
       update!(field_voice: nil, naming_source: nil, named_by: nil, named_at: nil,
         decision_generation: decision_generation + 1, **SUGGESTION_FIELDS)
-      field_recording.update!(transcript_text: field_recording.render_transcript_text)
+      recording.update!(transcript_text: recording.render_transcript_text)
     end
   end
 

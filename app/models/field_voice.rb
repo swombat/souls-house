@@ -64,10 +64,12 @@ class FieldVoice < ApplicationRecord
   # (the same order every enrolment and write-back takes), forget the print,
   # return its speakers to "Speaker N", discard the voice and re-render the
   # transcripts. Nothing can enrol or write a print for it in between.
+  # Under the account lock first: every way of linking a speaker to a voice
+  # takes it too, so the set of linked recordings gathered here can't grow
+  # before the voice is discarded, and each is re-rendered.
   def delete_identity!
-    recordings = FieldRecording.where(id: speakers.select(:field_recording_id)).order(:id).to_a
     account.with_lock do
-      recordings.each(&:lock!)
+      recordings = FieldRecording.where(id: speakers.select(:field_recording_id)).order(:id).lock.to_a
       lock!
       forget_locked!
       speakers.update_all([ "field_voice_id = NULL, naming_source = NULL, named_by_type = NULL, named_by_id = NULL, " \
