@@ -82,6 +82,15 @@ class DeployTemplateTest < ActiveSupport::TestCase
     end
   end
 
+  test "a fork's source repository reaches the app, and is absent when blank" do
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST)) do
+      assert_not YAML.safe_load(render_deploy_yml).dig("env", "clear").key?("HOUSE_SOURCE_REPO")
+    end
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST, "HOUSE_SOURCE_REPO" => "someone/souls-house")) do
+      assert_equal "someone/souls-house", YAML.safe_load(render_deploy_yml).dig("env", "clear", "HOUSE_SOURCE_REPO")
+    end
+  end
+
   test "rendering with a malformed embeddings digest raises" do
     with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => "latest")) do
       error = assert_raises(RuntimeError) { render_deploy_yml }

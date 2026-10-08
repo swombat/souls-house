@@ -42,6 +42,24 @@ operator; this worker does not invent a state migration.
 Migration checks compare complete recursive Git trees, rejecting a truncated
 tree. They do not rely on GitHub compare's 300-file changed-file limit.
 
+## From inside the app
+
+**Site Admin → Deploy** (`/admin/deploys`) offers the same four buttons. Each
+press dispatches the matching `workflow_dispatch` workflow on `master` through
+the GitHub API, writes an audit log entry, and follows the run until it
+finishes. It uses `credentials.github.deploy_token`, a fine-grained PAT owned by
+the deploying account, scoped to this repository only, with **Actions: read and
+write** and nothing else. Because the token is that account's, the workflow's
+actor check passes, so the token is that account's hand. A site-admin session
+can choose *when*, never *what*: the workflows only build `master`. The page
+reads the repository from `HOUSE_SOURCE_REPO` (set it in `config/house.env` for
+a fork) and warns when GitHub reports the token expiring within 14 days.
+Credentials load when the app starts: add the token, then deploy once the old way.
+
+A fork must also replace the upstream login in `deploy-house.yml`'s two actor
+checks with its own deploying account. See "Optional: deploy from inside the
+app" in `public/self-host.md`.
+
 ## Authority and installation
 
 See issue #144 and the scoped amendment to ADR 0002. Production secrets stay in
