@@ -33,8 +33,13 @@ remain unchanged. It needs no personal key and never falls through to one.
 
 ## Route and safety envelope
 
-`HouseInference::Offering` is the server-owned catalogue. The first offering is
-`house/deepseek-v4.1-flash`, mapping to OpenRouter
+`HouseInference::Offering` is the server-owned catalogue. It has two offerings.
+New house-funded residents default to `DEFAULT_MODEL_ID`
+(`house/claude-haiku-5.5`). Existing residents keep whichever they chose.
+
+### DeepSeek V4.1 Flash
+
+The first offering is `house/deepseek-v4.1-flash`, mapping to OpenRouter
 `deepseek/deepseek-v4.1-flash`, pinned to **`fireworks/us`**. The [public endpoint catalogue](https://openrouter.ai/api/v1/models/deepseek/deepseek-v4.1-flash/endpoints)
 on 2026-09-30 advertised the dated serving model
 `deepseek/deepseek-v4.1-flash-20260910` and prices of $0.45/M input and $1.80/M
@@ -46,13 +51,31 @@ It caps output at **16,384 tokens**, independently bounds input bytes plus messa
 and tool framing below 1,048,576, and rejects paid extras, arbitrary providers,
 other models, multiple completions and non-text inputs. Even a full context and
 maximum output at these price caps costs under $0.56, below the $0.75 reservation.
+
+### Claude Haiku 5.5
+
+`house/claude-haiku-5.5` maps to OpenRouter `anthropic/claude-haiku-5.5`, pinned
+to the first-party **`anthropic`** endpoint. On 2026-10-08 the [endpoint catalogue](https://openrouter.ai/api/v1/models/anthropic/claude-haiku-5.5/endpoints)
+advertised `anthropic/claude-haiku-5.5-20261007`, a 1,000,000-token context, and
+$0.10/M input and $0.50/M output, **rising to $0.50/M and $2.50/M once a prompt
+passes 100,000 tokens**. The caps are therefore **$0.60/M input** and **$3/M
+output**. That is above the long-context tier, so long conversations are not
+refused, and well below anything else. Input is bounded below 1,000,000 and output
+capped at 16,384 tokens, so a full context at the caps costs about $0.65, below the
+same **$0.75** reservation. Requests cannot set `cache_control`, so no cache-write
+surcharge applies. Most replies settle far below the reservation. The reservation
+is held only while a call is in flight.
+
+### Both routes
+
 The request has bounded size, response size and time; no upstream body or prompt
 is logged. A higher-than-reserved reported bill is recorded at its actual amount
 and trips a house-wide billing circuit breaker rather than being undercounted.
 
 Streaming SSE (including tool-call frames and usage) and nonstreaming structured
-completions are supported. OpenRouter and Fireworks process the conversation;
-the picker discloses this US endpoint selection. It is **not** a guarantee that
+completions are supported. OpenRouter and the pinned provider (Fireworks or
+Anthropic) process the conversation; the picker discloses which. The Fireworks
+route is a US endpoint selection. It is **not** a guarantee that
 all metadata, logs or other processors stay in the US. Review their current terms
 and rerun the research prompts on this exact route before public rollout.
 

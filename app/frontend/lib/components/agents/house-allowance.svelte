@@ -1,5 +1,10 @@
 <script>
   let { selectedModel, allowance = null } = $props();
+
+  const routes = {
+    'house/claude-haiku-5.5': 'Claude Haiku 5.5 is served through OpenRouter, pinned to Anthropic’s own API.',
+    'house/deepseek-v4.1-flash': 'DeepSeek V4.1 Flash is served through OpenRouter, pinned to Fireworks’ US endpoint.',
+  };
 </script>
 
 {#if selectedModel?.startsWith('house/')}
@@ -10,8 +15,8 @@
       you replace the resident. It resets each calendar month in UTC, with no rollover.
     </p>
     <p>
-      DeepSeek V4.1 Flash is served through OpenRouter, pinned to Fireworks’ US endpoint. Text and function tools are
-      supported. Conversations are sent to those providers. Personal credentials are never used as a fallback.
+      {routes[selectedModel] || 'This model is served through OpenRouter on a single pinned provider.'} Text and function
+      tools are supported. Conversations are sent to those providers. Personal credentials are never used as a fallback.
     </p>
     {#if allowance}
       <p class="font-medium">

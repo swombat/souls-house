@@ -3,9 +3,27 @@ module HouseInference
   # personal routes, or change the provider under an existing offering's ID.
   class Offering
 
-    MODEL_ID = 'house/deepseek-v4.1-flash'.freeze
+    DEEPSEEK_MODEL_ID = 'house/deepseek-v4.1-flash'.freeze
+    HAIKU_MODEL_ID = 'house/claude-haiku-5.5'.freeze
+    # What a new house-funded resident starts on. Existing residents keep theirs.
+    DEFAULT_MODEL_ID = HAIKU_MODEL_ID
+
+    # The house's recommendation comes first; the picker keeps this order.
     OFFERINGS = {
-      MODEL_ID => {
+      # Anthropic's own endpoint. Prompts over 100k tokens are billed at a
+      # long-context rate ($0.50/M in, $2.50/M out on 2026-10-08), so the price
+      # caps sit above that tier rather than refusing long conversations, and
+      # the reservation covers a full context at the caps (about $0.65).
+      HAIKU_MODEL_ID => {
+        label: 'Claude Haiku 5.5 · On the house',
+        upstream_model: 'anthropic/claude-haiku-5.5',
+        provider: 'anthropic',
+        context_tokens: 1_000_000,
+        max_output_tokens: 16_384,
+        max_price: { prompt: 0.6, completion: 3.0 },
+        reservation_usd: BigDecimal('0.75')
+      }.freeze,
+      DEEPSEEK_MODEL_ID => {
         label: 'DeepSeek V4.1 Flash · On the house',
         upstream_model: 'deepseek/deepseek-v4.1-flash',
         provider: 'fireworks/us',

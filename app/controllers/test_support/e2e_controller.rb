@@ -111,7 +111,7 @@ module TestSupport
       end
       if params[:busy_house_orientation]
         resident = agents.first
-        resident.update!(model_id: HouseInference::Offering::MODEL_ID, health_state: "healthy",
+        resident.update!(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID, health_state: "healthy",
           birth_committed_at: Time.current, orientation_requested_at: Time.current)
         grant = HouseInferenceGrant.create!(agent: resident, user: primary_user)
         grant.house_inference_calls.create!(month: HouseInference::Offering.month,
@@ -393,7 +393,7 @@ module TestSupport
       )
       attributes = {
         account: account, requested_by: user, service_connection: connection,
-        name: "Example resident", model_id: HouseInference::Offering::MODEL_ID,
+        name: "Example resident", model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID,
         repository: "example-org/example-home", repository_id: "123456", branch: "main",
         commit_sha: "0123456789abcdef0123456789abcdef01234567",
         portable_home_id: "example-#{run_id}",
