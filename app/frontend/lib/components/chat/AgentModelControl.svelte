@@ -5,6 +5,7 @@
   // relabelled.
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
   import { CaretDown, Spinner, Warning } from 'phosphor-svelte';
+  import { shortModelLabel } from '$lib/short-model-label.js';
 
   let { agent, selection, running = false, runningLabel = null, saving = false, onselect } = $props();
 
@@ -17,6 +18,8 @@
     selection.seat_model_id ?? (selection.selected_by_conversation ? selection.model_id : DEFAULT_VALUE)
   );
   const triggerText = $derived(running ? `Next: ${nextLabel}` : nextLabel);
+  // Phones get the label without the family prefix ("Opus 5.5", "Sol 6.1").
+  const shortTriggerText = $derived(running ? `Next: ${shortModelLabel(nextLabel)}` : shortModelLabel(nextLabel));
   const effortText = $derived(
     selection.reasoning_effort && selection.reasoning_effort !== 'default'
       ? `Reasoning effort: ${selection.reasoning_effort}${selection.selected_by_conversation ? ` (${nextLabel}'s default)` : ''}`
@@ -58,7 +61,8 @@
     {:else if selection.problem}
       <Warning size={12} weight="bold" class="shrink-0" />
     {/if}
-    <span class="truncate">{triggerText}</span>
+    <span class="truncate md:hidden" data-testid="model-trigger-short">{shortTriggerText}</span>
+    <span class="truncate hidden md:inline" data-testid="model-trigger-full">{triggerText}</span>
     <CaretDown size={10} class="shrink-0 opacity-60" />
   </DropdownMenu.Trigger>
   <DropdownMenu.Content align="start" class="w-72 max-w-[calc(100vw-2rem)]">
