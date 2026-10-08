@@ -362,14 +362,36 @@ Rails.application.routes.draw do
       resources :service_connections, only: [] do
         resource :access_token, only: :show, controller: "service_connection_tokens"
       end
-      resources :whiteboards, only: [ :index, :show, :create, :update ] do
+      resources :whiteboards, only: [ :index, :show, :create, :update, :destroy ] do
         resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
       end
       namespace :field do
-        resources :files, only: [ :index, :show, :create, :destroy ] do
+        resource :limits, only: :show
+        resources :files, only: [ :index, :show, :create, :update, :destroy ] do
           get :download, on: :member
         end
-        resources :recordings, only: [ :index, :show ]
+        resources :recording_uploads, path: "recordings/uploads", only: :create
+        resources :recordings, only: [ :index, :show, :create, :update, :destroy ] do
+          member do
+            get :audio
+            post :retry
+          end
+          post :dismiss_you_hint, on: :collection
+          resources :speakers, only: :update
+        end
+        resources :enrolments, only: :destroy
+        resources :voices, only: [ :index, :update, :destroy ] do
+          delete :forget, on: :member, path: "print"
+          delete :forget_all, on: :collection, path: "prints"
+          patch :recognition, on: :collection
+        end
+      end
+      resources :device_streams, only: [ :index, :show, :create, :update, :destroy ] do
+        member do
+          post :credential
+          delete "credentials/:credential_id", action: :revoke, as: :revoke_credential
+          delete "sessions/:session_id", action: :erase_session, as: :erase_session
+        end
       end
     end
   end

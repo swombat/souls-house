@@ -228,6 +228,99 @@ another account of the same person, is 404.
   With an OAuth token this is every such membership. Listing grants nothing:
   an API key still acts in its own account.
 
+### Human keys: Field, notes and device streams
+
+These mirror the browser's own controls for a person's account key. Resident keys
+get 403 `{ "error": ... }`. A key whose person is no longer a confirmed member of
+the key's account gets 404, except for device-stream recovery (below). Field
+endpoints return 403 while the site's agents feature is off, like the pages.
+Errors are `{ "error": "..." }`.
+
+**Field limits.** `GET /api/v1/field/limits` returns what the Field page shows
+before an upload:
+
+```json
+{ "recording_allowance": { "limit_ms": 72000000, "used_ms": 600000, "pending_ms": 0, "window_days": 7 },
+  "max_recording_bytes": 2147483648, "max_recording_label": "2 GB",
+  "max_file_bytes": 104857600, "max_file_label": "100 MB" }
+```
+
+**Files.** `PATCH /api/v1/field/files/:id` with `title` and/or `note` returns
+`{ "file": {...} }`. Upload and delete already existed.
+
+**Recordings.** Uploading is the web's direct-upload flow:
+
+1. `POST /api/v1/field/recordings/uploads` with
+   `{ "blob": { "filename": "call.m4a", "content_type": "audio/mp4", "byte_size": 1234567, "checksum": "<base64 MD5>" } }`
+   returns 201 with `signed_id` and `direct_upload: { url, headers }`. The blob is
+   pinned to you and this account.
+2. `PUT` the bytes to `direct_upload.url` with those headers.
+3. `POST /api/v1/field/recordings` with `{ "upload_id": "<signed_id>", "title": "Standup", "note": "...", "expected_speakers": 3 }`
+   returns 201 `{ "recording": {...} }`. The recording is probed and then
+   transcribed. Poll `GET /api/v1/field/recordings/:id` for `status`.
+
+With a person's key, `GET /api/v1/field/recordings/:id` adds what the transcript
+page uses. Resident keys still get the plain transcript, without audio or timings:
+
+```json
+{ "recording": { "id": "aBcDeF", "title": "Standup", "status": "ready", "retryable": false,
+  "audio_path": "/api/v1/field/recordings/aBcDeF/audio",
+  "transcript_text": "[00:00] Priya: hello ...",
+  "words": [ { "s": 0, "e": 500, "t": "hello", "k": "w", "spk": "speaker_0" } ],
+  "speakers": [ { "id": "xYz", "label": "speaker_0", "name": "Priya", "named": true, "voice_id": "QrS",
+                  "talk_ms": 4200, "clip_start_ms": 0, "clip_end_ms": 3000 } ],
+  "show_you_hint": false, "...": "..." } }
+```
+
+In `words`, `s` and `e` are start and end in ms, and `k` is `w` (word), `s`
+(spacing) or `a` (audio event). `GET .../audio` redirects to a five-minute storage
+URL. This read never includes voice-recognition or name-suggestion data.
+
+- `PATCH /api/v1/field/recordings/:id` (`title`, `note`), `DELETE` (204; minutes
+  already sent to the transcriber aren't given back), `POST .../retry` (failed or
+  rejected only; 201 with the new recording, otherwise 422).
+- `POST /api/v1/field/recordings/dismiss_you_hint` → 204.
+- `PATCH /api/v1/field/recordings/:recording_id/speakers/:id` takes one of
+  `me: true`, `voice_id`, `member_user_id`, `name` or `unname: true`. A `name`
+  matching an existing voice returns 409
+  `{ "error": ..., "match": { "voice_id", "name", "last_named_in" } }`; resend
+  with `link_existing: true` to link to that voice. Returns `{ "speaker": {...} }`.
+
+**Voices.** `GET /api/v1/field/voices` lists voices (`remembered`, `used_in`, and
+so on), `members_without_voice`, `my_voice_id`, `pending_enrolments`,
+`recognise_voices` and `can_change_setting`. It never returns a voice print.
+`PATCH /api/v1/field/voices/:id` (`name`), `DELETE /api/v1/field/voices/:id`
+(deletes the voice), `DELETE /api/v1/field/voices/:id/print` (forget one print),
+`DELETE /api/v1/field/voices/prints` (forget all),
+`PATCH /api/v1/field/voices/recognition` (`{ "recognise_voices": false }`) and
+`DELETE /api/v1/field/enrolments/:id` (remove a pending "remember this voice").
+Starting or confirming an enrolment is biometric consent and stays in the browser.
+
+**Notes.** `DELETE /api/v1/whiteboards/:id` → 204 (a soft delete, as on the
+page). Resident keys can edit notes but not delete them.
+
+**Device streams** (your own, in the key's account; see
+[device streams](device-streams.md)). Responses are `Cache-Control: no-store`.
+
+- `GET /api/v1/device_streams`, `GET /api/v1/device_streams/:stream_key`: streams
+  where you're the subject. A read lists credentials (`id`, `created_at`,
+  `revoked_at`, never the token), the newest 100 sessions, readers, and
+  `reader_options` while you're a member.
+- `POST /api/v1/device_streams` `{ "name": "Chest strap" }`: starts disabled.
+- `PATCH /api/v1/device_streams/:stream_key` with `reader_user_ids`,
+  `reader_agent_ids` and/or `enabled`. A field you leave out keeps its value.
+- `POST /api/v1/device_streams/:stream_key/credential` → 201
+  `{ "credential": { "token": "shd_...", "ingest_url": ".../api/v1/streams/<key>/samples" } }`.
+  The token is shown only here, once. The stream must be enabled.
+- `DELETE /api/v1/device_streams/:stream_key/credentials/:credential_id`,
+  `DELETE /api/v1/device_streams/:stream_key/sessions/:session_uuid` and
+  `DELETE /api/v1/device_streams/:stream_key` (hide every session, revoke every
+  device, close the stream) → 204. Deleting hides; it doesn't remove stored samples.
+
+Creating, changing readers and issuing credentials need current membership. Reading
+and the three deletions keep working after you leave the account, as on the web's
+personal recovery page, but only for streams in the key's account.
+
 ### Read-only site-admin monitoring
 
 `GET /api/v1/admin/summary`, `/api/v1/admin/accounts` and `/api/v1/admin/users`

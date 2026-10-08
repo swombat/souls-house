@@ -87,6 +87,25 @@ module FieldItems
     }
   end
 
+  # A speaker as the API gives it to a person's key: who they are named as and
+  # where they talk. No recognition, no suggestion, no naming source; those
+  # stay with the page's biometric and suggestion affordances.
+  def plain_speaker_json(speaker)
+    voice = speaker.field_voice&.kept? ? speaker.field_voice : nil
+    {
+      id: speaker.to_param,
+      label: speaker.label,
+      position: speaker.position,
+      default_name: speaker.default_name,
+      name: speaker.display_name,
+      named: voice.present?,
+      voice_id: voice&.to_param,
+      talk_ms: speaker.talk_ms,
+      clip_start_ms: speaker.clip_start_ms,
+      clip_end_ms: speaker.clip_end_ms
+    }
+  end
+
   # Recognition affordances for one speaker on the transcript page (spec §9).
   # Only meaningful when both gates are open; the caller passes that in.
   def speaker_recognition_json(speaker, enabled:)
