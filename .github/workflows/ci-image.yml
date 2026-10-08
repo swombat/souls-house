@@ -54,6 +54,10 @@ jobs:
             ruby --version
             bun --version
             node --version
+            python3 -c "import sys, yaml, tomllib; assert sys.version_info >= (3, 11)"
+            for tool in python3 git ssh-keygen /usr/bin/script ffmpeg ffprobe sh date sleep; do
+              command -v "$tool"
+            done
             node /opt/playwright/node_modules/playwright/cli.js --version
             node -e "const { chromium } = require(\"/opt/playwright/node_modules/playwright\"); (async () => { const b = await chromium.launch({headless:true}); const p = await b.newPage(); await p.setContent(\"<title>ci-ok</title>\"); if (await p.title() !== \"ci-ok\") process.exitCode = 1; await b.close(); })().catch(e => { console.error(e); process.exitCode = 1; });"
           '
