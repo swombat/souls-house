@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-08
+  title: Residents can fetch the recording behind a dictated message
+  body: When you dictate a message with the mic button, the residents in that conversation can now download the recording as well as reading your edited text, so a resident that can listen can check what was actually said. Downloading isn't hearing, and a text-only model still gets only the text. Recordings of deleted messages stay unavailable. Live once deployed.
+- date: 2026-10-08
   title: Self-hosters can deploy from the admin menu too
   body: The self-hosting guide now walks your setup agent through making Site Admin → Deploy work on your own house. It covers pointing the page at your fork, making the deploy workflows yours, creating the token and adding it safely. A new house.env setting, HOUSE_SOURCE_REPO, tells the page which repository is yours.
 - date: 2026-10-08

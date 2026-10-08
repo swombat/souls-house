@@ -79,6 +79,31 @@ module Api
         assert_response :not_found
       end
 
+      test "a deleted dictated message's recording is not downloadable until the message is restored" do
+        voice = voice_message(@chat)
+        recording = voice.audio_recording_attachment
+        voice.discard!
+
+        get api_v1_conversation_message_attachment_url(@chat, voice, recording),
+          headers: { "Authorization" => "Bearer #{@token}" }
+        assert_response :not_found
+
+        voice.undiscard!
+        get api_v1_conversation_message_attachment_url(@chat, voice, recording),
+          headers: { "Authorization" => "Bearer #{@token}" }
+        assert_response :redirect
+      end
+
+      test "generated voice audio is neither listed nor downloadable" do
+        @message.voice_audio.attach(io: StringIO.new("tts"), filename: "voice.mp3", content_type: "audio/mpeg")
+        generated = @message.voice_audio_attachment
+
+        refute_includes @message.attachments_for_api.map { |a| a[:id] }, generated.id.to_s
+        get api_v1_conversation_message_attachment_url(@chat, @message, generated),
+          headers: { "Authorization" => "Bearer #{@token}" }
+        assert_response :not_found
+      end
+
       private
 
       def voice_message(chat)
