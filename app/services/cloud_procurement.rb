@@ -21,7 +21,14 @@ class CloudProcurement
   class NotAuthorized < StandardError; end
   class NotAllowed < StandardError; end
 
-  Config = Data.define(:image_id, :ssh_key_ids, :locations, :rails_url) do
+  Config = Data.define(:image_id, :ssh_key_ids, :locations, :rails_url, :runner_commands) do
+    # runner_commands turns on the VM runner's command channel (#238). Off
+    # unless the credentials say so: a VM ordered without it can report but
+    # can never be told to run a resident.
+    def initialize(image_id:, ssh_key_ids:, locations:, rails_url:, runner_commands: false)
+      super(image_id:, ssh_key_ids:, locations:, rails_url:, runner_commands: runner_commands == true)
+    end
+
     def self.from_credentials
       settings = Rails.application.credentials.hetzner_cloud || {}
       new(
@@ -29,7 +36,8 @@ class CloudProcurement
         ssh_key_ids: Array(settings[:ssh_key_ids]).map { |id| Integer(id) },
         locations: Array(settings[:allowed_locations]).map(&:to_s),
         # The installation's own domain; no default, so an unset one refuses.
-        rails_url: ENV["SOULSHOUSE_DOMAIN"].presence&.then { |domain| "https://#{domain}" }
+        rails_url: ENV["SOULSHOUSE_DOMAIN"].presence&.then { |domain| "https://#{domain}" },
+        runner_commands: settings[:runner_commands] == true
       )
     end
   end
@@ -101,7 +109,8 @@ class CloudProcurement
       claimed_at = now
       enrollment, token = @minter.mint!(placement: operation.agent_placement, operation_id: operation.id, now: now)
       # The plaintext token lives only in this local and the request body.
-      user_data = @renderer.render(enrollment:, token:, rails_url: @config.rails_url)
+      user_data = @renderer.render(enrollment:, token:, rails_url: @config.rails_url,
+        commands_enabled: @config.runner_commands)
       operation.update!(state: "create_in_flight", create_sent_at: claimed_at)
       true
     end

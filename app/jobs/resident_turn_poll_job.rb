@@ -11,7 +11,11 @@ class ResidentTurnPollJob < ApplicationJob
     turn = ResidentTurn.find(id)
     return if turn.finished_at? || turn.state == "queued"
     interaction = turn.agent_runtime_interaction
-    client = ChaosTriggerClient.new(interaction.endpoint_url, turn.agent.trigger_bearer_token)
+    client = if Agents::RemoteRuntime.remote_endpoint?(interaction.endpoint_url)
+      Agents::RemoteRuntime.client_for(turn)
+    else
+      ChaosTriggerClient.new(interaction.endpoint_url, turn.agent.trigger_bearer_token)
+    end
     response = client.turn_status(turn.dispatch_id)
     ledger_id = response.dig(:body, "ledger_id")
     unless ledger_id.is_a?(String) && ledger_id.match?(/\A[0-9a-f-]{36}\z/)

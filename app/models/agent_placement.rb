@@ -20,8 +20,9 @@ class AgentPlacement < ApplicationRecord
   validates :provider_server_id,
     numericality: { only_integer: true, greater_than: 0 }, uniqueness: true, allow_nil: true
   validates :provider_server_id, :runtime_endpoint, absence: true, if: -> { backend == "local" }
-  validates :provider_server_id, :runtime_endpoint, presence: true,
-    if: -> { backend == "hetzner_cloud" && state == "ready" }
+  # A ready VM placement needs its server. It needs no endpoint: the house
+  # never calls the VM, whose runner polls for commands (#238).
+  validates :provider_server_id, presence: true, if: -> { backend == "hetzner_cloud" && state == "ready" }
   validate :runtime_endpoint_is_https
 
   private

@@ -149,5 +149,33 @@ The transport for resident turns stays **dial-out** (Mira's shape check on
   a `0600` env file, never to argv. Turns are relayed to the resident's
   trigger server on the private bridge.
 
-Still to come in #238: `commands_enabled` in cloud-init, remote dispatch
-routing for ready Hetzner placements, and minting pilot-only tokens.
+## Remote dispatch (#238 part 2)
+
+A resident on a VM is dispatchable only when its placement is `hetzner_cloud`
+and `ready`, asynchronous turns are on, and the placement has a live, healthy
+runner enrollment (`Agents::RemoteRuntime.dispatchable?`). Then:
+
+- `Agents::Endpoint.url_for` returns `runner://<enrollment id>`. The house
+  never calls that; the synchronous trigger path refuses it outright.
+- `ResidentTurn` admits the turn as it would a local one, and
+  `ResidentTurnPollJob` reconciles it unchanged through `RemoteTriggerClient`,
+  which turns `turn_status`, `submit_turn` and `cancel_turn` into
+  RunnerCommands. An unanswered command is reused, not duplicated. Anything but
+  the resident's own answer (runner failed, refused, unknown, or silent) comes
+  back as a 5xx and is retried; only the resident's trigger server can produce
+  the 404 that licenses a submission. A turn recorded against a replaced or
+  revoked runner is never sent to another one.
+- Health is the runner's heartbeat plus the last lifecycle command it carried
+  out being a successful `start_resident`. Cold-start and cleanup never touch
+  local Docker for a VM resident.
+- Starting and stopping are operator actions: `Agents::RemoteRuntime.start!`
+  (digest-pinned image, optional pull-only credential) and `stop!`. Only
+  house-inference residents with native homes can run on a VM; the
+  environment is the house's own values with the public origin.
+- A ready VM placement needs its `provider_server_id` but no
+  `runtime_endpoint`: nothing calls the VM.
+- VMs are ordered with the command channel off unless the credentials set
+  `hetzner_cloud.runner_commands: true`.
+
+Not in this slice: moving an existing resident's data (backup, restore,
+single-writer cutover), real residents, and console containment on a VM.

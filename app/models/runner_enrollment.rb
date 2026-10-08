@@ -135,6 +135,10 @@ class RunnerEnrollment < ApplicationRecord
           command.refuse_locally!("stale generation", now:)
           next
         end
+        if withdrawn_before_handoff?(command)
+          command.refuse_locally!("turn withdrawn before delivery", now:)
+          next
+        end
         return command.deliver!(now:)
       end
       nil
@@ -167,6 +171,23 @@ class RunnerEnrollment < ApplicationRecord
   end
 
   private
+
+  # The no-new-starts boundary, carried across the queue: a submission that
+  # has never been handed out is checked again here, at the last moment it
+  # can still be stopped. A withdrawn turn's submit is refused locally; the
+  # poll job then finds the resident never saw it and sends a cancellation
+  # instead. A submit that was already delivered keeps its uncertainty: the
+  # runner may have it, so it is never refused here.
+  def withdrawn_before_handoff?(command)
+    return false unless command.kind == "submit_turn" && command.state == "queued"
+
+    turn = command.resident_turn
+    return true unless turn
+
+    turn.withdraw_unless_deliverable!
+    turn.reload
+    turn.cancel_requested_at? || turn.finished_at?
+  end
 
   # Returns the placement, read fresh under the enrollment lock. A retired
   # placement gets no commands and settles no results, whatever the state of

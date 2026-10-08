@@ -57,7 +57,7 @@ module RunnerUserData
 
   SYSTEMD_UNIT = <<~UNIT.freeze
     [Unit]
-    Description=House host runner (enrollment and telemetry only)
+    Description=House host runner (enrollment, telemetry and, when enabled, resident commands)
     After=network-online.target docker.service
     Wants=network-online.target
 
@@ -77,14 +77,16 @@ module RunnerUserData
 
   module_function
 
-  def render(enrollment:, token:, rails_url:, runtime_image: nil)
+  def render(enrollment:, token:, rails_url:, runtime_image: nil, commands_enabled: false)
     validate_origin!(rails_url)
 
     config = {
       "rails_url" => rails_url,
       "runner_id" => enrollment.public_id,
       "enrollment_token" => token,
-      "runtime_image" => runtime_image
+      "runtime_image" => runtime_image,
+      # Only a literal true enables the command channel (#238).
+      "commands_enabled" => (true if commands_enabled == true)
     }.compact
 
     document = {
