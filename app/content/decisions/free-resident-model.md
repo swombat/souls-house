@@ -16,6 +16,7 @@ We don't ask whether a model sounds warm, or how close it sounds to Claude. A si
 - **Gates first.** A model has to stay present with someone in distress without handing them a script, and handle a practical question without losing the conversation. A model that fails either is out, whatever its other scores.
 - **Then relating, within budget.** Among the models that pass and that a free seat can afford, the one that relates best wins.
 - **Ties go to the cheaper model.** If the difference is within the noise of the test, the cheaper model wins, because it gives a free resident more evenings.
+- **The test shortlists; it doesn't switch.** It runs each model on a one-line seed. Before the house changes the default, the winner is checked on a real resident's full setup: their identity, their tools, and what a month of conversation actually costs.
 
 ## What this test is, and isn't
 
