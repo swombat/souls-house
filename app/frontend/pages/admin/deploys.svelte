@@ -1,17 +1,33 @@
 <script>
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { router } from '@inertiajs/svelte';
   import { Card, CardHeader, CardTitle, CardDescription } from '$lib/components/shadcn/card';
   import { Button } from '$lib/components/shadcn/button';
   import { RocketLaunch, ArrowSquareOut } from 'phosphor-svelte';
-  import { runLabel, shouldPoll, expiryWarning } from './deploys.js';
+  import { runLabel, shouldPoll, applyPollResult, classifyResponse, expiryWarning } from './deploys.js';
 
-  let { workflows = [], repo = '', deploy_status = null, flash = {} } = $props();
+  let { workflows = [], repo = '', deploy_status = null, flash = {}, pollMs = 8000 } = $props();
   let sending = $state(null);
   let requestedAt = $state(0);
+  let poll = $state({ runs: [], error: null, failures: 0, stopped: false });
+  let seeded = false;
+  let destroyed = false;
+  let busy = false;
 
   const status = $derived(deploy_status || { configured: false, runs: [] });
   const expiry = $derived(expiryWarning(status.token_expires_at));
+
+  // Seed from the server-rendered props (and again after a dispatch redirect).
+  // A render that couldn't reach GitHub keeps the runs we already knew about.
+  $effect(() => {
+    const fresh = status;
+    untrack(() => {
+      poll = fresh.error
+        ? { ...poll, error: fresh.error, stopped: false }
+        : { runs: fresh.runs || [], error: null, failures: 0, stopped: false };
+    });
+    seeded = true;
+  });
 
   function deploy(workflow) {
     if (!confirm(`Run "${workflow.name}" on master now?`)) return;
@@ -26,22 +42,34 @@
     );
   }
 
-  // Poll while a run is in flight or just after a request (GitHub takes a few
-  // seconds to list a new run). A Rails deploy restarts this app, so check
-  // /up first rather than letting Inertia show an error page mid-restart.
+  // Polls a plain JSON endpoint rather than reloading Inertia props: a Rails
+  // deploy restarts this app, and a proxy 502 must be a retry, not an error page.
   async function tick() {
-    if (!shouldPoll(status.runs, requestedAt, Date.now())) return;
+    if (!seeded || busy || !status.configured || !shouldPoll(poll, requestedAt, Date.now())) return;
+    busy = true;
+    let result;
     try {
-      const up = await fetch('/up', { cache: 'no-store' });
-      if (!up.ok) return;
+      const response = await fetch('/admin/deploys/status', {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
+      const kind = classifyResponse(response);
+      result = kind === 'ok' ? { kind, status: await response.json() } : { kind };
     } catch {
-      return;
+      result = { kind: 'transient' };
+    } finally {
+      busy = false;
     }
-    router.reload({ only: ['deploy_status'], preserveScroll: true });
+    if (destroyed) return;
+    poll = applyPollResult(poll, result);
   }
 
-  const timer = setInterval(tick, 8000);
-  onDestroy(() => clearInterval(timer));
+  const timer = setInterval(tick, pollMs);
+  onDestroy(() => {
+    destroyed = true;
+    clearInterval(timer);
+  });
 </script>
 
 <div class="container mx-auto max-w-2xl py-8 px-4">
@@ -67,9 +95,11 @@
       <code>github.deploy_token</code> in the production credentials.
     </div>
   {:else}
-    {#if status.error}
-      <div class="mb-4 rounded-md bg-red-50 dark:bg-red-950 p-3 text-sm text-red-700 dark:text-red-300">
-        {status.error}
+    {#if poll.error}
+      <div
+        class="mb-4 rounded-md bg-red-50 dark:bg-red-950 p-3 text-sm text-red-700 dark:text-red-300"
+        data-testid="deploy-poll-error">
+        {poll.error}
       </div>
     {/if}
     {#if expiry}
@@ -102,11 +132,11 @@
 
   {#if status.configured}
     <h2 class="text-lg font-semibold mt-8 mb-3">Recent runs</h2>
-    {#if status.runs.length === 0}
+    {#if poll.runs.length === 0}
       <p class="text-sm text-muted-foreground">No manual deploy runs found.</p>
     {:else}
       <ul class="divide-y rounded-md border text-sm" data-testid="deploy-runs">
-        {#each status.runs as run (run.id)}
+        {#each poll.runs as run (run.id)}
           <li class="flex items-center justify-between gap-3 px-3 py-2">
             <div class="min-w-0">
               <div class="font-medium">{run.name}</div>

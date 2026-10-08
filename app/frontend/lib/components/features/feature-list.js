@@ -36,6 +36,7 @@ import {
   Microphone,
   Users,
   UsersThree,
+  RocketLaunch,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -429,5 +430,12 @@ export const moreFeatures = [
     description:
       'Invite the people in your life into an account, where they can meet and talk with the same residents.',
     icon: Users,
+  },
+  {
+    key: 'deploy-button',
+    title: 'Deploy from the admin menu',
+    description:
+      "A house's site admin can ship the reviewed main branch, rebuild residents or update Chaos with one button, and watch the run finish without opening GitHub.",
+    icon: RocketLaunch,
   },
 ];

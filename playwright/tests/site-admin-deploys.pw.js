@@ -58,3 +58,45 @@ test('without a token the buttons are disabled and the page says why', async ({ 
   await expect(page.getByTestId('deploy-unconfigured')).toContainText('github.deploy_token');
   await expect(component.getByRole('button', { name: 'Run' }).first()).toBeDisabled();
 });
+
+test('a restart mid-run (502) is retried, not an error page, and the run is followed to the end', async ({
+  mount,
+  page,
+}) => {
+  // The house answers 502 (mid-restart) until the test releases it.
+  let calls = 0;
+  let restarted = false;
+  await page.route('**/admin/deploys/status', (route) => {
+    calls += 1;
+    if (!restarted) return route.fulfill({ status: 502, contentType: 'text/html', body: '<h1>Bad gateway</h1>' });
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        configured: true,
+        error: null,
+        token_expires_at: null,
+        runs: [{ ...runs[0], status: 'completed', conclusion: 'success' }],
+      }),
+    });
+  });
+
+  await mount(DeploysPage, {
+    props: {
+      workflows,
+      repo: 'swombat/souls-house',
+      pollMs: 200,
+      deploy_status: { configured: true, runs: [runs[0]], token_expires_at: null, error: null },
+    },
+  });
+
+  await expect(page.getByTestId('deploy-poll-error')).toContainText('restarting');
+  await expect(page.getByTestId('deploy-runs')).toContainText('… running');
+  await expect.poll(() => calls).toBeGreaterThan(2);
+  restarted = true;
+  await expect(page.getByTestId('deploy-runs').locator('li').first()).toContainText('✓ success');
+  await expect(page.getByTestId('deploy-poll-error')).toHaveCount(0);
+  const settled = calls;
+  await page.waitForTimeout(600);
+  expect(calls).toBe(settled);
+});

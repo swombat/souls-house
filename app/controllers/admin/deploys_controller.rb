@@ -11,6 +11,12 @@ class Admin::DeploysController < ApplicationController
     }
   end
 
+  # Polled by the page as plain JSON, so a proxy error during a Rails restart
+  # is just a failed fetch rather than an Inertia error modal.
+  def status
+    render json: HouseDeploy.status
+  end
+
   def create
     key = params[:workflow].to_s
     config = HouseDeploy.dispatch!(key)
@@ -24,7 +30,13 @@ class Admin::DeploysController < ApplicationController
   private
 
   def require_site_admin
-    redirect_to root_path unless Current.user&.is_site_admin?
+    return if Current.user&.is_site_admin?
+
+    if request.format.json?
+      head :not_found
+    else
+      redirect_to root_path
+    end
   end
 
 end

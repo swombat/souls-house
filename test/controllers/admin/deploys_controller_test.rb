@@ -73,4 +73,18 @@ class Admin::DeploysControllerTest < ActionDispatch::IntegrationTest
     assert_match(/Unknown deploy/, flash[:alert])
   end
 
+  test "status is JSON for site admins" do
+    sign_in users(:site_admin_user)
+    get status_admin_deploys_path, as: :json
+    assert_response :success
+    assert_equal true, response.parsed_body["configured"]
+    assert_equal [], response.parsed_body["runs"]
+  end
+
+  test "status is a bare 404 for non-admins" do
+    sign_in users(:user_1)
+    get status_admin_deploys_path, as: :json
+    assert_response :not_found
+  end
+
 end
