@@ -1,10 +1,12 @@
 module Api
   module V1
-    # Resident settings for a person's own key: the API side of the web
-    # resident pages (AgentsController and its retry/service-access
-    # controllers). Same authority as the web, which lets any confirmed member
-    # of the account manage its home residents. Resident keys are refused: a
-    # resident does not manage itself or its housemates through these routes.
+    # Resident settings for a person's credential (an account key or an OAuth
+    # app token): the API side of the web resident pages (AgentsController and
+    # its retry/service-access controllers). Same authority as the web, which
+    # lets any confirmed member of an enabled account manage its home
+    # residents. Authority is checked against the resident's own account.
+    # Resident keys are refused: a resident does not manage itself or its
+    # housemates through these routes.
     #
     # Not here, by design: memory writes, portability, predecessor, sandbox
     # recreation, provider subscriptions, runtime checks, Telegram tests and
@@ -13,9 +15,9 @@ module Api
 
       include AgentSettingsParams
 
-      before_action :require_human_key!
+      before_action :require_human_actor!
       before_action :require_residents_enabled!
-      before_action :set_account
+      before_action :set_account, only: [ :catalogue, :create ]
       before_action :set_agent, except: [ :catalogue, :create ]
 
       rescue_from ActionController::ParameterMissing do |error|
@@ -48,7 +50,7 @@ module Api
           attributes: attrs,
           open_beginning: open_beginning
         ).create!
-        audit("create_agent", @agent, **agent_audit_data(attrs))
+        audit_human_action("create_agent", @agent, account: @account, **agent_audit_data(attrs))
         render json: { agent: @agent.as_json, provisioning: provisioning_json }, status: :created
       rescue ActiveRecord::RecordInvalid => e
         render_invalid(e.record.errors)
@@ -60,7 +62,7 @@ module Api
       def update
         attrs = agent_params
         @agent.update_settings!(attrs, by: current_api_user)
-        audit("update_agent", @agent, **agent_audit_data(attrs))
+        audit_human_action("update_agent", @agent, account: @account, **agent_audit_data(attrs))
         render json: settings_json
       rescue ActiveRecord::RecordInvalid => e
         render_invalid(e.record.errors)
@@ -71,7 +73,7 @@ module Api
       # PATCH active: true re-enables.
       def destroy
         @agent.update!(active: false)
-        audit("disable_agent", @agent)
+        audit_human_action("disable_agent", @agent, account: @account)
         render json: { agent: @agent.as_json }
       end
 
@@ -119,20 +121,15 @@ module Api
         end
 
         access = @agent.set_service_access!(connection, enabled: enabled)
-        audit(enabled ? :enable_resident_service : :disable_resident_service,
-              connection,
-              resident_id: @agent.to_param,
-              provider: connection.provider)
+        audit_human_action(enabled ? :enable_resident_service : :disable_resident_service,
+                           connection,
+                           account: @account,
+                           resident_id: @agent.to_param,
+                           provider: connection.provider)
         render json: { service_connection: service_connection_json(connection, access) }
       end
 
       private
-
-      def require_human_key!
-        return unless current_api_agent
-
-        render json: { error: "Resident management is only available to a person's API key" }, status: :forbidden
-      end
 
       def require_residents_enabled!
         return if Setting.instance.allow_agents?
@@ -140,18 +137,30 @@ module Api
         render json: { error: "Residents are currently disabled" }, status: :forbidden
       end
 
-      # The key's account, and only while its person is still a confirmed
-      # member there (the web's own account lookup). Otherwise 404.
+      # Account-level actions (catalogue, birth): the request's account (the
+      # key's, or for an OAuth token the one account_id names, else the
+      # person's default), only while it is enabled and they are a confirmed
+      # member. Otherwise 404.
       def set_account
-        @account = requested_account
-        raise ActiveRecord::RecordNotFound unless @account.accessible_by?(current_api_user)
-
+        @account = human_account!(requested_account)
         Current.account = @account
       end
 
-      # Home residents only, like the web. Guests are managed at home.
+      # Home residents only, like the web. Guests are managed at home. An
+      # account key reaches its account's residents; an OAuth token reaches
+      # residents of every enabled account the person belongs to, or only the
+      # account account_id names. Authority then comes from the resident's own
+      # account, never a default.
       def set_agent
-        @agent = @account.agents.find(params[:id])
+        @agent = reachable_agents.find(params[:id])
+        @account = human_account!(@agent.account)
+        Current.account = @account
+      end
+
+      def reachable_agents
+        return Agent.where(account_id: current_api_user.confirmed_accounts.select(:id)) if app_token_request? && params[:account_id].blank?
+
+        requested_account.agents
       end
 
       # The web edit page's data, without secrets (the Telegram bot token is
@@ -220,19 +229,6 @@ module Api
 
       def render_invalid(errors)
         render json: { error: errors.full_messages.to_sentence, errors: errors.to_hash }, status: :unprocessable_entity
-      end
-
-      # The web's audit record for the same action, tagged with the key.
-      def audit(action, auditable, **data)
-        AuditLog.create!(
-          user: current_api_user,
-          account: @account,
-          action: action,
-          auditable: auditable,
-          data: data.merge(api_key_id: Current.api_key.to_param),
-          ip_address: request.remote_ip,
-          user_agent: request.user_agent
-        )
       end
 
     end

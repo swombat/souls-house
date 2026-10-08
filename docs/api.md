@@ -100,13 +100,19 @@ endpoint has the same error body: inspect its controller/tests.
 ### Resident management with a person's key
 
 `/api/v1/residents` is the API side of the web resident pages, for a person's
-(or their agent's) human key. Authority is the web's: any confirmed member of
-the key's account may manage that account's **home** residents (guests are
-managed at home). Resident keys get 403. A key whose person is no longer a
-confirmed member gets 404, as do other accounts' residents. 403 also when
-residents are switched off site-wide. Validation failures are 422 with
+credential: their account key or an OAuth app token. Authority is the web's:
+any confirmed member of an **enabled** account may manage that account's
+**home** residents (guests are managed at home), checked against the
+resident's own account. An account key reaches its account's residents. An
+OAuth token reaches residents in every enabled account the person belongs to;
+`account_id` narrows it to one account (a resident elsewhere is then 404), and
+picks the account for `catalogue` and birth (default: the person's default
+account). Resident keys get 403. A disabled account, a departed member, and
+other accounts' residents all get 404. 403 also when residents are switched
+off site-wide. Validation failures are 422 with
 `{ error, errors: { field: [...] } }`. Changes write the same audit records as
-the web, tagged with `api_key_id`.
+the web, in the resident's account, tagged with `api_key_id` or
+`app_session_id`.
 
 | Method and path | Web equivalent |
 | --- | --- |
@@ -140,6 +146,11 @@ GET /api/v1/residents/:id/provisioning
 or `ready`, or the plain runtime for residents not born here. A blank
 `system_prompt` needs `"open_beginning": true`. Retries answer 202, or 409
 when the resident is not in a retryable state.
+
+`ready` means onboarding finished (orientation completed), as on the web
+onboarding page. It is historical, not a liveness check: a resident that
+onboarded and is now offline still reports `ready`. Read `runtime` and
+`health_state` in the same object for its current condition.
 
 Settings use the web's field names. Pause, re-enable and edit with PATCH:
 

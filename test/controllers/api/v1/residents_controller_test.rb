@@ -1,8 +1,11 @@
 require "test_helper"
+require "support/app_oauth_test_helper"
 
 module Api
   module V1
     class ResidentsControllerTest < ActionDispatch::IntegrationTest
+
+      include AppOauthTestHelper
 
       setup do
         Setting.instance.update!(allow_agents: true)
@@ -62,6 +65,122 @@ module Api
         assert_response :not_found
         get catalogue_api_v1_residents_url, headers: auth(token)
         assert_response :not_found
+      end
+
+      # Mira, #234: Account#accessible_by? ignores disablement, so a member's
+      # key kept working after the account was disabled.
+      test "a disabled account's key is not found, for reads and writes" do
+        connection = service_connection(@account, @user)
+        @account.update_columns(disabled_at: Time.current)
+
+        get api_v1_resident_url(@agent), headers: auth
+        assert_response :not_found
+        get catalogue_api_v1_residents_url, headers: auth
+        assert_response :not_found
+        get provisioning_api_v1_resident_url(@agent), headers: auth
+        assert_response :not_found
+        patch api_v1_resident_url(@agent), params: { agent: { name: "After closing" } }, headers: auth, as: :json
+        assert_response :not_found
+        delete api_v1_resident_url(@agent), headers: auth
+        assert_response :not_found
+        assert_no_difference [ "Agent.count", "AgentServiceAccess.count" ] do
+          post api_v1_residents_url, params: { agent: { name: "Late", system_prompt: "x" } }, headers: auth, as: :json
+          assert_response :not_found
+          patch service_access_api_v1_resident_url(@agent, connection_id: connection.public_id),
+                headers: auth, as: :json, params: { enabled: true }
+          assert_response :not_found
+        end
+        @agent.reload
+        assert_equal "Research Assistant", @agent.name
+        assert @agent.active?
+      end
+
+      # OAuth: a person's token spans their enabled accounts. The resident's
+      # own account decides authority, and audit rows carry the app session.
+      test "oauth: reads and edits a resident in a second account without account_id" do
+        oauth_setup
+        get api_v1_resident_url(@team_agent), headers: bearer(@tokens)
+        assert_response :success
+        assert_equal "Team Agent", json.dig("agent", "name")
+
+        patch api_v1_resident_url(@team_agent), params: { agent: { name: "Team Renamed" } }, headers: bearer(@tokens), as: :json
+        assert_response :success
+        assert_equal "Team Renamed", @team_agent.reload.name
+        log = AuditLog.where(action: "update_agent", auditable: @team_agent).last
+        assert_equal @team, log.account
+        assert_equal users(:existing_user), log.user
+        assert_equal @app_session.id, log.data["app_session_id"]
+        assert_not log.data.key?("api_key_id")
+      end
+
+      test "oauth: service access and birth in a named account audit the app session and that account" do
+        oauth_setup
+        connection = service_connection(@team, users(:existing_user))
+        patch service_access_api_v1_resident_url(@team_agent, connection_id: connection.public_id),
+              headers: bearer(@tokens), as: :json, params: { enabled: true }
+        assert_response :success
+        log = AuditLog.where(action: "enable_resident_service").last
+        assert_equal @team, log.account
+        assert_equal @app_session.id, log.data["app_session_id"]
+
+        post api_v1_residents_url, headers: bearer(@tokens), as: :json, params: {
+          account_id: @team.to_param, agent: { name: "OAuth Birth", system_prompt: "Be kind", model_id: "openrouter/auto" }
+        }
+        assert_response :created
+        born = Agent.find_by!(name: "OAuth Birth")
+        assert_equal @team, born.account
+        log = AuditLog.where(action: "create_agent", auditable: born).last
+        assert_equal @team, log.account
+        assert_equal @app_session.id, log.data["app_session_id"]
+      end
+
+      test "oauth: account_id naming another of the person's accounts does not reach the resident" do
+        oauth_setup
+        get api_v1_resident_url(@team_agent, account_id: accounts(:another_team).to_param), headers: bearer(@tokens)
+        assert_response :not_found
+        patch api_v1_resident_url(@team_agent, account_id: accounts(:another_team).to_param),
+              params: { agent: { name: "Wrong door" } }, headers: bearer(@tokens), as: :json
+        assert_response :not_found
+        assert_equal "Team Agent", @team_agent.reload.name
+
+        get api_v1_resident_url(@team_agent, account_id: @team.to_param), headers: bearer(@tokens)
+        assert_response :success
+      end
+
+      test "oauth: a resident outside the person's accounts is not found" do
+        oauth_setup
+        get api_v1_resident_url(@agent), headers: bearer(@tokens)
+        assert_response :not_found
+      end
+
+      test "oauth: a disabled account is not found" do
+        oauth_setup
+        @team.update_columns(disabled_at: Time.current)
+        get api_v1_resident_url(@team_agent), headers: bearer(@tokens)
+        assert_response :not_found
+        patch api_v1_resident_url(@team_agent), params: { agent: { name: "Closed" } }, headers: bearer(@tokens), as: :json
+        assert_response :not_found
+        post api_v1_residents_url, headers: bearer(@tokens), as: :json,
+             params: { account_id: @team.to_param, agent: { name: "Closed Birth", system_prompt: "x" } }
+        assert_response :not_found
+        assert_equal "Team Agent", @team_agent.reload.name
+      end
+
+      test "oauth: a departed member is not found" do
+        oauth_setup
+        memberships(:team_member).destroy!
+        get api_v1_resident_url(@team_agent), headers: bearer(@tokens)
+        assert_response :not_found
+        patch api_v1_resident_url(@team_agent), params: { agent: { name: "Gone" } }, headers: bearer(@tokens), as: :json
+        assert_response :not_found
+        assert_equal "Team Agent", @team_agent.reload.name
+      end
+
+      test "oauth: catalogue uses the person's default account" do
+        oauth_setup
+        get catalogue_api_v1_residents_url, headers: bearer(@tokens)
+        assert_response :success
+        assert json["default_model_id"].present?
       end
 
       test "resident keys are refused" do
@@ -215,6 +334,16 @@ module Api
         assert_nil @agent.reload.orientation_last_error
       end
 
+      test "ready means onboarding finished; current health is reported separately" do
+        @agent.update!(birth_committed_at: Time.current, runtime: "external", health_state: "unhealthy",
+                       uuid: SecureRandom.uuid_v7, orientation_completed_at: Time.current)
+        get provisioning_api_v1_resident_url(@agent), headers: auth
+        assert_response :success
+        assert_equal "ready", json.dig("provisioning", "state")
+        assert_equal "unhealthy", json.dig("provisioning", "health_state")
+        assert_equal false, json.dig("provisioning", "stages", "runtime_ready")
+      end
+
       test "memory overview returns counts" do
         service = Struct.new(:call).new({ journals: { count: 2 }, node_count: 3, edge_count: 4, days: [] })
         Agents::MemoryOverview.stub(:new, ->(agent) { assert_equal @agent, agent; service }) do
@@ -260,6 +389,16 @@ module Api
       end
 
       private
+
+      def oauth_setup
+        @user = users(:existing_user)
+        @user.update_columns(default_account_id: accounts(:existing_user_account).id)
+        @team = accounts(:team_account)
+        @team_agent = agents(:other_account_agent)
+        @client = create_app_client
+        @tokens = sign_in_device
+        @app_session = row_for(@tokens).app_session
+      end
 
       def auth(token = @token)
         { "Authorization" => "Bearer #{token}" }
