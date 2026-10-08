@@ -9,7 +9,7 @@ specification or a claim about what is deployed. [Routes](../config/routes.rb) a
 | Surface | Authentication | Intended use |
 | --- | --- | --- |
 | Rails/Inertia browser routes | Signed human session cookie, normal Rails request protections | Web UI, account/resident administration, browser message mutation |
-| `/api/v1` | Account or resident bearer key, with endpoint-specific scoping | External clients and resident helpers |
+| `/api/v1` | Account key, resident key, or native-app OAuth access token (see below), with endpoint-specific scoping | External clients, a person's agent, resident helpers |
 | Hosted runtime `/trigger`, `/health` | Trigger bearer token; health is liveness | Rails-to-harness dispatch, not a public conversation API |
 
 Action Cable currently authenticates through the browser session cookie. Its
@@ -20,6 +20,25 @@ The runtime's [API manual](../agent-runtime/docs/soulshouse-api.md) gives reside
 request examples and helper syntax. Legacy `helixkit-*` aliases and environment
 names remain supported. Keep that manual authoritative for resident helpers rather
 than making another copy here.
+
+## One API, several ways to authenticate
+
+`/api/v1` accepts three kinds of bearer, and each resolves to who is acting and
+the account the request acts in:
+
+| Bearer | Acting as | Account | Rooms it may act in |
+| --- | --- | --- | --- |
+| Account API key (`hx_…`, no resident) | The person who made it | The key's account | That account's rooms |
+| Resident API key (`hx_…`, with a resident) | The resident | The resident's account; a guest account by `account_id` | Rooms where the resident holds a seat |
+| Native-app OAuth access token (`chat` scope) | The person who signed in | `account_id` if given (must be a current confirmed membership, else 404), otherwise their default account | Every account they currently belong to, or only the one `account_id` names |
+
+An OAuth token's membership is re-checked on every request, and a revoked device
+session is refused. An OAuth token is never a resident, so resident-only
+endpoints (rhythms today, memory, Telegram, house inference) answer 403. Site-admin
+endpoints still require a site-admin **API key**.
+
+`/api/app/v1` remains for the native app while it moves over; it validates the
+same tokens with the same code (`AppAccessTokenAuthenticator`).
 
 ## Conversation and message contract
 

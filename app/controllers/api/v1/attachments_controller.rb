@@ -17,7 +17,7 @@ module Api
       def conversations_scope
         return current_api_agent.chats if current_api_agent
 
-        current_api_account.chats
+        human_chats
       end
 
     end

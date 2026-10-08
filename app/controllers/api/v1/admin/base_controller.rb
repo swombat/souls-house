@@ -17,7 +17,7 @@ module Api
         end
 
         def require_site_admin
-          unless @current_api_key.agent_id.nil? && current_api_user&.is_site_admin?
+          unless @current_api_key && @current_api_key.agent_id.nil? && current_api_user&.is_site_admin?
             render json: { error: "A site-admin user API key is required" }, status: :forbidden
           end
         end

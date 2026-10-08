@@ -47,7 +47,7 @@ module Api
 
       def set_chat
         response.headers["Cache-Control"] = "no-store"
-        scope = current_api_account.chats.kept
+        scope = (current_api_agent ? current_api_account.chats : human_chats).kept
         if current_api_agent
           scope = scope.joins(:chat_agents).where(chat_agents: { agent_id: current_api_agent.id })
         end

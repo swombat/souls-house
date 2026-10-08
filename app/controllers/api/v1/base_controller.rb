@@ -3,6 +3,7 @@ module Api
     class BaseController < ActionController::API
 
       include ApiAuthentication
+      include ApiHumanActor
       # After authentication, which ApiAuthentication's before_action does.
       # PaperTrail 17 no longer adds this callback itself.
       before_action :set_paper_trail_whodunnit
@@ -43,7 +44,7 @@ module Api
       # Rooms a key may act in: its account's rooms and, for a resident key,
       # every room where that resident holds a seat, at home or as a guest.
       def actionable_chats
-        return current_api_account.chats unless current_api_agent
+        return human_chats unless current_api_agent
 
         Chat.where(account_id: current_api_account.id)
           .or(Chat.where(id: current_api_agent.chat_agents.select(:chat_id)))
