@@ -162,6 +162,30 @@ class RunnerEnrollment < ApplicationRecord
     end
   end
 
+  # The runner asks for a resident image (#238 part 3). The house hands it
+  # over only while this enrollment holds a delivered, unanswered
+  # start_resident naming exactly that image ID. Same rule as the other
+  # endpoints: every check under the lock before the nonce is consumed.
+  IMAGE_ID = /\Asha256:[0-9a-f]{64}\z/
+
+  def authorize_image!(image_id:, nonce:, now: Time.current)
+    with_lock do
+      placement = require_live!
+      raise Refused.new(:bad_image, 404) unless IMAGE_ID.match?(image_id.to_s)
+
+      wanted = commands.where(kind: "start_resident", state: "delivered")
+        .where(generation: placement.generation).any? do |command|
+          JSON.parse(command.payload_json.to_s)["image"] == image_id
+        rescue JSON::ParserError
+          false
+        end
+      raise Refused.new(:image_not_requested, 404) unless wanted
+
+      consume_nonce!(nonce, now)
+      image_id
+    end
+  end
+
   def healthy?(now: Time.current)
     enrolled? && revoked_at.nil? && last_heartbeat_at.present? && last_heartbeat_at > now - HEALTHY_WITHIN
   end

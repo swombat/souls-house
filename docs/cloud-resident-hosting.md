@@ -143,8 +143,8 @@ The transport for resident turns stays **dial-out** (Mira's shape check on
 - **What runs on the VM.** `docker create` comes from a fixed template that
   mirrors `Agents::Sandbox#run_container!`: named volumes, a private bridge
   network, no published ports, no host mounts, no Docker socket. Rails supplies
-  values, never flags. Images are pinned by digest; a pull credential, if
-  sent, is scoped to the image's registry and used for one pull. Resident env
+  values, never flags. Images are pinned by image ID and fetched from the
+  house (see below). Resident env
   keys are allowlisted (house inference only, no provider keys) and written to
   a `0600` env file, never to argv. Turns are relayed to the resident's
   trigger server on the private bridge.
@@ -169,13 +169,26 @@ runner enrollment (`Agents::RemoteRuntime.dispatchable?`). Then:
   out being a successful `start_resident`. Cold-start and cleanup never touch
   local Docker for a VM resident.
 - Starting and stopping are operator actions: `Agents::RemoteRuntime.start!`
-  (digest-pinned image, optional pull-only credential) and `stop!`. Only
+  (the resident's local image, pinned by image ID) and `stop!`. Only
   house-inference residents with native homes can run on a VM; the
   environment is the house's own values with the public origin.
 - A ready VM placement needs its `provider_server_id` but no
   `runtime_endpoint`: nothing calls the VM.
 - VMs are ordered with the command channel off unless the credentials set
   `hetzner_cloud.runner_commands: true`.
+
+## Resident images come from the house (#238 part 3)
+
+Resident images are built on the house host and pushed to no registry, so a
+VM gets its image from the house. `start_resident` pins the image by **image
+ID** (`sha256:<64 hex>`, the hash of the image config, which `docker load`
+reproduces exactly). The runner fetches it with a signed
+`GET /api/v1/host_runner/images/sha256:<id>`. Rails serves it only while this
+enrollment holds a delivered, unanswered `start_resident` naming exactly that
+ID in the placement's current generation, and streams `docker save` of that ID.
+The runner pipes it into `docker load`, refuses to run unless the image is then
+present under that exact ID, and skips the fetch when it already has it. No
+registry, no registry credential, nothing in cloud-init.
 
 Not in this slice: moving an existing resident's data (backup, restore,
 single-writer cutover), real residents, and console containment on a VM.

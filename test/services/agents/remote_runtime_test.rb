@@ -3,7 +3,7 @@ require "test_helper"
 module Agents
   class RemoteRuntimeTest < ActiveSupport::TestCase
 
-    DIGEST_IMAGE = "registry.example/souls-house/agent@sha256:#{'a' * 64}".freeze
+    DIGEST_IMAGE = "sha256:#{'a' * 64}".freeze
 
     setup do
       @agent = agents(:research_assistant)
@@ -61,9 +61,11 @@ module Agents
       end
     end
 
-    test "start! needs a digest-pinned image and queues one start_resident for this placement" do
+    test "start! needs an image ID and queues one start_resident for this placement" do
       with_env("SOULSHOUSE_DOMAIN" => "house.example") do
-        assert_raises(ArgumentError) { RemoteRuntime.start!(@agent, image: "registry.example/agent:latest") }
+        [ "registry.example/agent:latest", "helixkit-agent-runtime:latest", "sha256:abc" ].each do |image|
+          assert_raises(ArgumentError, image) { RemoteRuntime.start!(@agent, image:) }
+        end
         command = RemoteRuntime.start!(@agent, image: DIGEST_IMAGE)
         assert_equal "start_resident", command.kind
         assert_equal @placement.generation, command.generation

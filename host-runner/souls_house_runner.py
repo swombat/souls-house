@@ -26,6 +26,7 @@ used only for Ed25519. No cryptography is implemented here.
 
 import base64
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -33,7 +34,7 @@ import secrets
 import shutil
 import subprocess
 import sys
-import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -274,7 +275,9 @@ TRIGGER_PORT = 4000
 REMEMBERED_RESULTS = 200
 
 NAME_RE = re.compile(r"\A[a-z0-9][a-z0-9-]{0,62}\Z")
-IMAGE_RE = re.compile(r"\A[a-z0-9][a-z0-9.\-]*(?::[0-9]{1,5})?(?:/[a-z0-9][a-z0-9._\-]*)+@sha256:[0-9a-f]{64}\Z")
+# Resident images are built on the house host and pushed to no registry, so
+# the runner fetches one from the house by image ID and checks it after load.
+IMAGE_RE = re.compile(r"\Asha256:[0-9a-f]{64}\Z")
 COMMAND_ID_RE = re.compile(r"\A[0-9a-f]{32}\Z")
 DISPATCH_ID_RE = re.compile(r"\A[0-9a-f-]{36}\Z")
 LEDGER_ID_RE = re.compile(r"\A[0-9A-Za-z_\-]{1,64}\Z")
@@ -329,7 +332,7 @@ def validate_resident_spec(payload):
     name = payload.get("container_name")
     _require(isinstance(name, str) and NAME_RE.match(name), "bad container_name")
     image = payload.get("image")
-    _require(isinstance(image, str) and IMAGE_RE.match(image), "image must be pinned by sha256 digest")
+    _require(isinstance(image, str) and IMAGE_RE.match(image), "image must be a sha256 image ID")
     memory = payload.get("memory_mb")
     _require(isinstance(memory, int) and not isinstance(memory, bool)
              and MEMORY_MB_RANGE[0] <= memory <= MEMORY_MB_RANGE[1], "bad memory_mb")
@@ -343,16 +346,8 @@ def validate_resident_spec(payload):
         _require(isinstance(value, str) and "\n" not in value and "\r" not in value and "\0" not in value,
                  f"bad env value for {key}")
     _require(env.get("TRIGGER_BEARER_TOKEN"), "TRIGGER_BEARER_TOKEN required")
-    auth = payload.get("registry_auth")
-    if auth is not None:
-        # A pull-only credential for exactly the image's registry, used for
-        # one pull and never written to Docker's global config.
-        _require(isinstance(auth, dict) and set(auth) == {"registry", "username", "password"}, "bad registry_auth")
-        _require(auth["registry"] == image.split("/", 1)[0], "registry_auth must be for the image's registry")
-        for field in ("username", "password"):
-            _require(isinstance(auth[field], str) and auth[field] and "\n" not in auth[field], f"bad registry_auth {field}")
-    return {"container_name": name, "image": image, "memory_mb": memory, "cpu_shares": shares, "env": dict(env),
-            "registry_auth": auth}
+    _require("registry_auth" not in payload, "registry credentials are not accepted")
+    return {"container_name": name, "image": image, "memory_mb": memory, "cpu_shares": shares, "env": dict(env)}
 
 
 def volume_name(container_name, role):
@@ -431,10 +426,9 @@ class CommandState:
         os.rename(tmp, self.path)
 
 
-def _docker(argv, timeout=120, env=None):
+def _docker(argv, timeout=120):
     try:
-        completed = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                                   env=None if env is None else {**os.environ, **env})
+        completed = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.SubprocessError) as error:
         return False, str(error)
     return completed.returncode == 0, (completed.stdout if completed.returncode == 0 else completed.stderr).strip()
@@ -477,11 +471,14 @@ class ResidentHost:
     """Carries out the five commands. Docker and HTTP are injected so tests
     can see exactly what would run."""
 
-    def __init__(self, state_dir, docker=_docker, http=_http, sleep=time.sleep):
+    def __init__(self, state_dir, docker=_docker, http=_http, sleep=time.sleep, load_image=None):
         self.state_dir = state_dir
         self.docker = docker
         self.http = http
         self.sleep = sleep
+        # load_image(image_id) streams the image from the house into
+        # `docker load`; returns (ok, error).
+        self.load_image = load_image
 
     # Secrets for a resident live only in its root-owned env file.
     def _env_path(self, name):
@@ -559,22 +556,23 @@ class ResidentHost:
             self.sleep(2)
         raise CommandFailed("resident started but never answered /health")
 
+    def _image_present(self, image_id):
+        ok, found = self.docker(["docker", "image", "inspect", "--format", "{{.Id}}", image_id])
+        return ok and found == image_id
+
     def _pull(self, spec):
-        auth = spec["registry_auth"]
-        if auth is None:
-            ok, error = self.docker(["docker", "pull", spec["image"]], timeout=900)
-        else:
-            config_dir = tempfile.mkdtemp(prefix="pull-", dir=self.state_dir)
-            try:
-                token = base64.b64encode(f"{auth['username']}:{auth['password']}".encode()).decode("ascii")
-                self._write_private(os.path.join(config_dir, "config.json"),
-                                    json.dumps({"auths": {auth["registry"]: {"auth": token}}}))
-                ok, error = self.docker(["docker", "pull", spec["image"]], timeout=900,
-                                        env={"DOCKER_CONFIG": config_dir})
-            finally:
-                shutil.rmtree(config_dir, ignore_errors=True)
+        image_id = spec["image"]
+        if self._image_present(image_id):
+            return
+        if self.load_image is None:
+            raise CommandFailed("no way to fetch images on this runner")
+        ok, error = self.load_image(image_id)
         if not ok:
-            raise CommandFailed(f"could not pull image: {error}")
+            raise CommandFailed(f"could not fetch image: {error}")
+        # The ID is the hash of the image config: whatever was loaded, only the
+        # exact image asked for may run.
+        if not self._image_present(image_id):
+            raise CommandFailed("fetched image does not match the requested image ID")
 
     def stop_resident(self, payload):
         name = payload.get("container_name")
@@ -637,6 +635,122 @@ def execute_command(command, state, host):
     return command["id"], result
 
 
+IMAGE_PATH = "/api/v1/host_runner/images/{id}"
+IMAGE_CHUNK = 1024 * 1024
+
+
+# The image comes from the house and nowhere else: a redirect is answered as
+# the 3xx it is, so no redirected byte reaches docker load and the signature
+# headers never leave for another host.
+_IMAGE_OPENER = urllib.request.build_opener(_RefuseRedirects)
+
+
+def fetch_image(config, key, image_id, write, opener=_IMAGE_OPENER.open, deadline=None):
+    """Signed GET of one image from the house, streamed into write().
+    Returns (ok, error); never raises. deadline is a time.monotonic() value:
+    past it, the fetch stops at its next read."""
+    if not IMAGE_RE.match(image_id or ""):
+        return False, "bad image ID"
+    path = IMAGE_PATH.format(id=image_id)
+    request = urllib.request.Request(config["rails_url"].rstrip("/") + path, method="GET",
+                                     headers=signed_headers(key, "GET", path, b"", config["runner_id"]))
+    try:
+        with opener(request, timeout=60) as response:
+            if response.status != 200:
+                return False, f"house answered {response.status}"
+            # read1 returns after one receive, so a slow drip cannot hold a
+            # single read open past the deadline check.
+            read = response.read1 if hasattr(response, "read1") else response.read
+            while True:
+                if deadline is not None and time.monotonic() >= deadline:
+                    return False, "image fetch passed its deadline"
+                chunk = read(IMAGE_CHUNK)
+                if not chunk:
+                    return True, ""
+                write(chunk)
+    except (OSError, ValueError, http.client.HTTPException) as error:
+        return False, f"{type(error).__name__}: {error}"
+
+
+# docker load runs inside the command loop, which also carries heartbeats and
+# later stop commands, so the whole call is bounded by one absolute deadline:
+# the fetch runs in a worker thread that the loop stops waiting for at the
+# deadline (the worker itself stops at its next read or write); stderr is
+# drained concurrently, keeping only its tail, so neither side can block on a
+# full pipe; and whatever happens, the child is killed if still running and
+# reaped before this returns.
+LOAD_DEADLINE = 30 * 60
+LOAD_STDERR_TAIL = 4096
+
+
+def _drain_tail(stream, keep):
+    tail = bytearray()
+
+    def run():
+        for chunk in iter(lambda: stream.read(4096), b""):
+            tail.extend(chunk)
+            del tail[:-keep]
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return thread, tail
+
+
+def docker_load_from_house(config, key, popen=subprocess.Popen, fetch=fetch_image, deadline=LOAD_DEADLINE):
+    def load(image_id):
+        ends_at = time.monotonic() + deadline
+        try:
+            process = popen(["docker", "load"], stdin=subprocess.PIPE,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        except OSError as error:
+            return False, str(error)
+        outcome = {}
+
+        def run():
+            try:
+                outcome["result"] = fetch(config, key, image_id, process.stdin.write, deadline=ends_at)
+            except OSError:
+                outcome["result"] = (False, "docker load stopped reading")
+            except Exception as error:  # never let the worker die silently
+                outcome["result"] = (False, f"image fetch failed: {type(error).__name__}: {error}")
+
+        timed_out = False
+        code = None
+        drainer = None
+        tail = bytearray()
+        try:
+            drainer, tail = _drain_tail(process.stderr, LOAD_STDERR_TAIL)
+            worker = threading.Thread(target=run, daemon=True)
+            worker.start()
+            worker.join(max(0.0, ends_at - time.monotonic()))
+            timed_out = worker.is_alive()
+            ok, error = outcome.get("result", (False, "image fetch did not finish"))
+            if timed_out or not ok:
+                process.kill()
+            try:
+                process.stdin.close()
+            except (OSError, ValueError):
+                pass
+            try:
+                code = process.wait(timeout=max(0.0, ends_at - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                timed_out = True
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+            if drainer is not None:
+                drainer.join(timeout=5)
+        if timed_out:
+            return False, f"docker load did not finish within {deadline} seconds"
+        if not ok:
+            return False, error or "image fetch failed"
+        if code != 0:
+            return False, bytes(tail[-500:]).decode("utf-8", "replace") or "docker load failed"
+        return True, ""
+    return load
+
+
 def poll_command_once(config, key, state, host, opener=urllib.request.urlopen):
     """One poll. Returns True when a command was handled."""
     status, body = post(config["rails_url"], COMMAND_NEXT_PATH, {}, key, config["runner_id"], opener=opener)
@@ -692,7 +806,7 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
         # Heartbeats keep their cadence; between them the runner polls for
         # commands, pausing COMMAND_IDLE_SECONDS when there is nothing to do.
         state = CommandState(state_dir)
-        host = ResidentHost(state_dir, sleep=sleep)
+        host = ResidentHost(state_dir, sleep=sleep, load_image=docker_load_from_house(config, key))
         last_beat = None
         while max_heartbeats is None or sent < max_heartbeats:
             if last_beat is None or clock() - last_beat >= HEARTBEAT_SECONDS:

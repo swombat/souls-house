@@ -1,3 +1,5 @@
+require "open3"
+
 module Agents
   # A resident whose placement is on a house-ordered VM (#238). Rails never
   # calls the VM: everything here becomes a RunnerCommand that the VM's runner
@@ -11,7 +13,9 @@ module Agents
 
     ENDPOINT_SCHEME = "runner".freeze
     ENDPOINT_PATTERN = /\Arunner:\/\/(rnr_[0-9a-f]{20})\z/
-    IMAGE_PATTERN = /\A[a-z0-9][a-z0-9.\-]*(?::[0-9]{1,5})?(?:\/[a-z0-9][a-z0-9._\-]*)+@sha256:[0-9a-f]{64}\z/
+    # Resident images are built on the house host and pushed nowhere, so a VM
+    # gets one from the house by image ID (RunnerEnrollment#authorize_image!).
+    IMAGE_ID = RunnerEnrollment::IMAGE_ID
 
     class Unavailable < StandardError; end
 
@@ -66,11 +70,11 @@ module Agents
       RemoteTriggerClient.new(enrollment:, agent: turn.agent, resident_turn: turn)
     end
 
-    # Operator action: start (or update) the resident on its VM. The image
-    # must be pinned by digest; a pull credential, if needed, must be
-    # pull-only and is scoped by the runner to the image's registry.
-    def start!(agent, image:, registry_auth: nil)
-      raise ArgumentError, "image must be pinned by sha256 digest" unless IMAGE_PATTERN.match?(image.to_s)
+    # Operator action: start (or update) the resident on its VM, with the
+    # exact image the house would run locally, pinned by image ID. The VM
+    # fetches that image from the house and checks the ID before using it.
+    def start!(agent, image: local_image_id(agent))
+      raise ArgumentError, "image must be a sha256 image ID" unless IMAGE_ID.match?(image.to_s)
 
       enrollment = live_enrollment!(agent)
       payload = {
@@ -80,8 +84,15 @@ module Agents
         "cpu_shares" => agent.container_cpu_shares,
         "env" => environment(agent)
       }
-      payload["registry_auth"] = registry_auth.to_h.stringify_keys.slice("registry", "username", "password") if registry_auth
       RunnerCommand.enqueue!(enrollment:, kind: "start_resident", payload:)
+    end
+
+    def local_image_id(agent)
+      stdout, status = Open3.capture2("docker", "image", "inspect", "--format", "{{.Id}}", agent.container_image.to_s)
+      id = stdout.strip
+      raise Unavailable, "resident image #{agent.container_image} is not on this host" unless status.success? && IMAGE_ID.match?(id)
+
+      id
     end
 
     def stop!(agent)
