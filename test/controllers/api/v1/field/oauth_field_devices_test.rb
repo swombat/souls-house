@@ -165,4 +165,47 @@ class Api::V1::Field::OauthFieldDevicesTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
+  # The counterpart to the OAuth reach above (Mira's scoping constraint on
+  # #232): a person's account key is scoped to its account. A key minted for
+  # their personal account can't reach things in the team account, even
+  # though the person belongs to both.
+  test "an account key for one account can't reach the person's other account" do
+    key = human_headers(@user, @personal)
+    @stream.update!(enabled: false)
+
+    get api_v1_field_recording_path(@recording), headers: key
+    assert_response :not_found
+    get audio_api_v1_field_recording_path(@recording), headers: key
+    assert_response :not_found
+    patch api_v1_field_recording_path(@recording), params: { title: "No" }, headers: key.dup, as: :json
+    assert_response :not_found
+    patch api_v1_field_recording_speaker_path(@recording, @speaker), params: { name: "No" }, headers: key.dup, as: :json
+    assert_response :not_found
+    patch api_v1_field_file_path(@file), params: { title: "No" }, headers: key.dup, as: :json
+    assert_response :not_found
+    patch api_v1_field_voice_path(@voice), params: { name: "No" }, headers: key.dup, as: :json
+    assert_response :not_found
+    delete forget_api_v1_field_voice_path(@voice), headers: key
+    assert_response :not_found
+    delete api_v1_whiteboard_path(@whiteboard), headers: key
+    assert_response :not_found
+    get api_v1_device_stream_path(@stream.stream_key), headers: key
+    assert_response :not_found
+    patch api_v1_device_stream_path(@stream.stream_key), params: { enabled: true }, headers: key.dup, as: :json
+    assert_response :not_found
+    delete api_v1_device_stream_path(@stream.stream_key), headers: key
+    assert_response :not_found
+
+    get api_v1_field_voices_path(account_id: @team.to_param), headers: key
+    assert_response :success
+    assert_empty response.parsed_body["voices"], "a key's account_id doesn't widen it: still the key's account"
+    get api_v1_device_streams_path, headers: key
+    assert_empty response.parsed_body["device_streams"]
+
+    assert_equal [ "Team call", "Notes", "Tomás", nil, false, nil ],
+      [ @recording.reload.title, @file.reload.title, @voice.reload.name, @whiteboard.reload.deleted_at,
+        @stream.reload.enabled?, @stream.erased_at ]
+    assert_nil @speaker.reload.field_voice_id
+  end
+
 end
