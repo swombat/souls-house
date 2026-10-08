@@ -6,13 +6,8 @@ class AccountMembersController < ApplicationController
 
   def destroy
     @member = @account.memberships.find(params[:id])
-    if @member.owner? && @account.last_owner?
-      redirect_to account_path(@account), alert: "Cannot remove the last owner"
-      return
-    end
-
-    if @member.user_id == Current.user.id
-      redirect_to account_path(@account), alert: "You can't remove yourself from this account"
+    if (refusal = @member.removal_refusal_for(Current.user))
+      redirect_to account_path(@account), alert: refusal
       return
     end
 

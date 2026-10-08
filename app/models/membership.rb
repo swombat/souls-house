@@ -137,6 +137,14 @@ class Membership < ApplicationRecord
     true
   end
 
+  # Why a manager may not remove this membership, or nil when they may. The
+  # web and API both show these words.
+  def removal_refusal_for(user)
+    return "Cannot remove the last owner" if owner? && account.last_owner?
+
+    "You can't remove yourself from this account" if user_id == user&.id
+  end
+
   def resend_invitation!
     return false unless invitation_pending?
 

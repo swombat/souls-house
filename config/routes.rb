@@ -280,6 +280,24 @@ Rails.application.routes.draw do
         resources :users, only: :index
       end
       resources :visual_tags, only: :index
+      # Account administration with a person's key (the web's account pages).
+      resource :account, only: %i[show update] do
+        scope module: :accounts do
+          resources :invitations, only: :create do
+            post :resend, on: :member
+          end
+          resources :members, only: :destroy
+          resources :notices, only: %i[index create destroy]
+          resource :costs, only: :show
+          get "agents/:agent_id/costs", to: "costs#agent", as: :agent_costs
+          get "conversations/:conversation_id/costs", to: "costs#conversation", as: :conversation_costs
+          resources :visual_tags, only: %i[create update destroy]
+          resources :api_keys, only: %i[index destroy]
+          resources :guest_memberships, only: %i[index create destroy]
+          resources :service_connections, only: %i[index update destroy]
+          resource :ai_provider_keys, only: %i[show update]
+        end
+      end
       resources :rhythms, only: %i[index show create update destroy] do
         member do
           post :join
