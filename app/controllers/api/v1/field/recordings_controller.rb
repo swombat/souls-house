@@ -16,6 +16,7 @@ module Api
 
         include AttachmentDownloads
         include ApiHumanReach
+        include ApiHomeAccountOnly
 
         HUMAN_ACTIONS = %i[audio create update destroy retry dismiss_you_hint].freeze
 
