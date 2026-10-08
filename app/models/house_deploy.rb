@@ -110,6 +110,9 @@ class HouseDeploy
 
       {
         id: run["id"],
+        # A rerun keeps the run id and bumps run_attempt; outcomes and job
+        # evidence belong to one attempt.
+        attempt: (run["run_attempt"] || 1).to_i,
         workflow: key,
         name: names[key],
         status: run["status"],
@@ -148,12 +151,15 @@ class HouseDeploy
 
   # deployed / superseded / not_deployed for a finished successful run; nil
   # while running or when the run itself failed (its conclusion says so).
-  # Finished runs never change, so their outcome is cached.
+  # A finished attempt never changes, so its outcome is cached per attempt.
+  # (A rerun keeps the run id, so caching by id alone would show the first
+  # attempt's outcome for every later one.)
   def self.automatic_outcome(run)
     return nil unless run[:status] == "completed" && run[:conclusion] == "success"
 
-    Rails.cache.fetch([ "house_deploy/automatic_outcome", run[:id] ], expires_in: 1.day, skip_nil: true) do
-      status, _headers, body = transport.call(:get, "/repos/#{repo}/actions/runs/#{run[:id]}/jobs", nil)
+    attempt = (run[:attempt] || 1).to_i
+    Rails.cache.fetch([ "house_deploy/automatic_outcome", run[:id], attempt ], expires_in: 1.day, skip_nil: true) do
+      status, _headers, body = transport.call(:get, "/repos/#{repo}/actions/runs/#{run[:id]}/attempts/#{attempt}/jobs", nil)
       next nil unless status == 200 && body.is_a?(Hash)
 
       ran = Array(body["jobs"]).flat_map { |job| Array(job["steps"]) }
