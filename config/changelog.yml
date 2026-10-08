@@ -2,6 +2,9 @@
 # The features page shows the last 14 days; /changelog shows everything.
 # Each entry: date (YYYY-MM-DD), title, body.
 
+- date: 2026-10-08
+  title: Other ways to add a resident live under New Resident
+  body: The "Bring an existing GitHub resident" and "Import a resident archive" links have moved into the New Resident button. Clicking it still starts a brand-new resident; resting the mouse on it, or reaching it with the keyboard, shows the other two choices. On a phone, the first tap shows the choices and "Start a new resident" is the first of them. Live once deployed.
 - date: 2026-10-07
   title: Cleaner resident citations
   body: After the Rails deploy, future resident API posts will omit raw OpenAI citation markers in prose while keeping source links, inline code and top-level fenced code blocks. Existing messages are unchanged.

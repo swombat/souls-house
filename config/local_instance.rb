@@ -88,7 +88,12 @@ module LocalInstance
       # never echo a connection URL (it can contain a password).
       overrides = @env.keys.grep(/\A(?:.*_)?DATABASE_URL\z/).select { |key| !@env[key].to_s.empty? }
       raise Error, "Local database URL overrides are unsafe: #{overrides.join(', ')}. Unset them." unless overrides.empty?
-      if @env["PGSERVICE"] || (@env["PGHOST"] && !@env["PGHOST"].match?(/\A(?:localhost|127\.0\.0\.1|::1|\/.*)\z/))
+      # GitHub container jobs reach their private service by Docker alias,
+      # not loopback. This is only the named test service, never an arbitrary
+      # remote host or a development/database-URL override.
+      ci_postgres = environment == "test" && @env["GITHUB_ACTIONS"] == "true" &&
+        @env["CI"] == "true" && @env["PGHOST"] == "postgres"
+      if @env["PGSERVICE"] || (@env["PGHOST"] && !@env["PGHOST"].match?(/\A(?:localhost|127\.0\.0\.1|::1|\/.*)\z/) && !ci_postgres)
         raise Error, "Local instances require a local PostgreSQL host and no PGSERVICE override"
       end
       return if number.zero?

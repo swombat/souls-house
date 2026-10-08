@@ -55,6 +55,27 @@ class LocalInstanceTest < Minitest::Test
     assert_raises(LocalInstance::Error) { other.claim!(directory: registry) }
   end
 
+  def test_github_test_service_alias_is_narrowly_allowed
+    env = { "PGHOST" => "postgres", "GITHUB_ACTIONS" => "true", "CI" => "true" }
+    config("souls-house-1", env, "test").validate!
+    [
+      env.reject { |key, _| key == "CI" },
+      env.reject { |key, _| key == "GITHUB_ACTIONS" },
+      env.merge("PGHOST" => "other.example"),
+      env.merge("PGSERVICE" => "override"),
+      env.merge("DATABASE_URL" => "postgres://secret")
+    ].each do |unsafe|
+      assert_raises(LocalInstance::Error) { config("souls-house-1", unsafe, "test").validate! }
+    end
+    assert_raises(LocalInstance::Error) { config("souls-house-1", env, "development").validate! }
+    assert_raises(LocalInstance::Error) { config("souls-house-1", { "PGHOST" => "postgres" }, "test").validate! }
+    registry = File.join(@directory, "ci-registry")
+    config("souls-house-1", env, "test").claim!(directory: registry)
+    assert_raises(LocalInstance::Error) do
+      config("different", env.merge("SOULSHOUSE_INSTANCE" => "1"), "test").claim!(directory: registry)
+    end
+  end
+
   def test_cookies_and_docker_are_isolated_by_instance_and_environment
     first = config("souls-house-1")
     second = config("souls-house-2")

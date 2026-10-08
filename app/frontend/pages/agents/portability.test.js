@@ -5,6 +5,16 @@ import ResidentIndex from './index.svelte';
 import NewResident from './new.svelte';
 import PortabilityPanel from '$lib/components/agents/resident-portability-panel.svelte';
 
+// jsdom has no PointerEvent, so fireEvent would drop pointerType.
+if (!window.PointerEvent) {
+  window.PointerEvent = class PointerEvent extends MouseEvent {
+    constructor(type, init = {}) {
+      super(type, init);
+      this.pointerType = init.pointerType ?? '';
+    }
+  };
+}
+
 vi.mock('$lib/use-sync', () => ({ useSync: vi.fn() }));
 
 const account = { id: 'account' };
@@ -36,9 +46,30 @@ test.each(['Stop the resident before exporting.', 'External graph export is unav
   }
 );
 
-test('an empty resident index still offers import', () => {
-  render(ResidentIndex, { account, resident_import_url: '/import' });
+test('an empty resident index still offers import from the New Resident menu', async () => {
+  render(ResidentIndex, { account, resident_import_url: '/import', github_resident_import_url: '/github' });
+  expect(screen.queryByRole('link', { name: 'Import a resident archive' })).not.toBeInTheDocument();
+  await fireEvent.pointerEnter(screen.getByRole('group', { name: 'Add a resident' }), { pointerType: 'mouse' });
   expect(screen.getByRole('link', { name: 'Import a resident archive' })).toHaveAttribute('href', '/import');
+  expect(screen.getByRole('link', { name: 'Bring an existing GitHub resident' })).toHaveAttribute('href', '/github');
+});
+
+test('New Resident still creates a new resident on a mouse click', async () => {
+  render(ResidentIndex, { account, resident_import_url: '/import' });
+  const button = screen.getByRole('button', { name: 'New Resident' });
+  await fireEvent.pointerDown(button, { pointerType: 'mouse' });
+  await fireEvent.click(button);
+  expect(router.visit).toHaveBeenCalled();
+});
+
+test('first tap on touch reveals the choices instead of creating', async () => {
+  render(ResidentIndex, { account, resident_import_url: '/import' });
+  const button = screen.getByRole('button', { name: 'New Resident' });
+  await fireEvent.pointerDown(button, { pointerType: 'touch' });
+  await fireEvent.click(button);
+  expect(router.visit).not.toHaveBeenCalled();
+  await fireEvent.click(screen.getByRole('button', { name: 'Start a new resident' }));
+  expect(router.visit).toHaveBeenCalled();
 });
 
 test('new resident page offers import without creating a resident', () => {
@@ -49,6 +80,7 @@ test('new resident page offers import without creating a resident', () => {
 test('index has no import entry when server does not grant it', () => {
   render(ResidentIndex, { account });
   expect(screen.queryByRole('link', { name: 'Import a resident archive' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'New Resident' })).not.toHaveAttribute('aria-expanded');
 });
 
 describe('explicit portability lifecycle actions', () => {
