@@ -8,6 +8,12 @@ on:
       operation:
         required: true
         type: string
+      # Optional, Rails only: deploy only if master is still this commit. The
+      # host checks it against its own clone; it can't pick another commit.
+      expected_revision:
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -30,10 +36,12 @@ jobs:
     environment: production-deploy
     env:
       OPERATION: ${{ inputs.operation }}
+      EXPECTED_REVISION: ${{ inputs.expected_revision }}
       DEPLOY_HOST: ${{ vars.HOUSE_DEPLOY_HOST }}
       DEPLOY_PORT: ${{ vars.HOUSE_DEPLOY_PORT }}
     steps:
       - name: Request deployment and wait for verified outcome
+        id: request
         shell: bash
         env:
           DEPLOY_KEY: ${{ secrets.HOUSE_DEPLOY_KEY }}
@@ -43,6 +51,11 @@ jobs:
           : "${DEPLOY_KEY:?Deployment environment SSH key unavailable}"
           : "${DEPLOY_KNOWN_HOSTS:?Deployment environment host keys unavailable}"
           case "$OPERATION" in rails|chaos|both|runtime) ;; *) exit 2;; esac
+          request="$OPERATION"
+          if [[ -n "$EXPECTED_REVISION" ]]; then
+            [[ "$OPERATION" == rails && "$EXPECTED_REVISION" =~ ^[0-9a-f]{40}$ ]] || exit 2
+            request="rails expect $EXPECTED_REVISION"
+          fi
           [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
           umask 077
           directory="$(mktemp -d)"
@@ -57,7 +70,7 @@ jobs:
               -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
               "house-deploy-trigger@$DEPLOY_HOST" "$1"
           }
-          receipt="$(remote "$OPERATION")"
+          receipt="$(remote "$request")"
           printf '%s\n' "$receipt"
           id="$(jq -er '.id' <<<"$receipt")"
           [[ "$id" =~ ^[0-9a-f]{32}$ ]]
@@ -72,7 +85,16 @@ jobs:
             state="$(jq -er '.state' <<<"$receipt")"
             case "$state" in
               success)
+                if [[ -n "$EXPECTED_REVISION" ]]; then
+                  [[ "$(jq -er '.rails_revision' <<<"$receipt")" == "$EXPECTED_REVISION" ]] || {
+                    echo 'Host deployed a different revision than expected'; exit 1; }
+                fi
                 printf '\nVerified:\n```json\n%s\n```\n' "$receipt" >> "$GITHUB_STEP_SUMMARY"
+                echo outcome=deployed >> "$GITHUB_OUTPUT"
+                exit 0 ;;
+              superseded)
+                printf '\nMaster moved on; nothing deployed:\n```json\n%s\n```\n' "$receipt" >> "$GITHUB_STEP_SUMMARY"
+                echo outcome=superseded >> "$GITHUB_OUTPUT"
                 exit 0 ;;
               failed|partial|interrupted)
                 printf '\nNot complete:\n```json\n%s\n```\n' "$receipt" >> "$GITHUB_STEP_SUMMARY"
@@ -83,3 +105,11 @@ jobs:
           done
           echo "Wait expired; job $id may still be running on the host. Inspect before retrying."
           exit 1
+      # Marker steps: the Deployments page reads which of these ran to tell a
+      # real deploy from a superseded one (both leave the job successful).
+      - name: Deployment verified
+        if: steps.request.outputs.outcome == 'deployed'
+        run: echo deployed
+      - name: Master moved on, nothing deployed
+        if: steps.request.outputs.outcome == 'superseded'
+        run: echo superseded

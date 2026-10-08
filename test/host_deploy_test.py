@@ -50,12 +50,14 @@ class WorkflowAuthorityTest(unittest.TestCase):
         for condition in ["github.event.workflow_run.conclusion == 'success'",
                           "github.event.workflow_run.event == 'push'",
                           "github.event.workflow_run.head_branch == 'master'",
-                          "vars.AUTO_DEPLOY_RAILS != 'false'",
-                          "needs.check.outputs.current == 'true'"]:
+                          "vars.AUTO_DEPLOY_RAILS != 'false'"]:
             self.assertIn(condition, caller)
         self.assertIn("uses: ./.github/workflows/deploy-house.yml", caller)
+        self.assertNotIn("runs-on:", caller)
         operations = [line.strip() for line in caller.splitlines() if line.strip().startswith("operation:")]
         self.assertEqual(["operation: rails"], operations)
+        # The tested commit travels to the host; nothing else chooses it.
+        self.assertIn("expected_revision: ${{ github.event.workflow_run.head_sha }}", caller)
         self.assertIn("cancel-in-progress: false", caller)
 
 
@@ -85,6 +87,21 @@ class GateTest(unittest.TestCase):
                      ["status", "A" * 32], ["status", "a" * 31], ["status", "a" * 32, "extra"]]:
             self.assertFalse(gate.valid_args(args))
 
+    def test_rails_alone_may_carry_an_exact_expected_revision(self):
+        sha = "c" * 40
+        self.assertTrue(gate.valid_args(["rails", "expect", sha]))
+        for args in [["chaos", "expect", sha], ["both", "expect", sha], ["rails", "expect", sha[:39]],
+                     ["rails", "expect", "C" * 40], ["rails", "expect", "master"],
+                     ["rails", "deploy", sha], ["rails", "expect", sha, "extra"]]:
+            self.assertFalse(gate.valid_args(args), args)
+
+    def test_forced_command_accepts_expected_revision_only_for_rails(self):
+        import re
+        grammar = re.search(r're\.fullmatch\(r"(.+?)", command\)', (OPS / "ssh-command").read_text())[1]
+        self.assertTrue(re.fullmatch(grammar, "rails expect " + "c" * 40))
+        for command in ["chaos expect " + "c" * 40, "rails expect " + "c" * 39, "rails expect master"]:
+            self.assertFalse(re.fullmatch(grammar, command), command)
+
     def test_forced_command_refuses_before_sudo(self):
         for command in ["", "bash", "rails; id", "rails\n", " rails", "status ../../etc/passwd"]:
             result = subprocess.run([sys.executable, str(OPS / "ssh-command")],
@@ -109,6 +126,26 @@ class GateTest(unittest.TestCase):
             run.assert_not_called()
             with self.assertRaises(RuntimeError):
                 gate.request("chaos")
+
+    def test_expected_revision_is_recorded_and_returned(self):
+        with patch.object(gate.subprocess, "run"):
+            result = gate.request("rails", "c" * 40)
+        self.assertEqual("c" * 40, result["expected_revision"])
+        with patch.object(gate, "active", return_value=True):
+            self.assertEqual("c" * 40, gate.status(result["id"])["expected_revision"])
+
+    def test_running_job_with_another_expectation_is_not_joined(self):
+        self.job()  # a running rails job with no expectation
+        with patch.object(gate, "active", return_value=True), patch.object(gate.subprocess, "run") as run:
+            with self.assertRaises(RuntimeError):
+                gate.request("rails", "c" * 40)
+            run.assert_not_called()
+
+    def test_superseded_is_terminal_and_does_not_block_the_next_request(self):
+        self.job("superseded")
+        with patch.object(gate, "active", return_value=False), patch.object(gate.subprocess, "run"):
+            self.assertEqual("superseded", gate.status("a" * 32)["state"])
+            self.assertEqual("starting", gate.request("rails")["state"])
 
     def test_status_projection_cannot_expose_private_fields(self):
         job_id = self.job()
@@ -269,6 +306,27 @@ class WorkerTest(unittest.TestCase):
         name = "house-deploy-kamal-" + self.w.data["id"]
         self.assertIn(name, run.call_args_list[0].args[0])
         self.assertEqual(["docker", "rm", "-f", name], run.call_args_list[1].args[0])
+
+    def test_master_moved_on_deploys_nothing(self):
+        self.w.data["expected_revision"] = "c" * 40
+        self.w.settings["repository"] = "https://example.test/public.git"
+        with patch.object(self.w, "run", side_effect=[None, "d" * 40]), \
+             patch.object(self.w, "deploy_rails") as rails, patch.object(self.w, "update_chaos") as chaos:
+            self.w.execute()
+        rails.assert_not_called()
+        chaos.assert_not_called()
+        self.assertEqual("superseded", self.w.data["state"])
+        self.assertEqual("d" * 40, self.w.data["rails_revision"])
+
+    def test_expected_revision_still_at_master_deploys_it(self):
+        self.w.data["expected_revision"] = "c" * 40
+        self.w.settings["repository"] = "https://example.test/public.git"
+        with patch.object(self.w, "run", side_effect=[None, "c" * 40]), \
+             patch.object(self.w, "deploy_rails") as rails, patch.object(self.w, "update_chaos"):
+            self.w.execute()
+        rails.assert_called_once()
+        self.assertEqual("success", self.w.data["state"])
+        self.assertEqual("c" * 40, self.w.data["rails_revision"])
 
     def test_only_public_checkout_overrides_private_umask(self):
         self.w.settings["repository"] = "https://example.test/public.git"

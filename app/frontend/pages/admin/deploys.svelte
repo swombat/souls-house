@@ -28,7 +28,7 @@
       if (requested) requestedAt = Date.now();
       poll = fresh.error
         ? { ...poll, error: fresh.error, stopped: false }
-        : { runs: fresh.runs || [], error: null, failures: 0, stopped: false };
+        : applyPollResult(poll, { kind: 'ok', status: fresh });
     });
     seeded = true;
   });

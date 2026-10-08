@@ -78,8 +78,10 @@ class HouseDeploy
     raise Error, failure_message(status, body)
   end
 
-  # Recent manual runs of the four deploy workflows, newest first, plus the
-  # token's expiry as GitHub reports it on every authenticated response.
+  # Recent deploy runs, manual and automatic, newest first, plus the token's
+  # expiry as GitHub reports it on every authenticated response. If only the
+  # automatic listing fails, the manual runs still come back and
+  # partial_error says what is missing.
   def self.status(limit: 10)
     return { configured: false, runs: [], token_expires_at: nil, error: nil } unless configured?
 
@@ -89,9 +91,10 @@ class HouseDeploy
       return { configured: true, runs: [], token_expires_at: expires_at, error: failure_message(status, body) }
     end
 
-    runs = (deploy_runs(body) + automatic_runs).sort_by { |run| run[:created_at].to_s }.reverse.first(limit)
+    automatic, partial_error = automatic_runs
+    runs = (deploy_runs(body) + automatic).sort_by { |run| run[:created_at].to_s }.reverse.first(limit)
 
-    { configured: true, runs: runs, token_expires_at: expires_at, error: nil }
+    { configured: true, runs: runs, token_expires_at: expires_at, error: nil, partial_error: partial_error }
   end
 
   def self.deploy_runs(body)
@@ -120,14 +123,46 @@ class HouseDeploy
     }
   end
 
-  # The automatic workflow is triggered by workflow_run, so the
-  # workflow_dispatch listing never includes it. A failure here only hides
-  # those runs; it doesn't blank the manual ones.
-  def self.automatic_runs
-    status, _headers, body = transport.call(:get, "/repos/#{repo}/actions/workflows/#{AUTOMATIC[:file]}/runs?branch=#{REF}&per_page=20", nil)
-    return [] unless status == 200
+  DEPLOYED_STEP = "Deployment verified"
+  SUPERSEDED_STEP = "Master moved on, nothing deployed"
 
-    deploy_runs(body).select { |run| run[:workflow] == AUTOMATIC[:key] }
+  # The automatic workflow is triggered by workflow_run, so the
+  # workflow_dispatch listing never includes it. Returns [runs, error].
+  #
+  # A successful automatic run doesn't by itself mean anything shipped: the
+  # deploy job can be skipped, or the host can find master has moved on. So
+  # each finished run's outcome comes from which marker step ran, and the
+  # commit shown is the one CI tested (carried in the run name), not the
+  # workflow run's own head_sha.
+  def self.automatic_runs(limit: 5)
+    status, _headers, body = transport.call(:get, "/repos/#{repo}/actions/workflows/#{AUTOMATIC[:file]}/runs?branch=#{REF}&per_page=#{limit}", nil)
+    return [ [], "Couldn't list automatic deploys: #{failure_message(status, body)}" ] unless status == 200 && body.is_a?(Hash)
+
+    raw = Array(body["workflow_runs"]).index_by { |run| run["id"] }
+    runs = deploy_runs(body).select { |run| run[:workflow] == AUTOMATIC[:key] }.first(limit).map { |run|
+      tested = raw.dig(run[:id], "display_title").to_s[/\b[0-9a-f]{40}\b/]
+      run.merge(head_sha: tested.to_s.first(7).presence || "?", outcome: automatic_outcome(run))
+    }
+    [ runs, nil ]
+  end
+
+  # deployed / superseded / not_deployed for a finished successful run; nil
+  # while running or when the run itself failed (its conclusion says so).
+  # Finished runs never change, so their outcome is cached.
+  def self.automatic_outcome(run)
+    return nil unless run[:status] == "completed" && run[:conclusion] == "success"
+
+    Rails.cache.fetch([ "house_deploy/automatic_outcome", run[:id] ], expires_in: 1.day, skip_nil: true) do
+      status, _headers, body = transport.call(:get, "/repos/#{repo}/actions/runs/#{run[:id]}/jobs", nil)
+      next nil unless status == 200 && body.is_a?(Hash)
+
+      ran = Array(body["jobs"]).flat_map { |job| Array(job["steps"]) }
+        .select { |step| step["conclusion"] == "success" }.map { |step| step["name"] }
+      if ran.include?(DEPLOYED_STEP) then "deployed"
+      elsif ran.include?(SUPERSEDED_STEP) then "superseded"
+      else "not_deployed"
+      end
+    end
   end
 
   def self.failure_message(status, body)

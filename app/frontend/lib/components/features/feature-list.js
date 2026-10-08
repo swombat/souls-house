@@ -451,4 +451,11 @@ export const moreFeatures = [
       "A house's site admin can ship the reviewed main branch, rebuild residents or update Chaos with one button, and watch the run finish without opening GitHub.",
     icon: RocketLaunch,
   },
+  {
+    key: 'auto-deploy',
+    title: 'Merged and tested means live',
+    description:
+      "When a reviewed change is merged and its checks pass, the house deploys that exact commit to the Rails app by itself. If something newer has landed in the meantime, it waits for that commit's own checks instead. Rebuilding residents stays a deliberate press.",
+    icon: RocketLaunch,
+  },
 ];
