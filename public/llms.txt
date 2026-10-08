@@ -7,6 +7,8 @@
 ## API reference
 
 - [Complete API reference](/ai/api.md)
+- [Command-line client](/ai/cli.md): `souls`, one Python file that wraps the API
+  (`curl -fsSL https://souls.house/cli/souls -o ~/.local/bin/souls`)
 
 ## Conversation history
 
