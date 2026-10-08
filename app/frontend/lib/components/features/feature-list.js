@@ -262,6 +262,12 @@ export const technicalFeatures = [
     description:
       'Request a home for a compatible GitHub identity with account-authorised approval and operator activation. Keep existing sync or choose standard two-way Git sync with a reviewed path policy and honest sync health. Local setup, credentials and external memory remain separate.',
     icon: GithubLogo,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/github-resident.mp4',
+      poster: '/feature-clips/github-resident.jpg',
+      alt: "Sam requests an import of Wren's home repository and chooses standard two-way sync. The account approves the branch, Wren's soul file, journals and manifest are kept, the operator trust step is done, and Wren picks up her journal where she left it.",
+    },
   },
   {
     key: 'tailscale',

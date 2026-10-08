@@ -110,6 +110,7 @@ test('every featured clip and its poster are served as files', async ({ page }) 
       'backups',
       'computer',
       'github',
+      'github-resident',
       'google',
       'guests',
       'heartbeats',
