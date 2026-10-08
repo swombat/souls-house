@@ -83,12 +83,14 @@ module Agents
     end
 
     def with_runtime
+      # Checked before the remote branch too: a suspended vault stops a VM
+      # resident's turns exactly as it stops a local one's.
+      ensure_memory_not_suspended!
       # Started and stopped on its VM by explicit commands, never cold-started.
       return yield if RemoteRuntime.dispatchable?(agent)
 
       RuntimeLocation.require_local!(agent)
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
-      ensure_memory_not_suspended!
       cold_start = Agents::Config.cold_start?
       return yield unless cold_start
 
