@@ -282,11 +282,13 @@ Rails.application.routes.draw do
       end
       resources :visual_tags, only: :index
       resources :rhythms, only: %i[index show create update destroy] do
+        get :preview, on: :collection
         member do
           post :join
           post :leave
           post :pause
           post :resume
+          post :start
         end
       end
       get "house_inference/models", to: "house_inference#models"

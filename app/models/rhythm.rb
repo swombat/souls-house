@@ -40,10 +40,59 @@ class Rhythm < ApplicationRecord
 
   scope :due, ->(now = Time.current) { where(next_run_at: ..now) }
 
+  # The residents a human may select: eligible residents of the account or
+  # its accepted guests. An id outside that set raises RecordNotFound, so a
+  # foreign or ineligible selection fails closed rather than being dropped.
+  # Every id must decode to exactly one resident: an undecodable or malformed
+  # id is not found too, rather than silently dropped or an error.
+  def self.selectable_resident_ids(account, ids)
+    ids = Array(ids).reject(&:blank?)
+    decoded = ids.map { |id| decode_resident_id(id) }
+    raise ActiveRecord::RecordNotFound, "Couldn't find every selected resident" if decoded.include?(nil)
+
+    account.conversation_agents.eligible_for_conversation.find(decoded).map(&:id)
+  end
+
+  def self.decode_resident_id(id)
+    case id
+    when Integer then id if id.positive?
+    when /\A[1-9]\d*\z/ then id.to_i
+    when String
+      numbers = Agent.hashids.decode(id)
+      numbers.first if numbers.one?
+    end
+  rescue Hashids::InputError
+    nil
+  end
+  private_class_method :decode_resident_id
+
   def resident_ids = agent_ids
 
   def resident_ids=(ids)
     self.agent_ids = ids
+  end
+
+  # How a human's form save lands: validate, then restart the schedule from
+  # now. Returns false, with errors, when the rhythm is invalid.
+  def save_from_form
+    return false unless valid?
+
+    self.next_run_at = next_occurrence(after: Time.current)
+    save!
+  end
+
+  # A form edit of a saved rhythm. Assigning a selection writes its join rows
+  # at once, so the whole edit runs in its own savepoint and is undone when
+  # the rhythm is invalid: a rejected edit changes nothing. Returns false,
+  # with errors, in that case.
+  def update_from_form(attributes)
+    saved = false
+    transaction(requires_new: true) do
+      assign_attributes(attributes)
+      saved = save_from_form
+      raise ActiveRecord::Rollback unless saved
+    end
+    saved
   end
 
   def manageable_by?(user)
