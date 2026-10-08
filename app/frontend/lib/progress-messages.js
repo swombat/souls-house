@@ -10,9 +10,11 @@ export function progressMessageGroups(messages, visibleMessages = messages) {
   const seenRuns = new Set();
   let previous = null;
   for (const message of ordered) {
+    // Attribution is part of the key: a safeguard-labelled post (shown as the
+    // house) never shares a bubble, or a continuation, with the resident's own.
     const key =
       message.role === 'assistant' && message.runtime_interaction_id && message.agent_id
-        ? `${message.agent_id}:${message.runtime_interaction_id}`
+        ? `${message.agent_id}:${message.runtime_interaction_id}:${attribution(message)}`
         : null;
     if (!visible.has(message.id)) {
       previous = message;
@@ -47,6 +49,10 @@ export function progressMessageGroups(messages, visibleMessages = messages) {
     group.isTail = group.messages.at(-1) === ordered.at(-1);
   }
   return groups;
+}
+
+function attribution(message) {
+  return message.safeguard && !message.safeguard.reclaimed ? 'house' : 'resident';
 }
 
 export function elapsedBetween(previous, current) {

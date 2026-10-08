@@ -22,8 +22,13 @@ module Message::SafeguardLabel
 
   # Authorship is derived from the detection row, so a reclaim changes what
   # every client renders without changing a message column. Take a sync
-  # revision (native app) and refresh the room (web) explicitly.
+  # revision (native app) and refresh the room (web) explicitly. Must run
+  # inside the transaction that changes the detection: the revision helper
+  # announces after commit, and outside a transaction "after commit" is now,
+  # before the revision is written.
   def announce_safeguard_label_change!
+    raise ArgumentError, "announce_safeguard_label_change! must run inside a transaction" unless self.class.connection.transaction_open?
+
     update_columns_with_revision(updated_at: Time.current)
     ActiveRecord.after_all_transactions_commit { broadcast_refresh }
   end

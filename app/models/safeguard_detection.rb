@@ -64,15 +64,18 @@ class SafeguardDetection < ApplicationRecord
         cold_offer_outcome: reclaimed_from_cold_offer?(interaction) ? "reclaimed" : cold_offer_outcome
       )
       telegram_message&.update!(sender_name: agent.name)
+      # Same transaction: the message's sync revision and the reclaim commit
+      # together, and every announcement waits for that commit.
+      restore_conversation_attribution
     end
-    restore_conversation_attribution
   end
 
   private
 
   # The label is derived from this row, so the reclaim itself restores the
-  # author. Touch the message so the room's clients get the update, and let
-  # reply attention see an ordinary message again.
+  # author. Take a sync revision on the message so clients fetch the change,
+  # and let reply attention see an ordinary message again. Runs inside the
+  # reclaim's transaction: a failed message write rolls the reclaim back.
   def restore_conversation_attribution
     return unless conversation?
 

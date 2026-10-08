@@ -42,6 +42,19 @@ describe('progress grouping', () => {
     expect(sizes(messages)).toEqual([20, 20, 1]);
     expect(progressMessageGroups(messages)[1].continued).toBe(true);
   });
+  it("never groups a safeguard-labelled post with the same run's own speech, in either order", () => {
+    const labelled = { safeguard: { reclaimed: false } };
+    for (const order of [
+      [post(1), post(2, labelled)],
+      [post(1, labelled), post(2)],
+    ]) {
+      const groups = progressMessageGroups(order);
+      expect(groups.map((group) => group.messages.length)).toEqual([1, 1]);
+      expect(groups[1].continued).toBe(false);
+    }
+    expect(sizes([post(1, labelled), post(2, labelled)])).toEqual([2]);
+    expect(sizes([post(1), post(2, { safeguard: { reclaimed: true } })])).toEqual([2]);
+  });
   it('joins a loaded page boundary only when adjacent messages qualify', () => {
     const messages = [post(1), post(2), post(3), post(4)];
     expect(sizes(messages.slice(2))).toEqual([2]);

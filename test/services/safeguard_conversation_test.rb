@@ -167,6 +167,41 @@ class SafeguardConversationTest < ActiveSupport::TestCase
     assert_nil snapshot, "a reclaim before the roll cancels it when nothing else is owed"
   end
 
+  test "reclaim announces the sync revision only after it is written, with the reclaim visible" do
+    message = labelled_message
+    before = message.revision
+    seen = []
+    record = ->(stream, payload) {
+      next unless payload.is_a?(Hash) && payload[:type] == "changed"
+      seen << { announced: payload[:latest_revision],
+                stored: Message.where(id: message.id).pick(:revision),
+                reclaimed: SafeguardDetection.where(id: message.safeguard_detection_id).where.not(reclaimed_at: nil).exists? }
+    }
+    ActionCable.server.stub(:broadcast, record) do
+      message.safeguard_detection.reclaim!(reason: "Mine.")
+    end
+
+    announced = seen.select { |event| event[:announced] > before }
+    assert announced.any?, "a sync revision was announced"
+    announced.each do |event|
+      assert_operator event[:stored], :>=, event[:announced], "no revision is announced before it is written"
+      assert event[:reclaimed], "the reclaim is visible whenever a revision is announced"
+    end
+  end
+
+  test "a failed message write rolls the reclaim back" do
+    message = labelled_message
+    detection = message.safeguard_detection
+    broken = Message.find(message.id)
+    def broken.update_columns_with_revision(*) = raise(ActiveRecord::StatementInvalid, "message write failed")
+
+    Message.stub(:find_by, ->(*) { broken }) do
+      assert_raises(ActiveRecord::StatementInvalid) { detection.reclaim!(reason: "Mine.") }
+    end
+    assert_not detection.reload.reclaimed?
+    assert_equal "souls.house", message.reload.author_name
+  end
+
   test "a reclaimed message is an ordinary transcript line again" do
     message = labelled_message
     request = ExternalAgentResponseRequest.new(agent: @agent, chat: @chat)
