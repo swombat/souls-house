@@ -7,6 +7,7 @@ module Api
 
         include AttachmentDownloads
         include ApiHumanReach
+        include ApiHomeAccountOnly
 
         # Editing a file's title and note is the person's control on the
         # Field page (FieldFilesController#update): any member, any file, in

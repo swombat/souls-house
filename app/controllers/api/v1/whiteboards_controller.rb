@@ -3,6 +3,7 @@ module Api
     class WhiteboardsController < BaseController
 
       include ApiHumanReach
+      include ApiHomeAccountOnly
 
       # Deleting a note is the person's control in the Field
       # (WhiteboardsController#destroy), in the note's own account. Residents

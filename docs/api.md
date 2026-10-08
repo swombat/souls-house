@@ -386,6 +386,13 @@ account; `account_id` narrows it to one account (a thing elsewhere is then
 /field/voices/recognition`, `POST /device_streams`) act in `account_id`, or the
 person's default account.
 
+The same holds for every key on the shared Field file, recording and
+whiteboard endpoints (`/field/files`, `/field/recordings`, `/whiteboards` and
+their versions), resident keys included: they act only in the key's own
+account, and an `account_id` naming any other account is 404, never a quiet
+fallback to the key's account. A resident that is a guest elsewhere still
+reads only its home Field.
+
 A disabled account, or one the person no longer belongs to, is 404, except for
 device-stream recovery (below). Field endpoints, including a person's recording
 reads, return 403 while the site's agents feature is off, like the pages.
