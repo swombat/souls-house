@@ -50,12 +50,36 @@ const recording = {
 
 const speakers = [
   {
-    id: 's1', label: 'speaker_0', position: 0, default_name: 'Speaker 1', name: 'Sam', named: true,
-    voice_id: 'v1', naming_source: 'human', talk_ms: 1_200_000, clip_start_ms: 0, clip_end_ms: 900,
+    id: 's1',
+    label: 'speaker_0',
+    position: 0,
+    default_name: 'Speaker 1',
+    name: 'Sam',
+    named: true,
+    voice_id: 'v1',
+    naming_source: 'human',
+    talk_ms: 1_200_000,
+    clip_start_ms: 0,
+    clip_end_ms: 900,
   },
   {
-    id: 's2', label: 'speaker_1', position: 1, default_name: 'Speaker 2', name: 'Speaker 2', named: false,
-    voice_id: null, naming_source: null, talk_ms: 2_100_000, clip_start_ms: 3000, clip_end_ms: 6200,
+    id: 's2',
+    label: 'speaker_1',
+    position: 1,
+    default_name: 'Speaker 2',
+    name: 'Speaker 2',
+    named: false,
+    voice_id: null,
+    naming_source: null,
+    talk_ms: 2_100_000,
+    clip_start_ms: 3000,
+    clip_end_ms: 6200,
+    suggestion: {
+      name: 'Priya',
+      quote: 'Shall we start with the venue?',
+      quote_ms: 3000,
+      label: "Suggested from what's said",
+    },
   },
 ];
 
@@ -64,7 +88,10 @@ test('the transcript page shows names, unnamed speakers and turns', async ({ mou
     props: {
       recording,
       speakers,
-      voices: [{ id: 'v1', name: 'Sam', member: true }, { id: 'v2', name: 'Priya', member: false }],
+      voices: [
+        { id: 'v1', name: 'Sam', member: true },
+        { id: 'v2', name: 'Priya', member: false },
+      ],
       members_without_voice: [],
       my_voice_id: 'v1',
       show_you_hint: false,
@@ -75,6 +102,8 @@ test('the transcript page shows names, unnamed speakers and turns', async ({ mou
   await expect(component).toContainText('Board call with Priya and Tomás');
   await expect(component).toContainText('Speaker 2');
   await expect(component).toContainText('Shall we start with the venue?');
+  await expect(page.getByTestId('speaker-suggestion')).toContainText('Priya?');
+  await expect(page.getByTestId('speaker-suggestion')).toContainText("Suggested from what's said");
   await expect(component).not.toContainText('thinks');
   await expect(component).not.toContainText('voice print');
   await page.screenshot({ path: 'tmp/field-recording-show.png', fullPage: true });
@@ -82,7 +111,15 @@ test('the transcript page shows names, unnamed speakers and turns', async ({ mou
 
 test('the "is one of these you?" hint shows when asked for', async ({ mount, page }) => {
   const component = await mount(RecordingPage, {
-    props: { recording, speakers, voices: [], members_without_voice: [], my_voice_id: null, show_you_hint: true, account },
+    props: {
+      recording,
+      speakers,
+      voices: [],
+      members_without_voice: [],
+      my_voice_id: null,
+      show_you_hint: true,
+      account,
+    },
   });
   await expect(component).toContainText('Is one of these you?');
   await page.screenshot({ path: 'tmp/field-recording-hint.png', fullPage: true });
@@ -108,11 +145,25 @@ test('the Recordings tab lists recordings in plain words, with the allowance gau
       notes: [],
       recordings: [
         recording,
-        { ...recording, key: 'recording-r2', id: 'r2', title: 'Tuesday standup', status: 'transcribing', speaker_names: [] },
         {
-          ...recording, key: 'recording-r3', id: 'r3', title: 'The long one', status: 'rejected', speaker_names: [],
-          failure_reason: "This recording is 4 h 10 m. You have 3 h 20 m left this week. No estimate yet: other recordings are still transcribing.",
-          retryable: true, dispatched: false,
+          ...recording,
+          key: 'recording-r2',
+          id: 'r2',
+          title: 'Tuesday standup',
+          status: 'transcribing',
+          speaker_names: [],
+        },
+        {
+          ...recording,
+          key: 'recording-r3',
+          id: 'r3',
+          title: 'The long one',
+          status: 'rejected',
+          speaker_names: [],
+          failure_reason:
+            'This recording is 4 h 10 m. You have 3 h 20 m left this week. No estimate yet: other recordings are still transcribing.',
+          retryable: true,
+          dispatched: false,
         },
       ],
       recording_allowance: { limit_ms: 72_000_000, used_ms: 12_000_000, pending_ms: 3_600_000, window_days: 7 },

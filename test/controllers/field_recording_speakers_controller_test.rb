@@ -93,6 +93,53 @@ class FieldRecordingSpeakersControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  def suggest!(speaker, name)
+    speaker.update!(suggested_name: name, suggestion_quote: "there", suggestion_quote_ms: 2000,
+      suggestion_source: "utility", suggestion_generation: speaker.decision_generation)
+  end
+
+  test "confirming a suggestion names the speaker; dismissing clears it" do
+    suggest!(@second, "Priya")
+    get account_field_recording_path(@account, @recording)
+    shown = inertia_props["props"]["speakers"].last["suggestion"]
+    assert_equal "Priya", shown["name"]
+    assert_equal 0, shown["generation"]
+
+    name_speaker(@second, confirm_suggestion: true, suggestion_generation: shown["generation"])
+    @second.reload
+    assert_equal "Priya", @second.display_name
+    assert_equal "confirmed_suggestion", @second.naming_source
+    assert_nil @second.suggested_name
+
+    suggest!(@first, "Tomás")
+    name_speaker(@first, dismiss_suggestion: true, suggestion_generation: @first.decision_generation)
+    assert_nil @first.reload.suggested_name
+    assert_nil @first.field_voice
+  end
+
+  test "a stale chip can't confirm or dismiss after a person decided something else" do
+    suggest!(@second, "Priya")
+    shown = @second.decision_generation
+    @second.name_as!(@account.field_voices.create!(name: "Tomás"), by: @user)
+    @second.unname! # back to Speaker 2: the old chip is still out of date
+
+    name_speaker(@second, confirm_suggestion: true, suggestion_generation: shown)
+    assert_nil @second.reload.field_voice
+    name_speaker(@second, dismiss_suggestion: true, suggestion_generation: shown)
+    assert_redirected_to account_field_recording_path(@account, @recording)
+  end
+
+  test "a suggestion for a known voice still asks 'same Priya?' before linking" do
+    priya = @account.field_voices.create!(name: "Priya")
+    suggest!(@second, "Priya")
+    @second.update!(suggested_voice: priya)
+
+    name_speaker(@second, confirm_suggestion: true, suggestion_generation: 0)
+    assert_nil @second.reload.field_voice
+    name_speaker(@second, confirm_suggestion: true, link_existing: true, suggestion_generation: 0)
+    assert_equal priya, @second.reload.field_voice
+  end
+
   test "the transcript page carries words, speakers and voices, and the 'you' hint once" do
     @account.field_voices.create!(name: "Tomás")
     get account_field_recording_path(@account, @recording)

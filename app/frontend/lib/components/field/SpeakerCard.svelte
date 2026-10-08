@@ -3,9 +3,10 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Play } from 'phosphor-svelte';
   import SpeakerChip from '$lib/components/field/SpeakerChip.svelte';
+  import SuggestionChip from '$lib/components/field/SuggestionChip.svelte';
   import { formatDuration } from '$lib/field-recordings';
 
-  let { speaker, totalTalkMs = 0, onPlayClip, ...chip } = $props();
+  let { speaker, totalTalkMs = 0, onPlayClip, onSeek, ...chip } = $props();
 
   const share = $derived(totalTalkMs > 0 ? Math.round((100 * (speaker.talk_ms || 0)) / totalTalkMs) : null);
   const hasClip = $derived(speaker.clip_start_ms != null && speaker.clip_end_ms != null);
@@ -31,5 +32,8 @@
       {/if}
       <SpeakerChip {speaker} {...chip} />
     </div>
+    {#if speaker.suggestion && !speaker.named}
+      <SuggestionChip suggestion={speaker.suggestion} url={chip.url} {onSeek} />
+    {/if}
   </Card.Content>
 </Card.Root>

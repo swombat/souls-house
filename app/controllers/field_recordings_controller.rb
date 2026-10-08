@@ -21,6 +21,7 @@ class FieldRecordingsController < ApplicationController
       members_without_voice: FieldItems.members_without_voice_json(current_account, except: Current.user),
       my_voice_id: current_account.field_voices.kept.find_by(user: Current.user)&.to_param,
       show_you_hint: show_you_hint?(recording),
+      suggestions_enabled: FieldSuggestions.enabled?,
       account: current_account.as_json
     }
   end

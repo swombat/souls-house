@@ -8,6 +8,9 @@ module FieldRecording::TranscriptReceiver
   def receive!(dispatch, transcription, request_id: nil)
     result = dispatch.field_recording.accept_transcript!(dispatch, transcription, request_id:)
     FieldRecordings::DeleteVendorTranscriptJob.perform_later(dispatch.id)
+    if result == :accepted && FieldSuggestions.enabled?
+      FieldRecordings::SuggestSpeakersJob.perform_later(dispatch.field_recording_id)
+    end
     result
   end
 

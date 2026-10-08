@@ -26,7 +26,11 @@ class Api::V1::Field::RecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "[00:00] Priya: hello\n[00:02] Speaker 2: there", body["transcript_text"]
     assert_equal [ "Priya", "Speaker 2" ], body["speakers"].map { |s| s["name"] }
     json = response.body
-    %w[audio voice_id field_voice print words naming_source].each { |key| assert_not_includes json, "\"#{key}" }
+    @recording.speakers.last.update!(suggested_name: "Tomás", suggestion_quote: "there", suggestion_source: "utility")
+    get api_v1_field_recording_path(@recording), headers: @headers
+    json = response.body
+    assert_not_includes json, "Tomás"
+    %w[audio voice_id field_voice print words naming_source suggest].each { |key| assert_not_includes json, "\"#{key}" }
   end
 
   test "unfinished recordings have no transcript yet, and discarded ones are gone" do

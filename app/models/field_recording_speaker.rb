@@ -10,6 +10,11 @@ class FieldRecordingSpeaker < ApplicationRecord
   belongs_to :field_recording
   belongs_to :field_voice, optional: true
   belongs_to :named_by, polymorphic: true, optional: true
+  belongs_to :suggested_voice, class_name: "FieldVoice", optional: true
+
+  SUGGESTION_FIELDS = { suggested_voice: nil, suggested_name: nil, suggestion_quote: nil,
+                        suggestion_quote_ms: nil, suggestion_source: nil, suggested_at: nil,
+                        suggestion_generation: nil }.freeze
 
   validates :label, presence: true
   validates :naming_source, inclusion: { in: NAMING_SOURCES }, allow_nil: true
@@ -27,8 +32,28 @@ class FieldRecordingSpeaker < ApplicationRecord
     field_recording.with_lock do
       raise ActiveRecord::RecordNotFound unless field_recording.kept? && field_recording.ready?
 
-      update!(field_voice: voice, naming_source: source, named_by: by, named_at: Time.current)
+      update!(field_voice: voice, naming_source: source, named_by: by, named_at: Time.current,
+        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS)
       field_recording.update!(transcript_text: field_recording.render_transcript_text)
+    end
+  end
+
+  def suggestion? = suggested_name.present? && !field_voice&.kept?
+
+  # The chip the person saw is still the live suggestion: same generation, no
+  # decision since, still unnamed. Checked under the recording lock.
+  def suggestion_current?(shown_generation)
+    reload
+    suggestion? && suggestion_generation == decision_generation && shown_generation.to_s == decision_generation.to_s
+  end
+
+  # Returns false when the chip was out of date (and changes nothing).
+  def dismiss_suggestion!(shown_generation)
+    field_recording.with_lock do
+      next false unless suggestion_current?(shown_generation)
+
+      update!(decision_generation: decision_generation + 1, **SUGGESTION_FIELDS)
+      true
     end
   end
 
@@ -38,7 +63,8 @@ class FieldRecordingSpeaker < ApplicationRecord
       # discard must not change it after waiting for the lock.
       raise ActiveRecord::RecordNotFound unless field_recording.kept? && field_recording.ready?
 
-      update!(field_voice: nil, naming_source: nil, named_by: nil, named_at: nil)
+      update!(field_voice: nil, naming_source: nil, named_by: nil, named_at: nil,
+        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS)
       field_recording.update!(transcript_text: field_recording.render_transcript_text)
     end
   end

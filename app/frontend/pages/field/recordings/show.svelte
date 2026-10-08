@@ -24,6 +24,7 @@
     members_without_voice = [],
     my_voice_id = null,
     show_you_hint = false,
+    suggestions_enabled = false,
     account,
   } = $props();
 
@@ -159,12 +160,19 @@
           </button>
         </div>
       {/if}
+      {#if suggestions_enabled}
+        <p class="text-xs text-muted-foreground" data-testid="suggestions-disclosure">
+          Names may be suggested from what's said: the transcript, title and note are sent to Google Gemini (through
+          OpenRouter) for that. A suggestion is only ever shown here, for a person to confirm or dismiss.
+        </p>
+      {/if}
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {#each speakers as speaker (speaker.id)}
           <SpeakerCard
             {speaker}
             {totalTalkMs}
             onPlayClip={playClip}
+            onSeek={seek}
             url={`/accounts/${account.id}/field/recordings/${recording.id}/speakers/${speaker.id}`}
             {voices}
             members={members_without_voice}

@@ -518,6 +518,34 @@ text anywhere until a human confirms it, and then it is the user's word.
   that already has a human name gets no suggestion.
 - A failure here does nothing visible and refunds nothing.
 
+**As built (Mira on #215).**
+- **Gated in production.** Nothing is sent unless `SOULSHOUSE_FIELD_SUGGESTIONS=on`
+  in deploy configuration. Off means no job is queued and no inference is
+  contacted.
+- **What is sent, and where.** Up to 20,000 characters of the transcript, with
+  speakers as S1, S2…; the recording's title and note; and at most 50 names
+  (this Field's voices and members). It goes through OpenRouter to Google
+  Gemini 2.5 Flash, on the house key, via `UtilityInference.structured`.
+  Provider routing isn't pinned, and OpenRouter's and Google's retention and
+  training terms for this traffic **are to be verified before the gate is
+  turned on**. That verification is the precondition, not the code.
+- **Told to people where it happens.** When the gate is on, the upload dialog
+  and the transcript page say in plain words that the transcript, title and
+  note are sent to Google Gemini through OpenRouter to suggest names.
+- **One call per recording**, claimed durably under the recording lock before
+  it is made. Duplicate jobs and retries after an empty or failed answer never
+  call again.
+- **Only untouched speakers.** A speaker someone has named, un-named or
+  dismissed a suggestion for is never suggested again. Every such decision
+  moves the speaker's `decision_generation` on. A suggestion records the
+  generation it was made against, and a confirm or dismiss must send the
+  generation it showed. Anything stale is refused.
+- **Names match whole words**, and a name that normalises to nothing never
+  matches. **The quote shown is the speaker's own words**, recovered from the
+  matched source, with its true time, not the model's rendering of it.
+- **Confirming always goes through the "same Priya?" check** when the
+  suggested name matches a known voice, exactly like a typed name.
+
 **Cost note.** I haven't priced Scribe-with-diarization per hour, or pyannote
 identify, from their current pages. Both need checking before the 20 h
 default is final. Suggestions are one small call per recording.

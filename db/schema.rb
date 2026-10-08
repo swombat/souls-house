@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_08_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -757,10 +757,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_100000) do
     t.string "named_by_type"
     t.bigint "named_by_id"
     t.datetime "named_at"
+    t.bigint "suggested_voice_id"
+    t.string "suggested_name", limit: 100
+    t.string "suggestion_quote", limit: 300
+    t.bigint "suggestion_quote_ms"
+    t.string "suggestion_source"
+    t.datetime "suggested_at"
+    t.integer "decision_generation", default: 0, null: false
+    t.integer "suggestion_generation"
     t.index ["field_recording_id", "label"], name: "index_field_recording_speakers_on_field_recording_id_and_label", unique: true
     t.index ["field_recording_id"], name: "index_field_recording_speakers_on_field_recording_id"
     t.index ["field_voice_id"], name: "index_field_recording_speakers_on_field_voice_id"
     t.index ["named_by_type", "named_by_id"], name: "index_field_recording_speakers_on_named_by"
+    t.index ["suggested_voice_id"], name: "index_field_recording_speakers_on_suggested_voice_id"
   end
 
   create_table "field_recordings", force: :cascade do |t|
@@ -783,6 +792,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_100000) do
     t.jsonb "transcript_words"
     t.text "transcript_text"
     t.string "language_code"
+    t.string "suggestions_state"
     t.index ["account_id", "created_at"], name: "index_field_recordings_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_field_recordings_on_account_id"
     t.index ["discarded_at"], name: "index_field_recordings_on_discarded_at"
@@ -1699,6 +1709,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_100000) do
   add_foreign_key "field_recording_reservations", "field_recordings"
   add_foreign_key "field_recording_speakers", "field_recordings"
   add_foreign_key "field_recording_speakers", "field_voices"
+  add_foreign_key "field_recording_speakers", "field_voices", column: "suggested_voice_id", on_delete: :nullify
   add_foreign_key "field_recordings", "accounts"
   add_foreign_key "field_recordings", "field_recordings", column: "retried_from_id", on_delete: :nullify
   add_foreign_key "field_voices", "accounts"
