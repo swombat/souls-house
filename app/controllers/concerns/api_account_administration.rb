@@ -29,8 +29,12 @@ module ApiAccountAdministration
     @account = human_account!(account)
   end
 
-  # Accounts a lookup by record id may span. Each record found must still be
-  # passed to administer!, so a departed member or disabled account is 404.
+  # The credential's scope for a lookup by record id: every account an OAuth
+  # token's person belongs to (no account_id), else only the selected account
+  # (an account key's own account, or the one account_id names). Records are
+  # always found through this relation first, never globally, because
+  # human_account! checks membership only, not the credential's scope. Each
+  # record found is then passed to administer!.
   def administrable_accounts
     return current_api_user.confirmed_accounts if app_token_request? && params[:account_id].blank?
 

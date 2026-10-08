@@ -99,6 +99,52 @@ module Api
         assert_response :not_found
       end
 
+      # Credential scope (Mira's #232 approval): a key minted for one account
+      # must not reach records in another account, even one the person owns.
+      test "a key for one account cannot reach records in another of the person's accounts" do
+        Setting.instance.update!(allow_agents: true, allow_chats: true)
+        notice = Notice.announce_to_account!(account: @nexus, body: "Nexus only", expires_in_days: 7, created_by: @daniel)
+        tag = @nexus.visual_tags.create!(label: "Nexus tag", icon: "Heart", colour: "teal")
+        connection = create_connection(account: @nexus, user: @daniel)
+        member = memberships(:team_member)
+        agent = @nexus.agents.create!(name: "Nexus resident", system_prompt: "Test", runtime: "external")
+        chat = @nexus.chats.create!(model_id: "openrouter/auto", title: "Nexus room")
+        nexus_key = ApiKey.generate_for(@daniel, name: "Second nexus key", account: @nexus)
+
+        [ nil, @nexus.to_param ].each do |account_id|
+          scope = account_id ? { account_id: account_id } : {}
+          delete api_v1_account_notice_path(notice, **scope), headers: @home_headers
+          assert_response :not_found
+          patch api_v1_account_visual_tag_path(tag, **scope), params: { label: "Crossed" }, headers: @home_headers, as: :json
+          assert_response :not_found
+          delete api_v1_account_visual_tag_path(tag, **scope), headers: @home_headers
+          assert_response :not_found
+          patch api_v1_account_service_connection_path(connection.public_id, **scope), params: { label: "Crossed" }, headers: @home_headers, as: :json
+          assert_response :not_found
+          delete api_v1_account_service_connection_path(connection.public_id, **scope), headers: @home_headers
+          assert_response :not_found
+          delete api_v1_account_member_path(member, **scope), headers: @home_headers
+          assert_response :not_found
+          post resend_api_v1_account_invitation_path(memberships(:team_member), **scope), headers: @home_headers
+          assert_response :not_found
+          delete api_v1_account_api_key_path(nexus_key, **scope), headers: @home_headers
+          assert_response :not_found
+          get agent_costs_api_v1_account_path(agent, **scope), headers: @home_headers
+          assert_response :not_found
+          get conversation_costs_api_v1_account_path(chat, **scope), headers: @home_headers
+          assert_response :not_found
+        end
+
+        assert Notice.active.exists?(notice.id)
+        assert_equal "Nexus tag", tag.reload.label
+        assert_equal "owner/repository", connection.reload.label
+        assert Membership.exists?(member.id)
+        assert ApiKey.exists?(nexus_key.id)
+
+        delete api_v1_account_notice_path(notice), headers: @nexus_owner_headers
+        assert_response :success, "the account's own key still reaches it"
+      end
+
       # Service connections
 
       test "lists, relabels, toggles and disconnects your own connection" do
