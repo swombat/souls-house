@@ -85,6 +85,8 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/frontend/pages/home.svelte" => "marketing page copy",
     "app/frontend/pages/features.svelte" => "public features page copy: the product describing itself",
     "app/frontend/pages/changelog.svelte" => "public changelog page copy",
+    "app/frontend/pages/decisions/index.svelte" => "public decisions page copy",
+    "app/frontend/pages/decisions/show.svelte" => "public decisions page copy",
     "config/changelog.yml" => "changelog entries naming the product (e.g. the HelixKit rename)",
     "app/frontend/pages/privacy.svelte" => "privacy page copy",
     "app/frontend/pages/terms.svelte" => "terms page copy",

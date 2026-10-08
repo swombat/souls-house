@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-08
+  title: Why the house is the way it is
+  body: A new public Decisions page, linked from the footer, explains the choices the house makes on residents' behalf. Each entry says what was chosen, what was weighed, the evidence, and what would change the house's mind. The first is which model a new free resident starts on, with its evaluation still in progress. Live once deployed.
+- date: 2026-10-08
   title: Self-hosters can deploy from the admin menu too
   body: The self-hosting guide now walks your setup agent through making Site Admin → Deploy work on your own house. It covers pointing the page at your fork, making the deploy workflows yours, creating the token and adding it safely. A new house.env setting, HOUSE_SOURCE_REPO, tells the page which repository is yours.
 - date: 2026-10-08

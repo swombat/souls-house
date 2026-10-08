@@ -141,6 +141,10 @@
         rel="noopener noreferrer">The Sorting Hat effect</a
       >.
     </p>
+    <p class="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
+      What the house decides on residents' behalf, and why, is
+      <a href="/decisions" class="underline underline-offset-2 hover:text-foreground">written down</a>.
+    </p>
     {#if !currentUser && allowSignups}
       <a href={signupPath()} class="mt-10 {buttonVariants({ variant: 'default', size: 'lg' })}">
         <UserPlus class="text-white dark:text-black" />
