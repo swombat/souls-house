@@ -9,6 +9,7 @@
     Megaphone,
     Pulse,
     RocketLaunch,
+    ListBullets,
   } from 'phosphor-svelte';
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
   import { buttonVariants } from '$lib/components/shadcn/button/index.js';
@@ -37,6 +38,14 @@
   }
 
   const lines = $derived(deployLines(deployInfo, { failed: deployInfoFailed }));
+  const workflows = $derived(deployInfo?.workflows || []);
+
+  // Starts the deploy; the server redirects to the Deploys page, which then
+  // follows the new run.
+  function deploy(workflow) {
+    if (!confirm(`Run "${workflow.name}" on master now?`)) return;
+    router.post('/admin/deploys', { workflow: workflow.key });
+  }
 </script>
 
 <DropdownMenu.Root onOpenChange={(open) => open && loadDeployInfo()}>
@@ -73,10 +82,29 @@
       <Megaphone class="mr-2 size-4" />
       <span>Site Notices</span>
     </DropdownMenu.Item>
-    <DropdownMenu.Item onclick={() => router.visit('/admin/deploys')}>
-      <RocketLaunch class="mr-2 size-4" />
-      <span>Deploy</span>
-    </DropdownMenu.Item>
+    <DropdownMenu.Sub>
+      <DropdownMenu.SubTrigger data-testid="deploy-submenu">
+        <RocketLaunch class="mr-2 size-4" />
+        <span>Deploy</span>
+      </DropdownMenu.SubTrigger>
+      <DropdownMenu.SubContent>
+        <DropdownMenu.Item onclick={() => router.visit('/admin/deploys')}>
+          <ListBullets class="mr-2 size-4" />
+          <span>Deployments</span>
+        </DropdownMenu.Item>
+        <DropdownMenu.Separator />
+        {#each workflows as workflow (workflow.key)}
+          <DropdownMenu.Item onclick={() => deploy(workflow)} title={workflow.description}>
+            <RocketLaunch class="mr-2 size-4" />
+            <span>{workflow.name}</span>
+          </DropdownMenu.Item>
+        {:else}
+          <div class="px-2 py-1.5 text-xs text-muted-foreground">
+            {deployInfoFailed ? 'Couldn’t load deploys' : 'Loading…'}
+          </div>
+        {/each}
+      </DropdownMenu.SubContent>
+    </DropdownMenu.Sub>
     <DropdownMenu.Separator />
     <div class="px-2 py-1.5 text-xs text-muted-foreground max-w-72 space-y-0.5" data-testid="deploy-info">
       {#each lines as line}

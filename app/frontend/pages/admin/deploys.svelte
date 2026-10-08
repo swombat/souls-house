@@ -6,7 +6,7 @@
   import { RocketLaunch, ArrowSquareOut } from 'phosphor-svelte';
   import { runLabel, shouldPoll, applyPollResult, classifyResponse, expiryWarning } from './deploys.js';
 
-  let { workflows = [], repo = '', deploy_status = null, flash = {}, pollMs = 8000 } = $props();
+  let { workflows = [], repo = '', deploy_status = null, just_requested = false, flash = {}, pollMs = 8000 } = $props();
   let sending = $state(null);
   let requestedAt = $state(0);
   let poll = $state({ runs: [], error: null, failures: 0, stopped: false });
@@ -21,7 +21,11 @@
   // A render that couldn't reach GitHub keeps the runs we already knew about.
   $effect(() => {
     const fresh = status;
+    const requested = just_requested;
     untrack(() => {
+      // Arriving straight from a dispatch (e.g. the Site Admin menu): follow
+      // the new run even if GitHub doesn't list it yet.
+      if (requested) requestedAt = Date.now();
       poll = fresh.error
         ? { ...poll, error: fresh.error, stopped: false }
         : { runs: fresh.runs || [], error: null, failures: 0, stopped: false };

@@ -4,7 +4,7 @@ class Admin::DeployInfosController < ApplicationController
   before_action :require_site_admin
 
   def show
-    render json: DeployInfo.summary
+    render json: DeployInfo.summary.merge(workflows: HouseDeploy.workflows)
   end
 
   private

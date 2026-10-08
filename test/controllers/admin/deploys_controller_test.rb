@@ -59,6 +59,13 @@ class Admin::DeploysControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to admin_deploys_path
     assert_equal [ :post, "/repos/swombat/souls-house/actions/workflows/deploy-chaos.yml/dispatches", { ref: "master" } ], @calls.last
     assert_equal "chaos", AuditLog.where(action: "admin_deploy_dispatched").last.data["workflow"]
+
+    follow_redirect!
+    assert inertia_shared_props["just_requested"], "the page after a dispatch should know to follow the run"
+
+    get admin_deploys_path
+    @inertia_props = nil # the helper memoizes per test
+    assert_not inertia_shared_props["just_requested"]
   end
 
   test "unknown workflow is refused and audited as a failure" do

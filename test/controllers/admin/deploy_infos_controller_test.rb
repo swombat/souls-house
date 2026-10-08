@@ -20,6 +20,7 @@ class Admin::DeployInfosControllerTest < ActionDispatch::IntegrationTest
     assert body.key?("deployed")
     assert body.key?("master")
     assert_nil body["master"]
+    assert_equal %w[rails runtime chaos both], body["workflows"].map { |w| w["key"] }
   end
 
   test "non-admin gets nothing" do

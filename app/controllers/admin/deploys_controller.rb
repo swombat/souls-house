@@ -7,6 +7,10 @@ class Admin::DeploysController < ApplicationController
     render inertia: "admin/deploys", props: {
       workflows: HouseDeploy.workflows,
       repo: HouseDeploy.repo,
+      # Set only on the render right after a dispatch, wherever it was pressed
+      # (this page or the Site Admin menu), so the page follows the new run
+      # even before GitHub lists it.
+      just_requested: flash[:deploy_requested].present?,
       deploy_status: -> { HouseDeploy.status }
     }
   end
@@ -21,6 +25,7 @@ class Admin::DeploysController < ApplicationController
     key = params[:workflow].to_s
     config = HouseDeploy.dispatch!(key)
     audit(:admin_deploy_dispatched, nil, workflow: key, ref: HouseDeploy::REF)
+    flash[:deploy_requested] = key
     redirect_to admin_deploys_path, notice: "#{config[:name]} requested. GitHub usually shows the run within a few seconds."
   rescue HouseDeploy::Error => e
     audit(:admin_deploy_failed, nil, workflow: key, error: e.message)
