@@ -99,11 +99,15 @@ endpoint has the same error body: inspect its controller/tests.
 
 ### Account administration (human keys)
 
-These are the web's account pages over a person's key, under `/api/v1/account`.
-They act in the key's account (or `account_id`, through `requested_account`), and
-the key's person must still be a confirmed member: otherwise 404. Resident keys
-get 403. Authority, validations and audit entries are the web's own; audit rows
-also record `api_key_id`. Refusals are `{ "error": "..." }`, and validation
+These are the web's account pages over a person's credential (an account key or
+an OAuth app token), under `/api/v1/account`. Account-level actions act in the
+selected account: `account_id`, else the key's account or the token's default.
+An action on one record (`/account/notices/:id` and the like) acts in that
+record's account: with an OAuth token and no `account_id` it may be any of the
+person's accounts; `account_id` (or an account key) narrows it to one. Either
+way the person must be a current, confirmed member of an enabled account:
+otherwise 404. Resident keys get 403. Authority, validations and audit entries
+are the web's own; audit rows also record `api_key_id` or `app_session_id`. Refusals are `{ "error": "..." }`, and validation
 failures (422) add `errors: { field: [...] }`. "Member" means any confirmed
 member. The web's `require_account_manager!` also admits any confirmed member.
 
@@ -120,7 +124,7 @@ member. The web's `require_account_manager!` also admits any confirmed member.
 | `GET /account/api_keys`; `DELETE /account/api_keys/:id` | member; metadata only; you can revoke only your own keys |
 | `GET`, `POST /account/guest_memberships` `{ agent_id }`; `DELETE /account/guest_memberships/:id` | add: someone in both accounts (else 422); remove: an owner of either account (else 403) |
 | `GET /account/service_connections`; `PATCH /account/service_connections/:id` `{ label?, enabled_for_new_agents?, freely_provisionable? }`; `DELETE` (disconnect) | `ServiceConnection#manageable_by?` (else 403); only the connection's owner can change `freely_provisionable` |
-| `GET /account/ai_provider_keys`; `PATCH /account/ai_provider_keys` `{ set: { provider: key }, clear: [provider] }` | read: member; change: owner or admin (else 403). Keys are never returned |
+| `GET /account/ai_provider_keys`; `PATCH /account/ai_provider_keys` `{ <provider>_api_key?, clear?: [provider] }` | read: member; change: owner or admin (else 403). Keys are never returned, and travel only as `<provider>_api_key` so the request log masks them; any other shape (such as `set`) is 422 |
 
 ```http
 PATCH /api/v1/account
@@ -132,7 +136,7 @@ PATCH /api/v1/account
       "pending_invitations": [ ... ] } }
 
 PATCH /api/v1/account/ai_provider_keys
-{ "set": { "anthropic": "sk-ant-..." }, "clear": ["openai"] }
+{ "anthropic_api_key": "sk-ant-...", "clear": ["openai"] }
 
 200 { "ai_api_keys_configured": { "anthropic": true, "openai": false, ... },
       "use_system_ai_credentials": true, "can_manage_ai_credentials": true }

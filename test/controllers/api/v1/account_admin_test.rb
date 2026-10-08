@@ -39,7 +39,7 @@ module Api
       test "the account endpoints refuse a resident key" do
         get api_v1_account_path, headers: @resident_headers
         assert_response :forbidden
-        assert_match(/person's API key/, response.parsed_body["error"])
+        assert_match(/person's credential/, response.parsed_body["error"])
 
         patch api_v1_account_path, params: { name: "Renamed by resident" }, headers: @resident_headers, as: :json
         assert_response :forbidden
@@ -59,6 +59,32 @@ module Api
 
         get api_v1_account_path, headers: @member_headers
         assert_response :not_found
+      end
+
+      # Mira #231: accessible_by? ignored account enablement, so a member's key
+      # kept every control after the account was disabled.
+      test "a disabled account is not found, for reads and writes" do
+        notice = Notice.announce_to_account!(account: @team, body: "Before", expires_in_days: 7, created_by: users(:member))
+        notices_before = @team.notices.count
+        @team.disable!
+
+        get api_v1_account_path, headers: @member_headers
+        assert_response :not_found
+        get api_v1_account_notices_path, headers: @member_headers
+        assert_response :not_found
+        patch api_v1_account_path, params: { name: "After disable" }, headers: @member_headers, as: :json
+        assert_response :not_found
+        post api_v1_account_notices_path, params: { body: "After disable" }, headers: @member_headers, as: :json
+        assert_response :not_found
+        delete api_v1_account_notice_path(notice), headers: @member_headers
+        assert_response :not_found
+        post api_v1_account_invitations_path, params: { email: "late@example.com", role: "member" }, headers: @owner_headers, as: :json
+        assert_response :not_found
+
+        assert_equal "Team for Testing", @team.reload.name
+        assert Notice.active.exists?(notice.id)
+        assert_equal notices_before, @team.notices.count
+        assert_not @team.memberships.joins(:user).exists?(users: { email_address: "late@example.com" })
       end
 
       test "renames the account and sets the logo colour, with the web's audit entries" do

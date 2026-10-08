@@ -1,30 +1,40 @@
-# Shared footing for the human account-administration endpoints under
-# /api/v1/account: the web's account pages, reached with a person's key.
+# What the account-administration endpoints under /api/v1/account add to the
+# shared ApiHumanActor guard: the web's role and feature checks, its error
+# shapes, and its audit_with_changes.
 #
-# Every endpoint is human-only: these are the account holder's settings, not
-# a resident's. The account is the one the key names (or `account_id`, via
-# requested_account), and the key's person must still be a confirmed member,
-# as the web's find_current_user_account! requires. Anything else is 404.
+# Who may act, and where, is ApiHumanActor's: human credentials only, and
+# only in an enabled account where the person is a current, confirmed member
+# (else 404). Account-level actions act in the selected account
+# (`account_id`, else the credential's account or the person's default).
+# Actions on one record act in that record's account: with an OAuth token and
+# no `account_id` the record may be in any of the person's accounts; naming
+# an account, or using an account key, narrows the lookup to that account.
 module ApiAccountAdministration
 
   extend ActiveSupport::Concern
 
   included do
-    before_action :require_human_api_key!
-    before_action :set_administered_account
+    before_action :require_human_actor!
   end
 
   private
 
-  def require_human_api_key!
-    return unless current_api_agent
-
-    render json: { error: "Account administration is only available to a person's API key" }, status: :forbidden
+  # before_action for account-level actions: the selected account.
+  def set_administered_account
+    administer!(requested_account)
   end
 
-  def set_administered_account
-    @account = requested_account
-    raise ActiveRecord::RecordNotFound unless @account.accessible_by?(current_api_user)
+  # Makes `account` the one this request acts in, if the person may act there.
+  def administer!(account)
+    @account = human_account!(account)
+  end
+
+  # Accounts a lookup by record id may span. Each record found must still be
+  # passed to administer!, so a departed member or disabled account is 404.
+  def administrable_accounts
+    return current_api_user.confirmed_accounts if app_token_request? && params[:account_id].blank?
+
+    Account.where(id: human_account!(requested_account).id)
   end
 
   # The web's require_account_manager!.
@@ -50,17 +60,9 @@ module ApiAccountAdministration
            status: :unprocessable_entity
   end
 
-  # The web's audit record for the same action, tagged with the key that did it.
+  # The web's audit record for the same action, with the acting credential.
   def audit(action, auditable = nil, **data)
-    AuditLog.create!(
-      user: current_api_user,
-      account: @account,
-      action: action,
-      auditable: auditable,
-      data: data.merge(api_key_id: Current.api_key&.id),
-      ip_address: request.remote_ip,
-      user_agent: request.user_agent
-    )
+    audit_human_action(action, auditable, account: @account, **data)
   end
 
   # The web's audit_with_changes: saved changes, filtered like request params.

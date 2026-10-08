@@ -126,6 +126,31 @@ module Api
         assert AuditLog.exists?(action: "disconnect_service")
       end
 
+      # Mira #231: `.present?` let JSON false through for a non-owner manager.
+      test "only the personal owner changes delegation, whether to true or false" do
+        connection = create_connection(account: @nexus, user: users(:existing_user))
+        connection.update!(freely_provisionable: true)
+
+        patch api_v1_account_service_connection_path(connection.public_id),
+          params: { freely_provisionable: false, label: "Relabelled by owner of the account" },
+          headers: @nexus_owner_headers, as: :json
+        assert_response :success
+        connection.reload
+        assert connection.freely_provisionable?, "JSON false from a non-owner must not change delegation"
+        assert_equal "Relabelled by owner of the account", connection.label
+
+        connection.update!(freely_provisionable: false)
+        patch api_v1_account_service_connection_path(connection.public_id), params: { freely_provisionable: true },
+          headers: @nexus_owner_headers, as: :json
+        assert_response :success
+        assert_not connection.reload.freely_provisionable?
+
+        patch api_v1_account_service_connection_path(connection.public_id), params: { freely_provisionable: true },
+          headers: @nexus_member_headers, as: :json
+        assert_response :success
+        assert connection.reload.freely_provisionable?, "the owner may still delegate"
+      end
+
       test "someone else's personal connection can't be managed by a member" do
         connection = create_connection(account: @nexus, user: @daniel)
 
@@ -159,7 +184,7 @@ module Api
 
         assert_enqueued_with(job: AccountAgentCredentialsRefreshJob, args: [ @home.id ]) do
           patch api_v1_account_ai_provider_keys_path,
-            params: { set: { anthropic: "sk-ant-new-value" }, clear: [ "openai" ] }, headers: @home_headers, as: :json
+            params: { anthropic_api_key: "sk-ant-new-value", clear: [ "openai" ] }, headers: @home_headers, as: :json
         end
 
         assert_response :success
@@ -172,15 +197,73 @@ module Api
         assert_not_includes log.data.to_json, "sk-old-openai"
       end
 
-      test "provider keys need an owner or admin, known providers, and a human key" do
-        patch api_v1_account_ai_provider_keys_path, params: { set: { anthropic: "sk-member" } }, headers: @nexus_member_headers, as: :json
+      # Mira #231 P2: clearing alone always failed validation.
+      test "clearing a key needs no key to set" do
+        @home.update!(openai_api_key: "sk-old-openai", anthropic_api_key: "sk-old-anthropic")
+
+        patch api_v1_account_ai_provider_keys_path, params: { clear: [ "openai" ] }, headers: @home_headers, as: :json
+        assert_response :success
+        assert_equal false, response.parsed_body.dig("ai_api_keys_configured", "openai")
+        @home.reload
+        assert_nil @home.openai_api_key
+        assert_equal "sk-old-anthropic", @home.anthropic_api_key
+
+        patch api_v1_account_ai_provider_keys_path, params: { anthropic_api_key: "", clear: [ "anthropic" ] }, headers: @home_headers, as: :json
+        assert_response :success
+        assert_nil @home.reload.anthropic_api_key
+      end
+
+      # Mira #231 P1: `{set: {provider: key}}` slipped past the parameter filter.
+      # Every provider's key, in the accepted shape and in the refused draft
+      # shape, must stay out of the request log and the filtered parameters.
+      test "no provider key reaches the request log or the filtered parameters" do
+        Account::AI_PROVIDERS.each_key do |provider|
+          marker = "SYNTHETIC-#{provider}-NOT-A-SECRET-#{SecureRandom.hex(4)}"
+          [
+            { "#{provider}_api_key" => marker },
+            { set: { provider => marker } }
+          ].each do |body|
+            params_seen = []
+            log = capture_request_log do
+              ActiveSupport::Notifications.subscribed(->(*, payload) { params_seen << payload[:params] }, "start_processing.action_controller") do
+                patch api_v1_account_ai_provider_keys_path, params: body, headers: @home_headers, as: :json
+              end
+            end
+
+            assert_includes log, "Parameters:", "the capture must see the request log"
+            assert_not_includes log, marker, "#{body.keys.first} leaked into the log"
+            assert_not_includes params_seen.to_s, marker
+            assert_not_includes request.filtered_parameters.to_s, marker
+            assert_not_includes response.body, marker
+          end
+          assert_equal "SYNTHETIC", @home.reload.public_send("#{provider}_api_key").to_s.split("-").first
+        end
+      end
+
+      test "the draft set shape, unknown providers and non-text keys are refused" do
+        patch api_v1_account_ai_provider_keys_path, params: { set: { anthropic: "sk-draft" } }, headers: @home_headers, as: :json
+        assert_response :unprocessable_entity
+        assert_match(/anthropic_api_key/, response.parsed_body["error"])
+        patch api_v1_account_ai_provider_keys_path, params: { set: {}, clear: [ "openai" ] }, headers: @home_headers, as: :json
+        assert_response :unprocessable_entity
+
+        patch api_v1_account_ai_provider_keys_path, params: { skynet_api_key: "sk-x" }, headers: @home_headers, as: :json
+        assert_response :unprocessable_entity
+        patch api_v1_account_ai_provider_keys_path, params: { clear: [ "skynet" ] }, headers: @home_headers, as: :json
+        assert_response :unprocessable_entity
+        patch api_v1_account_ai_provider_keys_path, params: { anthropic_api_key: { nested: "x" } }, headers: @home_headers, as: :json
+        assert_response :unprocessable_entity
+        patch api_v1_account_ai_provider_keys_path, params: {}, headers: @home_headers, as: :json
+        assert_response :unprocessable_entity
+        assert_nil @home.reload.anthropic_api_key
+      end
+
+      test "provider keys need an owner or admin and a human key" do
+        patch api_v1_account_ai_provider_keys_path, params: { anthropic_api_key: "sk-member" }, headers: @nexus_member_headers, as: :json
         assert_response :forbidden
         assert_nil @nexus.reload.anthropic_api_key
 
-        patch api_v1_account_ai_provider_keys_path, params: { set: { skynet: "sk-x" } }, headers: @home_headers, as: :json
-        assert_response :unprocessable_entity
-
-        patch api_v1_account_ai_provider_keys_path, params: { set: { anthropic: "sk-resident" } }, headers: @resident_headers, as: :json
+        patch api_v1_account_ai_provider_keys_path, params: { anthropic_api_key: "sk-resident" }, headers: @resident_headers, as: :json
         assert_response :forbidden
         assert_nil @home.reload.anthropic_api_key
       end
@@ -189,6 +272,17 @@ module Api
 
       def headers_for(key)
         { "Authorization" => "Bearer #{key.raw_token}" }
+      end
+
+      def capture_request_log
+        io = StringIO.new
+        logger = ActiveSupport::Logger.new(io)
+        logger.level = :debug
+        Rails.logger.broadcast_to(logger)
+        yield
+        io.string
+      ensure
+        Rails.logger.stop_broadcasting_to(logger)
       end
 
       def create_connection(account:, user:)

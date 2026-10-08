@@ -1,17 +1,20 @@
 module Api
   module V1
-    # The account a person's key acts in: its name, type, logo colour, members
-    # and pending invitations (the web's account page and Interface tab).
-    # Renaming mirrors accounts#update (name only; converting the account type
-    # is not here). The logo colour mirrors accounts/interfaces#update.
-    class AccountsController < BaseController
+    # The selected account (GET/PATCH /api/v1/account): its name, type, logo
+    # colour, members and pending invitations (the web's account page and
+    # Interface tab). Renaming mirrors accounts#update (name only; converting
+    # the account type is not here). The logo colour mirrors
+    # accounts/interfaces#update. Listing a person's accounts is
+    # Api::V1::AccountsController, which needs no selected account.
+    class AccountAdministrationController < BaseController
 
       include ApiAccountAdministration
 
+      before_action :set_administered_account
       before_action :require_account_manager!, only: :update, if: -> { params.key?(:logo_colour) }
 
       def show
-        render json: { account: account_json }
+        render json: { account: administered_account_json }
       end
 
       def update
@@ -35,7 +38,7 @@ module Api
           rename if params.key?(:name)
           update_logo_colour if params.key?(:logo_colour)
         end
-        render json: { account: account_json }
+        render json: { account: administered_account_json }
       rescue ActiveRecord::RecordInvalid => error
         render_invalid(error.record)
       end
@@ -54,7 +57,7 @@ module Api
         audit_with_changes(:update_account_logo_colour, @account)
       end
 
-      def account_json
+      def administered_account_json
         memberships = @account.members_with_details.to_a
         pending, members = memberships.partition(&:invitation_pending?)
 
@@ -67,13 +70,13 @@ module Api
           can_manage: @account.manageable_by?(current_api_user),
           can_manage_ai_credentials: @account.ai_credentials_manageable_by?(current_api_user),
           is_owner: @account.owned_by?(current_api_user),
-          members: members.map { |membership| membership_json(membership) },
-          pending_invitations: pending.map { |membership| membership_json(membership) }
+          members: members.map { |membership| administered_membership_json(membership) },
+          pending_invitations: pending.map { |membership| administered_membership_json(membership) }
         }
       end
 
       # The member fields the web shows, without the confirmation token.
-      def membership_json(membership)
+      def administered_membership_json(membership)
         {
           id: membership.to_param,
           role: membership.role,

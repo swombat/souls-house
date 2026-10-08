@@ -7,6 +7,8 @@ module Api
 
         include ApiAccountAdministration
 
+        before_action :set_administered_account, only: :create
+        before_action :set_member, only: :resend
         before_action :require_account_manager!
 
         def create
@@ -21,7 +23,7 @@ module Api
 
         # The id is the pending membership's, from GET /api/v1/account.
         def resend
-          member = @account.memberships.find(params[:id])
+          member = @member
           unless member.resend_invitation!
             return render json: { error: "Could not resend invitation" }, status: :unprocessable_entity
           end
@@ -31,6 +33,11 @@ module Api
         end
 
         private
+
+        def set_member
+          @member = Membership.where(account: administrable_accounts).find(params[:id])
+          administer!(@member.account)
+        end
 
         def invitation_json(membership)
           {

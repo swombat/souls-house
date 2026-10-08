@@ -10,6 +10,7 @@ module Api
 
         include ApiAccountAdministration
 
+        before_action :set_administered_account, only: %i[index create]
         before_action -> { require_feature_enabled!(:agents) }
 
         def index
@@ -34,10 +35,13 @@ module Api
         # The receiving account removes its guest, or the hosting account
         # withdraws its resident. Either side is enough.
         def destroy
+          accounts = administrable_accounts
           membership = GuestMembership
-            .where(account: @account)
-            .or(GuestMembership.where(agent_id: @account.agents.select(:id)))
+            .where(account: accounts)
+            .or(GuestMembership.where(agent_id: Agent.where(account: accounts).select(:id)))
             .find(params[:id])
+          # Act as the receiving account when the person is there, else as the home.
+          administer!(accounts.exists?(membership.account_id) ? membership.account : membership.agent.account)
           return render_forbidden("You don't have permission to change this guest") unless membership.removable_by?(current_api_user)
 
           membership.destroy!

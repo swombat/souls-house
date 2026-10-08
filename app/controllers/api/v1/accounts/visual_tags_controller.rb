@@ -8,6 +8,8 @@ module Api
 
         include ApiAccountAdministration
 
+        before_action :set_administered_account, only: :create
+        before_action :set_tag, only: %i[update destroy]
         before_action :require_account_manager!
 
         def create
@@ -19,7 +21,7 @@ module Api
         end
 
         def update
-          tag = VisualTag.resolve_for(@account, params[:id])
+          tag = @tag
           tag.update!(visual_tag_params)
           audit_with_changes(:update_visual_tag, tag)
           render json: { visual_tag: tag.as_json }
@@ -28,7 +30,7 @@ module Api
         end
 
         def destroy
-          tag = VisualTag.resolve_for(@account, params[:id])
+          tag = @tag
           tag.destroy!
           audit(:destroy_visual_tag, tag)
           render json: { removed: tag.as_json }
@@ -39,6 +41,20 @@ module Api
         end
 
         private
+
+        # VisualTag.resolve_for's id rules, in whichever of the person's
+        # accounts this request may administer.
+        def set_tag
+          tag = administrable_accounts.lazy.filter_map do |account|
+            VisualTag.resolve_for(account, params[:id])
+          rescue ActiveRecord::RecordNotFound
+            nil
+          end.first
+          raise ActiveRecord::RecordNotFound unless tag
+
+          administer!(tag.account)
+          @tag = tag
+        end
 
         def visual_tag_params
           params.slice(:label, :icon, :colour).permit(:label, :icon, :colour)

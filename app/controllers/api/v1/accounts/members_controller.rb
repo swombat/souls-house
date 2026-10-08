@@ -8,10 +8,11 @@ module Api
 
         include ApiAccountAdministration
 
+        before_action :set_member
         before_action :require_account_manager!
 
         def destroy
-          member = @account.memberships.find(params[:id])
+          member = @member
           if (refusal = member.removal_refusal_for(current_api_user))
             return render json: { error: refusal }, status: :unprocessable_entity
           end
@@ -22,6 +23,13 @@ module Api
 
           audit(:remove_member, nil, removed_email: member_email, removed_role: member_role)
           render json: { removed: { id: member.to_param, email_address: member_email, role: member_role } }
+        end
+
+        private
+
+        def set_member
+          @member = Membership.where(account: administrable_accounts).find(params[:id])
+          administer!(@member.account)
         end
 
       end

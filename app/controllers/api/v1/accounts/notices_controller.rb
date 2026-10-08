@@ -7,6 +7,7 @@ module Api
 
         include ApiAccountAdministration
 
+        before_action :set_administered_account, only: %i[index create]
         def index
           render json: {
             notices: managed_notices.order(created_at: :desc).map { |notice| notice_json(notice) },
@@ -29,7 +30,8 @@ module Api
 
         # Ends the notice now, as the web does; the row is kept.
         def destroy
-          notice = managed_notices.find(params[:id])
+          notice = Notice.where(account: administrable_accounts).active.announcements.find(params[:id])
+          administer!(notice.account)
           notice.expire!
           audit("expire_account_notice", notice)
           render json: { notice: notice_json(notice) }

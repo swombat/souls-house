@@ -281,7 +281,7 @@ Rails.application.routes.draw do
       end
       resources :visual_tags, only: :index
       # Account administration with a person's key (the web's account pages).
-      resource :account, only: %i[show update] do
+      resource :account, only: %i[show update], controller: "account_administration" do
         scope module: :accounts do
           resources :invitations, only: :create do
             post :resend, on: :member

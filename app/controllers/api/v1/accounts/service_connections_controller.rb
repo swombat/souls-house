@@ -9,6 +9,7 @@ module Api
 
         include ApiAccountAdministration
 
+        before_action :set_administered_account, only: :index
         before_action :set_connection, only: %i[update destroy]
         before_action :require_connection_manager!, only: %i[update destroy]
 
@@ -21,7 +22,8 @@ module Api
 
         def update
           attributes = connection_params
-          if attributes[:freely_provisionable].present? && !@connection.owner?(current_api_user)
+          # Delegation is the personal owner's alone; JSON false must not slip past.
+          if attributes.key?(:freely_provisionable) && !@connection.owner?(current_api_user)
             attributes.delete(:freely_provisionable)
           end
           @connection.update!(attributes)
@@ -46,7 +48,8 @@ module Api
         private
 
         def set_connection
-          @connection = @account.service_connections.find_by_public_id!(params[:id])
+          @connection = ServiceConnection.where(account: administrable_accounts).find_by_public_id!(params[:id])
+          administer!(@connection.account)
         end
 
         def require_connection_manager!
