@@ -9,12 +9,20 @@
   import WhiteboardViewer from '$lib/components/whiteboards/WhiteboardViewer.svelte';
   import FieldFileViewer from '$lib/components/field/FieldFileViewer.svelte';
   import NoteHistory from '$lib/components/field/NoteHistory.svelte';
+  import RecordingUploadDialog from '$lib/components/field/RecordingUploadDialog.svelte';
+  import RecordingAllowance from '$lib/components/field/RecordingAllowance.svelte';
+  import RecordingViewer from '$lib/components/field/RecordingViewer.svelte';
   import { fieldItemLink, formatBytes, formatWhen } from '$lib/field';
-  import { FileArrowUp, File, Notepad, NotePencil, Plant } from 'phosphor-svelte';
+  import { formatDuration, recordingStatusLine } from '$lib/field-recordings';
+  import { FileArrowUp, File, Microphone, Notepad, NotePencil, Plant } from 'phosphor-svelte';
 
   let {
     files = [],
     notes = [],
+    recordings = [],
+    recording_allowance = null,
+    max_recording_bytes = 2 * 1024 * 1024 * 1024,
+    max_recording_label = '2 GB',
     tab = 'all',
     selected = null,
     max_file_bytes = 100 * 1024 * 1024,
@@ -27,14 +35,15 @@
     { key: 'all', label: 'All' },
     { key: 'files', label: 'Files' },
     { key: 'notes', label: 'Notes' },
+    { key: 'recordings', label: 'Recordings' },
   ];
 
-  const items = $derived.by(() => {
-    const shown = tab === 'files' ? files : tab === 'notes' ? notes : [...files, ...notes];
-    return [...shown].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-  });
-  const fieldEmpty = $derived(files.length === 0 && notes.length === 0);
-  const current = $derived([...files, ...notes].find((item) => item.key === selected) || null);
+  const everything = $derived([...files, ...notes, ...recordings]);
+  const byTab = $derived({ all: everything, files, notes, recordings });
+  const items = $derived([...(byTab[tab] || everything)].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)));
+  const fieldEmpty = $derived(everything.length === 0);
+  const current = $derived(everything.find((item) => item.key === selected) || null);
+  const kindLabel = { file: 'File', note: 'Note', recording: 'Recording' };
   const accountLabel = $derived(account_name || 'this account');
   const sharedLine = $derived(
     `Shared with every human member and resident in ${accountLabel}, including anyone who joins later.`
@@ -45,6 +54,7 @@
     const subs = {
       [`Account:${account.id}:field_files`]: 'files',
       [`Account:${account.id}:whiteboards`]: 'notes',
+      [`Account:${account.id}:field_recordings`]: ['recordings', 'recording_allowance'],
     };
     if (current?.kind === 'note') subs[`Whiteboard:${current.id}`] = 'notes';
     updateSync(subs);
@@ -63,6 +73,8 @@
     conflict = null;
     visit({ tab, item: key });
   }
+
+  let recordingOpen = $state(false);
 
   // Add file
   let uploadOpen = $state(false);
@@ -233,6 +245,9 @@
       <Button variant="outline" onclick={() => (noteOpen = true)} data-testid="field-new-note">
         <NotePencil class="size-4" /> New note
       </Button>
+      <Button variant="outline" onclick={() => (recordingOpen = true)} data-testid="field-add-recording">
+        <Microphone class="size-4" /> Bring in a recording
+      </Button>
     </div>
   </div>
 
@@ -241,14 +256,14 @@
       <Card.Content class="py-16 text-center max-w-xl mx-auto">
         <Plant class="mx-auto size-16 text-muted-foreground mb-4" weight="duotone" />
         <h2 class="text-xl font-semibold mb-2">Bring something into the Field.</h2>
-        <p class="text-muted-foreground mb-3">Add files or write notes to keep and return to together.</p>
+        <p class="text-muted-foreground mb-3">
+          Add files, write notes or bring in recordings to keep and return to together.
+        </p>
         <p class="text-muted-foreground mb-3" data-testid="field-sharing">
           Everything here is shared with every human member and resident in {accountLabel}. Adding something doesn't
           notify or wake residents. To explore it together, share its link in a chat.
         </p>
-        <p class="text-muted-foreground text-sm">
-          Recordings can be stored here; automatic transcription isn't available yet.
-        </p>
+        <p class="text-muted-foreground text-sm">Recordings are transcribed, so everyone can read them.</p>
       </Card.Content>
     </Card.Root>
   {:else}
@@ -266,11 +281,15 @@
           onclick={() => selectTab(t.key)}>
           {t.label}
           <span class="text-muted-foreground ml-1">
-            {t.key === 'files' ? files.length : t.key === 'notes' ? notes.length : files.length + notes.length}
+            {byTab[t.key].length}
           </span>
         </Button>
       {/each}
     </div>
+
+    {#if tab === 'recordings' && recording_allowance}
+      <RecordingAllowance allowance={recording_allowance} />
+    {/if}
 
     <div class="grid gap-6 lg:grid-cols-3">
       <div class="space-y-3">
@@ -287,19 +306,30 @@
                 <div class="flex items-start gap-3">
                   {#if item.kind === 'file'}
                     <File class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
+                  {:else if item.kind === 'recording'}
+                    <Microphone class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
                   {:else}
                     <Notepad class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
                   {/if}
                   <div class="flex-1 min-w-0">
                     <h3 class="font-semibold truncate">{item.title}</h3>
-                    {#if item.kind === 'file' && item.note}
+                    {#if item.kind === 'recording'}
+                      <p
+                        class="text-sm line-clamp-2 mt-1 {item.status === 'rejected' || item.status === 'failed'
+                          ? 'text-destructive'
+                          : 'text-muted-foreground'}"
+                        data-testid="field-recording-line">
+                        {recordingStatusLine(item)}
+                      </p>
+                    {:else if item.kind === 'file' && item.note}
                       <p class="text-sm text-muted-foreground line-clamp-2 mt-1">{item.note}</p>
                     {:else if item.kind === 'note' && item.summary}
                       <p class="text-sm text-muted-foreground line-clamp-2 mt-1">{item.summary}</p>
                     {/if}
                     <p class="text-xs text-muted-foreground mt-2">
-                      {item.kind === 'file' ? 'File' : 'Note'}
-                      {#if item.kind === 'file' && item.uploader_name}· {item.uploader_name}{/if}
+                      {kindLabel[item.kind]}
+                      {#if item.kind === 'recording' && item.duration_ms}· {formatDuration(item.duration_ms)}{/if}
+                      {#if item.kind !== 'note' && item.uploader_name}· {item.uploader_name}{/if}
                       {#if item.kind === 'note' && item.editor_name}· {item.editor_name}{/if}
                       · {formatWhen(item.created_at)}
                     </p>
@@ -314,6 +344,10 @@
       <div class="lg:col-span-2">
         {#if current?.kind === 'file'}
           <FieldFileViewer file={current} link={fieldItemLink(account.id, current.key)} onDelete={deleteFile} />
+        {:else if current?.kind === 'recording'}
+          {#key current.key}
+            <RecordingViewer recording={current} />
+          {/key}
         {:else if current?.kind === 'note'}
           <div class="mb-2 flex justify-end gap-1">
             <Button size="sm" variant="ghost" onclick={() => (historyOpen = true)} data-testid="note-history-open">
@@ -383,6 +417,14 @@
     </form>
   </Dialog.Content>
 </Dialog.Root>
+
+<RecordingUploadDialog
+  bind:open={recordingOpen}
+  accountId={account.id}
+  allowance={recording_allowance}
+  maxBytes={max_recording_bytes}
+  maxLabel={max_recording_label}
+  {sharedLine} />
 
 <Dialog.Root bind:open={noteOpen}>
   <Dialog.Content class="sm:max-w-lg">

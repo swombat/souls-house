@@ -7,7 +7,7 @@ class SyncChannel < ApplicationCable::Channel
     },
     "Account" => {
       model: Account,
-      collections: %w[agents chats whiteboards field_files],
+      collections: %w[agents chats whiteboards field_files field_recordings],
       allow_all: true
     },
     "Agent" => {
@@ -24,6 +24,10 @@ class SyncChannel < ApplicationCable::Channel
     },
     "FieldFile" => {
       model: FieldFile,
+      collections: []
+    },
+    "FieldRecording" => {
+      model: FieldRecording,
       collections: []
     },
     "Setting" => {

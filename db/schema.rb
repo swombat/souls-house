@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_08_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -752,8 +752,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_090000) do
     t.bigint "clip_end_ms"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "field_voice_id"
+    t.string "naming_source"
+    t.string "named_by_type"
+    t.bigint "named_by_id"
+    t.datetime "named_at"
     t.index ["field_recording_id", "label"], name: "index_field_recording_speakers_on_field_recording_id_and_label", unique: true
     t.index ["field_recording_id"], name: "index_field_recording_speakers_on_field_recording_id"
+    t.index ["field_voice_id"], name: "index_field_recording_speakers_on_field_voice_id"
+    t.index ["named_by_type", "named_by_id"], name: "index_field_recording_speakers_on_named_by"
   end
 
   create_table "field_recordings", force: :cascade do |t|
@@ -782,6 +789,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_090000) do
     t.index ["retried_from_id"], name: "index_field_recordings_on_retried_from_id"
     t.index ["status"], name: "index_field_recordings_on_status"
     t.index ["uploaded_by_type", "uploaded_by_id"], name: "index_field_recordings_on_uploaded_by"
+  end
+
+  create_table "field_voices", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", limit: 100, null: false
+    t.bigint "user_id"
+    t.string "created_by_type"
+    t.bigint "created_by_id"
+    t.datetime "discarded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "account_id, lower((name)::text)", name: "index_field_voices_unique_kept_name", unique: true, where: "(discarded_at IS NULL)"
+    t.index ["account_id", "user_id"], name: "index_field_voices_unique_kept_user", unique: true, where: "((discarded_at IS NULL) AND (user_id IS NOT NULL))"
+    t.index ["account_id"], name: "index_field_voices_on_account_id"
+    t.index ["created_by_type", "created_by_id"], name: "index_field_voices_on_created_by"
+    t.index ["user_id"], name: "index_field_voices_on_user_id"
   end
 
   create_table "github_integrations", force: :cascade do |t|
@@ -1562,6 +1585,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_090000) do
     t.string "password_reset_token"
     t.datetime "updated_at", null: false
     t.bigint "default_account_id"
+    t.datetime "field_you_hint_dismissed_at"
     t.index ["default_account_id"], name: "index_users_on_default_account_id"
     t.index ["email_address"], name: "index_users_on_email_address", unique: true
     t.index ["password_reset_token"], name: "index_users_on_password_reset_token", unique: true
@@ -1674,8 +1698,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_090000) do
   add_foreign_key "field_recording_reservations", "accounts"
   add_foreign_key "field_recording_reservations", "field_recordings"
   add_foreign_key "field_recording_speakers", "field_recordings"
+  add_foreign_key "field_recording_speakers", "field_voices"
   add_foreign_key "field_recordings", "accounts"
   add_foreign_key "field_recordings", "field_recordings", column: "retried_from_id", on_delete: :nullify
+  add_foreign_key "field_voices", "accounts"
+  add_foreign_key "field_voices", "users", on_delete: :nullify
   add_foreign_key "github_integrations", "accounts"
   add_foreign_key "github_resident_imports", "accounts"
   add_foreign_key "github_resident_imports", "service_connections"

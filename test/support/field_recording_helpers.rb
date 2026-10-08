@@ -30,6 +30,14 @@ module FieldRecordingHelpers
     recording.reload
   end
 
+  # A recording transcribed with two speakers (speaker_0, speaker_1).
+  def ready_recording(account:, user:, **attributes)
+    recording = queued_recording(account:, user:, **attributes)
+    dispatch = recording.claim_dispatch!
+    recording.accept_transcript!(dispatch, scribe_transcription)
+    recording.reload
+  end
+
   # Scribe word list: [speaker, start_s, end_s, text]; spacing is added.
   def scribe_words(*spoken)
     spoken.flat_map.with_index do |(speaker, start, finish, text), index|
