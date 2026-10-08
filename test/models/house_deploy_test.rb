@@ -77,4 +77,115 @@ class HouseDeployTest < ActiveSupport::TestCase
     assert_empty status[:runs]
   end
 
+  test "status lists automatic Rails deploys beside manual ones, newest first, without skipped runs" do
+    tested = "b" * 40
+    manual = { "workflow_runs" => [
+      { "id" => 2, "path" => ".github/workflows/deploy-rails.yml", "status" => "completed", "conclusion" => "success",
+        "head_sha" => "aaaaaaa111", "created_at" => "2026-10-08T06:00:00Z" }
+    ] }
+    automatic = { "workflow_runs" => [
+      { "id" => 3, "path" => ".github/workflows/deploy-rails-on-green.yml", "status" => "in_progress", "conclusion" => nil,
+        "display_title" => "Deploy Rails #{tested}", "head_sha" => "f" * 40,
+        "actor" => { "login" => "swombat" }, "created_at" => "2026-10-08T07:00:00Z" },
+      { "id" => 4, "path" => ".github/workflows/deploy-rails-on-green.yml", "status" => "completed", "conclusion" => "skipped",
+        "head_sha" => "ccccccc333", "created_at" => "2026-10-08T08:00:00Z" }
+    ] }
+    HouseDeploy.transport = ->(_method, path, _body) {
+      path.include?("deploy-rails-on-green.yml/runs") ? [ 200, {}, automatic ] : [ 200, {}, manual ]
+    }
+
+    status = HouseDeploy.status
+    runs = status[:runs]
+
+    assert_nil status[:partial_error]
+    assert_equal [ 3, 2 ], runs.map { |run| run[:id] }
+    assert_equal [ "rails_auto", "rails" ], runs.map { |run| run[:workflow] }
+    assert_match(/automatic/, runs.first[:name])
+    # The commit CI tested, from the run name, not the workflow run's own head_sha.
+    assert_equal "bbbbbbb", runs.first[:head_sha]
+    assert_nil runs.first[:outcome]
+  end
+
+  test "a finished automatic run reports what shipped, not just that it succeeded" do
+    run = ->(id) {
+      { "id" => id, "path" => ".github/workflows/deploy-rails-on-green.yml", "status" => "completed",
+        "conclusion" => "success", "display_title" => "Deploy Rails #{"b" * 40}", "created_at" => "2026-10-08T07:0#{id}:00Z" }
+    }
+    steps = {
+      11 => [ { "name" => "Request deployment and wait for verified outcome", "conclusion" => "success" },
+              { "name" => "Deployment verified", "conclusion" => "success" },
+              { "name" => "Master moved on, nothing deployed", "conclusion" => "skipped" } ],
+      12 => [ { "name" => "Request deployment and wait for verified outcome", "conclusion" => "success" },
+              { "name" => "Deployment verified", "conclusion" => "skipped" },
+              { "name" => "Master moved on, nothing deployed", "conclusion" => "success" } ],
+      13 => [] # the deploy job was skipped (actor gate or off switch)
+    }
+    HouseDeploy.transport = ->(_method, path, _body) {
+      if (id = path[%r{/runs/(\d+)/attempts/1/jobs}, 1])
+        [ 200, {}, { "jobs" => [ { "name" => "deploy / deploy", "steps" => steps.fetch(id.to_i) } ] } ]
+      elsif path.include?("deploy-rails-on-green.yml/runs")
+        [ 200, {}, { "workflow_runs" => [ run.(11), run.(12), run.(13) ] } ]
+      else
+        [ 200, {}, { "workflow_runs" => [] } ]
+      end
+    }
+
+    outcomes = HouseDeploy.status[:runs].to_h { |r| [ r[:id], r[:outcome] ] }
+
+    assert_equal({ 11 => "deployed", 12 => "superseded", 13 => "not_deployed" }, outcomes)
+  end
+
+  test "a rerun's outcome comes from its own attempt, not the cached first attempt" do
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    attempt = 1
+    run = { "id" => 21, "path" => ".github/workflows/deploy-rails-on-green.yml", "status" => "completed",
+            "conclusion" => "success", "display_title" => "Deploy Rails #{"c" * 40}",
+            "created_at" => "2026-10-08T07:00:00Z" }
+    steps = {
+      1 => [ { "name" => "Deployment verified", "conclusion" => "success" } ],
+      2 => [ { "name" => "Deployment verified", "conclusion" => "skipped" },
+             { "name" => "Master moved on, nothing deployed", "conclusion" => "success" } ]
+    }
+    job_paths = []
+    HouseDeploy.transport = ->(_method, path, _body) {
+      if (n = path[%r{/runs/21/attempts/(\d+)/jobs}, 1])
+        job_paths << path
+        [ 200, {}, { "jobs" => [ { "steps" => steps.fetch(n.to_i) } ] } ]
+      elsif path.include?("deploy-rails-on-green.yml/runs")
+        [ 200, {}, { "workflow_runs" => [ run.merge("run_attempt" => attempt) ] } ]
+      else
+        [ 200, {}, { "workflow_runs" => [] } ]
+      end
+    }
+
+    first = HouseDeploy.status[:runs].first
+    assert_equal [ 1, "deployed" ], [ first[:attempt], first[:outcome] ]
+
+    attempt = 2
+    second = HouseDeploy.status[:runs].first
+    assert_equal [ 2, "superseded" ], [ second[:attempt], second[:outcome] ]
+    assert_equal 2, job_paths.size
+
+    HouseDeploy.status # both attempts now cached
+    assert_equal 2, job_paths.size
+  ensure
+    Rails.cache = original_cache
+  end
+
+  test "a failed automatic-run lookup still shows the manual runs and says what is missing" do
+    manual = { "workflow_runs" => [
+      { "id" => 2, "path" => ".github/workflows/deploy-rails.yml", "status" => "completed", "created_at" => "2026-10-08T06:00:00Z" }
+    ] }
+    HouseDeploy.transport = ->(_method, path, _body) {
+      path.include?("deploy-rails-on-green.yml/runs") ? [ 404, {}, { "message" => "Not Found" } ] : [ 200, {}, manual ]
+    }
+
+    status = HouseDeploy.status
+
+    assert_nil status[:error]
+    assert_match(/Couldn't list automatic deploys/, status[:partial_error])
+    assert_equal [ 2 ], status[:runs].map { |run| run[:id] }
+  end
+
 end

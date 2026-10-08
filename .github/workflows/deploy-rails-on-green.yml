@@ -1,0 +1,39 @@
+name: Deploy Rails on green CI
+# The tested commit is in the run name, so the Deployments page can show it.
+run-name: Deploy Rails ${{ github.event.workflow_run.head_sha }}
+# A merge to master is a decision to put it live. When CI passes for a push to
+# master, deploy Rails. Chaos and resident-runtime rebuilds restart residents,
+# so they stay manual (Deploy both / Update Chaos / Rebuild residents).
+#
+# Off switch: set the repository variable AUTO_DEPLOY_RAILS to "false".
+#
+# The request carries the commit CI tested. The host deploys master as it
+# clones it, and only if that clone is exactly the tested commit; otherwise it
+# reports "superseded" and deploys nothing, and the newer commit's own CI run
+# deploys it. Waiting in the deploy queue can't let an untested commit through.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+
+permissions:
+  contents: read
+
+# At most one waiting deploy: a burst of merges collapses to the newest.
+concurrency:
+  group: auto-deploy-rails
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master' &&
+      vars.AUTO_DEPLOY_RAILS != 'false'
+    uses: ./.github/workflows/deploy-house.yml
+    secrets: inherit
+    with:
+      operation: rails
+      expected_revision: ${{ github.event.workflow_run.head_sha }}

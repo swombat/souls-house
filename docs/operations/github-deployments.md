@@ -60,6 +60,28 @@ A fork must also replace the upstream login in `deploy-house.yml`'s two actor
 checks with its own deploying account. See "Optional: deploy from inside the
 app" in `public/self-host.md`.
 
+## Automatic Rails deploys
+
+`deploy-rails-on-green.yml` runs when **CI** completes for a push to `master`.
+If CI passed, it calls the same transport with `operation: rails` and
+`expected_revision` set to the commit CI tested. The forced command accepts
+`rails expect <40-hex sha>`; the worker clones `master` exactly as for a manual
+press and deploys only if that clone is the expected commit. Otherwise the job
+ends in the terminal state `superseded` with nothing deployed, and the newer
+commit's own CI run deploys it. Queue time behind another deployment can't let
+an untested commit through.
+
+Chaos, resident rebuilds and **Deploy both** stay manual. Set the repository
+variable `AUTO_DEPLOY_RAILS` to `false` to stop automatic deploys. Until the
+host is reinstalled with this gate grammar (`sudo ops/deploy/install`),
+automatic requests are refused at the forced command and the run fails; manual
+buttons keep working.
+
+The Deployments page lists automatic runs beside manual ones. A finished
+automatic run shows **deployed**, **master moved on, nothing deployed** or
+**not deployed** (the job was skipped), read from the transport's marker steps,
+and the commit shown is the tested one from the run name.
+
 ## Authority and installation
 
 See issue #144 and the scoped amendment to ADR 0002. Production secrets stay in

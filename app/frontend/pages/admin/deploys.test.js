@@ -21,6 +21,17 @@ describe('runLabel', () => {
   });
 });
 
+describe('runLabel for automatic deploys', () => {
+  const auto = (outcome) => ({ status: 'completed', conclusion: 'success', workflow: 'rails_auto', outcome });
+  it('says what shipped, not just that the workflow succeeded', () => {
+    expect(runLabel(auto('deployed'))).toBe('✓ deployed');
+    expect(runLabel(auto('superseded'))).toBe('– master moved on, nothing deployed');
+    expect(runLabel(auto('not_deployed'))).toBe('– not deployed');
+    expect(runLabel(auto(undefined))).toBe('✓ finished (outcome unknown)');
+    expect(runLabel({ ...auto(undefined), conclusion: 'failure' })).toBe('✗ failed');
+  });
+});
+
 describe('shouldPoll', () => {
   it('polls while a run is unfinished', () => {
     expect(shouldPoll(fresh([running]), 0, 1000)).toBe(true);
@@ -88,5 +99,37 @@ describe('expiryWarning', () => {
   it('warns inside two weeks and after expiry', () => {
     expect(expiryWarning('2026-10-11T00:00:00Z', now)).toBe('The deploy token expires in 3 days.');
     expect(expiryWarning('2026-10-01T00:00:00Z', now)).toMatch(/has expired/);
+  });
+});
+
+describe('applyPollResult with a partial failure', () => {
+  it('keeps known automatic runs, takes fresh manual runs, shows the gap and keeps polling', () => {
+    const autoRunning = { id: 9, status: 'in_progress', workflow: 'rails_auto', created_at: '2026-10-08T12:00:00Z' };
+    const manualOld = {
+      id: 1,
+      status: 'completed',
+      conclusion: 'success',
+      workflow: 'rails',
+      created_at: '2026-10-08T10:00:00Z',
+    };
+    const manualNew = {
+      id: 2,
+      status: 'completed',
+      conclusion: 'success',
+      workflow: 'rails',
+      created_at: '2026-10-08T11:00:00Z',
+    };
+    const after = applyPollResult(fresh([autoRunning, manualOld]), {
+      kind: 'ok',
+      status: {
+        runs: [manualNew, manualOld],
+        error: null,
+        partial_error: "Couldn't list automatic deploys: GitHub unreachable",
+      },
+    });
+    expect(after.runs.map((run) => run.id)).toEqual([9, 2, 1]);
+    expect(after.error).toMatch(/automatic deploys/);
+    expect(after.stopped).toBe(false);
+    expect(shouldPoll(after, 0, 1000)).toBe(true);
   });
 });
