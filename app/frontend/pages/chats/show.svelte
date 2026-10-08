@@ -163,6 +163,7 @@
       showUsage={showUsageInChat}
       {agentIsResponding}
       {activeRuntimeAgentIds}
+      runtimeInteractions={activity.rows}
       {responseMarker}
       fileUploadConfig={file_upload_config}
       onAgentTrigger={response.refreshMessages}

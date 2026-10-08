@@ -10,6 +10,7 @@
     showUsage = false,
     agentIsResponding = false,
     activeRuntimeAgentIds = [],
+    runtimeInteractions = [],
     responseMarker = null,
     fileUploadConfig = {},
     onAgentTrigger = () => {},
@@ -28,6 +29,7 @@
     chatId={chat.id}
     disabled={agentIsResponding || !chat?.respondable}
     {activeRuntimeAgentIds}
+    {runtimeInteractions}
     {responseMarker}
     onTrigger={onAgentTrigger} />
 {/if}

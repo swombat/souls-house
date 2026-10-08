@@ -629,6 +629,7 @@ def persistent_trigger(
                     record,
                     events,
                     subscription_notice_at=subscription_notice_at,
+                    model=model,
                 )
                 return instrumented_response(
                     session_id, result, events, resume_prompt,
@@ -1395,8 +1396,11 @@ def save_session_record(
     _atomic_write(session_record_path(session_id), record)
 
 
-def update_session_record(session_id, record, events, subscription_notice_at=None):
+def update_session_record(session_id, record, events, subscription_notice_at=None, model=None):
     record["schema_version"] = SIDECAR_SCHEMA_VERSION
+    if model and record.get("model") != model:
+        record["previous_model"] = record.get("model")
+        record["model"] = model
     record["last_finished_at"] = _utcnow_iso()
     record["trigger_sequence"] = next_trigger_sequence(record)
     record["identity_fingerprint"] = identity_fingerprint()
@@ -1446,8 +1450,9 @@ def roll_decision(
         return "sidecar-schema-unsupported", []
     if record.get("provider", AGENT_PROVIDER) != (provider or AGENT_PROVIDER):
         return "provider-changed", []
-    if record.get("model") != model:
-        return "model-changed", []
+    # A model-only change resumes the same Chaos session: Chaos replays its
+    # own transcript to the new model (verified on anthropic+clamp and on
+    # openai, 2026-10-08). The sidecar records the new model on success.
     if record.get("auth_mode", "api_key") != auth_mode:
         return "auth-mode-changed", []
     if (_optional_int(record.get("runtime_session_generation")) or 0) != runtime_session_generation:

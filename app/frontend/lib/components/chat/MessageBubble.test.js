@@ -175,3 +175,22 @@ test('ordinary grouped sections keep independent Markdown, files, tools and voic
   expect(container.querySelector('button[title="Play voice"]')).not.toBeNull();
   expect(container.textContent).not.toContain('Status unknown');
 });
+
+test('system messages render as a platform notice, not as anyone’s bubble', () => {
+  const { container, getByTestId } = render(MessageBubble, {
+    message: {
+      id: 'sys',
+      role: 'system',
+      author_name: 'The house',
+      content:
+        'One will run on GPT-6 Astra in this conversation from their next turn (was GPT-6.1 Sol). Changed by Dan.',
+      created_at: '2026-10-08T14:05:00Z',
+    },
+  });
+  const notice = getByTestId('system-notice');
+  expect(notice).toHaveTextContent('The house');
+  expect(notice).toHaveTextContent('One will run on GPT-6 Astra in this conversation from their next turn');
+  expect(notice.querySelector('time')).toHaveAttribute('datetime', '2026-10-08T14:05:00Z');
+  expect(container.querySelector('[data-testid="message-group"]')).toBeNull();
+  expect(container.querySelector('.justify-end')).toBeNull();
+});

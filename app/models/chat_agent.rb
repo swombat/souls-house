@@ -29,6 +29,29 @@ class ChatAgent < ApplicationRecord
     agent_summary_generated_at.nil? || agent_summary_generated_at < SUMMARY_COOLDOWN.ago
   end
 
+  # Select the model this resident runs on in this conversation. nil (or
+  # "default") follows the resident's default. Applies from the next turn; a
+  # running turn keeps the model it started with. Returns false when nothing
+  # changed. Raises ModelNotAllowed for a model the resident may not use.
+  class ModelNotAllowed < StandardError; end
+
+  def select_model!(requested, by:)
+    requested = requested.to_s.strip
+    requested = nil if requested.blank? || requested == "default"
+    if requested && (problem = agent.model_selection_problem(requested))
+      raise ModelNotAllowed, "#{Agent.label_for_model(requested)} #{problem}"
+    end
+
+    with_lock do
+      previous = model_id
+      next false if previous == requested
+
+      update!(model_id: requested)
+      ConversationModelEvent.changed!(seat: self, from_model_id: previous, to_model_id: requested, by: by)
+      true
+    end
+  end
+
   def clear_borrowed_context!
     update_columns(borrowed_context_json: nil) if borrowed_context_json.present?
   end

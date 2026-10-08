@@ -2,7 +2,7 @@ export function buildChatSubscriptions({ account, chat }) {
   const subscriptions = {};
 
   if (chat) {
-    subscriptions[`Chat:${chat.id}`] = ['chat', 'messages', 'runtime_interactions', 'cost_breakdown'];
+    subscriptions[`Chat:${chat.id}`] = ['chat', 'messages', 'runtime_interactions', 'cost_breakdown', 'agents'];
     subscriptions[`Chat:${chat.id}:messages`] = 'messages';
 
     if (chat.active_whiteboard) {

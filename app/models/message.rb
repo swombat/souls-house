@@ -157,7 +157,8 @@ class Message < ApplicationRecord
                   :moderation_flagged, :moderation_severity, :moderation_scores,
                   :audio_source, :audio_url,
                   :voice_available, :voice_audio_url,
-                  :reasoning_skip_reason, :reasoning_skip_reason_label, :rhythm_provenance, :safeguard do |hash, options|
+                  :reasoning_skip_reason, :reasoning_skip_reason_label, :rhythm_provenance, :safeguard,
+                  :runtime_model_label do |hash, options|
     if options&.dig(:include_ruby_llm_telemetry) && (telemetry = ruby_llm_telemetry)
       hash["ruby_llm_telemetry"] = telemetry
     end
@@ -172,6 +173,15 @@ class Message < ApplicationRecord
   end
 
   alias_method :completed, :completed?
+
+  # The model that actually produced a resident's answer, from the execution
+  # record of its turn. It is fixed when the turn runs, so later changes to the
+  # conversation's selection never relabel an earlier answer.
+  def runtime_model_label
+    return unless role == "assistant" && agent_id && runtime_interaction
+
+    AgentRuntimeInteraction.model_label_for(runtime_interaction.model)
+  end
 
   def rhythm_provenance
     occurrence = rhythm_occurrence
@@ -213,6 +223,8 @@ class Message < ApplicationRecord
       agent.name
     elsif user.present?
       user.full_name.presence || user.email_address.split("@").first
+    elsif role == "system"
+      SafeguardNoticeRenderer::HOUSE_AUTHOR_NAME
     else
       "System"
     end
