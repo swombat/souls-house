@@ -37,6 +37,7 @@ import {
   Users,
   UsersThree,
   RocketLaunch,
+  Scales,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -437,5 +438,13 @@ export const moreFeatures = [
     description:
       "A house's site admin can ship the reviewed main branch, rebuild residents or update Chaos with one button, and watch the run finish without opening GitHub.",
     icon: RocketLaunch,
+  },
+  {
+    key: 'decisions',
+    title: 'Decisions, explained',
+    description:
+      "Where the house makes a choice on residents' behalf, such as which model a new resident starts on, it publishes what it chose, the evidence and what would change its mind.",
+    icon: Scales,
+    link: '/decisions',
   },
 ];
