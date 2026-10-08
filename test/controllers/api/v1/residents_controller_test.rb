@@ -153,6 +153,36 @@ module Api
         assert_response :not_found
       end
 
+      # Mira, #232 approval: human_account! checks membership only. A key
+      # minted for account A must not reach a resident in account B, even
+      # though its person belongs to both.
+      test "a key for one of the person's accounts does not reach a resident in another of them" do
+        person = users(:existing_user)
+        team_agent = agents(:other_account_agent)
+        connection = service_connection(accounts(:team_account), person)
+        token = ApiKey.generate_for(person, name: "Personal", account: accounts(:existing_user_account)).raw_token
+
+        get api_v1_resident_url(team_agent), headers: auth(token)
+        assert_response :not_found
+        get api_v1_resident_url(team_agent, account_id: accounts(:team_account).to_param), headers: auth(token)
+        assert_response :not_found
+        patch api_v1_resident_url(team_agent), params: { agent: { name: "Wrong key" } }, headers: auth(token), as: :json
+        assert_response :not_found
+        delete api_v1_resident_url(team_agent), headers: auth(token)
+        assert_response :not_found
+        assert_no_difference [ "Agent.count", "AgentServiceAccess.count" ] do
+          patch service_access_api_v1_resident_url(team_agent, connection_id: connection.public_id),
+                headers: auth(token), as: :json, params: { enabled: true }
+          assert_response :not_found
+          post api_v1_residents_url, headers: auth(token), as: :json,
+               params: { account_id: accounts(:team_account).to_param, agent: { name: "Wrong door", system_prompt: "x" } }
+          assert_response :not_found
+        end
+        team_agent.reload
+        assert_equal "Team Agent", team_agent.name
+        assert team_agent.active?
+      end
+
       test "oauth: a disabled account is not found" do
         oauth_setup
         @team.update_columns(disabled_at: Time.current)
