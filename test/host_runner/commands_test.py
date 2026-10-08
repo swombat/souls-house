@@ -240,7 +240,7 @@ class ResidentHostTest(unittest.TestCase):
             self.assertIn("TRIGGER_BEARER_TOKEN=trig\n", handle.read())
 
     def test_a_registry_credential_is_scoped_to_one_pull(self):
-        auth = {"registry": "registry.example", "username": "pull-only", "password": "pw"}
+        auth = {"registry": "registry.example", "username": "pull-only", "password": "registry-secret-7f3a9c"}
         self.host.start_resident(spec(registry_auth=auth))
         pull_env = next(env for argv, env in zip(self.docker.calls, self.docker.envs) if argv[1] == "pull")
         self.assertEqual(list(self.docker.pull_config["auths"]), ["registry.example"])
@@ -248,7 +248,7 @@ class ResidentHostTest(unittest.TestCase):
         self.assertFalse(os.path.exists(pull_env["DOCKER_CONFIG"]))
         others = [env for argv, env in zip(self.docker.calls, self.docker.envs) if argv[1] != "pull"]
         self.assertTrue(all(env is None for env in others))
-        self.assertFalse(any("pw" in value for argv in self.docker.calls for value in argv))
+        self.assertFalse(any("registry-secret-7f3a9c" in value for argv in self.docker.calls for value in argv))
 
     def test_a_registry_credential_for_another_registry_is_refused(self):
         for auth in ({"registry": "evil.example", "username": "u", "password": "p"},
