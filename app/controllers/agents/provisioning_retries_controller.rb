@@ -3,18 +3,12 @@ class Agents::ProvisioningRetriesController < ApplicationController
   include AgentScoped
 
   def create
-    unless @agent.born_hosted? && @agent.provisioning?
+    unless @agent.provisioning_retryable?
       redirect_to onboarding_account_agent_path(current_account, @agent), alert: "This resident is not waiting for provisioning"
       return
     end
 
-    @agent.update!(
-      provisioning_started_at: Time.current,
-      sandbox_last_error: nil,
-      sandbox_last_error_at: nil,
-      health_state: "unknown"
-    )
-    ProvisionAgentJob.perform_later(@agent.id)
+    @agent.retry_provisioning!
     redirect_to onboarding_account_agent_path(current_account, @agent), notice: "Provisioning retry started"
   end
 

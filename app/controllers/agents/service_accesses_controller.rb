@@ -10,18 +10,13 @@ class Agents::ServiceAccessesController < ApplicationController
       return
     end
 
-    allowed = enabled ? @connection.provisionable_by?(Current.user) : @connection.manageable_by?(Current.user)
-    unless allowed
+    unless @connection.resident_access_changeable_by?(Current.user, enabled: enabled)
       redirect_back_or_to edit_account_agent_path(current_account, @agent, tab: "integrations"),
                           alert: "You cannot change this resident's access"
       return
     end
 
-    access = @agent.agent_service_accesses.find_or_initialize_by(service_connection: @connection)
-    access.enabled = enabled
-    access.follows_default = false
-    access.provisioning_status = enabled ? "pending" : "removal_pending"
-    access.save!
+    @agent.set_service_access!(@connection, enabled: enabled)
 
     audit(enabled ? :enable_resident_service : :disable_resident_service,
           @connection,

@@ -361,6 +361,16 @@ Rails.application.routes.draw do
       resource :reply_attention, only: :show
       resources :agents, only: [ :index, :show ]
       resources :guest_memberships, only: [ :index, :destroy ]
+      resources :residents, only: [ :show, :create, :update, :destroy ] do
+        get :catalogue, on: :collection
+        member do
+          get :provisioning
+          post :provisioning_retry
+          post :orientation_retry
+          get :memory_overview
+          patch "service_accesses/:connection_id", action: :service_access, as: :service_access
+        end
+      end
       resources :telegram_conversations, only: :show
       get "telegram_conversations/:conversation_id/messages/:message_id/media",
         to: "telegram_media#show",
