@@ -615,28 +615,31 @@ module Agents
       chaos_selection_for(agent).fetch(:model)
     end
 
-    def self.chaos_selection_for(agent)
-      if HouseInference::Offering.find(agent.model_id)
-        return { provider: "house", model: agent.model_id }
+    # `model_id` defaults to the resident's own; a conversation that selected
+    # another model passes it here (see Agents::ModelSelection).
+    def self.chaos_selection_for(agent, model_id: agent.model_id)
+      model_id = model_id.to_s
+      if HouseInference::Offering.find(model_id)
+        return { provider: "house", model: model_id }
       end
 
-      subscription_provider = subscription_provider_for(agent)
+      subscription_provider = subscription_provider_for(agent, model_id: model_id)
       if subscription_provider && agent.provider_auth_mode(subscription_provider) == "oauth_account"
         return {
           provider: subscription_provider,
-          model: Chat.model_config(agent.model_id.to_s).fetch(:provider_model_id)
+          model: Chat.model_config(model_id).fetch(:provider_model_id)
         }
       end
 
-      selection = ResolvesProvider.resolve_provider(agent.model_id.to_s, account: agent.account)
+      selection = ResolvesProvider.resolve_provider(model_id, account: agent.account)
       {
         provider: CHAOS_PROVIDER_IDS.fetch(selection.fetch(:provider)),
         model: selection.fetch(:model_id)
       }
     end
 
-    def self.subscription_provider_for(agent)
-      model_id = agent.model_id.to_s
+    def self.subscription_provider_for(agent, model_id: agent.model_id)
+      model_id = model_id.to_s
       return unless Chat.model_config(model_id)&.dig(:provider_model_id)
 
       provider = case model_id

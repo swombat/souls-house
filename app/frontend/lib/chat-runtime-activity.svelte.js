@@ -37,7 +37,7 @@ export function createChatRuntimeActivity(context) {
             snapshot: data.runtime_interactions || [],
             rows: mergeRuntimeActivity(updates.chatId === chatId ? updates.rows : [], data.runtime_interactions || []),
           };
-          if (needsRefresh) reloadProps(['chat', 'messages', 'runtime_interactions', 'cost_breakdown']);
+          if (needsRefresh) reloadProps(['chat', 'messages', 'runtime_interactions', 'cost_breakdown', 'agents']);
         }
       } catch {
         // A failed read does not mean execution failed; keep the persisted card.

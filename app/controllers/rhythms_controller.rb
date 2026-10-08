@@ -28,7 +28,7 @@ class RhythmsController < ApplicationController
   def create
     @rhythm = Rhythm.new(account: current_account, creator: Current.user)
     @rhythm.assign_attributes(rhythm_params)
-    save_rhythm
+    respond_to_save(@rhythm.save_from_form)
   end
 
   def edit
@@ -36,10 +36,8 @@ class RhythmsController < ApplicationController
   end
 
   def update
-    @rhythm.with_lock do
-      @rhythm.assign_attributes(rhythm_params)
-      save_rhythm
-    end
+    attributes = rhythm_params
+    respond_to_save(@rhythm.with_lock { @rhythm.update_from_form(attributes) })
   end
 
   def destroy
@@ -48,19 +46,13 @@ class RhythmsController < ApplicationController
   end
 
   def preview
-    attributes = params.require(:rhythm).permit(:title, :append_date, :cadence, :time_of_day,
-      :weekday, :month_day, :month, :timezone)
-    rhythm = Rhythm.new(attributes)
-    rhythm.account = current_account
-    rhythm.creator = Current.user
+    preview = Rhythm::Preview.new(account: current_account, creator: Current.user,
+      attributes: params.require(:rhythm).permit(*Rhythm::Preview::ATTRIBUTES))
     response.headers["Cache-Control"] = "no-store"
-    if rhythm.valid?(:preview)
-      at = rhythm.next_occurrence(after: Time.current)
-      render json: { next_run_at: at.iso8601, preview_title: rhythm.preview_title(at: at),
-        timezone_identifier: ActiveSupport::TimeZone[rhythm.timezone].tzinfo.identifier,
-        schedule_description: RhythmPresentation.new(rhythm, user: Current.user).schedule_description }
+    if preview.valid?
+      render json: preview.as_json
     else
-      render json: { errors: rhythm.errors.to_hash(true) }, status: :unprocessable_entity
+      render json: { errors: preview.errors }, status: :unprocessable_entity
     end
   end
 
@@ -97,17 +89,13 @@ class RhythmsController < ApplicationController
     permitted = params.require(:rhythm).permit(:title, :opening, :append_date, :cadence, :time_of_day,
       :weekday, :month_day, :month, :timezone, resident_ids: [])
     if permitted.key?(:resident_ids)
-      ids = permitted.delete(:resident_ids).reject(&:blank?)
-      permitted[:resident_ids] = current_account.conversation_agents.eligible_for_conversation
-        .find(Agent.decode_id(ids)).map(&:id)
+      permitted[:resident_ids] = Rhythm.selectable_resident_ids(current_account, permitted.delete(:resident_ids))
     end
     permitted.to_h.symbolize_keys
   end
 
-  def save_rhythm
-    if @rhythm.valid?
-      @rhythm.next_run_at = @rhythm.next_occurrence(after: Time.current)
-      @rhythm.save!
+  def respond_to_save(saved)
+    if saved
       redirect_to account_rhythm_path(current_account, @rhythm), notice: "Rhythm saved."
     else
       render_form(status: :unprocessable_entity)

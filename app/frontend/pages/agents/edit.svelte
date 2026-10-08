@@ -132,6 +132,8 @@
       turn_timeout_minutes: agent.turn_timeout_minutes ?? 30,
       subagents_enabled: agent.subagents_enabled || false,
       subagent_models: agent.subagent_models || [],
+      switchable_model_ids: agent.switchable_model_ids || [],
+      resident_may_switch_model: agent.resident_may_switch_model || false,
     },
   });
 

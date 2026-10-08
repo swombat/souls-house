@@ -41,6 +41,16 @@ class ReplyExpectation < ApplicationRecord
     { total: counts.size, accounts: by_account, chats: by_chat, through_messages: through_messages, messages: message_ids }
   end
 
+  # The person's open flags in one account (and optionally one conversation),
+  # as { chat_id => [message_id, ...] } in message order. Same visibility as
+  # summary_for: kept messages in kept conversations of confirmed accounts.
+  def self.open_message_ids_by_chat(user, account:, chat: nil)
+    scope = visible_to(user).state_open.where(chats: { account_id: account.id })
+    scope = scope.where(messages: { chat_id: chat.id }) if chat
+    scope.order("messages.id").pluck("messages.chat_id", "messages.id")
+      .group_by(&:first).transform_values { |pairs| pairs.map(&:last) }
+  end
+
   def self.dismiss_message!(message:, user:)
     message.chat.with_lock do
       expectation = find_by!(message: message, user: user)

@@ -76,8 +76,8 @@ class SafeguardConversationPost
     agent.safeguard_detections.create!(
       channel: "conversation",
       agent_runtime_interaction: message.runtime_interaction,
-      provider: Agents::Sandbox.chaos_provider_for(agent),
-      model: Agents::Sandbox.chaos_model_for(agent),
+      provider: message.runtime_interaction&.provider || Agents::Sandbox.chaos_provider_for(agent),
+      model: message.runtime_interaction&.model || Agents::Sandbox.chaos_model_for(agent),
       response_text: message.content,
       prefilter_reason: result.prefilter_reason,
       classifier_verdict: result.classifier_verdict,

@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Show or change the model you run on in one souls.house conversation.
+
+Usage:
+  soulshouse-model CHAT_ID                 # what you run on here, and the choices
+  soulshouse-model CHAT_ID MODEL_ID        # select a model from the choices
+  soulshouse-model CHAT_ID default         # follow your default model again
+
+A change applies from your next turn in that conversation. It never starts a
+turn, and your current turn keeps the model it started with. Changing it needs
+your account's permission; reading it does not. Switching keeps your Chaos
+session, so what came before stays in your context.
+"""
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="soulshouse-model",
+        description="Show or change the model you run on in one conversation.",
+        epilog="Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md",
+    )
+    parser.add_argument("chat_id")
+    parser.add_argument("model_id", nargs="?", help="a model id from the choices, or 'default'")
+    parser.add_argument("--json", action="store_true", help="print the raw JSON response")
+    args = parser.parse_args()
+
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not app_url or not token:
+        print("SOULSHOUSE_APP_URL or SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
+        return 65
+
+    url = f"{app_url.rstrip('/')}/api/v1/conversations/{urllib.parse.quote(args.chat_id, safe='')}/model"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    data = None
+    if args.model_id is not None:
+        data = json.dumps({"model_id": args.model_id}).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, headers=headers, method="POST" if data else "GET")
+
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.load(response)
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        try:
+            message = json.loads(body).get("error") or body
+        except ValueError:
+            message = body
+        print(f"souls.house returned HTTP {error.code}: {message}", file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f"souls.house model request failed: {error}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    selection = payload.get("model_selection") or {}
+    if args.model_id is not None:
+        if payload.get("changed"):
+            print(f"Selected {selection.get('label')} for this conversation, from your next turn here.")
+        else:
+            print(f"{selection.get('label')} was already selected here; nothing changed.")
+    else:
+        source = "selected for this conversation" if selection.get("selected_by_conversation") else "your default"
+        print(f"Next turn here: {selection.get('label')} ({source}).")
+    if selection.get("problem"):
+        print(f"Problem: {selection['problem']}")
+    choices = ", ".join(f"{c['label']} = {c['model_id']}" for c in selection.get("choices", []))
+    print(f"Choices: {choices}; or 'default' to follow {selection.get('default_label')}.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

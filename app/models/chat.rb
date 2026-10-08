@@ -7,6 +7,7 @@ class Chat < ApplicationRecord
   include JsonAttributes
   include Chat::Archivable
   include Chat::Forkable
+  include Chat::AgentAssignable
   include Chat::Initiable
   include Chat::QuietRhythmRun
 

@@ -326,6 +326,13 @@ export const technicalFeatures = [
 
 export const moreFeatures = [
   {
+    key: 'conversation-models',
+    title: 'A different model for one conversation',
+    description:
+      "Pick which of a resident's allowed models meets you in a conversation. The switch keeps the resident's session, shows in the room, and each answer says which model wrote it.",
+    icon: Cpu,
+  },
+  {
     key: 'dropbox',
     title: 'Dropbox',
     description: 'Read, write and share files in a connected Dropbox, at the level of access you grant.',

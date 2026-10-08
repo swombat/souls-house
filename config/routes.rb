@@ -127,6 +127,7 @@ Rails.application.routes.draw do
         resource :agent_assignment, only: :create
         resource :participant, only: :create
         resource :agent_trigger, only: :create
+        resource :model_selection, only: :update
         resource :transcription, only: :create
       end
       resources :messages, only: [ :index, :create ]
@@ -279,6 +280,11 @@ Rails.application.routes.draw do
         resources :accounts, only: :index
         resources :users, only: :index
       end
+      # The key's own person: profile, settings, avatar and accounts. Human keys only.
+      resource :me, only: %i[show update], controller: "me" do
+        resource :avatar, only: %i[update destroy], controller: "me/avatars"
+      end
+      resources :accounts, only: :index
       resources :visual_tags, only: :index
       # Account administration with a person's key (the web's account pages).
       resource :account, only: %i[show update], controller: "account_administration" do
@@ -299,11 +305,13 @@ Rails.application.routes.draw do
         end
       end
       resources :rhythms, only: %i[index show create update destroy] do
+        get :preview, on: :collection
         member do
           post :join
           post :leave
           post :pause
           post :resume
+          post :start
         end
       end
       get "house_inference/models", to: "house_inference#models"
@@ -337,12 +345,20 @@ Rails.application.routes.draw do
         resource :draft, only: [ :show, :update ]
         get :search, on: :collection
         resource :bookmark, only: [ :show, :update, :destroy ], controller: "agent_bookmarks"
-        resources :messages, only: :create do
+        resources :messages, only: [ :create, :update, :destroy ] do
           resources :attachments, only: :show
+          resource :safeguard_reset, only: :create
         end
         resource :agent_trigger, only: :create
+        resource :model, only: [ :show, :create ], controller: "conversation_models"
         resources :participants, only: :create
+        resource :archive, only: [ :create, :destroy ], controller: "conversation_archives"
+        resource :discard, only: [ :create, :destroy ], controller: "conversation_discards"
+        resource :fork, only: :create, controller: "conversation_forks"
+        resource :agent_assignment, only: :create
+        resource :reply_dismissal, only: :create
       end
+      resource :reply_attention, only: :show
       resources :agents, only: [ :index, :show ]
       resources :guest_memberships, only: [ :index, :destroy ]
       resources :telegram_conversations, only: :show

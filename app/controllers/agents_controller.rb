@@ -107,6 +107,7 @@ class AgentsController < ApplicationController
     redirect_to account_agents_path(current_account), notice: update_notice(model_changed)
   rescue ActiveRecord::RecordInvalid => e
     tab = "subagents" if e.record.errors.attribute_names.intersect?(%i[subagents_enabled subagent_models])
+    tab ||= "settings" if e.record.errors.attribute_names.include?(:switchable_model_ids)
     redirect_to edit_account_agent_path(current_account, @agent, tab: tab),
                 inertia: { errors: e.record.errors.to_hash }
   end
@@ -152,7 +153,8 @@ class AgentsController < ApplicationController
       :voice_id, :persistent_session, :persistent_wake_session, :scheduled_wakes_enabled,
       :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
       :session_context_budget_tokens, :turn_timeout_minutes, :subagents_enabled,
-      subagent_models: []
+      :resident_may_switch_model,
+      subagent_models: [], switchable_model_ids: []
     )
 
     permitted.delete(:telegram_bot_token) if permitted[:telegram_bot_token].blank?
@@ -197,6 +199,8 @@ class AgentsController < ApplicationController
           model_id: m[:model_id],
           label: m[:label],
           supports_thinking: m.dig(:thinking, :supported) == true,
+          # Whether a conversation may select it (Agent::ModelSwitching).
+          switchable: m[:provider_model_id].present? && !HouseInference::Offering.find(m[:model_id]),
           reasoning:
         }
       end
