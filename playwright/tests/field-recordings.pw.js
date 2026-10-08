@@ -213,8 +213,14 @@ async function fakeBackend(page) {
     await settle(route, () =>
       route.fulfill({
         json: {
-          id: n, key: `k${n}`, filename: 'call.m4a', content_type: 'audio/mp4', byte_size: 10, checksum: 'x',
-          signed_id: `signed-${n}`, direct_upload: { url: `/test-storage/${n}`, headers: {} },
+          id: n,
+          key: `k${n}`,
+          filename: 'call.m4a',
+          content_type: 'audio/mp4',
+          byte_size: 10,
+          checksum: 'x',
+          signed_id: `signed-${n}`,
+          direct_upload: { url: `/test-storage/${n}`, headers: {} },
         },
       })
     );
@@ -285,7 +291,10 @@ async function reopenAndComplete(page, log, expectedSignedId) {
   expect(log.posts[0].field_recording).toMatchObject({ upload_id: expectedSignedId, title: 'Second try' });
 }
 
-test('cancelling while the file is being prepared sends nothing, even when preparing finishes', async ({ mount, page }) => {
+test('cancelling while the file is being prepared sends nothing, even when preparing finishes', async ({
+  mount,
+  page,
+}) => {
   await mount(FieldPage, { props: fieldProps([]) });
   const { log } = await fakeBackend(page);
   await holdChecksum(page);
@@ -323,7 +332,10 @@ test('cancelling while the blob is being created aborts it and nothing follows',
 });
 
 for (const [route, close] of Object.entries(closeBy)) {
-  test(`closing by ${route} during the upload aborts it, and a new upload then goes through`, async ({ mount, page }) => {
+  test(`closing by ${route} during the upload aborts it, and a new upload then goes through`, async ({
+    mount,
+    page,
+  }) => {
     await mount(FieldPage, { props: fieldProps([]) });
     const { log, holds } = await fakeBackend(page);
     holds.put = deferred();
@@ -342,7 +354,10 @@ for (const [route, close] of Object.entries(closeBy)) {
   });
 }
 
-test('once the recording is being brought in, closing only closes: it says Close and the POST still lands', async ({ mount, page }) => {
+test('once the recording is being brought in, closing only closes: it says Close and the POST still lands', async ({
+  mount,
+  page,
+}) => {
   await mount(FieldPage, { props: fieldProps([]) });
   const { log, holds } = await fakeBackend(page);
   holds.post = deferred();
@@ -396,7 +411,15 @@ const playable = { ...recording, audio_url: `data:audio/wav;base64,${silentWav(1
 
 async function mountPlayer(mount, page) {
   const component = await mount(RecordingPage, {
-    props: { recording: playable, speakers, voices: [], members_without_voice: [], my_voice_id: null, show_you_hint: false, account },
+    props: {
+      recording: playable,
+      speakers,
+      voices: [],
+      members_without_voice: [],
+      my_voice_id: null,
+      show_you_hint: false,
+      account,
+    },
   });
   const audio = page.getByTestId('recording-audio');
   await expect.poll(() => audio.evaluate((el) => el.readyState)).toBeGreaterThanOrEqual(1);
@@ -440,10 +463,19 @@ test('clicking a turn while a clip plays ends the clip too', async ({ mount, pag
   await page.getByTestId('transcript').getByText('venue?').click();
   await expect.poll(() => state(audio).then((s) => s.t), { timeout: 10_000 }).toBeGreaterThan(7);
   expect((await state(audio)).paused).toBe(false);
+});
+
 // Slice C: recognition and "remember this voice" (spec §9). Behind two gates.
 
 const recognitionSpeakers = [
-  { ...speakers[0], can_remember: false, remembered: true, remembering: false, recognition: null, pending_enrolment: null },
+  {
+    ...speakers[0],
+    can_remember: false,
+    remembered: true,
+    remembering: false,
+    recognition: null,
+    pending_enrolment: null,
+  },
   {
     ...speakers[1],
     suggestion: null,

@@ -170,7 +170,8 @@
       <div class="flex justify-end">
         <Link
           href={`/accounts/${account.id}/field/voices`}
-          class="text-sm text-muted-foreground hover:text-foreground underline-offset-2 hover:underline">Voices this Field knows</Link>
+          class="text-sm text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+          >Voices this Field knows</Link>
       </div>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {#each speakers as speaker (speaker.id)}
