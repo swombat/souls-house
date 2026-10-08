@@ -24,6 +24,7 @@ class FieldVoiceprintConcurrencyTest < ActiveSupport::TestCase
   self.use_transactional_tests = false
 
   setup do
+    @last_blob_id = ActiveStorage::Blob.maximum(:id).to_i
     @account = Account.create!(name: "Voice race #{SecureRandom.hex(4)}", account_type: "team")
     @user = users(:user_1)
     @recording = long_ready_recording(account: @account, user: @user)
@@ -44,6 +45,9 @@ class FieldVoiceprintConcurrencyTest < ActiveSupport::TestCase
     recordings.each { |r| r.audio.purge }
     recordings.delete_all
     @account.destroy!
+    # Enrolment samples are purged later, by a job these tests never run, and
+    # nothing rolls this database back: purge them here, or they outlive the test.
+    ActiveStorage::Blob.where("id > ?", @last_blob_id).find_each(&:purge)
   end
 
   test "forget racing a write-back never leaves a print on a forgotten voice" do

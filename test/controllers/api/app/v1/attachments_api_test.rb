@@ -35,21 +35,23 @@ class Api::App::V1::AttachmentsApiTest < ActionDispatch::IntegrationTest
   end
 
   test "an upload is refused for bad declarations, a closed conversation, or one outside membership" do
-    request_upload(checksum: "nope")
-    assert_error :unprocessable_entity, "invalid_parameter"
-    request_upload(byte_size: Message::Attachable::MAX_FILE_SIZE + 1)
-    assert_error :unprocessable_entity, "invalid_parameter"
-    request_upload(content_type: "not a type")
-    assert_error :unprocessable_entity, "invalid_parameter"
+    # Refusals create no blobs. Count the change, not the table, which other suites share.
+    assert_no_difference "ActiveStorage::Blob.count" do
+      request_upload(checksum: "nope")
+      assert_error :unprocessable_entity, "invalid_parameter"
+      request_upload(byte_size: Message::Attachable::MAX_FILE_SIZE + 1)
+      assert_error :unprocessable_entity, "invalid_parameter"
+      request_upload(content_type: "not a type")
+      assert_error :unprocessable_entity, "invalid_parameter"
 
-    @chat.update!(archived_at: Time.current)
-    request_upload
-    assert_error :unprocessable_entity, "conversation_not_respondable"
+      @chat.update!(archived_at: Time.current)
+      request_upload
+      assert_error :unprocessable_entity, "conversation_not_respondable"
 
-    theirs = new_chat(accounts(:regular_user_account), "Theirs")
-    request_upload(chat: theirs)
-    assert_error :not_found, "not_found"
-    assert_equal 0, ActiveStorage::Blob.count
+      theirs = new_chat(accounts(:regular_user_account), "Theirs")
+      request_upload(chat: theirs)
+      assert_error :not_found, "not_found"
+    end
   end
 
   # --- sending ---------------------------------------------------------------
