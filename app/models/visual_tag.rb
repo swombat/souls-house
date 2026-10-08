@@ -16,6 +16,7 @@ class VisualTag < ApplicationRecord
     [ "Plans", "Compass", "green" ],
     [ "Help", "Lifebuoy", "orange" ]
   ].map(&:freeze).freeze
+  PIN = { label: "Pin", icon: "PushPin", colour: "amber" }.freeze
 
   belongs_to :account
   has_many :chats
@@ -26,10 +27,13 @@ class VisualTag < ApplicationRecord
   validates :icon, inclusion: { in: ICON_OPTIONS }
   validates :colour, inclusion: { in: COLOUR_OPTIONS }
   validate :account_cannot_change, on: :update
+  validate :pin_label_is_fixed, if: :pinned?
   before_validation -> { self.label = label.strip if label.is_a?(String) }
+  before_destroy :keep_pin, prepend: true
   before_destroy :clear_chat_selections
 
   scope :palette_order, -> { order(:id) }
+  scope :pinned, -> { where(pinned: true) }
 
   # Browser-only account aggregate. Keep as_json and the resident API palette
   # presentation-only: guests must not learn usage in rooms they cannot see.
@@ -56,13 +60,28 @@ class VisualTag < ApplicationRecord
   end
 
   def as_json(_options = nil)
-    { "id" => to_param, "label" => label, "icon" => icon, "colour" => colour }
+    { "id" => to_param, "label" => label, "icon" => icon, "colour" => colour, "pinned" => pinned? }
   end
 
   private
 
   def account_cannot_change
     errors.add(:account, "cannot be changed") if will_save_change_to_account_id?
+    errors.add(:pinned, "cannot be changed") if will_save_change_to_pinned?
+  end
+
+  # The Pin tag is a fixed feature of every account: its colour and icon are
+  # the account's to choose, but it keeps its name and cannot be removed.
+  def pin_label_is_fixed
+    errors.add(:label, "of the Pin tag cannot be changed") unless label == PIN[:label]
+  end
+
+  def keep_pin
+    # Removing the account removes its Pin with it.
+    return unless pinned? && !destroyed_by_association
+
+    errors.add(:base, "The Pin tag cannot be removed")
+    throw :abort
   end
 
   def clear_chat_selections

@@ -1,6 +1,7 @@
 require "test_helper"
 require "active_record/testing/query_assertions"
 require_relative "../../db/migrate/20261004150000_create_visual_tags"
+require_relative "../../db/migrate/20261008060000_add_pinned_to_visual_tags"
 
 class VisualTagTest < ActiveSupport::TestCase
 
@@ -32,7 +33,7 @@ class VisualTagTest < ActiveSupport::TestCase
     id = @tag.to_param
     @tag.update!(label: "Updated")
     assert_equal id, @tag.reload.to_param
-    assert_equal %w[colour icon id label], @tag.as_json.keys.sort
+    assert_equal %w[colour icon id label pinned], @tag.as_json.keys.sort
     assert_equal @tag, VisualTag.resolve_for(@account, id)
     assert_nil VisualTag.resolve_for(@account, nil)
     [ @tag.id, @tag.id.to_s, "", [], {}, "unknown" ].each do |invalid|
@@ -58,8 +59,8 @@ class VisualTagTest < ActiveSupport::TestCase
     palette = VisualTag.palette_with_usage_for(@account)
     assert_equal %w[Zulu alpha Building Empty zebra], palette.pluck("label")
     assert_equal [ 2, 1, 1, 0, 0 ], palette.pluck("conversation_count")
-    assert_equal %w[colour conversation_count icon id label], palette.first.keys.sort
-    assert_equal %w[colour icon id label], popular.as_json.keys.sort
+    assert_equal %w[colour conversation_count icon id label pinned], palette.first.keys.sort
+    assert_equal %w[colour icon id label pinned], popular.as_json.keys.sort
     assert_equal @tag.as_json, @chat.as_json["visual_tag"]
   end
 
@@ -126,13 +127,57 @@ class VisualTagTest < ActiveSupport::TestCase
     end
   end
 
-  test "new accounts receive all nine defaults and no conversations are selected" do
+  test "new accounts receive all nine defaults plus the Pin and no conversations are selected" do
     account = Account.create!(name: "New palette", account_type: :team)
-    assert_equal VisualTag::DEFAULTS, account.visual_tags.palette_order.pluck(:label, :icon, :colour)
+    assert_equal VisualTag::DEFAULTS, account.visual_tags.where(pinned: false).palette_order.pluck(:label, :icon, :colour)
+    assert_equal [ "Pin", "PushPin", "amber" ], account.pin_tag.values_at(:label, :icon, :colour)
     assert_empty account.chats
     account.visual_tags.first.destroy!
     account.update!(name: "Still edited")
-    assert_equal 8, account.visual_tags.count
+    assert_equal 9, account.visual_tags.count
+  end
+
+  test "the Pin tag is fixed: one per account, name locked, look editable, never removed" do
+    account = Account.create!(name: "Pinned palette", account_type: :team)
+    pin = account.pin_tag
+    chat = account.chats.create!(title: "Pinned", model_id: "openrouter/auto", visual_tag: pin)
+
+    pin.update!(colour: "rose", icon: "Heart")
+    assert_not pin.update(label: "Top")
+    assert pin.errors[:label].any?
+    pin.reload
+    assert_not pin.update(pinned: false)
+    pin.reload
+    assert_not account.visual_tags.first.update(pinned: true)
+
+    # Pinning is an ordinary selection change, so the live sidebar refreshes and re-sorts.
+    other_chat = account.chats.create!(title: "Later", model_id: "openrouter/auto")
+    assert_broadcasts("Account:#{account.to_param}", 1) { other_chat.update!(visual_tag: pin) }
+
+    assert_not pin.destroy
+    assert_raises(ActiveRecord::RecordNotDestroyed) { pin.destroy! }
+    assert_equal pin, chat.reload.visual_tag
+    assert_equal pin, other_chat.reload.visual_tag
+
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      VisualTag.transaction(requires_new: true) do
+        account.visual_tags.create!(**VisualTag::PIN, pinned: true)
+      end
+    end
+  end
+
+  test "pin migration keys on the system flag, not the label, and is safe to rerun" do
+    lookalike = @account.visual_tags.create!(label: "Pin", icon: "PushPin", colour: "red")
+    other = accounts(:other)
+    other.visual_tags.create!(**VisualTag::PIN, pinned: true)
+    ActiveRecord::Migration.suppress_messages do
+      2.times { AddPinnedToVisualTags.new.seed_existing_accounts }
+    end
+
+    Account.find_each { |account| assert_equal 1, account.visual_tags.pinned.count, account.name }
+    assert_not lookalike.reload.pinned?
+    assert_not_equal lookalike, @account.reload.pin_tag
+    assert_not @chat.reload.visual_tag.pinned?
   end
 
   test "migration seeds existing accounts without selecting existing chats" do

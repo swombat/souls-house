@@ -40,6 +40,22 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_includes inertia_shared_props.fetch("chats").pluck("id"), run.to_param
   end
 
+  test "sidebar puts pinned conversations first, newest comment first, then the rest, then archived" do
+    pin = @account.visual_tags.create!(**VisualTag::PIN, pinned: true)
+    building = @account.visual_tags.create!(label: "Building", icon: "Wrench", colour: "blue")
+    @chat.update!(last_message_at: 1.minute.ago)
+    old_pin = @account.chats.create!(title: "Old pin", visual_tag: pin, last_message_at: 3.days.ago)
+    new_pin = @account.chats.create!(title: "New pin", visual_tag: pin, last_message_at: 1.day.ago)
+    tagged = @account.chats.create!(title: "Tagged", visual_tag: building, last_message_at: 2.minutes.ago)
+    archived_pin = @account.chats.create!(title: "Archived pin", visual_tag: pin, last_message_at: 1.second.ago)
+    archived_pin.archive!
+
+    get account_chats_path(@account)
+    ids = inertia_shared_props.fetch("chats").pluck("id")
+    expected = [ new_pin, old_pin, @chat, tagged, archived_pin ].map(&:to_param)
+    assert_equal expected, ids & expected
+  end
+
   test "sidebar includes legacy-prefixed threads for members and site admins by default" do
     resident_chat = @account.chats.create!(title: "[AGENT-ONLY] Old resident thread")
     archived_chat = @account.chats.create!(title: "[AGENT-ONLY] Archived", archived_at: Time.current)
