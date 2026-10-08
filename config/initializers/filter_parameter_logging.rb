@@ -23,3 +23,8 @@ Rails.application.config.filter_parameters += [ /\Aopening\z/ ]
 
 # Voice prints are biometric data (Field recordings, spec §9): never logged.
 Rails.application.config.filter_parameters += [ /\A(?:print|voiceprints?)\z/ ]
+
+# Model provider keys reach the API as <provider>_api_key (masked by :_key).
+# The draft API's `set: { provider: key }` shape is refused, but a client still
+# sending it would otherwise have its keys logged before the refusal.
+Rails.application.config.filter_parameters += [ /\Aset\z/ ]

@@ -142,4 +142,28 @@ class Accounts::ServiceConnectionsControllerTest < ActionDispatch::IntegrationTe
     assert_equal "That credential is already connected as dad/site", flash[:alert]
   end
 
+
+  # Mira #231: `.present?` let a JSON false through for a manager who is not
+  # the personal connection's owner.
+  test "only the personal owner changes delegation, even to false" do
+    team = accounts(:team_account)
+    connection = team.service_connections.create!(
+      connected_by_user: users(:existing_user), provider: "github", external_subject_id: "github-user-web-delegation",
+      external_identity: "member", label: "member/repository", management_scope: "personal", credential_kind: "token",
+      credential_fingerprint: "web-delegation-fingerprint", credential_payload_hash: { "token" => "github_pat_secret" },
+      credential_metadata: { "credential_strategy" => "static", "repository" => "member/repository" },
+      freely_provisionable: true
+    )
+
+    patch account_service_connection_path(team, connection.public_id),
+      params: { service_connection: { freely_provisionable: false, label: "Relabelled" } }, as: :json
+    connection.reload
+    assert connection.freely_provisionable?
+    assert_equal "Relabelled", connection.label
+
+    patch account_service_connection_path(team, connection.public_id),
+      params: { service_connection: { freely_provisionable: "0" } }
+    assert connection.reload.freely_provisionable?
+  end
+
 end

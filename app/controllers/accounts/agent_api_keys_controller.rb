@@ -18,8 +18,7 @@ module Accounts
         return
       end
 
-      current_account.update!(agent_api_key_params)
-      AccountAgentCredentialsRefreshJob.perform_later(current_account.id) if current_account.saved_ai_credentials_change?
+      current_account.update_ai_api_keys!(**agent_api_key_changes)
       audit_with_changes(:update_agent_api_keys, current_account)
       redirect_to account_agent_api_keys_path(current_account), notice: "Model API keys updated"
     rescue ActiveRecord::RecordInvalid => e
@@ -53,20 +52,16 @@ module Accounts
       end
     end
 
-    def agent_api_key_params
+    def agent_api_key_changes
       permitted = params.require(:account).permit(
         *Account::AI_PROVIDERS.keys.map { |provider| "#{provider}_api_key" },
         { clear_ai_api_keys: [] }
       )
-      clear_ai_api_keys = Array(permitted.delete("clear_ai_api_keys"))
 
-      Account::AI_PROVIDERS.each_key do |provider|
-        attribute = "#{provider}_api_key"
-        permitted.delete(attribute) if permitted[attribute].blank?
-        permitted[attribute] = nil if clear_ai_api_keys.include?(provider.to_s)
-      end
-
-      permitted
+      {
+        set: Account::AI_PROVIDERS.keys.to_h { |provider| [ provider.to_s, permitted["#{provider}_api_key"] ] },
+        clear: Array(permitted["clear_ai_api_keys"])
+      }
     end
 
   end

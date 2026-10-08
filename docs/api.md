@@ -182,6 +182,54 @@ Common errors include 401 for failed authentication, 404 for inaccessible/missin
 records, 409 for conflicts and 422 for validation failures. Do not assume every
 endpoint has the same error body: inspect its controller/tests.
 
+### Account administration (human keys)
+
+These are the web's account pages over a person's credential (an account key or
+an OAuth app token), under `/api/v1/account`. Account-level actions act in the
+selected account: `account_id`, else the key's account or the token's default.
+An action on one record (`/account/notices/:id` and the like) acts in that
+record's account: with an OAuth token and no `account_id` it may be any of the
+person's accounts; `account_id` (or an account key) narrows it to one. Either
+way the person must be a current, confirmed member of an enabled account:
+otherwise 404. Resident keys get 403. Authority, validations and audit entries
+are the web's own; audit rows also record `api_key_id` or `app_session_id`. Refusals are `{ "error": "..." }`, and validation
+failures (422) add `errors: { field: [...] }`. "Member" means any confirmed
+member. The web's `require_account_manager!` also admits any confirmed member.
+
+| Method and path | Authority (as on the web) |
+| --- | --- |
+| `GET /account` | member |
+| `PATCH /account` `{ name?, logo_colour? }` | member (rename: `accounts#update`); manager (logo colour: `accounts/interfaces#update`) |
+| `POST /account/invitations` `{ email, role }` | manager |
+| `POST /account/invitations/:membership_id/resend` | manager; pending invitations only (else 422) |
+| `DELETE /account/members/:membership_id` | manager; not yourself, not the last owner (422) |
+| `GET`, `POST /account/notices` `{ body, expires_in_days }`; `DELETE /account/notices/:id` | member; days are 1, 3, 7, 14 or 30 (otherwise 7); delete ends the notice now |
+| `GET /account/costs`, `/account/agents/:agent_id/costs`, `/account/conversations/:conversation_id/costs` | member; the web's cost reports, verbatim |
+| `POST /account/visual_tags` `{ label, icon, colour }`; `PATCH`, `DELETE /account/visual_tags/:id` | manager; the Pin tag can't be removed (422). Read with `GET /visual_tags` |
+| `GET /account/api_keys`; `DELETE /account/api_keys/:id` | member; metadata only; you can revoke only your own keys |
+| `GET`, `POST /account/guest_memberships` `{ agent_id }`; `DELETE /account/guest_memberships/:id` | add: someone in both accounts (else 422); remove: an owner of either account (else 403) |
+| `GET /account/service_connections`; `PATCH /account/service_connections/:id` `{ label?, enabled_for_new_agents?, freely_provisionable? }`; `DELETE` (disconnect) | `ServiceConnection#manageable_by?` (else 403); only the connection's owner can change `freely_provisionable` |
+| `GET /account/ai_provider_keys`; `PATCH /account/ai_provider_keys` `{ <provider>_api_key?, clear?: [provider] }` | read: member; change: owner or admin (else 403). Keys are never returned, and travel only as `<provider>_api_key` so the request log masks them; any other shape (such as `set`) is 422 |
+
+```http
+PATCH /api/v1/account
+{ "name": "Nexus", "logo_colour": "plum" }
+
+200 { "account": { "id": "aB3", "name": "Nexus", "account_type": "team", "logo_colour": "plum",
+      "can_manage": true, "is_owner": false, "members": [ { "id": "xY1", "role": "owner", "status": "active",
+      "user": { "id": "Qr7", "email_address": "a@example.com", "full_name": "A" }, "can_remove": false } ],
+      "pending_invitations": [ ... ] } }
+
+PATCH /api/v1/account/ai_provider_keys
+{ "anthropic_api_key": "sk-ant-...", "clear": ["openai"] }
+
+200 { "ai_api_keys_configured": { "anthropic": true, "openai": false, ... },
+      "use_system_ai_credentials": true, "can_manage_ai_credentials": true }
+```
+
+Not here, by design: converting the account type, deleting an account, creating
+keys or approving key requests, and connecting services (provider consent).
+
 ### Me and my accounts (person credentials)
 
 The credential's own person, with a human account key or a native-app OAuth
