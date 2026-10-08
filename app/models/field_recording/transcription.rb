@@ -42,6 +42,21 @@ module FieldRecording::Transcription
     end
   end
 
+  # On discard (under this recording's lock): anything still in flight will
+  # never be accepted now, so it's superseded, and if its transcript id is
+  # already known its vendor cleanup starts. A late id for it then queues
+  # cleanup through learn_ids!. A succeeded dispatch is left as it is.
+  def supersede_in_flight_dispatches!
+    dispatches.where(outcome: "in_flight").find_each do |dispatch|
+      dispatch.with_lock do
+        next unless dispatch.outcome == "in_flight"
+
+        dispatch.update!(outcome: "superseded")
+        dispatch.queue_cleanup if dispatch.transcription_id.present? && dispatch.vendor_deleted_at.nil?
+      end
+    end
+  end
+
   def current_dispatch
     attempt_token && dispatches.find_by(attempt_token:)
   end

@@ -91,4 +91,35 @@ class FieldRecordings::DeleteVendorTranscriptJobTest < ActiveJob::TestCase
     end
   end
 
+  test "discarded mid-flight with its id already known: superseded and cleaned up, no webhook needed" do
+    @dispatch.learn_ids!(transcription_id: "tr_known")
+
+    assert_enqueued_with(job: FieldRecordings::DeleteVendorTranscriptJob, args: [ @dispatch.id ]) do
+      @recording.discard_and_settle!
+    end
+    assert_equal "superseded", @dispatch.reload.outcome
+
+    perform_enqueued_jobs(only: FieldRecordings::DeleteVendorTranscriptJob) do
+      FieldRecordings::DeleteVendorTranscriptJob.perform_now(@dispatch.id, client: FakeScribe.new)
+    end
+    assert @dispatch.reload.vendor_deleted_at
+  end
+
+  test "discarded mid-flight, id arrives afterwards, no webhook: cleanup starts when the id lands" do
+    @recording.discard_and_settle!
+    assert_equal "superseded", @dispatch.reload.outcome
+
+    assert_enqueued_with(job: FieldRecordings::DeleteVendorTranscriptJob, args: [ @dispatch.id ]) do
+      @recording.record_submission!(@dispatch, ElevenLabsScribe::Submission.new(request_id: "r", transcription_id: "tr_late"))
+    end
+    FieldRecordings::DeleteVendorTranscriptJob.perform_now(@dispatch.id, client: FakeScribe.new)
+    assert @dispatch.reload.vendor_deleted_at
+  end
+
+  test "discarding after success leaves the succeeded dispatch as it is" do
+    @recording.accept_transcript!(@dispatch, scribe_transcription(transcription_id: "tr_1"))
+    @recording.reload.discard_and_settle!
+    assert_equal "succeeded", @dispatch.reload.outcome
+  end
+
 end
