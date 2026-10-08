@@ -1,5 +1,7 @@
 class AgentsController < ApplicationController
 
+  include AgentSettingsParams
+
   require_feature_enabled :agents
   before_action :set_agent, only: [ :edit, :update, :destroy ]
 
@@ -99,10 +101,7 @@ class AgentsController < ApplicationController
     attrs = agent_params
     model_changed = attrs.key?(:model_id) && attrs[:model_id] != @agent.model_id
 
-    HouseInferenceGrant.synchronize do
-      @agent.update!(attrs)
-      HouseInferenceGrant.assign!(@agent, Current.user)
-    end
+    @agent.update_settings!(attrs, by: Current.user)
     audit("update_agent", @agent, **agent_audit_data(attrs))
     redirect_to account_agents_path(current_account), notice: update_notice(model_changed)
   rescue ActiveRecord::RecordInvalid => e
@@ -143,40 +142,6 @@ class AgentsController < ApplicationController
     @agent = current_account.agents.find(params[:id])
   end
 
-  def agent_params
-    permitted = params.require(:agent).permit(
-      :name, :system_prompt,
-      :model_id, :active, :paused, :colour, :icon,
-      :thinking_enabled, :thinking_budget, :reasoning_effort,
-      :telegram_bot_token, :telegram_bot_username,
-      :voice_id, :persistent_session, :persistent_wake_session, :scheduled_wakes_enabled,
-      :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
-      :session_context_budget_tokens, :turn_timeout_minutes, :subagents_enabled,
-      subagent_models: []
-    )
-
-    permitted.delete(:telegram_bot_token) if permitted[:telegram_bot_token].blank?
-    strip_externally_managed_params!(permitted) if @agent&.identity_owned_by_agent?
-    permitted
-  end
-
-  def birth_params
-    params.require(:agent).permit(
-      :name, :system_prompt, :model_id, :colour, :icon,
-      :scheduled_wakes_enabled, :open_beginning
-    )
-  end
-
-  def strip_externally_managed_params!(permitted)
-    Agent::EXTERNALLY_MANAGED_ATTRIBUTES.each do |attribute|
-      permitted.delete(attribute)
-    end
-  end
-
-  def agent_audit_data(attrs)
-    attrs.except(:telegram_bot_token).to_h
-  end
-
   def update_notice(model_changed)
     return "Resident updated" unless model_changed && @agent.identity_owned_by_agent?
 
@@ -190,17 +155,7 @@ class AgentsController < ApplicationController
   end
 
   def grouped_models
-    (Chat::MODELS + HouseInference::Offering.models).group_by { |m| m[:group] || "Other" }.transform_values do |models|
-      models.map do |m|
-        reasoning = Chat.reasoning_effort_config(m[:model_id])
-        {
-          model_id: m[:model_id],
-          label: m[:label],
-          supports_thinking: m.dig(:thinking, :supported) == true,
-          reasoning:
-        }
-      end
-    end
+    Agents::ModelCatalogue.grouped
   end
 
   def memories_for_display

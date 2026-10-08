@@ -97,6 +97,74 @@ Common errors include 401 for failed authentication, 404 for inaccessible/missin
 records, 409 for conflicts and 422 for validation failures. Do not assume every
 endpoint has the same error body: inspect its controller/tests.
 
+### Resident management with a person's key
+
+`/api/v1/residents` is the API side of the web resident pages, for a person's
+(or their agent's) human key. Authority is the web's: any confirmed member of
+the key's account may manage that account's **home** residents (guests are
+managed at home). Resident keys get 403. A key whose person is no longer a
+confirmed member gets 404, as do other accounts' residents. 403 also when
+residents are switched off site-wide. Validation failures are 422 with
+`{ error, errors: { field: [...] } }`. Changes write the same audit records as
+the web, tagged with `api_key_id`.
+
+| Method and path | Web equivalent |
+| --- | --- |
+| `GET /api/v1/residents/catalogue` | model and option lists on new/edit |
+| `GET /api/v1/residents/:id` | the edit page's settings |
+| `POST /api/v1/residents` | birth (`agents#create`) |
+| `PATCH /api/v1/residents/:id` | save settings (`agents#update`) |
+| `DELETE /api/v1/residents/:id` | disable (nothing is deleted) |
+| `GET /api/v1/residents/:id/provisioning` | the onboarding page's stages |
+| `POST /api/v1/residents/:id/provisioning_retry`, `/orientation_retry` | the onboarding retry buttons |
+| `GET /api/v1/residents/:id/memory_overview` | Memory tab counts (no memory text) |
+| `PATCH /api/v1/residents/:id/service_accesses/:connection_id` | Integrations tab toggle |
+
+Birth, then poll until `provisioning.settled` is true:
+
+```
+POST /api/v1/residents
+{ "agent": { "name": "Wren", "system_prompt": "…", "model_id": "openrouter/auto",
+             "colour": "teal", "icon": "Bird", "scheduled_wakes_enabled": true } }
+→ 201 { "agent": { "id": "…", "name": "Wren", "runtime": "provisioning", … },
+        "provisioning": { "state": "provisioning", "settled": false,
+          "stages": { "beginning_recorded": true, "home_prepared": false, "runtime_ready": false,
+                      "orientation_offered": false, "orientation_completed": false },
+          "can_retry_provisioning": true, "can_retry_orientation": false, … } }
+
+GET /api/v1/residents/:id/provisioning
+→ 200 { "agent_id": "…", "provisioning": { "state": "ready", "settled": true, … } }
+```
+
+`state` is `provisioning`, `setup_failed`, `orienting`, `orientation_failed`
+or `ready`, or the plain runtime for residents not born here. A blank
+`system_prompt` needs `"open_beginning": true`. Retries answer 202, or 409
+when the resident is not in a retryable state.
+
+Settings use the web's field names. Pause, re-enable and edit with PATCH:
+
+```
+PATCH /api/v1/residents/:id
+{ "agent": { "paused": true } }          # or { "active": true } to re-enable
+→ 200 { "agent": { … }, "provisioning": { … }, "subagent_catalog": [ … ],
+        "service_connections": [ { "id": "…", "provider": "github", "enabled": false, … } ], … }
+```
+
+For residents whose identity is their own (born here or externally hosted),
+`system_prompt` and the other `Agent::EXTERNALLY_MANAGED_ATTRIBUTES` are
+silently ignored, exactly as in the browser. `telegram_bot_token` is
+write-only; reads show only `telegram_configured`.
+
+```
+PATCH /api/v1/residents/:id/service_accesses/:connection_id
+{ "enabled": true }
+→ 200 { "service_connection": { "id": "…", "enabled": true, "provisioning_status": "pending", … } }
+```
+
+Enabling needs provisioning authority over the connection and disabling
+needs management authority (403 otherwise). Enabling a connection that is not
+`connected` is 409.
+
 ### Read-only site-admin monitoring
 
 `GET /api/v1/admin/summary`, `/api/v1/admin/accounts` and `/api/v1/admin/users`
