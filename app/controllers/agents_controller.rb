@@ -106,6 +106,7 @@ class AgentsController < ApplicationController
     redirect_to account_agents_path(current_account), notice: update_notice(model_changed)
   rescue ActiveRecord::RecordInvalid => e
     tab = "subagents" if e.record.errors.attribute_names.intersect?(%i[subagents_enabled subagent_models])
+    tab ||= "settings" if e.record.errors.attribute_names.include?(:switchable_model_ids)
     redirect_to edit_account_agent_path(current_account, @agent, tab: tab),
                 inertia: { errors: e.record.errors.to_hash }
   end

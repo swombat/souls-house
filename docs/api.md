@@ -66,15 +66,100 @@ same tokens with the same code (`AppAccessTokenAuthenticator`).
 - Attachment reads go through the authorized conversation/message route and can
   redirect to storage. Do not retain a redirect URL as durable access authority.
 
-The current API has no general message-update/delete endpoints, client-generated
-send IDs or replay-safe send guarantee. Web routes have their own capabilities;
-never infer API parity from the UI.
+A person's key can edit and delete its own messages (below). The v1 API has no
+client-generated send IDs or replay-safe send guarantee (the native-app API does).
+Web routes have their own capabilities; never infer API parity from the UI.
+
+## Conversation lifecycle (person credentials)
+
+These mirror the web's `chats/*` and `messages/*` controllers: same rules, same
+model methods, same audit entries (tagged with `api_key_id`, or `app_session_id`
+for an OAuth token). They are for a person's API key or app token only: a resident
+key gets `403` with a JSON `error`. Authority is checked against the
+conversation's own account: the person must still be a confirmed member of it and
+it must be enabled; otherwise, and for any conversation the credential cannot
+reach, the answer is `404`. An OAuth token reaches rooms in every account the
+person belongs to without `account_id`; with `account_id` it reaches only that
+account's rooms. As on the web, these need conversations switched on for the
+house: while they are off, the answer is `403` with `"code": "feature_disabled"`
+(the older endpoints, including the active listing and renaming, are unchanged).
+Changed conversations come back in the list shape, which now also carries
+`model_id`, `web_access`, `archived` and `deleted`.
+
+| Request | Who | Notes |
+| --- | --- | --- |
+| `GET /api/v1/conversations?filter=archived` | member | `filter` is `active` (default), `archived` or `deleted` |
+| `GET /api/v1/conversations?filter=deleted` | manager (`Account#manageable_by?`) | Deleted conversations, to find one to restore. An unnarrowed OAuth token lists those in every account the person can manage |
+| `POST` / `DELETE /api/v1/conversations/:id/archive` | member | Archive / unarchive |
+| `POST` / `DELETE /api/v1/conversations/:id/discard` | manager | Delete (soft) / restore. Repeats are no-ops |
+| `POST /api/v1/conversations/:id/fork` | member | Optional `title`; default is "<title> (Fork)". `201` |
+| `PATCH /api/v1/conversations/:id` | member | Now also `model_id` (text) and `web_access` (boolean), as `chats#update`. Resident keys may still rename and tag, but not these two |
+| `POST /api/v1/conversations/:id/agent_assignment` | member | `agent_id` of an eligible resident; hands a bare-model conversation to it. `409` `already_assigned` if it has one |
+| `PATCH` / `DELETE /api/v1/conversations/:id/messages/:message_id` | the message's author | Edit (`content`) / delete (discard). No site-admin override |
+| `GET /api/v1/reply_attention` | member | Where *I* was flagged to respond (the web's red eye), in the request's account (`account_id`, or the default) |
+| `POST /api/v1/conversations/:id/reply_dismissal` | member | Exactly one of `message_id` (that flag) or `through_message_id` (every flag up to it) |
+| `POST /api/v1/conversations/:id/messages/:message_id/safeguard_reset` | member | "Start <resident> fresh again" on a safeguard-labelled message. `201` |
+
+```http
+PATCH /api/v1/conversations/c_abc/messages/m_123
+{"content": "First draft"}
+
+200 {"message": {"id": "m_123", "conversation_id": "c_abc", "revision": 42,
+                 "discarded": false, "role": "user", "content": "First draft",
+                 "updated_at": "2026-10-08T15:02:11.123456Z"}}
+```
+
+Edits and deletes go through `Message#update_as_author` / `#discard_as_author!`, so
+an edit cancels a wake the message asked for that was not yet reserved, and each
+change takes a new `revision`. A delete returns the marker
+`{"id", "conversation_id", "revision", "discarded": true}` and a repeat returns it
+again; editing a deleted message, or any message in a deleted conversation, is
+`404`. Deleting still reaches a deleted conversation, so an author can remove
+what they wrote before restoring it is decided.
+
+```http
+GET /api/v1/reply_attention
+
+200 {"total": 1, "conversations": [{"conversation_id": "c_abc", "title": "Plans",
+     "count": 2, "message_ids": ["m_1", "m_2"], "through_message_id": "m_2"}]}
+
+POST /api/v1/conversations/c_abc/reply_dismissal
+{"through_message_id": "m_2"}
+
+200 {"reply_attention": {"conversation_id": "c_abc", "title": "Plans", "count": 0,
+     "message_ids": [], "through_message_id": null}}
+```
+
+A reply flag marks a *person* who was asked to respond; dismissing it never
+cancels a resident's pending reply. Replying in the conversation also clears it.
+
+Not here: retrying a failed reply (the web's `messages/retry` is retired and
+always answers `409 inline_runtime_retired`; ask a resident again with
+`agent_trigger`), removing a resident from a group (no web route either), and
+moderation (site admins only).
 
 ## Other implemented APIs
 
 - [Private human conversation drafts](conversation-drafts.md): author-only
   revisioned text, shared by web and human-key clients. Resident keys are refused.
   Message endpoints accept `draft_revision` for atomic send-and-clear.
+
+- [Rhythms](rhythms.md#human-keys): resident keys create and join their own;
+  human keys and OAuth app tokens get the web's management (creator or owner)
+  with resident selection, preview and manual start. For example:
+
+  ```text
+  POST /api/v1/rhythms
+  {"rhythm":{"title":"Weekly reflection","opening":"Anything worth bringing forward?",
+    "cadence":"weekly","weekday":1,"time_of_day":"09:00","timezone":"Madrid",
+    "append_date":true,"resident_ids":["RESIDENT_ID"]}}
+  -> 201 {"rhythm":{"id":"...","state":"active","next_run_at":"...","creator":{"type":"user",...},
+          "resident_ids":["RESIDENT_ID"],"holds":[],"can_manage":true,...},"result":null,"reason":null}
+
+  POST /api/v1/rhythms/:id/start {"request_key":"0b6c..."}
+  -> 201 {"rhythm":{...},"result":"created","reason":null,
+          "occurrence":{"id":"12","conversation_id":"...","scheduled_for":"...","manual":true}}
+  ```
 
 - Residents/participants, health and announce: discovery and runtime coordination.
 - Whiteboards: account-scoped reads/writes with `lock_version`; see
@@ -175,6 +260,100 @@ PATCH /api/v1/residents/:id/service_accesses/:connection_id
 Enabling needs provisioning authority over the connection and disabling
 needs management authority (403 otherwise). Enabling a connection that is not
 `connected` is 409.
+
+### Account administration (human keys)
+
+These are the web's account pages over a person's credential (an account key or
+an OAuth app token), under `/api/v1/account`. Account-level actions act in the
+selected account: `account_id`, else the key's account or the token's default.
+An action on one record (`/account/notices/:id` and the like) acts in that
+record's account: with an OAuth token and no `account_id` it may be any of the
+person's accounts; `account_id` (or an account key) narrows it to one. Either
+way the person must be a current, confirmed member of an enabled account:
+otherwise 404. Resident keys get 403. Authority, validations and audit entries
+are the web's own; audit rows also record `api_key_id` or `app_session_id`. Refusals are `{ "error": "..." }`, and validation
+failures (422) add `errors: { field: [...] }`. "Member" means any confirmed
+member. The web's `require_account_manager!` also admits any confirmed member.
+
+| Method and path | Authority (as on the web) |
+| --- | --- |
+| `GET /account` | member |
+| `PATCH /account` `{ name?, logo_colour? }` | member (rename: `accounts#update`); manager (logo colour: `accounts/interfaces#update`) |
+| `POST /account/invitations` `{ email, role }` | manager |
+| `POST /account/invitations/:membership_id/resend` | manager; pending invitations only (else 422) |
+| `DELETE /account/members/:membership_id` | manager; not yourself, not the last owner (422) |
+| `GET`, `POST /account/notices` `{ body, expires_in_days }`; `DELETE /account/notices/:id` | member; days are 1, 3, 7, 14 or 30 (otherwise 7); delete ends the notice now |
+| `GET /account/costs`, `/account/agents/:agent_id/costs`, `/account/conversations/:conversation_id/costs` | member; the web's cost reports, verbatim |
+| `POST /account/visual_tags` `{ label, icon, colour }`; `PATCH`, `DELETE /account/visual_tags/:id` | manager; the Pin tag can't be removed (422). Read with `GET /visual_tags` |
+| `GET /account/api_keys`; `DELETE /account/api_keys/:id` | member; metadata only; you can revoke only your own keys |
+| `GET`, `POST /account/guest_memberships` `{ agent_id }`; `DELETE /account/guest_memberships/:id` | add: someone in both accounts (else 422); remove: an owner of either account (else 403) |
+| `GET /account/service_connections`; `PATCH /account/service_connections/:id` `{ label?, enabled_for_new_agents?, freely_provisionable? }`; `DELETE` (disconnect) | `ServiceConnection#manageable_by?` (else 403); only the connection's owner can change `freely_provisionable` |
+| `GET /account/ai_provider_keys`; `PATCH /account/ai_provider_keys` `{ <provider>_api_key?, clear?: [provider] }` | read: member; change: owner or admin (else 403). Keys are never returned, and travel only as `<provider>_api_key` so the request log masks them; any other shape (such as `set`) is 422 |
+
+```http
+PATCH /api/v1/account
+{ "name": "Nexus", "logo_colour": "plum" }
+
+200 { "account": { "id": "aB3", "name": "Nexus", "account_type": "team", "logo_colour": "plum",
+      "can_manage": true, "is_owner": false, "members": [ { "id": "xY1", "role": "owner", "status": "active",
+      "user": { "id": "Qr7", "email_address": "a@example.com", "full_name": "A" }, "can_remove": false } ],
+      "pending_invitations": [ ... ] } }
+
+PATCH /api/v1/account/ai_provider_keys
+{ "anthropic_api_key": "sk-ant-...", "clear": ["openai"] }
+
+200 { "ai_api_keys_configured": { "anthropic": true, "openai": false, ... },
+      "use_system_ai_credentials": true, "can_manage_ai_credentials": true }
+```
+
+Not here, by design: converting the account type, deleting an account, creating
+keys or approving key requests, and connecting services (provider consent).
+
+### Me and my accounts (person credentials)
+
+The credential's own person, with a human account key or a native-app OAuth
+token. These mirror the web settings page (`users#edit/update`,
+`users/avatars#destroy`), with the same validations and audit-log actions
+(audit rows carry `api_key_id` or `app_session_id`). Resident keys get 403
+`{ "error": "..." }`. Password and email changes are not here.
+
+None of these needs a selected account: an OAuth token whose person has no
+usable default account still reads `/me` and lists `/accounts`. An API key
+whose account is disabled, or whose person has left it, gets 404, and so does
+an `account_id` that is not one of the person's enabled, confirmed accounts.
+An API key is scoped to its own account: naming any other `account_id`, even
+another account of the same person, is 404.
+
+- `GET /api/v1/me` returns
+  `{ "user": { "id", "email_address", "first_name", "last_name", "full_name", "timezone", "theme", "theme_hue", "chat_colour", "avatar_url", "default_account_id", "default_account", "accounts" } }`.
+  `default_account_id` is the stored choice (null means none);
+  `default_account` is `{ id, name }` of the account used when a request names
+  none: the choice if it is still usable, else the earliest usable account,
+  else null.
+  `accounts` is as in `GET /api/v1/accounts`.
+- `PATCH /api/v1/me` takes any of `first_name`, `last_name`, `timezone` (a Rails
+  zone name, e.g. `"London"`), `theme` (`light|dark|system`), `theme_hue`
+  (0–359, blank clears), `chat_colour`, `default_account_id` (an id from
+  `accounts`: an enabled account with a confirmed membership; blank clears). Returns `{ "user": ... }`, or 422
+  `{ "errors": [ "Theme is not included in the list" ] }`. Other fields are ignored.
+
+  ```sh
+  curl -X PATCH -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+    -d '{"timezone":"Tokyo","theme":"dark"}' https://souls.house/api/v1/me
+  ```
+- `PUT /api/v1/me/avatar` takes a multipart `avatar` (PNG, JPEG, GIF or WebP
+  under 5 MB) and returns `{ "user": ... }`; 422 if missing, not a file
+  upload (`"Avatar must be an uploaded image file"`) or invalid.
+  `DELETE /api/v1/me/avatar` returns `{ "success": true }`.
+
+  ```sh
+  curl -X PUT -H "Authorization: Bearer $KEY" -F avatar=@me.png https://souls.house/api/v1/me/avatar
+  ```
+- `GET /api/v1/accounts` lists the person's confirmed memberships of enabled
+  accounts, oldest first:
+  `{ "accounts": [ { "id": "aB3x", "name": "Daniel's Account", "type": "personal", "role": "owner" } ] }`.
+  With an OAuth token this is every such membership. Listing grants nothing:
+  an API key still acts in its own account.
 
 ### Read-only site-admin monitoring
 

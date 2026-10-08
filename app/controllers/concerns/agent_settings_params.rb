@@ -16,7 +16,8 @@ module AgentSettingsParams
       :voice_id, :persistent_session, :persistent_wake_session, :scheduled_wakes_enabled,
       :heartbeat_wakes_per_day, :session_idle_timeout_minutes, :session_max_age_minutes,
       :session_context_budget_tokens, :turn_timeout_minutes, :subagents_enabled,
-      subagent_models: []
+      :resident_may_switch_model,
+      subagent_models: [], switchable_model_ids: []
     )
 
     permitted.delete(:telegram_bot_token) if permitted[:telegram_bot_token].blank?

@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-08
+  title: Choose a resident's model for one conversation
+  body: An account can give a resident a list of models it may run on, in the resident's settings. In a conversation, the resident's button then has a model picker. The choice applies to that conversation only, from the resident's next turn, and the resident keeps its session and what it was doing. The room shows who changed the model, each answer shows which model wrote it, and the resident is told which model it is running on. If the chosen model stops being available, the room says so and the resident doesn't answer on another model. An account can also let a resident change its own model. Needs the Rails deploy and rebuilt residents.
+- date: 2026-10-08
   title: A clip for bringing an existing GitHub resident
   body: The "Bring an existing GitHub resident" card on the features page now has its own clip. It shows the import request, the account approving the branch, the resident's own files kept as they were, and the operator trust step that is still done by hand. Live once deployed.
 - date: 2026-10-08

@@ -21,21 +21,8 @@ class UsersController < ApplicationController
 
   def update_user_successfully
     # Handle profile attributes in both nested and direct format
-    params_for_user, params_for_profile = separate_user_and_profile_params
-
-    User.transaction do
-      return false unless Current.user.update(params_for_user)
-
-      if params_for_profile.present?
-        unless Current.user.profile.update(params_for_profile)
-          # Add profile errors to user errors
-          Current.user.profile.errors.each do |error|
-            Current.user.errors.add(error.attribute, error.message)
-          end
-          return false
-        end
-      end
-    end
+    params_for_user, params_for_profile = User.split_settings_params(user_params)
+    return false unless Current.user.update_settings(params_for_user, params_for_profile)
 
     audit_user_changes
     set_theme_cookie if theme_changed?
@@ -48,16 +35,7 @@ class UsersController < ApplicationController
   end
 
   def audit_user_changes
-    audit_with_changes(determine_audit_action, Current.user)
-  end
-
-  def determine_audit_action
-    changes = Current.user.saved_changes.except(:updated_at)
-    profile_changes = Current.user.profile&.saved_changes || {}
-    return :change_theme if profile_changes.key?("theme")
-    return :update_timezone if profile_changes.key?("timezone")
-    return :set_avatar if avatar_being_updated?
-    :update_profile
+    audit_with_changes(Current.user.settings_audit_action(avatar_updated: avatar_being_updated?), Current.user)
   end
 
   def avatar_being_updated?
@@ -82,27 +60,6 @@ class UsersController < ApplicationController
 
   def user_params
     params.require(:user).permit(:first_name, :last_name, :timezone, :avatar, :theme, :chat_colour, :theme_hue, :default_account_key, preferences: [ :theme ], profile_attributes: [ :first_name, :last_name, :timezone, :avatar, :theme, :chat_colour, :theme_hue ])
-  end
-
-  def separate_user_and_profile_params
-    all_params = user_params.dup
-    profile_attributes = [ :first_name, :last_name, :timezone, :avatar, :theme, :chat_colour, :theme_hue ]
-
-    # Extract profile attributes directly sent
-    profile_params = all_params.extract!(*profile_attributes)
-
-    # Handle preferences format (legacy)
-    if all_params[:preferences].present?
-      preferences = all_params.delete(:preferences)
-      profile_params[:theme] = preferences[:theme] if preferences[:theme].present?
-    end
-
-    # Also handle nested profile_attributes format
-    if all_params[:profile_attributes].present?
-      profile_params.merge!(all_params.delete(:profile_attributes))
-    end
-
-    [ all_params, profile_params ]
   end
 
   def theme_changed?

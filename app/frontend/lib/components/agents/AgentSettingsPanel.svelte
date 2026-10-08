@@ -3,6 +3,7 @@
   import { Label } from '$lib/components/shadcn/label';
   import { Switch } from '$lib/components/shadcn/switch';
   import AgentModelPanel from '$lib/components/agents/AgentModelPanel.svelte';
+  import AgentConversationModels from '$lib/components/agents/AgentConversationModels.svelte';
   import { siteName } from '$lib/branding';
 
   let {
@@ -21,6 +22,12 @@
   </div>
 
   <AgentModelPanel {houseAllowance} {form} {groupedModels} {runtimeManaged} bind:selectedModel />
+
+  <AgentConversationModels
+    {form}
+    {groupedModels}
+    defaultModelId={selectedModel}
+    agentName={$form.agent.name || 'this resident'} />
 
   {#if runtimeManaged}
     <div class="border rounded-lg p-4 text-sm text-muted-foreground">

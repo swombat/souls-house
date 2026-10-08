@@ -33,6 +33,15 @@ class AuditLog < ApplicationRecord
     distinct.pluck(:auditable_type).compact.sort
   end
 
+  # Audit data for a record's last save: its saved changes (minus
+  # updated_at) merged over extra data, with filtered parameters masked.
+  def self.data_with_changes(record, **extra_data)
+    changes = record.saved_changes.except(:updated_at)
+    ActiveSupport::ParameterFilter
+      .new(Rails.application.config.filter_parameters)
+      .filter(extra_data.merge(changes))
+  end
+
   def display_action
     action.to_s.humanize
   end

@@ -10,6 +10,8 @@ module Agents
             model_id: m[:model_id],
             label: m[:label],
             supports_thinking: m.dig(:thinking, :supported) == true,
+            # Whether a conversation may select it (Agent::ModelSwitching).
+            switchable: m[:provider_model_id].present? && !HouseInference::Offering.find(m[:model_id]),
             reasoning:
           }
         end

@@ -2,6 +2,11 @@ module Chat::Forkable
 
   extend ActiveSupport::Concern
 
+  # The title a fork takes when the person doesn't name it.
+  def default_fork_title
+    "#{title_or_default} (Fork)"
+  end
+
   def fork_with_title!(new_title)
     transaction do
       forked = account.chats.new(

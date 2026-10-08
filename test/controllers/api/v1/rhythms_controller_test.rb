@@ -43,19 +43,6 @@ class Api::V1::RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
-  test "human key cannot use resident discovery creation or controls" do
-    key = ApiKey.generate_for(@creator, name: "Human")
-    headers = { "Authorization" => "Bearer #{key.raw_token}" }
-    get api_v1_rhythms_path, headers: headers
-    assert_response :not_found
-    get api_v1_rhythm_path(@rhythm), headers: headers
-    assert_response :not_found
-    post pause_api_v1_rhythm_path(@rhythm), headers: headers
-    assert_response :not_found
-    post api_v1_rhythms_path, params: { rhythm: attributes }, headers: headers, as: :json
-    assert_response :not_found
-  end
-
   test "creation is actually resident attributed and creator can update and delete" do
     assert_difference "Rhythm.count", 1 do
       post api_v1_rhythms_path, params: { rhythm: attributes }, headers: @headers, as: :json

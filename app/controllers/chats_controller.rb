@@ -214,7 +214,10 @@ class ChatsController < ApplicationController
     agents.map do |agent|
       json = as.present? ? agent.as_json(as: as) : agent.as_json
       subscription = Agents::ProviderSubscriptionPresentation.call(agent)
-      subscription ? json.merge("provider_subscription" => subscription) : json
+      json = json.merge("provider_subscription" => subscription) if subscription
+      # Which model this resident will run on here next, and what it may choose.
+      json = json.merge("model_selection" => Agents::ModelSelection.for(agent, chat: @chat).as_json) if @chat&.persisted?
+      json
     end
   end
 

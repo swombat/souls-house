@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_08_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -409,6 +409,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_130000) do
     t.datetime "subagents_policy_changed_at"
     t.bigint "github_resident_import_id"
     t.boolean "follow_through", default: false, null: false
+    t.jsonb "switchable_model_ids", default: [], null: false
+    t.boolean "resident_may_switch_model", default: false, null: false
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
     t.index ["account_id", "name"], name: "index_agents_on_account_id_and_name", unique: true
     t.index ["account_id", "paused"], name: "index_agents_on_account_id_and_paused"
@@ -527,6 +529,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_130000) do
     t.datetime "created_at", null: false
     t.integer "safeguard_reset_requested_generation", default: 0, null: false
     t.integer "safeguard_reset_acknowledged_generation", default: 0, null: false
+    t.string "model_id"
     t.index ["agent_id", "agent_summary_generated_at"], name: "index_chat_agents_on_agent_summary_recency"
     t.index ["agent_id", "closed_for_initiation_at"], name: "index_chat_agents_on_agent_closed_initiation"
     t.index ["agent_id"], name: "index_chat_agents_on_agent_id"

@@ -14,6 +14,7 @@
 
   import { Streamdown } from 'svelte-streamdown';
   import { formatTime, formatDateTime } from '$lib/utils';
+  import { siteName } from '$lib/branding';
 
   import { elapsedBetween } from '$lib/progress-messages';
 
@@ -112,6 +113,18 @@
           </div>
         {/if}
       </div>
+    </div>
+  {:else if message.role === 'system'}
+    <!-- A platform notice (for example a model change): not a resident's or a person's message. -->
+    <div class="flex justify-center px-2" data-testid="system-notice">
+      <p
+        class="max-w-[90%] md:max-w-[70%] text-center text-xs text-muted-foreground leading-relaxed [overflow-wrap:anywhere]">
+        <span class="whitespace-nowrap mr-1.5"
+          ><span class="font-medium text-foreground/70">{message.author_name || $siteName}</span>
+          <time class="text-muted-foreground/70" datetime={message.created_at}>· {formatTime(message.created_at)}</time
+          ></span>
+        <span>{message.content}</span>
+      </p>
     </div>
   {:else}
     <div class="flex justify-start group">

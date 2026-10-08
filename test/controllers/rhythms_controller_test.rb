@@ -138,6 +138,29 @@ class RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_not rhythm.reload.held?
   end
 
+  # Mira #228 finding 1, on the shared save path: a rejected edit must not
+  # keep the selection it assigned.
+  test "a rejected edit keeps the saved selection and adds no hold" do
+    rhythm = make_rhythm
+    peer = agents(:code_reviewer)
+    patch account_rhythm_path(@account, rhythm), params: { rhythm: { title: "Changed", opening: "", resident_ids: [ peer.to_param ] } }
+    assert_response :unprocessable_entity
+    rhythm.reload
+    assert_equal [ @resident.id ], rhythm.agent_ids
+    assert_equal "Weekly reflection", rhythm.title
+    patch account_rhythm_path(@account, rhythm), params: { rhythm: { opening: "", resident_ids: [] } }
+    assert_response :unprocessable_entity
+    assert_equal [ @resident.id ], rhythm.reload.agent_ids
+    assert_empty rhythm.open_holds
+  end
+
+  test "a malformed resident id is not found rather than an error" do
+    rhythm = make_rhythm
+    patch account_rhythm_path(@account, rhythm), params: { rhythm: { title: "Changed", resident_ids: [ @resident.to_param, "abc-!" ] } }
+    assert_response :not_found
+    assert_equal "Weekly reflection", rhythm.reload.title
+  end
+
   private
 
   def make_rhythm

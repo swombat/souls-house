@@ -868,4 +868,22 @@ class UserTest < ActiveSupport::TestCase
     assert_not membership_json.to_json.include?(accounts(:team_account).to_param)
   end
 
+  # requires_new: inside a caller's transaction, a profile failure must still
+  # roll back the user half, without aborting the caller's own work.
+  test "update_settings rolls back its user half inside an outer transaction" do
+    user = users(:user_1)
+    team = accounts(:team_account)
+    saved = nil
+
+    User.transaction do
+      saved = user.update_settings({ default_account_key: team.to_param }, { theme: "neon" })
+      user.profile.reload.update!(timezone: "Tokyo")
+    end
+
+    assert_equal false, saved
+    assert user.errors[:theme].any?
+    assert_nil user.reload.default_account_id
+    assert_equal "Tokyo", user.profile.reload.timezone
+  end
+
 end
