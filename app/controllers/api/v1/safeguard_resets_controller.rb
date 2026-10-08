@@ -1,18 +1,19 @@
 module Api
   module V1
-    # messages/safeguard_resets for a person's key: "Start <resident> fresh
+    # messages/safeguard_resets for a person's credential: "Start <resident> fresh
     # again" on a message the safeguard labelled. Any member who can see the
     # room may ask; the resident's next trigger here starts a fresh session.
     # Repeats are harmless. Residents have their own path (safeguard_reclaims).
     class SafeguardResetsController < BaseController
 
-      include ApiHumanActions
+      include ApiHumanConversation
 
-      before_action :require_human_key
+      before_action :require_human_actor!
+      before_action :require_chats_feature!
 
       # POST /api/v1/conversations/:conversation_id/messages/:message_id/safeguard_reset
       def create
-        chat = member_account.chats.kept.find(params[:conversation_id])
+        chat = human_chat!
         message = chat.messages.kept.find(params[:message_id])
         unless chat.respondable?
           render json: { error: "This conversation is archived or deleted" }, status: :unprocessable_entity

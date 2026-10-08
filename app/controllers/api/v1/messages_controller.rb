@@ -2,9 +2,10 @@ module Api
   module V1
     class MessagesController < BaseController
 
-      include ApiHumanActions
+      include ApiHumanConversation
 
-      before_action :require_human_key, only: [ :update, :destroy ]
+      before_action :require_human_actor!, only: [ :update, :destroy ]
+      before_action :require_chats_feature!, only: [ :update, :destroy ]
       before_action :set_authored_message, only: [ :update, :destroy ]
 
       def create
@@ -89,7 +90,7 @@ module Api
 
         old_content = @message.content
         if @message.update_as_author(content: content)
-          audit("update_message", @message, old_content: old_content, new_content: @message.content)
+          audit_human_action("update_message", @message, account: @message.chat.account, old_content: old_content, new_content: @message.content)
           render json: { message: authored_message_json(@message) }
         else
           render json: { errors: @message.errors.full_messages }, status: :unprocessable_entity
@@ -100,7 +101,7 @@ module Api
       # repeat is a no-op that returns the same marker.
       def destroy
         unless @message.discarded?
-          audit("delete_message", @message, content: @message.content)
+          audit_human_action("delete_message", @message, account: @message.chat.account, content: @message.content)
           @message.discard_as_author!
         end
         render json: { message: authored_message_json(@message) }
@@ -108,11 +109,13 @@ module Api
 
       private
 
-      # Only delete may find an already-discarded message, so a repeat is a
-      # no-op; editing a deleted message is 404.
+      # Editing reaches only kept messages in kept conversations. Delete also
+      # finds an already-discarded message (a repeat is a no-op) and reaches a
+      # deleted conversation, so the author can still remove what they wrote.
       def set_authored_message
-        chat = member_account.chats.find(params[:conversation_id])
-        @message = (action_name == "destroy" ? chat.messages : chat.messages.kept).find(params[:id])
+        deleting = action_name == "destroy"
+        chat = human_chat!(deleting ? human_chats.with_discarded : human_chats.kept)
+        @message = (deleting ? chat.messages : chat.messages.kept).find(params[:id])
         return if @message.role == "user" && @message.user_id == current_api_user.id
 
         # Unlike the web, no site-admin override, as in the native-app API.

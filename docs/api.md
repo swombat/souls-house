@@ -70,27 +70,33 @@ A person's key can edit and delete its own messages (below). The v1 API has no
 client-generated send IDs or replay-safe send guarantee (the native-app API does).
 Web routes have their own capabilities; never infer API parity from the UI.
 
-## Conversation lifecycle (person keys)
+## Conversation lifecycle (person credentials)
 
 These mirror the web's `chats/*` and `messages/*` controllers: same rules, same
-model methods, same audit entries (tagged with `api_key_id`). They are for a
-person's key only: a resident key gets `403` with a JSON `error`. The key's person
-must still be a confirmed member of its account; otherwise, and for another
-account's conversation or message, the answer is `404`. Changed conversations come
-back in the list shape, which now also carries `model_id`, `web_access`,
-`archived` and `deleted`.
+model methods, same audit entries (tagged with `api_key_id`, or `app_session_id`
+for an OAuth token). They are for a person's API key or app token only: a resident
+key gets `403` with a JSON `error`. Authority is checked against the
+conversation's own account: the person must still be a confirmed member of it and
+it must be enabled; otherwise, and for any conversation the credential cannot
+reach, the answer is `404`. An OAuth token reaches rooms in every account the
+person belongs to without `account_id`; with `account_id` it reaches only that
+account's rooms. As on the web, these need conversations switched on for the
+house: while they are off, the answer is `403` with `"code": "feature_disabled"`
+(the older endpoints, including the active listing and renaming, are unchanged).
+Changed conversations come back in the list shape, which now also carries
+`model_id`, `web_access`, `archived` and `deleted`.
 
 | Request | Who | Notes |
 | --- | --- | --- |
 | `GET /api/v1/conversations?filter=archived` | member | `filter` is `active` (default), `archived` or `deleted` |
-| `GET /api/v1/conversations?filter=deleted` | manager (`Account#manageable_by?`) | Deleted conversations, to find one to restore |
+| `GET /api/v1/conversations?filter=deleted` | manager (`Account#manageable_by?`) | Deleted conversations, to find one to restore. An unnarrowed OAuth token lists those in every account the person can manage |
 | `POST` / `DELETE /api/v1/conversations/:id/archive` | member | Archive / unarchive |
 | `POST` / `DELETE /api/v1/conversations/:id/discard` | manager | Delete (soft) / restore. Repeats are no-ops |
 | `POST /api/v1/conversations/:id/fork` | member | Optional `title`; default is "<title> (Fork)". `201` |
 | `PATCH /api/v1/conversations/:id` | member | Now also `model_id` (text) and `web_access` (boolean), as `chats#update`. Resident keys may still rename and tag, but not these two |
 | `POST /api/v1/conversations/:id/agent_assignment` | member | `agent_id` of an eligible resident; hands a bare-model conversation to it. `409` `already_assigned` if it has one |
 | `PATCH` / `DELETE /api/v1/conversations/:id/messages/:message_id` | the message's author | Edit (`content`) / delete (discard). No site-admin override |
-| `GET /api/v1/reply_attention` | member | Where *I* was flagged to respond (the web's red eye) |
+| `GET /api/v1/reply_attention` | member | Where *I* was flagged to respond (the web's red eye), in the request's account (`account_id`, or the default) |
 | `POST /api/v1/conversations/:id/reply_dismissal` | member | Exactly one of `message_id` (that flag) or `through_message_id` (every flag up to it) |
 | `POST /api/v1/conversations/:id/messages/:message_id/safeguard_reset` | member | "Start <resident> fresh again" on a safeguard-labelled message. `201` |
 
@@ -107,7 +113,9 @@ Edits and deletes go through `Message#update_as_author` / `#discard_as_author!`,
 an edit cancels a wake the message asked for that was not yet reserved, and each
 change takes a new `revision`. A delete returns the marker
 `{"id", "conversation_id", "revision", "discarded": true}` and a repeat returns it
-again; editing a deleted message is `404`.
+again; editing a deleted message, or any message in a deleted conversation, is
+`404`. Deleting still reaches a deleted conversation, so an author can remove
+what they wrote before restoring it is decided.
 
 ```http
 GET /api/v1/reply_attention

@@ -1,13 +1,15 @@
 module Api
   module V1
-    # chats/discards for a person's key: delete (discard) and restore, for
-    # someone who can manage the account. Repeating either is a no-op.
+    # chats/discards for a person's credential: delete (discard) and restore,
+    # for someone who can manage the room's account. Repeating either is a
+    # no-op.
     class ConversationDiscardsController < BaseController
 
       include ApiConversationJson
-      include ApiHumanActions
+      include ApiHumanConversation
 
-      before_action :require_human_key
+      before_action :require_human_actor!
+      before_action :require_chats_feature!
       before_action :set_chat
       before_action :require_manager
 
@@ -15,7 +17,7 @@ module Api
       def create
         unless @chat.discarded?
           @chat.discard!
-          audit("discard_chat", @chat)
+          audit_human_action("discard_chat", @chat, account: @chat.account)
         end
         render json: { conversation: conversation_json(@chat) }
       end
@@ -24,7 +26,7 @@ module Api
       def destroy
         if @chat.discarded?
           @chat.undiscard!
-          audit("restore_chat", @chat)
+          audit_human_action("restore_chat", @chat, account: @chat.account)
         end
         render json: { conversation: conversation_json(@chat) }
       end
@@ -33,11 +35,11 @@ module Api
 
       # Deleted conversations too, so they can be restored.
       def set_chat
-        @chat = member_account.chats.with_discarded.find(params[:conversation_id])
+        @chat = human_chat!(human_chats.with_discarded)
       end
 
       def require_manager
-        return if member_account.manageable_by?(current_api_user)
+        return if @chat.account.manageable_by?(current_api_user)
 
         render json: { error: "Only someone who can manage this account can delete or restore conversations" }, status: :forbidden
       end

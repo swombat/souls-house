@@ -3,7 +3,7 @@ module Api
     class ConversationsController < BaseController
 
       include ApiConversationJson
-      include ApiHumanActions
+      include ApiHumanConversation
 
       wrap_parameters false
 
@@ -138,9 +138,16 @@ module Api
           render json: { error: "Provide top-level #{UPDATABLE_FIELDS.to_sentence(last_word_connector: ", and/or ")}; no other fields are accepted" }, status: :unprocessable_entity
           return
         end
-        if current_api_agent && (changes.keys & HUMAN_ONLY_FIELDS).any?
-          render json: { error: "model_id and web_access can only be changed with a person's API key" }, status: :forbidden
-          return
+        if (changes.keys & HUMAN_ONLY_FIELDS).any?
+          if current_api_agent
+            render json: { error: "model_id and web_access can only be changed with a person's API key" }, status: :forbidden
+            return
+          end
+          # As chats#update: the room's account must still be the person's,
+          # and chats must be switched on.
+          human_account!(chat.account)
+          require_chats_feature!
+          return if performed?
         end
         if changes.key?("model_id")
           model_id = changes["model_id"]
@@ -213,8 +220,9 @@ module Api
       end
 
       # active (default) is what the API has always listed. archived and
-      # deleted mirror the web sidebar: archived rooms for any member, deleted
-      # ones only for someone who can manage the account (chats#index).
+      # deleted mirror the web sidebar (chats#index): archived rooms for any
+      # current member, deleted ones only where the person can manage the
+      # account. Both are person-only and need chats switched on.
       def listing_scope
         filter = params[:filter].presence || "active"
         unless LIST_FILTERS.include?(filter)
@@ -223,18 +231,39 @@ module Api
         end
         return conversations_scope.kept.active if filter == "active"
 
-        require_human_key
+        require_human_actor!
+        require_chats_feature! unless performed?
         return if performed?
 
-        if filter == "deleted"
-          unless member_account.manageable_by?(current_api_user)
-            render json: { error: "Only someone who can manage this account can list deleted conversations" }, status: :forbidden
-            return
-          end
-          return conversations_scope.discarded
-        end
+        scope = member_chats
+        return scope.kept.archived if filter == "archived"
 
-        conversations_scope.kept.archived
+        if spans_accounts?
+          # An unnarrowed OAuth token: only the accounts the person may manage.
+          manageable = current_api_user.confirmed_accounts.select { |account| account.manageable_by?(current_api_user) }
+          return scope.discarded.where(account_id: manageable.map(&:id))
+        end
+        unless human_account!(current_api_account).manageable_by?(current_api_user)
+          render json: { error: "Only someone who can manage this account can list deleted conversations" }, status: :forbidden
+          return
+        end
+        scope.discarded
+      end
+
+      # An OAuth token without account_id reaches every enabled account the
+      # person belongs to; otherwise the request names one account.
+      def spans_accounts?
+        app_token_request? && params[:account_id].blank?
+      end
+
+      # human_chats, but only where the person is still a confirmed member of
+      # an enabled account: an account key whose person has left, or whose
+      # account is disabled, lists nothing (404).
+      def member_chats
+        return human_chats if spans_accounts?
+
+        human_account!(current_api_account)
+        human_chats
       end
 
       def paginated_conversations(listed)
