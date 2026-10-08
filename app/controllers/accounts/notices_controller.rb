@@ -1,6 +1,6 @@
 class Accounts::NoticesController < ApplicationController
 
-  EXPIRY_DAYS = [ 1, 3, 7, 14, 30 ].freeze
+  EXPIRY_DAYS = Notice::EXPIRY_DAYS
 
   before_action :set_account
 
@@ -18,11 +18,10 @@ class Accounts::NoticesController < ApplicationController
   end
 
   def create
-    notice = @account.notices.create!(
-      scope: "account",
-      notice_type: "announcement",
+    notice = Notice.announce_to_account!(
+      account: @account,
       body: notice_params[:body],
-      expires_at: expiry_days.days.from_now,
+      expires_in_days: notice_params[:expires_in_days],
       created_by: Current.user
     )
     audit("create_account_notice", notice, expires_at: notice.expires_at)
@@ -33,7 +32,7 @@ class Accounts::NoticesController < ApplicationController
 
   def destroy
     notice = managed_notices.find(params[:id])
-    notice.update!(expires_at: Time.current)
+    notice.expire!
     audit("expire_account_notice", notice)
     redirect_to account_notices_path(@account), notice: "Account notice ended"
   end
@@ -49,12 +48,7 @@ class Accounts::NoticesController < ApplicationController
   end
 
   def managed_notices
-    @account.notices.active.where(notice_type: "announcement")
-  end
-
-  def expiry_days
-    requested = notice_params[:expires_in_days].to_i
-    EXPIRY_DAYS.include?(requested) ? requested : 7
+    @account.notices.active.announcements
   end
 
   def current_account

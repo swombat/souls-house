@@ -269,10 +269,14 @@ Rails.application.routes.draw do
     end
 
     namespace :v1 do
-      # Host runners on house-ordered VMs (pilot telemetry only, #192).
+      # Host runners on house-ordered VMs: telemetry (#192) and commands (#238).
       namespace :host_runner do
         resource :enrollment, only: :create
         resource :heartbeat, only: :create
+        resources :commands, only: [] do
+          post :next, on: :collection
+          post :result, on: :member
+        end
       end
 
       namespace :admin do
@@ -286,6 +290,24 @@ Rails.application.routes.draw do
       end
       resources :accounts, only: :index
       resources :visual_tags, only: :index
+      # Account administration with a person's key (the web's account pages).
+      resource :account, only: %i[show update], controller: "account_administration" do
+        scope module: :accounts do
+          resources :invitations, only: :create do
+            post :resend, on: :member
+          end
+          resources :members, only: :destroy
+          resources :notices, only: %i[index create destroy]
+          resource :costs, only: :show
+          get "agents/:agent_id/costs", to: "costs#agent", as: :agent_costs
+          get "conversations/:conversation_id/costs", to: "costs#conversation", as: :conversation_costs
+          resources :visual_tags, only: %i[create update destroy]
+          resources :api_keys, only: %i[index destroy]
+          resources :guest_memberships, only: %i[index create destroy]
+          resources :service_connections, only: %i[index update destroy]
+          resource :ai_provider_keys, only: %i[show update]
+        end
+      end
       resources :rhythms, only: %i[index show create update destroy] do
         get :preview, on: :collection
         member do
@@ -350,6 +372,16 @@ Rails.application.routes.draw do
       resource :reply_attention, only: :show
       resources :agents, only: [ :index, :show ]
       resources :guest_memberships, only: [ :index, :destroy ]
+      resources :residents, only: [ :show, :create, :update, :destroy ] do
+        get :catalogue, on: :collection
+        member do
+          get :provisioning
+          post :provisioning_retry
+          post :orientation_retry
+          get :memory_overview
+          patch "service_accesses/:connection_id", action: :service_access, as: :service_access
+        end
+      end
       resources :telegram_conversations, only: :show
       get "telegram_conversations/:conversation_id/messages/:message_id/media",
         to: "telegram_media#show",
@@ -369,14 +401,36 @@ Rails.application.routes.draw do
       resources :service_connections, only: [] do
         resource :access_token, only: :show, controller: "service_connection_tokens"
       end
-      resources :whiteboards, only: [ :index, :show, :create, :update ] do
+      resources :whiteboards, only: [ :index, :show, :create, :update, :destroy ] do
         resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
       end
       namespace :field do
-        resources :files, only: [ :index, :show, :create, :destroy ] do
+        resource :limits, only: :show
+        resources :files, only: [ :index, :show, :create, :update, :destroy ] do
           get :download, on: :member
         end
-        resources :recordings, only: [ :index, :show ]
+        resources :recording_uploads, path: "recordings/uploads", only: :create
+        resources :recordings, only: [ :index, :show, :create, :update, :destroy ] do
+          member do
+            get :audio
+            post :retry
+          end
+          post :dismiss_you_hint, on: :collection
+          resources :speakers, only: :update
+        end
+        resources :enrolments, only: :destroy
+        resources :voices, only: [ :index, :update, :destroy ] do
+          delete :forget, on: :member, path: "print"
+          delete :forget_all, on: :collection, path: "prints"
+          patch :recognition, on: :collection
+        end
+      end
+      resources :device_streams, only: [ :index, :show, :create, :update, :destroy ] do
+        member do
+          post :credential
+          delete "credentials/:credential_id", action: :revoke, as: :revoke_credential
+          delete "sessions/:session_id", action: :erase_session, as: :erase_session
+        end
       end
     end
   end

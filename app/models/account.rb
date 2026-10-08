@@ -260,6 +260,25 @@ class Account < ApplicationRecord
     (saved_changes.keys.map(&:to_sym) & AI_CREDENTIAL_ATTRIBUTES).any?
   end
 
+  # Write-only change to the account's own model provider keys, shared by the
+  # web page and the API. `set` maps provider names to new keys; blank values
+  # leave that key alone. Providers named in `clear` lose their key, even if
+  # `set` also names them. Residents are refreshed when anything changed.
+  def update_ai_api_keys!(set: {}, clear: [])
+    set = set.to_h.transform_keys(&:to_s)
+    clear = Array(clear).map(&:to_s)
+    attributes = {}
+
+    AI_PROVIDERS.each_key do |provider|
+      attribute = "#{provider}_api_key"
+      attributes[attribute] = set[provider.to_s] if set[provider.to_s].present?
+      attributes[attribute] = nil if clear.include?(provider.to_s)
+    end
+
+    update!(attributes)
+    AccountAgentCredentialsRefreshJob.perform_later(id) if saved_ai_credentials_change?
+  end
+
   alias_method :active, :active?
   alias_method :disabled, :disabled?
 

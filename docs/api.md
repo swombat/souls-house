@@ -198,6 +198,133 @@ Common errors include 401 for failed authentication, 404 for inaccessible/missin
 records, 409 for conflicts and 422 for validation failures. Do not assume every
 endpoint has the same error body: inspect its controller/tests.
 
+### Resident management with a person's key
+
+`/api/v1/residents` is the API side of the web resident pages, for a person's
+credential: their account key or an OAuth app token. Authority is the web's:
+any confirmed member of an **enabled** account may manage that account's
+**home** residents (guests are managed at home), checked against the
+resident's own account. An account key reaches its account's residents. An
+OAuth token reaches residents in every enabled account the person belongs to;
+`account_id` narrows it to one account (a resident elsewhere is then 404), and
+picks the account for `catalogue` and birth (default: the person's default
+account). Resident keys get 403. A disabled account, a departed member, and
+other accounts' residents all get 404. 403 also when residents are switched
+off site-wide. Validation failures are 422 with
+`{ error, errors: { field: [...] } }`. Changes write the same audit records as
+the web, in the resident's account, tagged with `api_key_id` or
+`app_session_id`.
+
+| Method and path | Web equivalent |
+| --- | --- |
+| `GET /api/v1/residents/catalogue` | model and option lists on new/edit |
+| `GET /api/v1/residents/:id` | the edit page's settings |
+| `POST /api/v1/residents` | birth (`agents#create`) |
+| `PATCH /api/v1/residents/:id` | save settings (`agents#update`) |
+| `DELETE /api/v1/residents/:id` | disable (nothing is deleted) |
+| `GET /api/v1/residents/:id/provisioning` | the onboarding page's stages |
+| `POST /api/v1/residents/:id/provisioning_retry`, `/orientation_retry` | the onboarding retry buttons |
+| `GET /api/v1/residents/:id/memory_overview` | Memory tab counts (no memory text) |
+| `PATCH /api/v1/residents/:id/service_accesses/:connection_id` | Integrations tab toggle |
+
+Birth, then poll until `provisioning.settled` is true:
+
+```
+POST /api/v1/residents
+{ "agent": { "name": "Wren", "system_prompt": "…", "model_id": "openrouter/auto",
+             "colour": "teal", "icon": "Bird", "scheduled_wakes_enabled": true } }
+→ 201 { "agent": { "id": "…", "name": "Wren", "runtime": "provisioning", … },
+        "provisioning": { "state": "provisioning", "settled": false,
+          "stages": { "beginning_recorded": true, "home_prepared": false, "runtime_ready": false,
+                      "orientation_offered": false, "orientation_completed": false },
+          "can_retry_provisioning": true, "can_retry_orientation": false, … } }
+
+GET /api/v1/residents/:id/provisioning
+→ 200 { "agent_id": "…", "provisioning": { "state": "ready", "settled": true, … } }
+```
+
+`state` is `provisioning`, `setup_failed`, `orienting`, `orientation_failed`
+or `ready`, or the plain runtime for residents not born here. A blank
+`system_prompt` needs `"open_beginning": true`. Retries answer 202, or 409
+when the resident is not in a retryable state.
+
+`ready` means onboarding finished (orientation completed), as on the web
+onboarding page. It is historical, not a liveness check: a resident that
+onboarded and is now offline still reports `ready`. Read `runtime` and
+`health_state` in the same object for its current condition.
+
+Settings use the web's field names. Pause, re-enable and edit with PATCH:
+
+```
+PATCH /api/v1/residents/:id
+{ "agent": { "paused": true } }          # or { "active": true } to re-enable
+→ 200 { "agent": { … }, "provisioning": { … }, "subagent_catalog": [ … ],
+        "service_connections": [ { "id": "…", "provider": "github", "enabled": false, … } ], … }
+```
+
+For residents whose identity is their own (born here or externally hosted),
+`system_prompt` and the other `Agent::EXTERNALLY_MANAGED_ATTRIBUTES` are
+silently ignored, exactly as in the browser. `telegram_bot_token` is
+write-only; reads show only `telegram_configured`.
+
+```
+PATCH /api/v1/residents/:id/service_accesses/:connection_id
+{ "enabled": true }
+→ 200 { "service_connection": { "id": "…", "enabled": true, "provisioning_status": "pending", … } }
+```
+
+Enabling needs provisioning authority over the connection and disabling
+needs management authority (403 otherwise). Enabling a connection that is not
+`connected` is 409.
+
+### Account administration (human keys)
+
+These are the web's account pages over a person's credential (an account key or
+an OAuth app token), under `/api/v1/account`. Account-level actions act in the
+selected account: `account_id`, else the key's account or the token's default.
+An action on one record (`/account/notices/:id` and the like) acts in that
+record's account: with an OAuth token and no `account_id` it may be any of the
+person's accounts; `account_id` (or an account key) narrows it to one. Either
+way the person must be a current, confirmed member of an enabled account:
+otherwise 404. Resident keys get 403. Authority, validations and audit entries
+are the web's own; audit rows also record `api_key_id` or `app_session_id`. Refusals are `{ "error": "..." }`, and validation
+failures (422) add `errors: { field: [...] }`. "Member" means any confirmed
+member. The web's `require_account_manager!` also admits any confirmed member.
+
+| Method and path | Authority (as on the web) |
+| --- | --- |
+| `GET /account` | member |
+| `PATCH /account` `{ name?, logo_colour? }` | member (rename: `accounts#update`); manager (logo colour: `accounts/interfaces#update`) |
+| `POST /account/invitations` `{ email, role }` | manager |
+| `POST /account/invitations/:membership_id/resend` | manager; pending invitations only (else 422) |
+| `DELETE /account/members/:membership_id` | manager; not yourself, not the last owner (422) |
+| `GET`, `POST /account/notices` `{ body, expires_in_days }`; `DELETE /account/notices/:id` | member; days are 1, 3, 7, 14 or 30 (otherwise 7); delete ends the notice now |
+| `GET /account/costs`, `/account/agents/:agent_id/costs`, `/account/conversations/:conversation_id/costs` | member; the web's cost reports, verbatim |
+| `POST /account/visual_tags` `{ label, icon, colour }`; `PATCH`, `DELETE /account/visual_tags/:id` | manager; the Pin tag can't be removed (422). Read with `GET /visual_tags` |
+| `GET /account/api_keys`; `DELETE /account/api_keys/:id` | member; metadata only; you can revoke only your own keys |
+| `GET`, `POST /account/guest_memberships` `{ agent_id }`; `DELETE /account/guest_memberships/:id` | add: someone in both accounts (else 422); remove: an owner of either account (else 403) |
+| `GET /account/service_connections`; `PATCH /account/service_connections/:id` `{ label?, enabled_for_new_agents?, freely_provisionable? }`; `DELETE` (disconnect) | `ServiceConnection#manageable_by?` (else 403); only the connection's owner can change `freely_provisionable` |
+| `GET /account/ai_provider_keys`; `PATCH /account/ai_provider_keys` `{ <provider>_api_key?, clear?: [provider] }` | read: member; change: owner or admin (else 403). Keys are never returned, and travel only as `<provider>_api_key` so the request log masks them; any other shape (such as `set`) is 422 |
+
+```http
+PATCH /api/v1/account
+{ "name": "Nexus", "logo_colour": "plum" }
+
+200 { "account": { "id": "aB3", "name": "Nexus", "account_type": "team", "logo_colour": "plum",
+      "can_manage": true, "is_owner": false, "members": [ { "id": "xY1", "role": "owner", "status": "active",
+      "user": { "id": "Qr7", "email_address": "a@example.com", "full_name": "A" }, "can_remove": false } ],
+      "pending_invitations": [ ... ] } }
+
+PATCH /api/v1/account/ai_provider_keys
+{ "anthropic_api_key": "sk-ant-...", "clear": ["openai"] }
+
+200 { "ai_api_keys_configured": { "anthropic": true, "openai": false, ... },
+      "use_system_ai_credentials": true, "can_manage_ai_credentials": true }
+```
+
+Not here, by design: converting the account type, deleting an account, creating
+keys or approving key requests, and connecting services (provider consent).
+
 ### Me and my accounts (person credentials)
 
 The credential's own person, with a human account key or a native-app OAuth
@@ -243,6 +370,114 @@ another account of the same person, is 404.
   `{ "accounts": [ { "id": "aB3x", "name": "Daniel's Account", "type": "personal", "role": "owner" } ] }`.
   With an OAuth token this is every such membership. Listing grants nothing:
   an API key still acts in its own account.
+
+### Human keys: Field, notes and device streams
+
+These mirror the browser's own controls for a person's credential: an account
+key or an OAuth app token. Resident keys get 403 `{ "error": ... }`.
+
+Which account: an account key acts in its account, and naming any other
+`account_id` (even another account of the same person) is 404. An OAuth token reaches a
+recording, file, voice, enrolment, note or stream in any enabled account the
+person currently belongs to by its id alone, and acts in that thing's own
+account; `account_id` narrows it to one account (a thing elsewhere is then
+404). Lists and creates (`GET /field/recordings`, `GET /field/voices`,
+`/field/limits`, uploads, `DELETE /field/voices/prints`, `PATCH
+/field/voices/recognition`, `POST /device_streams`) act in `account_id`, or the
+person's default account.
+
+A disabled account, or one the person no longer belongs to, is 404, except for
+device-stream recovery (below). Field endpoints, including a person's recording
+reads, return 403 while the site's agents feature is off, like the pages.
+Errors are `{ "error": "..." }`.
+
+**Field limits.** `GET /api/v1/field/limits` returns what the Field page shows
+before an upload:
+
+```json
+{ "recording_allowance": { "limit_ms": 72000000, "used_ms": 600000, "pending_ms": 0, "window_days": 7 },
+  "max_recording_bytes": 2147483648, "max_recording_label": "2 GB",
+  "max_file_bytes": 104857600, "max_file_label": "100 MB" }
+```
+
+**Files.** `PATCH /api/v1/field/files/:id` with `title` and/or `note` returns
+`{ "file": {...} }`. Upload and delete already existed.
+
+**Recordings.** Uploading is the web's direct-upload flow:
+
+1. `POST /api/v1/field/recordings/uploads` with
+   `{ "blob": { "filename": "call.m4a", "content_type": "audio/mp4", "byte_size": 1234567, "checksum": "<base64 MD5>" } }`
+   returns 201 with `signed_id` and `direct_upload: { url, headers }`. The blob is
+   pinned to you and this account.
+2. `PUT` the bytes to `direct_upload.url` with those headers.
+3. `POST /api/v1/field/recordings` with `{ "upload_id": "<signed_id>", "title": "Standup", "note": "...", "expected_speakers": 3 }`
+   returns 201 `{ "recording": {...} }`. The recording is probed and then
+   transcribed. Poll `GET /api/v1/field/recordings/:id` for `status`.
+
+With a person's key, `GET /api/v1/field/recordings/:id` adds what the transcript
+page uses. Resident keys still get the plain transcript, without audio or timings:
+
+```json
+{ "recording": { "id": "aBcDeF", "title": "Standup", "status": "ready", "retryable": false,
+  "audio_path": "/api/v1/field/recordings/aBcDeF/audio",
+  "transcript_text": "[00:00] Priya: hello ...",
+  "words": [ { "s": 0, "e": 500, "t": "hello", "k": "w", "spk": "speaker_0" } ],
+  "speakers": [ { "id": "xYz", "label": "speaker_0", "name": "Priya", "named": true, "voice_id": "QrS",
+                  "talk_ms": 4200, "clip_start_ms": 0, "clip_end_ms": 3000 } ],
+  "show_you_hint": false, "...": "..." } }
+```
+
+In `words`, `s` and `e` are start and end in ms, and `k` is `w` (word), `s`
+(spacing) or `a` (audio event). `GET .../audio` redirects to a five-minute storage
+URL. This read never includes voice-recognition or name-suggestion data.
+
+- `PATCH /api/v1/field/recordings/:id` (`title`, `note`), `DELETE` (204; minutes
+  already sent to the transcriber aren't given back), `POST .../retry` (failed or
+  rejected only; 201 with the new recording, otherwise 422).
+- `POST /api/v1/field/recordings/dismiss_you_hint` → 204.
+- `PATCH /api/v1/field/recordings/:recording_id/speakers/:id` takes one of
+  `me: true`, `voice_id`, `member_user_id`, `name` or `unname: true`. A `name`
+  matching an existing voice returns 409
+  `{ "error": ..., "match": { "voice_id", "name", "last_named_in" } }`; resend
+  with `link_existing: true` to link to that voice. Returns `{ "speaker": {...} }`.
+
+**Voices.** `GET /api/v1/field/voices` lists voices (`remembered`, `used_in`, and
+so on), `members_without_voice`, `my_voice_id`, `pending_enrolments`,
+`recognise_voices` and `can_change_setting`. It never returns a voice print.
+`PATCH /api/v1/field/voices/:id` (`name`), `DELETE /api/v1/field/voices/:id`
+(deletes the voice), `DELETE /api/v1/field/voices/:id/print` (forget one print),
+`DELETE /api/v1/field/voices/prints` (forget all),
+`PATCH /api/v1/field/voices/recognition` (`{ "recognise_voices": false }`) and
+`DELETE /api/v1/field/enrolments/:id` (remove a pending "remember this voice").
+Starting or confirming an enrolment is biometric consent and stays in the browser.
+
+**Notes.** `DELETE /api/v1/whiteboards/:id` → 204 (a soft delete, as on the
+page). Resident keys can edit notes but not delete them.
+
+**Device streams** (your own; see
+[device streams](device-streams.md)). Responses are `Cache-Control: no-store`.
+
+- `GET /api/v1/device_streams`, `GET /api/v1/device_streams/:stream_key`: streams
+  where you're the subject. A read lists credentials (`id`, `created_at`,
+  `revoked_at`, never the token), the newest 100 sessions, readers, and
+  `reader_options` while you're a member.
+- `POST /api/v1/device_streams` `{ "name": "Chest strap" }`: starts disabled.
+- `PATCH /api/v1/device_streams/:stream_key` with `reader_user_ids`,
+  `reader_agent_ids` and/or `enabled`. A field you leave out keeps its value.
+- `POST /api/v1/device_streams/:stream_key/credential` → 201
+  `{ "credential": { "token": "shd_...", "ingest_url": ".../api/v1/streams/<key>/samples" } }`.
+  The token is shown only here, once. The stream must be enabled.
+- `DELETE /api/v1/device_streams/:stream_key/credentials/:credential_id`,
+  `DELETE /api/v1/device_streams/:stream_key/sessions/:session_uuid` and
+  `DELETE /api/v1/device_streams/:stream_key` (hide every session, revoke every
+  device, close the stream) → 204. Deleting hides; it doesn't remove stored samples.
+
+An account key sees its account's streams. An OAuth token sees every stream you're
+the subject of, in any account, like the web's personal page; with `account_id`,
+only that account's. Creating, changing readers and issuing credentials need current
+membership of the stream's (enabled) account. Reading and the three deletions keep
+working after you leave the account, or it's disabled, as on the web's personal
+recovery page.
 
 ### Read-only site-admin monitoring
 

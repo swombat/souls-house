@@ -89,12 +89,12 @@ module RunnerUserData
 
     document = {
       "package_update" => true,
-      "packages" => %w[docker.io python3-cryptography nftables],
+      "packages" => %w[docker.io docker-cli python3-cryptography nftables],
       "write_files" => [
         file("/etc/nftables.d/souls-house-input.nft", NFTABLES, "0644"),
         file("/etc/systemd/system/souls-house-firewall.service", FIREWALL_UNIT, "0644"),
         file("/etc/systemd/system/souls-house-runner.service", SYSTEMD_UNIT, "0644"),
-        file("/opt/souls-house-runner/souls_house_runner.py", runner_source, "0755", encode: true),
+        file("/opt/souls-house-runner/souls_house_runner.py", runner_source, "0755", encode: :gzip),
         file("/etc/souls-house-runner/config.json", JSON.generate(config), "0600")
       ],
       "runcmd" => [
@@ -130,13 +130,28 @@ module RunnerUserData
     File.read(RUNNER_SOURCE_PATH)
   end
 
+  # The runner is embedded gzipped: Hetzner caps user_data at 32 KiB, and the
+  # runner alone is near that once base64'd. A fixed gzip mtime keeps the
+  # document identical for identical source.
   def file(path, content, permissions, encode: false)
     entry = { "path" => path, "permissions" => permissions, "owner" => "root:root" }
-    if encode
+    case encode
+    when :gzip
+      entry.merge("encoding" => "gz+b64", "content" => Base64.strict_encode64(gzip(content)))
+    when true
       entry.merge("encoding" => "b64", "content" => Base64.strict_encode64(content))
     else
       entry.merge("content" => content)
     end
+  end
+
+  def gzip(content)
+    io = StringIO.new("".b)
+    writer = Zlib::GzipWriter.new(io, Zlib::BEST_COMPRESSION)
+    writer.mtime = 1
+    writer.write(content)
+    writer.close
+    io.string
   end
 
 end

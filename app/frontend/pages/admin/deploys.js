@@ -9,6 +9,13 @@ export function runLabel(run) {
   if (run.status !== 'completed') {
     return run.status === 'in_progress' ? '… running' : `… ${run.status || 'queued'}`;
   }
+  // Automatic runs say what actually shipped; a successful run alone doesn't.
+  if (run.conclusion === 'success' && run.workflow === 'rails_auto') {
+    if (run.outcome === 'deployed') return '✓ deployed';
+    if (run.outcome === 'superseded') return '– master moved on, nothing deployed';
+    if (run.outcome === 'not_deployed') return '– not deployed';
+    return '✓ finished (outcome unknown)';
+  }
   switch (run.conclusion) {
     case 'success':
       return '✓ success';
@@ -53,6 +60,15 @@ export function applyPollResult(state, result) {
     const failures = state.failures + 1;
     const stopped = failures >= MAX_CONSECUTIVE_FAILURES;
     return { ...state, failures, error: stopped ? `${status.error}. ${STOPPED_MESSAGE}` : status.error, stopped };
+  }
+  if (status.partial_error) {
+    // Only the automatic listing failed: take the fresh manual runs, keep the
+    // automatic runs we already knew about (one may still be in flight, which
+    // keeps polling going), and say what is missing.
+    const kept = (state.runs || []).filter((run) => run.workflow === 'rails_auto');
+    const fresh = (status.runs || []).filter((run) => run.workflow !== 'rails_auto');
+    const runs = [...fresh, ...kept].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    return { runs, error: status.partial_error, failures: 0, stopped: false };
   }
   return { runs: status.runs || [], error: null, failures: 0, stopped: false };
 }

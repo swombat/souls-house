@@ -101,6 +101,12 @@ class ServiceConnection < ApplicationRecord
     freely_provisionable? && account.service_credentials_manageable_by?(user)
   end
 
+  # Granting a resident access needs provisioning authority; withdrawing it
+  # needs management authority.
+  def resident_access_changeable_by?(user, enabled:)
+    enabled ? provisionable_by?(user) : manageable_by?(user)
+  end
+
   def runtime_entry(agent:)
     {
       "connection_id" => public_id,

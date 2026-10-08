@@ -79,7 +79,8 @@ calling the runner over a private network. It covers enrollment and telemetry
 only; the transport for resident turns is still undecided.
 
 - **Boot.** Procurement renders cloud-init with `RunnerUserData.render` and
-  sends it in its single create request. The document installs Docker,
+  sends it in its single create request. The document installs Docker (daemon
+  and `docker-cli`, which Debian 13 packages separately),
   `python3-cryptography` and nftables, embeds the runner source, and writes a
   0600 config holding the one-time enrollment token. That token is the only
   secret in it.
@@ -103,9 +104,10 @@ only; the transport for resident turns is still undecided.
 - **Heartbeats.** `POST /api/v1/host_runner/heartbeat` is signed with the
   pinned key and stores a fixed list of host facts. Health is derived from
   heartbeat age and lapses on its own.
-- **What it cannot do.** The runner knows two actions, `report_facts` and
-  `heartbeat`, and refuses anything else locally. Rails has no command queue.
-  Enrollment and health never make a placement ready or permit dispatch.
+- **What it cannot do.** Without `"commands_enabled": true` in its config the
+  runner knows two actions, `report_facts` and `heartbeat`, and refuses
+  anything else locally. Enrollment and health never make a placement ready or
+  permit dispatch.
 - **Network.** Host input is dropped except loopback, established traffic,
   ICMP and SSH. SSH exists for Daniel's offline break-glass key; Rails holds
   only the public half or its Hetzner key ID. Rails stays root-equivalent over
@@ -114,3 +116,38 @@ only; the transport for resident turns is still undecided.
 
 `RunnerEnrollment` is separate from procurement's states. Provisioned is not
 enrolled, enrolled is not healthy, and healthy is not runtime-ready.
+
+## Command channel (#238)
+
+The transport for resident turns stays **dial-out** (Mira's shape check on
+#238): Rails never calls the VM.
+
+- **Commands.** `RunnerCommand` rows belong to one enrollment, its placement
+  and the placement generation they were issued under. The payload is
+  encrypted at rest and dropped once the runner answers. Kinds:
+  `start_resident`, `stop_resident`, `submit_turn`, `turn_status`,
+  `cancel_turn`; the runner refuses anything else locally.
+- **Delivery.** `POST /api/v1/host_runner/commands/next` (signed like a
+  heartbeat) returns at most one command at once, the oldest queued, or one
+  delivered but unanswered for `REDELIVER_AFTER`. Commands from an older
+  generation are refused by Rails and by the runner.
+- **Answers.** `POST /api/v1/host_runner/commands/:id/result` accepts only a
+  delivered command of this enrollment. The first answer wins. Outcomes are
+  `done`, `failed`, `refused` or `unknown`; anything else is recorded as
+  `unknown`. `done` for `submit_turn` is the trigger's answer, not turn
+  completion.
+- **Restarts.** The runner writes an in-flight marker before running a command
+  and remembers every answer by command id. A redelivery is answered from
+  memory, and a command interrupted by a restart is answered `unknown` and
+  never run again. A turn in that state is reconciled by its dispatch id.
+- **What runs on the VM.** `docker create` comes from a fixed template that
+  mirrors `Agents::Sandbox#run_container!`: named volumes, a private bridge
+  network, no published ports, no host mounts, no Docker socket. Rails supplies
+  values, never flags. Images are pinned by digest; a pull credential, if
+  sent, is scoped to the image's registry and used for one pull. Resident env
+  keys are allowlisted (house inference only, no provider keys) and written to
+  a `0600` env file, never to argv. Turns are relayed to the resident's
+  trigger server on the private bridge.
+
+Still to come in #238: `commands_enabled` in cloud-init, remote dispatch
+routing for ready Hetzner placements, and minting pilot-only tokens.

@@ -110,6 +110,13 @@ class Worker:
         revision = self.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture=True)
         if not SHA.fullmatch(revision):
             raise RuntimeError("Invalid master revision")
+        expected = self.data.get("expected_revision")
+        if expected and revision != expected:
+            # Master moved on after the caller checked it. Deploy nothing; the
+            # newer commit's own request will deploy it once it has passed CI.
+            self.report("master moved on; nothing deployed", state="superseded",
+                        rails_revision=revision)
+            return
         self.report("master resolved", rails_revision=revision)
         # Kamal executes only after checkout; service scripts remain root-installed
         # and cannot silently change through a web deployment.
@@ -284,6 +291,8 @@ class Worker:
             with (ROOT / "deployment.lock").open("a") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 self.checkout()
+                if self.data["state"] == "superseded":
+                    return
                 if self.data["operation"] in ("rails", "both"):
                     self.deploy_rails()
                 if self.data["operation"] in ("chaos", "both"):
@@ -311,4 +320,4 @@ if __name__ == "__main__":
         fcntl.flock(gate, fcntl.LOCK_EX)
         worker = Worker(sys.argv[1])
     worker.execute()
-    sys.exit(0 if worker.data["state"] == "success" else 1)
+    sys.exit(0 if worker.data["state"] in ("success", "superseded") else 1)

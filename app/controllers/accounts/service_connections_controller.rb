@@ -53,7 +53,7 @@ class Accounts::ServiceConnectionsController < ApplicationController
     end
 
     attributes = connection_params
-    if attributes[:freely_provisionable].present? && !@connection.owner?(Current.user)
+    if attributes.key?(:freely_provisionable) && !@connection.owner?(Current.user)
       attributes.delete(:freely_provisionable)
     end
     @connection.update!(attributes)

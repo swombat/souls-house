@@ -14,6 +14,7 @@ class Agent < ApplicationRecord
   include Agent::ModelSwitching
   include Agent::RuntimeAvailability
   include Agent::SessionPolicy
+  include Agent::HostedSetup
 
   validates :turn_timeout_minutes,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 1440 }
