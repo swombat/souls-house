@@ -100,6 +100,32 @@ class Api::V1::HostRunner::CommandsControllerTest < ActionDispatch::IntegrationT
     assert_nil stale.payload_json
   end
 
+  test "a late result from an older generation is refused and spends no nonce" do
+    command = enqueue
+    assert_equal command.public_id, poll["id"]
+    @placement.update!(generation: @placement.generation + 1)
+    assert_no_difference -> { RunnerRequestNonce.count } do
+      answer(command.public_id, { outcome: "done" })
+    end
+    assert_response :conflict
+    assert_equal "stale_generation", response.parsed_body["error"]
+    assert_equal "delivered", command.reload.state
+  end
+
+  test "a retired placement gets no commands and settles no results" do
+    command = enqueue
+    poll
+    @placement.update!(state: "retired")
+    assert_no_difference -> { RunnerRequestNonce.count } do
+      assert_nil poll
+      assert_response :gone
+      answer(command.public_id, { outcome: "done" })
+      assert_response :gone
+    end
+    assert_equal "placement_retired", response.parsed_body["error"]
+    assert_equal "delivered", command.reload.state
+  end
+
   test "a runner cannot see or answer another enrollment's commands" do
     other_placement = AgentPlacement.create!(agent: agents(:code_reviewer), backend: "hetzner_cloud", state: "pending")
     other, other_token = RunnerEnrollment.mint!(placement: other_placement)

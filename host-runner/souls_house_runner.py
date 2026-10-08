@@ -407,6 +407,9 @@ class CommandState:
         redelivery finds this and answers "unknown" instead of running the
         command a second time; Rails reconciles the same turn by its id."""
         self.data.setdefault("in_flight", {})[command_id] = generation
+        # The highest generation seen advances when a command starts, not
+        # when it finishes: after a restart, an older generation stays refused.
+        self.data["highest_generation"] = max(self.data["highest_generation"], generation)
         self._save()
 
     def record(self, command_id, generation, result):
@@ -437,7 +440,18 @@ def _docker(argv, timeout=120, env=None):
     return completed.returncode == 0, (completed.stdout if completed.returncode == 0 else completed.stderr).strip()
 
 
-def _http(method, url, token, body=None, ledger_id=None, timeout=10):
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """The relay talks to one resident on the private bridge. A redirect is
+    answered as the 3xx it is, never followed with the trigger token."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_RELAY_OPENER = urllib.request.build_opener(_RefuseRedirects)
+
+
+def _http(method, url, token, body=None, ledger_id=None, timeout=10, opener=None):
     data = None if body is None else json.dumps(body).encode("utf-8")
     request = urllib.request.Request(url, data=data, method=method)
     request.add_header("Authorization", f"Bearer {token}")
@@ -445,7 +459,7 @@ def _http(method, url, token, body=None, ledger_id=None, timeout=10):
     if ledger_id:
         request.add_header("X-Resident-Ledger-ID", ledger_id)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with (opener or _RELAY_OPENER).open(request, timeout=timeout) as response:
             raw = response.read()
             status = response.status
     except urllib.error.HTTPError as error:
@@ -515,7 +529,9 @@ class ResidentHost:
         env_text = "".join(f"{key}={value}\n" for key, value in sorted(spec["env"].items()))
         self._write_private(self._env_path(name), env_text)
         public_spec = {key: spec[key] for key in ("container_name", "image", "memory_mb", "cpu_shares")}
-        public_spec["env_keys"] = sorted(spec["env"])
+        # A digest of the whole env, values included, so a rotated token
+        # recreates the container; the values themselves stay in the env file.
+        public_spec["env_digest"] = hashlib.sha256(env_text.encode("utf-8")).hexdigest()
         previous = None
         if os.path.exists(self._spec_path(name)):
             with open(self._spec_path(name)) as handle:

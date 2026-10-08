@@ -198,6 +198,13 @@ class ExecuteTest(unittest.TestCase):
         self.assertEqual(result["outcome"], "unknown")
         self.assertEqual(Dying.calls, 1)
 
+    def test_a_restart_after_begin_keeps_the_higher_generation(self):
+        self.state.begin("b" * 32, 3)  # generation 3 started, then the runner died
+        host = self.CountingHost()
+        _, result = runner.execute_command(command(generation=2, cid="c" * 32), runner.CommandState(self.dir), host)
+        self.assertEqual(result, {"outcome": "refused", "error": "stale generation"})
+        self.assertEqual(host.calls, 0)
+
     def test_an_unexpected_error_is_unknown_not_failed(self):
         class Exploding:
             def start_resident(self, payload):
@@ -265,6 +272,16 @@ class ResidentHostTest(unittest.TestCase):
         self.assertIn(["docker", "rm", "-f", "agent-pilot-1"], self.docker.calls)
         self.assertIn("create", self.docker.verbs())
         self.assertFalse(any(argv[1:3] == ["volume", "rm"] for argv in self.docker.calls))
+
+    def test_a_rotated_env_value_recreates_the_container(self):
+        self.host.start_resident(spec())
+        self.docker.calls.clear()
+        rotated = spec(env={**spec()["env"], "TRIGGER_BEARER_TOKEN": "trig-rotated"})
+        self.host.start_resident(rotated)
+        self.assertIn(["docker", "rm", "-f", "agent-pilot-1"], self.docker.calls)
+        self.assertIn("create", self.docker.verbs())
+        with open(os.path.join(self.dir, "residents", "agent-pilot-1.json")) as handle:
+            self.assertNotIn("trig", handle.read())
 
     def test_a_failed_pull_stops_before_create(self):
         self.docker.fail.add("pull")
@@ -382,6 +399,45 @@ class PollTest(unittest.TestCase):
                             enroll=lambda *a: None, heartbeat=lambda *a: beats.append(1), facts=lambda image: {},
                             max_heartbeats=2, poll=broken_poll, clock=lambda: next(ticking))
                 self.assertEqual(len(beats), 2)
+
+
+class RelayRedirectTest(unittest.TestCase):
+    def test_the_relay_never_follows_a_redirect(self):
+        import http.server
+        import threading
+
+        hits = {"elsewhere": 0}
+
+        class Elsewhere(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                hits["elsewhere"] += 1
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        elsewhere = http.server.HTTPServer(("127.0.0.1", 0), Elsewhere)
+
+        class Resident(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{elsewhere.server_port}/steal")
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        resident = http.server.HTTPServer(("127.0.0.1", 0), Resident)
+        for server in (elsewhere, resident):
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            response = runner._http("GET", f"http://127.0.0.1:{resident.server_port}/turns/x", "secret-token")
+        finally:
+            resident.shutdown()
+            elsewhere.shutdown()
+        self.assertEqual(response["status"], 302)
+        self.assertEqual(hits["elsewhere"], 0)
 
 
 if __name__ == "__main__":

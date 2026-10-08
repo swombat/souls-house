@@ -127,9 +127,9 @@ class RunnerEnrollment < ApplicationRecord
   # placement generation is refused here and never handed out.
   def poll!(nonce:, now: Time.current)
     with_lock do
-      require_live!
+      placement = require_live!
       consume_nonce!(nonce, now)
-      generation = AgentPlacement.uncached { AgentPlacement.find(agent_placement_id).generation }
+      generation = placement.generation
       while (command = RunnerCommand.next_for(self, now:))
         if command.generation < generation
           command.refuse_locally!("stale generation", now:)
@@ -143,11 +143,14 @@ class RunnerEnrollment < ApplicationRecord
 
   # The runner answers a command. Only a command this enrollment was given
   # can be answered, and only once; a repeated answer is accepted and ignored.
+  # A command from an older placement generation can't be answered: a late
+  # result must not settle anything for a placement that has moved on.
   def report_command_result!(public_id:, result:, nonce:, now: Time.current)
     with_lock do
-      require_live!
+      placement = require_live!
       command = commands.find_by(public_id: public_id.to_s) || raise(Refused.new(:unknown_command, 404))
       raise Refused.new(:not_delivered, 409) if command.state == "queued"
+      raise Refused.new(:stale_generation, 409) if command.generation < placement.generation
 
       consume_nonce!(nonce, now)
       command.record_result!(result, now:)
@@ -165,9 +168,17 @@ class RunnerEnrollment < ApplicationRecord
 
   private
 
+  # Returns the placement, read fresh under the enrollment lock. A retired
+  # placement gets no commands and settles no results, whatever the state of
+  # its enrollment.
   def require_live!
     raise Refused.new(:revoked, 403) if revoked_at
     raise Refused.new(:not_enrolled, 409) unless enrolled_at
+
+    placement = AgentPlacement.uncached { AgentPlacement.find(agent_placement_id) }
+    raise Refused.new(:placement_retired, 410) if placement.state == "retired"
+
+    placement
   end
 
   # Inside the caller's transaction. A duplicate nonce violates the unique
