@@ -3,6 +3,7 @@ module Api
     class BaseController < ActionController::API
 
       include ApiAuthentication
+      include ApiHumanActor
       # After authentication, which ApiAuthentication's before_action does.
       # PaperTrail 17 no longer adds this callback itself.
       before_action :set_paper_trail_whodunnit
