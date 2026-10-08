@@ -103,16 +103,28 @@ the 20 h default is final.
 | `duration_ms` | int, from ffprobe, not null once probed |
 | `status` | `probing` → `queued` → `transcribing` → `ready`; `rejected` (too long / unreadable, no allowance used); `failed` |
 | `failure_reason` | short, human-readable string |
-| `vendor_request_id`, `vendor_transcription_id` | ElevenLabs ids, nullable |
-| `attempt_token` | random per dispatch; the webhook must echo it (§5) |
+| `attempt_token` | the *current* attempt. Set when a dispatch is claimed, and cleared on any terminal state or discard (§5a) |
+| `dispatch_count` | int, at most 3 |
 | `transcript_words` | jsonb: `[{s, e, t, spk}]`, ms ints, Scribe words and audio events, exactly as Scribe returned them apart from compaction |
 | `transcript_text` | rendered text with names (rebuilt when names change) |
 | `language_code` | from Scribe |
 | `ready_at` | |
 | `discarded_at` | Discard. The recording is discardable like a file |
 
-`has_one_attached :audio`. Index on `[account_id, created_at]`, plus a unique
-index on `vendor_request_id`.
+`has_one_attached :audio`. Index on `[account_id, created_at]`.
+
+### `field_recording_dispatches`
+
+One row per vendor dispatch. This is the record vendor cleanup works from,
+and it outlives the attempt it belongs to.
+
+| column | notes |
+|---|---|
+| `field_recording_id` | |
+| `attempt_token` | unique. Written **before** the POST |
+| `request_id`, `transcription_id` | nullable. Filled from whichever arrives first, the POST response or the webhook |
+| `outcome` | `in_flight` / `succeeded` / `failed` / `superseded` |
+| `vendor_deleted_at`, `vendor_delete_error` | cleanup state |
 
 ### `field_recording_speakers`
 
@@ -128,7 +140,7 @@ One row per diarized speaker in a recording.
 | `naming_source` | `human` / `confirmed_suggestion` / `confirmed_recognition`, nullable |
 | `named_by_type/_id` | who named it |
 | `suggested_voice_id`, `suggested_name`, `suggestion_quote`, `suggestion_quote_ms`, `suggestion_source` | slice B. Never shown as a name, only as a suggestion |
-| `recognised_voice_id`, `recognition_confidence`, `recognition_voiceprint_version` | slice C. A recognition is a *guess* until a human confirms it |
+| `recognised_voice_id`, `recognition_confidence`, `recognition_print_generation` | slice C. A recognition is a *guess* until a human confirms it |
 
 A speaker shows as: the name of `field_voice_id` if set; otherwise
 "Speaker N". Suggestions and recognitions render as chips beside it, never in
@@ -144,6 +156,7 @@ An account-scoped identity that a name refers to. **Print-optional.**
 | `name` | as typed. Unique per account, case-insensitive, among kept voices |
 | `user_id` | nullable. Set when the voice is the uploader saying "this is me", or explicitly linked to an account member. Never by name equality |
 | `created_by_type/_id` | |
+| `print_generation` | bigint, default 0. **Monotonic and never reset.** Bumped by every print write *and* every forget. Lives on the surviving row, so forget → re-enrol can never reproduce an old generation |
 | `discarded_at` | an *identity* (a name) follows the discard rule. Its print doesn't (below) |
 
 Linking two speakers to one voice is always explicit: the chip offers
@@ -158,7 +171,7 @@ merging silently.
 | `field_voice_id` | unique. At most one print per voice |
 | `account_id` | denormalised so every query can scope by account without a join |
 | `print` | **encrypted** (`encrypts :print`, non-deterministic) |
-| `version` | int. Bumped on every replace |
+| `generation` | copied from `field_voices.print_generation` when written. A print is current only while the two are equal |
 | `sample_recording_id`, `sample_ms` | where the sample came from, and how much clean speech it had |
 | `consented_by_type/_id`, `consented_at`, `consent_text_version` | who ticked "remember this voice", and what it said |
 | `vendor` | `pyannote` |
@@ -199,10 +212,13 @@ never accepts a bare signed blob id. The pattern from
    returns the direct-upload URL and headers.
 2. The browser PUTs the bytes and shows progress.
 3. `POST /accounts/:id/field/recordings` with `upload_id` (the signed id),
-   `title`, `note` and `expected_speakers`. The server accepts the blob only
-   if its metadata names **this user and this account**, `expires_at` (6 h)
-   hasn't passed, and the blob isn't attached to anything. Otherwise it's a
-   422 that says nothing about the blob.
+   `title`, `note` and `expected_speakers`. **Claim, atomically:** in one
+   transaction, `SELECT … FOR UPDATE` the blob row, then check that its
+   metadata names **this user and this account**, that `expires_at` (6 h)
+   hasn't passed, and that no `active_storage_attachments` row references it;
+   then create the recording and its attachment, and commit. A second create
+   racing for the same blob waits on the row lock and then sees the
+   attachment. Any failure is a 422 that says nothing about the blob.
 4. The recording is created in `probing` and `FieldRecordings::ProbeJob` runs.
 
 **Probe.** `ffprobe` on a download of the blob reads the duration and
@@ -215,63 +231,126 @@ advisory only. The server's probe decides.
 
 **Cleanup.** `FieldRecordings::OrphanSweepJob` (hourly, in `recurring.yml`)
 purges blobs carrying `field_recording_upload` metadata that are unattached
-past `expires_at`, and purges the audio of `rejected` recordings after 24 h.
+past `expires_at`. It takes the same blob row lock and rechecks "no
+attachment" before purging, so a claim and a purge can't both win. It also
+purges the audio of `rejected` recordings after 24 h.
 A rejected recording isn't something anyone brought into the Field, so the
 discard rule doesn't apply to it.
 
 Residents do **not** upload recordings in slice A. The resident Field API
 stays files-only for writes.
 
+**Retry** ("Try again" on a failed recording) is an internal path, not the
+upload endpoint. `FieldRecording#retry!` creates a new recording whose audio
+attachment points at the *same blob*, under the old recording's lock, and only
+if the old one is `failed` and kept. The new recording goes through probe and
+reservation like any other. The upload endpoint's "unattached" rule stays
+strict.
+
 ## 5. Transcription (slice A)
+
+Every step below runs under the lifecycle contract in §5a.
 
 `FieldRecordings::TranscribeJob(recording_id)`:
 
-1. Under `recording.with_lock`: if the status isn't `queued`, return (this
-   is what makes the job idempotent). Set `transcribing`, generate a fresh
-   `attempt_token`, save.
-2. POST to Scribe: `model_id=scribe_v2`, `diarize=true`,
+1. **Claim** (recording lock): continue only if the recording is kept,
+   `queued` and `dispatch_count < 3`. Set `transcribing`, mint
+   `attempt_token`, bump `dispatch_count`, and insert the dispatch row
+   (`in_flight`). Commit. The job holds the minted token as `my_attempt`.
+2. POST to Scribe (outside any lock): `model_id=scribe_v2`, `diarize=true`,
    `timestamps_granularity=word`, `tag_audio_events=true`,
    `num_speakers=expected_speakers` when given, `webhook=true`,
    `webhook_id`, and
    `webhook_metadata={"recording": <obfuscated id>, "attempt": attempt_token}`.
    The file goes as `cloud_storage_url`: a signed blob URL valid for 6 h.
    With local storage in development, the file is posted as multipart.
-3. Store `request_id` and, if present, `transcription_id`.
+3. **Record the response** (recording lock): always write `request_id` and
+   `transcription_id` onto *my* dispatch row, whatever state the recording
+   is in now, because cleanup needs them. Touch the recording only if its
+   `attempt_token == my_attempt` and it's still `transcribing`.
 
 `POST /webhooks/elevenlabs/stt` (no session, CSRF skipped):
 
 1. Verify the HMAC signature against `stt_webhook_secret`, with a timestamp
    tolerance of 5 min. If it fails: 401, nothing touched.
-2. Find the recording by obfuscated id. If it isn't `transcribing`, or the
-   `attempt` doesn't match its `attempt_token`, return 200 and ignore it.
-   That covers duplicates, a stale attempt after a retry, and a recording
-   discarded meanwhile.
-3. In one transaction under the recording lock: store the words, create the
-   speaker rows (talk time, clip choice: the longest turn of that speaker
-   with no other speaker within 1 s, trimmed to 5 s), render
-   `transcript_text`, set `ready`, and **consume the reservation** (§6).
-4. After commit: `DeleteVendorTranscriptJob` calls Scribe's DELETE, retrying
-   up to 3 times, and logs (without the content) if it can't. Then broadcast
-   to the account, and in slice B enqueue suggestions.
+2. Find the **dispatch row** by the echoed `attempt`. If there is none,
+   return 200 and do nothing. Under the recording lock, write the payload's
+   `transcription_id` (and `request_id`) onto the dispatch row if they're
+   missing. That covers a webhook that arrives before the POST response.
+3. Still under that lock, the result is **accepted** only if the recording
+   is kept, `transcribing`, and its `attempt_token` equals this attempt.
+   If accepted, in the same transaction: store the words, create the speaker
+   rows (talk time, clip choice: the longest turn of that speaker with no
+   other speaker within 1 s, trimmed to 5 s), render `transcript_text`, set
+   `ready`, clear `attempt_token`, mark the dispatch `succeeded`, and
+   **consume the reservation** (§6). If not accepted, mark the dispatch
+   `superseded` and store none of its content.
+4. After commit, **in both cases**: enqueue
+   `DeleteVendorTranscriptJob(dispatch_id)`. If accepted, also broadcast,
+   and in slice B enqueue suggestions.
+
+`DeleteVendorTranscriptJob` calls Scribe's DELETE with the dispatch's
+`transcription_id`, retrying up to 3 times, and records
+`vendor_deleted_at` or the error (never content). **If no
+`transcription_id` ever arrives** (neither the POST response nor the webhook
+carries one, and the docs mark both nullable), we can't delete. The
+transcript then stays in the house's ElevenLabs history under their retention
+policy. The dispatch row records `vendor_delete_error: "no transcription id"`,
+and the Field's "about recordings" note says vendor deletion is attempted,
+not guaranteed. The first live call checks which source carries the id, and
+its result goes into this section.
 
 **When no webhook arrives.** `FieldRecordings::StuckSweepJob` (every 10 min)
-looks at `transcribing` recordings older than
-`max(20 min, 0.5 × duration)`. If a `transcription_id` is known, it GETs the
-transcript and processes it exactly as the webhook would, through the same
-method with the same guards. Otherwise, or if the GET fails, the dispatch
-counts as one failed attempt. Each recording gets at most **3 dispatches**.
-After that it's `failed` and the reservation is released. Every dispatch
-costs vendor money, so the cap bounds spend separately from the allowance.
+looks at `transcribing` recordings whose current dispatch is older than
+`max(20 min, 0.5 × duration)`. If that dispatch has a `transcription_id`, it
+GETs the transcript and hands it to the same accept method as the webhook,
+with the same attempt guard. Otherwise, or if the GET fails, it **abandons
+the attempt** under the lock: the dispatch becomes `failed`,
+`attempt_token` is cleared, and the recording goes back to `queued` if
+`dispatch_count < 3`, or to `failed` (with release) if not. A webhook that
+arrives later for the abandoned attempt is `superseded`: its content is
+ignored, but it is still deleted at the vendor. Every dispatch costs vendor
+money, so the cap of 3 bounds spend separately from the allowance.
 
-**Errors at dispatch.** A 4xx other than 429 → `failed` straight away, with
-Scribe's message, and the reservation released. A 429, a 5xx or a transport
-error → back to `queued` with a backoff (1, 5, 15 min), counted against the
-3 dispatches.
+The same sweep **settles stranded reservations** after a crash: any
+`pending` reservation whose recording is discarded, `rejected` or `failed`
+is released. A `queued` recording with no live job for 30 min is
+re-enqueued; claiming it still respects the dispatch cap.
 
-**Discarding a recording mid-flight.** The webhook guard ignores the result
-and the reservation stays `pending` until the sweep finds a discarded
-`transcribing` recording. If the transcription had already been consumed, it
-stays consumed: the vendor did the work.
+**Errors at dispatch** (only for `my_attempt`, under the lock, guarded as in
+step 3): a 4xx other than 429 → `failed`, with Scribe's message, and the
+reservation released. A 429, a 5xx or a transport error → the dispatch is
+`failed`, `attempt_token` is cleared, and the recording goes back to
+`queued` with a backoff (1, 5, 15 min), or to `failed` once the cap is
+reached. A late error for an attempt that's no longer current changes
+nothing on the recording.
+
+**Discarding a recording.** Under the recording lock: discard, clear
+`attempt_token`, and release the reservation **immediately** if it's still
+`pending`. Everything still in flight then fails its attempt guard. A
+reservation already consumed stays consumed: the vendor did the work.
+
+## 5a. The lifecycle contract
+
+One rule covers probe, dispatch, response, webhook, sweep, discard and retry:
+
+- **Every state change happens under the recording's row lock** and rechecks,
+  inside that lock, the conditions it was started under: kept, the expected
+  `status`, and (for anything attempt-bound) `attempt_token == my_attempt`.
+  If any of them fails, the step changes nothing on the recording. Its only
+  allowed effect is recording vendor ids on its own dispatch row and
+  queueing vendor cleanup.
+- **Terminal states** (`ready`, `rejected`, `failed`, discarded) clear
+  `attempt_token`, so no stale worker can move a recording out of one.
+  Nothing moves a recording from `ready` back to `queued` or `failed`.
+- **Lock order:** account, then recording, then (in slice C) voices in id
+  order. Probe's admission takes account → recording. Consume and release
+  take only the recording lock and a guarded `UPDATE … WHERE state =
+  'pending'`. They never need the account lock, because they only ever lower
+  "used" or keep it the same, so they can't break an admission decision.
+- **Probe** rechecks under account → recording that the recording is kept
+  and still `probing` before it reserves. A recording discarded while
+  ffprobe ran gets no reservation.
 
 ## 6. The allowance (slice A)
 
@@ -289,6 +368,8 @@ upload. That's the clock that decides when room frees up.
 
 ```ruby
 account.with_lock do
+  recording.lock!                                  # lock order: account, then recording
+  return unless recording.kept? && recording.probing?   # discarded while probing → no reservation
   return if recording.reservation.present?        # idempotent retry
   used = FieldRecordingReservation.used_ms(account, now)
   if used + duration_ms > account.recording_ms_weekly_limit
@@ -308,12 +389,11 @@ same recording impossible, even outside the lock.
 
 **Transitions**, each guarded by `WHERE state = 'pending'` so that a
 duplicate does nothing:
-- **consume**: on a successful transcript. Exactly once. Later failures
-  (suggestions, recognition) never refund it.
-- **release**: on `failed` or `rejected`, or a discard before consumption.
-  A released recording can't be re-queued. "Try again" creates a new
-  recording from the same blob, with a new reservation, through the same
-  check.
+- **consume**: on an accepted transcript (§5 step 3). Exactly once. Later
+  failures (suggestions, recognition) never refund it.
+- **release**: on `failed` or `rejected`, immediately on discard, or by the
+  sweep for a stranded reservation. A released recording can't be re-queued;
+  "Try again" is `retry!` (§4), with a new recording and a new reservation.
 
 **What people see.**
 - The gauge in the Recordings tab: "3 h 20 m of 20 h used in the last 7
@@ -322,7 +402,9 @@ duplicate does nothing:
 - Over the limit: "This recording is 2 h 05 m. You have 1 h 40 m left this
   week. Room frees up gradually; enough for this one by about Tue 14 Oct,
   09:10." That time is computed from consumed rows only and labelled
-  "about", because pending work can change it.
+  "about". If consumed rows expiring could never make enough room, because
+  pending work alone fills the gap, it says "No estimate yet: other
+  recordings are still transcribing" instead of inventing a date.
 - No upsell wording. If an account needs more, Daniel raises the limit.
 
 ## 7. The transcript and naming (slice A; chips from B and C)
@@ -417,7 +499,8 @@ default is final. Suggestions are one small call per recording.
 ### The gate
 
 Recognition does anything at all only when **both** the house flag
-`field_voiceprints` (default off) **and** `account.recognise_voices`
+`field_voiceprints` (an env var in deploy config, default off; see
+"Restoring") **and** `account.recognise_voices`
 (default off) are on. When either is off:
 - no "remember this voice" box,
 - no print is built, replaced or sent,
@@ -430,7 +513,12 @@ setting's copy says so and offers "Forget all voices" beside it.
 **Open, for Daniel and someone who knows the law:** the lawful basis for
 storing a print of someone who isn't an account member (Art. 9: explicit
 consent from *that person*, which "she'd be fine with it" isn't). Until
-that's settled, the house flag stays off in production. Slice A and B don't
+that's settled, the house flag stays off in production. The "Remember this
+voice" box below records *who said* the person agreed. That is an
+attestation, not the person's own consent, and it doesn't settle the basis
+by itself. Opening the gate needs the legal basis plus a consent-evidence and
+revocation flow that the person themself can use. That flow is out of scope
+for this spec and comes back to Daniel when the basis is known. Slice A and B don't
 depend on it.
 
 ### Remembering a voice is its own act
@@ -450,14 +538,35 @@ The house never builds a print as a side effect: not when naming, not when
 confirming a recognition, not retrospectively for voices named before slice C
 was switched on.
 
+### One synchronisation rule for prints
+
+Every operation that reads or writes a print, or acts on a recognition,
+takes the **voice row lock** (after the recording lock, if it needs both;
+voices in id order). Forget, build write-back, identify write-back and
+confirming a recognition all serialise on that lock. Under it, each one
+rechecks:
+- **the gate** (house flag and `recognise_voices`),
+- the voice is kept, and the recording too, where one is involved,
+- **the generation**: the voice's current `print_generation` equals the
+  generation the operation started from,
+- and, for builds, that the consent token still exists.
+
+These checks run **twice**: immediately before any vendor dispatch, and again
+at write-back. If any check fails at dispatch, nothing is sent. If any fails
+at write-back, the result is thrown away. A request already dispatched can't
+be recalled. pyannote deletes the job input after processing and the output
+after 24 h, and that's all we can say about it.
+
+Because `print_generation` lives on the voice and only ever goes up (bumped
+by every write *and* every forget), an old snapshot can never match a print
+enrolled after a forget.
+
 ### Building the print
 
-`FieldVoices::BuildPrintJob(speaker_id, consent_token)`:
+`FieldVoices::BuildPrintJob(speaker_id, consent_token)`. The job records
+`start_generation = voice.print_generation` when the consent token is made.
 
-1. Recheck the gate, that the speaker is still named to that voice, that the
-   voice is kept, and that the consent token matches a still-pending consent
-   (a token row created by the tick, deleted on forget). Any failure: stop,
-   and delete the token.
+1. Run the rechecks above. Any failure: stop and delete the token.
 2. **Choose the sample.** Turns of this speaker with no other speaker within
    1 s, longest first, joined until 30 s. If there's less than 8 s → stop,
    and say "Not enough clear speech from Priya in this recording to remember
@@ -470,11 +579,12 @@ was switched on.
    in 1 h) and the popover plays it: "This is what will be remembered as
    Priya. [Use it] [Not her]." Only **Use it** continues. **Not her**
    deletes the sample and the consent token.
-4. **Dispatch.** Upload the sample to pyannote `/voiceprint` via a 1 h signed
-   URL. Poll the job (webhook optional, later).
-5. **Write back**, under `voice.with_lock`: recheck everything in step 1
-   *again* (a forget may have happened in between). If the consent token is
-   gone, discard the result. Otherwise upsert the print, bump `version`,
+4. **Dispatch.** Under the voice lock, run the rechecks; then send the sample
+   to pyannote `/voiceprint` via a 1 h signed URL. Poll the job (webhook
+   optional, later).
+5. **Write back**, under the voice lock: run the rechecks *again*. If any
+   fails, throw the result away and delete the sample and token. Otherwise
+   bump `voice.print_generation`, upsert the print with that generation, and
    delete the temporary sample blob and the consent token.
 
 **Replacing a print** happens only by the same explicit act on a later
@@ -487,25 +597,30 @@ same job with a new consent row.
 `FieldRecordings::IdentifyJob(recording_id)`, after `ready`, when the gate is
 open and the account has at least one print:
 
-1. Snapshot `{voice_id → version}` for every print in the account. Dispatch
-   `/identify` with the audio URL, those prints (labelled by an opaque
-   per-job key, never the name), `matching.exclusive: true`,
+1. Snapshot `{voice_id → print_generation}` for every current print in the
+   account, under each voice's lock, with the rechecks. Dispatch `/identify`
+   with the audio URL, those prints (labelled by an opaque per-job key, never
+   the name), `matching.exclusive: true`,
    `matching.threshold` (start at 50, a tunable constant),
    `numSpeakers`/`maxSpeakers` from `expected_speakers`, and model
    `precision-2`.
-2. Poll. On completion, under the recording lock: for each print in the
-   result, check the voice still has a print **with the same version as the
-   snapshot**. If it doesn't, throw that match away. A forgotten or replaced
-   voice can't be used by a late result.
-3. **Diarization when both run (Mira's B, provisionally).** Scribe's words
-   and speakers stay as they are. For each Scribe speaker, take the identify
-   segments that overlap its words. If at least 70% of that speaker's word
-   time lies in segments matched to one voice, and none of it lies in a
-   segment matched to another voice, record that as a *recognition*
-   (`recognised_voice_id`, confidence = time-weighted mean). Otherwise the
-   speaker gets no recognition. Words in overlap or crosstalk aren't
-   reassigned. If both diarizers' turns were adopted, we'd be choosing a
-   truth; this way we only ever add a guess on top of the user's view.
+2. Poll. On completion, take the recording lock, then the matched voices'
+   locks in id order, and run the rechecks. Any match whose voice fails
+   (generation moved, forgotten, gate shut, voice discarded) is thrown away.
+   Store each surviving recognition with its `recognition_print_generation`.
+3. **Diarization when both run (Mira's B, provisionally; an experiment, not
+   a calibration).** Scribe's words and speakers stay as they are. Work only
+   on **non-overlapping speech**: drop any interval where identify reports
+   more than one segment, or where Scribe words from two speakers overlap,
+   so crosstalk and duplicated segments can't inflate coverage. For each
+   Scribe speaker, if at least 70% of their remaining word time lies in
+   segments matched to one voice, and none of it lies in a segment matched to
+   another voice, record a *recognition* (`recognised_voice_id`, confidence
+   = time-weighted mean). Otherwise there's no recognition. Speech that's
+   uncovered or ambiguous stays visible as it is: "Speaker N" with no chip,
+   and nothing reassigned. If both diarizers' turns were adopted, we'd be
+   choosing a truth; this way we only ever add a guess on top of the user's
+   view.
 4. Speakers already named by a human aren't touched. A recognition never
    sets `field_voice_id`.
 5. Don't refund: identify failing leaves the transcription consumed.
@@ -513,20 +628,29 @@ open and the account has at least one print:
 Rerunning identify (a button on the recording, or after the Voices page
 changes) replaces recognitions only. Human names and confirmations stay.
 
+**Confirming a recognition** takes the recording lock, then the voice lock,
+and runs the rechecks plus one more: `recognition_print_generation` must
+equal the voice's current `print_generation`. A chip left over from before a
+forget or a replace is rejected ("This suggestion is out of date") and
+cleared.
+
 ### Forgetting
 
 **"Forget Priya's voice"** (Voices page, any account member):
 
-1. In one transaction: **destroy** the `field_voiceprints` row, and delete
-   any pending consent tokens and temporary samples for that voice. Clear
+1. Under the voice lock, in one transaction: bump
+   `voice.print_generation`, **destroy** the `field_voiceprints` row, delete
+   any pending consent tokens and temporary samples for that voice, and clear
    `recognised_voice_id` / `recognition_*` on every speaker that points at
    it.
 2. The name and the human labels stay. They're the account's own words about
    who spoke, and forgetting the *voice* doesn't rewrite the transcripts.
    The Voices page says so: "Priya's name stays on transcripts where someone
    named her. To remove those, rename or un-name them."
-3. Because of the guards in BuildPrintJob step 5 and IdentifyJob step 2, a
-   job queued or in flight can't recreate the print or use it.
+3. Because every other print operation rechecks the generation under the
+   same lock, nothing queued or in flight can recreate this print, use it, or
+   confirm a guess made from it, even if Priya's voice is enrolled again
+   afterwards. What has already been sent can't be recalled (above).
 4. **"Forget all voices"** does this for every print in the account.
 
 **Deleting a voice** (the name itself) is a separate act. It discards the
@@ -539,15 +663,26 @@ means":
   pyannote deletes job inputs right after processing, and job outputs after
   24 h.
 - Database backups taken before the forget still contain the encrypted print
-  until they age out. `DatabaseBackupJob` uploads `pg_dump`s to S3 and
+  until they're deleted. `DatabaseBackupJob` uploads `pg_dump`s to S3 and
   expires nothing itself. Any retention would be an S3 lifecycle rule I can't
-  see from here (owed: Daniel confirms). If there's no rule, backups keep a
-  forgotten print indefinitely, and that is the case for the next sentence.
-  A restore must re-apply forgets: the forget
-  writes a `field_voice_forgets` row (voice id, time, no print), and a
-  restored database's `FieldVoices::ReapplyForgetsJob` destroys any print
-  older than a recorded forget. *(Mira: is this worth building in C, or is
-  "until backups age out" the honest whole answer?)*
+  see from here. **Precondition for opening the C gate:** Daniel confirms
+  (or sets) a backup retention period, and the "What this means" text states
+  it as a number of days. "Until backups age out" isn't stated anywhere
+  unless they actually do.
+
+**Restoring a database resets biometric state.** A same-database forget log
+would be rolled back by the very restore it was meant to survive, so there
+isn't one. Instead, the restore runbook has one required step, run before
+workers or recognition resume:
+`bin/rails field:reset_biometrics_after_restore`. It destroys every print,
+bumps every voice's `print_generation`, and deletes all pending consent
+tokens, temporary samples and recognition guesses. Manual names stay. Anyone
+who wants recognition back re-enrols with a fresh tick. A backstop stored in
+the database would be restored along with everything else, so the backstop
+lives outside it: the house flag `field_voiceprints` is **deploy
+configuration (an env var), not a database setting**. The runbook order is:
+flag off, restore, reset task, flag back on. A restored database can't
+switch recognition back on by itself.
 
 **Deleting recordings** stays separate. Discarding a recording follows the
 discard rule, as for files. It isn't "forget my voice", and the page that
@@ -608,7 +743,22 @@ uploader). Status changes broadcast on the account channel as files do.
 - Webhook: bad HMAC → 401. A duplicate delivery → one transcript, one
   consume. A stale `attempt` after a retry is ignored. A webhook for a
   discarded recording consumes nothing new.
-- The stuck sweep caps at 3 dispatches, then fails and releases.
+- **Races, run concurrently and not just in sequence:** a webhook arriving
+  before the POST response (the id lands on the dispatch row, and the
+  response then doesn't overwrite a newer attempt); a late POST error after
+  the sweep re-queued (no change); discard racing an accepted webhook
+  (exactly one wins, and the reservation ends consumed or released, never
+  both); discard during probe (no reservation); two creates claiming one
+  blob, and a claim racing the orphan purge (exactly one wins).
+- Stale and discarded successes still enqueue vendor DELETE, with the id
+  taken from either source. With no id from either, the dispatch records the
+  limitation.
+- The stuck sweep caps at 3 dispatches, then fails and releases. It also
+  releases stranded pending reservations on discarded, failed or rejected
+  recordings, and re-enqueues orphaned `queued` ones.
+- No `ready` recording ever moves back to `queued` or `failed`.
+- The over-limit message shows "No estimate yet" when pending work alone
+  blocks.
 - Naming one speaker never changes another recording. Un-naming restores
   "Speaker N". `transcript_text` changes only on human naming.
 - Resident API: a recording in another account is a 404, and there are no
@@ -632,6 +782,15 @@ uploader). Status changes broadcast on the account channel as files do.
 - Forget between dispatch and write-back → the result is discarded and no
   row exists. A late identify result for a forgotten or replaced voice →
   that match is ignored.
+- **Forget → re-enrol → old result:** a build or identify result started
+  before the forget is rejected even though a new print now exists, because
+  the generations differ.
+- Forget racing a build write-back, and forget racing a confirmation (run
+  concurrently): no print survives a forget that committed first, and a
+  stale chip can't be confirmed.
+- Gate switched off mid-flight: nothing is written back or confirmed.
+- `field:reset_biometrics_after_restore` leaves no prints, tokens, samples
+  or guesses, keeps manual names, and bumps every generation.
 - Cross-account: a voice, print or speaker from account A can't be read,
   named to, forgotten or sent in an identify request from account B.
 - Serialiser sweep: no print in any JSON (§9).
@@ -640,13 +799,15 @@ uploader). Status changes broadcast on the account channel as files do.
 
 ## 12. Build order and review
 
-1. **PR A1**: models, migrations, allowance ledger, upload endpoints, probe,
-   Scribe client and webhook, sweeps, and the tests above. No UI beyond the
-   tab listing.
-2. **PR A2**: the recording page, the speaker strip, naming, the "You"
+1. **PR A1a, foundation**: models and migrations, the allowance ledger,
+   upload and atomic claim, probe and admission, discard and retry, the
+   orphan sweep.
+2. **PR A1b, vendor lifecycle**: the Scribe client, dispatches, webhook,
+   stuck/settlement sweep and vendor DELETE.
+3. **PR A2**: the recording page, the speaker strip, naming, the "You"
    prompt, the gauge, the resident API.
-3. **PR B**: suggestions.
-4. **PR C**: recognition behind the gate.
+4. **PR B**: suggestions.
+5. **PR C**: recognition behind the gate.
 
 Each PR goes to Mira for review, and merges after her approval and green CI
 on the exact head (standing rule). Deploying stays Daniel's call. Daniel's
@@ -659,9 +820,9 @@ setup steps in §2 are listed in each PR that needs them.
 - Naming and remembering a voice are separate. Remembering is an unticked,
   explicit, per-person box with a preview of the sample and a "Not her" exit.
   No print is ever built as a side effect. (Mira: consent, phase 1.)
-- Forgetting destroys the print row. Version and consent-token guards stop
-  queued or late jobs recreating or using a print. Vendor and backup limits
-  are stated, and there's a forget log to re-apply after a restore.
+- Forgetting destroys the print row. Generation and consent-token guards
+  stop queued or late jobs recreating or using a print. Vendor and backup
+  limits are stated, and a restore resets biometric state (round two, §14).
   "Forget voice" is separate from deleting recordings and from deleting a
   name. (Mira: forgetting.)
 - Inferred names never become text: only human-set names render into
@@ -691,13 +852,30 @@ setup steps in §2 are listed in each PR that needs them.
 - Direct upload uses the existing pinned-metadata pattern, so the Field's
   "no bare signed ids" rule holds.
 
-## 14. Questions for Mira's second look
+## 14. Round two (Mira on `31a0568`) and what changed
 
-1. Is the forget log and re-apply after restore (§9) worth building, or is
-   "until backups age out", stated plainly, the honest whole answer?
-2. The 70% / no-conflicting-match rule for recognition (§9, Identifying,
-   step 3). Too strict, too loose, or the wrong shape?
-3. Anything in the webhook guard (attempt token plus status) that a retry
-   racing a late webhook can still get wrong?
-4. Size: four PRs. Does A1 look like one reviewable PR to you, or should the
-   allowance ledger be its own?
+- A1: a lifecycle contract (§5a). Every step rechecks kept / status /
+  attempt under the recording lock. Terminal states clear the attempt. Lock
+  order is account → recording → voices. Probe rechecks before reserving.
+  Concurrent race tests are listed.
+- A2: discard releases unconsumed allowance immediately. The sweep settles
+  stranded reservations and orphaned queued recordings. A consumed
+  reservation stays consumed.
+- A3: a `field_recording_dispatches` row per attempt, written before the
+  POST. The vendor id comes from whichever of the response and the webhook
+  arrives first. DELETE runs for stale and discarded successes too. If no
+  id ever arrives, the limitation is recorded and stated, not promised away.
+- A4: the blob is claimed under a row lock, and the orphan purge takes the
+  same lock. Retry is an internal `retry!`. "No estimate yet" replaces an
+  invented date.
+- C5: a monotonic `print_generation` on the voice, bumped by writes and
+  forgets. One voice-lock protocol for forget, build, identify and confirm,
+  with rechecks at dispatch and at write-back. Stale chips are rejected. No
+  claim that sent requests can be recalled.
+- C6: the forget log is dropped. A restore resets all biometric state before
+  recognition resumes, and the house flag is an env var so a restored
+  database can't switch it on. A confirmed backup retention period is a
+  precondition for opening C.
+- §14 answers taken: 70% is computed on non-overlapping speech and stays
+  experimental. A1 is split into A1a and A1b. The attestation checkbox is
+  stated as not settling the consent basis.
