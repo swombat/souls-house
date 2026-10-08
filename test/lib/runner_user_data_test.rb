@@ -7,6 +7,14 @@ class RunnerUserDataTest < ActiveSupport::TestCase
     @enrollment, @token = RunnerEnrollment.mint!(placement:)
   end
 
+  # The production image is built from an explicit COPY list; a runner left
+  # out of it fails every purchase before the create request (2026-10-08).
+  test "the production image ships the runner source" do
+    dockerfile = Rails.root.join("Dockerfile").read
+    assert_includes dockerfile, "COPY host-runner/souls_house_runner.py host-runner/souls_house_runner.py"
+    assert_includes dockerfile, "COPY --from=build --chown=rails:rails /rails/host-runner /rails/host-runner"
+  end
+
   def render(**overrides)
     RunnerUserData.render(enrollment: @enrollment, token: @token, rails_url: "https://souls.example", **overrides)
   end
