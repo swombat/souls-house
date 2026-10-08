@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_08_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1418,6 +1418,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_140000) do
     t.check_constraint "creator_id IS NULL OR creator_agent_id IS NULL", name: "rhythms_one_creator"
   end
 
+  create_table "runner_commands", force: :cascade do |t|
+    t.string "public_id", null: false
+    t.bigint "runner_enrollment_id", null: false
+    t.bigint "agent_placement_id", null: false
+    t.integer "generation", null: false
+    t.string "kind", null: false
+    t.text "payload_json"
+    t.string "state", default: "queued", null: false
+    t.integer "delivery_count", default: 0, null: false
+    t.datetime "delivered_at"
+    t.jsonb "result"
+    t.datetime "finished_at"
+    t.bigint "resident_turn_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_placement_id"], name: "index_runner_commands_on_agent_placement_id"
+    t.index ["public_id"], name: "index_runner_commands_on_public_id", unique: true
+    t.index ["resident_turn_id"], name: "index_runner_commands_on_resident_turn_id"
+    t.index ["runner_enrollment_id", "state", "id"], name: "index_runner_commands_on_runner_enrollment_id_and_state_and_id"
+    t.index ["runner_enrollment_id"], name: "index_runner_commands_on_runner_enrollment_id"
+  end
+
   create_table "runner_enrollments", force: :cascade do |t|
     t.bigint "agent_placement_id", null: false
     t.bigint "procurement_operation_id"
@@ -1859,6 +1881,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_140000) do
   add_foreign_key "rhythms", "accounts", on_delete: :cascade
   add_foreign_key "rhythms", "agents", column: "creator_agent_id", on_delete: :nullify
   add_foreign_key "rhythms", "users", column: "creator_id", on_delete: :nullify
+  add_foreign_key "runner_commands", "agent_placements"
+  add_foreign_key "runner_commands", "resident_turns"
+  add_foreign_key "runner_commands", "runner_enrollments"
   add_foreign_key "runner_enrollments", "agent_placements"
   add_foreign_key "runner_enrollments", "cloud_procurement_operations", column: "procurement_operation_id"
   add_foreign_key "runner_request_nonces", "runner_enrollments", on_delete: :cascade

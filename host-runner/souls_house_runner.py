@@ -5,8 +5,8 @@ Runs on a Hetzner Cloud VM ordered by the house. It dials out to Rails, so
 it opens no inbound port. It enrolls once with a one-time token and then sends
 signed heartbeats with facts about the host.
 
-When its config says "commands_enabled": true it also long-polls Rails for
-commands. The vocabulary is fixed here (start_resident, stop_resident,
+When its config says "commands_enabled": true it also polls Rails for
+commands; Rails answers at once with at most one. The vocabulary is fixed here (start_resident, stop_resident,
 submit_turn, turn_status, cancel_turn) and anything else is refused locally,
 whatever Rails asks. Rails supplies values, never Docker flags: the runner
 builds every docker argv itself from a fixed template and validates each value
@@ -51,7 +51,7 @@ HEARTBEAT_PATH = "/api/v1/host_runner/heartbeat"
 COMMAND_NEXT_PATH = "/api/v1/host_runner/commands/next"
 COMMAND_RESULT_PATH = "/api/v1/host_runner/commands/{id}/result"
 HEARTBEAT_SECONDS = 60
-COMMAND_POLL_TIMEOUT_SECONDS = 40
+COMMAND_IDLE_SECONDS = 5
 ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 
 # The runner's whole vocabulary. Anything else is refused here, not only in
@@ -622,9 +622,8 @@ def execute_command(command, state, host):
 
 
 def poll_command_once(config, key, state, host, opener=urllib.request.urlopen):
-    """One long-poll. Returns True when a command was handled."""
-    status, body = post(config["rails_url"], COMMAND_NEXT_PATH, {}, key, config["runner_id"], opener=opener,
-                        timeout=COMMAND_POLL_TIMEOUT_SECONDS + 10)
+    """One poll. Returns True when a command was handled."""
+    status, body = post(config["rails_url"], COMMAND_NEXT_PATH, {}, key, config["runner_id"], opener=opener)
     if status != 200 or not isinstance(body.get("command"), dict):
         return False
     command_id, result = execute_command(body["command"], state, host)
@@ -674,8 +673,8 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
 
     sent = 0
     if config.get("commands_enabled") is True:
-        # Heartbeats keep their cadence; between them the runner long-polls
-        # for commands. A poll that returns nothing has already waited.
+        # Heartbeats keep their cadence; between them the runner polls for
+        # commands, pausing COMMAND_IDLE_SECONDS when there is nothing to do.
         state = CommandState(state_dir)
         host = ResidentHost(state_dir, sleep=sleep)
         last_beat = None
@@ -690,7 +689,7 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
                 print(f"command poll failed: {error}", file=sys.stderr)
                 handled = False
             if not handled:
-                sleep(5)
+                sleep(COMMAND_IDLE_SECONDS)
         return 0
     while max_heartbeats is None or sent < max_heartbeats:
         heartbeat(config, key, facts(config.get("runtime_image")))

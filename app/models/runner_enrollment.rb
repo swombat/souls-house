@@ -27,6 +27,7 @@ class RunnerEnrollment < ApplicationRecord
 
   belongs_to :agent_placement
   has_many :request_nonces, class_name: "RunnerRequestNonce", dependent: :delete_all
+  has_many :commands, class_name: "RunnerCommand", dependent: :restrict_with_exception
 
   validates :public_id, :token_digest, :expires_at, presence: true
   validates :expected_provider_server_id, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
@@ -120,6 +121,40 @@ class RunnerEnrollment < ApplicationRecord
 
   def enrolled? = enrolled_at.present?
 
+  # The runner asks for its next command (#238). Same rule as heartbeat!:
+  # every check under the row lock first, then the nonce, then the change.
+  # Returns the command envelope or nil. A command issued under an older
+  # placement generation is refused here and never handed out.
+  def poll!(nonce:, now: Time.current)
+    with_lock do
+      require_live!
+      consume_nonce!(nonce, now)
+      generation = AgentPlacement.uncached { AgentPlacement.find(agent_placement_id).generation }
+      while (command = RunnerCommand.next_for(self, now:))
+        if command.generation < generation
+          command.refuse_locally!("stale generation", now:)
+          next
+        end
+        return command.deliver!(now:)
+      end
+      nil
+    end
+  end
+
+  # The runner answers a command. Only a command this enrollment was given
+  # can be answered, and only once; a repeated answer is accepted and ignored.
+  def report_command_result!(public_id:, result:, nonce:, now: Time.current)
+    with_lock do
+      require_live!
+      command = commands.find_by(public_id: public_id.to_s) || raise(Refused.new(:unknown_command, 404))
+      raise Refused.new(:not_delivered, 409) if command.state == "queued"
+
+      consume_nonce!(nonce, now)
+      command.record_result!(result, now:)
+      command
+    end
+  end
+
   def healthy?(now: Time.current)
     enrolled? && revoked_at.nil? && last_heartbeat_at.present? && last_heartbeat_at > now - HEALTHY_WITHIN
   end
@@ -129,6 +164,11 @@ class RunnerEnrollment < ApplicationRecord
   end
 
   private
+
+  def require_live!
+    raise Refused.new(:revoked, 403) if revoked_at
+    raise Refused.new(:not_enrolled, 409) unless enrolled_at
+  end
 
   # Inside the caller's transaction. A duplicate nonce violates the unique
   # index; the raise rolls the whole transaction back.
