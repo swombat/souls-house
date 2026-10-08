@@ -203,8 +203,11 @@ class RecoveryTest(unittest.TestCase):
 
 
 class AllowlistTest(unittest.TestCase):
-    def test_only_two_actions_exist(self):
-        self.assertEqual(runner.ALLOWED_ACTIONS, {"report_facts", "heartbeat"})
+    def test_the_vocabulary_is_fixed(self):
+        self.assertEqual(runner.ALLOWED_ACTIONS, {
+            "report_facts", "heartbeat",
+            "start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn",
+        })
         for action in ("shell", "start_container", "docker_run", "", "REPORT_FACTS"):
             with self.assertRaises(runner.RefusedAction):
                 runner.require_allowed(action)

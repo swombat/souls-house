@@ -269,10 +269,14 @@ Rails.application.routes.draw do
     end
 
     namespace :v1 do
-      # Host runners on house-ordered VMs (pilot telemetry only, #192).
+      # Host runners on house-ordered VMs: telemetry (#192) and commands (#238).
       namespace :host_runner do
         resource :enrollment, only: :create
         resource :heartbeat, only: :create
+        resources :commands, only: [] do
+          post :next, on: :collection
+          post :result, on: :member
+        end
       end
 
       namespace :admin do

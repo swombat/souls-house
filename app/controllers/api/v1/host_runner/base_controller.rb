@@ -2,7 +2,7 @@ module Api
   module V1
     module HostRunner
       # Host runners authenticate with Ed25519-signed requests, not API keys.
-      # Telemetry only: nothing here can start, stop or reach a resident.
+      # Telemetry, plus the command channel in CommandsController (#238).
       class BaseController < ActionController::API
 
         rescue_from RunnerSignature::Invalid do |error|

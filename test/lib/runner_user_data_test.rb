@@ -41,7 +41,16 @@ class RunnerUserDataTest < ActiveSupport::TestCase
 
   test "embeds exactly the runner in this repository" do
     runner = parsed["write_files"].find { |f| f["path"] == "/opt/souls-house-runner/souls_house_runner.py" }
-    assert_equal File.read(Rails.root.join("host-runner/souls_house_runner.py")), Base64.strict_decode64(runner["content"])
+    assert_equal "gz+b64", runner["encoding"]
+    assert_equal File.read(Rails.root.join("host-runner/souls_house_runner.py")), Zlib.gunzip(Base64.strict_decode64(runner["content"]))
+  end
+
+  # Hetzner refuses user_data over 32 KiB, and render raises before any
+  # create request. The real runner must fit with room to grow; a runner that
+  # outgrew it would make every VM order fail (#238 part 1 nearly did).
+  test "the document with the real runner fits Hetzner's limit with margin" do
+    assert_operator render.bytesize, :<, RunnerUserData::HETZNER_USER_DATA_LIMIT * 3 / 4
+    assert_equal render, render
   end
 
   test "drops inbound traffic except SSH and starts only the firewall, Docker and the runner" do
