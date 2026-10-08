@@ -233,7 +233,8 @@ another account of the same person, is 404.
 These mirror the browser's own controls for a person's credential: an account
 key or an OAuth app token. Resident keys get 403 `{ "error": ... }`.
 
-Which account: an account key acts in its account. An OAuth token reaches a
+Which account: an account key acts in its account, and naming any other
+`account_id` (even another account of the same person) is 404. An OAuth token reaches a
 recording, file, voice, enrolment, note or stream in any enabled account the
 person currently belongs to by its id alone, and acts in that thing's own
 account; `account_id` narrows it to one account (a thing elsewhere is then

@@ -18,7 +18,9 @@ module Api
     #   subject of, in any account (the personal page, /device_streams);
     # - an OAuth token with account_id: that account's (the account page;
     #   the account must be one they currently belong to, else 404);
-    # - an account key: its own account's.
+    # - an account key: its own account's; naming another account_id is 404
+    #   (requested_account). This adds no membership check, so recovery
+    #   still works after the subject leaves the key's account.
     #
     # Managing is authorised against the stream's own account.
     class DeviceStreamsController < BaseController
@@ -47,7 +49,7 @@ module Api
 
       # Starts disabled with no readers other than the subject, as on the web.
       def create
-        stream = DeviceStream.create!(account: human_account!(current_api_account), subject_user: current_api_user,
+        stream = DeviceStream.create!(account: human_account!(requested_account), subject_user: current_api_user,
           name: params[:name], enabled: false)
         render json: { device_stream: detail_json(stream) }, status: :created
       end
@@ -101,7 +103,7 @@ module Api
         streams = DeviceStream.where(subject_user: current_api_user)
         return streams if app_token_request? && params[:account_id].blank?
 
-        streams.where(account: current_api_account)
+        streams.where(account: requested_account)
       end
 
       def find_owned_stream

@@ -197,8 +197,7 @@ class Api::V1::Field::OauthFieldDevicesTest < ActionDispatch::IntegrationTest
     assert_response :not_found
 
     get api_v1_field_voices_path(account_id: @team.to_param), headers: key
-    assert_response :success
-    assert_empty response.parsed_body["voices"], "a key's account_id doesn't widen it: still the key's account"
+    assert_response :not_found, "a key naming another account is refused, not quietly read in its own account"
     get api_v1_device_streams_path, headers: key
     assert_empty response.parsed_body["device_streams"]
 

@@ -3,7 +3,8 @@
 # (require_human_actor!, human_account!); this only decides which accounts to
 # look in, like ApiAuthentication#human_chats does for rooms:
 #
-# - an account key looks in its own account;
+# - an account key looks in its own account, and naming any other account_id
+#   is 404 (requested_account), never a quiet fallback to the key's account;
 # - an OAuth token with account_id looks only in that account;
 # - an OAuth token without one looks in every enabled account the person
 #   currently belongs to, so a resource in their second account is reachable
@@ -31,7 +32,7 @@ module ApiHumanReach
   def human_reachable_accounts
     return current_api_user.confirmed_accounts if app_token_request? && params[:account_id].blank?
 
-    Account.where(id: current_api_account.id)
+    Account.where(id: requested_account.id)
   end
 
   # One record by its public id, in an account this request may reach, and
@@ -45,9 +46,10 @@ module ApiHumanReach
   end
 
   # The account a collection or create acts in (account_id, the key's
-  # account, or the person's default), if the person may act in it now.
+  # account, or the person's default), if the person may act in it now. A key
+  # naming an account_id other than its own gets 404 (requested_account).
   def human_request_account!
-    @human_request_account ||= human_account!(current_api_account)
+    @human_request_account ||= human_account!(requested_account)
   end
 
 end
