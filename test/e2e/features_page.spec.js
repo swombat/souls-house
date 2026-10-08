@@ -20,6 +20,7 @@ test('the homepage links to a two-column features page with an expandable index'
   const download = theirWords.getByTestId('feature-clip-download');
   await expect(download).toHaveAttribute('href', '/feature-clips/their-words.mp4');
   await expect(download).toHaveAttribute('download', 'souls-house-their-words.mp4');
+  await expect(download).toHaveCSS('opacity', '0');
   await theirWords.locator('video').hover();
   await expect(download).toHaveCSS('opacity', '1');
 
