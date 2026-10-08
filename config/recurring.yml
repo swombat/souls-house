@@ -10,6 +10,11 @@
 #     schedule: at 5am every day
 
 production:
+  field_recordings_stuck_sweep:
+    class: FieldRecordings::StuckSweepJob
+    queue: default
+    schedule: every 10 minutes
+
   field_recordings_orphan_sweep:
     class: FieldRecordings::OrphanSweepJob
     queue: default
