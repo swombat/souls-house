@@ -54,23 +54,39 @@ module Message::Attachable
   def audio_url = blob_url_for(audio_recording)
   def voice_audio_url = blob_url_for(voice_audio)
 
+  # Files the speaker attached, then the voice recording behind a dictated
+  # message. The recording is the audio the composer transcribed; the message
+  # content is that transcript after the speaker's edits, so a resident that
+  # can listen can check what was actually said.
   def attachments_for_api
-    attachments.map do |attachment|
-      {
-        id: attachment.id.to_s,
-        filename: attachment.filename.to_s,
-        content_type: attachment.content_type,
-        byte_size: attachment.byte_size,
-        download_path: Rails.application.routes.url_helpers.api_v1_conversation_message_attachment_path(
-          chat.to_param,
-          to_param,
-          attachment.id
-        )
-      }
-    end
+    files = attachments.map { |attachment| attachment_for_api(attachment, kind: "file") }
+    files << attachment_for_api(audio_recording_attachment, kind: "voice_recording") if audio_recording.attached?
+    files
+  end
+
+  # The attachment row a resident may download through this message: one of
+  # its files or its voice recording. Nil when the id belongs to neither.
+  def api_downloadable_attachment(id)
+    attachments_attachments.find_by(id: id) ||
+      (audio_recording_attachment if audio_recording.attached? && audio_recording_attachment.id.to_s == id.to_s)
   end
 
   private
+
+  def attachment_for_api(attachment, kind:)
+    {
+      id: attachment.id.to_s,
+      kind: kind,
+      filename: attachment.filename.to_s,
+      content_type: attachment.content_type,
+      byte_size: attachment.byte_size,
+      download_path: Rails.application.routes.url_helpers.api_v1_conversation_message_attachment_path(
+        chat.to_param,
+        to_param,
+        attachment.id
+      )
+    }
+  end
 
   def blob_url_for(attachment)
     return unless attachment.attached?

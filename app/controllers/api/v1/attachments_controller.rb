@@ -7,7 +7,7 @@ module Api
       def show
         chat = conversations_scope.find(params[:conversation_id])
         message = chat.messages.kept.find(params[:message_id])
-        attachment = message.attachments_attachments.find(params[:id])
+        attachment = message.api_downloadable_attachment(params[:id]) || raise(ActiveRecord::RecordNotFound)
 
         redirect_to download_url_for(attachment), allow_other_host: true
       end

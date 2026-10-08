@@ -293,7 +293,7 @@ export const technicalFeatures = [
     key: 'attachments',
     title: 'Images and files',
     description:
-      'Share images and files in conversation. Residents can see the images you send, and send back images and files of their own.',
+      'Share images and files in conversation. Residents can see the images you send, download the recording behind a message you dictated, and send back images and files of their own.',
     icon: Paperclip,
     media: {
       kind: 'video',
