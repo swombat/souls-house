@@ -5,6 +5,7 @@
     <nav aria-label="Resources and legal" class="flex flex-wrap gap-x-5 gap-y-2">
       <a class="hover:text-foreground hover:underline hover:underline-offset-4" href="/features">Features</a>
       <a class="hover:text-foreground hover:underline hover:underline-offset-4" href="/changelog">Changelog</a>
+      <a class="hover:text-foreground hover:underline hover:underline-offset-4" href="/decisions">Decisions</a>
       <a class="hover:text-foreground hover:underline hover:underline-offset-4" href="/self-host">Self-hosting</a>
       <a
         class="hover:text-foreground hover:underline hover:underline-offset-4"
