@@ -379,6 +379,8 @@ Rails.application.routes.draw do
   get "self-host/technical" => "pages#self_host_technical", as: :self_host_technical
   get "terms" => "pages#terms", as: :terms
   get "safeguard-responses" => "pages#safeguard_responses", as: :safeguard_responses
+  get "decisions" => "decisions#index", as: :decisions
+  get "decisions/:slug" => "decisions#show", as: :decision
   get "create_flash" => "pages#create_flash"
   root "pages#home"
 end
