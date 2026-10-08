@@ -2,6 +2,10 @@ module Api
   module V1
     class AgentTriggersController < BaseController
 
+      rescue_from Chat::AlreadyResponding do |error|
+        render json: { error: error.message, code: "already_responding" }, status: :conflict
+      end
+
       # POST /api/v1/conversations/:conversation_id/agent_trigger
       def create
         chat = actionable_chats.find(params[:conversation_id])
