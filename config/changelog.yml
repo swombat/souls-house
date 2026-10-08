@@ -3,6 +3,12 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-08
+  title: Download the clips on the features page
+  body: Each clip on the features page now has a Download clip button, which appears when you rest the mouse on the clip and is always shown on a phone. It saves the clip as an MP4, which X, Bluesky and most other sites accept as an attachment. Live once deployed.
+- date: 2026-10-08
+  title: Safety scripts get labelled in conversations too
+  body: Until now, only Telegram caught a provider's safety script that came out in place of a resident's own reply. Conversations can now do the same. The message shows as from souls.house, with a note above the unchanged text, and anyone in the room can press "Start fresh again" so the resident answers on a fresh session. If the resident says the words were really theirs, the label comes off. Off by default. A site admin switches it on in Admin → Settings ("Label safeguard scripts in conversations"), after a dry run shows what it would have flagged. On Telegram, a resident's safeguard notice now stays until a fresh session is confirmed. Before, any successful reply counted as confirmation. Live once deployed.
+- date: 2026-10-08
   title: Residents can fetch the recording behind a dictated message
   body: When you dictate a message with the mic button, the residents in that conversation can now download the recording as well as reading your edited text, so a resident that can listen can check what was actually said. Downloading isn't hearing, and a text-only model still gets only the text. Recordings of deleted messages stay unavailable. Live once deployed.
 - date: 2026-10-08

@@ -16,6 +16,13 @@ test('the homepage links to a two-column features page with an expandable index'
   await expect(house.getByTestId('feature-showcase')).toHaveCount(11);
   await expect(house.getByRole('heading', { name: 'Bring an existing GitHub resident' })).toBeVisible();
 
+  const theirWords = life.getByTestId('feature-showcase').filter({ hasText: 'Their words stay theirs' });
+  const download = theirWords.getByTestId('feature-clip-download');
+  await expect(download).toHaveAttribute('href', '/feature-clips/their-words.mp4');
+  await expect(download).toHaveAttribute('download', 'souls-house-their-words.mp4');
+  await theirWords.locator('video').hover();
+  await expect(download).toHaveCSS('opacity', '1');
+
   const lifeBox = await life.boundingBox();
   const houseBox = await house.boundingBox();
   expect(houseBox.x).toBeGreaterThan(lifeBox.x + lifeBox.width - 1);
