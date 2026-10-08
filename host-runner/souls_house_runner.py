@@ -26,6 +26,7 @@ used only for Ed25519. No cryptography is implemented here.
 
 import base64
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -644,9 +645,10 @@ IMAGE_CHUNK = 1024 * 1024
 _IMAGE_OPENER = urllib.request.build_opener(_RefuseRedirects)
 
 
-def fetch_image(config, key, image_id, write, opener=_IMAGE_OPENER.open):
+def fetch_image(config, key, image_id, write, opener=_IMAGE_OPENER.open, deadline=None):
     """Signed GET of one image from the house, streamed into write().
-    Returns (ok, error)."""
+    Returns (ok, error); never raises. deadline is a time.monotonic() value:
+    past it, the fetch stops at its next read."""
     if not IMAGE_RE.match(image_id or ""):
         return False, "bad image ID"
     path = IMAGE_PATH.format(id=image_id)
@@ -656,19 +658,27 @@ def fetch_image(config, key, image_id, write, opener=_IMAGE_OPENER.open):
         with opener(request, timeout=60) as response:
             if response.status != 200:
                 return False, f"house answered {response.status}"
+            # read1 returns after one receive, so a slow drip cannot hold a
+            # single read open past the deadline check.
+            read = response.read1 if hasattr(response, "read1") else response.read
             while True:
-                chunk = response.read(IMAGE_CHUNK)
+                if deadline is not None and time.monotonic() >= deadline:
+                    return False, "image fetch passed its deadline"
+                chunk = read(IMAGE_CHUNK)
                 if not chunk:
                     return True, ""
                 write(chunk)
-    except (OSError, ValueError) as error:
-        return False, str(error)
+    except (OSError, ValueError, http.client.HTTPException) as error:
+        return False, f"{type(error).__name__}: {error}"
 
 
 # docker load runs inside the command loop, which also carries heartbeats and
-# later stop commands, so it is bounded: an absolute deadline kills it, stderr
-# is drained concurrently (keeping only its tail) so neither side can block on
-# a full pipe, and a failed fetch kills the child instead of waiting for it.
+# later stop commands, so the whole call is bounded by one absolute deadline:
+# the fetch runs in a worker thread that the loop stops waiting for at the
+# deadline (the worker itself stops at its next read or write); stderr is
+# drained concurrently, keeping only its tail, so neither side can block on a
+# full pipe; and whatever happens, the child is killed if still running and
+# reaped before this returns.
 LOAD_DEADLINE = 30 * 60
 LOAD_STDERR_TAIL = 4096
 
@@ -688,37 +698,50 @@ def _drain_tail(stream, keep):
 
 def docker_load_from_house(config, key, popen=subprocess.Popen, fetch=fetch_image, deadline=LOAD_DEADLINE):
     def load(image_id):
+        ends_at = time.monotonic() + deadline
         try:
             process = popen(["docker", "load"], stdin=subprocess.PIPE,
                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         except OSError as error:
             return False, str(error)
-        drainer, tail = _drain_tail(process.stderr, LOAD_STDERR_TAIL)
-        expired = threading.Event()
+        outcome = {}
 
-        def expire():
-            expired.set()
-            process.kill()
-
-        timer = threading.Timer(deadline, expire)
-        timer.daemon = True
-        timer.start()
-        try:
+        def run():
             try:
-                ok, error = fetch(config, key, image_id, process.stdin.write)
+                outcome["result"] = fetch(config, key, image_id, process.stdin.write, deadline=ends_at)
             except OSError:
-                ok, error = False, "docker load stopped reading"
-            if not ok:
+                outcome["result"] = (False, "docker load stopped reading")
+            except Exception as error:  # never let the worker die silently
+                outcome["result"] = (False, f"image fetch failed: {type(error).__name__}: {error}")
+
+        timed_out = False
+        code = None
+        drainer = None
+        tail = bytearray()
+        try:
+            drainer, tail = _drain_tail(process.stderr, LOAD_STDERR_TAIL)
+            worker = threading.Thread(target=run, daemon=True)
+            worker.start()
+            worker.join(max(0.0, ends_at - time.monotonic()))
+            timed_out = worker.is_alive()
+            ok, error = outcome.get("result", (False, "image fetch did not finish"))
+            if timed_out or not ok:
                 process.kill()
             try:
                 process.stdin.close()
-            except OSError:
+            except (OSError, ValueError):
                 pass
-            code = process.wait()
+            try:
+                code = process.wait(timeout=max(0.0, ends_at - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                timed_out = True
         finally:
-            timer.cancel()
-        drainer.join(timeout=5)
-        if expired.is_set():
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+            if drainer is not None:
+                drainer.join(timeout=5)
+        if timed_out:
             return False, f"docker load did not finish within {deadline} seconds"
         if not ok:
             return False, error or "image fetch failed"

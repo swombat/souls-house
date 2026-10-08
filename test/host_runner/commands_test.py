@@ -538,7 +538,7 @@ class DockerLoadTest(unittest.TestCase):
     def test_a_failed_fetch_returns_at_once_and_reaps_the_child(self):
         import time
         load = runner.docker_load_from_house({}, None, popen=self.child("import time; time.sleep(30)"),
-                                             fetch=lambda *args: (False, "house answered 404"), deadline=60)
+                                             fetch=lambda *args, **kwargs: (False, "house answered 404"), deadline=60)
         started = time.monotonic()
         ok, error = load(IMAGE)
         self.assertLess(time.monotonic() - started, 10)
@@ -550,7 +550,7 @@ class DockerLoadTest(unittest.TestCase):
         script = ("import sys; sys.stderr.write('x' * (2 * 1024 * 1024)); sys.stderr.flush(); "
                   "data = sys.stdin.buffer.read(); sys.exit(0 if len(data) == 1024 * 1024 else 3)")
 
-        def fetch(config, key, image_id, write):
+        def fetch(config, key, image_id, write, deadline=None):
             for _ in range(16):
                 write(b"y" * (64 * 1024))
             return True, ""
@@ -563,7 +563,7 @@ class DockerLoadTest(unittest.TestCase):
     def test_a_child_that_stops_reading_is_killed_at_the_deadline(self):
         import time
 
-        def fetch(config, key, image_id, write):
+        def fetch(config, key, image_id, write, deadline=None):
             try:
                 for _ in range(64):
                     write(b"y" * (1024 * 1024))
@@ -583,8 +583,83 @@ class DockerLoadTest(unittest.TestCase):
     def test_a_failing_load_reports_the_tail_of_stderr(self):
         script = "import sys; sys.stdin.buffer.read(); sys.stderr.write('no space left on device'); sys.exit(1)"
         load = runner.docker_load_from_house({}, None, popen=self.child(script),
-                                             fetch=lambda c, k, i, write: (write(b"z") or True, ""), deadline=60)
+                                             fetch=lambda c, k, i, write, deadline=None: (write(b"z") or True, ""), deadline=60)
         self.assertEqual(load(IMAGE), (False, "no space left on device"))
+
+    def test_a_fetch_stalled_before_its_next_write_is_bounded_by_the_deadline(self):
+        import time
+
+        def fetch(config, key, image_id, write, deadline=None):
+            time.sleep(5)  # a response that stops sending, before any write
+            return True, ""
+
+        load = runner.docker_load_from_house({}, None, popen=self.child("import time; time.sleep(60)"),
+                                             fetch=fetch, deadline=0.5)
+        started = time.monotonic()
+        ok, error = load(IMAGE)
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertFalse(ok)
+        self.assertIn("did not finish", error)
+        self.assertIsNotNone(self.process.poll())
+
+    def test_a_fetch_that_raises_still_kills_and_reaps_the_child(self):
+        import time
+
+        def fetch(config, key, image_id, write, deadline=None):
+            raise RuntimeError("malformed response")
+
+        load = runner.docker_load_from_house({}, None, popen=self.child("import time; time.sleep(60)"),
+                                             fetch=fetch, deadline=60)
+        started = time.monotonic()
+        ok, error = load(IMAGE)
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertFalse(ok)
+        self.assertIn("malformed response", error)
+        self.assertIsNotNone(self.process.poll())
+
+
+class FetchImageFailureTest(unittest.TestCase):
+    CONFIG = {"rails_url": "https://house.example", "runner_id": "rnr_" + "0" * 20}
+
+    class Response:
+        status = 200
+
+        def __init__(self, read):
+            self.read1 = read
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def test_an_incomplete_chunked_read_is_a_failure_not_an_exception(self):
+        import http.client
+
+        def broken(size):
+            raise http.client.IncompleteRead(b"partial")
+
+        written = []
+        ok, error = runner.fetch_image(self.CONFIG, Ed25519PrivateKey.generate(), IMAGE, written.append,
+                                       opener=lambda request, timeout=None: self.Response(broken))
+        self.assertFalse(ok)
+        self.assertIn("IncompleteRead", error)
+
+    def test_a_fetch_past_its_deadline_stops_at_the_next_read(self):
+        import time
+        reads = []
+
+        def read(size):
+            reads.append(size)
+            return b"x"
+
+        written = []
+        ok, error = runner.fetch_image(self.CONFIG, Ed25519PrivateKey.generate(), IMAGE, written.append,
+                                       opener=lambda request, timeout=None: self.Response(read),
+                                       deadline=time.monotonic() - 1)
+        self.assertFalse(ok)
+        self.assertIn("deadline", error)
+        self.assertEqual((reads, written), ([], []))
 
 
 if __name__ == "__main__":
