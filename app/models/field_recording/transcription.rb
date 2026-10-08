@@ -10,6 +10,7 @@ module FieldRecording::Transcription
   included do
     has_many :dispatches, class_name: "FieldRecordingDispatch", dependent: :destroy
     has_many :speakers, -> { in_order }, class_name: "FieldRecordingSpeaker", dependent: :destroy
+    has_many :identifications, class_name: "FieldRecordingIdentification", dependent: :destroy
   end
 
   # Claim the next dispatch: queued → transcribing with a fresh attempt.

@@ -15,10 +15,15 @@ class FieldRecordingSpeakersController < ApplicationController
 
   def update
     attributes = params.require(:speaker).permit(:me, :voice_id, :member_user_id, :name, :link_existing, :unname,
-      :confirm_suggestion, :dismiss_suggestion, :suggestion_generation)
+      :confirm_suggestion, :dismiss_suggestion, :suggestion_generation, :confirm_recognition, :dismiss_recognition,
+      recognition: %i[voice_id print_generation decision_generation])
 
     if truthy?(attributes[:unname])
       @speaker.unname!
+    elsif truthy?(attributes[:dismiss_recognition])
+      return out_of_date unless @speaker.dismiss_recognition!(shown: attributes[:recognition])
+    elsif truthy?(attributes[:confirm_recognition])
+      return out_of_date unless @speaker.confirm_recognition!(by: Current.user, shown: attributes[:recognition])
     elsif truthy?(attributes[:dismiss_suggestion])
       return out_of_date unless @speaker.dismiss_suggestion!(attributes[:suggestion_generation])
     elsif truthy?(attributes[:confirm_suggestion])
@@ -69,12 +74,12 @@ class FieldRecordingSpeakersController < ApplicationController
     end
   end
 
-  # Under the recording lock: the chip the person saw must still be the live
+  # Under account → recording (the naming order, never recording first): the chip the person saw must still be the live
   # suggestion (same generation, no decision since). The suggested name then
   # goes through exactly the same check as a typed one, so a name matching a
   # known voice asks "same Priya?" before linking.
   def confirm_suggestion(attributes)
-    @speaker.field_recording.with_lock do
+    @speaker.with_decision_locks do
       next false unless @speaker.suggestion_current?(attributes[:suggestion_generation])
 
       voice = resolve_voice(attributes.merge(name: @speaker.suggested_name))

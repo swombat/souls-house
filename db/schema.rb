@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_08_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -36,6 +36,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_110000) do
     t.text "xai_api_key"
     t.text "zai_api_key"
     t.bigint "recording_ms_weekly_limit", default: 72000000, null: false
+    t.boolean "recognise_voices", default: false, null: false
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
@@ -727,6 +728,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_110000) do
     t.index ["request_id"], name: "index_field_recording_dispatches_on_request_id"
   end
 
+  create_table "field_recording_identifications", force: :cascade do |t|
+    t.bigint "field_recording_id", null: false
+    t.string "vendor_job_id", null: false
+    t.jsonb "snapshot", default: {}, null: false
+    t.jsonb "speaker_decisions", default: {}, null: false
+    t.string "status", default: "dispatched", null: false
+    t.integer "poll_count", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["field_recording_id"], name: "index_field_recording_identifications_on_field_recording_id"
+  end
+
   create_table "field_recording_reservations", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "field_recording_id", null: false
@@ -765,10 +778,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_110000) do
     t.datetime "suggested_at"
     t.integer "decision_generation", default: 0, null: false
     t.integer "suggestion_generation"
+    t.bigint "recognised_voice_id"
+    t.integer "recognition_confidence"
+    t.bigint "recognition_print_generation"
+    t.integer "recognition_decision_generation"
     t.index ["field_recording_id", "label"], name: "index_field_recording_speakers_on_field_recording_id_and_label", unique: true
     t.index ["field_recording_id"], name: "index_field_recording_speakers_on_field_recording_id"
     t.index ["field_voice_id"], name: "index_field_recording_speakers_on_field_voice_id"
     t.index ["named_by_type", "named_by_id"], name: "index_field_recording_speakers_on_named_by"
+    t.index ["recognised_voice_id"], name: "index_field_recording_speakers_on_recognised_voice_id"
     t.index ["suggested_voice_id"], name: "index_field_recording_speakers_on_suggested_voice_id"
   end
 
@@ -801,6 +819,48 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_110000) do
     t.index ["uploaded_by_type", "uploaded_by_id"], name: "index_field_recordings_on_uploaded_by"
   end
 
+  create_table "field_voice_enrolments", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "field_voice_id", null: false
+    t.bigint "field_recording_speaker_id", null: false
+    t.bigint "start_generation", null: false
+    t.integer "decision_generation", default: 0, null: false
+    t.integer "sample_ms", null: false
+    t.string "consented_by_type"
+    t.bigint "consented_by_id"
+    t.string "consent_text_version", null: false
+    t.string "status", default: "previewing", null: false
+    t.string "vendor_job_id"
+    t.integer "poll_count", default: 0, null: false
+    t.datetime "expires_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_field_voice_enrolments_on_account_id"
+    t.index ["consented_by_type", "consented_by_id"], name: "index_field_voice_enrolments_on_consented_by"
+    t.index ["field_recording_speaker_id"], name: "index_field_voice_enrolments_on_field_recording_speaker_id"
+    t.index ["field_voice_id"], name: "index_field_voice_enrolments_on_field_voice_id"
+  end
+
+  create_table "field_voiceprints", force: :cascade do |t|
+    t.bigint "field_voice_id", null: false
+    t.bigint "account_id", null: false
+    t.text "print", null: false
+    t.bigint "generation", null: false
+    t.bigint "sample_recording_id"
+    t.integer "sample_ms", null: false
+    t.string "consented_by_type"
+    t.bigint "consented_by_id"
+    t.datetime "consented_at", null: false
+    t.string "consent_text_version", null: false
+    t.string "vendor", default: "pyannote", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_field_voiceprints_on_account_id"
+    t.index ["consented_by_type", "consented_by_id"], name: "index_field_voiceprints_on_consented_by"
+    t.index ["field_voice_id"], name: "index_field_voiceprints_on_field_voice_id", unique: true
+    t.index ["sample_recording_id"], name: "index_field_voiceprints_on_sample_recording_id"
+  end
+
   create_table "field_voices", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "name", limit: 100, null: false
@@ -810,6 +870,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_110000) do
     t.datetime "discarded_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "print_generation", default: 0, null: false
     t.index "account_id, lower((name)::text)", name: "index_field_voices_unique_kept_name", unique: true, where: "(discarded_at IS NULL)"
     t.index ["account_id", "user_id"], name: "index_field_voices_unique_kept_user", unique: true, where: "((discarded_at IS NULL) AND (user_id IS NOT NULL))"
     t.index ["account_id"], name: "index_field_voices_on_account_id"
@@ -1705,13 +1766,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_110000) do
   add_foreign_key "field_files", "accounts"
   add_foreign_key "field_recording_dispatches", "accounts"
   add_foreign_key "field_recording_dispatches", "field_recordings"
+  add_foreign_key "field_recording_identifications", "field_recordings"
   add_foreign_key "field_recording_reservations", "accounts"
   add_foreign_key "field_recording_reservations", "field_recordings"
   add_foreign_key "field_recording_speakers", "field_recordings"
   add_foreign_key "field_recording_speakers", "field_voices"
+  add_foreign_key "field_recording_speakers", "field_voices", column: "recognised_voice_id", on_delete: :nullify
   add_foreign_key "field_recording_speakers", "field_voices", column: "suggested_voice_id", on_delete: :nullify
   add_foreign_key "field_recordings", "accounts"
   add_foreign_key "field_recordings", "field_recordings", column: "retried_from_id", on_delete: :nullify
+  add_foreign_key "field_voice_enrolments", "accounts"
+  add_foreign_key "field_voice_enrolments", "field_recording_speakers"
+  add_foreign_key "field_voice_enrolments", "field_voices"
+  add_foreign_key "field_voiceprints", "accounts"
+  add_foreign_key "field_voiceprints", "field_recordings", column: "sample_recording_id", on_delete: :nullify
+  add_foreign_key "field_voiceprints", "field_voices"
   add_foreign_key "field_voices", "accounts"
   add_foreign_key "field_voices", "users", on_delete: :nullify
   add_foreign_key "github_integrations", "accounts"

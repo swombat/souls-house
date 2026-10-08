@@ -75,11 +75,49 @@ module FieldItems
       talk_ms: speaker.talk_ms,
       clip_start_ms: speaker.clip_start_ms,
       clip_end_ms: speaker.clip_end_ms,
+      recognition: (if speaker.recognition?
+                      { name: speaker.recognised_voice.name, confidence: speaker.recognition_confidence,
+                        token: speaker.recognition_token }
+                    end),
       suggestion: (if speaker.suggestion?
                      { name: speaker.suggested_name, quote: speaker.suggestion_quote,
                        quote_ms: speaker.suggestion_quote_ms, generation: speaker.suggestion_generation,
                        label: "Suggested from what's said" }
                    end)
+    }
+  end
+
+  # Recognition affordances for one speaker on the transcript page (spec §9).
+  # Only meaningful when both gates are open; the caller passes that in.
+  def speaker_recognition_json(speaker, enabled:)
+    return { can_remember: false, remembered: false, pending_enrolment: nil } unless enabled
+
+    voice = speaker.field_voice&.kept? ? speaker.field_voice : nil
+    pending = voice && speaker.enrolments.find { |e| e.status == "previewing" && !e.expired? && e.sample.attached? }
+    print = voice&.voiceprint
+    {
+      can_remember: voice.present? && (print.nil? || !voice.remembered? ||
+                                       FieldVoiceprints::Sample.clean_ms(speaker) > print.sample_ms),
+      remembered: voice&.remembered? || false,
+      remembering: voice.present? && speaker.enrolments.any? { |e| e.status == "dispatched" },
+      pending_enrolment: (if pending
+                            { id: pending.to_param, sample_ms: pending.sample_ms,
+                              sample_url: Rails.application.routes.url_helpers.rails_blob_path(pending.sample, disposition: :inline, only_path: true) }
+                          end)
+    }
+  end
+
+  def voice_page_json(voice, used_count)
+    print = voice.voiceprint
+    {
+      id: voice.to_param,
+      name: voice.name,
+      member: voice.user_id.present?,
+      used_in: used_count,
+      remembered: voice.remembered?,
+      sample_seconds: (print.sample_ms / 1000 if print),
+      remembered_at: print&.consented_at&.iso8601,
+      remembered_by: (print&.consented_by.respond_to?(:full_name) ? print.consented_by.full_name.presence : nil)
     }
   end
 
