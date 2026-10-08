@@ -13,8 +13,8 @@ module Api
 
       def conversation_draft
         @conversation_draft ||= begin
-          account = current_api_user.confirmed_accounts.find(current_api_account.id)
-          chat = account.chats.find(params[:conversation_id])
+          chat = human_chats.find(params[:conversation_id])
+          current_api_user.confirmed_accounts.find(chat.account_id)
           ConversationDraft.for(chat: chat, user: current_api_user)
         end
       end

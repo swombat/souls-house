@@ -29,8 +29,8 @@ class Api::V1::Memory::BaseController < Api::V1::BaseController
   end
 
   def require_resident!
-    @resident = @current_api_key.agent
-    unless @resident&.externally_hosted? && @resident.account_id == @current_api_key.account_id &&
+    @resident = @current_api_key&.agent
+    unless @resident&.externally_hosted? && @resident.account_id == @current_api_key&.account_id &&
         !@resident.account.disabled? && @resident.active?
       render json: { error: "An active external resident credential is required" }, status: :forbidden
     end

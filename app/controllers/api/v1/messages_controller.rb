@@ -51,7 +51,7 @@ module Api
 
         draft = if params.key?(:draft_revision)
           return head :forbidden if current_api_agent
-          current_api_user.confirmed_accounts.find(current_api_account.id)
+          current_api_user.confirmed_accounts.find(chat.account_id)
           ConversationDraft.for(chat: chat, user: current_api_user)
         end
         saved = if draft
@@ -77,7 +77,7 @@ module Api
       def conversations_scope
         return current_api_agent.chats if current_api_agent
 
-        current_api_account.chats
+        human_chats
       end
 
     end
