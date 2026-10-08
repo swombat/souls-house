@@ -2,6 +2,7 @@
 
 export const POLL_AFTER_REQUEST_MS = 90_000;
 export const MAX_CONSECUTIVE_FAILURES = 40; // ~5 minutes at 8s
+export const STOPPED_MESSAGE = 'Stopped checking after repeated failures. Reload the page to check again.';
 
 export function runLabel(run) {
   if (!run) return '';
@@ -39,17 +40,19 @@ export function applyPollResult(state, result) {
   }
   if (result.kind === 'transient') {
     const failures = state.failures + 1;
+    const stopped = failures >= MAX_CONSECUTIVE_FAILURES;
     return {
       ...state,
       failures,
-      error: 'Waiting for the house to answer (it may be restarting)…',
-      stopped: failures >= MAX_CONSECUTIVE_FAILURES,
+      error: stopped ? STOPPED_MESSAGE : 'Waiting for the house to answer (it may be restarting)…',
+      stopped,
     };
   }
   const status = result.status || {};
   if (status.error) {
     const failures = state.failures + 1;
-    return { ...state, failures, error: status.error, stopped: failures >= MAX_CONSECUTIVE_FAILURES };
+    const stopped = failures >= MAX_CONSECUTIVE_FAILURES;
+    return { ...state, failures, error: stopped ? `${status.error}. ${STOPPED_MESSAGE}` : status.error, stopped };
   }
   return { runs: status.runs || [], error: null, failures: 0, stopped: false };
 }

@@ -56,6 +56,7 @@ describe('applyPollResult', () => {
     let state = fresh([running]);
     for (let i = 0; i < MAX_CONSECUTIVE_FAILURES; i++) state = applyPollResult(state, { kind: 'transient' });
     expect(state.stopped).toBe(true);
+    expect(state.error).toMatch(/Stopped checking.*Reload/);
     expect(shouldPoll(state, 0, 1000)).toBe(false);
   });
 
