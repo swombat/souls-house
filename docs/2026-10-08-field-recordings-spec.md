@@ -577,6 +577,19 @@ revocation flow that the person themself can use. That flow is out of scope
 for this spec and comes back to Daniel when the basis is known. Slice A and B don't
 depend on it.
 
+**As built.** The house gate is `SOULSHOUSE_FIELD_VOICEPRINTS=on`, **and**
+`SOULSHOUSE_BACKUP_RETENTION_DAYS=<n>`, **and** a pyannote key in
+credentials (`ai.pyannote.api_key`). All three live outside the database. The
+retention requirement is enforced in code, so the precondition can't be skipped
+by turning the flag on alone, and the number it gives is what the Voices page
+tells people. The account gate is `accounts.recognise_voices`. Only someone
+who can manage the account changes it, under the account lock that identify
+and print write-back also take. "Forget voice", "Forget all voices", deleting
+a name and the restore reset (`bin/rails field:reset_biometrics_after_restore`)
+are never gated. The **Voices page** (`/field/voices`) lists every name, says
+what is remembered (sample length, by whom, when), and carries the setting,
+the forget actions and the "What this means" text.
+
 ### Remembering a voice is its own act
 
 When the gate is open, the naming popover gets one extra line under the
