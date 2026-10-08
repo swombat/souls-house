@@ -64,6 +64,7 @@ class Account < ApplicationRecord
   has_many :field_recordings, dependent: :destroy
   has_many :field_recording_reservations, dependent: :destroy
   has_many :field_voices, dependent: :destroy
+  has_many :field_voice_enrolments, dependent: :destroy
   has_many :device_streams, dependent: :destroy
   has_many :service_connections, dependent: :destroy
   has_many :service_authorization_attempts, dependent: :destroy

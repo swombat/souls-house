@@ -25,6 +25,7 @@
     my_voice_id = null,
     show_you_hint = false,
     suggestions_enabled = false,
+    recognition_enabled = false,
     account,
   } = $props();
 
@@ -166,6 +167,11 @@
           OpenRouter) for that. A suggestion is only ever shown here, for a person to confirm or dismiss.
         </p>
       {/if}
+      <div class="flex justify-end">
+        <Link
+          href={`/accounts/${account.id}/field/voices`}
+          class="text-sm text-muted-foreground hover:text-foreground underline-offset-2 hover:underline">Voices this Field knows</Link>
+      </div>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {#each speakers as speaker (speaker.id)}
           <SpeakerCard
@@ -173,6 +179,9 @@
             {totalTalkMs}
             onPlayClip={playClip}
             onSeek={seek}
+            recognitionEnabled={recognition_enabled}
+            accountId={account.id}
+            recordingId={recording.id}
             url={`/accounts/${account.id}/field/recordings/${recording.id}/speakers/${speaker.id}`}
             {voices}
             members={members_without_voice}

@@ -184,9 +184,18 @@ Rails.application.routes.draw do
     resources :field_recordings, path: "field/recordings", only: [ :show, :create, :update, :destroy ] do
       post :retry, on: :member
       post :dismiss_you_hint, on: :collection
-      resources :speakers, only: [ :update ], controller: "field_recording_speakers"
+      resources :speakers, only: [ :update ], controller: "field_recording_speakers" do
+        resources :enrolments, only: [ :create ], controller: "field_voice_enrolments"
+      end
     end
-    resources :field_voices, path: "field/voices", only: [ :update ]
+    resources :field_voice_enrolments, path: "field/enrolments", only: [ :destroy ] do
+      post :confirm, on: :member
+    end
+    resources :field_voices, path: "field/voices", only: [ :index, :update, :destroy ] do
+      delete :forget, on: :member, path: "print"
+      delete :forget_all, on: :collection, path: "prints"
+      patch :recognition, on: :collection
+    end
     resources :whiteboards, only: [ :index, :create, :update, :destroy ] do
       resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
     end

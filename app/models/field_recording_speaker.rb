@@ -11,10 +11,13 @@ class FieldRecordingSpeaker < ApplicationRecord
   belongs_to :field_voice, optional: true
   belongs_to :named_by, polymorphic: true, optional: true
   belongs_to :suggested_voice, class_name: "FieldVoice", optional: true
+  belongs_to :recognised_voice, class_name: "FieldVoice", optional: true
+  has_many :enrolments, class_name: "FieldVoiceEnrolment", dependent: :destroy
 
   SUGGESTION_FIELDS = { suggested_voice: nil, suggested_name: nil, suggestion_quote: nil,
                         suggestion_quote_ms: nil, suggestion_source: nil, suggested_at: nil,
                         suggestion_generation: nil }.freeze
+  RECOGNITION_FIELDS = { recognised_voice: nil, recognition_confidence: nil, recognition_print_generation: nil }.freeze
 
   validates :label, presence: true
   validates :naming_source, inclusion: { in: NAMING_SOURCES }, allow_nil: true
@@ -33,7 +36,7 @@ class FieldRecordingSpeaker < ApplicationRecord
       raise ActiveRecord::RecordNotFound unless field_recording.kept? && field_recording.ready?
 
       update!(field_voice: voice, naming_source: source, named_by: by, named_at: Time.current,
-        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS)
+        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **RECOGNITION_FIELDS)
       field_recording.update!(transcript_text: field_recording.render_transcript_text)
     end
   end
@@ -55,6 +58,36 @@ class FieldRecordingSpeaker < ApplicationRecord
       update!(decision_generation: decision_generation + 1, **SUGGESTION_FIELDS)
       true
     end
+  end
+
+  def recognition? = recognised_voice_id.present? && !field_voice&.kept? && recognised_voice&.kept?
+
+  # A person confirms "Tomás?" (spec §9). Recording lock, then the voice lock,
+  # then every check again: both gates, the voice kept, its print still the one
+  # this guess was made from. A guess left over from before a forget or a
+  # replacement is refused and cleared. Confirming never builds a print.
+  def confirm_recognition!(by:)
+    field_recording.with_lock do
+      voice = recognised_voice
+      raise ActiveRecord::RecordNotFound unless voice
+
+      voice.with_lock do
+        current = FieldVoiceprints.enabled_for?(field_recording.account.reload) && voice.kept? && !field_voice&.kept? &&
+          recognition_print_generation == voice.print_generation &&
+          FieldVoiceprint.where(field_voice: voice, generation: voice.print_generation).exists?
+        unless current
+          update!(**RECOGNITION_FIELDS)
+          next false
+        end
+
+        name_as!(voice, by:, source: "confirmed_recognition")
+        true
+      end
+    end
+  end
+
+  def dismiss_recognition!
+    field_recording.with_lock { update!(decision_generation: decision_generation + 1, **RECOGNITION_FIELDS) }
   end
 
   def unname!

@@ -20,3 +20,6 @@ Rails.application.config.filter_parameters += [ /\A(?:messages|tools|reasoning|t
 
 # A saved rhythm invitation can contain the same private prose as a message.
 Rails.application.config.filter_parameters += [ /\Aopening\z/ ]
+
+# Voice prints are biometric data (Field recordings, spec §9): never logged.
+Rails.application.config.filter_parameters += [ /\A(?:print|voiceprints?)\z/ ]

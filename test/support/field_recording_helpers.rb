@@ -38,6 +38,56 @@ module FieldRecordingHelpers
     recording.reload
   end
 
+  # Both recognition gates open for the block: the house flag and retention
+  # in ENV, pyannote "configured", and the account setting on.
+  def with_recognition(account)
+    previous = ENV.to_h.slice("SOULSHOUSE_FIELD_VOICEPRINTS", "SOULSHOUSE_BACKUP_RETENTION_DAYS")
+    ENV["SOULSHOUSE_FIELD_VOICEPRINTS"] = "on"
+    ENV["SOULSHOUSE_BACKUP_RETENTION_DAYS"] = "30"
+    account.update!(recognise_voices: true)
+    PyannoteClient.stub(:api_key, "pk_test") { yield }
+  ensure
+    %w[SOULSHOUSE_FIELD_VOICEPRINTS SOULSHOUSE_BACKUP_RETENTION_DAYS].each { |key| ENV[key] = previous[key] }
+  end
+
+  # A recording where speaker_0 talks alone for long enough to remember.
+  def long_ready_recording(account:, user:, **attributes)
+    recording = queued_recording(account:, user:, **attributes)
+    dispatch = recording.claim_dispatch!
+    words = scribe_words(
+      [ "speaker_0", 0.0, 6.0, "first" ], [ "speaker_0", 6.1, 12.0, "long" ],
+      [ "speaker_1", 14.0, 15.0, "reply" ], [ "speaker_0", 17.0, 22.0, "again" ]
+    )
+    recording.accept_transcript!(dispatch, scribe_transcription(words:))
+    recording.reload
+  end
+
+  def store_print!(voice, print: "PRINT-#{SecureRandom.hex(4)}")
+    voice.with_lock do
+      generation = voice.print_generation + 1
+      voice.update_columns(print_generation: generation)
+      FieldVoiceprint.create!(field_voice: voice, account: voice.account, print:, generation:, sample_ms: 12_000,
+        consented_at: Time.current, consent_text_version: FieldVoiceprints::CONSENT_TEXT_VERSION)
+    end
+  end
+
+  # Stands in for PyannoteClient.
+  class FakePyannote
+
+    attr_reader :voiceprint_calls, :identify_calls
+
+    def initialize(jobs: {})
+      @jobs = jobs
+      @voiceprint_calls = []
+      @identify_calls = []
+    end
+
+    def voiceprint(url:) = (@voiceprint_calls << url) && "vp_job"
+    def identify(**kwargs) = (@identify_calls << kwargs) && "id_job"
+    def job(id) = @jobs.fetch(id)
+
+  end
+
   # Scribe word list: [speaker, start_s, end_s, text]; spacing is added.
   def scribe_words(*spoken)
     spoken.flat_map.with_index do |(speaker, start, finish, text), index|
