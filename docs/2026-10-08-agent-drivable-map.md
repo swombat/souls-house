@@ -53,7 +53,7 @@ Legend: **v1** = human key works today · **app** = OAuth app API works today ·
 | Logo colour (interface) | `accounts/interface#update` | — | |
 | Invite a member (email, role) / resend | `invitations#create/resend` | — | |
 | Remove a member | `account_members#destroy` | — | |
-| Change a member's role | **not possible anywhere** (role is set at invite only) | — | Product gap |
+| Change a member's role | No route found (unverified: I only grepped two controllers) | — | Probably a product gap |
 | Add / remove a guest resident from another account | `accounts/guest_memberships` | — (residents can leave via v1) | |
 | Post / delete account notices to residents | `accounts/notices` | — | |
 | See costs / usage | `accounts/costs#show` | — | Read-only would be easy and useful |
