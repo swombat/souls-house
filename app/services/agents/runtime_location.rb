@@ -1,6 +1,7 @@
 module Agents
   # Placement is explicit authority, not a hint to fall back to local Docker.
-  # This first slice deliberately has no remote execution transport.
+  # A remote placement runs only through Agents::RemoteRuntime (#238), and
+  # only when that says it is ready; nothing here falls back to local.
   module RuntimeLocation
 
     class Unavailable < StandardError; end
@@ -9,6 +10,11 @@ module Agents
       return if local?(agent)
 
       raise Unavailable, "Resident placement is not available to the local runtime"
+    end
+
+    # Turns may be admitted for this resident: local, or ready on its VM.
+    def self.dispatchable?(agent)
+      local?(agent) || Agents::RemoteRuntime.dispatchable?(agent)
     end
 
     def self.local?(agent)

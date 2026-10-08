@@ -13,6 +13,9 @@ class ChaosTriggerClient
   def request_response(conversation_id:, requested_by:, session_id:, request:, trigger_kind: "conversation", provider: nil, model: nil, reasoning_effort: nil, auth_mode: nil, request_delta: nil, persistent_session: false, session_policy: nil, trigger_payload: nil, activity: nil, read_timeout: nil, runtime_timeout_secs: DEFAULT_RUNTIME_TIMEOUT_SECS, interaction: nil, completion_context: {})
     raise ArgumentError, "endpoint_url is missing" if endpoint_url.blank?
     raise ArgumentError, "trigger bearer token is missing" if trigger_bearer_token.blank?
+    if Agents::RemoteRuntime.remote_endpoint?(endpoint_url) && !ResidentTurn.enabled?
+      raise ArgumentError, "a VM resident is reachable only through asynchronous turns"
+    end
 
     uri = URI("#{endpoint_url.to_s.delete_suffix('/')}/trigger")
     http_request = Net::HTTP::Post.new(uri)

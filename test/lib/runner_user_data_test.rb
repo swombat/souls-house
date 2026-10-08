@@ -45,6 +45,13 @@ class RunnerUserDataTest < ActiveSupport::TestCase
     assert_equal File.read(Rails.root.join("host-runner/souls_house_runner.py")), Zlib.gunzip(Base64.strict_decode64(runner["content"]))
   end
 
+  test "the command channel is on only for a literal true" do
+    config = ->(output) { JSON.parse(YAML.safe_load(output.delete_prefix("#cloud-config\n"))["write_files"].find { |f| f["path"] == "/etc/souls-house-runner/config.json" }["content"]) }
+    assert_not config.call(render).key?("commands_enabled")
+    [ "true", 1, "yes" ].each { |value| assert_not config.call(render(commands_enabled: value)).key?("commands_enabled") }
+    assert_equal true, config.call(render(commands_enabled: true))["commands_enabled"]
+  end
+
   # Hetzner refuses user_data over 32 KiB, and render raises before any
   # create request. The real runner must fit with room to grow; a runner that
   # outgrew it would make every VM order fail (#238 part 1 nearly did).

@@ -43,16 +43,13 @@ class AgentPlacementTest < ActiveSupport::TestCase
     end
   end
 
-  test "remote ready requires both server identity and endpoint" do
+  test "remote ready requires server identity but no endpoint (the runner dials out)" do
     placement = @agent.build_placement(backend: "hetzner_cloud")
     assert placement.valid?
     placement.state = "ready"
     assert_not placement.valid?
     assert placement.errors[:provider_server_id].present?
-    assert placement.errors[:runtime_endpoint].present?
     placement.provider_server_id = 123
-    assert_not placement.valid?
-    placement.runtime_endpoint = "https://runtime.example.test:8443/"
     assert placement.valid?, placement.errors.full_messages.join(", ")
     placement.save!
     assert_equal 123, placement.reload.provider_server_id

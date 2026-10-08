@@ -83,6 +83,9 @@ module Agents
     end
 
     def with_runtime
+      # Started and stopped on its VM by explicit commands, never cold-started.
+      return yield if RemoteRuntime.dispatchable?(agent)
+
       RuntimeLocation.require_local!(agent)
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
       ensure_memory_not_suspended!
