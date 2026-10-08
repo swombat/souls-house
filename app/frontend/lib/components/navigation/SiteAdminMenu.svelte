@@ -1,6 +1,15 @@
 <script>
   import { router } from '@inertiajs/svelte';
-  import { ShieldWarning, Buildings, Gear, ClockClockwise, Play, Megaphone, Pulse } from 'phosphor-svelte';
+  import {
+    ShieldWarning,
+    Buildings,
+    Gear,
+    ClockClockwise,
+    Play,
+    Megaphone,
+    Pulse,
+    RocketLaunch,
+  } from 'phosphor-svelte';
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
   import { buttonVariants } from '$lib/components/shadcn/button/index.js';
   import { cn } from '$lib/utils.js';
@@ -63,6 +72,10 @@
     <DropdownMenu.Item onclick={() => router.visit(adminNoticesPath())}>
       <Megaphone class="mr-2 size-4" />
       <span>Site Notices</span>
+    </DropdownMenu.Item>
+    <DropdownMenu.Item onclick={() => router.visit('/admin/deploys')}>
+      <RocketLaunch class="mr-2 size-4" />
+      <span>Deploy</span>
     </DropdownMenu.Item>
     <DropdownMenu.Separator />
     <div class="px-2 py-1.5 text-xs text-muted-foreground max-w-72 space-y-0.5" data-testid="deploy-info">
