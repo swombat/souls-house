@@ -77,6 +77,7 @@ class AgentRuntimeInteractionCost
     [ /minimax\/minimax-m3\z/, "minimax/minimax-m3", 0.3, 1.2 ],
     [ /moonshotai\/kimi-k2\.7-code\z/, "moonshotai/kimi-k2.7-code", 0.82, 3.75 ],
     [ /qwen\/qwen3\.7-max\z/, "qwen/qwen3.7-max", 1.475, 4.425 ],
+    [ /qwen\/qwen3\.8-omni-flash\z/, "qwen/qwen3.8-omni-flash", 0.15, 0.47 ],
     [ /z-ai\/glm-5\.2\z/, "z-ai/glm-5.2", 0.8218, 2.5828 ]
   ].map do |pattern, model, input, output|
     {
@@ -108,6 +109,7 @@ class AgentRuntimeInteractionCost
     "minimax/minimax-m3" => 0.06,
     "moonshotai/kimi-k2.7-code" => 0.16,
     "qwen/qwen3.7-max" => 0.295,
+    "qwen/qwen3.8-omni-flash" => 0.016,
     "z-ai/glm-5.2" => 0.15262,
     "x-ai/grok-4.6" => 0.5
   }.transform_values { |rate| BigDecimal(rate.to_s) }.freeze

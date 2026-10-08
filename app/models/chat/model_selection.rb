@@ -602,6 +602,7 @@ module Chat::ModelSelection
     # Qwen
     { model_id: "qwen/qwen3.8-2.4t-a95b", label: "Qwen3.8 2.4T A95B", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.8-max", label: "Qwen3.8 Max", group: "Qwen", thinking: { supported: true } },
+    { model_id: "qwen/qwen3.8-omni-flash", label: "Qwen3.8 Omni Flash", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.7-flash", label: "Qwen3.7 Flash", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.7-max", label: "Qwen3.7 Max", group: "Qwen", thinking: { supported: true } },
     { model_id: "qwen/qwen3.6-plus", label: "Qwen3.6 Plus", group: "Qwen", thinking: { supported: true } },

@@ -312,6 +312,7 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "qwen/qwen3.7-flash",
       "qwen/qwen3.8-2.4t-a95b",
       "qwen/qwen3.8-max",
+      "qwen/qwen3.8-omni-flash",
       "x-ai/grok-4.6"
     ].each do |model_id|
       assert_includes model_ids, model_id

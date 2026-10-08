@@ -32,6 +32,12 @@ endpoint for `anthropic/claude-haiku-5.5` (Anthropic provider). OpenRouter also
 lists a long-context tier above 100k prompt tokens (0.5 in / 2.5 out) that these
 estimates do not model. Recheck against Anthropic's pricing page.
 
+Qwen3.8 Omni Flash (added October 8, 2026): input 0.15, cache read 0.016,
+output 0.47, from the OpenRouter endpoint for `qwen/qwen3.8-omni-flash`
+(Alibaba provider, the only one listed). No cache-write rate is quoted, so
+creation tokens use the input rate. Text pricing only; audio/video input is not
+modelled.
+
 Gemini rates are selected by the interaction's date, preserving historical
 promotional estimates. Google quotes cache **storage** by token-hour, not a
 one-off cache-write rate. Do not convert that to a token price by assuming a
