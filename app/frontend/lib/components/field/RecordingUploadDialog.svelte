@@ -16,6 +16,7 @@
     maxBytes = 2 * 1024 * 1024 * 1024,
     maxLabel = '2 GB',
     sharedLine = '',
+    suggestionsEnabled = false,
   } = $props();
 
   let file = $state(null);
@@ -208,7 +209,11 @@
   <Dialog.Content class="sm:max-w-lg">
     <Dialog.Header>
       <Dialog.Title>Bring in a recording</Dialog.Title>
-      <Dialog.Description>{sharedLine} It's transcribed so you can read it together.</Dialog.Description>
+      <Dialog.Description>
+        {sharedLine} It's transcribed by ElevenLabs so you can read it together.{#if suggestionsEnabled}
+          The transcript, title and note are also sent to Google Gemini (through OpenRouter) to suggest who's speaking;
+          a person always confirms.{/if}
+      </Dialog.Description>
     </Dialog.Header>
     <form onsubmit={submit} class="space-y-4" data-testid="recording-upload-form">
       <div class="space-y-1">

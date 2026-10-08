@@ -23,6 +23,7 @@
     recording_allowance = null,
     max_recording_bytes = 2 * 1024 * 1024 * 1024,
     max_recording_label = '2 GB',
+    suggestions_enabled = false,
     tab = 'all',
     selected = null,
     max_file_bytes = 100 * 1024 * 1024,
@@ -424,6 +425,7 @@
   allowance={recording_allowance}
   maxBytes={max_recording_bytes}
   maxLabel={max_recording_label}
+  suggestionsEnabled={suggestions_enabled}
   {sharedLine} />
 
 <Dialog.Root bind:open={noteOpen}>
