@@ -82,6 +82,38 @@ module Api
         assert_equal "Narrowed", @user.reload.first_name
       end
 
+      # The API-key counterpart: a key is scoped to the account it was minted
+      # for. Naming another account, even one the person belongs to, is 404.
+      test "an API key minted for one account naming another of the person's accounts is 404" do
+        key = ApiKey.generate_for(@user, name: "Team key", account: @team)
+        headers = { "Authorization" => "Bearer #{key.raw_token}" }
+        @user.avatar.attach(fixture_file_upload("test_avatar.png", "image/png"))
+
+        [ @another.to_param, @personal.to_param, accounts(:regular_user_account).to_param, "not-an-id" ].each do |other|
+          assert_no_difference -> { AuditLog.count } do
+            get api_v1_me_path(account_id: other), headers: headers
+            assert_response :not_found, other
+            get api_v1_accounts_path(account_id: other), headers: headers
+            assert_response :not_found, other
+            patch api_v1_me_path(account_id: other), headers: headers, as: :json, params: { first_name: "Crossed" }
+            assert_response :not_found, other
+            put api_v1_me_avatar_path(account_id: other), headers: headers,
+              params: { avatar: fixture_file_upload("test_avatar.png", "image/png") }
+            assert_response :not_found, other
+            delete api_v1_me_avatar_path(account_id: other), headers: headers
+            assert_response :not_found, other
+          end
+        end
+        assert_not_equal "Crossed", @user.reload.first_name
+        assert @user.avatar.attached?
+
+        patch api_v1_me_path(account_id: @team.to_param), headers: headers, as: :json, params: { first_name: "Own account" }
+        assert_response :success
+        log = AuditLog.where(user: @user).order(:id).last
+        assert_equal @team, log.account
+        assert_equal key.id, log.data["api_key_id"]
+      end
+
       # (c) A disabled account and a departed membership.
       test "a disabled account drops out of the list, is 404 when named and cannot become the default" do
         @team.update_columns(disabled_at: Time.current)

@@ -8,6 +8,12 @@
 # current confirmed member of, and an account the request names with
 # account_id must be usable too; otherwise 404, as everywhere in /api/v1.
 #
+# The named account is found through the credential's own scope first, then
+# checked for membership: an API key reaches only its own account (via
+# requested_account), so a key minted for account A naming account B is 404
+# even when the person belongs to both. An OAuth token reaches the person's
+# enabled confirmed accounts (via current_api_account).
+#
 # Method names are prefixed (self_*) so they cannot collide with presenters
 # in other /api/v1 controllers.
 module ApiV1SelfEndpoints
@@ -24,8 +30,19 @@ module ApiV1SelfEndpoints
   # Also fixes the audit account before anything changes, so a request that
   # changes the default account is filed under the account it started in.
   def require_usable_self_account!
-    human_account! if @current_api_key || params[:account_id].present?
+    if @current_api_key
+      human_account!(self_key_scoped_account)
+    elsif params[:account_id].present?
+      human_account!
+    end
     self_audit_account
+  end
+
+  # The key's account, or the account_id it names if that is the key's own.
+  def self_key_scoped_account
+    requested_account
+  rescue Hashids::InputError
+    raise ActiveRecord::RecordNotFound
   end
 
   # The account an audit row is filed under: the key's account, the account

@@ -109,6 +109,8 @@ None of these needs a selected account: an OAuth token whose person has no
 usable default account still reads `/me` and lists `/accounts`. An API key
 whose account is disabled, or whose person has left it, gets 404, and so does
 an `account_id` that is not one of the person's enabled, confirmed accounts.
+An API key is scoped to its own account: naming any other `account_id`, even
+another account of the same person, is 404.
 
 - `GET /api/v1/me` returns
   `{ "user": { "id", "email_address", "first_name", "last_name", "full_name", "timezone", "theme", "theme_hue", "chat_colour", "avatar_url", "default_account_id", "default_account", "accounts" } }`.
