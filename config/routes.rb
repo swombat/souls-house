@@ -327,13 +327,20 @@ Rails.application.routes.draw do
         resource :draft, only: [ :show, :update ]
         get :search, on: :collection
         resource :bookmark, only: [ :show, :update, :destroy ], controller: "agent_bookmarks"
-        resources :messages, only: :create do
+        resources :messages, only: [ :create, :update, :destroy ] do
           resources :attachments, only: :show
+          resource :safeguard_reset, only: :create
         end
         resource :agent_trigger, only: :create
         resource :model, only: [ :show, :create ], controller: "conversation_models"
         resources :participants, only: :create
+        resource :archive, only: [ :create, :destroy ], controller: "conversation_archives"
+        resource :discard, only: [ :create, :destroy ], controller: "conversation_discards"
+        resource :fork, only: :create, controller: "conversation_forks"
+        resource :agent_assignment, only: :create
+        resource :reply_dismissal, only: :create
       end
+      resource :reply_attention, only: :show
       resources :agents, only: [ :index, :show ]
       resources :guest_memberships, only: [ :index, :destroy ]
       resources :telegram_conversations, only: :show

@@ -66,9 +66,77 @@ same tokens with the same code (`AppAccessTokenAuthenticator`).
 - Attachment reads go through the authorized conversation/message route and can
   redirect to storage. Do not retain a redirect URL as durable access authority.
 
-The current API has no general message-update/delete endpoints, client-generated
-send IDs or replay-safe send guarantee. Web routes have their own capabilities;
-never infer API parity from the UI.
+A person's key can edit and delete its own messages (below). The v1 API has no
+client-generated send IDs or replay-safe send guarantee (the native-app API does).
+Web routes have their own capabilities; never infer API parity from the UI.
+
+## Conversation lifecycle (person credentials)
+
+These mirror the web's `chats/*` and `messages/*` controllers: same rules, same
+model methods, same audit entries (tagged with `api_key_id`, or `app_session_id`
+for an OAuth token). They are for a person's API key or app token only: a resident
+key gets `403` with a JSON `error`. Authority is checked against the
+conversation's own account: the person must still be a confirmed member of it and
+it must be enabled; otherwise, and for any conversation the credential cannot
+reach, the answer is `404`. An OAuth token reaches rooms in every account the
+person belongs to without `account_id`; with `account_id` it reaches only that
+account's rooms. As on the web, these need conversations switched on for the
+house: while they are off, the answer is `403` with `"code": "feature_disabled"`
+(the older endpoints, including the active listing and renaming, are unchanged).
+Changed conversations come back in the list shape, which now also carries
+`model_id`, `web_access`, `archived` and `deleted`.
+
+| Request | Who | Notes |
+| --- | --- | --- |
+| `GET /api/v1/conversations?filter=archived` | member | `filter` is `active` (default), `archived` or `deleted` |
+| `GET /api/v1/conversations?filter=deleted` | manager (`Account#manageable_by?`) | Deleted conversations, to find one to restore. An unnarrowed OAuth token lists those in every account the person can manage |
+| `POST` / `DELETE /api/v1/conversations/:id/archive` | member | Archive / unarchive |
+| `POST` / `DELETE /api/v1/conversations/:id/discard` | manager | Delete (soft) / restore. Repeats are no-ops |
+| `POST /api/v1/conversations/:id/fork` | member | Optional `title`; default is "<title> (Fork)". `201` |
+| `PATCH /api/v1/conversations/:id` | member | Now also `model_id` (text) and `web_access` (boolean), as `chats#update`. Resident keys may still rename and tag, but not these two |
+| `POST /api/v1/conversations/:id/agent_assignment` | member | `agent_id` of an eligible resident; hands a bare-model conversation to it. `409` `already_assigned` if it has one |
+| `PATCH` / `DELETE /api/v1/conversations/:id/messages/:message_id` | the message's author | Edit (`content`) / delete (discard). No site-admin override |
+| `GET /api/v1/reply_attention` | member | Where *I* was flagged to respond (the web's red eye), in the request's account (`account_id`, or the default) |
+| `POST /api/v1/conversations/:id/reply_dismissal` | member | Exactly one of `message_id` (that flag) or `through_message_id` (every flag up to it) |
+| `POST /api/v1/conversations/:id/messages/:message_id/safeguard_reset` | member | "Start <resident> fresh again" on a safeguard-labelled message. `201` |
+
+```http
+PATCH /api/v1/conversations/c_abc/messages/m_123
+{"content": "First draft"}
+
+200 {"message": {"id": "m_123", "conversation_id": "c_abc", "revision": 42,
+                 "discarded": false, "role": "user", "content": "First draft",
+                 "updated_at": "2026-10-08T15:02:11.123456Z"}}
+```
+
+Edits and deletes go through `Message#update_as_author` / `#discard_as_author!`, so
+an edit cancels a wake the message asked for that was not yet reserved, and each
+change takes a new `revision`. A delete returns the marker
+`{"id", "conversation_id", "revision", "discarded": true}` and a repeat returns it
+again; editing a deleted message, or any message in a deleted conversation, is
+`404`. Deleting still reaches a deleted conversation, so an author can remove
+what they wrote before restoring it is decided.
+
+```http
+GET /api/v1/reply_attention
+
+200 {"total": 1, "conversations": [{"conversation_id": "c_abc", "title": "Plans",
+     "count": 2, "message_ids": ["m_1", "m_2"], "through_message_id": "m_2"}]}
+
+POST /api/v1/conversations/c_abc/reply_dismissal
+{"through_message_id": "m_2"}
+
+200 {"reply_attention": {"conversation_id": "c_abc", "title": "Plans", "count": 0,
+     "message_ids": [], "through_message_id": null}}
+```
+
+A reply flag marks a *person* who was asked to respond; dismissing it never
+cancels a resident's pending reply. Replying in the conversation also clears it.
+
+Not here: retrying a failed reply (the web's `messages/retry` is retired and
+always answers `409 inline_runtime_retired`; ask a resident again with
+`agent_trigger`), removing a resident from a group (no web route either), and
+moderation (site admins only).
 
 ## Other implemented APIs
 
