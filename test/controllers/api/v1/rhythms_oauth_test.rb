@@ -76,6 +76,31 @@ class Api::V1::RhythmsOauthTest < ActionDispatch::IntegrationTest
     assert_equal "Weekly reflection", @rhythm.reload.title
   end
 
+  # The OAuth token above reaches the team rhythm; an account key is scoped to
+  # its own account even though the person also belongs to the team.
+  test "an account key for one of the person's accounts cannot reach a rhythm in another" do
+    assert @user.confirmed_accounts.exists?(@team.id)
+    key = ApiKey.generate_for(@user, name: "Home only", account: @home)
+    headers = { "Authorization" => "Bearer #{key.raw_token}" }
+    get api_v1_rhythm_path(@rhythm), headers: headers
+    assert_response :not_found
+    patch api_v1_rhythm_path(@rhythm), params: { rhythm: { title: "Nope" } }, headers: headers, as: :json
+    assert_response :not_found
+    post pause_api_v1_rhythm_path(@rhythm), headers: headers
+    assert_response :not_found
+    post start_api_v1_rhythm_path(@rhythm), params: { request_key: "k" }, headers: headers, as: :json
+    assert_response :not_found
+    delete api_v1_rhythm_path(@rhythm), headers: headers
+    assert_response :not_found
+    patch api_v1_rhythm_path(@rhythm), params: { account_id: @team.to_param, rhythm: { title: "Nope" } }, headers: headers, as: :json
+    assert_response :not_found
+    get api_v1_rhythms_path, params: { account_id: @team.to_param }, headers: headers
+    assert_response :not_found
+    assert_equal "Weekly reflection", @rhythm.reload.title
+    assert_not @rhythm.held?
+    assert_empty @rhythm.occurrences
+  end
+
   test "a disabled account is not found" do
     @team.update_column(:disabled_at, Time.current)
     patch api_v1_rhythm_path(@rhythm), params: { rhythm: { title: "Nope" } }, headers: @headers, as: :json

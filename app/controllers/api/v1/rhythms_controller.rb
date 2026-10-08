@@ -187,9 +187,11 @@ module Api
         @rhythm = Rhythm.where(account: reachable).find(params[:id])
       end
 
-      # An account key reaches its own account; an OAuth token reaches every
-      # account the person may act in, or only the one account_id names. Then
-      # the rhythm's own account must pass the membership check.
+      # Find through the credential's scope first, never globally: an account
+      # key reaches only its own account (requested_account), an OAuth token
+      # every enabled account the person belongs to, or only the one
+      # account_id names. Then human_account! checks the person's current
+      # membership of the rhythm's own account.
       def set_human_rhythm
         scope = if app_token_request? && params[:account_id].blank?
           Rhythm.where(account_id: current_api_user.confirmed_accounts.select(:id))
