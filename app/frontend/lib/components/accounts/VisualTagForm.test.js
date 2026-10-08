@@ -62,6 +62,20 @@ test('deleting explains the effect on tagged conversations and allows cancellati
   confirm.mockRestore();
 });
 
+test('the Pin tag keeps its name and cannot be removed, but its look can change', async () => {
+  const pin = { id: 'tag-pin', label: 'Pin', icon: 'Wrench', colour: 'blue', pinned: true };
+  render(VisualTagForm, { ...props, tag: pin });
+  expect(screen.getByLabelText('Label')).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Remove tag' })).not.toBeInTheDocument();
+  await fireEvent.click(screen.getByRole('button', { name: 'Colour: rose' }));
+  await fireEvent.submit(screen.getByRole('form'));
+  expect(router.patch).toHaveBeenCalledWith(
+    '/accounts/house/visual_tags/tag-pin',
+    { visual_tag: { label: 'Pin', icon: 'Wrench', colour: 'rose' } },
+    expect.any(Object)
+  );
+});
+
 test('live edits update untouched forms but do not overwrite an unsaved edit', async () => {
   const { rerender } = render(VisualTagForm, props);
   await rerender({ ...props, tag: { ...tag, label: 'Making' } });

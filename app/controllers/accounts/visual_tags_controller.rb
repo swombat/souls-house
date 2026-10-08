@@ -24,6 +24,8 @@ class Accounts::VisualTagsController < ApplicationController
     tag.destroy!
     audit(:destroy_visual_tag, tag)
     redirect_to account_interface_path(current_account), notice: "Visual tag removed"
+  rescue ActiveRecord::RecordNotDestroyed => error
+    redirect_validation_errors(error.record)
   rescue ActiveRecord::InvalidForeignKey
     redirect_to account_interface_path(current_account),
       inertia: { errors: { visual_tag: "This tag was selected while it was being removed. Please try again." } }

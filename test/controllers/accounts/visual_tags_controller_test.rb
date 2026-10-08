@@ -36,6 +36,27 @@ class Accounts::VisualTagsControllerTest < ActionDispatch::IntegrationTest
     assert_not VisualTag.exists?(@tag.id)
   end
 
+  test "the Pin tag can change colour and icon but not name, pinned flag, or existence" do
+    pin = @account.visual_tags.create!(**VisualTag::PIN, pinned: true)
+    chat = @account.chats.create!(title: "Pinned", model_id: "openrouter/auto", visual_tag: pin)
+
+    patch account_visual_tag_path(@account, pin), params: { visual_tag: { colour: "rose", icon: "Heart", pinned: false } }
+    assert_redirected_to account_interface_path(@account)
+    assert_equal [ "Pin", "Heart", "rose", true ], pin.reload.values_at(:label, :icon, :colour, :pinned)
+
+    patch account_visual_tag_path(@account, pin), params: { visual_tag: { label: "Top" } }
+    assert_equal "Pin", pin.reload.label
+
+    post account_visual_tags_path(@account), params: { visual_tag: { label: "Second", icon: "Heart", colour: "rose", pinned: true } }
+    assert_equal [ pin ], @account.visual_tags.pinned.to_a
+
+    assert_no_difference "VisualTag.count" do
+      delete account_visual_tag_path(@account, pin)
+    end
+    assert_redirected_to account_interface_path(@account)
+    assert_equal pin, chat.reload.visual_tag
+  end
+
   test "validation failures redirect with inertia errors and do not write" do
     assert_no_difference "VisualTag.count" do
       post account_visual_tags_path(@account), params: {

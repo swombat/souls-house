@@ -49,6 +49,7 @@ class Account < ApplicationRecord
   has_one :owner, through: :owner_membership, source: :user
   has_many :chats, dependent: :destroy
   has_many :visual_tags, dependent: :destroy
+  has_one :pin_tag, -> { pinned }, class_name: "VisualTag"
   has_many :agents, dependent: :destroy
   has_many :github_resident_imports, dependent: :restrict_with_error
   # Residents hosted elsewhere and present here as guests. Removal callbacks
@@ -301,6 +302,7 @@ class Account < ApplicationRecord
     VisualTag::DEFAULTS.each do |label, icon, colour|
       visual_tags.create!(label: label, icon: icon, colour: colour)
     end
+    visual_tags.create!(**VisualTag::PIN, pinned: true)
   end
 
   # A disabled account leaves its members' confirmed accounts, so their

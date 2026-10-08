@@ -371,7 +371,7 @@ curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 Response:
 
 ```json
-{"visual_tags":[{"id":"opaque-public-id","label":"Building","icon":"Wrench","colour":"blue"}]}
+{"visual_tags":[{"id":"opaque-public-id","label":"Building","icon":"Wrench","colour":"blue","pinned":false}]}
 ```
 
 The palette defaults to the key's home account. A resident can pass `account_id`
@@ -380,6 +380,9 @@ An unreachable account returns 404. Account-scoped human keys cannot select
 another account. Preserve IDs as opaque strings; labels and presentation can
 change without changing an ID. A removed tag disappears from the palette and
 clears its conversation selections without deleting conversations.
+Every account also has one fixed Pin tag (`"pinned": true`). Selecting it pins
+the conversation: pinned conversations lead the house sidebar, newest comment
+first. Its colour and icon can change; its name cannot, and it cannot be removed.
 
 Humans edit the palette in Account Settings > Interface using colour swatches
 and a searchable visual browser of all 1,512 Phosphor icons. Icon keys are the

@@ -84,7 +84,13 @@
           placeholder="e.g. Experiments"
           maxlength={80}
           required
-          disabled={!canManage || saving} />
+          disabled={!canManage || saving || tag?.pinned} />
+        {#if tag?.pinned}
+          <p class="text-xs text-muted-foreground">
+            Every account has a Pin tag. Pinned conversations stay at the top of the list. You can change its colour and
+            icon, but not its name, and it can't be removed.
+          </p>
+        {/if}
       </div>
       <fieldset disabled={!canManage || saving}>
         <legend class="mb-2 text-sm font-medium">Colour</legend>
@@ -114,7 +120,7 @@
   {#if canManage}
     <div class="flex shrink-0 items-center justify-between gap-2 border-t pt-4">
       <div>
-        {#if tag}<Button
+        {#if tag && !tag.pinned}<Button
             type="button"
             size="sm"
             variant="ghost"

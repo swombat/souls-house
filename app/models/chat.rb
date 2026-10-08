@@ -87,6 +87,8 @@ class Chat < ApplicationRecord
   after_update_commit :refresh_reply_attention, if: :saved_change_to_discarded_at?
 
   scope :latest, -> { order(Arel.sql("COALESCE(chats.last_message_at, chats.created_at) DESC"), id: :desc) }
+  # Pinned conversations lead; chain before `latest` so each group keeps recency order.
+  scope :pinned_first, -> { left_joins(:visual_tag).order(Arel.sql("visual_tags.pinned IS TRUE DESC")) }
   # The native app's authority (issue #94): current confirmed membership of an
   # enabled account, with no site-admin widening. HTTP and cable share it.
   scope :app_accessible_to, ->(user) { kept.where(account_id: user.confirmed_accounts.select(:id)) }

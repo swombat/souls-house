@@ -146,7 +146,7 @@ class ChatsController < ApplicationController
     else
       # Quiet rhythm runs live on their rhythm's page (Chat::QuietRhythmRun).
       chats = chats.listed
-      chats.active.latest + chats.archived.latest
+      chats.active.pinned_first.latest + chats.archived.latest
     end
   end
 
