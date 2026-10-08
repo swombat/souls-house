@@ -10,6 +10,11 @@
 #     schedule: at 5am every day
 
 production:
+  field_recordings_orphan_sweep:
+    class: FieldRecordings::OrphanSweepJob
+    queue: default
+    schedule: every hour at minute 23
+
   rhythms:
     class: RhythmSweepJob
     queue: default

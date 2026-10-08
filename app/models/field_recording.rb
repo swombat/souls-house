@@ -1,0 +1,144 @@
+# A recording someone brought into an account's Field, to be transcribed with
+# its speakers separated. Spec: docs/2026-10-08-field-recordings-spec.md.
+#
+# Lifecycle (§5a): every state change happens under this row's lock and
+# rechecks, inside the lock, what it was started under (kept, status, and for
+# vendor work the attempt token). Terminal states clear the attempt token so no
+# stale worker can move a recording out of one. Lock order is account, then
+# recording.
+#
+# Deleting discards, as for Field files: the row and bytes are kept, and
+# HidesDiscardedBlobs stops issued blob URLs from serving the audio.
+class FieldRecording < ApplicationRecord
+
+  include Discard::Model
+  include Broadcastable
+  include ObfuscatesId
+  include SyncAuthorizable
+
+  class NotRetryable < StandardError; end
+
+  MAX_BYTES = 2.gigabytes # Scribe's limit for a file fetched by URL
+  MAX_BYTES_LABEL = "2 GB"
+  MAX_NOTE_LENGTH = FieldFile::MAX_NOTE_LENGTH
+  MAX_SPEAKERS = 32 # Scribe's num_speakers ceiling
+  MAX_DISPATCHES = 3
+
+  STATUSES = %w[probing queued transcribing ready rejected failed].freeze
+  TERMINAL_STATUSES = %w[ready rejected failed].freeze
+  RETRYABLE_STATUSES = %w[failed rejected].freeze
+
+  belongs_to :account
+  belongs_to :uploaded_by, polymorphic: true, optional: true
+  belongs_to :retried_from, class_name: "FieldRecording", optional: true
+  has_one :reservation, class_name: "FieldRecordingReservation", dependent: :destroy
+
+  has_one_attached :audio
+
+  validates :title, presence: true, length: { maximum: 200 }
+  validates :note, length: { maximum: MAX_NOTE_LENGTH }
+  validates :status, inclusion: { in: STATUSES }
+  validates :expected_speakers, numericality: { only_integer: true, in: 1..MAX_SPEAKERS }, allow_nil: true
+  validate :audio_present_and_bounded
+
+  before_validation :default_title_from_filename
+
+  broadcasts_to :account
+
+  scope :newest_first, -> { order(created_at: :desc, id: :desc) }
+
+  STATUSES.each do |name|
+    define_method(:"#{name}?") { status == name }
+  end
+
+  def terminal? = TERMINAL_STATUSES.include?(status)
+
+  # Probe found a duration: reserve allowance or refuse (§6). Account lock
+  # first, then this row, so two probes finishing together are serialised.
+  # Returns :admitted, :rejected or :skipped.
+  def admit!(duration_ms, now: Time.current)
+    account.with_lock do
+      lock!
+      next :skipped unless kept? && probing?
+      next :skipped if reservation.present?
+
+      used = FieldRecordingReservation.used_ms(account, now:)
+      if used + duration_ms > account.recording_ms_weekly_limit
+        update!(status: "rejected", duration_ms:, attempt_token: nil,
+          failure_reason: FieldRecordingReservation.over_limit_message(account, duration_ms, now:))
+        :rejected
+      else
+        create_reservation!(account:, audio_ms: duration_ms, state: "pending", reserved_at: now)
+        update!(status: "queued", duration_ms:)
+        :admitted
+      end
+    end
+  end
+
+  # Probe couldn't read the file. No allowance was reserved.
+  def reject_unreadable!(reason)
+    with_lock do
+      next false unless kept? && probing?
+      update!(status: "rejected", failure_reason: reason, attempt_token: nil)
+    end
+  end
+
+  # Discard and settle in one locked step (§5): clear the attempt so every
+  # in-flight step fails its guard, and give back allowance not yet consumed.
+  def discard_and_settle!
+    with_lock do
+      next false if discarded?
+      self.attempt_token = nil
+      discard!
+      reservation&.release!(reason: "discarded")
+      true
+    end
+  end
+
+  # "Try again" (§4): an internal path that attaches the same blob to a new
+  # recording, which then goes through probe and admission like any other.
+  # The upload endpoint's "unattached blobs only" rule is not involved.
+  def retry!(by:)
+    with_lock do
+      raise NotRetryable unless kept? && RETRYABLE_STATUSES.include?(status) && audio.attached?
+
+      account.field_recordings.create!(
+        title:, note:, expected_speakers:, uploaded_by: by, retried_from: self, audio: audio.blob
+      )
+    end
+  end
+
+  def uploader_name
+    case uploaded_by
+    when User then uploaded_by.full_name.presence || uploaded_by.email_address.split("@").first
+    when Agent then uploaded_by.name
+    end
+  end
+
+  def uploader_kind
+    case uploaded_by
+    when User then "human"
+    when Agent then "resident"
+    end
+  end
+
+  def filename = audio.attached? ? audio.filename.to_s : nil
+  def byte_size = audio.attached? ? audio.byte_size : nil
+
+  private
+
+  def default_title_from_filename
+    self.title = title.to_s.strip
+    self.title = audio.filename.to_s.truncate(200) if title.blank? && audio.attached?
+  end
+
+  def audio_present_and_bounded
+    unless audio.attached?
+      errors.add(:audio, "must be attached")
+      return
+    end
+
+    errors.add(:audio, "must be #{MAX_BYTES_LABEL} or smaller") if audio.byte_size > MAX_BYTES
+  end
+
+end

@@ -38,4 +38,34 @@ module FieldItems
     }
   end
 
+  def recording_json(recording)
+    {
+      key: "recording-#{recording.to_param}",
+      kind: "recording",
+      id: recording.to_param,
+      title: recording.title,
+      note: recording.note,
+      status: recording.status,
+      failure_reason: recording.failure_reason,
+      duration_ms: recording.duration_ms,
+      expected_speakers: recording.expected_speakers,
+      filename: recording.filename,
+      byte_size: recording.byte_size,
+      uploader_name: recording.uploader_name,
+      uploader_kind: recording.uploader_kind,
+      created_at: recording.created_at.iso8601
+    }
+  end
+
+  # The gauge (spec §6): used over the rolling 7 days, with the part still
+  # transcribing shown separately.
+  def allowance_json(account, now: Time.current)
+    {
+      limit_ms: account.recording_ms_weekly_limit,
+      used_ms: FieldRecordingReservation.used_ms(account, now:),
+      pending_ms: account.field_recording_reservations.where(state: "pending").sum(:audio_ms),
+      window_days: FieldRecordingReservation::WINDOW.in_days.to_i
+    }
+  end
+
 end
