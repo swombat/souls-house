@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
-      image: ghcr.io/swombat/souls-house-ci@sha256:80532bb1f4e7227ec3e07bc2b6333d4029a4789c8fe6d83e1d18eb215eacb3f2
+      image: ghcr.io/swombat/souls-house-ci@sha256:69f4d2446766d944c71ffc06ed0d574abb4259e43ad7db7c1dc2fd5dd91bf7bc
       options: --ipc=host
     strategy:
       fail-fast: false
