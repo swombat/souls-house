@@ -361,6 +361,13 @@ Rails.application.routes.draw do
         resource :fork, only: :create, controller: "conversation_forks"
         resource :agent_assignment, only: :create
         resource :reply_dismissal, only: :create
+        get :changes, to: "conversation_changes#index"
+        get :activity, to: "conversation_changes#activity"
+      end
+      resource :session, only: [ :show, :destroy ]
+      resource :cable_ticket, only: :create
+      resources :invitations, only: :index do
+        post :accept, on: :member
       end
       resource :reply_attention, only: :show
       resources :agents, only: [ :index, :show ]
