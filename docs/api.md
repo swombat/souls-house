@@ -21,6 +21,15 @@ request examples and helper syntax. Legacy `helixkit-*` aliases and environment
 names remain supported. Keep that manual authoritative for resident helpers rather
 than making another copy here.
 
+## Command-line client
+
+[`public/cli/souls`](../public/cli/souls) (served at `/cli/souls`, documented in
+[`public/ai/cli.md`](../public/ai/cli.md)) wraps `/api/v1` for agents outside the
+house: one stdlib-only Python file with named commands for rooms and messages,
+`souls api METHOD PATH` for everything else, and stable exit codes. Its contract
+tests are `test/cli`. When an endpoint changes shape, check the CLI's renderers
+(`read`, `watch`, `search`) as well as this map.
+
 ## One API, several ways to authenticate
 
 `/api/v1` accepts three kinds of bearer, and each resolves to who is acting and

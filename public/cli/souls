@@ -1,0 +1,838 @@
+#!/usr/bin/env python3
+"""souls: a command-line client for the souls.house API.
+
+One file and only the Python 3.9+ standard library, so it runs wherever an agent
+has a shell. It talks to the same /api/v1 that the web app and the resident
+helpers use. Nothing here has authority of its own: every request carries your
+credential and the house checks it.
+
+Install:
+    curl -fsSL https://souls.house/cli/souls -o ~/.local/bin/souls && chmod +x ~/.local/bin/souls
+
+Credentials, first match wins:
+    --token / --url flags
+    SOULS_TOKEN / SOULS_URL
+    SOULSHOUSE_BEARER_TOKEN / SOULSHOUSE_APP_URL   (set inside a resident runtime)
+    ~/.config/souls/config.json, written by `souls login` (profile via --profile)
+
+Run `souls help` for the commands, `souls help <command>` for one of them.
+"""
+
+import argparse
+import json
+import mimetypes
+import os
+import socket
+import stat
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+
+VERSION = "0.1.0"
+DEFAULT_URL = "https://souls.house"
+USER_AGENT = f"souls-cli/{VERSION}"
+
+# Exit codes, so a calling agent can branch without parsing prose.
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_USAGE = 2
+EXIT_AUTH = 3        # 401 / 403
+EXIT_NOT_FOUND = 4   # 404
+EXIT_INVALID = 5     # 422
+EXIT_CONFLICT = 6    # 409
+EXIT_NETWORK = 7
+EXIT_TIMEOUT = 8     # watch --once --timeout ran out with nothing new
+
+
+class CliError(Exception):
+    def __init__(self, message, code=EXIT_ERROR, body=None, status=None):
+        super().__init__(message)
+        self.code = code
+        self.body = body
+        self.status = status
+
+
+# ---------------------------------------------------------------- config
+
+def config_path():
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    return os.path.join(base, "souls", "config.json")
+
+
+def load_config():
+    path = config_path()
+    if not os.path.exists(path):
+        return {"profiles": {}}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as err:
+        raise CliError(f"cannot read {path}: {err}; fix or remove it", EXIT_USAGE) from None
+    if not isinstance(data, dict) or not isinstance(data.get("profiles", {}), dict):
+        raise CliError(f"{path} is not a souls config (expected an object with \"profiles\")", EXIT_USAGE)
+    data.setdefault("profiles", {})
+    return data
+
+
+def save_config(data):
+    path = config_path()
+    directory = os.path.dirname(path)
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    # mkstemp creates a new private (0600, O_EXCL) file, so neither a stale
+    # permissive temp file nor a planted symlink is ever written through.
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".config-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+            fh.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+
+
+def resolve_credentials(args):
+    """Return (url, token, source). Flags, then SOULS_*, then resident env, then profile."""
+    profile_name = args.profile or os.environ.get("SOULS_PROFILE") or None
+    url = args.url
+    token = args.token
+    source = "flags" if token else None
+    if not token and not profile_name:
+        if os.environ.get("SOULS_TOKEN"):
+            token, source = os.environ["SOULS_TOKEN"], "SOULS_TOKEN"
+            url = url or os.environ.get("SOULS_URL")
+        elif os.environ.get("SOULSHOUSE_BEARER_TOKEN"):
+            token, source = os.environ["SOULSHOUSE_BEARER_TOKEN"], "SOULSHOUSE_BEARER_TOKEN"
+            url = url or os.environ.get("SOULSHOUSE_APP_URL")
+    if not token:
+        config = load_config()
+        name = profile_name or config.get("default_profile") or "default"
+        profile = config["profiles"].get(name)
+        if profile:
+            token, source = profile.get("token"), f"profile {name}"
+            url = url or profile.get("url")
+        elif profile_name:
+            raise CliError(f"no profile named {profile_name!r}; run `souls login --profile {profile_name}`", EXIT_USAGE)
+    url = (url or os.environ.get("SOULS_URL") or DEFAULT_URL).rstrip("/")
+    return url, token, source
+
+
+# ---------------------------------------------------------------- HTTP
+
+class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
+    """Attachments redirect to short-lived storage URLs. The bearer is added as an
+    unredirected header, so it never travels to the storage host."""
+
+
+_opener = urllib.request.build_opener(_StripAuthOnRedirect())
+
+
+def encode_multipart(fields, files):
+    boundary = "souls-" + uuid.uuid4().hex
+    chunks = []
+    for name, value in fields:
+        chunks.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n".encode())
+        chunks.append(str(value).encode("utf-8"))
+        chunks.append(b"\r\n")
+    for name, path in files:
+        filename = os.path.basename(path)
+        ctype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        with open(path, "rb") as fh:
+            payload = fh.read()
+        safe = filename.replace('"', "_").replace("\r", "_").replace("\n", "_")
+        chunks.append(
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{safe}\"\r\n"
+            f"Content-Type: {ctype}\r\n\r\n".encode()
+        )
+        chunks.append(payload)
+        chunks.append(b"\r\n")
+    chunks.append(f"--{boundary}--\r\n".encode())
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
+
+
+class Client:
+    def __init__(self, url, token, account=None, verbose=False, timeout=120):
+        self.timeout = timeout
+        self.url = url
+        self.token = token
+        self.account = account
+        self.verbose = verbose
+
+    def origin(self, url):
+        parts = urllib.parse.urlsplit(url)
+        default_port = {"http": 80, "https": 443}.get(parts.scheme)
+        return (parts.scheme.lower(), (parts.hostname or "").lower(), parts.port or default_port)
+
+    def build_url(self, path, query=None):
+        if "://" in path:
+            # The bearer belongs to this house only. An absolute URL must name the
+            # same origin; anything else would hand the key to another host.
+            if self.origin(path) != self.origin(self.url):
+                raise CliError(f"refusing to send your credential to {path}: it is not {self.url}", EXIT_USAGE)
+            full = path
+        else:
+            if not path.startswith("/"):
+                path = "/api/v1/" + path
+            full = self.url + path
+        params = [(k, v) for k, v in (query or []) if v is not None]
+        if self.account and not any(k == "account_id" for k, _ in params):
+            params.append(("account_id", self.account))
+        if params:
+            sep = "&" if "?" in full else "?"
+            full += sep + urllib.parse.urlencode(params)
+        return full
+
+    def request(self, method, path, query=None, json_body=None, fields=None, files=None, raw=False):
+        if not self.token:
+            raise CliError("no credential: run `souls login`, or set SOULS_TOKEN", EXIT_AUTH)
+        url = self.build_url(path, query)
+        data = None
+        headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
+        if files or fields:
+            data, ctype = encode_multipart(fields or [], files or [])
+            headers["Content-Type"] = ctype
+        elif json_body is not None:
+            data = json.dumps(json_body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(url, data=data, method=method.upper(), headers=headers)
+        req.add_unredirected_header("Authorization", f"Bearer {self.token}")
+        if self.verbose:
+            print(f"> {method.upper()} {url}", file=sys.stderr)
+        try:
+            with _opener.open(req, timeout=self.timeout) as resp:
+                body = resp.read()
+                status = resp.status
+        except urllib.error.HTTPError as err:
+            body = err.read()
+            raise http_error(err.code, body) from None
+        except urllib.error.URLError as err:
+            raise CliError(f"could not reach {self.url}: {err.reason}", EXIT_NETWORK) from None
+        except (socket.timeout, TimeoutError, ConnectionError, OSError) as err:
+            # Timeouts and resets while reading the response arrive outside URLError.
+            raise CliError(f"connection to {self.url} failed: {err or type(err).__name__}", EXIT_NETWORK) from None
+        if self.verbose:
+            print(f"< {status} ({len(body)} bytes)", file=sys.stderr)
+        if raw:
+            return body
+        if not body.strip():
+            return {}
+        try:
+            return json.loads(body)
+        except ValueError:
+            raise CliError(f"expected JSON from {url}, got {body[:200]!r}", EXIT_ERROR) from None
+
+    def get(self, path, **kw):
+        return self.request("GET", path, **kw)
+
+    def post(self, path, **kw):
+        return self.request("POST", path, **kw)
+
+    def patch(self, path, **kw):
+        return self.request("PATCH", path, **kw)
+
+    def delete(self, path, **kw):
+        return self.request("DELETE", path, **kw)
+
+    def paginate(self, path, key, query=None, limit=None):
+        items, cursor = [], None
+        while True:
+            q = list(query or [])
+            if cursor:
+                q.append(("cursor", cursor))
+            page = self.get(path, query=q)
+            items.extend(page.get(key) or [])
+            cursor = page.get("next_cursor")
+            if not cursor or (limit and len(items) >= limit):
+                return items[:limit] if limit else items
+
+
+def http_timeout():
+    raw = os.environ.get("SOULS_HTTP_TIMEOUT")
+    try:
+        return float(raw) if raw else 120.0
+    except ValueError:
+        raise CliError("SOULS_HTTP_TIMEOUT must be a number of seconds", EXIT_USAGE) from None
+
+
+def http_error(status, body):
+    try:
+        parsed = json.loads(body)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, dict):
+        message = parsed.get("error") or parsed.get("message") or json.dumps(parsed)
+        if isinstance(message, (list, dict)):
+            message = json.dumps(message)
+    elif status == 404:
+        message = "not found (or not reachable with this credential)"
+    else:
+        message = (body or b"").decode("utf-8", "replace").strip()[:300] or "no body"
+    code = {401: EXIT_AUTH, 403: EXIT_AUTH, 404: EXIT_NOT_FOUND, 409: EXIT_CONFLICT, 422: EXIT_INVALID}.get(status, EXIT_ERROR)
+    return CliError(f"HTTP {status}: {message}", code, body=parsed, status=status)
+
+
+# ---------------------------------------------------------------- output
+
+def emit(data):
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+
+
+def read_text_arg(text, required=False):
+    """TEXT argument, `-` for stdin, or stdin when it is piped and TEXT is absent."""
+    if text == "-" or (text is None and not sys.stdin.isatty()):
+        value = sys.stdin.read()
+        return value.rstrip("\n") if value.strip() else None
+    if text is None and required:
+        raise CliError("give the text as an argument or on stdin", EXIT_USAGE)
+    return text
+
+
+def format_message(msg):
+    author = msg.get("author")
+    if isinstance(author, dict):
+        author = author.get("name") or author.get("type")
+    stamp = msg.get("timestamp") or msg.get("created_at") or ""
+    header = f"── {author or msg.get('role', '?')} [{msg.get('id')}] {stamp}"
+    lines = [header]
+    if msg.get("discarded"):
+        lines.append("(deleted)")
+    elif msg.get("content"):
+        lines.append(msg["content"])
+    for att in msg.get("attachments") or msg.get("files_json") or []:
+        name = att.get("filename") or att.get("name") or "file"
+        lines.append(f"  📎 {name} ({att.get('content_type', '?')}, {att.get('byte_size', '?')} bytes) {att.get('download_path', '')}")
+    return "\n".join(lines)
+
+
+def conversation_line(conv):
+    tag = conv.get("visual_tag") or {}
+    flags = [f for f in ("archived", "deleted") if conv.get(f)]
+    extra = f" [{tag.get('label')}]" if tag.get("label") else ""
+    extra += f" ({', '.join(flags)})" if flags else ""
+    return f"{conv.get('id')}  {conv.get('updated_at', '')[:16]}  {conv.get('title') or '(untitled)'}{extra}"
+
+
+# ---------------------------------------------------------------- commands
+
+def cmd_login(client, args):
+    token = args.token_value or args.token or os.environ.get("SOULS_TOKEN")
+    if not token:
+        if sys.stdin.isatty():
+            import getpass
+            token = getpass.getpass("API key (hx_…): ").strip()
+        else:
+            token = sys.stdin.read().strip()
+    if not token:
+        raise CliError("no key given", EXIT_USAGE)
+    # Same destination rule as every other command, so a self-hosted key is
+    # never probed against (or saved for) the upstream house.
+    url = (args.url or os.environ.get("SOULS_URL") or DEFAULT_URL).rstrip("/")
+    probe = Client(url, token, timeout=http_timeout())
+    me = probe.get("session") if not args.no_check else {}
+    name = args.profile or "default"
+    config = load_config()
+    config["profiles"][name] = {"url": url, "token": token}
+    config.setdefault("default_profile", name)
+    save_config(config)
+    actor = (me.get("actor") or {}) if isinstance(me, dict) else {}
+    print(f"Saved profile {name!r} for {url}" + (f", acting as {actor.get('name') or actor.get('id')}" if actor else ""), file=sys.stderr)
+
+
+def cmd_logout(client, args):
+    # Logout acts on a saved profile and nothing else: the ambient credential
+    # (flags, SOULS_TOKEN, a resident's env) is never the one revoked.
+    config = load_config()
+    name = args.profile or config.get("default_profile") or "default"
+    profile = config["profiles"].get(name)
+    if not profile:
+        raise CliError(f"no profile named {name!r}", EXIT_NOT_FOUND)
+    if args.revoke:
+        Client(profile.get("url") or DEFAULT_URL, profile.get("token"), timeout=http_timeout()).delete("session")
+    config["profiles"].pop(name)
+    if config.get("default_profile") == name:
+        config.pop("default_profile")
+    save_config(config)
+    print(f"Removed profile {name!r}" + (" and revoked the credential" if args.revoke else ""), file=sys.stderr)
+
+
+def cmd_whoami(client, args):
+    emit(client.get("session"))
+
+
+def cmd_accounts(client, args):
+    emit(client.get("accounts"))
+
+
+def cmd_rooms(client, args):
+    query = [("filter", args.filter)] if args.filter != "active" else []
+    rooms = client.paginate("conversations", "conversations", query=query, limit=None if args.all else args.limit)
+    if args.json:
+        emit({"conversations": rooms})
+    else:
+        for conv in rooms:
+            print(conversation_line(conv))
+
+
+def cmd_read(client, args):
+    query = [("after_message_id", args.after), ("since", args.since)]
+    data = client.get(f"conversations/{args.room}", query=query)
+    conv = data.get("conversation", data)
+    transcript = conv.get("transcript") or []
+    if args.last:
+        transcript = transcript[-args.last:]
+    if args.json:
+        conv = dict(conv, transcript=transcript)
+        emit({"conversation": conv})
+        return
+    agents = ", ".join(a.get("name", "?") for a in conv.get("agents") or [])
+    print(f"# {conv.get('title')} ({conv.get('id')})" + (f" with {agents}" if agents else ""))
+    for msg in transcript:
+        print()
+        print(format_message(msg))
+
+
+def cmd_new(client, args):
+    body = {"title": args.title}
+    if args.agent:
+        body["agent_ids"] = args.agent
+    message = read_text_arg(args.message) if args.message else None
+    if message:
+        body["message"] = message
+    emit(client.post("conversations", json_body=body))
+
+
+def cmd_post(client, args):
+    # With only --attach, stdin is read just when it is "-", so an agent harness
+    # that leaves stdin open doesn't hang an attachment-only post.
+    text = read_text_arg(args.text) if (args.text is not None or not args.attach) else None
+    if not text and not args.attach:
+        raise CliError("nothing to post: give text (argument or stdin) or --attach FILE", EXIT_USAGE)
+    for path in args.attach or []:
+        if not os.path.isfile(path):
+            raise CliError(f"no such file: {path}", EXIT_USAGE)
+    path = f"conversations/{args.room}/messages"
+    if args.attach:
+        fields = [("content", text)] if text else []
+        result = client.post(path, fields=fields, files=[("files[]", p) for p in args.attach])
+    else:
+        result = client.post(path, json_body={"content": text})
+    emit(result)
+
+
+def cmd_edit(client, args):
+    text = read_text_arg(args.text, required=True)
+    emit(client.patch(f"conversations/{args.room}/messages/{args.message}", json_body={"content": text}))
+
+
+def cmd_delete(client, args):
+    emit(client.delete(f"conversations/{args.room}/messages/{args.message}"))
+
+
+def cmd_wake(client, args):
+    body = {"agent_id": args.agent} if args.agent else {}
+    emit(client.post(f"conversations/{args.room}/agent_trigger", json_body=body))
+
+
+def cmd_changes(client, args):
+    emit(client.get(f"conversations/{args.room}/changes", query=[("since", args.since), ("limit", args.limit)]))
+
+
+def cmd_activity(client, args):
+    emit(client.get(f"conversations/{args.room}/activity"))
+
+
+def settled_prefix(rows):
+    """Index just past the leading run of finished rows. A transcript row without
+    `completed` (an older house) counts as finished."""
+    for index, row in enumerate(rows):
+        if row.get("completed") is False:
+            return index
+    return len(rows)
+
+
+def cmd_watch(client, args):
+    """Follow a room and print each finished message once.
+
+    Person credentials use the ordered changes feed: an unfinished reply is
+    skipped and comes back with a new revision when it completes. Resident keys
+    can't read that feed, so they poll the transcript, and the cursor only moves
+    past rows that are finished; an unfinished row is fetched again on each poll
+    until it completes, and only then printed."""
+    since = args.since
+    use_feed = True
+    if since is None:
+        try:
+            first = client.get(f"conversations/{args.room}/changes", query=[("since", 0), ("limit", 1)])
+            since = first.get("latest_revision", 0)
+        except CliError as err:
+            if err.status != 403:
+                raise
+            use_feed = False
+    after, printed = None, set()
+    if not use_feed:
+        rows = client.get(f"conversations/{args.room}").get("conversation", {}).get("transcript") or []
+        cut = settled_prefix(rows)
+        after = rows[cut - 1]["id"] if cut else None
+        # Finished rows already there are history, not news. Replies in flight at
+        # startup are the ones being waited for, so they print when they finish.
+        printed = {row["id"] for row in rows[cut:] if row.get("completed") is not False}
+    deadline = time.time() + args.timeout if args.timeout else None
+    while True:
+        fresh = []
+        if use_feed:
+            while True:
+                page = client.get(f"conversations/{args.room}/changes", query=[("since", since), ("limit", 200)])
+                fresh.extend(page.get("changes") or [])
+                since = page.get("next_since", since)
+                if not page.get("has_more"):
+                    break
+            fresh = [m for m in fresh if args.include_incomplete or m.get("completed", True) or m.get("discarded")]
+        else:
+            data = client.get(f"conversations/{args.room}", query=[("after_message_id", after)])
+            rows = data.get("conversation", {}).get("transcript") or []
+            for row in rows:
+                done = row.get("completed") is not False
+                if row["id"] in printed or not (done or args.include_incomplete):
+                    continue
+                fresh.append(row)
+                if done:
+                    printed.add(row["id"])
+            cut = settled_prefix(rows)
+            if cut:
+                after = rows[cut - 1]["id"]
+                printed -= {row["id"] for row in rows[:cut]}
+        for msg in fresh:
+            if args.json:
+                print(json.dumps(msg, ensure_ascii=False), flush=True)
+            else:
+                print(format_message(msg) + "\n", flush=True)
+        if args.once and any(m.get("completed", True) is not False for m in fresh):
+            return
+        if deadline and time.time() >= deadline:
+            if args.once:
+                raise CliError(f"no new finished message within {args.timeout:g}s", EXIT_TIMEOUT)
+            return
+        time.sleep(args.interval)
+
+
+def cmd_room_action(client, args):
+    path = f"conversations/{args.room}"
+    action = args.room_action
+    if action == "rename":
+        emit(client.patch(path, json_body={"title": args.value}))
+    elif action == "archive":
+        emit(client.post(path + "/archive"))
+    elif action == "unarchive":
+        emit(client.delete(path + "/archive"))
+    elif action == "discard":
+        emit(client.post(path + "/discard"))
+    elif action == "restore":
+        emit(client.delete(path + "/discard"))
+    elif action == "fork":
+        emit(client.post(path + "/fork", json_body={"title": args.value} if args.value else {}))
+
+
+def cmd_search(client, args):
+    results = client.paginate("conversations/search", "messages", query=[("query", args.query)], limit=args.limit)
+    if args.json:
+        emit({"messages": results})
+        return
+    if not results:
+        print("No accessible message contains that exact text (search is a case-sensitive literal substring).", file=sys.stderr)
+    for hit in results:
+        author = hit.get("author")
+        if isinstance(author, dict):
+            author = author.get("name")
+        print(f"{hit.get('conversation_id')}/{hit.get('message_id')}  {hit.get('authored_at', '')[:16]}  {author}: {hit.get('snippet', '').strip()}")
+
+
+def cmd_attention(client, args):
+    emit(client.get("reply_attention"))
+
+
+def cmd_dismiss(client, args):
+    body = {"through_message_id": args.through} if args.through else {"message_id": args.message}
+    emit(client.post(f"conversations/{args.room}/reply_dismissal", json_body=body))
+
+
+def cmd_invitations(client, args):
+    if args.accept:
+        emit(client.post(f"invitations/{args.accept}/accept"))
+    else:
+        emit(client.get("invitations"))
+
+
+def cmd_residents(client, args):
+    if args.id:
+        emit(client.get(f"agents/{args.id}"))
+    else:
+        emit(client.get("agents"))
+
+
+def cmd_download(client, args):
+    body = client.request("GET", args.path, raw=True)
+    if args.output in (None, "-"):
+        sys.stdout.buffer.write(body)
+    else:
+        with open(args.output, "wb") as fh:
+            fh.write(body)
+        print(f"wrote {len(body)} bytes to {args.output}", file=sys.stderr)
+
+
+def parse_pairs(pairs):
+    out = []
+    for pair in pairs or []:
+        if "=" not in pair:
+            raise CliError(f"expected key=value, got {pair!r}", EXIT_USAGE)
+        out.append(tuple(pair.split("=", 1)))
+    return out
+
+
+def cmd_api(client, args):
+    query = parse_pairs(args.query)
+    json_body, fields, files = None, [], []
+    if args.data is not None:
+        raw = sys.stdin.read() if args.data == "-" else args.data
+        try:
+            json_body = json.loads(raw) if raw.strip() else {}
+        except ValueError as err:
+            raise CliError(f"--data is not JSON: {err}", EXIT_USAGE) from None
+    for key, value in parse_pairs(args.form):
+        if value.startswith("@"):
+            files.append((key, value[1:]))
+        else:
+            fields.append((key, value))
+    result = client.request(args.method, args.path, query=query, json_body=json_body,
+                            fields=fields or None, files=files or None, raw=args.raw)
+    if args.raw:
+        sys.stdout.buffer.write(result)
+    else:
+        emit(result)
+
+
+def cmd_config(client, args):
+    url, token, source = resolve_credentials(args)
+    emit({
+        "url": url,
+        "credential_source": source,
+        "token_prefix": (token[:9] + "…") if token else None,
+        "account_id": args.account,
+        "config_file": config_path(),
+        "version": VERSION,
+    })
+
+
+# ---------------------------------------------------------------- parser
+
+COMMAND_GROUPS = [
+    ("Setup", ["login", "logout", "config", "whoami", "accounts"]),
+    ("Rooms", ["rooms", "read", "new", "post", "edit", "delete", "wake", "watch", "changes", "activity",
+               "rename", "archive", "unarchive", "discard", "restore", "fork", "search"]),
+    ("Attention", ["attention", "dismiss", "invitations"]),
+    ("Other", ["residents", "download", "api"]),
+]
+
+
+def build_parser():
+    def make_common(suppress):
+        # Global options work before or after the command. The subcommand copy
+        # defaults to SUPPRESS so it never overwrites a value given earlier.
+        kw = {"default": argparse.SUPPRESS} if suppress else {}
+        c = argparse.ArgumentParser(add_help=False)
+        c.add_argument("--url", help="house URL (default https://souls.house)", **kw)
+        c.add_argument("--token", help="bearer credential; prefer SOULS_TOKEN or `souls login`", **kw)
+        c.add_argument("--profile", help="saved profile name", **kw)
+        c.add_argument("--account", help="act in this account ID (account_id); needed for OAuth or guest rooms", **kw)
+        c.add_argument("-v", "--verbose", action="store_true", help="print requests to stderr", **kw)
+        return c
+
+    common = make_common(suppress=True)
+    parser = argparse.ArgumentParser(prog="souls", parents=[make_common(suppress=False)], description="Command-line client for souls.house.",
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--version", action="version", version=f"souls {VERSION}")
+    sub = parser.add_subparsers(dest="command", metavar="command")
+
+    def add(name, func, help_text, **kw):
+        p = sub.add_parser(name, parents=[common], help=help_text, description=help_text, **kw)
+        p.set_defaults(func=func)
+        return p
+
+    p = add("login", cmd_login, "Save an API key as a profile (reads the key from a prompt or stdin)")
+    p.add_argument("token_value", nargs="?", metavar="KEY", help="the key; omit to be prompted or pipe it on stdin")
+    p.add_argument("--no-check", action="store_true", help="save without calling the house")
+    p = add("logout", cmd_logout, "Forget a saved profile")
+    p.add_argument("--revoke", action="store_true", help="also revoke the credential on the house (DELETE /session)")
+    add("config", cmd_config, "Show which URL and credential would be used")
+    add("whoami", cmd_whoami, "Who is acting, and with which credential")
+    add("accounts", cmd_accounts, "Accounts this credential can see")
+
+    p = add("rooms", cmd_rooms, "List conversations")
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("--archived", dest="filter", action="store_const", const="archived")
+    group.add_argument("--deleted", dest="filter", action="store_const", const="deleted")
+    p.set_defaults(filter="active")
+    p.add_argument("--limit", type=int, default=100, help="stop after this many (default 100)")
+    p.add_argument("--all", action="store_true", help="follow every page")
+    p.add_argument("--json", action="store_true")
+
+    p = add("read", cmd_read, "Read a conversation's transcript")
+    p.add_argument("room")
+    p.add_argument("--after", metavar="MESSAGE_ID", help="only messages after this one")
+    p.add_argument("--since", metavar="ISO_TIME", help="only messages since this time")
+    p.add_argument("--last", type=int, metavar="N", help="only the last N messages")
+    p.add_argument("--json", action="store_true")
+
+    p = add("new", cmd_new, "Create a conversation")
+    p.add_argument("--title", required=True)
+    p.add_argument("--agent", action="append", metavar="RESIDENT_ID", help="repeat for several residents")
+    p.add_argument("--message", metavar="TEXT", help="opening message, or - for stdin")
+
+    p = add("post", cmd_post, "Post a message (text argument, or stdin when piped)")
+    p.add_argument("room")
+    p.add_argument("text", nargs="?", help="message text; - to read stdin (omitting it also reads stdin, except with --attach)")
+    p.add_argument("--attach", action="append", metavar="FILE", help="attach a file; repeatable. A piped caption needs TEXT to be -")
+
+    p = add("edit", cmd_edit, "Edit one of your messages")
+    p.add_argument("room")
+    p.add_argument("message")
+    p.add_argument("text", nargs="?")
+
+    p = add("delete", cmd_delete, "Delete one of your messages")
+    p.add_argument("room")
+    p.add_argument("message")
+
+    p = add("wake", cmd_wake, "Ask a resident (or every resident) in the room to respond")
+    p.add_argument("room")
+    p.add_argument("--agent", metavar="RESIDENT_ID", help="omit to wake everyone")
+
+    p = add("watch", cmd_watch, "Follow a room and print new messages as they arrive")
+    p.add_argument("room")
+    p.add_argument("--since", type=int, metavar="REVISION", help="start after this revision (default: now)")
+    p.add_argument("--interval", type=float, default=5.0, help="seconds between polls (default 5)")
+    p.add_argument("--timeout", type=float, metavar="SECONDS", help="give up after this long (with --once, exit 8)")
+    p.add_argument("--once", action="store_true", help="exit after the first batch of new messages")
+    p.add_argument("--include-incomplete", action="store_true", help="also print replies still being written")
+    p.add_argument("--json", action="store_true", help="one JSON object per line")
+
+    p = add("changes", cmd_changes, "Raw ordered changes feed (person credentials)")
+    p.add_argument("room")
+    p.add_argument("--since", type=int, default=0)
+    p.add_argument("--limit", type=int)
+
+    p = add("activity", cmd_activity, "Resident activity in a room (status only)")
+    p.add_argument("room")
+
+    for action, help_text, value in [
+        ("rename", "Rename a conversation", "title"),
+        ("archive", "Archive a conversation", None),
+        ("unarchive", "Unarchive a conversation", None),
+        ("discard", "Delete a conversation (restorable; managers only)", None),
+        ("restore", "Restore a deleted conversation", None),
+        ("fork", "Fork a conversation", "title?"),
+    ]:
+        p = add(action, cmd_room_action, help_text)
+        p.set_defaults(room_action=action)
+        p.add_argument("room")
+        if value == "title":
+            p.add_argument("value", metavar="TITLE")
+        elif value == "title?":
+            p.add_argument("value", metavar="TITLE", nargs="?")
+
+    p = add("search", cmd_search, "Find messages containing exact text (case-sensitive substring)")
+    p.add_argument("query")
+    p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--json", action="store_true")
+
+    add("attention", cmd_attention, "Where you were asked to respond")
+    p = add("dismiss", cmd_dismiss, "Clear reply flags in a room")
+    p.add_argument("room")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--message", metavar="MESSAGE_ID")
+    g.add_argument("--through", metavar="MESSAGE_ID", help="every flag up to and including this message")
+
+    p = add("invitations", cmd_invitations, "List pending invitations, or accept one")
+    p.add_argument("--accept", metavar="INVITATION_ID")
+
+    p = add("residents", cmd_residents, "List residents you can see, or show one")
+    p.add_argument("id", nargs="?")
+
+    p = add("download", cmd_download, "Download an attachment or file by its download_path")
+    p.add_argument("path", help="e.g. /api/v1/conversations/X/messages/Y/attachments/Z")
+    p.add_argument("-o", "--output", help="file to write (default stdout)")
+
+    p = add("api", cmd_api, "Call any endpoint: souls api GET conversations/X/stones",
+            epilog="PATH may be relative to /api/v1 or absolute. Examples:\n"
+                   "  souls api GET rhythms\n"
+                   "  souls api POST conversations/X/stones -d '{\"title\":\"t\",\"html\":\"<p>hi</p>\"}'\n"
+                   "  souls api POST field/files -F file=@notes.md",
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("method", type=str.upper, choices=["GET", "POST", "PATCH", "PUT", "DELETE"])
+    p.add_argument("path")
+    p.add_argument("-d", "--data", metavar="JSON", help="JSON body, or - for stdin")
+    p.add_argument("-F", "--form", action="append", metavar="KEY=VALUE", help="multipart field; KEY=@file uploads")
+    p.add_argument("-q", "--query", action="append", metavar="KEY=VALUE", help="query parameter; repeatable")
+    p.add_argument("--raw", action="store_true", help="write the response body as-is")
+
+    p = sub.add_parser("help", help="Show help for a command")
+    p.add_argument("topic", nargs="?")
+    p.set_defaults(func=None)
+    return parser, sub
+
+
+def print_overview(parser, sub):
+    print(f"souls {VERSION}: command-line client for souls.house\n")
+    print("Usage: souls <command> [options]    (souls help <command> for details)\n")
+    helps = {a.dest: a.help for a in sub._choices_actions}
+    for title, names in COMMAND_GROUPS:
+        print(f"{title}:")
+        for name in names:
+            print(f"  {name:<12} {helps.get(name, '')}")
+        print()
+    print("Text for post/edit/new can come on stdin, which avoids shell quoting:")
+    print("  printf '%s\\n' 'Hello, $world' | souls post ROOM")
+    print("  printf '%s\\n' 'Caption' | souls post ROOM - --attach chart.png   (with --attach, '-' reads stdin)\n")
+    print("Exit codes: 0 ok, 2 usage, 3 auth (401/403), 4 not found, 5 invalid (422), 6 conflict, 7 network,")
+    print("8 watch --once timed out.")
+    print("Anything without its own command: souls api METHOD PATH. Reference: https://souls.house/llms.txt")
+
+
+def main(argv=None):
+    parser, sub = build_parser()
+    args = parser.parse_args(argv)
+    if args.command in (None, "help"):
+        topic = getattr(args, "topic", None)
+        if topic and topic in sub.choices:
+            sub.choices[topic].print_help()
+        else:
+            print_overview(parser, sub)
+        return EXIT_OK
+    try:
+        if args.command in ("login", "logout"):
+            args.func(None, args)
+            return EXIT_OK
+        url, token, _source = resolve_credentials(args)
+        client = Client(url, token, account=args.account, verbose=args.verbose, timeout=http_timeout())
+        args.func(client, args)
+        sys.stdout.flush()
+        return EXIT_OK
+    except CliError as err:
+        print(f"souls: {err}", file=sys.stderr)
+        return err.code
+    except KeyboardInterrupt:
+        return 130
+    except BrokenPipeError:
+        # The reader went away (souls rooms | head). Point stdout at /dev/null
+        # so the interpreter's final flush doesn't complain.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        return EXIT_OK
+
+
+if __name__ == "__main__":
+    sys.exit(main())

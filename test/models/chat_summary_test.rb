@@ -46,6 +46,16 @@ class ChatSummaryTest < ActiveSupport::TestCase
     assert transcript.first[:author].present?
   end
 
+  test "transcript_for_api marks a reply still being written as not completed" do
+    @chat.messages.create!(content: "Hello", role: "user", user: @user)
+    reply = @chat.messages.create!(content: "Half a", role: "assistant", streaming: true)
+
+    assert_equal [ true, false ], @chat.transcript_for_api.map { |m| m[:completed] }
+
+    reply.update!(content: "Half a thought, now whole", streaming: false)
+    assert_equal [ true, true ], @chat.reload.transcript_for_api.map { |m| m[:completed] }
+  end
+
   test "transcript_for_api excludes system messages" do
     @chat.messages.create!(content: "Hello", role: "user", user: @user)
     @chat.messages.create!(content: "System info", role: "system")

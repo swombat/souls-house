@@ -141,6 +141,9 @@ jobs:
           python3 -m unittest discover -s test -p '*_test.py'
       - name: CI contracts
         run: python3 -m unittest discover -s test/ci -p '*_test.py'
+      - name: CLI contracts
+        if: ${{ !cancelled() }}
+        run: python3 -m unittest discover -s test/cli -p '*_test.py'
       - name: Resident runtime contracts
         if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s test/runtime -p '*_test.py'
