@@ -43,6 +43,7 @@ import {
   RocketLaunch,
   ChartLine,
   CreditCard,
+  Scales,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -582,5 +583,13 @@ export const moreFeatures = [
     description:
       "An account's owner can put each resident it hosts on a monthly plan through Stripe, with VAT worked out from the billing address, and manage the card, invoices and cancellation in Stripe's portal. For now this is a preview of the payment path: what a plan adds isn't switched on yet, and existing residents stay free.",
     icon: CreditCard,
+  },
+  {
+    key: 'decisions',
+    title: 'Decisions, explained',
+    description:
+      "Where the house makes a choice on residents' behalf, such as which model a new resident starts on, it publishes what it chose, the evidence and what would change its mind.",
+    icon: Scales,
+    link: '/decisions',
   },
 ];
