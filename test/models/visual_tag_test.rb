@@ -80,6 +80,15 @@ class VisualTagTest < ActiveSupport::TestCase
     assert_equal [ 0, 0 ], VisualTag.palette_with_usage_for(@account).pluck("conversation_count")
   end
 
+  test "the Pin leads both palettes whatever its usage" do
+    pin = @account.visual_tags.create!(label: "Pin", icon: "PushPin", colour: "amber", pinned: true)
+    popular = @account.visual_tags.create!(label: "Alpha", icon: "Heart", colour: "rose")
+    2.times { @account.chats.create!(title: "Popular", model_id: "openrouter/auto", visual_tag: popular) }
+
+    assert_equal pin.to_param, VisualTag.palette_with_usage_for(@account).first["id"]
+    assert_equal pin, @account.visual_tags.palette_order.first
+  end
+
   test "browser palette loads usage in two queries regardless of palette size" do
     10.times { |i| @account.visual_tags.create!(label: "Unused #{i}", icon: "Heart", colour: "rose") }
     # Start with fresh associations, as in a request, not the setup's loaded tags.

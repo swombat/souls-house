@@ -32,7 +32,7 @@ class VisualTag < ApplicationRecord
   before_destroy :keep_pin, prepend: true
   before_destroy :clear_chat_selections
 
-  scope :palette_order, -> { order(:id) }
+  scope :palette_order, -> { order(pinned: :desc, id: :asc) }
   scope :pinned, -> { where(pinned: true) }
 
   # Browser-only account aggregate. Keep as_json and the resident API palette
@@ -43,7 +43,7 @@ class VisualTag < ApplicationRecord
     account.visual_tags.map do |tag|
       tag.as_json.merge("conversation_count" => counts.fetch(tag.id, 0))
     end.sort_by do |tag|
-      [ -tag["conversation_count"], tag["label"].downcase, tag["label"], tag["id"] ]
+      [ tag["pinned"] ? 0 : 1, -tag["conversation_count"], tag["label"].downcase, tag["label"], tag["id"] ]
     end
   end
 
