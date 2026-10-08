@@ -65,6 +65,8 @@ module FieldRecordings
     end
 
     def requeue_orphans(now)
+      return unless ElevenLabsScribe.configured?
+
       FieldRecording.kept.where(status: "queued").where(updated_at: ...(now - ORPHAN_QUEUED_AFTER)).find_each do |recording|
         TranscribeJob.perform_later(recording.id)
       end

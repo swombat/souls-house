@@ -68,9 +68,21 @@ class FieldRecordings::StuckSweepJobTest < ActiveJob::TestCase
   test "queued recordings with no live job are sent again" do
     orphan = queued_recording(account: @account, user: @user)
     orphan.update_columns(updated_at: 45.minutes.ago)
-    assert_enqueued_with(job: FieldRecordings::TranscribeJob, args: [ orphan.id ]) do
+    ElevenLabsScribe.stub(:configured?, true) do
+      assert_enqueued_with(job: FieldRecordings::TranscribeJob, args: [ orphan.id ]) do
+        FieldRecordings::StuckSweepJob.perform_now(client: FakeScribe.new)
+      end
+    end
+  end
+
+  test "queued recordings aren't re-sent while Scribe isn't configured" do
+    @dispatch.update_columns(created_at: 1.minute.ago) # keep the in-flight one out of this
+    orphan = queued_recording(account: @account, user: @user)
+    orphan.update_columns(updated_at: 45.minutes.ago)
+    ElevenLabsScribe.stub(:configured?, false) do
       FieldRecordings::StuckSweepJob.perform_now(client: FakeScribe.new)
     end
+    assert_no_enqueued_jobs(only: FieldRecordings::TranscribeJob)
   end
 
 end

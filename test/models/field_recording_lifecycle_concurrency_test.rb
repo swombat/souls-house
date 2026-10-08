@@ -54,6 +54,22 @@ class FieldRecordingLifecycleConcurrencyTest < ActiveSupport::TestCase
     assert_equal "consumed", FieldRecordingReservation.find_by(field_recording_id: @recording.id).state
   end
 
+  test "two claims at the account's exposure ceiling: one is sent, one is refused" do
+    @account.update!(recording_ms_weekly_limit: 200_000) # allowance 200 s, exposure ceiling 400 s
+    earlier = claimed_recording(account: @account, user: @user)
+    # 320 s already sent this week: room for one more 45 s attempt, not two.
+    FieldRecordingDispatch.create!(field_recording: earlier, account: @account, audio_ms: 320_000 - @dispatch.audio_ms,
+      attempt_token: SecureRandom.hex(8))
+    a = queued_recording(account: @account, user: @user, duration_ms: 45_000)
+    b = queued_recording(account: @account, user: @user, duration_ms: 45_000)
+
+    results = concurrently(2) { |i| FieldRecording.find([ a, b ][i].id).claim_dispatch! }
+
+    assert_equal 1, results.compact.size
+    assert_operator FieldRecordingDispatch.exposure_ms(@account), :<=, FieldRecordingDispatch.exposure_limit_ms(@account)
+    assert_equal 1, [ a, b ].count { |r| r.reload.failed? }
+  end
+
   private
 
   def concurrently(count)

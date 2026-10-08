@@ -9,10 +9,26 @@ class FieldRecordingDispatch < ApplicationRecord
 
   OUTCOMES = %w[in_flight succeeded failed superseded].freeze
   NO_ID = "no transcription id"
+  EXPOSURE_WINDOW = 7.days
+  # Audio the house will send for one account in a week, counting every
+  # attempt, as a multiple of the account's transcription allowance. Room for
+  # retries after failures, but a hard ceiling on vendor spend.
+  EXPOSURE_FACTOR = 2
+  EXPOSURE_MESSAGE = "This Field has sent as much audio to the transcriber as it can this week. Try again in a few days."
 
   belongs_to :field_recording
+  belongs_to :account
 
   validates :outcome, inclusion: { in: OUTCOMES }
+  validates :audio_ms, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+
+  def self.exposure_ms(account, now: Time.current)
+    where(account:, created_at: (now - EXPOSURE_WINDOW)..).sum(:audio_ms)
+  end
+
+  def self.exposure_limit_ms(account)
+    account.recording_ms_weekly_limit * EXPOSURE_FACTOR
+  end
 
   # Under this row's lock, the same lock the cleanup job takes, so "cleanup
   # found no id" and "the id arrived" can't miss each other.

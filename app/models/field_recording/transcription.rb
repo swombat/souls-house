@@ -13,18 +13,32 @@ module FieldRecording::Transcription
   end
 
   # Claim the next dispatch: queued → transcribing with a fresh attempt.
-  # nil when there's nothing to dispatch (not queued, discarded, or capped).
-  def claim_dispatch!
-    with_lock do
+  # nil when there's nothing to dispatch (not queued, discarded, capped, or
+  # the account's dispatch exposure is used up).
+  #
+  # Two bounds. Per recording, at most MAX_DISPATCHES attempts. Per account,
+  # the audio sent to the vendor in the last 7 days (every committed dispatch,
+  # whatever became of it, because a timed-out or failed attempt may still
+  # have been billed) stays within FieldRecordingDispatch.exposure_limit_ms.
+  # That second bound is what stops refunded failures from buying unbounded
+  # vendor work across new recordings and retries. Account lock first, then
+  # this row, so concurrent claims are serialised.
+  def claim_dispatch!(now: Time.current)
+    account.with_lock do
+      lock!
       next nil unless kept? && queued?
       if dispatch_count >= FieldRecording::MAX_DISPATCHES
         fail_and_release!("The transcriber couldn't process this recording.")
         next nil
       end
+      if FieldRecordingDispatch.exposure_ms(account, now:) + duration_ms.to_i > FieldRecordingDispatch.exposure_limit_ms(account)
+        fail_and_release!(FieldRecordingDispatch::EXPOSURE_MESSAGE)
+        next nil
+      end
 
       token = SecureRandom.urlsafe_base64(24)
       update!(status: "transcribing", attempt_token: token, dispatch_count: dispatch_count + 1)
-      dispatches.create!(attempt_token: token)
+      dispatches.create!(attempt_token: token, account:, audio_ms: duration_ms.to_i)
     end
   end
 

@@ -708,6 +708,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_090000) do
 
   create_table "field_recording_dispatches", force: :cascade do |t|
     t.bigint "field_recording_id", null: false
+    t.bigint "account_id", null: false
+    t.bigint "audio_ms", null: false
     t.string "attempt_token", null: false
     t.string "request_id"
     t.string "transcription_id"
@@ -717,6 +719,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_090000) do
     t.string "vendor_delete_error"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_field_recording_dispatches_on_account_id_and_created_at"
+    t.index ["account_id"], name: "index_field_recording_dispatches_on_account_id"
     t.index ["attempt_token"], name: "index_field_recording_dispatches_on_attempt_token", unique: true
     t.index ["field_recording_id"], name: "index_field_recording_dispatches_on_field_recording_id"
     t.index ["request_id"], name: "index_field_recording_dispatches_on_request_id"
@@ -1664,6 +1668,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_090000) do
   add_foreign_key "device_streams", "accounts"
   add_foreign_key "device_streams", "users", column: "subject_user_id"
   add_foreign_key "field_files", "accounts"
+  add_foreign_key "field_recording_dispatches", "accounts"
   add_foreign_key "field_recording_dispatches", "field_recordings"
   add_foreign_key "field_recording_reservations", "accounts"
   add_foreign_key "field_recording_reservations", "field_recordings"

@@ -9,7 +9,12 @@ module FieldRecordings
     BACKOFF = [ 1.minute, 5.minutes, 15.minutes ].freeze
     SOURCE_URL_TTL = 6.hours
 
-    def perform(recording_id, client: ElevenLabsScribe.new)
+    def perform(recording_id, client: ElevenLabsScribe.new, configured: ElevenLabsScribe.configured?)
+      # Fail closed: without the key, webhook and secret, nothing is sent and
+      # no attempt is used. The recording waits in `queued`; the sweep sends
+      # it once configuration exists.
+      return unless configured
+
       recording = FieldRecording.find_by(id: recording_id)
       dispatch = recording&.claim_dispatch!
       return unless dispatch

@@ -1,6 +1,8 @@
 # Asynchronous Scribe v2 transcription with diarization, for Field recordings
 # (spec §2, §5). Separate from ElevenLabsStt, which stays synchronous for
-# voice notes. Errors carry status codes only, never transcript content.
+# voice notes. Errors carry our own wording and the status code only: no
+# vendor text is stored or logged, so no transcript or signed URL can leak
+# through an error.
 class ElevenLabsScribe
 
   class Error < StandardError; end
@@ -24,7 +26,7 @@ class ElevenLabsScribe
       [ "webhook", "true" ],
       [ "webhook_metadata", metadata.to_json ]
     ]
-    form << [ "webhook_id", webhook_id ] if webhook_id.present?
+    form << [ "webhook_id", self.class.webhook_id ]
     form << [ "num_speakers", num_speakers.to_s ] if num_speakers
     if source_url
       form << [ "cloud_storage_url", source_url ]
@@ -53,7 +55,10 @@ class ElevenLabsScribe
   def self.valid_signature?(header, body, secret:, now: Time.current)
     return false if header.blank? || secret.blank?
 
-    parts = header.split(",").to_h { |part| part.split("=", 2) }
+    parts = header.to_s.split(",").filter_map do |part|
+      key, value = part.strip.split("=", 2)
+      [ key, value ] if key.present? && value.present?
+    end.to_h
     timestamp, signature = parts["t"], parts["v0"]
     return false unless timestamp&.match?(/\A\d+\z/) && signature.present?
 
@@ -68,6 +73,20 @@ class ElevenLabsScribe
     Rails.application.credentials.dig(:ai, :eleven_labs, :stt_webhook_secret)
   end
 
+  def self.webhook_id
+    Rails.application.credentials.dig(:ai, :eleven_labs, :stt_webhook_id)
+  end
+
+  def self.api_key
+    Rails.application.credentials.dig(:ai, :eleven_labs, :api_token)
+  end
+
+  # Paid work starts only when its result can come back verifiably: an API
+  # key, a webhook to deliver to, and the secret to check deliveries with.
+  def self.configured?
+    [ api_key, webhook_id, webhook_secret ].all? { |value| value.is_a?(String) && value.present? }
+  end
+
   private
 
   def perform(request, expect:)
@@ -80,7 +99,7 @@ class ElevenLabsScribe
     unless expect.include?(code)
       raise TransientError, "Scribe returned #{code}" if code == 429 || code >= 500
 
-      raise PermanentError, "Scribe returned #{code}: #{vendor_message(response)}"
+      raise PermanentError, "Scribe refused the request (#{code})"
     end
     return {} if response.body.blank?
 
@@ -91,22 +110,8 @@ class ElevenLabsScribe
     raise TransientError, "Scribe returned an unreadable body"
   end
 
-  # A short vendor reason for a refused request (e.g. "file too long"). Never
-  # the request or transcript body.
-  def vendor_message(response)
-    data = JSON.parse(response.body.to_s)
-    message = data.dig("detail", "message") || data.dig("error", "message") || data["detail"]
-    message.is_a?(String) ? message.truncate(200) : "request refused"
-  rescue JSON::ParserError
-    "request refused"
-  end
-
   def api_key
-    Rails.application.credentials.dig(:ai, :eleven_labs, :api_token) || raise(PermanentError, "ElevenLabs API key not configured")
-  end
-
-  def webhook_id
-    Rails.application.credentials.dig(:ai, :eleven_labs, :stt_webhook_id)
+    self.class.api_key.presence || raise(PermanentError, "ElevenLabs API key not configured")
   end
 
 end
