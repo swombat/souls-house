@@ -27,7 +27,7 @@ module House
     # Mirrors config/deploy.yml's `house_optional.call(...)` list.
     OPTIONAL_KEYS = %w[
       HOUSE_DOCKER_GID HOUSE_BUILDER_REMOTE HOUSE_AGENT_RUNTIME_DOCKER_HOST
-      HOUSE_MAIL_FROM HOUSE_TRANSITION_ALIASES
+      HOUSE_MAIL_FROM HOUSE_SOURCE_REPO HOUSE_TRANSITION_ALIASES
     ].freeze
 
     # Mirrors .kamal/secrets' resolution of each secret.

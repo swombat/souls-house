@@ -50,6 +50,7 @@
   house_docker_gid = house_optional.call("HOUSE_DOCKER_GID")
   house_builder_remote = house_optional.call("HOUSE_BUILDER_REMOTE")
   house_mail_from = house_optional.call("HOUSE_MAIL_FROM")
+  house_source_repo = house_optional.call("HOUSE_SOURCE_REPO")
   transition_aliases = house_optional.call("HOUSE_TRANSITION_ALIASES").to_s.split(",").map(&:strip).reject(&:empty?)
 
   # Canonical HOUSE_EMBEDDINGS_DIGEST; MNEMODYNE_EMBEDDING_IMAGE_DIGEST is kept
@@ -94,6 +95,9 @@ env:
     SOULSHOUSE_STORAGE: <%= house_storage %>
 <% if house_mail_from %>
     SOULSHOUSE_MAIL_FROM: <%= house_mail_from %>
+<% end %>
+<% if house_source_repo %>
+    HOUSE_SOURCE_REPO: <%= house_source_repo %> # owner/repo the Site Admin deploy page reads and dispatches to.
 <% end %>
     MNEMODYNE_EMBEDDING_URL: http://souls-house-embeddings:8080/v1/embeddings
     MNEMODYNE_EMBEDDING_PROFILE: bge-small-en-v1.5-q-52398278842e-fastembed-0.7.4-v1

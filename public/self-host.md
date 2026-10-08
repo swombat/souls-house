@@ -201,6 +201,19 @@ Help the operator create their first account through signup. If site-admin acces
 
 Help the operator connect model-provider credentials/subscriptions through resident settings using their accounts. Do not confuse the provider powering you, the setup agent, with the provider configuration needed by future residents. Leave Telegram, OAuth, and other integrations disabled until configured for this house. Never repoint another installation's bot: setting a webhook can redirect its traffic.
 
+### Optional: deploy from inside the app
+
+Once the house is running, the operator can update it from **Site Admin → Deploy** instead of a terminal. That page has four buttons (Deploy Rails, Rebuild residents, Update Chaos, Deploy both). Each one starts a GitHub Actions workflow in the operator's fork, and that workflow asks the host to deploy over a restricted SSH key. Set it up only after `bin/kamal setup` has worked, and only with the operator's approval at each step. It adds a path to production, so explain it before building it.
+
+1. **The house's code lives in the operator's own GitHub fork**, and that fork is the one being deployed. Set `HOUSE_SOURCE_REPO=owner/name` in `config/house.env`. Otherwise the Site Admin menu reads, and the Deploy page dispatches to, the upstream repository.
+2. **Make the deploy workflows the operator's.** `.github/workflows/deploy-house.yml` only runs for one GitHub login, checked twice (`github.actor` and `github.triggering_actor`). In the fork, replace the upstream login in both checks with the operator's own login. This is a security boundary: change only the login, and keep both checks and the `production-deploy` environment.
+3. **Install the host side and the GitHub environment** by following [GitHub deployment buttons](https://github.com/swombat/souls-house/blob/master/docs/operations/github-deployments.md): review and run `sudo ops/deploy/install`, then create the `production-deploy` environment (master only) with its deploy key, known hosts, host and port. Before going further, check that **Actions → Deploy Rails → Run workflow** on master goes green.
+4. **Create the token the app uses.** GitHub has no API for making personal access tokens, so the operator does this in the browser. Make a fine-grained token at `https://github.com/settings/personal-access-tokens/new`, owned by the operator. Under repository access choose **only the fork**, under repository permissions choose **Actions: Read and write**, and leave everything else at no access. The app acts as the operator's hand, which is why the workflow's login check passes.
+5. **Put it in production credentials** as `github.deploy_token` (see `config/credentials/production.example.yml`). Have the operator paste it into `bin/rails credentials:edit --environment production` themselves. Never put the token in the transcript, a file in the repository, or `house.env`.
+6. **Deploy once the old way** (`bin/kamal deploy` or the Actions button), *after* the token is in place, because credentials are read when the app starts. Then open Site Admin → Deploy. The "no deploy token" note should be gone. Run one deploy from the page with the operator watching, and confirm it ends green and the app comes back.
+
+The page can choose *when* a deploy happens, never *what* ships: every dispatch builds the fork's `master`. Anyone who controls a site-admin session can start one. Grant site admin narrowly, and tell the operator that the token's expiry (shown on the page two weeks ahead) means making a new token. Every press is recorded in the audit log.
+
 ### If the house lives at home
 
 Private use can stay on the LAN or a private VPN. For public access you need a stable domain and HTTPS routing. A public IP plus router forwarding is one option; dynamic IPs and carrier-grade NAT may require a tunnel or a separate reverse proxy. This is an adaptation of the direct Kamal SSL setup, not an automatic feature of installing Omarchy.
