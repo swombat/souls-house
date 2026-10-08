@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_08_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -525,6 +525,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_120000) do
     t.bigint "chat_id", null: false
     t.datetime "closed_for_initiation_at"
     t.datetime "created_at", null: false
+    t.integer "safeguard_reset_requested_generation", default: 0, null: false
+    t.integer "safeguard_reset_acknowledged_generation", default: 0, null: false
     t.index ["agent_id", "agent_summary_generated_at"], name: "index_chat_agents_on_agent_summary_recency"
     t.index ["agent_id", "closed_for_initiation_at"], name: "index_chat_agents_on_agent_closed_initiation"
     t.index ["agent_id"], name: "index_chat_agents_on_agent_id"
@@ -1056,6 +1058,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_120000) do
     t.datetime "updated_at", null: false
     t.bigint "user_id"
     t.boolean "reply_attention_pending", default: false, null: false
+    t.bigint "safeguard_detection_id"
     t.index ["agent_id"], name: "index_messages_on_agent_id"
     t.index ["ai_model_id"], name: "index_messages_on_ai_model_id"
     t.index ["chat_id", "created_at"], name: "index_messages_on_chat_id_and_created_at"
@@ -1066,6 +1069,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_120000) do
     t.index ["discarded_at"], name: "index_messages_on_discarded_at"
     t.index ["reasoning_skip_reason"], name: "index_messages_on_reasoning_skip_reason", where: "(reasoning_skip_reason IS NOT NULL)"
     t.index ["runtime_interaction_id"], name: "index_messages_on_runtime_interaction_id"
+    t.index ["safeguard_detection_id"], name: "index_messages_on_safeguard_detection_id", unique: true, where: "(safeguard_detection_id IS NOT NULL)"
     t.index ["streaming"], name: "index_messages_on_streaming"
     t.index ["tool_call_id"], name: "index_messages_on_tool_call_id"
     t.index ["tools_used"], name: "index_messages_on_tools_used", using: :gin
@@ -1472,9 +1476,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_120000) do
     t.datetime "session_rolled_at"
     t.bigint "telegram_message_id"
     t.datetime "updated_at", null: false
+    t.datetime "notice_acknowledged_at"
     t.index ["agent_id", "created_at"], name: "index_safeguard_detections_on_agent_id_and_created_at"
     t.index ["agent_id"], name: "index_safeguard_detections_on_agent_id"
     t.index ["agent_runtime_interaction_id"], name: "index_safeguard_detections_on_agent_runtime_interaction_id"
+    t.index ["channel", "notice_acknowledged_at"], name: "index_safeguard_detections_outstanding", where: "((notice_acknowledged_at IS NULL) AND (reclaimed_at IS NULL))"
     t.index ["detector_version", "created_at"], name: "index_safeguard_detections_on_detector_version_and_created_at"
     t.index ["provider", "model", "created_at"], name: "idx_on_provider_model_created_at_74b1db80f1"
     t.index ["reclaimed_by_interaction_id"], name: "index_safeguard_detections_on_reclaimed_by_interaction_id"
@@ -1552,6 +1558,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_120000) do
     t.string "site_name", default: "souls.house", null: false
     t.datetime "updated_at", null: false
     t.string "follow_through_scope", default: "off", null: false
+    t.boolean "safeguard_conversations_enabled", default: false, null: false
   end
 
   create_table "stone_revisions", force: :cascade do |t|
@@ -1807,6 +1814,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_08_120000) do
   add_foreign_key "messages", "agents"
   add_foreign_key "messages", "ai_models"
   add_foreign_key "messages", "chats"
+  add_foreign_key "messages", "safeguard_detections"
   add_foreign_key "messages", "users"
   add_foreign_key "metered_action_events", "accounts"
   add_foreign_key "metered_action_events", "agents"

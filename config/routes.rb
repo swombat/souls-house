@@ -205,6 +205,7 @@ Rails.application.routes.draw do
     scope module: :messages do
       resource :retry, only: :create
       resource :voice, only: :create
+      resource :safeguard_reset, only: :create
     end
   end
 

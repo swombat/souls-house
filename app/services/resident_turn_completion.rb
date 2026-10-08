@@ -24,6 +24,7 @@ class ResidentTurnCompletion
       detection&.update!(cold_offer_outcome: @result["status"] == 200 ? "no_response" : "failed") unless detection&.reclaimed?
     end
     finish_telegram(context) if context["telegram_subscription_id"]
+    SafeguardRoll.acknowledge_conversation!(context, @result)
     surface_provider_failure(context)
   end
 
@@ -31,14 +32,9 @@ class ResidentTurnCompletion
 
   def finish_telegram(context)
     subscription = TelegramSubscription.find_by(id: context["telegram_subscription_id"], agent: @turn.agent)
-    return unless subscription && @result["status"] == 200
-    detection = SafeguardDetection.find_by(id: context["safeguard_roll_id"])
-    return unless detection
-    body = @result["body"]
-    reason = body["session_roll_reason"] || body.dig("telemetry", "session", "roll_reason")
-    outcome = body.dig("telemetry", "session", "outcome")
-    detection.update!(session_rolled_at: Time.current) if reason == "safeguard-detected" || outcome.in?(%w[fresh rolled fresh_fallback])
-    subscription.update!(pending_safeguard_detection: nil) if subscription.pending_safeguard_detection_id == detection.id
+    return unless subscription
+
+    SafeguardRoll.acknowledge_telegram!(subscription: subscription, detection_id: context["safeguard_roll_id"], result: @result)
   end
 
   def surface_provider_failure(context)

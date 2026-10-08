@@ -4,9 +4,14 @@ class SafeguardDetection < ApplicationRecord
 
   COLD_OFFER_OUTCOMES = %w[reclaimed no_response failed].freeze
   RESPONSE_TEXT_RETENTION = 30.days
+  # An outstanding conversation notice keeps its exact text past the normal
+  # retention until the resident has been shown it, but never beyond this.
+  OUTSTANDING_NOTICE_RETENTION = 90.days
+  CHANNELS = %w[telegram conversation].freeze
 
   belongs_to :agent
   belongs_to :telegram_message, optional: true
+  has_one :message, inverse_of: :safeguard_detection
   belongs_to :agent_runtime_interaction, optional: true
   belongs_to :reclaimed_by_interaction, class_name: "AgentRuntimeInteraction", optional: true
 
@@ -17,7 +22,23 @@ class SafeguardDetection < ApplicationRecord
   validates :cold_offer_outcome, inclusion: { in: COLD_OFFER_OUTCOMES }, allow_nil: true
   validates :reclaim_reason, length: { maximum: 300 }, allow_nil: true
 
+  validates :channel, inclusion: { in: CHANNELS }
+
   scope :recent_first, -> { order(created_at: :desc) }
+  scope :conversation, -> { where(channel: "conversation") }
+  scope :unacknowledged, -> { where(notice_acknowledged_at: nil, reclaimed_at: nil) }
+
+  # The outstanding notice set for one resident in one conversation (spec §5.1).
+  def self.outstanding_for(agent:, chat:)
+    conversation.unacknowledged
+      .joins(:message)
+      .where(agent_id: agent.id, messages: { chat_id: chat.id, agent_id: agent.id })
+      .order(created_at: :desc, id: :desc)
+  end
+
+  def conversation?
+    channel == "conversation"
+  end
 
   def reclaimed?
     reclaimed_at.present?
@@ -43,10 +64,28 @@ class SafeguardDetection < ApplicationRecord
         cold_offer_outcome: reclaimed_from_cold_offer?(interaction) ? "reclaimed" : cold_offer_outcome
       )
       telegram_message&.update!(sender_name: agent.name)
+      # Same transaction: the message's sync revision and the reclaim commit
+      # together, and every announcement waits for that commit.
+      restore_conversation_attribution
     end
   end
 
   private
+
+  # The label is derived from this row, so the reclaim itself restores the
+  # author. Take a sync revision on the message so clients fetch the change,
+  # and let reply attention see an ordinary message again. Runs inside the
+  # reclaim's transaction: a failed message write rolls the reclaim back.
+  def restore_conversation_attribution
+    return unless conversation?
+
+    message = Message.find_by(safeguard_detection_id: id)
+    return unless message
+
+    message.safeguard_detection = self
+    message.announce_safeguard_label_change!
+    message.refresh_reply_attention!
+  end
 
   def reclaimed_from_cold_offer?(interaction)
     interaction&.trigger_kind == "safeguard_reclaim_offer"

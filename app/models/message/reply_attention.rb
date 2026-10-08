@@ -10,8 +10,18 @@ module Message::ReplyAttention
     after_save_commit :refresh_reply_attention_visibility, if: :saved_change_to_discarded_at?
   end
 
+  # A labelled safeguard script asks no one for a reply on the resident's behalf.
   def reply_attention_conversational?
-    role.in?(%w[user assistant]) && content.present? && !streaming? && !progress_message? && kept?
+    role.in?(%w[user assistant]) && content.present? && !streaming? && !progress_message? && kept? &&
+      !safeguard_labelled?
+  end
+
+  # Re-run the attention bookkeeping when conversational status changed
+  # without a content change (a reclaimed safeguard label).
+  def refresh_reply_attention!
+    update!(reply_attention_pending: reply_attention_conversational?)
+    record_direct_reply_mentions
+    enqueue_reply_attention
   end
 
   private

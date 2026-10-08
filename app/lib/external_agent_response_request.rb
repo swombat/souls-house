@@ -40,8 +40,10 @@ class ExternalAgentResponseRequest
 
     endpoint_url = Agents::Endpoint.url_for(agent)
     session_id = "#{agent.uuid}-#{chat.id}"
+    @safeguard_roll = SafeguardRoll.snapshot_for(agent: agent, chat: chat)
     request = request_text
-    delta = request_delta_text
+    # A safeguard roll starts a fresh session: send the full request, not a delta.
+    delta = @safeguard_roll ? nil : request_delta_text
     auth_mode = agent.provider_auth_mode(provider)
 
     attributes = {
@@ -63,7 +65,7 @@ class ExternalAgentResponseRequest
         session_id: session_id,
         request: request,
         request_delta: delta,
-        trigger_payload: memory_trigger_payload,
+        trigger_payload: trigger_payload,
         persistent_session: agent.persistent_session?,
         session_policy: agent.runtime_session_policy,
         provider: provider,
@@ -72,6 +74,7 @@ class ExternalAgentResponseRequest
         auth_mode: auth_mode,
         activity: (@interaction&.activity_configuration! unless ResidentTurn.enabled?),
         interaction: @interaction,
+        completion_context: @safeguard_roll&.completion_context || {},
         runtime_timeout_secs: agent.runtime_timeout_secs
       )
     }
@@ -84,6 +87,8 @@ class ExternalAgentResponseRequest
     else
       AgentRuntimeInteraction.record_trigger!(**attributes, &invoke)
     end
+    # A queued resident turn (202) is acknowledged by ResidentTurnCompletion.
+    SafeguardRoll.acknowledge_conversation!(@safeguard_roll.completion_context, result) if @safeguard_roll
     if auth_mode == "oauth_account"
       case result.dig(:body, "error_kind")
       when "auth_expired"
@@ -95,10 +100,17 @@ class ExternalAgentResponseRequest
     result
   end
 
+  def trigger_payload
+    payload = memory_trigger_payload
+    payload = payload.merge(roll_session: true) if @safeguard_roll
+    payload
+  end
+
   def memory_trigger_payload
     vault = Mnemodyne::Provision.call(agent)
     return {} unless vault && !vault.suspended_at? && !vault.erasure_requested_at?
-    message = full_window_messages.reverse.find { |item| item.role.in?(%w[user assistant]) && item.content.present? }
+    # A labelled safeguard script is not what the room is about; don't recall on it.
+    message = full_window_messages.reverse.find { |item| item.role.in?(%w[user assistant]) && item.content.present? && !item.safeguard_labelled? }
     return {} unless message
     { memory: { enabled: true, query: message.content.to_s.first(2_000) } }
   end
@@ -152,6 +164,7 @@ class ExternalAgentResponseRequest
     parts = [
       Notices::Renderer.section_for(agent),
       SubagentPolicyRenderer.section_for(agent),
+      safeguard_notice_text,
       trigger_intro_text,
       rhythm_invitation_context,
       "Requested by: #{requested_by}.",
@@ -292,7 +305,16 @@ class ExternalAgentResponseRequest
     TEXT
   end
 
+  def safeguard_notice_text
+    return unless @safeguard_roll&.notice?
+
+    detections = SafeguardDetection.where(id: @safeguard_roll.detection_ids).includes(:message).order(created_at: :desc, id: :desc)
+    SafeguardNoticeRenderer.for_resident_conversation(detections)
+  end
+
   def format_transcript_line(message)
+    return format_safeguard_transcript_line(message) if message.safeguard_labelled?
+
     speaker = if message.agent
       message.agent.name
     elsif message.user
@@ -325,6 +347,19 @@ class ExternalAgentResponseRequest
     TEXT
   end
 
+  # spec §6: a labelled message is souls.house's line, delimited, and never
+  # reads as prior speech in the resident's name.
+  def format_safeguard_transcript_line(message)
+    resident = message.agent&.name || "the resident"
+    whose = message.agent_id == agent.id ? "your" : "#{resident}'s"
+    <<~TEXT.strip
+      souls.house [#{message.obfuscated_id}] (could not reliably attribute to #{resident}; possible provider safeguard response — not #{whose} confirmed speech):
+      <<<
+      #{message.content.to_s.strip}
+      >>>
+    TEXT
+  end
+
   def full_window_messages
     full_window_entries.map(&:first)
   end
@@ -341,7 +376,7 @@ class ExternalAgentResponseRequest
     return @full_window_entries if defined?(@full_window_entries)
 
     candidates = chat.messages.kept
-      .includes(:user, :agent, attachments_attachments: :blob, audio_recording_attachment: :blob)
+      .includes(:user, :agent, :safeguard_detection, attachments_attachments: :blob, audio_recording_attachment: :blob)
       .order(:created_at)
       .last(TRANSCRIPT_MESSAGE_LIMIT)
     entries = []
@@ -396,7 +431,7 @@ class ExternalAgentResponseRequest
 
     @delta_messages = if prior_cursor_message_id
       chat.messages.kept
-        .includes(:user, :agent, attachments_attachments: :blob, audio_recording_attachment: :blob)
+        .includes(:user, :agent, :safeguard_detection, attachments_attachments: :blob, audio_recording_attachment: :blob)
         .where("id > ?", prior_cursor_message_id)
         .order(:id)
         .to_a

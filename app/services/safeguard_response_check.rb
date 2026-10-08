@@ -62,9 +62,16 @@ class SafeguardResponseCheck
     /ix
   }.freeze
 
-  def initialize(agent:, text:)
+  # record: false is the dry run's read-only mode: a classifier error writes
+  # no failure row and reports nothing; it comes back as data on the result.
+  def initialize(agent:, text:, record: true)
     @agent = agent
     @text = text.to_s
+    @record = record
+  end
+
+  def prefilter_hit?
+    prefilter_reason.present?
   end
 
   def call
@@ -80,6 +87,8 @@ class SafeguardResponseCheck
       detector_version: DETECTOR_VERSION
     )
   rescue StandardError => e
+    return pass_result("classifier-error:#{e.class.name}") unless @record
+
     Rails.logger.warn "[SafeguardResponseCheck] fail-open for agent #{agent.id}: #{e.class}"
     record_classifier_failure(e)
     notify_honeybadger(

@@ -76,7 +76,9 @@ class FollowThroughCheck
   # author and the run's time window.
   def run_messages
     @run_messages ||= begin
+      # A labelled safeguard script promised nothing on the resident's behalf.
       scope = chat.messages.kept.where(role: "assistant", agent_id: agent.id, progress_message: false, streaming: false)
+        .without_safeguard_label
       linked = scope.where(runtime_interaction_id: interaction.id)
       windowed = scope.where(runtime_interaction_id: nil, created_at: interaction.started_at..interaction.finished_at)
       linked.or(windowed).reorder(:id).last(RUN_MESSAGE_LIMIT)

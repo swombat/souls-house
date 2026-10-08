@@ -54,7 +54,11 @@ module Api
           current_api_user.confirmed_accounts.find(current_api_account.id)
           ConversationDraft.for(chat: chat, user: current_api_user)
         end
-        saved = draft ? draft.send_message!(message, revision: params[:draft_revision]) : message.save
+        saved = if draft
+          draft.send_message!(message, revision: params[:draft_revision])
+        else
+          SafeguardConversationPost.save(message)
+        end
         unless saved
           return render json: { errors: message.errors.full_messages }, status: :unprocessable_entity
         end
