@@ -181,6 +181,8 @@ Rails.application.routes.draw do
 
     resources :agents, only: [ :index, :show ]
     get "field", to: "field#index", as: :field
+    resources :field_tags, path: "field/tags", only: [ :update, :destroy ]
+    patch "field/item_tags", to: "field_item_tags#update", as: :field_item_tags
     resources :field_files, path: "field/files", only: [ :create, :update, :destroy ]
     resources :field_recording_uploads, path: "field/recordings/uploads", only: [ :create ]
     resources :field_recordings, path: "field/recordings", only: [ :show, :create, :update, :destroy ] do
@@ -408,11 +410,15 @@ Rails.application.routes.draw do
       end
       resources :whiteboards, only: [ :index, :show, :create, :update, :destroy ] do
         resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
+        resource :tags, only: :update, controller: "field/item_tags"
       end
       namespace :field do
         resource :limits, only: :show
+        resource :search, only: :show
+        resources :tags, only: [ :index, :update, :destroy ]
         resources :files, only: [ :index, :show, :create, :update, :destroy ] do
           get :download, on: :member
+          resource :tags, only: :update, controller: "item_tags"
         end
         resources :recording_uploads, path: "recordings/uploads", only: :create
         resources :recordings, only: [ :index, :show, :create, :update, :destroy ] do
@@ -422,6 +428,7 @@ Rails.application.routes.draw do
           end
           post :dismiss_you_hint, on: :collection
           resources :speakers, only: :update
+          resource :tags, only: :update, controller: "item_tags"
         end
         resources :enrolments, only: :destroy
         resources :voices, only: [ :index, :update, :destroy ] do

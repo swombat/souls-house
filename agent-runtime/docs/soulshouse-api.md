@@ -1182,8 +1182,8 @@ curl -L -o recording.m4a -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 ```
 
 Stored is not the same as readable. Any file type can be kept, up to 100 MB
-per file, and there is no automatic transcription yet: an audio recording
-arrives as audio. Say so plainly rather than guessing at contents you could not read.
+per file. A file is not transcribed: audio brought in as a file arrives as
+audio (recordings are different, below). Say so plainly rather than guessing at contents you could not read.
 
 Bring a file into the Field yourself (multipart upload only, not a signed
 blob ID; `title` defaults to the filename, `note` is optional). It is shared
@@ -1208,6 +1208,63 @@ old download links stop working, except that a signed storage URL already
 handed out by a download redirect keeps working until it expires (minutes). It does not reach anything already read:
 your own quotes in chats and anything you kept in memory stay where they are.
 
+
+### Recordings
+
+Recordings brought in as recordings (not as files) are transcribed, with
+speakers separated. List them with `GET /api/v1/field/recordings` and read one
+with `GET /api/v1/field/recordings/RECORDING_ID`. `transcript_text` is present
+once `status` is `ready`. Speakers carry the names people gave them, or
+"Speaker N" otherwise.
+
+### Search the Field
+
+When someone asks about something from their past (a meeting, a call, a
+decision), search the Field before saying you don't know. Search covers
+recording titles, notes and transcripts, file titles, filenames, notes and the
+text of plain-text files (not PDFs), and note names and contents:
+
+```sh
+curl -G -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  --data-urlencode "query=granttree valuation" \
+  "$SOULSHOUSE_APP_URL/api/v1/field/search"
+```
+
+Every word must appear somewhere in the item, though not next to each other.
+`"a phrase"` keeps words together, and `-word` leaves a word out. Matching
+ignores case and doesn't stem, so `meeting` won't find `meetings`: try the
+other forms, or a single distinctive name. Optional parameters: `tag` (repeat
+it for several; an item must carry all of them), `kind` (`recording`, `file`
+or `note`), `sort=relevance` (newest is the default) and `page` (from 0, 20 per
+page, with `next_page` null on the last page).
+
+Each result has `kind`, `id`, `title`, `date`, `tags`, `api_path`,
+`web_path`, and up to three `excerpts`. Each excerpt is `{ text, matches }`,
+where `matches` are `[offset, length]` pairs in characters. Quote the excerpt
+with its date, then read the whole item at `api_path` before you rely on it.
+An excerpt is a window, not the context. An empty result comes with
+`guidance`. It doesn't mean something never happened, only that these words
+didn't match. A long body is searched only in its first 128 kB (about
+128,000 characters of English).
+
+### Tags
+
+Items can carry several tags (`life`, `granttree`, `music`...). Tags are shared
+across the account and folded to lower case. `GET /api/v1/field/tags` lists
+them with item counts. Add or remove tags on an item:
+
+```sh
+curl -X PATCH -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  -H "Content-Type: application/json" -d '{"add":["granttree"],"remove":["zar"]}' \
+  "$SOULSHOUSE_APP_URL/api/v1/field/recordings/RECORDING_ID/tags"
+```
+
+The same works on `/api/v1/field/files/FILE_ID/tags` and
+`/api/v1/whiteboards/WHITEBOARD_ID/tags`. Sending `tags` instead of
+`add`/`remove` replaces the item's whole list, so prefer `add`/`remove`. Every
+change records that you made it. Renaming or deleting a tag itself changes
+everyone's items and is for people only: your key gets 403. Ask a person if a
+tag needs renaming.
 ## Whiteboards
 
 Whiteboards appear as Notes in the Field. People can now create and edit them
