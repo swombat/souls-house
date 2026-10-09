@@ -21,12 +21,14 @@ class CloudProcurement
   class NotAuthorized < StandardError; end
   class NotAllowed < StandardError; end
 
-  Config = Data.define(:image_id, :ssh_key_ids, :locations, :rails_url, :runner_commands) do
+  Config = Data.define(:image_id, :ssh_key_ids, :locations, :rails_url, :runner_commands, :server_type) do
     # runner_commands turns on the VM runner's command channel (#238). Off
     # unless the credentials say so: a VM ordered without it can report but
-    # can never be told to run a resident.
-    def initialize(image_id:, ssh_key_ids:, locations:, rails_url:, runner_commands: false)
-      super(image_id:, ssh_key_ids:, locations:, rails_url:, runner_commands: runner_commands == true)
+    # can never be told to run a resident. server_type is what a VM birth
+    # orders (#246); the pilot's admin plan! still names its own.
+    def initialize(image_id:, ssh_key_ids:, locations:, rails_url:, runner_commands: false, server_type: "cx23")
+      super(image_id:, ssh_key_ids:, locations:, rails_url:, runner_commands: runner_commands == true,
+        server_type: server_type.presence || "cx23")
     end
 
     def self.from_credentials
@@ -37,7 +39,8 @@ class CloudProcurement
         locations: Array(settings[:allowed_locations]).map(&:to_s),
         # The installation's own domain; no default, so an unset one refuses.
         rails_url: ENV["SOULSHOUSE_DOMAIN"].presence&.then { |domain| "https://#{domain}" },
-        runner_commands: settings[:runner_commands] == true
+        runner_commands: settings[:runner_commands] == true,
+        server_type: settings[:server_type].to_s
       )
     end
   end
@@ -68,6 +71,62 @@ class CloudProcurement
   # Fixes location and spec for one purchase. Sends nothing.
   def plan!(placement:, requested_by:, approval_reference:, server_type:)
     require_admin!(requested_by)
+    plan_operation!(placement:, requested_by:, approval_reference:, server_type:)
+  end
+
+  # The one entry point that buys without an installation admin (#246 slice
+  # 5): only for a placement whose birth was durably admitted while "new
+  # residents on their own server" was on. It keys on that record and never
+  # re-reads the switch, so switching it off cannot strand an admitted birth.
+  # The admission already counted this placement against the cap. Audited.
+  def plan_for_vm_birth!(placement:)
+    placement.reload
+    raise NotAllowed, "placement was not admitted as a VM birth" unless placement.vm_birth?
+    raise NotAllowed, "placement has cleanup requested" if placement.cleanup_requested?
+
+    requester = placement.birth_requested_by || raise(NotAllowed, "placement has no recorded birth requester")
+    operation = plan_operation!(placement:, requested_by: requester,
+      approval_reference: "setting:new_residents_on_vm/agent:#{placement.agent_id}", server_type: @config.server_type)
+    AuditLog.create!(user: requester, account: placement.agent.account, action: "vm_birth_procurement_planned",
+      auditable: operation, data: { "agent_id" => placement.agent_id, "placement_id" => placement.id,
+        "admitted_by_setting_at" => placement.admitted_by_setting_at.iso8601, "server_type" => operation.server_type,
+        "location" => operation.location })
+    operation
+  end
+
+  # Cleanup of a placement whose birth failed or was given up (#246): delete
+  # a verified server without an admin, but only when the placement records
+  # cleanup intent. A planned operation that never sent anything is closed
+  # as refused: nothing was bought.
+  def cleanup!(operation)
+    placement = operation.agent_placement
+    raise NotAllowed, "placement has no cleanup requested" unless placement.reload.cleanup_requested?
+
+    operation.reload
+    case operation.state
+    when "planned"
+      settle!(operation, "planned", "refused", last_error_code: "cancelled_before_submit")
+    when "create_in_flight", "unknown", "reconciling", "deleting"
+      reconcile!(operation)
+    when "provisioned", "needs_review"
+      if operation.provider_server_id
+        operation.with_lock do
+          next unless %w[provisioned needs_review].include?(operation.state)
+
+          operation.update!(state: "deleting", delete_requested_at: now, review_reason: nil)
+        end
+        send_delete!(operation) if operation.reload.state == "deleting"
+      end
+    end
+    operation.reload
+  rescue HetznerCloudClient::Error => e
+    operation.update_columns(last_error_code: e.code, last_reconciled_at: now)
+    operation
+  end
+
+  private
+
+  def plan_operation!(placement:, requested_by:, approval_reference:, server_type:)
     raise NotAllowed, "image and SSH keys must be configured" if @config.image_id.nil? || @config.ssh_key_ids.empty?
     raise NotAllowed, "the house domain must be configured" if @config.rails_url.blank?
 
@@ -97,6 +156,8 @@ class CloudProcurement
       )
     end
   end
+
+  public
 
   # Mints enrollment authority, commits create intent, then sends the one
   # create request. Calling it again, concurrently or later, sends nothing.
