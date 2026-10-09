@@ -27,11 +27,26 @@
 
   const editing = $derived(Boolean(rhythm?.id));
 
-  // A model choice for each selected resident that has more than one model.
+  // A model choice for each selected resident that has more than one model,
+  // or that the saved rhythm already pins (so a pin can always be reset, even
+  // when it has left the resident's list).
+  const savedPins = rhythm?.resident_models ?? {};
+  const savedLabels = Object.fromEntries(
+    (rhythm?.residents ?? []).map((resident) => [resident.id, resident.model_label])
+  );
   const modelPickers = $derived(
-    residents.filter(
-      (resident) => $form.rhythm.resident_ids.includes(resident.id) && (resident.model_choices?.length ?? 0) > 1
-    )
+    residents
+      .filter(
+        (resident) =>
+          $form.rhythm.resident_ids.includes(resident.id) &&
+          ((resident.model_choices?.length ?? 0) > 1 || Boolean(savedPins[resident.id]))
+      )
+      .map((resident) => {
+        const pin = savedPins[resident.id];
+        const choices = resident.model_choices ?? [];
+        const stale = pin && !choices.some((choice) => choice.model_id === pin);
+        return { ...resident, stalePin: stale ? { model_id: pin, label: savedLabels[resident.id] || pin } : null };
+      })
   );
   const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
@@ -158,11 +173,20 @@
                 [resident.id]: event.currentTarget.value,
               })}>
             <option value="">Their default ({resident.default_model_label})</option>
-            {#each resident.model_choices as choice (choice.model_id)}
+            {#each resident.model_choices ?? [] as choice (choice.model_id)}
               <option value={choice.model_id}>{choice.label}</option>
             {/each}
+            {#if resident.stalePin}
+              <option value={resident.stalePin.model_id}>{resident.stalePin.label} (no longer available)</option>
+            {/if}
           </select>
         </div>
+        {#if resident.stalePin && $form.rhythm.resident_models?.[resident.id] === resident.stalePin.model_id}
+          <p class="text-xs text-destructive">
+            {resident.stalePin.label} is no longer on {resident.name}'s list, so conversations from this rhythm will
+            report a problem instead of running. Choose another model or their default.
+          </p>
+        {/if}
       {/each}
       {#each [...errorsFor('resident_ids'), ...errorsFor('agents'), ...errorsFor('resident_models')] as error}<p
           class="text-sm text-destructive">

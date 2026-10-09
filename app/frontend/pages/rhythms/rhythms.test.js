@@ -1,5 +1,6 @@
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/svelte';
-import { router } from '@inertiajs/svelte';
+import { router, useForm } from '@inertiajs/svelte';
+import { get } from 'svelte/store';
 import RhythmsIndex from './index.svelte';
 import RhythmForm from './form.svelte';
 import RhythmShow from './show.svelte';
@@ -278,4 +279,58 @@ test('a pinned model shows on the resident chip', () => {
     rhythm: rhythmFixture({ residents: [{ ...residents[0], model_selected: true, model_label: 'Claude Fable 5.1' }] }),
   });
   expect(screen.getByText(/Claude Fable 5\.1/)).toBeInTheDocument();
+});
+
+describe('a saved model pin can always be seen and reset', () => {
+  const opus = { model_id: 'anthropic/claude-opus-5.5', label: 'Claude Opus 5.5' };
+  const fable = { model_id: 'anthropic/claude-fable-5.1', label: 'Claude Fable 5.1' };
+  const sonnet = { model_id: 'anthropic/claude-sonnet-5.5', label: 'Claude Sonnet 5.5' };
+
+  function renderPinned({ choices, pin, pinLabel }) {
+    const resident = { ...residents[0], default_model_label: 'Claude Opus 5.5', model_choices: choices };
+    render(RhythmForm, {
+      account,
+      residents: [resident],
+      timezones: [],
+      rhythm: rhythmFixture({
+        resident_models: { lume: pin },
+        residents: [{ ...residents[0], model_id: pin, model_label: pinLabel, model_selected: true }],
+      }),
+    });
+    return screen.getByLabelText('Lume runs on');
+  }
+
+  async function resetAndSubmit(select) {
+    await fireEvent.change(select, { target: { value: '' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    // The form submits through $form.transform; apply it as Inertia would.
+    const form = get(useForm.mock.results.at(-1).value);
+    expect(form.patch).toHaveBeenCalled();
+    return form.transform.mock.calls.at(-1)[0](form);
+  }
+
+  test('a stale pin with one choice left is shown as unavailable and resets to default', async () => {
+    const select = renderPinned({ choices: [opus], pin: fable.model_id, pinLabel: fable.label });
+    expect(select.value).toBe(fable.model_id);
+    expect(within(select).getByRole('option', { name: 'Claude Fable 5.1 (no longer available)' })).toBeInTheDocument();
+    expect(screen.getByText(/no longer on Lume's list/)).toBeInTheDocument();
+    const data = await resetAndSubmit(select);
+    expect(data.rhythm.resident_models).toEqual({ lume: 'default' });
+    expect(screen.queryByText(/no longer on Lume's list/)).not.toBeInTheDocument();
+  });
+
+  test('a valid pin to the sole default can be changed to follow future defaults', async () => {
+    const select = renderPinned({ choices: [opus], pin: opus.model_id, pinLabel: opus.label });
+    expect(select.value).toBe(opus.model_id);
+    expect(within(select).queryByRole('option', { name: /no longer available/ })).not.toBeInTheDocument();
+    const data = await resetAndSubmit(select);
+    expect(data.rhythm.resident_models).toEqual({ lume: 'default' });
+  });
+
+  test('a stale pin among several choices is shown as unavailable and resets to default', async () => {
+    const select = renderPinned({ choices: [opus, sonnet], pin: fable.model_id, pinLabel: fable.label });
+    expect(within(select).getByRole('option', { name: 'Claude Fable 5.1 (no longer available)' })).toBeInTheDocument();
+    const data = await resetAndSubmit(select);
+    expect(data.rhythm.resident_models).toEqual({ lume: 'default' });
+  });
 });

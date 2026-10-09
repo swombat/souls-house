@@ -290,6 +290,9 @@ class Rhythm < ApplicationRecord
       end
       model_id = model_id.to_s.strip
       next if model_id.blank? || model_id == "default"
+      # Keeping a pin that has since left the allowlist is allowed: an edit to
+      # something else must not fail on it. It is reported at run time.
+      next if persisted? && rhythm_agents.where(agent_id: agent_id).pick(:model_id) == model_id
       if (problem = agent.model_selection_problem(model_id))
         errors.add(:resident_models, "#{Agent.label_for_model(model_id)} #{problem}")
       end

@@ -94,4 +94,15 @@ class RhythmSeatModelsTest < ActiveSupport::TestCase
     assert_not selection.ok?
   end
 
+  test "an unrelated edit still saves when the form resubmits a pin that left the allowlist" do
+    @rhythm.update!(resident_models: { @agent.id => "anthropic/claude-fable-5.1" })
+    @agent.update!(switchable_model_ids: [])
+    assert @rhythm.update_from_form(title: "Renamed", resident_models: { @agent.id => "anthropic/claude-fable-5.1" })
+    assert_equal "Renamed", @rhythm.reload.title
+    assert_equal "anthropic/claude-fable-5.1", @rhythm.resident_models[@agent.id]
+    assert @rhythm.update_from_form(resident_models: { @agent.id => "default" })
+    assert_nil @rhythm.reload.resident_models[@agent.id]
+    assert_not @rhythm.update_from_form(resident_models: { @agent.id => "anthropic/claude-fable-5.1" })
+  end
+
 end
