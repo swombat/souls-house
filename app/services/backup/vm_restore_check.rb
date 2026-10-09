@@ -1,12 +1,14 @@
 require "open3"
+require "timeout"
 require "rubygems/package"
 require "stringio"
 require "zlib"
 
 module Backup
-  # The disposable restore check from the VM-birth design (#246, "Restore
-  # check"): before the switch goes on, prove a VM resident's backup brings
-  # its home back. Reads the latest verified snapshot straight from the
+  # The readback check from the VM-birth design (#246, "Restore check"):
+  # before the switch goes on, read a VM resident's backup back from storage
+  # and compare it with what it was born from. This is readback evidence for
+  # identity and checkpoint, not a full rerun of a recovery onto a new VM. Reads the latest verified snapshot straight from the
   # house's own repository with restic (never through the VM), and checks:
   #
   #   * every file of the seed archive the resident was born from is in the
@@ -23,6 +25,8 @@ module Backup
 
     DUMP_LIMIT = 256.megabytes
     TIMEOUT = 300
+    # The same digest-pinned restic as slice 4's verifier and the VM's tool.
+    IMAGE = "restic/restic@sha256:39d9072fb5651c80d75c7a811612eb60b4c06b32ffe87c2e9f3c7222e1797e76".freeze
 
     Report = Data.define(:agent_id, :snapshot_id, :seed_files, :matched, :missing, :different, :added,
       :checkpoint_ok, :checkpoint_error) do
@@ -33,9 +37,14 @@ module Backup
       end
     end
 
-    def initialize(agent, capture: nil)
+    # capture replaces restic entirely (unit tests); argv_builder, cleanup and
+    # timeout exercise the real bounded process handling with a fake child.
+    def initialize(agent, capture: nil, argv_builder: nil, cleanup: nil, timeout: nil)
       @agent = agent
       @capture = capture
+      @argv_builder = argv_builder
+      @cleanup = cleanup
+      @timeout = timeout
     end
 
     def call
@@ -80,6 +89,7 @@ module Backup
 
     def capture_for_verifier(_agent, *args) = capture(*args)
 
+
     # Regular files only, keyed by path relative to the volume root.
     def read_tar(bytes, strip: nil)
       files = {}
@@ -98,33 +108,80 @@ module Backup
 
     def capture(*args)
       return @capture.call(*args).to_s.b if @capture
-      raise Failed, "Live restore checks are disabled in tests" if Rails.env.test?
+      raise Failed, "Live restore checks are disabled in tests" if Rails.env.test? && !@argv_builder
 
       name = "vm-restore-check-#{SecureRandom.hex(8)}"
-      argv = [ "docker", "run", "--rm", "--name", name,
+      run_bounded(argv_for(name, args), name, args.first)
+    end
+
+    # The same bounded pattern as slice 4's verifier: the child runs in its
+    # own process group, output is read concurrently under a byte limit,
+    # stderr keeps only a short tail, a timeout kills the whole group before
+    # waiting, and the tool container is removed by its unique name with a
+    # bounded docker rm.
+    def run_bounded(argv, name, what)
+      output = +"".b
+      tail = +"".b
+      Open3.popen3(*argv, pgroup: true) do |stdin, stdout, stderr, thread|
+        stdin.close
+        reader = Thread.new do
+          loop do
+            output << stdout.readpartial(64.kilobytes)
+            raise Failed, "restic output exceeds #{DUMP_LIMIT} bytes" if output.bytesize > DUMP_LIMIT
+          end
+        rescue EOFError
+          nil
+        end
+        errors = Thread.new do
+          loop do
+            tail << stderr.readpartial(4.kilobytes)
+            tail = tail.byteslice(-2.kilobytes, 2.kilobytes) || tail if tail.bytesize > 2.kilobytes
+          end
+        rescue EOFError
+          nil
+        end
+        begin
+          Timeout.timeout(@timeout || TIMEOUT) do
+            reader.value
+            errors.value
+            raise Failed, "restic #{what} failed: #{tail.to_s.scrub.last(500)}" unless thread.value.success?
+          end
+        ensure
+          Process.kill("KILL", -thread.pid) if thread.alive? rescue nil
+          reader.join(5)
+          errors.join(5)
+        end
+      end
+      output
+    rescue Timeout::Error
+      raise Failed, "restic #{what} timed out"
+    ensure
+      cleanup(name)
+    end
+
+    def argv_for(name, args)
+      return @argv_builder.call(name, args) if @argv_builder
+
+      [ "docker", "run", "--rm", "--name", name,
         "-e", "AWS_ACCESS_KEY_ID=#{AgentRestic.aws_value(:access_key_id)}",
         "-e", "AWS_SECRET_ACCESS_KEY=#{AgentRestic.aws_value(:secret_access_key)}",
         "-e", "AWS_DEFAULT_REGION=#{AgentRestic.region}",
         "-e", "RESTIC_PASSWORD=#{agent.restic_password}",
         "-e", "RESTIC_REPOSITORY=#{AgentRestic.repository_url(agent)}",
-        AgentRestic::IMAGE, "--no-lock", "--no-cache", *args ]
-      output = +"".b
-      Open3.popen3(*argv) do |stdin, stdout, stderr, thread|
-        stdin.close
-        errors = Thread.new { stderr.read.to_s }
-        Timeout.timeout(TIMEOUT) do
-          while (chunk = stdout.read(1.megabyte))
-            output << chunk
-            raise Failed, "restic output exceeds #{DUMP_LIMIT} bytes" if output.bytesize > DUMP_LIMIT
-          end
-        end
-        raise Failed, "restic #{args.first} failed: #{errors.value.last(500)}" unless thread.value.success?
+        IMAGE, "--no-lock", "--no-cache", *args ]
+    end
+
+    def cleanup(name)
+      return @cleanup.call(name) if @cleanup
+
+      pid = Process.spawn("docker", "rm", "--force", name, out: File::NULL, err: File::NULL, pgroup: true)
+      begin
+        Timeout.timeout(10) { Process.wait(pid) }
+      rescue Timeout::Error
+        Process.kill("KILL", -pid) rescue nil
+        Process.wait(pid) rescue nil
+        raise Failed, "restore check container cleanup timed out"
       end
-      output
-    rescue Timeout::Error
-      raise Failed, "restic #{args.first} timed out"
-    ensure
-      system("docker", "rm", "-f", name, out: File::NULL, err: File::NULL) if name && !@capture
     end
 
   end

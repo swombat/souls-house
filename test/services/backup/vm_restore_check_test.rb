@@ -62,4 +62,30 @@ class Backup::VmRestoreCheckTest < ActiveSupport::TestCase
     assert_raises(Backup::VmRestoreCheck::Failed) { check(@seed) }
   end
 
+
+  test "a stalled child is killed at the timeout, its group reaped, and the container cleanup still runs" do
+    cleaned = []
+    pid_file = Rails.root.join("tmp", "stalled-#{SecureRandom.hex(4)}.pid")
+    builder = ->(_name, _args) { [ "sh", "-c", "echo $$ > #{pid_file}; sleep 30" ] }
+    check = Backup::VmRestoreCheck.new(@agent, argv_builder: builder, cleanup: ->(name) { cleaned << name }, timeout: 1)
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    error = assert_raises(Backup::VmRestoreCheck::Failed) { check.call }
+    assert_match(/timed out/, error.message)
+    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 10
+    assert_equal 1, cleaned.size
+    assert_match(/\Avm-restore-check-\h{16}\z/, cleaned.first)
+    child = File.read(pid_file).to_i
+    assert_raises(Errno::ESRCH) { Process.kill(0, child) }
+  ensure
+    File.delete(pid_file) if pid_file && File.exist?(pid_file)
+  end
+
+  test "a failing child reports a bounded tail of its stderr" do
+    builder = ->(_name, _args) { [ "sh", "-c", "head -c 100000 /dev/zero | tr '\\\\0' x >&2; echo the-real-reason >&2; exit 3" ] }
+    check = Backup::VmRestoreCheck.new(@agent, argv_builder: builder, cleanup: ->(_) {}, timeout: 10)
+    error = assert_raises(Backup::VmRestoreCheck::Failed) { check.call }
+    assert_match(/the-real-reason/, error.message)
+    assert_operator error.message.bytesize, :<, 700
+  end
+
 end
