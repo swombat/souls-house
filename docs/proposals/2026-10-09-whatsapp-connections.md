@@ -174,8 +174,9 @@ default `false`.
 - **No revival.** `set_service_access!` reuses the access row and changes only
   `enabled` (`agent/hosted_setup.rb`), so default-false is not enough.
   Disabling the row clears `can_send`, and re-enabling read never restores it.
-  `can_send` is also cleared on every access row when the connection is
-  disconnected, re-paired to another number, or its owner changes.
+  `can_send` is also cleared on every access row whenever the connection leaves
+  `connected` (disconnect, logout, re-pair, error, suspension) or its owner
+  changes.
 - Grants **and** withdrawals of `can_send` are recorded (who, when, which
   resident) and shown on the owner's connection page.
 
@@ -202,8 +203,8 @@ resident can already see the connection, so 404 would hide nothing).
   record and at most one connector call.
 - **Checked at dispatch.** Inside the claim, under a lock: the connection is
   `connected`, the access row is enabled with `can_send`, and the rate limit
-  has room. Rate limits are counted from `comms_sends` rows per connection and
-  per resident, so concurrent requests cannot pass the cap together, and a
+  has room. Rate limits are counted from `comms_sends` rows per connection
+  (every claimed row counts, failed ones included), so concurrent requests cannot pass the cap together, and a
   retry of an existing send neither counts again nor calls again. Proposed
   limits, provisional and for Daniel to adjust: 6/minute and 100/day per
   connection. Beyond them, 429.
@@ -230,7 +231,10 @@ provider ID, or the echo finds the send by provider ID). The body is never
 rewritten.
 
 **The connector side.** `send_text` is a signed Rails → connector command
-carrying the send record's ID, the chat and the text. Before calling whatsmeow
+carrying the send record's ID, the chat, the text and the WhatsApp message ID.
+Rails chooses that ID at claim time (derived from the connection and send IDs)
+and the connector must use it (whatsmeow `SendRequestExtra.ID`), so an echo
+that arrives before the ack can already be linked. Before calling whatsmeow
 `SendMessage`, the connector durably records the send ID as *attempted* in its
 store; afterwards it records the outcome. A command for a send ID already
 attempted is never sent again: it returns the stored outcome, or `unknown` if
@@ -239,7 +243,12 @@ ID is derived from the send ID, which helps matching but is not, on present
 evidence, an exactly-once guarantee. Rails waits with a bounded timeout. A
 timeout or an ambiguous restart leaves the record `unknown`, and nothing
 retries an `unknown` send by itself: a duplicate message to a person is worse
-than a missing one. Rails never invents `sent` or `failed`. The connector logs no text, chat or JID;
+than a missing one. Rails never invents `sent` or `failed` for a send the
+connector was asked to make. It does record `failed` itself, with a reason,
+when it refused at dispatch and never called the connector. Rails marks a send
+`unknown` *before* the call, so a crash mid-call leaves `unknown`. A send that
+was claimed but never dispatched stays `pending`, and a retry with its
+`client_request_id` dispatches it once. The connector logs no text, chat or JID;
 Rails filters `text`.
 
 **Not in milestone 1:** media, new conversations, scheduled sends, sending as
