@@ -9,7 +9,13 @@ class SiteDashboard
 
   DAYS = 30
   WEEKS = 26
-  CACHE_KEY = "admin/site_dashboard/v1".freeze
+  HOURS = 7 * 24
+  GIB = 1024**3
+  RESTIC_FRESH_FOR = 36.hours
+  DISK_FRESH_FOR = 6.hours
+  # Bump the version whenever the payload shape changes: Solid Cache
+  # survives a deploy, and the page must never read an older shape.
+  CACHE_KEY = "admin/site_dashboard/v2".freeze
   # A finished turn failed if the runtime said error or timeout, if the live
   # activity path finished it as failed or timed out, or if the house
   # recorded an error and the runtime never reported a status (a refused or
@@ -59,6 +65,8 @@ class SiteDashboard
       costs: costs,
       placement: placement,
       backups: backups,
+      server: server,
+      storage: storage,
       founding: founding_accounts
     }
   end
@@ -380,7 +388,13 @@ class SiteDashboard
                                 .select("DISTINCT ON (agent_id) agent_id, size_bytes, taken_at")
                                 .order(:agent_id, taken_at: :desc)
     during = AgentBackupSnapshot.where(ok: true, taken_at: start..).order(:taken_at).pluck(:agent_id, :size_bytes, :taken_at)
-    current = before.to_h { |row| [ row.agent_id, row.size_bytes.to_i ] }
+    carry_forward(before.to_h { |row| [ row.agent_id, row.size_bytes.to_i ] }, during)
+  end
+
+  # Daily totals from per-resident readings, each resident's last reading
+  # carried forward until a newer one arrives. `during` is [[id, bytes, time]]
+  # sorted by time.
+  def carry_forward(current, during)
     pointer = 0
     days.map do |day|
       limit = day.end_of_day
@@ -392,6 +406,160 @@ class SiteDashboard
       total = current.values.sum
       total.positive? ? total : nil
     end
+  end
+
+  # --- server (sampled every five minutes) ---------------------------------
+
+  def host_samples
+    HouseSample.of_kind("host").where(subject: "house")
+  end
+
+  def server
+    latest = host_samples.order(sampled_at: :desc).first
+    return { available: false } unless latest
+    metrics = latest.metrics
+    hours = (0...HOURS).map { |i| (now - (HOURS - 1 - i).hours).beginning_of_hour }
+    hourly = host_samples.where(sampled_at: hours.first..)
+                         .group(Arel.sql("date_trunc('hour', sampled_at)"))
+                         .pluck(Arel.sql("date_trunc('hour', sampled_at)"),
+                                Arel.sql("avg((metrics->>'cpu_percent')::float)"),
+                                Arel.sql("avg((metrics->>'load_1')::float)"),
+                                Arel.sql("avg((metrics->>'mem_total_bytes')::float - (metrics->>'mem_available_bytes')::float)"))
+                         .to_h { |hour, cpu, load, mem| [ hour.to_i, [ cpu&.round(1), load&.round(2), mem&.round ] ] }
+    series = hours.map { |hour| hourly[hour.to_i] || [ nil, nil, nil ] }
+    disk_daily = host_samples.where(sampled_at: days.first.beginning_of_day..)
+                             .group(Arel.sql("date_trunc('day', sampled_at)"))
+                             .maximum(Arel.sql("(metrics->>'disk_used_bytes')::bigint"))
+                             .transform_keys(&:to_date)
+    day_cpu = host_samples.where(sampled_at: 24.hours.ago(now)..).average(Arel.sql("(metrics->>'cpu_percent')::float"))
+    {
+      available: true,
+      sampled_at: latest.sampled_at.iso8601,
+      cores: metrics["cores"],
+      load: [ metrics["load_1"], metrics["load_5"], metrics["load_15"] ],
+      cpu_percent: metrics["cpu_percent"],
+      cpu_avg_24h: day_cpu&.to_f&.round(1),
+      mem_total_bytes: metrics["mem_total_bytes"],
+      mem_available_bytes: metrics["mem_available_bytes"],
+      disk_total_bytes: metrics["disk_total_bytes"],
+      disk_used_bytes: metrics["disk_used_bytes"],
+      hourly_cpu: series.map(&:first),
+      hourly_load: series.map { |row| row[1] },
+      hourly_mem_used: series.map(&:last),
+      daily_disk_used: days.map { |day| disk_daily[day] },
+      busiest_residents: busiest_residents,
+      vms: hetzner_vms
+    }
+  end
+
+  # Average CPU (percent of one core) and memory per resident container over
+  # the last 24 hours, from the per-container readings in each host sample.
+  def busiest_residents
+    rows = HouseSample.connection.select_rows(HouseSample.sanitize_sql([ <<~SQL.squish, 24.hours.ago(now) ]))
+      SELECT entry.key, avg((entry.value->>'cpu')::float), avg((entry.value->>'mem')::float)
+      FROM house_samples, jsonb_each(house_samples.metrics->'residents') AS entry
+      WHERE house_samples.kind = 'host' AND house_samples.subject = 'house' AND house_samples.sampled_at >= ?
+      GROUP BY entry.key ORDER BY 2 DESC NULLS LAST LIMIT 8
+    SQL
+    agents = Agent.where(id: rows.map { |row| row.first.to_i }).index_by(&:id)
+    founding = founding_ids.to_set
+    rows.filter_map do |agent_id, cpu, mem|
+      agent = agents[agent_id.to_i]
+      next unless agent
+      { name: agent.name, founding: founding.include?(agent.account_id), cpu: cpu.to_f.round(1), mem_bytes: mem&.to_f&.round }
+    end
+  end
+
+  def hetzner_vms
+    latest = HouseSample.latest_per(:subject, "hetzner_vm").where(sampled_at: 1.hour.ago(now)..).to_a
+    agents = Agent.where(id: latest.map(&:agent_id)).index_by(&:id)
+    latest.map do |sample|
+      { name: agents[sample.agent_id]&.name, location: sample.metrics["location"], cpu: sample.metrics["cpu_percent"] }
+    end
+  end
+
+  # --- storage: on disk vs in Restic, and what it costs ---------------------
+
+  # Totals are each resident's last good reading. Coverage says how many
+  # residents those readings cover and how old they are, so a partial or
+  # stale total is shown as one rather than passed off as the whole.
+  def storage
+    pricing = HouseSample.of_kind("pricing").order(sampled_at: :desc).first&.metrics || {}
+    restic = HouseSample.latest_per(:agent_id, "restic_storage").to_a
+    stored = restic.sum { |sample| sample.metrics["bytes"].to_i }
+    price = pricing["s3_usd_per_gb_month"]
+    hosted = Agent.hosted.pluck(:storage_usage)
+    on_disk = hosted.select { |usage| usage["bytes"].present? }
+    {
+      restic_sampled: restic.any?,
+      restic_stored_bytes: restic.any? ? stored : nil,
+      restic_objects: restic.sum { |sample| sample.metrics["objects"].to_i },
+      restic_usd_per_month: restic.any? && price ? (stored.to_f / GIB * price).round(2) : nil,
+      restic_coverage: restic_coverage(restic),
+      s3_usd_per_gb_month: price,
+      s3_price_assumed: pricing["s3_price_assumed"] == true,
+      s3_region: pricing["s3_region"],
+      restic_daily_bytes: daily_sample_totals("restic_storage"),
+      disk_bytes: on_disk.any? ? on_disk.sum { |usage| usage["bytes"].to_i } : nil,
+      disk_residents_measured: on_disk.size,
+      disk_coverage: disk_coverage(hosted, on_disk),
+      disk_daily_bytes: daily_sample_totals("resident_disk"),
+      hetzner_eur_per_month: hetzner_monthly(pricing["hetzner_eur_per_month"]),
+      pricing_sampled_at: HouseSample.of_kind("pricing").maximum(:sampled_at)&.iso8601
+    }
+  end
+
+  # Residents with at least one good backup have a repository to measure.
+  def restic_coverage(latest)
+    expected = AgentBackupSnapshot.where(ok: true).distinct.pluck(:agent_id)
+    by_agent = latest.index_by(&:agent_id)
+    fresh = expected.count { |id| by_agent[id] && by_agent[id].sampled_at >= now - RESTIC_FRESH_FOR }
+    measured = expected.count { |id| by_agent[id] }
+    {
+      expected: expected.size,
+      fresh: fresh,
+      stale: measured - fresh,
+      missing: expected.size - measured,
+      oldest_sampled_at: expected.filter_map { |id| by_agent[id]&.sampled_at }.min&.iso8601
+    }
+  end
+
+  def parse_time(value)
+    Time.zone.parse(value.to_s)
+  rescue ArgumentError
+    nil
+  end
+
+  def disk_coverage(hosted, measured)
+    times = measured.filter_map { |usage| parse_time(usage["measured_at"]) }
+    fresh = times.count { |time| time >= now - DISK_FRESH_FOR }
+    {
+      expected: hosted.size,
+      fresh: fresh,
+      stale: measured.size - fresh,
+      missing: hosted.size - measured.size,
+      oldest_sampled_at: times.min&.iso8601
+    }
+  end
+
+  def daily_sample_totals(kind)
+    start = days.first.beginning_of_day
+    before = HouseSample.latest_per(:agent_id, kind).where(sampled_at: ...start).to_a
+                        .to_h { |sample| [ sample.agent_id, sample.metrics["bytes"].to_i ] }
+    during = HouseSample.of_kind(kind).where(sampled_at: start..).order(:sampled_at)
+                        .pluck(:agent_id, Arel.sql("(metrics->>'bytes')::bigint"), :sampled_at)
+    carry_forward(before, during)
+  end
+
+  def hetzner_monthly(prices)
+    return nil unless prices.is_a?(Hash)
+    # Confirmed VMs only, as in #placement: an unresolved purchase is not a cost we know we pay.
+    vms = CloudProcurementOperation.where(state: "provisioned").where.not(provider_server_id: nil)
+                                   .pluck(:server_type, :location)
+    return 0.0 if vms.empty?
+    amounts = vms.map { |type, location| prices.dig(type, location) }
+    return nil if amounts.any?(&:nil?)
+    amounts.sum.round(2)
   end
 
   # --- founding -------------------------------------------------------------

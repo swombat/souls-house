@@ -289,4 +289,20 @@ class HetznerCloudClientTest < ActiveSupport::TestCase
     assert_nil @client.find_action(78)
   end
 
+  test "server_cpu averages the metric points and is nil without any" do
+    stub_request(:get, %r{#{API}/servers/42/metrics\?.*type=cpu})
+      .to_return(status: 200, body: { metrics: { time_series: { cpu: { values: [ [ 1, "10" ], [ 2, "30" ], [ 3, "x" ] ] } } } }.to_json)
+    assert_equal 20.0, @client.server_cpu(42, start: 5.minutes.ago, finish: Time.current)
+
+    stub_request(:get, %r{#{API}/servers/43/metrics}).to_return(status: 200, body: { metrics: { time_series: {} } }.to_json)
+    assert_nil @client.server_cpu(43, start: 5.minutes.ago, finish: Time.current)
+  end
+
+  test "server_type_prices reads gross monthly prices per location" do
+    stub_request(:get, "#{API}/server_types?name=cx23").to_return(status: 200, body: {
+      server_types: [ { name: "cx23", prices: [ { location: "nbg1", price_monthly: { net: "3.49", gross: "4.1531" } } ] } ]
+    }.to_json)
+    assert_equal({ "cx23" => { "nbg1" => 4.15 } }, @client.server_type_prices(%w[cx23]))
+  end
+
 end

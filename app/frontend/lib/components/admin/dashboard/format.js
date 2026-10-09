@@ -90,3 +90,18 @@ export function lastValue(values) {
   }
   return null;
 }
+
+export function shortDateTime(iso) {
+  if (!iso) return '?';
+  return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+// "measured hourly" stops being true the moment readings go missing or old;
+// say so next to the total instead of letting it pass as complete.
+export function coverageNote(coverage) {
+  if (!coverage || !coverage.expected) return null;
+  const parts = [];
+  if (coverage.missing) parts.push(`${coverage.missing} of ${coverage.expected} not measured`);
+  if (coverage.stale) parts.push(`${coverage.stale} stale since ${shortDateTime(coverage.oldest_sampled_at)}`);
+  return parts.length ? `Partial: ${parts.join(', ')}` : null;
+}

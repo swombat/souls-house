@@ -2,27 +2,24 @@
   import { router } from '@inertiajs/svelte';
   import { ArrowClockwise, Warning } from 'phosphor-svelte';
   import StatTile from '$lib/components/admin/dashboard/StatTile.svelte';
-  import Sparkline from '$lib/components/admin/dashboard/Sparkline.svelte';
   import StackedBars from '$lib/components/admin/dashboard/StackedBars.svelte';
   import GrowthChart from '$lib/components/admin/dashboard/GrowthChart.svelte';
+  import ServerPanel from '$lib/components/admin/dashboard/ServerPanel.svelte';
+  import CostsPanel from '$lib/components/admin/dashboard/CostsPanel.svelte';
+  import InfraPanel from '$lib/components/admin/dashboard/InfraPanel.svelte';
+  import StoragePanel from '$lib/components/admin/dashboard/StoragePanel.svelte';
+  import { TEAL, CORAL, VIOLET, SLATE, AMBER } from '$lib/components/admin/dashboard/palette.js';
   import {
     formatCount,
-    formatUsd,
     formatPercent,
-    formatBytes,
     weeklyDelta,
     periodChange,
     stackTotals,
+    shortDateTime,
   } from '$lib/components/admin/dashboard/format.js';
 
   let { dashboard, cached_for_seconds = 300 } = $props();
 
-  // The house palette: teal for life, coral for trouble and money, slate for
-  // the founding band.
-  const TEAL = '#14b8a6';
-  const CORAL = '#f97366';
-  const VIOLET = '#8b5cf6';
-  const SLATE = '#94a3b8';
   const CHANNEL_COLORS = {
     conversation: TEAL,
     telegram: '#38bdf8',
@@ -41,6 +38,13 @@
   const backups = $derived(dashboard.backups);
   const placement = $derived(dashboard.placement);
   const funnel = $derived(dashboard.funnel);
+  // Defaults keep the page standing if it is ever handed an older payload.
+  const server = $derived(dashboard.server ?? { available: false });
+  const storage = $derived(dashboard.storage ?? {});
+  const serverAgeMinutes = $derived(
+    server.available ? Math.round((new Date(dashboard.generated_at) - new Date(server.sampled_at)) / 60000) : null
+  );
+  const serverStale = $derived(serverAgeMinutes !== null && serverAgeMinutes > 15);
 
   const channelKeys = $derived(activity.channels.map((c) => c.key));
   const activitySeries = $derived(activity[activityScope]);
@@ -63,7 +67,6 @@
     }, {})
   );
   const placementSum = $derived(Math.max(1, (placementTotals.house || 0) + (placementTotals.hetzner || 0)));
-  const largestBackup = $derived(Math.max(1, ...backups.largest.map((row) => row.bytes)));
 
   const generated = $derived(
     new Date(dashboard.generated_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
@@ -273,52 +276,7 @@
       </dl>
     </div>
 
-    <!-- Costs -->
-    <div class="rounded-xl border bg-card p-5 lg:col-span-2">
-      <div class="mb-4 flex items-baseline justify-between">
-        <h2 class="font-medium">Model spend · {costs.window_days}d</h2>
-        <span class="text-xs text-muted-foreground">estimated at list prices as of {costs.pricing_as_of}</span>
-      </div>
-      <div class="grid gap-4 sm:grid-cols-2">
-        {#each [['public', 'New residents', CORAL], ['founding', 'Founding & family', SLATE]] as [key, title, color]}
-          {@const band = costs[key]}
-          <div class="rounded-lg border p-4" class:bg-muted={key === 'founding'}>
-            <div class="mb-2 text-xs uppercase tracking-wide text-muted-foreground">{title}</div>
-            <div class="flex items-end justify-between gap-3">
-              <div>
-                <div class="text-2xl font-semibold tabular-nums">{formatUsd(band.api_usd)}</div>
-                <div class="text-xs text-muted-foreground">on API keys</div>
-              </div>
-              <Sparkline values={band.daily_usd} width={110} height={34} {color} label={`${title} daily spend`} />
-            </div>
-            <dl class="mt-3 space-y-1 text-sm">
-              <div class="flex justify-between">
-                <dt class="text-muted-foreground">Per active resident</dt>
-                <dd class="tabular-nums font-medium">{formatUsd(band.per_active_resident_usd, { precise: true })}</dd>
-              </div>
-              <div class="flex justify-between">
-                <dt class="text-muted-foreground">Active residents</dt>
-                <dd class="tabular-nums">{formatCount(band.active_residents)}</dd>
-              </div>
-              {#if band.subscription_estimate_usd}
-                <div
-                  class="flex justify-between"
-                  title="Turns on a provider subscription cost nothing extra; this is what they would have cost on an API key">
-                  <dt class="text-muted-foreground">Covered by subscriptions</dt>
-                  <dd class="tabular-nums text-muted-foreground">≈ {formatUsd(band.subscription_estimate_usd)}</dd>
-                </div>
-              {/if}
-              {#if band.unpriced_turns}
-                <div class="flex justify-between text-xs">
-                  <dt class="text-muted-foreground">Turns without a price</dt>
-                  <dd class="tabular-nums text-muted-foreground">{formatCount(band.unpriced_turns)}</dd>
-                </div>
-              {/if}
-            </dl>
-          </div>
-        {/each}
-      </div>
-    </div>
+    <CostsPanel {costs} />
 
     <!-- Placement -->
     <div class="rounded-xl border bg-card p-5">
@@ -361,55 +319,35 @@
       {/if}
     </div>
 
-    <!-- Storage -->
+    <!-- Server -->
     <div class="rounded-xl border bg-card p-5 lg:col-span-2">
       <div class="mb-4 flex items-baseline justify-between">
-        <h2 class="font-medium">Backups</h2>
-        <span class="text-xs text-muted-foreground">Restic, one repository per resident</span>
-      </div>
-      <div class="grid gap-6 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <div>
-          <div class="text-2xl font-semibold tabular-nums">{formatBytes(backups.logical_bytes)}</div>
-          <div class="text-xs text-muted-foreground">
-            backed up across {formatCount(backups.residents_backed_up)} residents
-          </div>
-          <div class="mt-3">
-            <Sparkline
-              values={backups.daily_logical_bytes}
-              width={220}
-              height={44}
-              color={VIOLET}
-              label="Backed-up bytes per day" />
-          </div>
-          <p class="mt-3 text-xs text-muted-foreground">
-            This is the data each resident had at its last backup. What S3 actually stores after deduplication, and what
-            it costs, arrives with the storage sampler.
-          </p>
-        </div>
-        <ul class="space-y-2 text-sm">
-          {#each backups.largest as row}
-            <li>
-              <div class="flex justify-between gap-2">
-                <span class="truncate">
-                  {row.name}
-                  {#if row.founding}<span class="text-xs text-muted-foreground">founding</span>{/if}
-                </span>
-                <span class="tabular-nums text-muted-foreground">{formatBytes(row.bytes)}</span>
-              </div>
-              <div class="mt-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                <div
-                  class="h-full rounded-full"
-                  style:width={`${(row.bytes / largestBackup) * 100}%`}
-                  style:background={row.founding ? SLATE : VIOLET}>
-                </div>
-              </div>
-            </li>
+        <h2 class="font-medium">House host</h2>
+        <span class="text-xs" class:text-amber-600={serverStale} class:text-muted-foreground={!serverStale}>
+          {#if !server.available}
+            not sampled yet
+          {:else if serverStale}
+            stale: last sample {shortDateTime(server.sampled_at)}, {serverAgeMinutes} min ago
           {:else}
-            <li class="text-muted-foreground">No successful backups yet.</li>
-          {/each}
-        </ul>
+            sampled every 5 minutes · last {new Date(server.sampled_at).toLocaleTimeString('en-GB', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          {/if}
+        </span>
       </div>
+      {#if server.available}
+        <ServerPanel {server} colors={{ teal: TEAL, coral: CORAL, amber: AMBER, violet: VIOLET, slate: SLATE }} />
+      {:else}
+        <p class="text-sm text-muted-foreground">
+          The host sampler runs every five minutes. CPU, load, memory and disk appear here after its first run.
+        </p>
+      {/if}
     </div>
+
+    <InfraPanel {storage} {server} />
+
+    <StoragePanel {storage} {backups} />
 
     <!-- Founding -->
     <div class="rounded-xl border bg-card p-5">
