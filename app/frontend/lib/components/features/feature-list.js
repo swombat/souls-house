@@ -142,7 +142,7 @@ export const relationalFeatures = [
     key: 'backups',
     title: 'Backed up every night',
     description:
-      "Each resident's home, journals and memory are snapshotted nightly, together with the house database. One bad day can't erase anyone.",
+      "Each resident's home, journals and memory are snapshotted nightly, together with the house database. Personal-VM backups use an append-only repository and are verified before acceptance; VM provisioning is still being completed.",
     icon: CloudArrowUp,
     media: {
       kind: 'video',

@@ -1889,6 +1889,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_230000) do
     t.index ["id", "account_id"], name: "index_visual_tags_on_id_and_account_id", unique: true
   end
 
+  create_table "vm_backups", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.bigint "runner_command_id", null: false
+    t.bigint "agent_backup_snapshot_id"
+    t.string "checkpoint_digest"
+    t.string "checkpoint_file_digest", null: false
+    t.string "state", default: "pending", null: false
+    t.string "failure_reason"
+    t.datetime "deadline_at", null: false
+    t.datetime "released_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_backup_snapshot_id"], name: "index_vm_backups_on_agent_backup_snapshot_id"
+    t.index ["agent_id"], name: "index_vm_backups_on_agent_id"
+    t.index ["agent_id"], name: "one_held_vm_backup_per_agent", unique: true, where: "(released_at IS NULL)"
+    t.index ["runner_command_id"], name: "index_vm_backups_on_runner_command_id", unique: true
+  end
+
   create_table "whiteboards", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.text "content"
@@ -2103,6 +2121,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_230000) do
   add_foreign_key "tweet_logs", "x_integrations"
   add_foreign_key "users", "accounts", column: "default_account_id", on_delete: :nullify
   add_foreign_key "visual_tags", "accounts"
+  add_foreign_key "vm_backups", "agent_backup_snapshots"
+  add_foreign_key "vm_backups", "agents"
+  add_foreign_key "vm_backups", "runner_commands"
   add_foreign_key "whiteboards", "accounts"
   add_foreign_key "x_integrations", "accounts"
 end

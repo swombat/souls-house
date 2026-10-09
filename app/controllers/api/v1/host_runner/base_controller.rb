@@ -46,7 +46,14 @@ module Api
 
         def facts
           value = payload["facts"]
-          value.is_a?(Hash) ? value.slice(*FACT_KEYS) : {}
+          return {} unless value.is_a?(Hash)
+
+          result = value.slice(*FACT_KEYS)
+          recovery = value["recovered_backup"]
+          if recovery.is_a?(Hash)
+            result["recovered_backup"] = recovery.slice("command_id", "container_name", "unpaused", "tools_stopped")
+          end
+          result
         end
 
         def reported_server_id
