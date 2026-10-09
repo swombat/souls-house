@@ -10,6 +10,7 @@ import {
   preflightProblem,
   recordingStatusLine,
   speakerNames,
+  suppliedTurns,
   timedWords,
   turnSpeakerName,
 } from './field-recordings';
@@ -91,7 +92,13 @@ describe('recording wording', () => {
   });
 
   it('shows no limit, and never warns, when the account is unlimited', () => {
-    const allowance = { limit_ms: 360_000_000_000, used_ms: 12_000_000, pending_ms: 0, window_days: 7, unlimited: true };
+    const allowance = {
+      limit_ms: 360_000_000_000,
+      used_ms: 12_000_000,
+      pending_ms: 0,
+      window_days: 7,
+      unlimited: true,
+    };
     expect(allowanceLine(allowance)).toBe('3 h 20 m used in the last 7 days (no weekly limit)');
     expect(preflightProblem(400 * 3_600_000, allowance)).toBe('');
   });
@@ -122,5 +129,27 @@ describe('recording wording', () => {
       last_named_in: 'Venue',
     });
     expect(parseNameMatch('nope')).toBeNull();
+  });
+});
+
+describe('suppliedTurns', () => {
+  it('makes one untimed part per turn, keeping a start only where one was given', () => {
+    const turns = suppliedTurns([
+      { spk: null, s: null, t: 'Source: x.mp3' },
+      { spk: 'Anna', s: 21000, t: 'How am I feeling?' },
+      { spk: 'Daniel', t: 'Mm-hmm.' },
+      { spk: 'Daniel', s: 5, t: '' },
+    ]);
+    expect(turns.map((turn) => [turn.spk, turn.start, turn.text])).toEqual([
+      [null, null, 'Source: x.mp3'],
+      ['Anna', 21000, 'How am I feeling?'],
+      ['Daniel', null, 'Mm-hmm.'],
+    ]);
+    expect(turns[1].parts).toEqual([{ k: 'w', t: 'How am I feeling?', s: 21000, i: null, whole: true }]);
+    expect(turnSpeakerName(turns[0], {})).toBe('Unattributed');
+  });
+
+  it('copes with nothing', () => {
+    expect(suppliedTurns(null)).toEqual([]);
   });
 });

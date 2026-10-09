@@ -18,6 +18,8 @@ module Api
         include ApiHumanReach
         include ApiHomeAccountOnly
 
+        class BadParam < StandardError; end
+
         HUMAN_ACTIONS = %i[audio create update destroy retry dismiss_you_hint].freeze
 
         before_action :require_human_actor!, only: HUMAN_ACTIONS
@@ -30,6 +32,7 @@ module Api
         def index
           account = current_api_agent ? current_api_account : human_request_account!
           recordings = account.field_recordings.kept.includes(:uploaded_by).newest_first
+          recordings = recordings.where(import_key: params[:import_key].to_s.strip) if params[:import_key].present?
           render json: { recordings: recordings.map { |recording| summary_json(recording) } }
         end
 
@@ -45,14 +48,27 @@ module Api
         end
 
         # Step 2: claim the direct upload made through
-        # POST /api/v1/field/recordings/uploads.
+        # POST /api/v1/field/recordings/uploads. With transcript_text or
+        # transcript_turns the recording arrives with its transcript and lands
+        # ready (FieldRecording#store_supplied_transcript!). import_key makes
+        # the call safe to repeat: the same key returns the recording it made.
         def create
-          attributes = params.permit(:upload_id, :title, :note, :expected_speakers)
+          account = human_request_account!
+          attributes = params.permit(:upload_id, :title, :note, :expected_speakers, :source_path, :recorded_at,
+            :import_key, :language_code)
+          return if render_existing_import(account, attributes[:import_key])
+
+          turns = supplied_turns
+          if attributes[:language_code].present? && !turns
+            return render json: { error: "language_code goes with a supplied transcript" }, status: :unprocessable_entity
+          end
+
           recording = FieldRecording::Upload.claim!(
-            account: human_request_account!,
+            account:,
             user: current_api_user,
             signed_id: attributes[:upload_id],
-            attributes: attributes.slice(:title, :note, :expected_speakers).to_h.symbolize_keys
+            attributes: recording_attributes(attributes, supplied: turns.present?),
+            supplied_turns: turns
           )
 
           unless recording
@@ -62,6 +78,12 @@ module Api
 
           FieldRecordings::ProbeJob.perform_later(recording.id)
           render json: { recording: person_json(recording) }, status: :created
+        rescue FieldRecording::SuppliedTranscript::Invalid, BadParam => e
+          render json: { error: e.message }, status: :unprocessable_entity
+        rescue ActiveRecord::RecordNotUnique
+          # A concurrent call with the same key won the race.
+          render_existing_import(account, attributes[:import_key]) ||
+            render(json: { error: "That import is already in progress." }, status: :conflict)
         rescue ActiveRecord::RecordInvalid => e
           render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
         end
@@ -101,6 +123,65 @@ module Api
 
         private
 
+        # The same import_key again: the recording it made (200, existing:
+        # true), whose upload this call leaves unclaimed for the orphan sweep.
+        # Deleted since: 409, so rerunning an import never brings it back.
+        # Not derived from filenames, so two files that share one stay two.
+        def render_existing_import(account, key)
+          key = key.to_s.strip
+          return false if key.empty?
+
+          existing = account.field_recordings.find_by(import_key: key)
+          return false unless existing
+
+          if existing.kept?
+            render json: { recording: person_json(existing), existing: true }, status: :ok
+          else
+            render json: { error: "A recording imported with this key was deleted.", import_key: key }, status: :conflict
+          end
+          true
+        end
+
+        # nil, or turns from transcript_turns (structured) or transcript_text.
+        def supplied_turns
+          if params.key?(:transcript_turns) && params.key?(:transcript_text)
+            raise FieldRecording::SuppliedTranscript::Invalid, "Send transcript_turns or transcript_text, not both."
+          end
+
+          if params.key?(:transcript_turns)
+            raw = params[:transcript_turns]
+            raise FieldRecording::SuppliedTranscript::Invalid, "transcript_turns must be a list" unless raw.is_a?(Array)
+
+            FieldRecording::SuppliedTranscript.from_turns(raw.map do |turn|
+              raise FieldRecording::SuppliedTranscript::Invalid, "each turn must be an object" unless turn.respond_to?(:permit)
+
+              turn.permit(:speaker, :start_ms, :text).to_h
+            end)
+          elsif params.key?(:transcript_text)
+            FieldRecording::SuppliedTranscript.parse(params[:transcript_text])
+          end
+        end
+
+        def recording_attributes(attributes, supplied:)
+          permitted = %i[title note source_path import_key]
+          permitted << (supplied ? :language_code : :expected_speakers)
+          values = attributes.slice(*permitted).to_h.symbolize_keys
+          values[:recorded_at] = recorded_at(attributes[:recorded_at]) if attributes[:recorded_at].present?
+          values
+        end
+
+        # ISO 8601, a date or a time. Anything else is refused rather than
+        # silently stored as nothing.
+        def recorded_at(value)
+          Time.iso8601(value.to_s)
+        rescue ArgumentError
+          begin
+            Date.iso8601(value.to_s).in_time_zone
+          rescue Date::Error
+            raise BadParam, "recorded_at must be an ISO 8601 date or time"
+          end
+        end
+
         # A resident reads in its home account, as before. A person finds the
         # recording in any account they may reach, and acts in its account.
         def set_recording
@@ -121,7 +202,11 @@ module Api
             language_code: recording.language_code,
             uploaded_by: { kind: recording.uploader_kind, name: recording.uploader_name },
             created_at: recording.created_at.iso8601,
-            ready_at: recording.ready_at&.iso8601
+            ready_at: recording.ready_at&.iso8601,
+            transcript_source: recording.transcript_source,
+            recorded_at: recording.recorded_at&.iso8601,
+            source_path: recording.source_path,
+            import_key: recording.import_key
           }
         end
 
@@ -129,7 +214,7 @@ module Api
           summary_json(recording).merge(
             transcript_text: (recording.transcript_text if recording.ready?),
             speakers: recording.speakers.includes(:field_voice).map do |speaker|
-              { label: speaker.default_name, name: speaker.display_name, talk_ms: speaker.talk_ms }
+              { label: speaker.default_name, name: speaker.display_name, talk_ms: speaker.known_talk_ms }
             end
           )
         end
@@ -149,6 +234,7 @@ module Api
             audio_path: (audio_api_v1_field_recording_path(recording) if recording.audio.attached?),
             transcript_text: (recording.transcript_text if recording.ready?),
             words: recording.ready? ? recording.transcript_words : [],
+            turns: (recording.transcript_turns if recording.ready? && recording.supplied?),
             speakers: recording.speakers.includes(:field_voice).map { |speaker| FieldItems.plain_speaker_json(speaker) },
             show_you_hint: show_you_hint?(recording)
           )

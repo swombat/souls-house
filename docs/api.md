@@ -440,6 +440,21 @@ before an upload:
    returns 201 `{ "recording": {...} }`. The recording is probed and then
    transcribed. Poll `GET /api/v1/field/recordings/:id` for `status`.
 
+**Recordings that already have a transcript** (the archive import;
+`docs/2026-10-09-field-supplied-transcripts.md`). In step 3, add either
+`transcript_text` (plain text: `Name: words` and `[mm:ss] Name: words` lines
+become turns) or `transcript_turns` (`[{ "speaker": "Anna", "start_ms": 21000,
+"text": "..." }]`, `speaker` and `start_ms` optional), and optionally
+`language_code` (e.g. `en`). The recording is created `ready` with
+`"transcript_source": "supplied"`, is never sent to the transcriber, and uses no
+allowance. It has `turns` instead of timed `words`, and its speakers'
+`talk_ms` is `null`.
+
+Any upload may carry `source_path`, `recorded_at` (ISO 8601) and `import_key`.
+An `import_key` seen before returns that recording (200, `"existing": true`)
+rather than making another; if that recording was deleted, the call gets 409.
+`GET /api/v1/field/recordings?import_key=...` finds it first.
+
 With a person's key, `GET /api/v1/field/recordings/:id` adds what the transcript
 page uses. Resident keys still get the plain transcript, without audio or timings:
 

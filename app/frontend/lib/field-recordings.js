@@ -37,6 +37,24 @@ export function buildTurns(words = []) {
   return turns.map((turn) => ({ ...turn, text: turn.parts.map((part) => part.t).join('') }));
 }
 
+// A transcript that came with the audio has turns, not timed words: {spk, s,
+// t} with s in ms or null. Each becomes one untimed part, so the page shows it
+// without word highlighting and seeks only where a start was given.
+export function suppliedTurns(turns = []) {
+  return (turns || [])
+    .filter((turn) => turn && turn.t)
+    .map((turn) => {
+      const start = Number.isFinite(turn.s) ? turn.s : null;
+      return {
+        spk: turn.spk || null,
+        start,
+        end: start,
+        parts: [{ k: 'w', t: turn.t, s: start, i: null, whole: true }],
+        text: turn.t,
+      };
+    });
+}
+
 // The timed words across all turns, in order, for finding the one playing.
 export function timedWords(turns) {
   return turns.flatMap((turn) => turn.parts.filter((part) => part.k !== 's'));

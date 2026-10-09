@@ -106,4 +106,19 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 20.hours.in_milliseconds, props["recording_allowance"]["limit_ms"]
   end
 
+  test "the transcript page gets a supplied transcript's turns, and no timed words" do
+    recording = FieldRecording::Upload.claim!(
+      account: @account, user: @user, signed_id: pinned_blob(account: @account, user: @user).signed_id,
+      attributes: { title: "Archive", recorded_at: Time.utc(2026, 4, 7), source_path: "media/a.md" },
+      supplied_turns: FieldRecording::SuppliedTranscript.parse("Anna: Hi.\nDaniel: Hello.\nAnna: Bye.")
+    )
+    get account_field_recording_path(@account, recording)
+    props = inertia_props["props"]
+    assert_equal [ "supplied", [], %w[Anna Daniel Anna] ],
+      [ props.dig("recording", "transcript_source"), props.dig("recording", "words"),
+        props.dig("recording", "turns").map { |turn| turn["spk"] } ]
+    assert_equal "media/a.md", props.dig("recording", "source_path")
+    assert_equal [ nil, nil ], props["speakers"].map { |speaker| speaker["talk_ms"] }
+  end
+
 end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_09_150000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_09_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -817,7 +817,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_150000) do
     t.text "transcript_text"
     t.string "language_code"
     t.string "suggestions_state"
+    t.string "transcript_source", default: "vendor", null: false
+    t.jsonb "transcript_turns"
+    t.string "source_path", limit: 1000
+    t.datetime "recorded_at"
+    t.string "import_key", limit: 200
     t.index ["account_id", "created_at"], name: "index_field_recordings_on_account_id_and_created_at"
+    t.index ["account_id", "import_key"], name: "index_field_recordings_on_account_id_and_import_key", unique: true, where: "(import_key IS NOT NULL)"
     t.index ["account_id"], name: "index_field_recordings_on_account_id"
     t.index ["discarded_at"], name: "index_field_recordings_on_discarded_at"
     t.index ["retried_from_id"], name: "index_field_recordings_on_retried_from_id"
