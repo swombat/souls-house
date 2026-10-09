@@ -9,17 +9,29 @@ This builds on what the second pilot proved on 2026-10-08: ordering
 dispatch (#241), and images served from the house (#242). The pilot's
 gaps are listed below.
 
+*Revised after Mira's review of `090a72dc`
+([comment](https://github.com/swombat/souls-house/pull/246#issuecomment-6075400049)):
+no silent local fallback, real append-only storage with no automatic VM
+prune, durable cleanup through uncertain purchases, an idempotent seed,
+and a first backup that means a recoverable home.*
+
 ## What this protects, and from whom
 
 - **The resident, from losing its home.** On a VM, the home lives only on
   the VM. Without backups, losing the VM means losing the resident. So no
-  VM resident is reported ready until its first backup has succeeded.
+  VM resident is reported ready until a verified backup of its home, with
+  its graph checkpoint from the same quiesced moment, has been committed.
 - **Residents from each other.** A compromised resident must not be able
-  to read, write or delete another resident's backups, and it must never
-  see the house's S3 or Hetzner credentials.
+  to read, write, replace or delete another resident's backups, must not
+  be able to replace or destroy its own history, and must never see the
+  house's S3 or Hetzner credentials.
+- **Daniel's isolation choice, from quietly degrading.** With the switch
+  on, a resident either gets a VM or isn't created. It never ends up
+  local without anyone noticing.
 - **The house's money.** A switch that buys a server for every resident
-  needs a ceiling, and a resident that is deleted must not leave a server
-  behind that keeps billing.
+  needs a ceiling. Any server that might exist keeps counting against
+  that ceiling until its deletion is confirmed, including servers whose
+  resident was deleted mid-purchase.
 
 It does **not** protect residents from the house. The house holds the
 Hetzner project token and stays root over every VM.
@@ -27,140 +39,248 @@ Hetzner project token and stays root over every VM.
 ## Site setting
 
 `settings.new_residents_on_vm` (boolean, default false) and
-`settings.vm_resident_limit` (integer, default 0). The limit is a cap on
-unresolved and live VM placements. Both go on Site Admin → Settings.
+`settings.vm_resident_limit` (integer, default 0). Both go on Site Admin →
+Settings. The page states the v1 exclusions next to the switch.
 
-When the switch is on, `Agents::HostedBirth` creates the resident with an
-`AgentPlacement(backend: hetzner_cloud, state: pending)` in the same
-transaction. If procurement isn't configured, or the cap has been
-reached, the resident is born locally exactly as today, and the
-admin-visible reason is recorded. A resident is never left with no home
-because of the switch.
+**With the switch on, creation either gets a VM or is refused before
+anything is committed.** The create form and `POST` refuse with a plain
+reason when:
+- procurement isn't configured (image, keys, house domain, command
+  channel)
+- the cap is reached
+- the resident is outside v1:
+  - imported homes (the reviewed home would have to reach the VM; that
+    comes in a later slice)
+  - subscription-OAuth providers (those residents stay creatable only with
+    the switch off)
 
-v1 eligibility (otherwise local, with a reason):
-- born hosted, not an imported home (imports need the reviewed home on
-  the VM, which is a later slice)
-- provider is house inference or an API-key provider. API-key providers
-  get their keys as container env, as they do locally (same trust: the
-  key sits in that resident's own container either way). Subscription
-  OAuth residents stay local for now.
+  House inference and API-key providers are in v1. API keys go to the
+  resident's own container as env, the same trust as locally.
+
+Nothing falls back to local. If Daniel later wants "VM where possible,
+local otherwise", that's a separate policy.
+
+**Cap.** The cap counts placements with `backend: hetzner_cloud` that
+aren't `retired`, plus any placement whose procurement operation is
+unresolved or whose deletion is unconfirmed. Creation takes the
+procurement admission advisory lock, counts, and creates the placement in
+the same transaction, so two simultaneous births can't both take the last
+slot.
+
+**Turning the switch off** affects only births not yet committed. Births
+already admitted keep going on their VM. Nothing is moved local.
 
 ## Creation flow
 
-`ProvisionAgentJob` branches on placement. The VM path is a new job,
-`ProvisionVmAgentJob`, which re-enqueues itself until it finishes or
-fails. It keeps each step idempotent and reads state rather than
-remembering it:
+`HostedBirth`, when the switch is on, creates the agent and an
+`AgentPlacement(backend: hetzner_cloud, state: pending)` together, then
+enqueues `ProvisionVmAgentJob` instead of `ProvisionAgentJob`. The job
+re-enqueues itself until it reaches done or failed. Each step reads
+current state, so it's safe to re-run:
 
 1. **Credentials.** `HostedProvisioning#prepare!` mints the outbound key,
-   trigger token and restic password for a VM placement as well. It
-   skips everything that is local Docker (`Resources.validate!`, the
-   container name's namespace check, sandbox host, publish ports). This
-   is the step I did by hand in the console during the pilot.
-2. **Order.** `CloudProcurement#plan!` / `submit!` with a system actor
-   instead of an admin. The `approval_reference` is the setting plus the
-   resident's id. `plan!` keeps its rule of one unresolved purchase per
-   placement.
+   trigger token and restic password for a VM placement too. There's no
+   local Docker step. (Slice 1, #247.)
+2. **Order.** This is a new, narrow entry point,
+   `CloudProcurement#plan_for_vm_birth!(placement:)`. It is the only path
+   that accepts the system actor, and only while the setting is on. It
+   writes an audit-log entry and uses `approval_reference:
+   "setting:new_residents_on_vm/agent:<id>"`. The admin gate on `plan!`
+   is unchanged. Then `submit!` as now.
 3. **Enroll.** Reconcile until the runner has enrolled and is healthy.
-   The existing deadlines apply; an expired enrollment means the resident
-   fails provisioning and the admin is told.
-4. **Seed the home.** New command `seed_home`. Its payload names a seed
-   archive by SHA-256. The runner fetches the archive from the house over
-   the signed channel, exactly as the image is fetched (#242): enrollment-
-   scoped, no redirects, bounded, and refused unless a delivered
-   `seed_home` names that digest. It extracts only into an empty identity
-   volume, and refuses if the volume isn't empty. The archive is the
-   same `AgentIdentityExporter` tarball local residents are seeded from.
-5. **Mark ready, start.** Placement → ready, `start_resident` with the
-   pinned image ID.
-6. **First backup** (below). Only when it succeeds does the house set
-   `runtime_ready_at` and enqueue `OrientNewAgentJob`.
+4. **Seed the home** (see Seed below).
+5. **Mark ready, start.** Placement → ready, then `start_resident` with
+   the pinned image ID.
+6. **First backup** (see Backups below). Only when it is verified does the
+   house set `runtime_ready_at` and enqueue `OrientNewAgentJob`.
 
-Failure at any step leaves `runtime: provisioning` with
-`sandbox_last_error`, as local provisioning does. Nothing is retried in a
-way that could buy a second server, because procurement already enforces
-that.
+**Turns are refused until step 6 passes.** Until `runtime_ready_at` is
+set, user, scheduled and rhythm turns for a VM resident are refused at
+admission. This is an explicit check in the slice that adds the job,
+because I haven't verified that `provisioning` alone suppresses every
+route.
 
-**Deletion.** Destroying or permanently deleting a VM resident calls
-`request_delete!` on its live procurement operation, revokes the
-enrollment and retires the placement. A sweeper reports any server
-whose resident is gone.
+**Bounded failure.** Provisioning has a deadline (default 45 minutes from
+order, configurable). Past the deadline, or on any terminal failure (a
+procurement refusal, an expired enrollment, a failed seed, three failed
+first backups), the job stops. No start, no orientation. It sets
+`sandbox_last_error`, marks the placement `failed`, and records cleanup
+intent (below). Then the VM is reconciled to deletion, so a failed birth
+can't keep spending. "Operator-held" is a named alternative state, used
+only if Daniel asks to keep a failed VM for inspection.
+
+## Cleanup through uncertain purchases
+
+`AgentPlacement` gains `cleanup_requested_at` and `cleanup_reason`. These
+are set when the resident is deleted, when provisioning fails, or by an
+admin. Setting them never deletes the placement or its operations.
+
+`VmCleanupJob` runs for any placement with cleanup intent, and keeps
+running until the provider confirms nothing is left:
+- **Operation still unresolved** (create sent, outcome unknown): keep
+  reconciling. If a server turns up, carry on to deletion.
+- **Server verified**: `request_delete!`, then reconcile until deletion is
+  confirmed.
+- **Confirmed deleted or validated refusal**: revoke the enrollment, set
+  the placement `retired`, and release it from the cap.
+
+A sweeper reports any server in the Hetzner project that no placement
+claims. Reporting is all it does, because a server nobody claims isn't
+ours to delete automatically. Until retirement, the placement keeps
+counting against the cap.
+
+## Seed
+
+New runner command `seed_home`. Its payload names a seed archive by
+SHA-256. The runner fetches the archive from the house over the signed
+channel, the same way it fetches images (#242): scoped to the enrollment,
+no redirects, bounded in size and time, and refused unless a delivered
+`seed_home` names that digest. The archive is the same
+`AgentIdentityExporter` tarball local residents get.
+
+The runner keeps a seed marker so a retry is idempotent:
+- It extracts into `/identity/.souls-house-seed-staging/`. Entries must be
+  relative, with no `..`, and regular files or directories only (no links,
+  devices or FIFOs), checked before writing. Total bytes and entry count
+  are capped.
+- When extraction finishes, it moves the entries into place, then
+  atomically writes `/identity/.souls-house-seed` containing the digest
+  (written to a temp file and renamed).
+- On retry:
+  - marker present with the same digest: answer `done`, idempotently. A
+    lost acknowledgement leads here.
+  - marker present with a different digest: `refused`.
+  - volume holds anything else and has no marker (including a staging
+    directory left by an interrupted run): `refused`. The volume is left
+    as it is for an operator and the birth fails closed. It is never
+    wiped automatically.
 
 ## Backups
 
-This is the hard part, and where I'd most like Mira's eyes.
+**restic on the VM, through a house-side REST repository, append-only in
+fact.**
 
-**Recommendation: restic on the VM, through a house-side REST repository.**
+**Runner side.** `backup_resident` command. The payload carries the
+resident's restic password and a graph checkpoint envelope (below). The
+runner:
+1. refuses unless the container is running or stopped (never already
+   paused)
+2. pauses it
+3. writes the checkpoint into a temp directory
+4. runs `restic backup` over the resident's volumes, mounted read-only
+   (`state` excluded, as locally), plus the checkpoint directory, tagged
+   as locally
+5. unpauses in `finally`
 
-- The runner gains a `backup_resident` command. It pauses the container,
-  runs `restic backup` with the resident's volumes mounted read-only
-  (except `state`, as locally), unpauses in `finally`, and reports the
-  snapshot id, size and stderr tail.
-- restic's repository is `rest:http://127.0.0.1:<port>/`, a loopback-only
-  proxy inside the runner. The proxy signs each request with the runner's
-  enrollment key, using the same Ed25519 scheme as every runner request.
-  No new secret goes to the VM. The restic password it uses is that
-  resident's own password, as stored on the agent today.
-- The house implements restic's REST protocol at
-  `/api/v1/host_runner/backup/...`. It streams to and from S3 under
-  `agents/<uuid>/`, the prefix the house already uses, with the house's
-  own credentials. The prefix comes from the enrollment's placement,
-  never from the request.
-- **Append-only.** The house refuses DELETE for everything except
-  `locks/`. Forget and prune run on the house, which already has the S3
-  credentials and the password (`AgentResticJob#prune!`, unchanged). A
-  compromised VM can add snapshots, but it can't destroy history.
-- Restore runs the other way through the same endpoint, read-only. It
-  isn't needed for v1 creation, but it is the path for a lost VM.
-- Scheduling: `AgentBackupSweeperJob` enqueues `backup_resident` for VM
-  residents where it would run `AgentResticJob` locally, and records an
-  `AgentBackupSnapshot` from the command result. The graph checkpoint is
-  house-side (mnemodyne lives in the house DB) and stays house-side.
+The whole command has a deadline. The unpause is attempted on every exit,
+and the result reports whether the container ended unpaused. restic's
+repository is `rest:http://127.0.0.1:<port>/`, a loopback-only proxy in
+the runner that signs each request with the enrollment key. No new secret
+goes to the VM.
 
-Alternatives considered:
-- *S3 credentials on the VM, IAM-scoped to its prefix.* This needs IAM
-  user management per resident, and a VM could still delete its own
-  history.
-- *A Hetzner Storage Box sub-account per resident over SFTP.* Provider-
-  enforced scoping and little code, but it adds a provider, has a sub-
-  account ceiling, and isn't append-only.
-- *Stream a tar to the house and run restic there.* No restic protocol to
-  implement, but every backup becomes a full transfer, not an incremental
-  one.
+**Graph checkpoint, coupled.** mnemodyne lives in the house database. The
+house builds the checkpoint envelope at the moment it issues
+`backup_resident`. It refuses to issue it unless the resident is idle (no
+active interaction), and it holds new turn admission for that resident
+until the command is answered. The envelope travels in the payload and is
+written into the same snapshot as the home, so one snapshot holds both,
+captured together. Afterwards the house checks, as `AgentResticJob` does,
+that no interaction started during the window. If one did, the snapshot
+is recorded as not ok.
 
-Cost of the recommendation: backup traffic passes through Puma. Pack
-files are bounded (restic's default is about 16 MiB), and requests get a
-size cap and a timeout.
+**House side.** The restic REST protocol at
+`/api/v1/host_runner/backup/*`. The repository prefix is
+`agents/<uuid>/`, taken from the enrollment's placement and never from
+the request.
+- **Grammar.** Only restic's own layout is accepted:
+  - `config`
+  - `keys/<64 hex>`, `locks/<64 hex>`, `snapshots/<64 hex>`,
+    `index/<64 hex>`
+  - `data/<2 hex>/<64 hex>`
+  - plus the listing endpoints
+
+  Any other path, method or query is refused.
+- **Create-if-absent.** Every POST is an S3 conditional put
+  (`If-None-Match: *`). If the object already exists, the house compares
+  it: identical bytes answer 200 (a retry), different bytes are refused.
+  `config` and `keys/*` fall under the same rule, so they can't be
+  replaced either.
+- **Delete.** Only `locks/<64 hex>` under this repository's own prefix.
+- **Budgets.** Each repository has a byte budget, default 20 GB,
+  configurable. Bytes are counted on commit, and writes are refused past
+  the budget. Each enrollment can have at most 2 backup requests in
+  flight, and the endpoint as a whole has a cap so backups can't take
+  every Puma thread. Each request has a size cap (restic packs are about
+  16 MiB by default) and a timeout.
+
+**First backup = verified.** A backup counts toward the readiness gate
+when the command answered `done`, the reported snapshot id exists in the
+repository listing the house reads directly from S3, that snapshot's
+tags carry this agent's uuid, the checkpoint digest it reports matches
+the envelope the house issued, and no interaction overlapped the window.
+The house records `AgentBackupSnapshot` with the checkpoint digest, as it
+does for local residents.
+
+**No automatic prune for VM residents in v1.** restic documents that,
+in append-only mode, someone holding the password can forge snapshots
+with chosen timestamps. Daily/weekly/monthly `forget` can then delete real
+history in favour of forged snapshots
+([restic: security considerations in append-only mode](https://restic.readthedocs.io/en/stable/060_forget.html#security-considerations-in-append-only-mode)).
+So VM repositories grow until the budget is reached. Hitting the budget
+alerts the admin, and backups stop with a visible error instead of
+evicting history. A safe retention policy is a separate design, with its
+own seam: today's `prune!` requires local placement.
+
+Alternatives considered and set aside:
+- **IAM-scoped S3 credentials on each VM.** Needs per-resident IAM, and a
+  VM could still delete its own history.
+- **Storage Box sub-accounts.** Not append-only, and adds a provider.
+- **Stream a tar to the house.** Every backup would be a full transfer.
+
+## Restore check
+
+Before the switch goes on in production: one throwaway VM resident is
+born, seeded and backed up. Then a disposable restore runs on the house
+(`restic restore` into a scratch directory, using the house's own S3
+credentials and the resident's password). The check compares the
+identity files against the seed archive and the checkpoint digest
+against the recorded one. Then everything is deleted. This is backup
+evidence, not migration work.
 
 ## Image updates
 
-Not in this slice. When the resident image changes, VM residents keep
-running the old image until something sends a new `start_resident`
-(start recreates the container on change; volumes stay). I'll do a
-follow-up that rolls new images to VMs one at a time, after a backup.
+Not in this slice. When the image changes, VM residents keep their pinned
+image until they get a new `start_resident`. Site Admin will show each VM
+resident's pinned image ID, and whether it differs from the house's
+current one, so stale VMs are visible. Rolling updates is a follow-up.
 
 ## Slices
 
-1. Setting + cap + VM credentials in `prepare!` + eligibility (no
-   ordering yet). Small.
-2. `seed_home` command, house archive endpoint, runner handler.
-3. Backup REST endpoint (append-only, prefix-scoped) + runner proxy +
-   `backup_resident` + sweeper.
-4. `ProvisionVmAgentJob` + system-actor procurement + deletion cleanup.
-   After this, the switch is real.
-5. Live check: switch on in production with `vm_resident_limit: 1`, create
-   one throwaway resident, see it answer, delete it, confirm nothing is
-   left.
+1. VM credentials in `prepare!` (#247).
+2. Setting, cap, refusal-not-fallback, and visible exclusions (UI + API).
+   The switch is still unusable here: turning it on refuses every birth
+   with "VM provisioning not available yet" until slice 5 lands.
+3. `seed_home`: house archive endpoint, runner handler, marker.
+4. Backup REST endpoint (grammar, create-if-absent, lock-only delete,
+   budgets), runner proxy, `backup_resident`, the coupled checkpoint and
+   the verified-snapshot check.
+5. `ProvisionVmAgentJob`, `plan_for_vm_birth!`, turn refusal until ready,
+   the deadline, `VmCleanupJob` and cleanup intent, the pinned-image
+   column in Site Admin.
+6. Live check in production with `vm_resident_limit: 1`: birth, answer,
+   restore check, delete, confirm nothing is left. Then Daniel flips the
+   switch.
 
-Each slice goes to Mira for review before merge. Master auto-deploys, so
-the setting stays off until slice 5.
+Every slice goes to Mira for review before merge. Master auto-deploys, so
+nothing that can spend runs until slice 5, and nothing is switched on
+until slice 6.
 
 ## Open questions
 
-1. House inference is off in production, so new residents currently get
-   an API-key provider. Is it fine for those keys to go to the VM as
-   container env? (I think yes: same trust as local.)
-2. The server type for every VM resident is the one in
-   credentials (cx23 in the pilot). Should it be per resident at some point? Not in v1.
-3. Is the append-only REST proxy worth the code over the Storage Box
-   option?
+1. With the switch on, imported and subscription-OAuth residents can't be
+   created at all. Is that acceptable to Daniel until the slice that
+   covers them? (It follows from "no silent local fallback".)
+2. The server type comes from credentials (cx23 in the pilot). Per
+   resident later; not in v1.
+3. The 20 GB backup budget and 45-minute provisioning deadline are
+   guesses. Both are settings.
