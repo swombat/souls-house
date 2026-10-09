@@ -87,11 +87,14 @@ class RhythmsController < ApplicationController
 
   def rhythm_params
     permitted = params.require(:rhythm).permit(:title, :opening, :append_date, :cadence, :time_of_day,
-      :weekday, :month_day, :month, :timezone, resident_ids: [])
+      :weekday, :month_day, :month, :timezone, resident_ids: [], resident_models: {})
     if permitted.key?(:resident_ids)
       permitted[:resident_ids] = Rhythm.selectable_resident_ids(current_account, permitted.delete(:resident_ids))
     end
-    permitted.to_h.symbolize_keys
+    models = permitted.delete(:resident_models)
+    attributes = permitted.to_h.symbolize_keys
+    attributes[:resident_models] = Rhythm.decode_resident_models(models) if models
+    attributes
   end
 
   def respond_to_save(saved)
@@ -124,7 +127,8 @@ class RhythmsController < ApplicationController
       account: current_account.as_json,
       residents: residents.map do |agent|
         { id: agent.to_param, name: agent.name, colour: agent.colour, icon: agent.icon,
-          paused: agent.paused?, unavailable: !eligible.include?(agent) }
+          paused: agent.paused?, unavailable: !eligible.include?(agent),
+          default_model_label: agent.model_label, model_choices: agent.model_choices }
       end,
       timezones: ActiveSupport::TimeZone.all.map { |zone| { value: zone.name, label: zone.to_s, identifier: zone.tzinfo.identifier } }
     }

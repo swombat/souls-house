@@ -161,6 +161,28 @@ class RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Weekly reflection", rhythm.reload.title
   end
 
+  test "the form sets a model per resident, offers each resident's choices, and shows the pin" do
+    @resident.update!(model_id: "anthropic/claude-opus-5.5", switchable_model_ids: [ "anthropic/claude-fable-5.1" ])
+    post account_rhythms_path(@account), params: { rhythm: @attributes.merge(
+      resident_models: { @resident.to_param => "anthropic/claude-fable-5.1" }
+    ) }
+    rhythm = Rhythm.order(:id).last
+    assert_redirected_to account_rhythm_path(@account, rhythm)
+    assert_equal({ @resident.id => "anthropic/claude-fable-5.1" }, rhythm.resident_models)
+
+    get edit_account_rhythm_path(@account, rhythm), headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
+    assert_response :ok
+    props = response.parsed_body["props"]
+    picker = props["residents"].find { |resident| resident["id"] == @resident.to_param }
+    assert_equal %w[anthropic/claude-opus-5.5 anthropic/claude-fable-5.1], picker["model_choices"].map { |c| c["model_id"] }
+    assert_equal "anthropic/claude-fable-5.1", props.dig("rhythm", "resident_models", @resident.to_param)
+    assert props.dig("rhythm", "residents", 0, "model_selected")
+
+    patch account_rhythm_path(@account, rhythm), params: { rhythm: { resident_models: { @resident.to_param => "openai/gpt-6.1-sol" } } }
+    assert_response :unprocessable_entity
+    assert_equal "anthropic/claude-fable-5.1", rhythm.reload.resident_models[@resident.id]
+  end
+
   private
 
   def make_rhythm
