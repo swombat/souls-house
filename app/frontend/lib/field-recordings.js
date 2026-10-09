@@ -100,6 +100,11 @@ export function allowanceLine(allowance) {
   if (!allowance) return '';
   const days = allowance.window_days || 7;
   const used = formatDuration(allowance.used_ms || 0);
+  if (allowance.unlimited) {
+    let open = `${used} used in the last ${days} days (no weekly limit)`;
+    if ((allowance.pending_ms || 0) > 0) open += `, ${formatDuration(allowance.pending_ms)} still transcribing`;
+    return open;
+  }
   const limit = formatDuration(allowance.limit_ms || 0);
   let line = `${used} of ${limit} used in the last ${days} days`;
   if ((allowance.pending_ms || 0) > 0) line += ` (${formatDuration(allowance.pending_ms)} still transcribing)`;
@@ -107,7 +112,7 @@ export function allowanceLine(allowance) {
 }
 
 export function remainingMs(allowance) {
-  if (!allowance) return null;
+  if (!allowance || allowance.unlimited) return null;
   return Math.max(0, (allowance.limit_ms || 0) - (allowance.used_ms || 0));
 }
 

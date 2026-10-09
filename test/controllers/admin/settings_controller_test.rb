@@ -31,6 +31,29 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
     assert Setting.instance.show_usage_in_chat
   end
 
+  test "admin switches new residents onto their own server and sets the cap" do
+    sign_in @admin
+    get admin_settings_path
+    assert_equal false, inertia_shared_props.fetch("vm_births").fetch("enabled")
+
+    patch admin_settings_path, params: { setting: { new_residents_on_vm: true, vm_resident_limit: 3 } }
+    assert_redirected_to admin_settings_path
+    setting = Setting.instance.reload
+    assert setting.new_residents_on_vm?
+    assert_equal 3, setting.vm_resident_limit
+    assert AuditLog.where(action: "update_settings").exists?
+
+    patch admin_settings_path, params: { setting: { vm_resident_limit: -1 } }
+    assert_equal 3, Setting.instance.reload.vm_resident_limit
+  end
+
+  test "non-admins cannot switch new residents onto their own server" do
+    sign_in @user
+    patch admin_settings_path, params: { setting: { new_residents_on_vm: true } }
+    assert_redirected_to root_path
+    assert_not Setting.instance.reload.new_residents_on_vm?
+  end
+
   test "retired safeguard notice threshold cannot be changed through settings" do
     sign_in @admin
     original_threshold = Setting.instance.safeguard_owner_notice_threshold

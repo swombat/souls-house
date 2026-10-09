@@ -283,6 +283,23 @@ class Account < ApplicationRecord
   alias_method :active, :active?
   alias_method :disabled, :disabled?
 
+  # Field recordings: accounts with a site admin in them aren't held to the
+  # weekly transcription allowance (Daniel, 2026-10-09). The column keeps its
+  # stored value; every reader goes through here, so the reservation check,
+  # the vendor exposure ceiling and the gauge all see the same number. Later
+  # this comes from the account's plan.
+  UNLIMITED_RECORDING_MS = 100_000.hours.in_milliseconds
+
+  def recording_ms_weekly_limit
+    recording_unlimited? ? UNLIMITED_RECORDING_MS : super
+  end
+
+  def recording_unlimited?
+    return true if is_site_admin?
+
+    memberships.confirmed.includes(:user).any? { |membership| membership.user&.site_admin }
+  end
+
   # Authorization methods - following DHH's "fat models, skinny controllers" principle
   def manageable_by?(user)
     return false unless user

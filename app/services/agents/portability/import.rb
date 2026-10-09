@@ -2,6 +2,11 @@ module Agents::Portability
   class Import
 
     def self.call(archive, account:, user:, name:, transport_factory: ->(agent) { Transport.new(agent) })
+      # An import makes a new home on this house. With new residents on their
+      # own VM, that's refused rather than done locally.
+      refusal = Agents::VmBirthPolicy.current.refusal(kind: :import)
+      raise Error, refusal if refusal
+
       archive.validate!
       raise Error, "Choose a destination name" unless name.is_a?(String) && name.present? && name.length <= 100
       manifest = archive.manifest
@@ -9,6 +14,11 @@ module Agents::Portability
       imported_agent = nil
       success = false
       result = Agent.transaction do
+        # Checked again at admission: validation can take a while, and the
+        # switch may have gone on during it.
+        refusal = Agents::VmBirthPolicy.current.refusal(kind: :import)
+        raise Error, refusal if refusal
+
         # This is not a birth; no orientation, schedules or runtime job.
         custody = manifest.slice("export_id", "source_resident_id", "source_installation", "exported_by", "created_at")
         custody.merge!("imported_at" => Time.current.iso8601, "imported_by" => user.to_param.to_s, "source_preferences" => manifest["metadata"].slice("scheduled_wakes_enabled"))

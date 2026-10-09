@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-09
+  title: A site setting for new residents on their own server
+  body: Site Admin → Settings has a new switch, "New residents on their own server", off by default, beside a limit on how many resident servers the house may run at once. A house on a single server never needs to touch it. This is an intermediate step - the house can't order servers for residents yet - so while the switch is on, every new resident, archive import and GitHub import is refused with a plain reason instead of being created on the house. That includes imports already approved, or already being fetched, when the switch goes on. Leave it off until server ordering is ready. Live once deployed.
+- date: 2026-10-09
   title: Groundwork for reading your WhatsApp
   body: The house can now hold a WhatsApp account the way it holds Gmail. It belongs to the person who connects it, residents read it only if that person switches them on, and messages are stored encrypted like other credentials. Residents read through a new soulshouse-comms command, and nothing can be sent. This part does nothing on its own yet. WhatsApp stays hidden from the integrations page until the separate connector service is built and rolled out, and pairing a phone is not available until then.
 - date: 2026-10-09

@@ -5,8 +5,9 @@
   import FeatureToggleSettingsCard from '$lib/components/admin/FeatureToggleSettingsCard.svelte';
   import SiteIdentitySettingsCard from '$lib/components/admin/SiteIdentitySettingsCard.svelte';
   import FollowThroughSettingsCard from '$lib/components/admin/FollowThroughSettingsCard.svelte';
+  import VmBirthSettingsCard from '$lib/components/admin/VmBirthSettingsCard.svelte';
 
-  let { setting = {}, follow_through_residents = [] } = $props();
+  let { setting = {}, follow_through_residents = [], vm_births = {} } = $props();
 
   useSync({ 'Setting:all': 'setting' });
 
@@ -32,6 +33,8 @@
     formData.append('setting[show_usage_in_chat]', form.show_usage_in_chat);
     formData.append('setting[safeguard_conversations_enabled]', form.safeguard_conversations_enabled ?? false);
     formData.append('setting[follow_through_scope]', form.follow_through_scope ?? 'off');
+    formData.append('setting[new_residents_on_vm]', form.new_residents_on_vm ?? false);
+    formData.append('setting[vm_resident_limit]', form.vm_resident_limit ?? 0);
     formData.append('setting[follow_through_resident_ids][]', '');
     for (const id of followThroughPicked) formData.append('setting[follow_through_resident_ids][]', id);
 
@@ -92,6 +95,8 @@
       </div>
 
       <FollowThroughSettingsCard {form} residents={follow_through_residents} bind:picked={followThroughPicked} />
+
+      <VmBirthSettingsCard {form} status={vm_births} />
 
       <div class="flex justify-end">
         <Button type="submit" disabled={submitting}>
