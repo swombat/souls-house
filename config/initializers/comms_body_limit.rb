@@ -1,8 +1,7 @@
-# The comms connector's event endpoint takes bounded bodies. The bound has to
-# hold before Rails touches the body: start-of-request parameter logging and
-# params access parse JSON before any controller callback can refuse it. So
-# this sits in front of the app and answers 413 (too large) or 411 (no
-# declared length) for that path alone.
+# The comms connector's event endpoint takes bounded bodies. The bound is
+# enforced here, in front of the app, so it holds before any parser, params
+# access or logging can read the body, whatever they turn out to be. Answers 413
+# (too large) or 411 (no declared length) for that path alone.
 class CommsBodyLimit
 
   PATH_PREFIX = "/internal/comms/".freeze

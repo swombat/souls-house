@@ -111,9 +111,8 @@ It is Go on whatsmeow. It talks only to Rails.
   commands with a separate connector-wide key and hands over the per-connection
   secret inside start-pair. To be settled with the connector, not in Rails.
 - **Body bound.** `CommsBodyLimit` (Rack, ahead of Rails) refuses an oversized
-  or undeclared-length POST to `/internal/comms/` before anything parses it,
-  because Rails' parameter logging parses a JSON body before any controller
-  callback. The reverse proxy should apply the same bound.
+  or undeclared-length POST to `/internal/comms/` before any parser, params
+  access or logging can read it. The reverse proxy should apply the same bound.
 - **Ordering.** A fresh nonce does not order events. QR events carry
   `issued_at`, and an older code never replaces a newer one. Messages are
   immutable once stored: the first delivery of a provider id wins, and edits

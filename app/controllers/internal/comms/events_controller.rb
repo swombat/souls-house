@@ -43,9 +43,8 @@ module Internal
         end
       end
 
-      # The body bound is enforced in front of Rails (CommsBodyLimit), because
-      # parameter logging parses a JSON body before any callback. Only the path
-      # parameter is read here before verification.
+      # The body bound is enforced in front of Rails (CommsBodyLimit). Only the
+      # path parameter is read here before verification.
       def connection_param
         request.path_parameters[:connection_id].to_s
       end
