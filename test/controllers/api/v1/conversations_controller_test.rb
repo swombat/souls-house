@@ -113,6 +113,14 @@ module Api
         assert_equal "Not found", json["error"]
       end
 
+      test "returns 404, not 500, for an id the obfuscator cannot decode" do
+        # Digits are outside the hashid alphabet, so this raises Hashids::InputError
+        # rather than RecordNotFound. The souls CLI maps 404 to exit 4.
+        get api_v1_conversation_url("NOPE00"), headers: { "Authorization" => "Bearer #{@token}" }
+        assert_response :not_found
+        assert_equal "Not found", JSON.parse(response.body)["error"]
+      end
+
       test "cannot access other user conversations" do
         other_user = users(:existing_user)
         other_account = other_user.personal_account

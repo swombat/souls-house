@@ -12,7 +12,9 @@ module Api
         render json: { error: error.message, code: error.code }, status: :conflict
       end
 
-      rescue_from ActiveRecord::RecordNotFound do
+      # Hashids::InputError: a malformed obfuscated id is a missing record, not a 500
+      # (same rule as Api::App::V1::BaseController).
+      rescue_from ActiveRecord::RecordNotFound, Hashids::InputError do
         render json: { error: "Not found" }, status: :not_found
       end
 
