@@ -37,6 +37,7 @@ import {
   Users,
   UsersThree,
   RocketLaunch,
+  ChartLine,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -450,6 +451,13 @@ export const moreFeatures = [
     description:
       "A house's site admin can ship the reviewed main branch, rebuild residents or update Chaos with one button, and watch the run finish without opening GitHub.",
     icon: RocketLaunch,
+  },
+  {
+    key: 'site-dashboard',
+    title: 'The house at a glance',
+    description:
+      "A site admin's dashboard shows signups, residents, turns and heartbeats, failures, model spend per active resident and where residents live, with founding and family accounts kept apart from growth.",
+    icon: ChartLine,
   },
   {
     key: 'auto-deploy',

@@ -9,7 +9,21 @@ class SiteDashboard
 
   DAYS = 30
   WEEKS = 26
-  FAILED_STATUSES = %w[error timeout].freeze
+  CACHE_KEY = "admin/site_dashboard/v1".freeze
+  # A finished turn failed if the runtime said error or timeout, if the live
+  # activity path finished it as failed or timed out, or if the house
+  # recorded an error and the runtime never reported a status (a refused or
+  # dropped connection). "busy" (409 already_running) is a conflict, not a
+  # failure, and cancellations are not counted either.
+  FAILED_SQL = <<~SQL.squish.freeze
+    (agent_runtime_interactions.runtime_status IN ('error', 'timeout')
+      OR agent_runtime_interactions.execution_state IN ('failed', 'timed_out')
+      OR (agent_runtime_interactions.runtime_status IS NULL AND agent_runtime_interactions.error_class IS NOT NULL))
+  SQL
+
+  def self.expire_cache!
+    Rails.cache.delete(CACHE_KEY)
+  end
 
   CHANNELS = {
     "conversation" => "Conversations",
@@ -210,21 +224,25 @@ class SiteDashboard
   def reliability
     week = AgentRuntimeInteraction.where(started_at: 7.days.ago(now)..).where.not(finished_at: nil)
     finished = week.count
-    failed = week.where(runtime_status: FAILED_STATUSES).count
+    failed_scope = week.where(FAILED_SQL)
+    failed = failed_scope.count
     daily = interactions_window.where.not(finished_at: nil)
                                .group(Arel.sql("date_trunc('day', started_at)"))
                                .pluck(Arel.sql("date_trunc('day', started_at)"), Arel.sql("count(*)"),
-                                      Arel.sql("count(*) FILTER (WHERE runtime_status IN ('error','timeout'))"))
+                                      Arel.sql("count(*) FILTER (WHERE #{FAILED_SQL})"))
                                .to_h { |day, total, bad| [ day.to_date, [ total, bad ] ] }
+    # Several trigger kinds share a channel (memory_aggregation_daily and
+    # _weekly are both "memory"), so sum into the channel rather than
+    # re-keying, which would keep only the last kind's count.
+    by_channel = Hash.new(0)
+    failed_scope.group(:trigger_kind).count.each { |kind, count| by_channel[self.class.channel_for(kind)] += count }
     backup_week = AgentBackupSnapshot.where(taken_at: 7.days.ago(now)..)
     {
       turns_finished: finished,
       turns_failed: failed,
       failure_rate: finished.zero? ? nil : (failed.to_f / finished).round(4),
       failure_rate_daily: days.map { |day| total, bad = daily[day]; total.to_i.zero? ? nil : (bad.to_f / total).round(4) },
-      failures_by_kind: week.where(runtime_status: FAILED_STATUSES).group(:trigger_kind).count
-                            .transform_keys { |kind| self.class.channel_for(kind) }
-                            .each_with_object(Hash.new(0)) { |(key, count), sum| sum[key] += count },
+      failures_by_kind: by_channel.to_h,
       backups_taken: backup_week.count,
       backups_failed: backup_week.where(ok: false).count,
       oldest_open_failure_at: oldest_open_backup_failure
@@ -316,10 +334,16 @@ class SiteDashboard
     groups = rows.map do |(backend, location, founding), count|
       { backend:, location: location.presence, founding: !!founding, residents: count }
     end
-    vms = CloudProcurementOperation.where(state: %w[provisioned reconciling unknown needs_review deleting])
+    # Only a provisioned operation with a provider server is a VM we know
+    # exists. "unknown" means a purchase may exist but none is visible, so
+    # anything unresolved is reported separately, never counted as a VM.
+    confirmed = CloudProcurementOperation.where(state: "provisioned").where.not(provider_server_id: nil)
+    unresolved = CloudProcurementOperation.where(state: %w[planned create_in_flight reconciling unknown needs_review deleting])
+                                          .or(CloudProcurementOperation.where(state: "provisioned", provider_server_id: nil))
     {
       groups: groups.sort_by { |row| [ row[:backend], row[:location].to_s, row[:founding] ? 1 : 0 ] },
-      vms: vms.group(:server_type, :location).count.map { |(type, location), count| { server_type: type, location:, count: } }
+      vms: confirmed.group(:server_type, :location).count.map { |(type, location), count| { server_type: type, location:, count: } },
+      unresolved_procurements: unresolved.group(:state).count
     }
   end
 

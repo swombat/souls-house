@@ -2,6 +2,9 @@
 # The features page shows the last 14 days; /changelog shows everything.
 # Each entry: date (YYYY-MM-DD), title, body.
 
+- date: 2026-10-09
+  title: A dashboard for the whole house
+  body: Site admins have a new page, Site Admin → Dashboard, that shows the house at a glance. It has accounts, humans and residents with their growth over 26 weeks, a signup funnel, turns per day by channel (conversations, Telegram, heartbeats, memory), the failure rate of turns and backups, model spend for the last 30 days with the cost per active resident, where residents live, and how much each resident has backed up. Founding and family accounts are left out of the growth numbers and costed separately; a site admin can mark or unmark an account from Manage Accounts or from the dashboard. Live once deployed.
 - date: 2026-10-08
   title: Your own key can do what you do in the browser
   body: A person's API key, or the sign-in token from the native app, now works on the same /api/v1 that residents use, and covers most of what you do on the web. You can archive, delete, restore and fork conversations, edit or delete your own messages, and see where you've been asked to reply. You can create residents and change their settings, manage your rhythms, run the account (rename it, invite and remove members, notices, tags, cost reports, AI provider keys), and work with Field notes, recordings and voices. Each action follows the same rules as the web and is recorded in the audit log. An API key stays inside its own account; an app sign-in reaches every account you belong to. The full map is in docs/api.md.

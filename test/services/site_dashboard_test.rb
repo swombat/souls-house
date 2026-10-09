@@ -84,4 +84,36 @@ class SiteDashboardTest < ActiveSupport::TestCase
     assert data[:reliability][:oldest_open_failure_at].present?
   end
 
+  test "failures from kinds that share a channel are summed, not overwritten" do
+    2.times { interaction(@public_agent, kind: "memory_aggregation_daily", status: "error") }
+    3.times { interaction(@public_agent, kind: "memory_aggregation_weekly", status: "error") }
+    interaction(@public_agent, kind: "orientation", status: "error")
+    interaction(@public_agent, kind: "safeguard_reclaim_offer", status: "timeout")
+
+    assert_equal({ "memory" => 5, "other" => 2 }, SiteDashboard.new.call[:reliability][:failures_by_kind])
+  end
+
+  test "a finished turn with a recorded error and no runtime status counts as failed, a busy conflict does not" do
+    interaction(@public_agent, status: nil, error_class: "Errno::ECONNREFUSED", error_message: "refused")
+    interaction(@public_agent, status: nil, execution_state: "timed_out")
+    interaction(@public_agent, status: "already_running", execution_state: "busy")
+    interaction(@public_agent)
+
+    reliability = SiteDashboard.new.call[:reliability]
+    assert_equal 4, reliability[:turns_finished]
+    assert_equal 2, reliability[:turns_failed]
+    assert_equal 0.5, reliability[:failure_rate_daily].last
+  end
+
+  test "an unresolved Hetzner purchase is reported, not counted as a VM" do
+    placement = AgentPlacement.create!(agent: @public_agent, backend: "hetzner_cloud", location: "nbg1")
+    CloudProcurementOperation.create!(agent_placement: placement, requested_by: users(:site_admin_user),
+      public_id: SecureRandom.hex(4), approval_reference: "test", location: "nbg1", server_type: "cx23",
+      image_id: 1, ssh_key_ids: [ 1 ], provider_name: "resident-#{SecureRandom.hex(3)}", state: "unknown")
+
+    placement_data = SiteDashboard.new.call[:placement]
+    assert_empty placement_data[:vms]
+    assert_equal({ "unknown" => 1 }, placement_data[:unresolved_procurements])
+  end
+
 end

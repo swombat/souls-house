@@ -60,6 +60,7 @@ class Admin::AccountsController < ApplicationController
   def founding
     founding = ActiveModel::Type::Boolean.new.cast(params.require(:account).require(:founding))
     @account.update!(founding: founding)
+    SiteDashboard.expire_cache!
     audit(:admin_update_founding_account, @account, account_id: @account.id, founding: founding)
     redirect_back_or_to admin_accounts_path(account_id: @account),
       notice: founding ? "Marked as a founding account" : "No longer a founding account"

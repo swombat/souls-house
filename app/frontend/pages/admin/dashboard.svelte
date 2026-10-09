@@ -101,7 +101,7 @@
       class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs text-muted-foreground hover:bg-muted"
       onclick={refresh}
       disabled={refreshing}
-      title={`Figures are cached for ${Math.round(cached_for_seconds / 60)} minutes`}>
+      title={`Figures are cached for ${Math.round(cached_for_seconds / 60)} minutes${dashboard.computed_ms ? `; computed in ${dashboard.computed_ms} ms` : ''}`}>
       <ArrowClockwise class={refreshing ? 'size-3.5 animate-spin' : 'size-3.5'} />
       As of {generated}
     </button>
@@ -346,6 +346,17 @@
         <div class="mt-4 border-t pt-3 text-xs text-muted-foreground">
           Hetzner VMs:
           {placement.vms.map((vm) => `${vm.count} × ${vm.server_type} (${vm.location})`).join(', ')}
+        </div>
+      {/if}
+      {#if Object.keys(placement.unresolved_procurements || {}).length}
+        <div class="mt-2 flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+          <Warning class="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            Unresolved Hetzner purchases, not counted as VMs:
+            {Object.entries(placement.unresolved_procurements)
+              .map(([state, count]) => `${count} ${state.replaceAll('_', ' ')}`)
+              .join(', ')}
+          </span>
         </div>
       {/if}
     </div>

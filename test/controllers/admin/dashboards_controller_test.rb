@@ -34,4 +34,23 @@ class Admin::DashboardsControllerTest < ActionDispatch::IntegrationTest
     assert account.reload.founding?
   end
 
+  test "changing an account's founding flag refreshes a warm dashboard" do
+    # The test environment uses a null cache; this needs a real one.
+    Rails.stub(:cache, ActiveSupport::Cache::MemoryStore.new) { founding_change_refreshes_cache }
+  end
+
+  def founding_change_refreshes_cache
+    account = accounts(:team_account)
+    account.update!(founding: true)
+    sign_in(users(:site_admin_user))
+    get admin_dashboard_path
+    assert Rails.cache.exist?(SiteDashboard::CACHE_KEY)
+
+    patch founding_admin_account_path(account), params: { account: { founding: false } }
+    assert_not Rails.cache.exist?(SiteDashboard::CACHE_KEY)
+    get admin_dashboard_path
+    founding = Rails.cache.read(SiteDashboard::CACHE_KEY)[:founding].map { |row| row[:id] }
+    assert_not_includes founding, account.to_param
+  end
+
 end
