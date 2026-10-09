@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import http.client
+import io
 import json
 import os
 import socket
@@ -96,8 +97,13 @@ class FakeDocker:
             return (False, "") if self.missing_role and argv[-1].endswith("-" + self.missing_role) else (True, "")
         if verb == "image inspect":
             return self.image_present, ""
-        if verb == "pull restic/restic:0.18.1":
+        if argv[1] == "pull":
+            assert argv[-1] == backup.RESTIC_IMAGE
             self.image_present = True
+            return True, ""
+        if argv[1] == "ps":
+            assert argv == ["docker", "ps", "-a", "--filter", backup.BACKUP_TOOL_FILTER,
+                            "--format", "{{.Names}}"]
             return True, ""
         if argv[1] == "pause":
             self.paused = True
@@ -215,7 +221,9 @@ class RunBackupTest(unittest.TestCase):
         self.assertLess(run, cleanup)
         self.assertLess(cleanup, unpause)
         self.assertEqual(self.docker.checkpoint_bytes, payload()["checkpoint_json"].encode())
-        self.assertEqual(self.docker.env_text, "RESTIC_PASSWORD=synthetic-password\n")
+        self.assertEqual(self.docker.env_text, "RESTIC_PASSWORD=synthetic-password\n"
+                         f"RESTIC_REPOSITORY={FakeProxy.instances[-1].repository}\n")
+        self.assertTrue(result["tools_stopped"])
         self.assertTrue(all(not os.path.exists(path) for path in self.docker.temp_paths))
 
     def test_fixed_read_only_mounts_host_network_and_tags_no_cloud_secrets(self):
@@ -314,11 +322,12 @@ class RunBackupTest(unittest.TestCase):
         self.assertEqual(caught.exception.result["snapshot_id"], SNAPSHOT)
         self.assertEqual(caught.exception.result["checkpoint_digest"], DIGEST)
 
-    def test_cleanup_failure_does_not_prevent_unpause(self):
+    def test_cleanup_failure_prevents_unsafe_unpause(self):
         self.docker.fail["rm -f"] = (False, "daemon unavailable")
         with self.assertRaises(backup.BackupFailed) as caught:
             self.run_backup()
-        self.assertTrue(caught.exception.result["unpaused"])
+        self.assertFalse(caught.exception.result["unpaused"])
+        self.assertFalse(caught.exception.result["tools_stopped"])
         self.assertIn("cleanup", str(caught.exception))
 
     def test_operation_deadline_is_shared_init_and_backup_not_per_child(self):
@@ -405,7 +414,7 @@ class ProxyTest(unittest.TestCase):
             for method, target, headers in (
                 ("GET", "/config?create=true", {}),
                 ("DELETE", "/data/" + "a" * 64, {}),
-                ("POST", "/config", {"Transfer-Encoding": "chunked"}),
+                ("POST", "/config", {"Transfer-Encoding": "gzip, chunked"}),
                 ("GET", "/config", {"Content-Length": "1"}),
                 ("POST", "/config", {"Expect": "100-continue"}),
                 ("PUT", "/config", {}),
@@ -562,7 +571,486 @@ class SignedTransportTest(unittest.TestCase):
             request("POST", "/api/v1/host_runner/commands/next", b"")
 
 
+class ChunkedBodyTest(unittest.TestCase):
+    def request(self, proxy, wire_body, extra="", target="/config"):
+        client = socket.create_connection(("127.0.0.1", proxy.server.server_port), timeout=2)
+        try:
+            client.sendall((f"POST {target} HTTP/1.1\r\nHost: localhost\r\n"
+                            f"Authorization: {proxy.authorization}\r\n"
+                            f"Transfer-Encoding: chunked\r\n{extra}\r\n").encode() + wire_body)
+            response = http.client.HTTPResponse(client)
+            response.begin()
+            status = response.status
+            response.read()
+            response.close()
+            return status
+        finally:
+            client.close()
+
+    def test_real_restic_empty_chunked_init_and_binary_writes_are_decoded(self):
+        seen = []
+
+        def callback(method, path, body, timeout):
+            seen.append((method, path, body))
+            return 200, {}, b""
+
+        with backup.BackupProxy(callback, time.monotonic() + 10) as proxy:
+            self.assertEqual(self.request(proxy, b"0\r\n\r\n", target="/?create=true"), 200)
+            self.assertEqual(self.request(proxy, b"2\r\n\x00\xff\r\n3\r\nabc\r\n0\r\n\r\n"), 200)
+        self.assertEqual(seen, [
+            ("POST", backup.BACKUP_PATH + "/?create=true", b""),
+            ("POST", backup.BACKUP_PATH + "/config", b"\x00\xffabc"),
+        ])
+
+    def test_ambiguous_headers_chunk_syntax_and_trailers_never_reach_callback(self):
+        seen = []
+        cases = [
+            (b"0\r\n\r\n", "Content-Length: 0\r\n"),
+            (b"0\r\n\r\n", "Transfer-Encoding: chunked\r\n"),
+            (b"0\r\n\r\n", "Trailer: X-Checksum\r\n"),
+            (b"0;extension=value\r\n\r\n", ""),
+            (b"+0\r\n\r\n", ""),
+            (b" 0\r\n\r\n", ""),
+            (b"0\n\r\n", ""),
+            (b"000000000\r\n\r\n", ""),
+            (b"1\r\nxXX0\r\n\r\n", ""),
+            (b"0\r\nX-Checksum: value\r\n\r\n", ""),
+        ]
+        with backup.BackupProxy(lambda *a, **kw: seen.append(a), time.monotonic() + 10) as proxy:
+            for body, extra in cases:
+                with self.subTest(body=body, extra=extra):
+                    self.assertEqual(self.request(proxy, body, extra), 400)
+        self.assertEqual(seen, [])
+
+    def test_decoded_body_and_frame_budgets(self):
+        seen = []
+        with backup.BackupProxy(lambda *a, **kw: seen.append(a), time.monotonic() + 10) as proxy:
+            with patch.object(backup, "MAX_BODY_BYTES", 2):
+                # Reject before trying to read an announced oversized frame.
+                self.assertEqual(self.request(proxy, b"3\r\nabc\r\n0\r\n\r\n"), 413)
+                self.assertEqual(self.request(proxy, b"2\r\nab\r\n1\r\nc\r\n0\r\n\r\n"), 413)
+            with patch.object(backup, "MAX_CHUNK_FRAMES", 2):
+                self.assertEqual(self.request(proxy, b"1\r\na\r\n1\r\nb\r\n0\r\n\r\n"), 400)
+        self.assertEqual(seen, [])
+
+    def test_chunked_body_obeys_absolute_deadline_and_never_forwards_partial_bytes(self):
+        seen = []
+        began = time.monotonic()
+        with backup.BackupProxy(lambda *a, **kw: seen.append(a), began + 0.15) as proxy:
+            client = socket.create_connection(("127.0.0.1", proxy.server.server_port), timeout=2)
+            try:
+                client.sendall((f"POST /config HTTP/1.1\r\nHost: localhost\r\n"
+                                f"Authorization: {proxy.authorization}\r\n"
+                                "Transfer-Encoding: chunked\r\n\r\n4\r\nx").encode())
+                time.sleep(0.25)
+            finally:
+                client.close()
+        self.assertLess(time.monotonic() - began, 2)
+        self.assertEqual(seen, [])
+
+
+class ReviewDocker(FakeDocker):
+    def __init__(self):
+        super().__init__()
+        self.listed_tools = ""
+        self.list_ok = True
+        self.unpause_failures = 0
+        self.unpause_attempts = 0
+        self.overrun = None
+
+    def __call__(self, argv, timeout=120):
+        if argv[1] == "ps":
+            self.calls.append((list(argv), timeout))
+            return self.list_ok, self.listed_tools
+        if argv[1] == "unpause":
+            self.unpause_attempts += 1
+            if self.unpause_attempts <= self.unpause_failures:
+                self.calls.append((list(argv), timeout))
+                return False, "synthetic daemon failure"
+        if argv[1] == "run" and "backup" in argv and self.overrun:
+            self.overrun()
+            self.calls.append((list(argv), timeout))
+            return False, "deadline exceeded"
+        return super().__call__(argv, timeout)
+
+
+class BackupReviewTest(unittest.TestCase):
+    def setUp(self):
+        self.docker = ReviewDocker()
+
+    def run_backup(self, **kwargs):
+        return backup.run_backup(payload(), FakeHost(), signed_request=lambda *a, **kw: (200, {}, b""),
+                                 proxy_factory=FakeProxy, docker=self.docker, **kwargs)
+
+    def test_read_search_capability_and_readonly_fixed_mounts(self):
+        self.run_backup()
+        argv = next(argv for argv, _ in self.docker.calls if "backup" in argv)
+        self.assertEqual(argv[argv.index("--cap-drop") + 1], "ALL")
+        self.assertEqual(argv[argv.index("--cap-add") + 1], "DAC_READ_SEARCH")
+        self.assertNotIn("DAC_OVERRIDE", argv)
+        self.assertNotIn("--privileged", argv)
+        self.assertIn("--read-only", argv)
+        self.assertIn("--rm", argv)
+        self.assertEqual(argv[argv.index("--network") + 1], "host")
+        mounts = [argv[i + 1] for i, value in enumerate(argv) if value == "--mount"]
+        self.assertEqual(len(mounts), 5)
+        self.assertTrue(all(value.endswith(",readonly") for value in mounts))
+        self.assertFalse(any("dst=/data/state" in value for value in mounts))
+
+    def test_proxy_credentials_are_only_in_private_env_file_and_one_connection(self):
+        self.run_backup()
+        repository = FakeProxy.instances[-1].repository
+        commands = [argv for argv, _ in self.docker.calls]
+        self.assertFalse(any(repository in " ".join(argv) for argv in commands))
+        self.assertFalse(any("synthetic-password" in " ".join(argv) for argv in commands))
+        self.assertIn("RESTIC_REPOSITORY=" + repository + "\n", self.docker.env_text)
+        self.assertFalse(any(os.path.exists(path) for path in self.docker.temp_paths))
+        for argv in commands:
+            if argv[1] == "run":
+                self.assertIn("rest.connections=1", argv)
+
+    def test_image_is_verified_published_index_digest(self):
+        self.assertEqual(backup.RESTIC_IMAGE,
+                         "restic/restic@sha256:39d9072fb5651c80d75c7a811612eb60b4c06b32ffe87c2e9f3c7222e1797e76")
+
+    def test_deadline_cap_is_900_seconds(self):
+        backup.validate_payload(payload(deadline_seconds=900))
+        for deadline in (901, 3600, True):
+            with self.subTest(deadline=deadline), self.assertRaises(BadCommand):
+                backup.validate_payload(payload(deadline_seconds=deadline))
+
+    def test_overrun_still_gives_ten_seconds_unpause_and_one_retry(self):
+        now = [0.0]
+        self.docker.overrun = lambda: now.__setitem__(0, 2000.0)
+        self.docker.unpause_failures = 1
+        with self.assertRaises(backup.BackupFailed) as caught:
+            self.run_backup(clock=lambda: now[0])
+        self.assertTrue(caught.exception.result["unpaused"])
+        self.assertTrue(caught.exception.result["tools_stopped"])
+        self.assertEqual(self.docker.unpause_attempts, 2)
+        self.assertEqual([timeout for argv, timeout in self.docker.calls if argv[1] == "unpause"], [10, 10])
+        self.assertEqual(caught.exception.result["duration_ms"], 2000000)
+
+    def test_two_failed_unpauses_are_not_reported_safe(self):
+        self.docker.unpause_failures = 2
+        with self.assertRaises(backup.BackupFailed) as caught:
+            self.run_backup()
+        self.assertEqual(self.docker.unpause_attempts, 2)
+        self.assertFalse(caught.exception.result["unpaused"])
+        self.assertTrue(caught.exception.result["tools_stopped"])
+
+    def test_tool_cleanup_is_verified_before_unpause(self):
+        self.assertTrue(self.run_backup()["tools_stopped"])
+        commands = [argv for argv, _ in self.docker.calls]
+        verify = next(i for i, argv in enumerate(commands) if argv[1] == "ps")
+        unpause = next(i for i, argv in enumerate(commands) if argv[1] == "unpause")
+        self.assertLess(verify, unpause)
+        self.assertEqual(commands[verify], ["docker", "ps", "-a", "--filter",
+                                           backup.BACKUP_TOOL_FILTER, "--format", "{{.Names}}"])
+
+    def test_remaining_tool_or_failed_verification_prevents_unpause(self):
+        for mode in ("remaining", "list_failure"):
+            self.docker = ReviewDocker()
+            if mode == "remaining":
+                self.docker.listed_tools = "souls-house-backup-" + "a" * 24
+            else:
+                self.docker.list_ok = False
+            with self.subTest(mode=mode), self.assertRaises(backup.BackupFailed) as caught:
+                self.run_backup()
+            self.assertFalse(caught.exception.result["unpaused"])
+            self.assertFalse(caught.exception.result["tools_stopped"])
+            self.assertEqual(self.docker.unpause_attempts, 0)
+
+    def test_recovery_hook_is_after_safe_state_inspection_and_before_pause(self):
+        events = []
+        docker = self.docker
+
+        def run(argv, timeout=120):
+            if argv[1] in ("pause", "inspect"):
+                events.append(argv[1])
+            return docker(argv, timeout)
+
+        host = FakeHost()
+        host.begin_backup_recovery = lambda name: events.append(("marker", name))
+        backup.run_backup(payload(), host, signed_request=lambda *a, **kw: (200, {}, b""),
+                          docker=run, proxy_factory=FakeProxy)
+        marker = events.index(("marker", "agent-pilot-1"))
+        self.assertEqual(events[marker - 1], "inspect")
+        self.assertEqual(events[marker + 1], "pause")
+
+    def test_refused_preexisting_pause_never_creates_recovery_marker(self):
+        self.docker.paused = True
+        markers = []
+        host = FakeHost()
+        host.begin_backup_recovery = markers.append
+        with self.assertRaises(BadCommand):
+            backup.run_backup(payload(), host, signed_request=lambda *a, **kw: (200, {}, b""),
+                              docker=self.docker, proxy_factory=FakeProxy)
+        self.assertEqual(markers, [])
+        self.assertEqual(self.docker.unpause_attempts, 0)
+
+    def test_system_exit_runs_tool_verification_before_unpause(self):
+        docker = self.docker
+        live_tools = set()
+        interrupted_tool = []
+
+        def run(argv, timeout=120):
+            if argv[1] == "run" and "backup" in argv:
+                tool = argv[argv.index("--name") + 1]
+                interrupted_tool.append(tool)
+                live_tools.add(tool)
+                docker.calls.append((list(argv), timeout))
+                raise SystemExit(143)
+            if argv[1:3] == ["rm", "-f"]:
+                response = docker(argv, timeout)
+                live_tools.difference_update(argv[3:])
+                return response
+            if argv[1] == "ps":
+                docker.calls.append((list(argv), timeout))
+                return True, "\n".join(sorted(live_tools))
+            return docker(argv, timeout)
+
+        with self.assertRaises(SystemExit) as caught:
+            backup.run_backup(payload(), FakeHost(), signed_request=lambda *a, **kw: (200, {}, b""),
+                              docker=run, proxy_factory=FakeProxy)
+        self.assertEqual(caught.exception.code, 143)
+        self.assertEqual(len(interrupted_tool), 1)
+        self.assertEqual(live_tools, set())
+        commands = [argv for argv, _ in docker.calls]
+        removed = next(i for i, argv in enumerate(commands) if argv[1] == "rm")
+        verified = next(i for i, argv in enumerate(commands) if argv[1] == "ps")
+        unpaused = next(i for i, argv in enumerate(commands) if argv[1] == "unpause")
+        self.assertIn(interrupted_tool[0], commands[removed][3:])
+        self.assertLess(removed, verified)
+        self.assertLess(verified, unpaused)
+        self.assertFalse(docker.paused)
+
+
+class RangeProxyTest(unittest.TestCase):
+    TARGET = "/data/" + "a" * 64
+
+    def request(self, proxy, value=None, method="GET", target=None):
+        headers = {"Authorization": proxy.authorization}
+        if value is not None:
+            headers["Range"] = value
+        client = http.client.HTTPConnection("127.0.0.1", proxy.server.server_port, timeout=2)
+        try:
+            client.request(method, target or self.TARGET, body=b"" if method == "POST" else None, headers=headers)
+            response = client.getresponse()
+            return response.status, dict(response.getheaders()), response.read()
+        finally:
+            client.close()
+
+    def test_valid_range_reaches_signed_callback_and_returns_exact_partial_bytes(self):
+        seen = []
+
+        def request(method, path, body, timeout, request_headers):
+            seen.append((method, path, body, request_headers))
+            return 206, {"Content-Range": "bytes 3-6/11", "Content-Length": "4"}, b"defg"
+
+        with backup.BackupProxy(request, time.monotonic() + 10) as proxy:
+            status, headers, body = self.request(proxy, "bytes=3-6")
+        self.assertEqual(status, 206)
+        self.assertEqual(body, b"defg")
+        self.assertEqual(headers["Content-Range"], "bytes 3-6/11")
+        self.assertEqual(headers["Content-Length"], "4")
+        self.assertEqual(seen, [("GET", backup.BACKUP_PATH + self.TARGET, b"", {"Range": "bytes=3-6"})])
+
+    def test_invalid_range_never_calls_signed_transport(self):
+        seen = []
+        with backup.BackupProxy(lambda *a, **kw: seen.append(a), time.monotonic() + 10) as proxy:
+            for value in ("bytes=-4", "bytes=6-3", "bytes=0-1,3-4", "Bytes=0-1",
+                          "bytes=0-33554432", "bytes=9223372036854775808-9223372036854775808", "bytes=0 - 1"):
+                with self.subTest(value=value):
+                    self.assertEqual(self.request(proxy, value)[0], 400)
+            self.assertEqual(self.request(proxy, "bytes=0-1", method="POST")[0], 400)
+            self.assertEqual(self.request(proxy, "bytes=0-1", target="/data/")[0], 400)
+        self.assertEqual(seen, [])
+
+    def test_real_restic_open_range_is_bounded_by_signed_head_then_forwarded_closed(self):
+        seen = []
+
+        def request(method, path, body, timeout, request_headers=None):
+            seen.append((method, path, request_headers))
+            if method == "HEAD":
+                return 200, {"Content-Length": "11"}, b""
+            return 206, {"Content-Range": "bytes 3-10/11"}, b"defghijk"
+
+        with backup.BackupProxy(request, time.monotonic() + 10) as proxy:
+            status, headers, body = self.request(proxy, "bytes=3-")
+        self.assertEqual(status, 206)
+        self.assertEqual(body, b"defghijk")
+        self.assertEqual(headers["Content-Range"], "bytes 3-10/11")
+        self.assertEqual(seen, [
+            ("HEAD", backup.BACKUP_PATH + self.TARGET, None),
+            ("GET", backup.BACKUP_PATH + self.TARGET, {"Range": "bytes=3-10"}),
+        ])
+
+    def test_open_range_invalid_or_unbounded_head_never_issues_get(self):
+        for reply in ((200, {}, b""), (200, {"Content-Length": "3"}, b""),
+                      (200, {"Content-Length": str(backup.MAX_BODY_BYTES + 1)}, b""),
+                      (404, {"Content-Length": "11"}, b""),
+                      (200, {"Content-Length": "11"}, b"unexpected")):
+            seen = []
+
+            def request(method, *args, **kwargs):
+                seen.append(method)
+                return reply
+
+            with self.subTest(reply=reply), backup.BackupProxy(request, time.monotonic() + 10) as proxy:
+                self.assertEqual(self.request(proxy, "bytes=3-")[0], 502)
+            self.assertEqual(seen, ["HEAD"])
+
+    def test_duplicate_range_headers_refused(self):
+        seen = []
+        with backup.BackupProxy(lambda *a, **kw: seen.append(a), time.monotonic() + 10) as proxy:
+            client = socket.create_connection(("127.0.0.1", proxy.server.server_port), timeout=2)
+            try:
+                client.sendall((f"GET {self.TARGET} HTTP/1.1\r\nHost: localhost\r\n"
+                                f"Authorization: {proxy.authorization}\r\n"
+                                "Range: bytes=0-1\r\nRange: bytes=0-1\r\n\r\n").encode())
+                response = http.client.HTTPResponse(client)
+                response.begin()
+                self.assertEqual(response.status, 400)
+                response.read()
+                response.close()
+            finally:
+                client.close()
+        self.assertEqual(seen, [])
+
+    def test_200_missing_invalid_or_mismatched_ranges_are_never_silently_consumed(self):
+        cases = [
+            (200, {"Content-Range": "bytes 3-6/11"}, b"abcdefghijk"),
+            (206, {}, b"defg"),
+            (206, {"Content-Range": "bytes 3-6/*"}, b"defg"),
+            (206, {"Content-Range": "bytes 2-5/11"}, b"cdef"),
+            (206, {"Content-Range": "bytes 3-5/11"}, b"def"),
+            (206, {"Content-Range": "bytes 3-6/6"}, b"defg"),
+            (206, {"Content-Range": "bytes 3-6/11"}, b"def"),
+            (206, {"Content-Range": "bytes 3-6/11", "Content-Length": "5"}, b"defg"),
+            (206, {"Content-Range": "bytes 3-6/11, bytes 3-6/11"}, b"defg"),
+            (206, {"Content-Range": "bytes 3-6/11\r\nInjected: header"}, b"defg"),
+        ]
+        for reply in cases:
+            with self.subTest(reply=reply):
+                with backup.BackupProxy(lambda *a, **kw: reply, time.monotonic() + 10) as proxy:
+                    status, headers, body = self.request(proxy, "bytes=3-6")
+                self.assertEqual(status, 502)
+                self.assertEqual(body, b"")
+                self.assertNotIn("Content-Range", headers)
+
+    def test_unsolicited_206_rejected_and_normal_callbacks_need_no_new_kwarg(self):
+        with backup.BackupProxy(lambda m, p, b, timeout: (200, {}, b"whole"), time.monotonic() + 10) as proxy:
+            self.assertEqual(self.request(proxy)[2], b"whole")
+        with backup.BackupProxy(lambda *a, **kw: (206, {}, b"part"), time.monotonic() + 10) as proxy:
+            self.assertEqual(self.request(proxy)[0], 502)
+
+
+class SignedRangeTransportTest(unittest.TestCase):
+    def call(self, status=206, headers=None, body=b"defg", request_headers=None):
+        seen = {}
+        response_headers = headers if headers is not None else {"Content-Range": "bytes 3-6/11", "Content-Length": "4"}
+
+        class Sock:
+            def settimeout(self, timeout):
+                pass
+
+            def shutdown(self, how):
+                pass
+
+        class Response:
+            def __init__(self):
+                self.status = status
+                self.body = body
+
+            def getheader(self, key, default=None):
+                return response_headers.get(key, default)
+
+            def read1(self, size):
+                chunk, self.body = self.body[:size], self.body[size:]
+                return chunk
+
+        class Connection:
+            sock = Sock()
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def connect(self):
+                pass
+
+            def request(self, method, path, body, headers):
+                seen["headers"] = headers
+
+            def getresponse(self):
+                return Response()
+
+            def close(self):
+                seen["closed"] = True
+
+        def sign(key, method, path, body, runner_id):
+            seen["signed"] = (method, path, body, runner_id)
+            return {"X-Runner-Signature": "synthetic"}
+
+        with patch.object(backup.http.client, "HTTPSConnection", Connection):
+            request = backup.make_signed_request({"rails_url": "https://house.invalid", "runner_id": "synthetic"},
+                                                 None, sign)
+            reply = request("GET", backup.BACKUP_PATH + RangeProxyTest.TARGET, b"",
+                            request_headers={"Range": "bytes=3-6"} if request_headers is None else request_headers)
+        return reply, seen
+
+    def test_transport_forwards_range_but_does_not_change_signature_contract(self):
+        reply, seen = self.call()
+        self.assertEqual(reply[0], 206)
+        self.assertEqual(reply[2], b"defg")
+        self.assertEqual(seen["headers"]["Range"], "bytes=3-6")
+        self.assertEqual(seen["signed"], ("GET", backup.BACKUP_PATH + RangeProxyTest.TARGET, b"", "synthetic"))
+        self.assertTrue(seen["closed"])
+
+    def test_transport_independently_checks_partial_response(self):
+        for status, headers, body in ((200, {}, b"abcdefghijk"), (206, {}, b"defg"),
+                                     (206, {"Content-Range": "bytes 2-5/11"}, b"cdef"),
+                                     (206, {"Content-Range": "bytes 3-6/11"}, b"def")):
+            with self.subTest(status=status, headers=headers), self.assertRaises(ValueError):
+                self.call(status, headers, body)
+
+    def test_transport_does_not_accept_arbitrary_request_headers(self):
+        for headers in ({"Range": "bytes=3-"}, {"Range": "bytes=3-6", "Authorization": "evil"},
+                        {"X-Runner-Id": "other"}, {"Range": None}, []):
+            with self.subTest(headers=headers), self.assertRaises(BadCommand):
+                self.call(request_headers=headers)
+
+
 class BoundedDockerTest(unittest.TestCase):
+    def test_system_exit_kills_and_reaps_docker_client_before_propagating(self):
+        class Process:
+            stdout = io.BytesIO()
+            stderr = io.BytesIO()
+            code = None
+            waits = 0
+            kills = 0
+
+            def wait(self, timeout=None):
+                self.waits += 1
+                if self.waits == 1:
+                    raise SystemExit(143)
+                return self.code
+
+            def poll(self):
+                return self.code
+
+            def kill(self):
+                self.kills += 1
+                self.code = -9
+
+        process = Process()
+        with patch.object(backup.subprocess, "Popen", return_value=process):
+            with self.assertRaises(SystemExit) as caught:
+                backup.bounded_docker(["docker", "run", "synthetic"])
+        self.assertEqual(caught.exception.code, 143)
+        self.assertEqual(process.kills, 1)
+        self.assertEqual(process.waits, 2)
+
     def test_output_tail_bounded(self):
         ok, output = backup.bounded_docker([sys.executable, "-c", "print('x' * 300000)"], timeout=2)
         self.assertTrue(ok)

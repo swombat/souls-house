@@ -1,12 +1,9 @@
-require "timeout"
-
 module Api
   module V1
     module HostRunner
       class BackupsController < BaseController
 
         BASE_PATH = "/api/v1/host_runner/backup"
-        REQUEST_TIMEOUT = 20
         READ_CHUNK = 1.megabyte
 
         # A factory keeps tests entirely credential-free, including the bucket.
@@ -17,8 +14,8 @@ module Api
           refuse(error.code, error.status)
         end
 
-        rescue_from Timeout::Error do
-          refuse(:backup_timeout, :gateway_timeout)
+        rescue_from ActiveRecord::QueryCanceled, ActiveRecord::LockWaitTimeout do
+          refuse(:backup_database_timeout, :service_unavailable)
         end
 
         rescue_from Aws::S3::Errors::ServiceError, Seahorse::Client::NetworkingError do
@@ -35,20 +32,20 @@ module Api
           path = "" if wire_path == BASE_PATH
           operation = Backup::VmRepository.operation(method: request.request_method, path:, query: query.to_s)
 
-          Backup::VmRepository::Admission.with(enrollment.id) do
-            Timeout.timeout(REQUEST_TIMEOUT) do
-              body = backup_body
-              raise Backup::VmRepository::Refused.new(:unexpected_backup_body, 400) if operation != :create && body.present?
+          body = backup_body
+          raise Backup::VmRepository::Refused.new(:unexpected_backup_body, 400) if operation != :create && body.present?
 
-              # Unlike other runner endpoints, init's literal query is signed.
-              # The common verifier's small default body cap is unchanged.
-              nonce = RunnerSignature.verify!(
-                method: request.request_method, path: target, body:,
-                headers: request.headers, public_key_b64: enrollment.public_key,
-                expected_runner_id: enrollment.public_id, max_body_bytes: Backup::VmRepository::MAX_BYTES
-              )
-              enrollment.authorize_backup!(nonce:)
-              repository = self.class.repository_factory.call(enrollment.agent_placement.agent)
+          Backup::VmRepository.with_database_limits do
+            # Authenticate before taking scarce storage slots. A busy retry
+            # needs a fresh nonce: authorization consumes it exactly once.
+            nonce = RunnerSignature.verify!(
+              method: request.request_method, path: target, body:,
+              headers: request.headers, public_key_b64: enrollment.public_key,
+              expected_runner_id: enrollment.public_id, max_body_bytes: Backup::VmRepository::MAX_BYTES
+            )
+            agent = enrollment.authorize_backup!(nonce:)
+            repository = self.class.repository_factory.call(agent)
+            Backup::VmRepository::Admission.with(enrollment.id) do
               serve(repository, operation, path, body)
             end
           end
@@ -74,6 +71,8 @@ module Api
         end
 
         def serve(repository, operation, path, body)
+          # Range and Accept are deliberately unsigned read-only selectors;
+          # they cannot choose a repository or mutate stored bytes.
           case operation
           when :init
             repository.init!

@@ -48,7 +48,7 @@ module Backup
         return settle!(backup, {}, "Backup deadline expired; runtime state uncertain, hold retained", release: false)
       end
       result = command.result["result"].is_a?(Hash) ? command.result["result"] : {}
-      safe = result["unpaused"] == true
+      safe = result["unpaused"] == true && result["tools_stopped"] == true
       reason = if command.state != "done"
         "Runner backup #{command.state}"
       elsif !safe
@@ -71,10 +71,43 @@ module Backup
     end
 
     def self.busy?(agent)
+      commands = RunnerCommand.joins(:agent_placement).where(agent_placements: { agent_id: agent.id },
+        kind: %w[submit_turn start_resident stop_resident seed_home])
       agent.agent_runtime_interactions.active.exists? ||
         ResidentTurn.occupying_capacity.where(agent_id: agent.id).exists? ||
-        RunnerCommand.joins(:agent_placement).where(agent_placements: { agent_id: agent.id },
-          kind: %w[submit_turn start_resident stop_resident seed_home], state: %w[queued delivered unknown]).exists?
+        commands.where(state: %w[queued delivered]).exists? ||
+        commands.where(state: "unknown").any? { |command|
+          # The original submit acknowledgement stays unknown even after the
+          # runtime ledger proves this dispatch finished. Use that proof, not
+          # age, to stop treating it as active forever. Unlinked and lifecycle
+          # unknowns still require explicit containment.
+          command.kind != "submit_turn" || !command.resident_turn&.finished_at?
+        }
+    end
+
+    # Only an authenticated heartbeat from the same live enrollment can supply
+    # this recovery acknowledgement. The runner emits it after durable-marker
+    # recovery, tool removal and a final unpaused inspection. Never bless the
+    # snapshot: recovery merely releases the failed hold.
+    def self.release_after_recovery!(enrollment:, now: Time.current)
+      proof = enrollment.last_facts["recovered_backup"]
+      return unless proof.is_a?(Hash) && proof["unpaused"] == true && proof["tools_stopped"] == true
+      return unless proof["command_id"].is_a?(String) && proof["command_id"].match?(/\A[0-9a-f]{32}\z/)
+      return unless enrollment.healthy?(now:) && !enrollment.revoked_at?
+      placement = enrollment.agent_placement
+      agent = placement.agent
+      return unless proof["container_name"] == agent.container_name
+      agent.with_lock do
+        backup = VmBackup.holding.joins(:runner_command).find_by(runner_commands: {
+          public_id: proof["command_id"], runner_enrollment_id: enrollment.id,
+          generation: placement.generation })
+        return unless backup
+        # A stale recovery acknowledgement cannot release a newer attempt.
+        return unless backup.state == "failed" || backup.runner_command.state == "unknown"
+        backup.update!(state: "failed", failure_reason: "Interrupted backup recovered by runner; snapshot not verified",
+          released_at: now)
+        Rails.logger.info("[vm_backup] recovery_release agent_id=#{agent.id} backup_id=#{backup.id} enrollment_id=#{enrollment.id}")
+      end
     end
 
     # Cleanup may release a held checkpoint only after the placement has

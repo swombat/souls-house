@@ -8,8 +8,12 @@ class Api::V1::HostRunner::BackupsControllerTest < ActionDispatch::IntegrationTe
 
   ID = "a" * 64
   BASE = "/api/v1/host_runner/backup"
+  AGENT_UUID = "11111111-1111-4111-8111-111111111111"
+  OTHER_UUID = "22222222-2222-4222-8222-222222222222"
 
   setup do
+    agents(:research_assistant).update!(uuid: AGENT_UUID)
+    agents(:code_reviewer).update!(uuid: OTHER_UUID)
     @placement = AgentPlacement.create!(agent: agents(:research_assistant), backend: "hetzner_cloud", state: "pending")
     @enrollment, token = RunnerEnrollment.mint!(placement: @placement)
     @enrollment.confirm_provider_server!(4242)
@@ -81,8 +85,8 @@ class Api::V1::HostRunner::BackupsControllerTest < ActionDispatch::IntegrationTe
     put = @client.api_requests.find { |request| request[:operation_name] == :put_object }[:params]
     assert_equal body, put[:body]
     assert_equal "*", put[:if_none_match]
-    assert_equal "agents/#{@placement.agent.uuid}/data/aa/#{ID}", put[:key]
-    assert_equal [ @placement.agent.uuid ], @requested_agents
+    assert_equal "agents/11111111-1111-4111-8111-111111111111/data/aa/#{ID}", put[:key]
+    assert_equal [ AGENT_UUID ], @requested_agents
   end
 
   test "32 MiB is accepted and one byte beyond the cap is refused before S3" do
@@ -111,7 +115,7 @@ class Api::V1::HostRunner::BackupsControllerTest < ActionDispatch::IntegrationTe
   test "listings negotiate v1 names or v2 names and sizes" do
     backup_command
     @client.stub_responses(:list_objects_v2, {
-      contents: [ { key: "agents/#{@placement.agent.uuid}/snapshots/#{ID}", size: 123 } ], is_truncated: false
+      contents: [ { key: "agents/11111111-1111-4111-8111-111111111111/snapshots/#{ID}", size: 123 } ], is_truncated: false
     })
     fetch("#{BASE}/snapshots/")
     assert_response :ok
@@ -142,7 +146,7 @@ class Api::V1::HostRunner::BackupsControllerTest < ActionDispatch::IntegrationTe
     fetch("#{BASE}/locks/#{ID}", method: "DELETE")
     assert_response :ok
     delete = @client.api_requests.find { |request| request[:operation_name] == :delete_object }
-    assert_equal "agents/#{@placement.agent.uuid}/locks/#{ID}", delete[:params][:key]
+    assert_equal "agents/11111111-1111-4111-8111-111111111111/locks/#{ID}", delete[:params][:key]
   end
 
   test "queued answered stale generation and absent backup commands do not authorize storage" do
@@ -208,6 +212,41 @@ class Api::V1::HostRunner::BackupsControllerTest < ActionDispatch::IntegrationTe
     fetch("#{BASE}/config")
     assert_response :service_unavailable
     assert_equal({ "error" => "backup_storage_unavailable" }, response.parsed_body)
+  end
+
+  test "invalid UUIDs fail closed before S3 even with valid signed authorization" do
+    backup_command
+    [ nil, "", "../other", "not-a-uuid" ].each do |uuid|
+      @placement.agent.update_column(:uuid, uuid)
+      fetch("#{BASE}/config", method: "POST", body: "bytes")
+      assert_response :service_unavailable
+      assert_equal "invalid_backup_identity", response.parsed_body["error"]
+      assert_empty @client.api_requests
+    end
+  end
+
+  test "authentication precedes admission and a busy authenticated retry spends its nonce only once" do
+    backup_command
+    observer = PG.connect(dbname: ActiveRecord::Base.connection_db_config.database)
+    4.times do |slot|
+      key = Backup::VmRepository.lock_key("slot:endpoint:#{slot}")
+      observer.exec("SELECT pg_advisory_lock(#{key})")
+    end
+    assert_no_difference -> { RunnerRequestNonce.count } do
+      fetch("#{BASE}/config", key: runner_key)
+    end
+    assert_response :unauthorized
+    nonce = SecureRandom.hex(16)
+    assert_difference -> { RunnerRequestNonce.count }, 1 do
+      fetch("#{BASE}/config", nonce:)
+    end
+    assert_response :too_many_requests
+    fetch("#{BASE}/config", nonce:)
+    assert_response :unauthorized
+    assert_empty @client.api_requests
+  ensure
+    observer&.exec("SELECT pg_advisory_unlock_all()")
+    observer&.close
   end
 
 end

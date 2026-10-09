@@ -1,15 +1,18 @@
 require "test_helper"
-require "timeout"
 require "aws-sdk-s3"
 
 class Backup::VmRepositoryTest < ActiveSupport::TestCase
 
   ID = "a" * 64
   OTHER_ID = "b" * 64
+  AGENT_UUID = "11111111-1111-4111-8111-111111111111"
+  OTHER_UUID = "22222222-2222-4222-8222-222222222222"
 
   setup do
     @agent = agents(:research_assistant)
-    @prefix = "agents/#{@agent.uuid}/"
+    @agent.update!(uuid: AGENT_UUID)
+    agents(:code_reviewer).update!(uuid: OTHER_UUID)
+    @prefix = "agents/11111111-1111-4111-8111-111111111111/"
     @objects = {}
     @puts = []
     @deletes = []
@@ -67,6 +70,16 @@ class Backup::VmRepositoryTest < ActiveSupport::TestCase
     connection.exec(sql).getvalue(0, 0) == "t"
   end
 
+  def wait_for_lock(connection, key)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 1
+    loop do
+      return true if lock_value(connection, "SELECT pg_try_advisory_lock(#{key})")
+      return false if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+      sleep 0.005
+    end
+  end
+
   test "only the literal restic wire grammar is accepted" do
     assert_equal :init, Backup::VmRepository.operation(method: "POST", path: "", query: "create=true")
     assert_equal :init, Backup::VmRepository.operation(method: "POST", path: "/", query: "create=true")
@@ -103,23 +116,57 @@ class Backup::VmRepositoryTest < ActiveSupport::TestCase
     assert_empty @puts
   end
 
-  test "every object uses conditional put including config and keys" do
+  test "new objects use conditional put and existing objects are compared before any put" do
     [ "config", "keys/#{ID}", "locks/#{ID}", "snapshots/#{ID}", "index/#{ID}", "data/#{ID}" ].each do |path|
       assert @repository.create(path, "original")
       assert @repository.create(path, "original")
       assert_refused(:backup_overwrite_refused) { @repository.create(path, "different") }
     end
-    assert_equal 18, @puts.size
+    assert_equal 6, @puts.size
     assert @puts.all? { |params| params[:if_none_match] == "*" && params[:bucket] == "synthetic-backups" }
     assert_equal "original", @objects["#{@prefix}data/aa/#{ID}"]
     refute @objects.key?("#{@prefix}data/#{ID}")
+  end
+
+  test "missing or invalid UUID refuses before any S3 operation" do
+    [ nil, "", "../someone", "11111111", "11111111-1111-4111-8111-111111111111/",
+      "11111111-1111-0111-0111-111111111111" ].each do |uuid|
+      @agent.update_column(:uuid, uuid)
+      assert_refused(:invalid_backup_identity) { repository }
+      assert_empty @client.api_requests
+    end
+  end
+
+  test "different residents have distinct literal storage prefixes" do
+    other = Backup::VmRepository.new(agent: agents(:code_reviewer), client: @client, bucket: "synthetic-backups")
+    @repository.create("config", "first")
+    other.create("config", "second")
+    assert_equal "first", @objects["agents/11111111-1111-4111-8111-111111111111/config"]
+    assert_equal "second", @objects["agents/22222222-2222-4222-8222-222222222222/config"]
+    assert_equal "first", @repository.read("config")[:body]
+    assert_equal "second", other.read("config")[:body]
+  end
+
+  test "even a backend that ignores conditional put cannot overwrite existing config or keys" do
+    @client.stub_responses(:put_object, lambda do |context|
+      @puts << context.params
+      @objects[context.params[:key]] = context.params[:body]
+      {}
+    end)
+    [ "config", "keys/#{ID}" ].each do |path|
+      @repository.create(path, "original")
+      assert @repository.create(path, "original")
+      assert_refused(:backup_overwrite_refused) { @repository.create(path, "different") }
+      assert_equal "original", @repository.read(path)[:body]
+    end
+    assert_equal 2, @puts.size
   end
 
   test "lists read and head use the enrollment resident prefix and wire names" do
     @objects["#{@prefix}data/aa/#{ID}"] = "pack"
     @objects["#{@prefix}data/bb/#{OTHER_ID}"] = "another"
     @objects["#{@prefix}data/cc/#{ID}"] = "malformed shard"
-    @objects["agents/someone-else/data/aa/#{ID}"] = "private"
+    @objects["agents/22222222-2222-4222-8222-222222222222/data/aa/#{ID}"] = "private"
     assert_equal [ { name: ID, size: 4 }, { name: OTHER_ID, size: 7 } ], @repository.list("data")
     assert_equal 4, @repository.head("data/#{ID}")
     assert_equal "pack", @repository.read("data/#{ID}")[:body]
@@ -194,6 +241,7 @@ class Backup::VmRepositoryTest < ActiveSupport::TestCase
       assert_refused(:backup_storage_busy) { @repository.create("config", "x") }
       assert_empty @puts
     ensure
+      connection.exec("SELECT pg_advisory_unlock_all()")
       connection.close
     end
     @client.stub_responses(:put_object, lambda do |_context|
@@ -220,23 +268,23 @@ class Backup::VmRepositoryTest < ActiveSupport::TestCase
       assert_refused(:backup_busy) { Backup::VmRepository::Admission.with(999, limit: 1) { flunk "admitted" } }
       assert lock_value(connection, "SELECT pg_try_advisory_lock(#{endpoint})"), "endpoint slot is released when enrollment slots are full"
     ensure
+      connection.exec("SELECT pg_advisory_unlock_all()")
       connection.close
     end
     assert_raises(RuntimeError) { Backup::VmRepository::Admission.with(999, limit: 1) { raise "failure" } }
     assert Backup::VmRepository::Admission.with(999, limit: 1) { true }
   end
 
-  test "a request timeout releases both shared admission and repository locks" do
+  test "a native storage timeout releases both shared admission and repository locks" do
     key = Backup::VmRepository.lock_key("repository:synthetic-backups:#{@prefix}")
     entered_storage = false
     @client.stub_responses(:put_object, lambda do |_context|
       entered_storage = true
-      sleep 1
-      {}
+      raise Seahorse::Client::NetworkingError.new(Net::ReadTimeout.new("synthetic read timeout"))
     end)
-    assert_raises(Timeout::Error) do
+    assert_raises(Seahorse::Client::NetworkingError) do
       Backup::VmRepository::Admission.with(999, limit: 1) do
-        Timeout.timeout(0.1) { @repository.create("config", "x") }
+        @repository.create("config", "x")
       end
     end
     assert entered_storage, "timeout interrupted storage while the repository lock was held"
@@ -250,6 +298,53 @@ class Backup::VmRepositoryTest < ActiveSupport::TestCase
     end
     @client.stub_responses(:put_object, {})
     assert Backup::VmRepository::Admission.with(999, limit: 1) { @repository.create("config", "x") }
+  end
+
+  test "cooperative deadline stops storage without asynchronous database interruption" do
+    now = 0
+    timed = Backup::VmRepository.new(agent: @agent, client: @client, bucket: "synthetic-backups", deadline_seconds: 20, clock: -> { now })
+    @client.stub_responses(:list_objects_v2, lambda do |_context|
+      now = 21
+      { contents: [], is_truncated: false }
+    end)
+    assert_refused(:backup_timeout) { timed.create("config", "x") }
+    assert_empty @puts
+  end
+
+  test "native PostgreSQL statement timeout restores session limits" do
+    connection = ActiveRecord::Base.connection
+    before = connection.select_value("SHOW statement_timeout")
+    before_lock = connection.select_value("SHOW lock_timeout")
+    assert_raises(ActiveRecord::QueryCanceled) do
+      Backup::VmRepository.with_database_limits(statement_timeout_ms: 10) do
+        connection.transaction(requires_new: true) { connection.execute("SELECT pg_sleep(1)") }
+      end
+    end
+    assert_equal before, connection.select_value("SHOW statement_timeout")
+    assert_equal before_lock, connection.select_value("SHOW lock_timeout")
+  end
+
+  test "failed unlocks discard the actual database session rather than leak pooled locks" do
+    # A standalone real pool is not fixture-pinned. Deliberately abort its
+    # transaction so PostgreSQL rejects every unlock query.
+    config = ActiveRecord::ConnectionAdapters::PoolConfig.new(
+      ActiveRecord::Base, ActiveRecord::Base.connection_db_config, :writing, :default
+    )
+    pool = ActiveRecord::ConnectionAdapters::ConnectionPool.new(config)
+    key = Backup::VmRepository.lock_key("test:failed-unlock")
+    connection = pool.checkout
+    assert connection.select_value("SELECT pg_try_advisory_lock(#{key})")
+    connection.execute("BEGIN")
+    assert_raises(ActiveRecord::StatementInvalid) { connection.execute("SELECT 1 / 0") }
+    assert_refused(:backup_database_unavailable) do
+      Backup::VmRepository::Admission.send(:release_locks, connection, [ key ])
+    end
+    refute_includes pool.connections, connection
+    separate = observer
+    assert wait_for_lock(separate, key), "server releases locks after noticing the discarded socket closed"
+  ensure
+    separate&.close
+    pool&.disconnect!
   end
 
 end

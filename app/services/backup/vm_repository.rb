@@ -11,6 +11,7 @@ module Backup
     MAX_REPOSITORY_OBJECTS = 1_000_000
     TYPES = %w[keys locks snapshots index data].freeze
     HASH = /\A[0-9a-f]{64}\z/
+    UUID = /\A[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/
     V2_MEDIA_TYPE = "application/vnd.x.restic.rest.v2"
 
     class Refused < StandardError
@@ -41,11 +42,15 @@ module Backup
       raise Refused.new(:bad_backup_request, 400)
     end
 
-    def initialize(agent:, client: nil, bucket: nil, budget_bytes: ENV.fetch("VM_BACKUP_BUDGET_BYTES", 20.gigabytes.to_s))
+    def initialize(agent:, client: nil, bucket: nil, budget_bytes: ENV.fetch("VM_BACKUP_BUDGET_BYTES", 20.gigabytes.to_s), deadline_seconds: 20, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
+      raise Refused.new(:invalid_backup_identity, 503) unless UUID.match?(agent.uuid.to_s)
+
       @agent_id = agent.id
       @prefix = "agents/#{agent.uuid}/"
       @client = client
       @bucket = bucket
+      @clock = clock
+      @deadline = @clock.call + deadline_seconds
       @budget_bytes = Integer(budget_bytes)
       raise ArgumentError, "backup budget must be positive" unless @budget_bytes.positive?
     end
@@ -57,7 +62,7 @@ module Backup
     end
 
     def head(path)
-      client.head_object(bucket:, key: object_key(path)).content_length
+      storage { client.head_object(bucket:, key: object_key(path)) }.content_length
     rescue Aws::S3::Errors::NotFound, Aws::S3::Errors::NoSuchKey
       raise Refused.new(:backup_object_not_found, 404)
     end
@@ -71,10 +76,13 @@ module Backup
         raise Refused.new(:backup_object_too_large, 413) if head(path) > MAX_BYTES
       end
       body = +"".b
-      result = client.get_object(**options) do |chunk|
-        raise Refused.new(:backup_object_too_large, 413) if body.bytesize + chunk.bytesize > MAX_BYTES
+      result = storage do
+        client.get_object(**options) do |chunk|
+          check_deadline!
+          raise Refused.new(:backup_object_too_large, 413) if body.bytesize + chunk.bytesize > MAX_BYTES
 
-        body << chunk
+          body << chunk
+        end
       end
       raise Refused.new(:backup_object_too_large, 413) if result.content_length.to_i > MAX_BYTES
 
@@ -122,24 +130,22 @@ module Backup
         # write counter drifting after a timeout/crash. Identical retries remain
         # allowed even when the budget is full.
         existing_size = object_size(key)
-        unless existing_size
+        if existing_size
+          compare_existing!(path, body)
+        else
           bytes = 0
           each_object(@prefix) { |object| bytes += object.size }
           if bytes + body.bytesize > @budget_bytes
             Rails.logger.error("[vm_backup] budget_exceeded agent_id=#{@agent_id} stored_bytes=#{bytes} incoming_bytes=#{body.bytesize} budget_bytes=#{@budget_bytes}")
             raise Refused.new(:backup_budget_exceeded, 507)
           end
-        end
-
-        begin
-          client.put_object(bucket:, key:, body:, if_none_match: "*")
-        rescue Aws::S3::Errors::PreconditionFailed
-          stored = read(path)[:body]
-          raise Refused.new(:backup_overwrite_refused, 409) unless stored == body
-        rescue Aws::S3::Errors::ConditionalRequestConflict
-          # A concurrent external writer is not a retry we can prove. Restic
-          # can retry with a new signed request.
-          raise Refused.new(:backup_storage_busy, 503)
+          begin
+            storage { client.put_object(bucket:, key:, body:, if_none_match: "*") }
+          rescue Aws::S3::Errors::PreconditionFailed
+            compare_existing!(path, body)
+          rescue Aws::S3::Errors::ConditionalRequestConflict
+            raise Refused.new(:backup_storage_busy, 503)
+          end
         end
       end
       true
@@ -148,12 +154,12 @@ module Backup
     def delete_lock(path)
       raise Refused.new(:bad_backup_request, 400) unless path.match?(/\Alocks\/[0-9a-f]{64}\z/)
 
-      with_repository_lock { client.delete_object(bucket:, key: object_key(path)) }
+      with_repository_lock { storage { client.delete_object(bucket:, key: object_key(path)) } }
       true
     end
 
-    # Fast rejection before waiting for a database connection, then shared
-    # PostgreSQL slots across Puma workers/hosts. Requires session pooling:
+    # Fast local rejection, then shared PostgreSQL slots across Puma
+    # workers/hosts. Requires session pooling:
     # transaction-mode PgBouncer cannot safely hold session advisory locks.
     class Admission
 
@@ -181,7 +187,7 @@ module Backup
                 locks << acquire_slot(connection, "enrollment:#{enrollment_id}", PER_ENROLLMENT)
                 yield
               ensure
-                locks.reverse_each { |key| connection.select_value("SELECT pg_advisory_unlock(#{key})") }
+                release_locks(connection, locks)
               end
             end
           end
@@ -203,6 +209,64 @@ module Backup
       end
       private_class_method :acquire_slot
 
+      def self.release_locks(connection, locks)
+        failed = false
+        locks.reverse_each do |key|
+          begin
+            failed = true unless connection.select_value("SELECT pg_advisory_unlock(#{key})")
+          rescue StandardError
+            failed = true
+          end
+        end
+        return unless failed
+
+        # Never return an uncertain session to the pool. Closing its socket
+        # also releases locks when no unlock statement can reach PostgreSQL.
+        VmRepository.discard_connection(connection)
+        raise Refused.new(:backup_database_unavailable, 503) unless $!
+      end
+      private_class_method :release_locks
+
+    end
+
+    # Native PostgreSQL cancellation, not asynchronous Ruby interruption.
+    # Restore session settings even when authorization/admission is refused.
+    def self.with_database_limits(statement_timeout_ms: 5_000, lock_timeout_ms: 1_000)
+      ActiveRecord::Base.connection_pool.with_connection do |connection|
+        connection.uncached do
+          previous = {}
+          begin
+            { statement_timeout: statement_timeout_ms, lock_timeout: lock_timeout_ms }.each do |name, milliseconds|
+              previous[name] = connection.select_value("SHOW #{name}")
+              connection.execute("SET #{name} = #{Integer(milliseconds)}")
+            end
+            yield
+          ensure
+            failed = false
+            # Admission may already have discarded this adapter. Do not
+            # reconnect an unmanaged socket just to restore dead-session state.
+            if connection.pool.connections.include?(connection)
+              previous.each do |name, value|
+                begin
+                  connection.execute("SET #{name} = #{connection.quote(value)}")
+                rescue StandardError
+                  failed = true
+                end
+              end
+            end
+            if failed
+              discard_connection(connection)
+              raise Refused.new(:backup_database_unavailable, 503) unless $!
+            end
+          end
+        end
+      end
+    end
+
+    def self.discard_connection(connection)
+      Rails.logger.error("[vm_backup] discarding uncertain database session")
+      connection.pool.remove(connection)
+      connection.disconnect!
     end
 
     def self.lock_key(value)
@@ -210,6 +274,21 @@ module Backup
     end
 
     private
+
+    def check_deadline!
+      raise Refused.new(:backup_timeout, 504) if @clock.call >= @deadline
+    end
+
+    def storage
+      check_deadline!
+      result = yield
+      check_deadline!
+      result
+    end
+
+    def compare_existing!(path, body)
+      raise Refused.new(:backup_overwrite_refused, 409) unless read(path)[:body] == body
+    end
 
     def object_key(path)
       unless path == "config" || path.match?(/\A(?:keys|locks|snapshots|index|data)\/[0-9a-f]{64}\z/)
@@ -220,7 +299,7 @@ module Backup
     end
 
     def object_size(key)
-      client.head_object(bucket:, key:).content_length
+      storage { client.head_object(bucket:, key:) }.content_length
     rescue Aws::S3::Errors::NotFound, Aws::S3::Errors::NoSuchKey
       nil
     end
@@ -229,7 +308,7 @@ module Backup
       token = nil
       count = 0
       loop do
-        page = client.list_objects_v2(bucket:, prefix:, continuation_token: token)
+        page = storage { client.list_objects_v2(bucket:, prefix:, continuation_token: token) }
         page.contents.each do |object|
           count += 1
           raise Refused.new(:backup_repository_too_large, 503) if count > MAX_REPOSITORY_OBJECTS

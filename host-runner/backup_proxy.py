@@ -4,10 +4,19 @@ Integration: run_backup(payload, host, signed_request=callback).
 host supplies _known_resident(name). Optional docker(argv, timeout=...) returns
 (ok, output) and must honour its timeout. BackupFailed.result must be included in failed command
 answers, not discarded by the ordinary CommandFailed handler.
+An optional host.begin_backup_recovery(name) runs only after accepting the
+second safe state inspection, before a pause can happen. Lifecycle owns its
+marker. A safe answer requires both unpaused and verified tools_stopped.
 
-signed_request(method, fullpath, body, timeout=...) -> (status, headers, bytes)
+signed_request(method, fullpath, body, timeout=..., request_headers=None)
+-> (status, headers, bytes). Only validated single Range headers are forwarded;
+like Accept, Range is not in the runner's signature string. Response ranges
+are checked independently before any bytes reach restic.
 must sign the FULL path, including the sole permitted query ?create=true.
 make_signed_request provides a no-redirect, bounded binary implementation.
+Incoming chunked POSTs are decoded under body/frame/deadline caps before signing
+the decoded bytes. Restic's open ranges are resolved by signed HEAD, then sent
+as closed intervals; no range is silently dropped.
 """
 
 import base64
@@ -32,10 +41,16 @@ BACKUP_PATH = "/api/v1/host_runner/backup"
 MAX_BODY_BYTES = 32 * 1024 * 1024
 MAX_CHECKPOINT_BYTES = 50_000_000
 MAX_REQUESTS = 4096
+MAX_CHUNK_FRAMES = 4096
 REQUEST_SECONDS = 30
 IO_SECONDS = 5
-RESTIC_IMAGE = "restic/restic:0.18.1"
+RESTIC_IMAGE = "restic/restic@sha256:39d9072fb5651c80d75c7a811612eb60b4c06b32ffe87c2e9f3c7222e1797e76"
+# Published 0.18.1 OCI index, verified 2026-10-09 against Docker Hub's
+# Docker-Content-Digest and SHA256 of the anonymously fetched manifest bytes.
 CLEANUP_SECONDS = 20
+UNPAUSE_SECONDS = 10
+MAX_DEADLINE_SECONDS = 900
+BACKUP_TOOL_FILTER = "name=^/souls-house-backup-[0-9a-f]{24}$"
 OUTPUT_BYTES = 128 * 1024
 HEX_RE = re.compile(r"[0-9a-f]{64}\Z")
 UUID_RE = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z")
@@ -47,6 +62,70 @@ class BackupFailed(CommandFailed):
     def __init__(self, message, result):
         super().__init__(message)
         self.result = result
+
+
+class BodyTooLarge(BadCommand):
+    pass
+
+
+def read_request_body(stream, connection, method, headers, deadline):
+    """Decode one bounded body, never forwarding HTTP framing to the house."""
+    lengths = headers.get_all("Content-Length", [])
+    transfers = headers.get_all("Transfer-Encoding", [])
+    if headers.get("Expect") is not None or headers.get("Trailer") is not None:
+        raise BadCommand("unsupported request framing")
+    if (len(lengths) > 1 or len(transfers) > 1 or (lengths and transfers) or
+            (lengths and not re.fullmatch(r"[0-9]{1,10}", lengths[0]))):
+        raise BadCommand("ambiguous request framing")
+    if transfers and (method != "POST" or transfers[0].lower() != "chunked"):
+        raise BadCommand("unsupported transfer encoding")
+    if method == "POST" and not lengths and not transfers:
+        raise BadCommand("request length required")
+
+    def set_timeout():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("backup request body deadline")
+        connection.settimeout(min(IO_SECONDS, remaining))
+
+    def read_exact(length):
+        chunks = []
+        while length:
+            set_timeout()
+            chunk = stream.read1(min(64 * 1024, length))
+            if not chunk:
+                raise BadCommand("incomplete body")
+            chunks.append(chunk)
+            length -= len(chunk)
+        return b"".join(chunks)
+
+    if not transfers:
+        length = int(lengths[0]) if lengths else 0
+        if length > MAX_BODY_BYTES:
+            raise BodyTooLarge("body too large")
+        if method != "POST" and length:
+            raise BadCommand("unexpected body")
+        return read_exact(length)
+
+    chunks, total = [], 0
+    for _ in range(MAX_CHUNK_FRAMES):
+        set_timeout()
+        # No chunk extensions, whitespace, signs, bare LF, or unbounded lines.
+        line = stream.readline(12)
+        if not re.fullmatch(rb"[0-9a-fA-F]{1,8}\r\n", line):
+            raise BadCommand("invalid chunk header")
+        size = int(line[:-2], 16)
+        if size == 0:
+            if read_exact(2) != b"\r\n":
+                raise BadCommand("trailers are not accepted")
+            return b"".join(chunks)
+        total += size
+        if total > MAX_BODY_BYTES:
+            raise BodyTooLarge("body too large")
+        chunks.append(read_exact(size))
+        if read_exact(2) != b"\r\n":
+            raise BadCommand("invalid chunk terminator")
+    raise BadCommand("chunk frame budget exceeded")
 
 
 def _require(condition, message):
@@ -69,6 +148,40 @@ def rest_path(method, target):
                   (method == "DELETE" and match[1] == "locks")):
         return BACKUP_PATH + target
     raise BadCommand("bad backup method or path")
+
+
+def validate_range(method, target, value):
+    """Accept one bounded, complete byte interval on an object GET only."""
+    if value is None:
+        return None
+    if method != "GET" or target.endswith("/") or not isinstance(value, str):
+        raise BadCommand("Range requires an object GET")
+    match = re.fullmatch(r"bytes=([0-9]{1,19})-([0-9]{1,19})", value)
+    if not match:
+        raise BadCommand("invalid Range")
+    start, end = int(match[1]), int(match[2])
+    if start > end or end > 2**63 - 1 or end - start + 1 > MAX_BODY_BYTES:
+        raise BadCommand("Range exceeds bounds")
+    return start, end
+
+
+def validate_range_response(bounds, status, headers, body):
+    if bounds is None:
+        if status == 206:
+            raise ValueError("unsolicited partial response")
+        return None
+    content_range = headers.get("Content-Range")
+    match = re.fullmatch(r"bytes ([0-9]{1,19})-([0-9]{1,19})/([0-9]{1,19})",
+                        content_range if isinstance(content_range, str) else "")
+    if status != 206 or not match:
+        raise ValueError("Range requires a valid 206 Content-Range")
+    start, end, total = map(int, match.groups())
+    if (start, end) != bounds or not end < total <= 2**63 - 1 or len(body) != end - start + 1:
+        raise ValueError("response does not match requested Range")
+    length = headers.get("Content-Length")
+    if length is not None and (not re.fullmatch(r"[0-9]{1,10}", str(length)) or int(length) != len(body)):
+        raise ValueError("Range response length mismatch")
+    return content_range
 
 
 def _unique_object(pairs):
@@ -98,7 +211,7 @@ def validate_payload(payload):
     _require(isinstance(password, str) and 1 <= len(password) <= 4096 and
              not any(char in password for char in "\r\n\0"), "bad restic_password")
     deadline = payload["deadline_seconds"]
-    _require(type(deadline) is int and CLEANUP_SECONDS < deadline <= 3600, "bad backup deadline")
+    _require(type(deadline) is int and CLEANUP_SECONDS < deadline <= MAX_DEADLINE_SECONDS, "bad backup deadline")
     digest = payload["checkpoint_digest"]
     _require(digest is None or (isinstance(digest, str) and HEX_RE.fullmatch(digest)),
              "bad checkpoint_digest")
@@ -133,15 +246,22 @@ def make_signed_request(config, key, signed_headers):
     """Create a binary transport, bypassing redirects and ambient HTTP proxies."""
     origin = urllib.parse.urlsplit(validate_origin(config.get("rails_url")))
 
-    def request(method, fullpath, body, timeout=REQUEST_SECONDS):
+    def request(method, fullpath, body, timeout=REQUEST_SECONDS, request_headers=None):
         # Validation here protects callers other than the loopback server too.
         target = fullpath.removeprefix(BACKUP_PATH)
         if fullpath != rest_path(method, target) or len(body) > MAX_BODY_BYTES:
             raise BadCommand("bad signed backup request")
+        extra = {} if request_headers is None else request_headers
+        if not isinstance(extra, dict) or set(extra) - {"Range"}:
+            raise BadCommand("unsupported backup request headers")
+        if "Range" in extra and not isinstance(extra["Range"], str):
+            raise BadCommand("invalid Range header")
+        bounds = validate_range(method, target, extra.get("Range"))
         ends = time.monotonic() + timeout
         headers = signed_headers(key, method, fullpath, body, config["runner_id"])
         headers["Content-Type"] = "application/octet-stream"
         headers["Accept"] = "application/vnd.x.restic.rest.v2"
+        headers.update(extra)
         connection = http.client.HTTPSConnection(origin.hostname, origin.port or 443,
                                                   timeout=min(IO_SECONDS, timeout))
         timer = None
@@ -182,7 +302,12 @@ def make_signed_request(config, key, signed_headers):
             response_headers = {"Content-Type": response.getheader("Content-Type", "application/octet-stream")}
             if length is not None:
                 response_headers["Content-Length"] = length
-            return response.status, response_headers, b"".join(chunks)
+            content_range = response.getheader("Content-Range")
+            if content_range is not None:
+                response_headers["Content-Range"] = content_range
+            data = b"".join(chunks)
+            validate_range_response(bounds, response.status, response_headers, data)
+            return response.status, response_headers, data
         finally:
             if timer is not None:
                 timer.cancel()
@@ -233,11 +358,14 @@ class BackupProxy:
             def log_message(self, *args):
                 pass  # Never log the URL, Basic token, or binary contents.
 
-            def answer(self, status, body=b"", content_type="application/octet-stream", head_length=None):
+            def answer(self, status, body=b"", content_type="application/octet-stream", head_length=None,
+                       content_range=None):
                 self.send_response(status)
                 self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(head_length if head_length is not None else len(body)))
                 self.send_header("Connection", "close")
+                if content_range is not None:
+                    self.send_header("Content-Range", content_range)
                 self.end_headers()
                 if self.command != "HEAD":
                     self.wfile.write(body)
@@ -254,37 +382,22 @@ class BackupProxy:
                     return
                 try:
                     remote_path = rest_path(self.command, self.path)
-                    lengths = self.headers.get_all("Content-Length", [])
-                    if self.headers.get("Transfer-Encoding") is not None or self.headers.get("Expect") is not None:
-                        raise BadCommand("unsupported request framing")
-                    if len(lengths) > 1 or (lengths and not re.fullmatch(r"[0-9]{1,10}", lengths[0])):
-                        raise BadCommand("bad request length")
-                    if self.command == "POST" and not lengths:
-                        raise BadCommand("request length required")
-                    length = int(lengths[0]) if lengths else 0
-                    if length > MAX_BODY_BYTES:
-                        self.answer(413)
-                        return
-                    if self.command != "POST" and length:
-                        raise BadCommand("unexpected body")
-                    chunks, remaining = [], length
-                    while remaining:
-                        seconds = ends - time.monotonic()
-                        if seconds <= 0:
-                            raise TimeoutError()
-                        self.connection.settimeout(min(IO_SECONDS, seconds))
-                        chunk = self.rfile.read1(min(64 * 1024, remaining))
-                        if not chunk:
-                            raise BadCommand("incomplete body")
-                        chunks.append(chunk)
-                        remaining -= len(chunk)
+                    ranges = self.headers.get_all("Range", [])
+                    if len(ranges) > 1:
+                        raise BadCommand("multiple Range headers")
+                    range_value = ranges[0] if ranges else None
+                    decoded_body = read_request_body(self.rfile, self.connection, self.command, self.headers, ends)
+                    range_value = proxy.closed_range(self.command, remote_path, range_value, ends)
+                    bounds = validate_range(self.command, self.path, range_value)
                     seconds = ends - time.monotonic()
                     if seconds <= 0:
                         raise TimeoutError()
                     status, headers, body = proxy.request(
-                        self.command, remote_path, b"".join(chunks), timeout=seconds)
+                        self.command, remote_path, decoded_body, timeout=seconds,
+                        request_headers={"Range": range_value} if ranges else None)
                     if not isinstance(body, bytes) or len(body) > MAX_BODY_BYTES:
                         raise ValueError("response too large")
+                    content_range = validate_range_response(bounds, status, headers, body)
                     if 300 <= status < 400:
                         self.answer(502)  # Never redirect restic to another host.
                     else:
@@ -297,7 +410,10 @@ class BackupProxy:
                             if not re.fullmatch(r"[0-9]{1,10}", length) or int(length) > MAX_BODY_BYTES:
                                 raise ValueError("bad HEAD response size")
                             head_length = int(length)
-                        self.answer(status, body, content_type, head_length=head_length)
+                        self.answer(status, body, content_type, head_length=head_length,
+                                    content_range=content_range)
+                except BodyTooLarge:
+                    self.answer(413)
                 except BadCommand:
                     self.answer(400)
                 except (OSError, ValueError, http.client.HTTPException):
@@ -334,14 +450,42 @@ class BackupProxy:
     def repository(self):
         return f"rest:http://backup:{self.token}@127.0.0.1:{self.server.server_port}/"
 
-    def request(self, method, path, body, timeout):
+    def closed_range(self, method, path, value, deadline):
+        """Real restic uses bytes=N-. Resolve via signed HEAD, never drop it.
+
+        Append-only objects cannot change between HEAD and GET. Only a bounded
+        closed interval is sent to the house; its 206 is still checked exactly.
+        """
+        match = re.fullmatch(r"bytes=([0-9]{1,19})-", value or "")
+        if not match:
+            validate_range(method, path, value)
+            return value
+        start = int(match[1])
+        if method != "GET" or path.endswith("/") or start > 2**63 - 1:
+            raise BadCommand("invalid open Range")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Range HEAD deadline")
+        status, headers, body = self.request("HEAD", path, b"", timeout=remaining)
+        length = str(headers.get("Content-Length", ""))
+        if status != 200 or body or not re.fullmatch(r"[0-9]{1,10}", length):
+            raise ValueError("cannot bound open Range")
+        size = int(length)
+        if not start < size <= MAX_BODY_BYTES:
+            raise ValueError("open Range exceeds object bounds")
+        return f"bytes={start}-{size - 1}"
+
+    def request(self, method, path, body, timeout, request_headers=None):
         if not self.request_slots.acquire(blocking=False):
             return 429, {}, b""
         outcome = {}
 
         def send():
             try:
-                outcome["response"] = self.signed_request(method, path, body, timeout=timeout)
+                kwargs = {"timeout": timeout}
+                if request_headers:
+                    kwargs["request_headers"] = request_headers
+                outcome["response"] = self.signed_request(method, path, body, **kwargs)
             except Exception as error:
                 outcome["error"] = error
             finally:
@@ -407,6 +551,11 @@ def bounded_docker(argv, timeout=120):
         timed_out = True
         process.kill()
     finally:
+        # SIGTERM becomes SystemExit in the runner. Do not block its finally
+        # path waiting for a still-running docker client before tools can be
+        # removed and the resident resumed.
+        if process.poll() is None:
+            process.kill()
         process.wait()
         for thread in threads:
             thread.join(timeout=1)
@@ -430,16 +579,16 @@ def _state(docker, name, timeout):
 
 def restic_argv(spec, repository, env_file, checkpoint_dir, tool_name, command):
     argv = [
-        "docker", "run", "--pull", "never", "--name", tool_name,
-        "--network", "host", "--read-only", "--cap-drop", "ALL",
+        "docker", "run", "--rm", "--pull", "never", "--name", tool_name,
+        "--network", "host", "--read-only", "--cap-drop", "ALL", "--cap-add", "DAC_READ_SEARCH",
         "--security-opt", "no-new-privileges", "--memory", "512m", "--cpus", "1",
         "--pids-limit", "64", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m",
-        "--env-file", env_file, "-e", f"RESTIC_REPOSITORY={repository}",
+        "--env-file", env_file,
     ]
     for role in ROLES:
         argv += ["--mount", f"type=volume,src={volume_name(spec['container_name'], role)},dst=/data/{role},readonly"]
     argv += ["--mount", f"type=bind,src={checkpoint_dir},dst=/data/memory-graph,readonly",
-             RESTIC_IMAGE, "--no-cache", *command]
+             RESTIC_IMAGE, "--no-cache", "-o", "rest.connections=1", *command]
     return argv
 
 
@@ -449,7 +598,8 @@ def run_backup(payload, host, *, signed_request, docker=None,
 
     Validation raises BadCommand. Operational failures raise BackupFailed with
     a structured .result, including whether this command left the home unpaused.
-    Cleanup has a reserved 20-second budget within the overall deadline.
+    Work reserves 20 seconds for cleanup. Unpause always gets a fresh ten
+    seconds and one retry, even after an overrun: safety beats the work deadline.
     """
     spec, checkpoint = validate_payload(payload)
     deadline_seconds = spec["deadline_seconds"]
@@ -462,7 +612,7 @@ def run_backup(payload, host, *, signed_request, docker=None,
     result = {
         "container_name": name, "checkpoint_digest": spec["checkpoint_digest"],
         "checkpoint_file_sha256": spec["checkpoint_file_sha256"],
-        "snapshot_id": None, "size_bytes": 0, "unpaused": False, "duration_ms": 0,
+        "snapshot_id": None, "size_bytes": 0, "unpaused": False, "tools_stopped": False, "duration_ms": 0,
     }
     pause_attempted = False
     tools = []
@@ -504,13 +654,19 @@ def run_backup(payload, host, *, signed_request, docker=None,
         state = _state(docker, name, min(10, remaining()))
         if state["Paused"]:
             raise BadCommand("resident is already paused")
-        if state["Running"] and state.get("Status") == "running":
+        if state.get("Restarting") or state.get("Dead") or not (
+            (state["Running"] and state.get("Status") == "running") or
+            (not state["Running"] and state.get("Status") in ("created", "exited"))
+        ):
+            raise CommandFailed("resident state changed before backup")
+        begin_recovery = getattr(host, "begin_backup_recovery", None)
+        if callable(begin_recovery):
+            begin_recovery(name)
+        if state["Running"]:
             pause_attempted = True  # even a timeout may have reached Docker
             ok, _ = run(["docker", "pause", name])
             if not ok:
                 raise CommandFailed("could not pause resident")
-        elif state["Running"] or state.get("Status") not in ("created", "exited") or state.get("Restarting") or state.get("Dead"):
-            raise CommandFailed("resident state changed before backup")
         with tempfile.TemporaryDirectory(prefix="souls-house-backup-") as temp:
             os.chmod(temp, 0o700)
             checkpoint_dir = os.path.join(temp, "checkpoint")
@@ -524,6 +680,8 @@ def run_backup(payload, host, *, signed_request, docker=None,
                 os.chmod(env_file, 0o600)
                 handle.write(f"RESTIC_PASSWORD={spec['restic_password']}\n")
             with proxy_factory(signed_request, work_ends) as proxy:
+                with open(env_file, "a", encoding="utf-8") as handle:
+                    handle.write(f"RESTIC_REPOSITORY={proxy.repository}\n")
                 def restic(command):
                     tool = "souls-house-backup-" + secrets.token_hex(12)
                     tools.append(tool)  # remember before launch, including timeouts
@@ -565,6 +723,7 @@ def run_backup(payload, host, *, signed_request, docker=None,
     finally:
         # Stop a timed-out daemon-side restic before allowing new resident work.
         # Use one rm invocation so both tool names share the cleanup budget.
+        cleanup_ok = True
         if tools:
             try:
                 ok, output = docker(["docker", "rm", "-f", *tools], timeout=max(0.001, min(5, ends - clock())))
@@ -575,18 +734,33 @@ def run_backup(payload, host, *, signed_request, docker=None,
                     re.fullmatch(r"Error response from daemon: No such container: souls-house-backup-[0-9a-f]{24}", line)
                     for line in missing
                 )):
+                    cleanup_ok = False
                     error = error or "backup tool cleanup failed"
             except Exception:
+                cleanup_ok = False
                 error = error or "backup tool cleanup failed"
-        if pause_attempted:
-            try:
-                ok, _ = docker(["docker", "unpause", name], timeout=max(0.001, min(10, ends - clock())))
-                if not ok:
-                    error = error or "could not unpause resident"
-            except Exception:
+        try:
+            ok, output = docker(["docker", "ps", "-a", "--filter", BACKUP_TOOL_FILTER,
+                                 "--format", "{{.Names}}"], timeout=5)
+            result["tools_stopped"] = cleanup_ok and ok and not output.strip()
+            if not result["tools_stopped"]:
+                error = error or "cannot verify backup tools stopped"
+        except Exception:
+            error = error or "cannot verify backup tools stopped"
+        if pause_attempted and result["tools_stopped"]:
+            resumed = False
+            for _ in range(2):
+                try:
+                    ok, _ = docker(["docker", "unpause", name], timeout=UNPAUSE_SECONDS)
+                    if ok or not _state(docker, name, 5)["Paused"]:
+                        resumed = True
+                        break
+                except Exception:
+                    pass
+            if not resumed:
                 error = error or "could not unpause resident"
         try:
-            final_state = _state(docker, name, max(0.001, min(5, ends - clock())))
+            final_state = _state(docker, name, 5)
             result["unpaused"] = not final_state["Paused"]
         except Exception:
             error = error or "cannot verify resident ended unpaused"

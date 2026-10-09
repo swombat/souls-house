@@ -24,7 +24,7 @@ module Backup
       command.record_result!({ "outcome" => outcome, "result" => {
         "snapshot_id" => "a" * 64, "checkpoint_digest" => backup.checkpoint_digest,
         "checkpoint_file_sha256" => backup.checkpoint_file_digest, "unpaused" => unpaused,
-        "size_bytes" => 42, "duration_ms" => 12
+        "size_bytes" => 42, "duration_ms" => 12, "tools_stopped" => true
       }.merge(values.stringify_keys) }, now: Time.current)
     end
 
@@ -59,6 +59,18 @@ module Backup
       command = RunnerCommand.enqueue!(enrollment: @enrollment, kind: "start_resident", payload: {})
       command.deliver!(now: Time.current)
       assert_raises(AgentRestic::ResidentBusy) { issue }
+    end
+
+    test "a reconciled finished turn no longer stays busy because its submit acknowledgement was unknown" do
+      interaction = AgentRuntimeInteraction.create!(agent: @agent, trigger_kind: "wake",
+        started_at: 1.minute.ago, finished_at: Time.current)
+      turn = ResidentTurn.create!(agent: @agent, agent_runtime_interaction: interaction, state: "unknown",
+        session_id: "reconciled", dispatch_id: SecureRandom.uuid, payload: "{}")
+      command = RunnerCommand.enqueue!(enrollment: @enrollment, kind: "submit_turn", payload: {}, resident_turn: turn)
+      command.update!(state: "unknown")
+      assert VmResident.busy?(@agent)
+      turn.update!(state: "finished", finished_at: Time.current)
+      assert_not VmResident.busy?(@agent)
     end
 
     test "verified snapshot is recorded once and releases the hold" do
@@ -115,6 +127,28 @@ module Backup
       @enrollment.revoke!
       VmResident.release_after_retirement!(placement: @placement)
       assert_not VmResident.held?(@agent)
+    end
+
+    test "authenticated known-state recovery releases only its failed hold without verifying snapshot" do
+      command = issue
+      answer(command, outcome: "unknown", unpaused: false)
+      VmResident.status(command:, verifier: Object.new)
+      proof = { "command_id" => command.public_id, "container_name" => @agent.container_name,
+        "unpaused" => true, "tools_stopped" => false }
+      @enrollment.update!(last_facts: { "recovered_backup" => proof })
+      VmResident.release_after_recovery!(enrollment: @enrollment)
+      assert VmResident.held?(@agent)
+      proof["tools_stopped"] = true
+      proof["command_id"] = SecureRandom.hex(16)
+      @enrollment.update!(last_facts: { "recovered_backup" => proof })
+      VmResident.release_after_recovery!(enrollment: @enrollment)
+      assert VmResident.held?(@agent)
+      proof["command_id"] = command.public_id
+      @enrollment.update!(last_facts: { "recovered_backup" => proof })
+      VmResident.release_after_recovery!(enrollment: @enrollment)
+      assert_not VmResident.held?(@agent)
+      assert_equal "failed", VmBackup.find_by!(runner_command: command).state
+      assert_not VmBackup.find_by!(runner_command: command).agent_backup_snapshot.ok?
     end
 
     test "overlapping interaction invalidates a backup" do

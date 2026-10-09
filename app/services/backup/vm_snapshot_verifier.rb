@@ -10,6 +10,8 @@ module Backup
     class Invalid < StandardError; end
     LIMIT = Mnemodyne::Checkpoint::MAX_BYTES + 1.megabyte
     TIMEOUT = 120
+    # Same published 0.18.1 OCI digest as the VM tool, not a mutable tag.
+    IMAGE = "restic/restic@sha256:39d9072fb5651c80d75c7a811612eb60b4c06b32ffe87c2e9f3c7222e1797e76"
 
     def initialize(capture: nil)
       @capture = capture
@@ -58,7 +60,7 @@ module Backup
         "-e", "RESTIC_REPOSITORY=#{AgentRestic.repository_url(agent)}"
       ]
       argv = [ "docker", "run", "--rm", "--name", name, *environment,
-        AgentRestic::IMAGE, "--no-lock", "--no-cache", *args ]
+        IMAGE, "--no-lock", "--no-cache", *args ]
       output = +"".b
       Open3.popen3(*argv, pgroup: true) do |stdin, stdout, stderr, thread|
         stdin.close

@@ -38,6 +38,24 @@ class Api::V1::HostRunner::HeartbeatsControllerTest < ActionDispatch::Integratio
     assert_equal "unknown_runner", response.parsed_body["error"]
   end
 
+  test "a signed recovery heartbeat releases only the exact interrupted backup hold" do
+    enroll!
+    agent = @placement.agent
+    command = RunnerCommand.enqueue!(enrollment: @enrollment, kind: "backup_resident", payload: {})
+    command.update!(state: "unknown")
+    backup = VmBackup.create!(agent:, runner_command: command, state: "failed",
+      checkpoint_file_digest: Digest::SHA256.hexdigest("null"), deadline_at: 1.minute.ago)
+    body = JSON.generate(facts: { provider_server_id: 4242, recovered_backup: {
+      command_id: command.public_id, container_name: agent.container_name,
+      unpaused: true, tools_stopped: true, ignored_secret: "not-a-fact"
+    } })
+    post PATH, params: body, headers: signed_runner_headers(@key, path: PATH, body:, runner_id: @enrollment.public_id)
+    assert_response :ok
+    assert backup.reload.released_at?
+    assert_equal "failed", backup.state
+    assert_not @enrollment.reload.last_facts["recovered_backup"].key?("ignored_secret")
+  end
+
   test "only the pinned key can heartbeat" do
     enroll!
     beat(key: runner_key)
