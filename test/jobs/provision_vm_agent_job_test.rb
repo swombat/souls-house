@@ -273,7 +273,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
         assert_equal "retired", placement.reload.state
         assert operation(agent).runner_enrollment.reload.revoked_at
         assert_nil Agents::RemoteRuntime.enrollment_for(agent)
-        assert_equal [ placement.id ], @backups.released, "backup holds are released only after retirement"
+        assert_equal [ placement.id ], @backups.released.uniq, "backup holds are released only after retirement"
       end
     end
   end
@@ -365,6 +365,94 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert_enqueued_with(job: ProvisionVmAgentJob, args: [ agent.id ]) do
         assert_enqueued_with(job: VmCleanupJob, args: [ failed.id ]) { VmBirthSweepJob.perform_now }
       end
+    end
+  end
+
+
+  # --- lifecycle lock (Mira's #269 review) -------------------------------
+
+  def contender
+    config = ActiveRecord::Base.connection_db_config.configuration_hash
+    # nil fields are left out so libpq falls back to PGHOST and friends, as
+    # Active Record's own connection does.
+    PG.connect(**{ dbname: config[:database], host: config[:host], port: config[:port],
+      user: config[:username], password: config[:password] }.compact)
+  end
+
+  def held_elsewhere?(placement_id, connection)
+    key = "#{ProvisionVmAgentJob::LOCK_CLASS}, #{placement_id}"
+    got = connection.exec("SELECT pg_try_advisory_lock(#{key})").getvalue(0, 0) == "t"
+    connection.exec("SELECT pg_advisory_unlock(#{key})") if got
+    !got
+  end
+
+  test "the lifecycle lock really is taken on every run, even with the query cache on" do
+    other = contender
+    observed = []
+    ActiveRecord::Base.cache do
+      3.times do
+        result = ProvisionVmAgentJob.exclusively(4242) { observed << held_elsewhere?(4242, other); :ran }
+        assert_equal :ran, result
+      end
+    end
+    assert_equal [ true, true, true ], observed, "each run must hold the lock for real"
+    assert_not held_elsewhere?(4242, other), "and release it afterwards"
+  ensure
+    other&.close
+  end
+
+  test "a run finds the lock busy while another connection holds it" do
+    other = contender
+    other.exec("SELECT pg_advisory_lock(#{ProvisionVmAgentJob::LOCK_CLASS}, 4243)")
+    assert_equal :busy, ProvisionVmAgentJob.exclusively(4243) { flunk "must not run" }
+  ensure
+    other&.close
+  end
+
+  test "when cleanup wins, a late birth step orders nothing, starts nothing and finishes nothing" do
+    with_house do
+      agent = born!
+      placement = agent.placement
+      placement.request_cleanup!("operator")
+      VmCleanupJob.perform_now(placement.id)
+      assert_equal "retired", placement.reload.state
+      assert_no_enqueued_jobs(only: OrientNewAgentJob) { run_job(agent) }
+      assert_empty @client.creates
+      assert_equal 0, CloudProcurementOperation.where(agent_placement_id: placement.id).count
+      assert_nil agent.runtime_ready_at
+    end
+  end
+
+  test "procurement re-checks cleanup under the placement lock, whatever the caller last read" do
+    with_house do
+      agent = born!
+      stale = AgentPlacement.find(agent.placement.id)
+      AgentPlacement.where(id: stale.id).update_all(cleanup_requested_at: Time.current, cleanup_reason: "late")
+      procurement = ProvisionVmAgentJob.procurement_factory.call
+      assert_raises(CloudProcurement::NotAllowed) do
+        procurement.send(:plan_operation!, placement: stale, requested_by: @user, approval_reference: "x",
+          server_type: "cx23", refuse_if_cleanup_requested: true)
+      end
+      assert_equal 0, CloudProcurementOperation.where(agent_placement_id: stale.id).count
+    end
+  end
+
+  test "retirement re-checks unresolved purchases under its lock, and release is retried once retired" do
+    with_house do
+      agent = born!
+      run_job(agent)
+      placement = agent.placement.reload
+      placement.request_cleanup!("operator")
+      job = VmCleanupJob.new
+      job.send(:retire!, placement)
+      assert_equal "pending", placement.reload.state, "an unresolved purchase blocks retirement"
+
+      placement.cloud_procurement_operations.update_all(state: "deleted")
+      job.send(:retire!, placement)
+      assert_equal "retired", placement.reload.state
+      assert_equal [ placement.id ], @backups.released
+      VmCleanupJob.perform_now(placement.id)
+      assert_equal [ placement.id, placement.id ], @backups.released, "a retired placement still retries the release"
     end
   end
 

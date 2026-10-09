@@ -15,19 +15,19 @@ class VmCleanupJob < ApplicationJob
 
   queue_as :default
 
-  LOCK_CLASS = 0x5646_434c
-
   def perform(placement_id)
-    # Runs for one placement never overlap, so a delete is never sent twice
-    # at once.
-    ProvisionVmAgentJob.exclusively(placement_id, lock_class: LOCK_CLASS) { clean(placement_id) }
+    # The same lifecycle lock as the birth: cleanup and a birth step for one
+    # placement never run at once, and a delete is never sent twice at once.
+    ProvisionVmAgentJob.exclusively(placement_id) { clean(placement_id) }
   end
 
   private
 
   def clean(placement_id)
     placement = AgentPlacement.find_by(id: placement_id)
-    return if placement.nil? || !placement.cleanup_requested? || placement.state == "retired"
+    return if placement.nil? || !placement.cleanup_requested?
+    # Retired, but a transient failure may have interrupted the release.
+    return release_backup_holds(placement) if placement.state == "retired"
 
     procurement = ProvisionVmAgentJob.procurement_factory.call
     placement.cloud_procurement_operations.unresolved.order(:id).each { |operation| procurement.cleanup!(operation) }
@@ -44,17 +44,26 @@ class VmCleanupJob < ApplicationJob
     Rails.logger.error("[vm_cleanup] placement=#{placement_id} error, will retry: #{e.class}: #{e.message}")
   end
 
+  # The empty read above is not the confirmation: it is checked again under
+  # the placement lock, where nothing new can be ordered for it.
   def retire!(placement)
-    placement.transaction do
+    retired = placement.transaction do
       placement.lock!
+      next false if placement.cloud_procurement_operations.unresolved.exists?
+
       RunnerEnrollment.where(agent_placement_id: placement.id, revoked_at: nil).find_each(&:revoke!)
       placement.update!(state: "retired", provider_server_id: nil, location: nil)
+      true
     end
-    # Slice 4 keeps a backup hold whose outcome is unknown until nothing of
-    # the VM is left; now that is confirmed, it can let go.
-    if Backup.const_defined?(:VmResident) && Backup::VmResident.respond_to?(:release_after_retirement!)
-      Backup::VmResident.release_after_retirement!(placement:)
-    end
+    release_backup_holds(placement) if retired
+  end
+
+  # Slice 4 keeps a backup hold whose outcome is unknown until nothing of the
+  # VM is left; once that is confirmed, it can let go. Safe to repeat.
+  def release_backup_holds(placement)
+    return unless Backup.const_defined?(:VmResident) && Backup::VmResident.respond_to?(:release_after_retirement!)
+
+    Backup::VmResident.release_after_retirement!(placement:)
   end
 
 end

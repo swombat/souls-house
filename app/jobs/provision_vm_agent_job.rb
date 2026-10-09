@@ -25,21 +25,28 @@ class ProvisionVmAgentJob < ApplicationJob
   class Failed < StandardError; end
 
   def perform(agent_id)
-    self.class.exclusively(agent_id) { advance(agent_id) }
+    placement_id = AgentPlacement.where(agent_id: agent_id).pick(:id)
+    return :done unless placement_id
+
+    self.class.exclusively(placement_id) { advance(agent_id) }
   end
 
-  # Runs the block only if no other run holds this lock (one per agent, or
-  # per placement for cleanup); otherwise does nothing, and the run holding
-  # it, or the next sweep, carries on.
-  def self.exclusively(id, lock_class: LOCK_CLASS)
-    connection = ActiveRecord::Base.connection
-    key = "#{Integer(lock_class)}, #{Integer(id)}"
-    return :busy unless connection.select_value("SELECT pg_try_advisory_lock(#{key})")
+  # One lifecycle lock per placement, shared by the birth and its cleanup, so
+  # a late order can never cross cleanup's decision to retire. Runs the block
+  # only if no other run holds it; otherwise does nothing, and the run holding
+  # it, or the next sweep, carries on. The lock SQL is side-effecting, so it
+  # runs uncached, and acquire, block and unlock share one leased connection.
+  def self.exclusively(placement_id, lock_class: LOCK_CLASS)
+    key = "#{Integer(lock_class)}, #{Integer(placement_id)}"
+    ActiveRecord::Base.connection_pool.with_connection do |connection|
+      acquired = connection.uncached { connection.select_value("SELECT pg_try_advisory_lock(#{key})") }
+      return :busy unless acquired
 
-    begin
-      yield
-    ensure
-      connection.select_value("SELECT pg_advisory_unlock(#{key})")
+      begin
+        yield
+      ensure
+        connection.uncached { connection.select_value("SELECT pg_advisory_unlock(#{key})") }
+      end
     end
   end
 

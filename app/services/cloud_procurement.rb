@@ -86,7 +86,8 @@ class CloudProcurement
 
     requester = placement.birth_requested_by || raise(NotAllowed, "placement has no recorded birth requester")
     operation = plan_operation!(placement:, requested_by: requester,
-      approval_reference: "setting:new_residents_on_vm/agent:#{placement.agent_id}", server_type: @config.server_type)
+      approval_reference: "setting:new_residents_on_vm/agent:#{placement.agent_id}", server_type: @config.server_type,
+      refuse_if_cleanup_requested: true)
     AuditLog.create!(user: requester, account: placement.agent.account, action: "vm_birth_procurement_planned",
       auditable: operation, data: { "agent_id" => placement.agent_id, "placement_id" => placement.id,
         "admitted_by_setting_at" => placement.admitted_by_setting_at.iso8601, "server_type" => operation.server_type,
@@ -126,7 +127,7 @@ class CloudProcurement
 
   private
 
-  def plan_operation!(placement:, requested_by:, approval_reference:, server_type:)
+  def plan_operation!(placement:, requested_by:, approval_reference:, server_type:, refuse_if_cleanup_requested: false)
     raise NotAllowed, "image and SSH keys must be configured" if @config.image_id.nil? || @config.ssh_key_ids.empty?
     raise NotAllowed, "the house domain must be configured" if @config.rails_url.blank?
 
@@ -135,6 +136,9 @@ class CloudProcurement
       # reservations when choosing a location.
       CloudProcurementOperation.connection.execute("SELECT pg_advisory_xact_lock(#{ADMISSION_LOCK})")
       placement.lock!
+      # Checked again under the placement lock: cleanup may have been asked
+      # for since the check before it.
+      raise NotAllowed, "placement has cleanup requested" if refuse_if_cleanup_requested && placement.cleanup_requested?
       unless placement.backend == "hetzner_cloud" && placement.state == "pending" && placement.provider_server_id.nil?
         raise NotAllowed, "placement is not an unprovisioned Hetzner Cloud placement"
       end
