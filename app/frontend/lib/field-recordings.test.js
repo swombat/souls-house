@@ -153,3 +153,11 @@ describe('suppliedTurns', () => {
     expect(suppliedTurns(null)).toEqual([]);
   });
 });
+
+describe('speakerNames', () => {
+  it('treats any label as a plain key, "__proto__" included', () => {
+    const names = speakerNames([{ label: '__proto__', name: 'Odd label' }]);
+    expect(turnSpeakerName({ spk: '__proto__' }, names)).toBe('Odd label');
+    expect(turnSpeakerName({ spk: 'toString' }, names)).toBe('toString');
+  });
+});

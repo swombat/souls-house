@@ -29,14 +29,36 @@ class FieldRecording::SuppliedTranscriptTest < ActiveSupport::TestCase
     assert_equal %w[Daniel Anna], Parse.speakers(turns).map { |speaker| speaker[:label] }
   end
 
-  test "Meet notes: vertical-tab turns, and a time alone on a line dates the next turn" do
-    text = "**Date:** 2026-03-25\nTitle: Coal Dust\n00:00:00\n \vDaniel Tenner: Hello.\vSteve Leung: Hello.\v \n" \
+  test "Meet notes: header blocks, vertical-tab turns, and a time alone on a line dates the next turn" do
+    text = "# 'Coal Dust' - Transcript\n**Date:** 2026-03-25\n\n---\n\nTitle: Coal Dust\nID: 128LHSD\n====\n\n" \
+           "Coal Dust - Transcript\n00:00:00\n \vDaniel Tenner: Hello.\vSteve Leung: Hello.\v \n" \
            "00:04:13\n \vDaniel Tenner: This one.\vSteve Leung: Yeah."
     turns = Parse.parse(text)
-    assert_equal "Date: 2026-03-25\nTitle: Coal Dust", turns.first["t"]
-    spoken = turns.drop(1)
+    assert_equal "# 'Coal Dust' - Transcript\nDate: 2026-03-25\n---\nTitle: Coal Dust\nID: 128LHSD\n====", turns.first["t"]
+    assert_equal [ nil, "Coal Dust - Transcript" ], turns.second.values_at("spk", "t")
+    spoken = turns.drop(2)
     assert_equal [ "Daniel Tenner", "Steve Leung", "Daniel Tenner", "Steve Leung" ], spoken.map { |turn| turn["spk"] }
     assert_equal [ 0, nil, 253_000, nil ], spoken.map { |turn| turn["s"] }
+  end
+
+  # Mira's round-1 cases: a speaker heard once, first, is speech, not header,
+  # and keeps their time whichever way it was written.
+  test "an opening speaker heard only once keeps their name and time" do
+    turns = Parse.parse("[00:01] Alice: Opening.\n[00:02] Bob: Reply.\n[00:03] Bob: Again.")
+    assert_equal [ [ "Alice", 1_000 ], [ "Bob", 2_000 ], [ "Bob", 3_000 ] ], turns.map { |turn| turn.values_at("spk", "s") }
+
+    turns = Parse.parse("00:00:00\nAlice: Opening.\n00:00:05\nBob: Reply.\n00:00:10\nBob: Again.")
+    assert_equal [ [ "Alice", 0 ], [ "Bob", 5_000 ], [ "Bob", 10_000 ] ], turns.map { |turn| turn.values_at("spk", "s") }
+
+    turns = Parse.parse("Alice: Opening.\n\nBob: Reply.\n\nBob: Again.")
+    assert_equal %w[Alice Bob Bob], turns.map { |turn| turn["spk"] }
+  end
+
+  test "bold around the time and the label together" do
+    turns = Parse.parse("*Labels pending*\n\n**[00:00] speaker_0:** Hello.\n\n**[00:05] speaker_1:** Hi.\n\n**[00:09] speaker_0:** Bye.")
+    assert_equal [ [ nil, nil ], [ "speaker_0", 0 ], [ "speaker_1", 5_000 ], [ "speaker_0", 9_000 ] ],
+      turns.map { |turn| turn.values_at("spk", "s") }
+    assert_equal "*Labels pending*", turns.first["t"]
   end
 
   test "prose stays prose: one label is not a conversation, and sentences aren't names" do

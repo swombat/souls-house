@@ -89,6 +89,26 @@ class Api::V1::Field::SuppliedTranscriptsTest < ActionDispatch::IntegrationTest
     assert_empty response.parsed_body["recordings"]
   end
 
+  test "a retry that loses the race for its own upload gets the recording the first call made" do
+    blob = pinned_blob(account: @account, user: @user)
+    real_claim = FieldRecording::Upload.method(:claim!)
+    # The first call commits between this call's import-key lookup and its
+    # claim, so this call finds the blob attached.
+    racing_claim = lambda do |**kwargs|
+      real_claim.call(**kwargs)
+      nil
+    end
+    FieldRecording::Upload.stub(:claim!, racing_claim) do
+      import(blob:, transcript_text: TEXT, import_key: "pa:raced")
+    end
+    assert_response :ok
+    assert response.parsed_body["existing"]
+    assert_equal @account.field_recordings.find_by!(import_key: "pa:raced").to_param, response.parsed_body.dig("recording", "id")
+
+    FieldRecording::Upload.stub(:claim!, nil) { import(blob:, transcript_text: TEXT, import_key: "pa:other") }
+    assert_response :unprocessable_entity, "with no recording under the key it is still an unusable upload"
+  end
+
   test "two files sharing a filename stay two recordings unless the importer gives them one key" do
     import(blob: pinned_blob(account: @account, user: @user), transcript_text: TEXT, import_key: "raw")
     import(blob: pinned_blob(account: @account, user: @user), transcript_text: TEXT, import_key: "edited")

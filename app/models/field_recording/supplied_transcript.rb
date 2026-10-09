@@ -18,7 +18,13 @@ module FieldRecording::SuppliedTranscript
   LINE = /\A\s*(?:#{TIMESTAMP}\s*[-–—]?\s*)?(?<label>[^\s:\[\]][^:\[\]\n]{0,#{MAX_LABEL_LENGTH - 1}}?)\s*:\s+(?<text>\S.*)\z/
   TIMED_ONLY = /\A\s*#{TIMESTAMP}\s*[-–—]?\s*(?<text>\S.*)\z/m
   TIME_ALONE = /\A\s*#{TIMESTAMP}\s*\z/
-  UNBOLD = /\A(?<pre>\s*(?:#{TIMESTAMP}\s*)?)(?<mark>\*\*|__)(?<label>[^*_\n]{1,#{MAX_LABEL_LENGTH + 1}}?)\k<mark>/
+  # Keys that open the archive's metadata blocks; a label from this list is
+  # metadata even alone on its line. Anything else needs the block shape.
+  METADATA_KEYS = %w[source sources date title id tab speakers attendees participants duration recorded location
+                     corrected file audio transcript transcribed language].freeze
+  TIMESTAMP_START = /\A\s*#{TIMESTAMP}\s/
+  # "**Name**:", "**Date:**", "**[00:04] speaker_0:**" and "[00:04] **Name**:".
+  UNBOLD = /\A(?<pre>\s*(?:#{TIMESTAMP}\s*)?)(?<mark>\*\*|__)(?<label>[^\n]{1,#{MAX_LABEL_LENGTH + 20}}?)\k<mark>/
   MAX_LABEL_WORDS = 4
 
   module_function
@@ -45,10 +51,10 @@ module FieldRecording::SuppliedTranscript
   # time on its own line, turns separated by vertical tabs), or prose.
   #
   # Speaker mode needs some label to occur at least twice, so prose with one
-  # "Note:" stays prose. A leading run of labelled lines whose labels never
-  # occur again ("Source: ...", "Date: ...") is a header, not speakers: it is
-  # kept, verbatim, as one unattributed turn. Unlabelled lines continue the
-  # turn before; a time alone on a line dates the next turn.
+  # "Note:" stays prose. Leading paragraphs that look like metadata (see
+  # header_paragraph?) are kept, verbatim, as one unattributed turn. Nothing
+  # is ever dropped: unlabelled lines continue the turn before, or start an
+  # unattributed one; a time alone on a line dates the next turn.
   def parse(text)
     text = text.to_s.gsub(/\r\n?|\v/, "\n").strip
     raise Invalid, "The transcript is empty." if text.empty?
@@ -87,32 +93,42 @@ module FieldRecording::SuppliedTranscript
   end
 
   def speaker_turns(lines, counts)
-    turns = []
+    paragraphs = lines.chunk { |line| line.strip.empty? ? :_separator : true }.map(&:last)
     header = []
+    header.concat(paragraphs.shift) while paragraphs.any? && paragraphs.size > 1 && header_paragraph?(paragraphs.first, counts)
+
+    turns = []
     pending_ms = nil
-    in_header = true
-
-    lines.each do |line|
-      next if line.strip.empty?
-
+    paragraphs.flatten.each do |line|
       if (alone = TIME_ALONE.match(line))
         pending_ms = start_ms(alone[:ts])
-        next
-      end
-
-      match = labelled_line(line)
-      in_header = false if match && counts[match[:label].squish] >= 2
-      if in_header
-        header << line.strip
-      elsif match
+      elsif (match = labelled_line(line))
         turns << { "spk" => label(match[:label]), "s" => start_ms(match[:ts]) || pending_ms, "t" => match[:text].strip }
         pending_ms = nil
-      elsif turns.any?
+      elsif turns.any? && pending_ms.nil?
         turns.last["t"] = "#{turns.last['t']}\n#{line.strip}"
+      else
+        turns << { "spk" => nil, "s" => pending_ms, "t" => line.strip }
+        pending_ms = nil
       end
     end
 
-    header.any? ? [ { "spk" => nil, "s" => nil, "t" => header.join("\n") }, *turns ] : turns
+    header.any? ? [ { "spk" => nil, "s" => nil, "t" => header.map(&:strip).join("\n") }, *turns ] : turns
+  end
+
+  # A paragraph is metadata, not speech, only when all of these hold: it
+  # carries no time (a timed line is speech, and a time alone dates speech);
+  # none of its labels recurs anywhere in the transcript; and it looks like a
+  # block, not one utterance: two or more lines, a markdown heading or rule,
+  # or metadata keys ("Source:", "Date:").
+  # So "Source: ...\nSpeakers: ..." is a header, and a speaker who opens with
+  # one untimed line in its own paragraph stays a speaker.
+  def header_paragraph?(paragraph, counts)
+    return false if paragraph.any? { |line| TIME_ALONE.match?(line) || labelled_line(line)&.[](:ts) || TIMESTAMP_START.match?(line) }
+    return false if paragraph.any? { |line| (match = labelled_line(line)) && counts[match[:label].squish] >= 2 }
+
+    paragraph.size >= 2 || paragraph.any? { |line| line.match?(/\A\s*(#|---|===)/) } ||
+      paragraph.all? { |line| METADATA_KEYS.include?(labelled_line(line)&.[](:label)&.squish&.downcase) }
   end
 
   # "**Speaker A**: words" and "**Date:** 2026-03-25" read as plain labels.

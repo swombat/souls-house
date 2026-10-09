@@ -80,8 +80,10 @@ export function activeWordIndex(list, ms) {
   return ms < (word.e ?? word.s) ? word.i : -1;
 }
 
+// A null-prototype map: speaker labels come from supplied transcripts too,
+// and a label such as "__proto__" must read as a name, not a property.
 export function speakerNames(speakers = []) {
-  const names = {};
+  const names = Object.create(null);
   for (const speaker of speakers || []) names[speaker.label] = speaker.name || speaker.default_name || speaker.label;
   return names;
 }

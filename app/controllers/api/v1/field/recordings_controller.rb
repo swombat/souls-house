@@ -72,6 +72,11 @@ module Api
           )
 
           unless recording
+            # A retry of the same call can lose the race for its own upload:
+            # both miss the lookup above, the first claims the blob, and the
+            # second finds it attached. The key then names what was made.
+            return if render_existing_import(account, attributes[:import_key])
+
             return render json: { error: "That upload can't be used. Please upload the file again." },
               status: :unprocessable_entity
           end

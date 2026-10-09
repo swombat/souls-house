@@ -19,11 +19,19 @@ duration.
 Parsing (`FieldRecording::SuppliedTranscript`) covers the shapes found in the
 ~700 archive transcripts in swombat/pa: `**Speaker A**: …`, `[00:04] speaker_0: …`,
 `00:00 Daniel: …`, Meet notes (a time alone on a line, turns split by vertical
-tabs) and prose. A label counts only if some label repeats. A leading run of
-labels that never recur (`Source:`, `Date:`) is a header, kept as one
-unattributed turn. Markdown list and heading lines are never speakers. Against
-the archive (699 files): 642 parse with speakers, 55 as prose, 221 with times,
-2 refused at 32 speakers before the cap below was raised (0 refused at 100).
+tabs, bold around a time and a name) and prose. A label counts only if some
+label repeats. A leading paragraph is metadata, not speech, only if it has no
+time, none of its labels recurs, and it is shaped like a block (two or more
+lines, a markdown heading or rule, or keys like `Source:` / `Date:`); it is
+kept, verbatim, as one unattributed turn. A speaker heard once, first, stays a
+speaker. Nothing is dropped: an unlabelled line continues the turn before or
+starts an unattributed one. Markdown list and heading lines are never speakers.
+
+Checked against the archive (699 files) for fidelity, not only acceptance:
+every alphabetic word and every line-start time in the source survives into the
+turns; 646 parse with speakers, 53 as prose, 224 with times, none refused.
+Known residue: about 14 files keep a one-off pseudo-speaker such as "Topics" or
+"Speaker attribution" from a note mid-file; the text is intact.
 
 ## Guards that lived in dispatch
 
