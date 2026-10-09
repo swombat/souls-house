@@ -74,4 +74,33 @@ class Backup::GraphCheckpointTest < ActiveSupport::TestCase
     assert_includes commands.last, "synthetic:ro"
   end
 
+  test "backups skip directories marked as caches" do
+    job = Backup::AgentResticJob.new
+    commands = []
+    Backup::AgentRestic.stub(:backup_mounts, []) do
+      Backup::AgentRestic.stub(:docker_environment, []) do
+        Open3.stub(:capture3, ->(*command) { commands << command; [ "", "", Struct.new(:success?).new(true) ] }) do
+          job.send(:run_restic_backup, @agent)
+        end
+      end
+    end
+    backup = commands.find { |command| command.include?("backup") }
+    assert_includes backup, "--exclude-caches"
+  end
+
+  test "a failed prune is recorded on the snapshot instead of ignored" do
+    job = Backup::AgentResticJob.new
+    snapshot = AgentBackupSnapshot.create!(agent: @agent, restic_snapshot_id: "abc", ok: true, taken_at: Time.current)
+    failed = Struct.new(:success?).new(false)
+    Backup::AgentRestic.stub(:backup_mounts, []) do
+      Backup::AgentRestic.stub(:docker_environment, []) do
+        Open3.stub(:capture3, ->(*) { [ "", "unable to create lock in backend", failed ] }) do
+          job.send(:record_prune_failure, snapshot, job.send(:prune!, @agent))
+        end
+      end
+    end
+    assert snapshot.reload.ok
+    assert_includes snapshot.stderr_tail, "Prune failed: unable to create lock"
+  end
+
 end
