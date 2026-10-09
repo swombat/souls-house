@@ -32,6 +32,25 @@
       }
     );
   }
+
+  // Sending as the owner (WhatsApp): only the owner can switch it on; anyone
+  // who manages the connection can switch it off.
+  function toggleSendGrant(connection, resident, canSend) {
+    const key = `${residentAccessKey(connection, resident)}:send`;
+    residentAccessUpdating = { ...residentAccessUpdating, [key]: true };
+    router.patch(
+      resident.send_grant_url,
+      { can_send: canSend },
+      {
+        preserveScroll: true,
+        onFinish() {
+          const next = { ...residentAccessUpdating };
+          delete next[key];
+          residentAccessUpdating = next;
+        },
+      }
+    );
+  }
 </script>
 
 <div class="space-y-3 border-t pt-4">
@@ -50,6 +69,18 @@
             </label>
             {#if transition}
               <p class="text-xs capitalize text-amber-700">{transition}</p>
+            {/if}
+            {#if resident.send_grant_url && resident.enabled}
+              <label class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={resident.can_send}
+                  disabled={residentAccessUpdating[`${residentAccessKey(connection, resident)}:send`] ||
+                    (resident.can_send ? !connection.can_manage : !connection.can_grant_send) ||
+                    (!resident.can_send && connection.status !== 'connected')}
+                  onchange={(event) => toggleSendGrant(connection, resident, event.currentTarget.checked)} />
+                Can send as you
+              </label>
             {/if}
           </div>
           <Switch

@@ -35,3 +35,6 @@ Rails.application.config.filter_parameters += [ /\Aset\z/ ]
 Rails.application.config.filter_parameters += [
   /\A(?:chats|body|caption|sender_name|sender_id|qr|pairing_qr)\z/, /\Achats\.name\z/
 ]
+
+# Text a resident sends through a comms connection, as its owner (spec §5).
+Rails.application.config.filter_parameters += [ /\Atext\z/ ]

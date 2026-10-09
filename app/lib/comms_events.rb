@@ -7,7 +7,7 @@ module CommsEvents
   MAX_BATCH = 200
   NONCE_RETENTION = (CommsSignature::MAX_SKEW * 2 + 60).seconds
   MAX_QR_LIFETIME = 5.minutes
-  MESSAGE_FIELDS = %w[provider_message_id chat sender_id sender_name sent_at body media_kind caption].freeze
+  MESSAGE_FIELDS = %w[provider_message_id chat sender_id sender_name sent_at body media_kind caption from_me].freeze
   CHAT_FIELDS = %w[provider_chat_id name kind last_activity_at].freeze
 
   # Connector status → ServiceConnection status. A phone-side logout needs the
@@ -116,9 +116,14 @@ module CommsEvents
       sent_at: sent_at,
       body: attributes["body"],
       media_kind: attributes["media_kind"],
-      caption: attributes["caption"]
+      caption: attributes["caption"],
+      from_me: attributes["from_me"] == true
     )
     message.save!
+    # A message this connection sent: attribute it to its send record if the
+    # connector's acknowledgement is already in (echo after ack). Otherwise
+    # the acknowledgement links it when it arrives (CommsSending.complete!).
+    CommsSending.link_message!(connection, message)
     chat.update!(last_activity_at: sent_at) if chat.last_activity_at.nil? || sent_at > chat.last_activity_at
     message
   end
