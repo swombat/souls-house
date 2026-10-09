@@ -176,7 +176,7 @@ class ServiceConnection < ApplicationRecord
     update!(
       credential_payload: nil,
       pairing_qr: nil,
-      pairing_qr_expires_at: nil,
+      pairing_qr_expires_at: nil, pairing_qr_issued_at: nil,
       status: "revoked",
       credential_revision: credential_revision + 1
     )
@@ -201,7 +201,7 @@ class ServiceConnection < ApplicationRecord
     update!(
       credential_payload: nil,
       pairing_qr: nil,
-      pairing_qr_expires_at: nil,
+      pairing_qr_expires_at: nil, pairing_qr_issued_at: nil,
       status: "reauthorizing",
       credential_revision: credential_revision + 1
     )

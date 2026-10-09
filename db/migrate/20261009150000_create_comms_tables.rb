@@ -45,6 +45,7 @@ class CreateCommsTables < ActiveRecord::Migration[8.1]
     # expires or pairing finishes.
     add_column :service_connections, :pairing_qr, :text
     add_column :service_connections, :pairing_qr_expires_at, :datetime
+    add_column :service_connections, :pairing_qr_issued_at, :datetime
   end
 
 end

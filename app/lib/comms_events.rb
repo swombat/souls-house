@@ -50,14 +50,19 @@ module CommsEvents
         change = STATUS_CHANGES[event["status"]] || raise(Refused.new(:unknown_status, :unprocessable_entity))
         require_status!(connection, change.fetch(:from))
         consume_nonce!(connection, nonce, now)
-        connection.update!(status: change.fetch(:to), pairing_qr: nil, pairing_qr_expires_at: nil)
+        connection.update!(status: change.fetch(:to), pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil)
       when "pairing.qr"
         require_status!(connection, %w[pairing])
-        code, expires_at = event["code"].to_s, time(event["expires_at"])
-        raise Refused.new(:bad_qr, :unprocessable_entity) if code.blank? || expires_at.nil?
+        code, expires_at, issued_at = event["code"].to_s, time(event["expires_at"]), time(event["issued_at"])
+        raise Refused.new(:bad_qr, :unprocessable_entity) if code.blank? || expires_at.nil? || issued_at.nil?
         raise Refused.new(:bad_qr, :unprocessable_entity) unless expires_at > now && expires_at <= now + MAX_QR_LIFETIME
+        # A fresh nonce does not make events ordered: an older code arriving
+        # after its replacement must not overwrite it.
+        if connection.pairing_qr_issued_at && issued_at <= connection.pairing_qr_issued_at
+          raise Refused.new(:stale_qr, :conflict)
+        end
         consume_nonce!(connection, nonce, now)
-        connection.update!(pairing_qr: code, pairing_qr_expires_at: expires_at)
+        connection.update!(pairing_qr: code, pairing_qr_expires_at: expires_at, pairing_qr_issued_at: issued_at)
       else
         raise Refused.new(:unknown_event, :unprocessable_entity)
       end
@@ -98,7 +103,12 @@ module CommsEvents
     attributes = attributes.slice(*MESSAGE_FIELDS)
     sent_at = time(attributes["sent_at"]) || raise(Refused.new(:bad_message, :unprocessable_entity))
     chat = connection.comms_chats.find_or_create_by!(provider_chat_id: attributes["chat"].to_s)
+    # Messages are immutable once stored: the first delivery wins, and any
+    # later delivery of the same provider id (a retry, a reordered retry, or
+    # an edit) is ignored. Edits and deletions are not modelled in milestone 1.
     message = connection.comms_messages.find_or_initialize_by(provider_message_id: attributes["provider_message_id"].to_s)
+    return message if message.persisted?
+
     message.assign_attributes(
       comms_chat: chat,
       sender_id: attributes["sender_id"],
@@ -108,8 +118,6 @@ module CommsEvents
       media_kind: attributes["media_kind"],
       caption: attributes["caption"]
     )
-    return message unless message.changed?
-
     message.save!
     chat.update!(last_activity_at: sent_at) if chat.last_activity_at.nil? || sent_at > chat.last_activity_at
     message

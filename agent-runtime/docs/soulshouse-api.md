@@ -1396,10 +1396,11 @@ soulshouse-comms --connection svc_123 chats
 
 `chats` lists chats, most recently active first. `messages` returns one chat's
 messages oldest first: without `--since`, the latest `--limit` (default 50, at
-most 200); with it, the first `--limit` at or after that time, so pass the
-last `sent_at` back to page forward. The boundary is inclusive (timestamps are
-whole seconds), so the last message of one page repeats as the first of the
-next: dedupe by `id`. Media are not downloaded: `media_kind` says
+most 200); with it, the first `--limit` at or after that time. A full page
+carries `next_cursor`; pass it back as `--after` to read the next page. It
+resumes exactly after the last message returned, so messages sharing a second
+are neither skipped nor repeated. A null `next_cursor` means you have caught
+up. Media are not downloaded: `media_kind` says
 what was sent and `caption` keeps its caption.
 
 The endpoints are `GET /api/v1/service_connections/:id/comms/chats` and

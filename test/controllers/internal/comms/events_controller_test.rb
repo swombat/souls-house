@@ -180,7 +180,7 @@ module Internal
 
       test "pairing QR is stored encrypted and cleared when pairing completes" do
         @connection.update!(status: "pairing")
-        post_event @connection, { type: "pairing.qr", code: "2@QRCANARY", expires_at: 40.seconds.from_now.utc.iso8601 }
+        post_event @connection, { type: "pairing.qr", code: "2@QRCANARY", issued_at: Time.current.utc.iso8601, expires_at: 40.seconds.from_now.utc.iso8601 }
         assert_response :no_content
         @connection.reload
         assert_equal "2@QRCANARY", @connection.current_pairing_qr[:code]
@@ -195,13 +195,50 @@ module Internal
       end
 
       test "a QR is refused once connected, and when already expired" do
-        post_event @connection, { type: "pairing.qr", code: "late", expires_at: 30.seconds.from_now.utc.iso8601 }
+        post_event @connection, { type: "pairing.qr", code: "late", issued_at: Time.current.utc.iso8601, expires_at: 30.seconds.from_now.utc.iso8601 }
         assert_response :conflict
 
         @connection.update!(status: "pairing")
-        post_event @connection, { type: "pairing.qr", code: "old", expires_at: 1.second.ago.utc.iso8601 }
+        post_event @connection, { type: "pairing.qr", code: "old", issued_at: 30.seconds.ago.utc.iso8601, expires_at: 1.second.ago.utc.iso8601 }
         assert_response :unprocessable_entity
         assert_nil @connection.reload.pairing_qr
+      end
+
+      test "a delayed older QR cannot overwrite its replacement" do
+        @connection.update!(status: "pairing")
+        older_issued = 20.seconds.ago.utc.iso8601
+        post_event @connection, { type: "pairing.qr", code: "B-newer", issued_at: Time.current.utc.iso8601, expires_at: 20.seconds.from_now.utc.iso8601 }
+        assert_response :no_content
+        assert_no_difference -> { CommsRequestNonce.count } do
+          post_event @connection, { type: "pairing.qr", code: "A-older", issued_at: older_issued, expires_at: 40.seconds.from_now.utc.iso8601 }
+        end
+        assert_response :conflict
+        assert_equal "stale_qr", response.parsed_body["error"]
+        assert_equal "B-newer", @connection.reload.current_pairing_qr[:code]
+      end
+
+      test "messages are immutable once stored: a reordered retry cannot restore or replace content" do
+        first = message_event("m1")
+        post_event @connection, first
+        assert_response :no_content
+        edited = message_event("m1")
+        edited[:messages][0][:body] = "edited B"
+        post_event @connection, edited
+        assert_response :no_content
+        assert_equal "hello m1", @connection.comms_messages.find_by!(provider_message_id: "m1").body
+        post_event @connection, first
+        assert_response :no_content
+        assert_equal "hello m1", @connection.comms_messages.find_by!(provider_message_id: "m1").body
+        assert_equal 1, @connection.comms_messages.where(provider_message_id: "m1").count
+      end
+
+      test "an oversized body is refused before it is parsed" do
+        body = JSON.generate({ type: "message.upsert", messages: [ { body: "x" * (CommsSignature::MAX_BODY_BYTES + 10) } ] })
+        headers = signed_headers(@connection, body)
+        JSON.stub(:parse, ->(*) { flunk "body was parsed" }) do
+          post events_path(@connection), params: body, headers: headers
+        end
+        assert_response :content_too_large
       end
 
       test "a phone-side logout needs the owner to pair again" do
@@ -226,7 +263,7 @@ module Internal
           }
           post_event @connection, { type: "chat.upsert", chats: [ { provider_chat_id: "c-canary@s.whatsapp.net", name: "#{canary}-name" } ] }
           @connection.update!(status: "pairing")
-          post_event @connection, { type: "pairing.qr", code: "#{canary}-qr", expires_at: 30.seconds.from_now.utc.iso8601 }
+          post_event @connection, { type: "pairing.qr", code: "#{canary}-qr", issued_at: Time.current.utc.iso8601, expires_at: 30.seconds.from_now.utc.iso8601 }
         ensure
           Rails.logger.stop_broadcasting_to(capture)
         end

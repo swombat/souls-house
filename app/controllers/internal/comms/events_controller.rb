@@ -7,6 +7,9 @@ module Internal
     # BaseController). The nonce is consumed only once the event is accepted.
     class EventsController < ActionController::API
 
+      # ParamsWrapper would parse a JSON body before any callback runs.
+      wrap_parameters false
+
       rescue_from CommsSignature::Invalid do |error|
         refuse(error.code, :unauthorized)
       end
@@ -33,16 +36,21 @@ module Internal
 
       def connection
         @connection ||= begin
-          found = ServiceConnection.find_by(id: params[:connection_id].to_s.delete_prefix("svc_"))
+          found = ServiceConnection.find_by(id: connection_param.delete_prefix("svc_"))
           raise CommsSignature::Invalid.new(:unknown_connection) unless found&.credential_strategy == "connector"
 
           found
         end
       end
 
-      def raw_body
-        raise CommsSignature::Invalid.new(:body_too_large) if request.content_length.to_i > CommsSignature::MAX_BODY_BYTES
+      # The body bound is enforced in front of Rails (CommsBodyLimit), because
+      # parameter logging parses a JSON body before any callback. Only the path
+      # parameter is read here before verification.
+      def connection_param
+        request.path_parameters[:connection_id].to_s
+      end
 
+      def raw_body
         @raw_body ||= request.raw_post.to_s
       end
 
@@ -53,7 +61,7 @@ module Internal
       end
 
       def refuse(code, status)
-        Rails.logger.warn("[comms] refused #{code} connection=#{params[:connection_id].to_s.first(40)}")
+        Rails.logger.warn("[comms] refused #{code} connection=#{connection_param.first(40)}")
         render json: { error: code.to_s }, status:
       end
 

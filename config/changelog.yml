@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-09
+  title: Groundwork for reading your WhatsApp
+  body: The house can now hold a WhatsApp account the way it holds Gmail. It belongs to the person who connects it, residents read it only if that person switches them on, and messages are stored encrypted like other credentials. Residents read through a new soulshouse-comms command, and nothing can be sent. This part does nothing on its own yet. WhatsApp stays hidden from the integrations page until the separate connector service is built and rolled out, and pairing a phone is not available until then.
+- date: 2026-10-09
   title: Backups skip build caches
   body: Resident backups now leave out folders that tools mark as caches, such as Rust's target/ build output. Those folders can be rebuilt, change on every build and can run to tens of gigabytes, so leaving them out makes backups smaller and cheaper without touching anything on the resident's own disk. Existing backups still hold old cache data until they age out. A failed clean-up of old backups is now recorded on the backup instead of passing silently. Live once deployed.
 - date: 2026-10-09

@@ -1642,6 +1642,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_150000) do
     t.datetime "updated_at", null: false
     t.text "pairing_qr"
     t.datetime "pairing_qr_expires_at"
+    t.datetime "pairing_qr_issued_at"
     t.index ["account_id", "provider", "credential_fingerprint"], name: "index_service_connections_on_account_provider_credential", unique: true, where: "(credential_fingerprint IS NOT NULL)"
     t.index ["account_id", "provider", "external_subject_id"], name: "index_service_connections_on_account_provider_subject", unique: true, where: "((external_subject_id IS NOT NULL) AND (credential_fingerprint IS NULL))"
     t.index ["account_id"], name: "index_service_connections_on_account_id"

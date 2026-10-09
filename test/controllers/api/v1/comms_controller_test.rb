@@ -44,6 +44,29 @@ module Api
         assert_equal %w[m1], response.parsed_body["messages"].map { |message| message["provider_message_id"] }
       end
 
+      test "the next_cursor pages through many messages in one second without skipping or repeating" do
+        second = Time.iso8601("2026-10-09T11:00:00Z")
+        5.times { |n| @connection.comms_messages.create!(comms_chat: @chat, provider_message_id: "s#{n}", sent_at: second, body: "same #{n}") }
+        get api_v1_service_connection_comms_messages_url(@connection.public_id, chat: @chat.public_id, since: second.iso8601, limit: 2), headers: auth
+        seen = response.parsed_body["messages"].map { |message| message["provider_message_id"] }
+        cursor = response.parsed_body["next_cursor"]
+        pages = 1
+        while cursor
+          get api_v1_service_connection_comms_messages_url(@connection.public_id, chat: @chat.public_id, after: cursor, limit: 2), headers: auth
+          assert_response :ok
+          seen.concat(response.parsed_body["messages"].map { |message| message["provider_message_id"] })
+          cursor = response.parsed_body["next_cursor"]
+          pages += 1
+          assert pages < 10, "pagination did not terminate"
+        end
+        assert_equal %w[s0 s1 s2 s3 s4], seen
+      end
+
+      test "a malformed cursor is a bad request" do
+        get api_v1_service_connection_comms_messages_url(@connection.public_id, chat: @chat.public_id, after: "not-a-cursor"), headers: auth
+        assert_response :bad_request
+      end
+
       test "since is inclusive, so messages sharing the boundary second are not skipped" do
         @chat.comms_messages.create!(service_connection: @connection, provider_message_id: "m1b",
                                      sent_at: Time.iso8601("2026-10-09T10:01:00Z"), body: "same second")

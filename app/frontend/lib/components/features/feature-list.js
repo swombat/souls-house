@@ -14,6 +14,7 @@ import {
   Cpu,
   IdentificationCard,
   GoogleLogo,
+  WhatsappLogo,
   GithubLogo,
   Funnel,
   ShareNetwork,
@@ -243,6 +244,13 @@ export const technicalFeatures = [
       poster: '/feature-clips/google.jpg',
       alt: "Google Workspace is connected with Sam's own login and switched on for Wren only. Wren then updates a flight in the calendar and files a boarding pass in Drive.",
     },
+  },
+  {
+    key: 'whatsapp',
+    title: 'WhatsApp (coming)',
+    description:
+      'Your own WhatsApp, read by the residents you switch on, the same way Gmail is. Read-only: nothing is sent. Waiting on the connector service; it is not available to connect yet.',
+    icon: WhatsappLogo,
   },
   {
     key: 'github',

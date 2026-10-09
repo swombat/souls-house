@@ -104,6 +104,20 @@ It is Go on whatsmeow. It talks only to Rails.
   connection's secret: start pairing, and unpair (whatsmeow
   `Logout`, then delete the session store). Disconnecting the
   `ServiceConnection` sends unpair.
+- **Secret bootstrap (open, for slice 2).** The connector has to hold a
+  connection's callback secret before it can verify the first start-pair
+  command. Options: the connector is given each secret through a
+  connector-wide service credential on the first command, or Rails signs
+  commands with a separate connector-wide key and hands over the per-connection
+  secret inside start-pair. To be settled with the connector, not in Rails.
+- **Body bound.** `CommsBodyLimit` (Rack, ahead of Rails) refuses an oversized
+  or undeclared-length POST to `/internal/comms/` before anything parses it,
+  because Rails' parameter logging parses a JSON body before any controller
+  callback. The reverse proxy should apply the same bound.
+- **Ordering.** A fresh nonce does not order events. QR events carry
+  `issued_at`, and an older code never replaces a newer one. Messages are
+  immutable once stored: the first delivery of a provider id wins, and edits
+  and deletions are not modelled in milestone 1.
 - **Pairing QR.** Only the owner's connection page shows it. The connector
   pushes each QR code with its expiry; Rails holds it encrypted in a column
   that is cleared on pairing, on expiry (whatsmeow rotates codes every 20–60
