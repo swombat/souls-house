@@ -13,6 +13,29 @@ class FieldRecordingTest < ActiveSupport::TestCase
 
   def recording(**attributes) = claimed_recording(account: @account, user: @user, **attributes)
 
+  test "an account with a site admin in it isn't held to the weekly allowance" do
+    limited = Account.create!(name: "Limited #{SecureRandom.hex(3)}", account_type: "team",
+      recording_ms_weekly_limit: 2.hours.in_milliseconds)
+    limited.memberships.create!(user: users(:regular_user), role: "owner", confirmed_at: Time.current)
+    assert_not limited.recording_unlimited?
+    assert_equal 2.hours.in_milliseconds, limited.recording_ms_weekly_limit
+
+    limited.memberships.create!(user: users(:site_admin_user), role: "member", confirmed_at: Time.current)
+    limited.reload
+    assert limited.recording_unlimited?
+    assert_equal Account::UNLIMITED_RECORDING_MS, limited.recording_ms_weekly_limit
+    assert FieldItems.allowance_json(limited)[:unlimited]
+
+    r = claimed_recording(account: limited, user: users(:regular_user))
+    assert_equal :admitted, r.admit!(50.hours.in_milliseconds)
+  end
+
+  test "an unconfirmed site admin doesn't lift the allowance" do
+    account = Account.create!(name: "Pending #{SecureRandom.hex(3)}", account_type: "team")
+    account.memberships.create!(user: users(:site_admin_user), role: "member", confirmed_at: nil)
+    assert_not account.reload.recording_unlimited?
+  end
+
   test "a recording starts probing and takes its title from the file" do
     r = recording
     assert r.probing?

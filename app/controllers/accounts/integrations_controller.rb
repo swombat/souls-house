@@ -2,7 +2,7 @@ class Accounts::IntegrationsController < ApplicationController
 
   def show
     can_manage_account = current_account.service_credentials_manageable_by?(Current.user)
-    service_definitions = Services::Definition.all.select do |definition|
+    service_definitions = Services::Definition.all.select(&:available?).select do |definition|
       definition.supports_management_scope?("personal") ||
         (can_manage_account && definition.supports_management_scope?("account_managed"))
     end

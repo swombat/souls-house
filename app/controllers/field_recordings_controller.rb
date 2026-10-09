@@ -14,6 +14,7 @@ class FieldRecordingsController < ApplicationController
       recording: FieldItems.recording_json(recording).merge(
         audio_url: (rails_blob_path(recording.audio, disposition: :inline) if recording.audio.attached?),
         words: recording.ready? ? recording.transcript_words : [],
+        turns: (recording.transcript_turns if recording.ready? && recording.supplied?),
         language_code: recording.language_code,
         ready_at: recording.ready_at&.iso8601
       ),

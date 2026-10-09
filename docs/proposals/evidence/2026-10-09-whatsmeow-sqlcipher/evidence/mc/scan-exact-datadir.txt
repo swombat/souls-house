@@ -1,0 +1,2 @@
+27965 needles total, 1032 without the CANARY token searched individually
+scanned 3 files, 1032 needles, 0 hits

@@ -8,6 +8,7 @@ class Setting < ApplicationRecord
 
   validates :max_accounts, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :resident_turn_limit, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 1_000 }
+  validates :vm_resident_limit, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 1_000 }
   validates :follow_through_scope, inclusion: { in: FOLLOW_THROUGH_SCOPES }
   validates :site_name, presence: true, length: { maximum: 100 }
   validates :safeguard_owner_notice_threshold,

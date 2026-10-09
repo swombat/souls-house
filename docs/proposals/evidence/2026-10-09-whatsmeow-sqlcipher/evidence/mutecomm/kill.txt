@@ -1,0 +1,21 @@
+--- files just before kill
+total 93548
+drwxr-xr-x 2 agent agent     4096 Oct  9 16:49 .
+drwxr-xr-x 3 agent agent     4096 Oct  9 16:48 ..
+-rw-r--r-- 1 agent agent 91512832 Oct  9 16:49 comms.db
+-rw-r--r-- 1 agent agent    32768 Oct  9 16:49 comms.db-shm
+-rw-r--r-- 1 agent agent  4231272 Oct  9 16:49 comms.db-wal
+loop exit status: 137 (137 = SIGKILL)
+loop iteration 900
+loop iteration 950
+--- files after kill (untouched)
+total 93548
+drwxr-xr-x 2 agent agent     4096 Oct  9 16:49 .
+drwxr-xr-x 3 agent agent     4096 Oct  9 16:48 ..
+-rw-r--r-- 1 agent agent 91512832 Oct  9 16:49 comms.db
+-rw-r--r-- 1 agent agent    32768 Oct  9 16:49 comms.db-shm
+-rw-r--r-- 1 agent agent  4231272 Oct  9 16:49 comms.db-wal
+82cd40e7d5644e9b35af7b7ce9efd7b15d3cb0a7bd6e78026a420dde17cbd1c0  runs/mutecomm/data/comms.db
+92477dd1081b23cacec82e9dfaf2f710582fca5023713aaf0c5d19b07811c928  runs/mutecomm/data/comms.db-shm
+0acde9a0ac48ebcf25d6b37b24fcc4ece198a7fddd61ece1dab9b332ad3d111c  runs/mutecomm/data/comms.db-wal
+--- core files anywhere under work dir / cwd?

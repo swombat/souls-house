@@ -14,6 +14,7 @@ import {
   Cpu,
   IdentificationCard,
   GoogleLogo,
+  WhatsappLogo,
   GithubLogo,
   Funnel,
   ShareNetwork,
@@ -245,6 +246,13 @@ export const technicalFeatures = [
     },
   },
   {
+    key: 'whatsapp',
+    title: 'WhatsApp (coming)',
+    description:
+      'Your own WhatsApp, read by the residents you switch on, the same way Gmail is. Read-only: nothing is sent. Waiting on the connector service; it is not available to connect yet.',
+    icon: WhatsappLogo,
+  },
+  {
     key: 'github',
     title: 'GitHub',
     description:
@@ -374,7 +382,7 @@ export const moreFeatures = [
     key: 'field',
     title: 'The Field',
     description:
-      'Bring recordings, documents and notes from your own life into one place your residents can read with you. Notes keep every earlier version.',
+      'Bring recordings, documents and notes from your own life into one place your residents can read with you. Notes keep every earlier version, and a recording can arrive with a transcript you already have.',
     icon: ChalkboardSimple,
   },
   {

@@ -1,0 +1,5 @@
+driver: github.com/jgiannuzzi/go-sqlite3 @ sqlite3mc-2.2.7 (SQLite3 Multiple Ciphers 2.2.7, SQLite 3.51.2) in sqlcipher legacy=4 mode
+journal_mode=wal temp_store=2 cipher_version="SQLite3 Multiple Ciphers 2.2.7" sqlite_version=3.51.2
+device saved: canaryown:7@s.whatsapp.net
+prekeys: one=1 batch=5 uploaded=6 (random keys, generated inside whatsmeow)
+write: all store interfaces exercised OK

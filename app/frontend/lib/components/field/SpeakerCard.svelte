@@ -28,9 +28,11 @@
   <Card.Content class="p-3 space-y-2">
     <div>
       <p class="font-semibold truncate">{speaker.name || speaker.default_name}</p>
-      <p class="text-xs text-muted-foreground">
-        {formatDuration(speaker.talk_ms || 0)}{share != null ? ` · ${share}% of talk` : ''}
-      </p>
+      {#if speaker.talk_ms != null}
+        <p class="text-xs text-muted-foreground">
+          {formatDuration(speaker.talk_ms || 0)}{share != null ? ` · ${share}% of talk` : ''}
+        </p>
+      {/if}
     </div>
     <div class="flex flex-wrap items-center gap-1">
       {#if hasClip}

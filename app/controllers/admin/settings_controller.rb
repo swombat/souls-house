@@ -8,7 +8,8 @@ class Admin::SettingsController < ApplicationController
       setting: Setting.instance.as_json.merge(
         logo_url: Setting.instance.logo.attached? ? url_for(Setting.instance.logo) : nil
       ),
-      follow_through_residents: follow_through_residents
+      follow_through_residents: follow_through_residents,
+      vm_births: Agents::VmBirthPolicy.current.as_json
     }
   end
 
@@ -43,6 +44,8 @@ class Admin::SettingsController < ApplicationController
       :show_usage_in_chat,
       :safeguard_conversations_enabled,
       :follow_through_scope,
+      :new_residents_on_vm,
+      :vm_resident_limit,
       :logo
     )
   end

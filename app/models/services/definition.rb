@@ -3,6 +3,9 @@ module Services
 
     class UnknownProvider < KeyError; end
 
+    CONNECTION_METHODS = %w[oauth2 credentials pairing].freeze
+    CREDENTIAL_STRATEGIES = %w[static self_refreshing refresh_broker connector].freeze
+
     attr_reader :key, :name, :management_scopes, :credential_strategy,
                  :api_origins, :documentation, :access_profiles,
                  :default_access_profile, :adapter_class, :connection_method,
@@ -36,7 +39,7 @@ module Services
     def initialize(key:, name:, management_scopes:, credential_strategy:, api_origins:,
                    documentation:, access_profiles: {}, default_access_profile: nil, adapter_class:,
                    connection_method: "oauth2", credential_fields: [], runtime_notes: [],
-                   authority_groups: {}, base_scopes: [])
+                   authority_groups: {}, base_scopes: [], requires_env: [])
       @key = key.to_s
       @name = name
       @management_scopes = management_scopes.map(&:to_s).freeze
@@ -51,6 +54,15 @@ module Services
       @connection_method = connection_method.to_s
       @credential_fields = credential_fields.map { |field| field.to_h.stringify_keys.freeze }.freeze
       @runtime_notes = Array(runtime_notes).map(&:to_s).freeze
+      @requires_env = Array(requires_env).map(&:to_s).freeze
+      raise ArgumentError, "Unknown connection method: #{@connection_method}" unless CONNECTION_METHODS.include?(@connection_method)
+      raise ArgumentError, "Unknown credential strategy: #{@credential_strategy}" unless CREDENTIAL_STRATEGIES.include?(@credential_strategy)
+    end
+
+    # A service whose backing infrastructure isn't configured on this host
+    # (e.g. WhatsApp without its connector) is neither listed nor connectable.
+    def available?
+      @requires_env.all? { |name| ENV[name].present? }
     end
 
     def scopes_for(profile)

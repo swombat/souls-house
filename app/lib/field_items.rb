@@ -3,7 +3,48 @@ module FieldItems
 
   module_function
 
-  def file_json(file)
+  # One FieldSearch result, the same for the API and the page: what it is,
+  # when, its tags, the excerpts, and where to read the whole thing.
+  def search_result_json(result)
+    record = result.record
+    routes = Rails.application.routes.url_helpers
+    base = {
+      key: "#{result.kind}-#{record.to_param}",
+      kind: result.kind,
+      id: record.to_param,
+      title: result.kind == "note" ? record.name : record.title,
+      date: result.date&.iso8601,
+      tags: result.tags,
+      excerpts: result.excerpts
+    }
+
+    case result.kind
+    when "recording"
+      base.merge(
+        status: record.status, duration_ms: record.duration_ms, uploaded_by: record.uploader_name,
+        web_path: routes.account_field_recording_path(record.account, record),
+        api_path: routes.api_v1_field_recording_path(record)
+      )
+    when "file"
+      base.merge(
+        filename: record.filename, uploaded_by: record.uploader_name,
+        web_path: routes.account_field_path(record.account, tab: "files", item: "file-#{record.to_param}"),
+        api_path: routes.api_v1_field_file_path(record)
+      )
+    else
+      base.merge(
+        web_path: routes.account_field_path(record.account, tab: "notes", item: "note-#{record.to_param}"),
+        api_path: routes.api_v1_whiteboard_path(record)
+      )
+    end
+  end
+
+  def tags_json(account)
+    counts = FieldTag.item_counts(account)
+    account.field_tags.kept.by_name.map { |tag| { id: tag.to_param, name: tag.name, item_count: counts.fetch(tag.id, 0) } }
+  end
+
+  def file_json(file, tags = [])
     url_helpers = Rails.application.routes.url_helpers
     {
       key: "file-#{file.to_param}",
@@ -17,11 +58,12 @@ module FieldItems
       uploader_name: file.uploader_name,
       uploader_kind: file.uploader_kind,
       created_at: file.created_at.iso8601,
+      tags: tags,
       download_url: (url_helpers.rails_blob_url(file.file, only_path: true, disposition: :attachment) if file.file.attached?)
     }
   end
 
-  def note_json(note)
+  def note_json(note, tags = [])
     {
       key: "note-#{note.to_param}",
       kind: "note",
@@ -34,11 +76,12 @@ module FieldItems
       revision: note.revision,
       editor_name: note.editor_name,
       created_at: (note.last_edited_at || note.updated_at).iso8601,
+      tags: tags,
       last_edited_at: note.last_edited_at&.strftime("%b %d at %l:%M %p")
     }
   end
 
-  def recording_json(recording)
+  def recording_json(recording, tags = [])
     {
       key: "recording-#{recording.to_param}",
       kind: "recording",
@@ -53,12 +96,16 @@ module FieldItems
       byte_size: recording.byte_size,
       uploader_name: recording.uploader_name,
       uploader_kind: recording.uploader_kind,
+      transcript_source: recording.transcript_source,
+      recorded_at: recording.recorded_at&.iso8601,
+      source_path: recording.source_path,
       speaker_names: recording.ready? ? recording.speakers.includes(:field_voice).map(&:display_name) : [],
       # Deleting after this point doesn't give the minutes back (spec §5).
       dispatched: recording.dispatch_count.positive?,
       retryable: recording.kept? && FieldRecording::RETRYABLE_STATUSES.include?(recording.status) && recording.audio.attached?,
       show_url: Rails.application.routes.url_helpers.account_field_recording_path(recording.account, recording),
-      created_at: recording.created_at.iso8601
+      created_at: recording.created_at.iso8601,
+      tags: tags
     }
   end
 
@@ -72,7 +119,7 @@ module FieldItems
       named: speaker.field_voice&.kept? || false,
       voice_id: speaker.field_voice&.kept? ? speaker.field_voice.to_param : nil,
       naming_source: speaker.naming_source,
-      talk_ms: speaker.talk_ms,
+      talk_ms: speaker.known_talk_ms,
       clip_start_ms: speaker.clip_start_ms,
       clip_end_ms: speaker.clip_end_ms,
       recognition: (if speaker.recognition?
@@ -100,7 +147,7 @@ module FieldItems
       name: speaker.display_name,
       named: voice.present?,
       voice_id: voice&.to_param,
-      talk_ms: speaker.talk_ms,
+      talk_ms: speaker.known_talk_ms,
       clip_start_ms: speaker.clip_start_ms,
       clip_end_ms: speaker.clip_end_ms
     }
@@ -163,6 +210,7 @@ module FieldItems
   def allowance_json(account, now: Time.current)
     {
       limit_ms: account.recording_ms_weekly_limit,
+      unlimited: account.recording_unlimited?,
       used_ms: FieldRecordingReservation.used_ms(account, now:),
       pending_ms: account.field_recording_reservations.where(state: "pending").sum(:audio_ms),
       window_days: FieldRecordingReservation::WINDOW.in_days.to_i

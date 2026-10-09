@@ -7,14 +7,20 @@ class FieldController < ApplicationController
   TABS = %w[all files notes recordings].freeze
 
   def index
-    files = current_account.field_files.kept.includes(:uploaded_by, file_attachment: :blob).newest_first
-    recordings = current_account.field_recordings.kept.includes(:uploaded_by, audio_attachment: :blob).newest_first
-    notes = current_account.whiteboards.active.includes(:last_edited_by).order(updated_at: :desc)
+    files = current_account.field_files.kept.includes(:uploaded_by, file_attachment: :blob).newest_first.to_a
+    recordings = current_account.field_recordings.kept.includes(:uploaded_by, audio_attachment: :blob).newest_first.to_a
+    notes = current_account.whiteboards.active.includes(:last_edited_by).order(updated_at: :desc).to_a
+    tags = FieldTagging.names_for(files + recordings + notes)
+    tags_for = ->(item) { tags[[ item.class.base_class.name, item.id ]] || [] }
 
     render inertia: "field/index", props: {
-      files: files.map { |file| FieldItems.file_json(file) },
-      notes: notes.map { |note| FieldItems.note_json(note) },
-      recordings: recordings.map { |recording| FieldItems.recording_json(recording) },
+      files: files.map { |file| FieldItems.file_json(file, tags_for.(file)) },
+      notes: notes.map { |note| FieldItems.note_json(note, tags_for.(note)) },
+      recordings: recordings.map { |recording| FieldItems.recording_json(recording, tags_for.(recording)) },
+      tags: FieldItems.tags_json(current_account),
+      filter_tags: filter_tags,
+      query: params[:q].is_a?(String) ? params[:q].to_s.strip : "",
+      search: search_props,
       recording_allowance: FieldItems.allowance_json(current_account),
       suggestions_enabled: FieldSuggestions.enabled?,
       max_recording_bytes: FieldRecording::MAX_BYTES,
@@ -26,6 +32,32 @@ class FieldController < ApplicationController
       account_name: current_account.name,
       account: current_account.as_json
     }
+  end
+
+  private
+
+  def filter_tags
+    raw = params[:tag]
+    raw = [ raw ] if raw.is_a?(String)
+    return [] unless raw.is_a?(Array) && raw.all?(String)
+
+    FieldTag.normalize_list(raw)
+  rescue FieldTag::Invalid
+    []
+  end
+
+  # Results when the page was asked to search: words, tags, or both. The
+  # item grid is filtered by tags on the page itself; only a query needs the
+  # server.
+  def search_props
+    query = params[:q].is_a?(String) ? params[:q].strip : ""
+    return nil if query.blank?
+
+    page = FieldSearch.new(account: current_account, query: query, tags: filter_tags,
+      sort: (params[:sort] if FieldSearch::SORTS.include?(params[:sort])), page: params[:page].is_a?(String) ? params[:page] : nil).call
+    { results: page.results.map { |result| FieldItems.search_result_json(result) }, page: page.page, next_page: page.next_page, error: nil }
+  rescue FieldSearch::Invalid => e
+    { results: [], page: 0, next_page: nil, error: e.message }
   end
 
 end

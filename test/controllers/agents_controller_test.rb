@@ -247,6 +247,20 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal agent.to_param, inertia_shared_props.fetch("agent").fetch("id")
   end
 
+  test "with new residents on their own server, birth is refused visibly and nothing is created" do
+    Setting.instance.update!(new_residents_on_vm: true, vm_resident_limit: 5)
+    get new_account_agent_path(@account)
+    assert_equal Agents::VmBirthPolicy.current.refusal, inertia_shared_props.fetch("vm_birth_refusal")
+    assert_no_difference [ "Agent.count", "ApiKey.count", "AgentPlacement.count" ] do
+      assert_no_enqueued_jobs only: ProvisionAgentJob do
+        post account_agents_path(@account), params: {
+          agent: { name: "Not here", system_prompt: "You are helpful", model_id: "openrouter/auto" }
+        }
+      end
+    end
+    assert_redirected_to new_account_agent_path(@account)
+  end
+
   test "should fail to create agent with missing name" do
     assert_no_difference "Agent.count" do
       post account_agents_path(@account), params: {

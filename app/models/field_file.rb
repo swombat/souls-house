@@ -11,6 +11,7 @@ class FieldFile < ApplicationRecord
   include Broadcastable
   include ObfuscatesId
   include SyncAuthorizable
+  include FieldTaggable
 
   MAX_FILE_SIZE = 100.megabytes
   MAX_FILE_SIZE_LABEL = "100 MB"
@@ -20,12 +21,16 @@ class FieldFile < ApplicationRecord
   belongs_to :uploaded_by, polymorphic: true, optional: true
 
   has_one_attached :file
+  # After the attachment: after_commit callbacks run in the order defined, and
+  # extraction needs the bytes already uploaded.
+  include FieldFile::TextExtraction
 
   validates :title, presence: true, length: { maximum: 200 }
   validates :note, length: { maximum: MAX_NOTE_LENGTH }
   validate :file_present_and_bounded
 
   before_validation :default_title_from_filename
+  before_save { self.indexed_filename = file.attached? ? file.filename.to_s.truncate(255) : nil }
 
   broadcasts_to :account
 

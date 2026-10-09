@@ -16,6 +16,7 @@ class FieldRecording < ApplicationRecord
   include ObfuscatesId
   include SyncAuthorizable
   include FieldRecording::Transcription
+  include FieldTaggable
 
   class NotRetryable < StandardError; end
 
@@ -25,7 +26,14 @@ class FieldRecording < ApplicationRecord
   MAX_SPEAKERS = 32 # Scribe's num_speakers ceiling
   MAX_DISPATCHES = 3
 
+  MAX_SOURCE_PATH_LENGTH = 1000
+  MAX_IMPORT_KEY_LENGTH = 200
+  LANGUAGE_CODE = /\A[a-z]{2,3}(-[A-Za-z0-9]{2,8})*\z/
+
   STATUSES = %w[probing queued transcribing ready rejected failed].freeze
+  # "vendor": transcribed here. "supplied": arrived with its transcript (spec
+  # docs/2026-10-09-field-supplied-transcripts.md), never sent anywhere.
+  TRANSCRIPT_SOURCES = %w[vendor supplied].freeze
   TERMINAL_STATUSES = %w[ready rejected failed].freeze
   RETRYABLE_STATUSES = %w[failed rejected].freeze
 
@@ -44,12 +52,18 @@ class FieldRecording < ApplicationRecord
   validates :note, length: { maximum: MAX_NOTE_LENGTH }
   validates :status, inclusion: { in: STATUSES }
   validates :expected_speakers, numericality: { only_integer: true, in: 1..MAX_SPEAKERS }, allow_nil: true
+  validates :transcript_source, inclusion: { in: TRANSCRIPT_SOURCES }
+  validates :source_path, length: { maximum: MAX_SOURCE_PATH_LENGTH }
+  validates :import_key, length: { maximum: MAX_IMPORT_KEY_LENGTH }, allow_nil: true
+  # Scribe's own codes are checked by Scribe; a supplied one is the caller's.
+  validates :language_code, format: { with: LANGUAGE_CODE }, allow_nil: true, if: :supplied?
   # Bytes are required when a recording is made. A rejected recording's audio
   # is later purged on purpose (OrphanSweepJob) while the row stays, and its
   # title and note must remain editable.
   validate :audio_present_and_bounded, on: :create
 
   before_validation :default_title_from_filename
+  before_validation :normalise_provenance
 
   broadcasts_to :account
 
@@ -60,6 +74,45 @@ class FieldRecording < ApplicationRecord
   end
 
   def terminal? = TERMINAL_STATUSES.include?(status)
+  def supplied? = transcript_source == "supplied"
+
+  # Made with its transcript, which arrived with the audio (docs/2026-10-09-
+  # field-supplied-transcripts.md). It lands ready, without passing through
+  # admission or dispatch, so no dispatch guard reaches it; each has a home:
+  #
+  # - size: the upload declaration and the create validation, as for any
+  #   recording (2 GB);
+  # - allowance: not reserved. The weekly allowance meters what is sent to
+  #   the transcriber, and nothing is;
+  # - language: the caller's code, format-checked, not detected;
+  # - speakers: at most SuppliedTranscript::MAX_SPEAKERS distinct labels.
+  #   expected_speakers steers the diarizer and is not kept, since there is
+  #   none;
+  # - retry: never offered (it is never failed or rejected).
+  #
+  # Word timings don't exist, so transcript_words stays empty and speakers
+  # have no talk time or clip; the voice-recognition and suggestion jobs are
+  # never queued for it. Called inside the create transaction.
+  def store_supplied_transcript!(turns)
+    raise ArgumentError, "not a supplied recording" unless supplied?
+
+    FieldRecording::SuppliedTranscript.speakers(turns).each { |attributes| speakers.create!(attributes) }
+    speakers.reset
+    self.transcript_turns = turns
+    self.transcript_words = []
+    self.transcript_text = render_transcript_text
+    update!(status: "ready", ready_at: Time.current, expected_speakers: nil)
+  end
+
+  # Probe of a supplied recording: the duration only, for display. Its status
+  # is already final and nothing is reserved.
+  def record_duration!(probed_ms)
+    with_lock do
+      next false unless probed_ms && kept? && supplied? && duration_ms.nil?
+
+      update!(duration_ms: probed_ms)
+    end
+  end
 
   # Probe found a duration: reserve allowance or refuse (§6). Account lock
   # first, then this row, so two probes finishing together are serialised.
@@ -149,6 +202,12 @@ class FieldRecording < ApplicationRecord
   def byte_size = audio.attached? ? audio.byte_size : nil
 
   private
+
+  def normalise_provenance
+    self.source_path = source_path.to_s.strip.presence
+    self.import_key = import_key.to_s.strip.presence
+    self.language_code = language_code.to_s.strip.presence
+  end
 
   def default_title_from_filename
     self.title = title.to_s.strip

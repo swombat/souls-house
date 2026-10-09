@@ -37,6 +37,24 @@ export function buildTurns(words = []) {
   return turns.map((turn) => ({ ...turn, text: turn.parts.map((part) => part.t).join('') }));
 }
 
+// A transcript that came with the audio has turns, not timed words: {spk, s,
+// t} with s in ms or null. Each becomes one untimed part, so the page shows it
+// without word highlighting and seeks only where a start was given.
+export function suppliedTurns(turns = []) {
+  return (turns || [])
+    .filter((turn) => turn && turn.t)
+    .map((turn) => {
+      const start = Number.isFinite(turn.s) ? turn.s : null;
+      return {
+        spk: turn.spk || null,
+        start,
+        end: start,
+        parts: [{ k: 'w', t: turn.t, s: start, i: null, whole: true }],
+        text: turn.t,
+      };
+    });
+}
+
 // The timed words across all turns, in order, for finding the one playing.
 export function timedWords(turns) {
   return turns.flatMap((turn) => turn.parts.filter((part) => part.k !== 's'));
@@ -62,8 +80,10 @@ export function activeWordIndex(list, ms) {
   return ms < (word.e ?? word.s) ? word.i : -1;
 }
 
+// A null-prototype map: speaker labels come from supplied transcripts too,
+// and a label such as "__proto__" must read as a name, not a property.
 export function speakerNames(speakers = []) {
-  const names = {};
+  const names = Object.create(null);
   for (const speaker of speakers || []) names[speaker.label] = speaker.name || speaker.default_name || speaker.label;
   return names;
 }
@@ -100,6 +120,11 @@ export function allowanceLine(allowance) {
   if (!allowance) return '';
   const days = allowance.window_days || 7;
   const used = formatDuration(allowance.used_ms || 0);
+  if (allowance.unlimited) {
+    let open = `${used} used in the last ${days} days (no weekly limit)`;
+    if ((allowance.pending_ms || 0) > 0) open += `, ${formatDuration(allowance.pending_ms)} still transcribing`;
+    return open;
+  }
   const limit = formatDuration(allowance.limit_ms || 0);
   let line = `${used} of ${limit} used in the last ${days} days`;
   if ((allowance.pending_ms || 0) > 0) line += ` (${formatDuration(allowance.pending_ms)} still transcribing)`;
@@ -107,7 +132,7 @@ export function allowanceLine(allowance) {
 }
 
 export function remainingMs(allowance) {
-  if (!allowance) return null;
+  if (!allowance || allowance.unlimited) return null;
   return Math.max(0, (allowance.limit_ms || 0) - (allowance.used_ms || 0));
 }
 

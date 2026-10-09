@@ -110,6 +110,52 @@ test('the transcript page shows names, unnamed speakers and turns', async ({ mou
   await page.screenshot({ path: 'tmp/field-recording-show.png', fullPage: true });
 });
 
+test('a transcript brought with its audio shows turns, times only where given, and no talk time or clips', async ({
+  mount,
+  page,
+}) => {
+  const supplied = {
+    ...recording,
+    title: 'Evening with Anna',
+    transcript_source: 'supplied',
+    recorded_at: '2026-10-04T18:45:00Z',
+    source_path: 'media/recordings/transcripts/2026-10-04_2045_anna.md',
+    words: [],
+    turns: [
+      { spk: null, s: null, t: 'Source: ~/dev/pa/media/audio/2026-10-04_2045_anna.mp3 (TileRec)' },
+      { spk: 'Daniel', s: 0, t: '[cutlery clinking]' },
+      { spk: 'Anna', s: 21000, t: 'How am I feeling?\nWell, I enjoyed my day off.' },
+      { spk: 'Daniel', s: null, t: 'Mm-hmm.' },
+    ],
+  };
+  const suppliedSpeakers = [
+    { id: 's1', label: 'Daniel', position: 0, default_name: 'Daniel', name: 'Daniel', named: false, talk_ms: null },
+    { id: 's2', label: 'Anna', position: 1, default_name: 'Anna', name: 'Anna', named: false, talk_ms: null },
+  ];
+  const component = await mount(RecordingPage, {
+    props: {
+      recording: supplied,
+      speakers: suppliedSpeakers,
+      voices: [],
+      members_without_voice: [],
+      suggestions_enabled: true,
+      recognition_enabled: true,
+      account,
+    },
+  });
+
+  await expect(component).toContainText('Transcript brought with it');
+  await expect(page.getByTestId('recording-source')).toContainText('2026-10-04_2045_anna.md');
+  await expect(page.getByText('How am I feeling?')).toHaveCSS('white-space', 'pre-line');
+  await expect(component).toContainText('Unattributed');
+  await expect(component).toContainText('00:21');
+  await expect(page.getByTestId('speaker-card')).toHaveCount(2);
+  await expect(component).not.toContainText('of talk');
+  await expect(component).not.toContainText('Hear');
+  await expect(page.getByTestId('suggestions-disclosure')).toHaveCount(0);
+  await page.screenshot({ path: 'tmp/field-recording-supplied.png', fullPage: true });
+});
+
 test('the "is one of these you?" hint shows when asked for', async ({ mount, page }) => {
   const component = await mount(RecordingPage, {
     props: {
