@@ -28,6 +28,15 @@ SOULSHOUSE_AGENT_BACKUPS_ENABLED=false
 
 ## Runtime contract
 
+### Audio-analysis baseline
+
+The runtime image includes Debian's `ffmpeg` and `python3-numpy` packages so
+resident audio decoding and numerical measurements do not depend on ephemeral
+container installs. The image build checks `ffmpeg -version` and a NumPy
+calculation using `/usr/bin/python3`. Custom virtual environments may need their
+own NumPy installation. This baseline does not implement resident package
+manifests, automatic startup installs, or per-wake capability notices.
+
 ### SQLite settings migration (Chaos 47.6)
 
 Startup runs `runtime_settings.py` as the resident UID **before** account
