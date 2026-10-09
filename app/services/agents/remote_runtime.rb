@@ -177,64 +177,116 @@ module Agents
           return :busy if placement.refresh_command_id.present?
           return :busy if ResidentTurn.pending.where(agent_id: agent.id).exists? ||
             agent.agent_runtime_interactions.active.exists?
+          # Under the same locks as the backup hold's own admission.
+          return :busy if Backup::VmResident.held?(agent)
 
-          snapshot = agent.agent_service_accesses.includes(:service_connection).map do |access|
+          accesses = agent.agent_service_accesses.includes(:service_connection).map do |access|
             { "id" => access.id, "enabled" => access.enabled?, "revision" => access.service_connection.credential_revision.to_s }
           end
           command = start!(agent)
           placement.update!(refresh_command_id: command.id, refresh_requested_at: Time.current,
-            refresh_snapshot: snapshot, refresh_last_error: nil)
+            refresh_snapshot: { "accesses" => accesses, "recoveries" => 0 }, refresh_last_error: nil)
           command
         end
       end
     end
 
-    # Settles a refresh once its start command is answered. Success marks
-    # reconciled only the service accesses whose revision is still the one
-    # the restart carried; a failure stays visible on the accesses and the
-    # resident. Either way the turn hold is released. Returns :pending,
-    # :done or :failed.
+    # Settles a refresh. Only known state opens turn admission again:
+    #
+    #   * the start (or the recovery start) answered done: services whose
+    #     revision is still the one the restart carried are reconciled, and
+    #     the hold is released
+    #   * no answer yet: past REFRESH_ANSWER_WITHIN the error becomes visible,
+    #     but the hold stays; that start may still run
+    #   * unknown, failed or refused: the error is visible on the services and
+    #     the resident, the hold stays, and one tracked recovery start is
+    #     queued. Runner commands run in order, so its done answer is known
+    #     state. If the recovery doesn't end done either, only an audited
+    #     operator release (release_refresh_hold!) opens admission
+    #
+    # Returns :done, :pending, :recovering or :held.
     REFRESH_ANSWER_WITHIN = 30.minutes
+    REFRESH_RECOVERIES = 1
 
     def settle_refresh!(placement, now: Time.current)
       placement.with_lock do
         return :done if placement.refresh_command_id.blank?
 
         command = RunnerCommand.find_by(id: placement.refresh_command_id)
-        unless command.nil? || command.terminal?
-          return :pending if now < placement.refresh_requested_at + REFRESH_ANSWER_WITHIN
-        end
-
+        snapshot = refresh_snapshot(placement)
         agent = placement.agent
         if command&.state == "done"
-          Array(placement.refresh_snapshot).each do |entry|
-            access = agent.agent_service_accesses.includes(:service_connection).find_by(id: entry["id"])
-            next unless access && access.enabled? == entry["enabled"] &&
-              access.service_connection.credential_revision.to_s == entry["revision"]
-
-            if access.enabled?
-              access.mark_provisioned!
-            else
-              access.update!(provisioned_revision: nil, provisioned_at: now, provisioning_status: "removed",
-                provisioning_error_code: nil)
-            end
-          end
+          reconcile_refreshed_services!(agent, snapshot, now)
           placement.update!(refresh_command_id: nil, refresh_requested_at: nil, refresh_snapshot: nil,
             refresh_last_error: nil)
-          :done
+          return :done
+        end
+
+        if command && !command.terminal?
+          return :pending if now < placement.refresh_requested_at + REFRESH_ANSWER_WITHIN
+
+          record_refresh_problem!(placement, agent, snapshot, "no answer", nil, now)
+          return :held
+        end
+
+        state = command&.state || "missing"
+        record_refresh_problem!(placement, agent, snapshot, state, command&.result&.dig("error"), now)
+        return :held if command.nil? || snapshot["recoveries"] >= REFRESH_RECOVERIES
+
+        recovery = start!(agent)
+        placement.update!(refresh_command_id: recovery.id, refresh_requested_at: now,
+          refresh_snapshot: snapshot.merge("recoveries" => snapshot["recoveries"] + 1))
+        :recovering
+      end
+    end
+
+    # An installation admin's explicit release of a refresh hold that never
+    # reached known state, after looking at the VM. Audited.
+    def release_refresh_hold!(agent, by:, reason:, now: Time.current)
+      raise ArgumentError, "installation admin required" unless by.is_a?(User) && by.is_site_admin?
+      raise ArgumentError, "a reason is required" if reason.to_s.strip.empty?
+
+      placement = placement_for(agent) || raise(Unavailable, "Resident is not placed on a VM")
+      placement.with_lock do
+        return false if placement.refresh_command_id.blank?
+
+        AuditLog.create!(user: by, account: agent.account, action: "vm_refresh_hold_released", auditable: placement,
+          data: { "reason" => reason.to_s.first(500), "command_id" => placement.refresh_command_id,
+                  "last_error" => placement.refresh_last_error })
+        placement.update!(refresh_command_id: nil, refresh_requested_at: nil, refresh_snapshot: nil)
+        true
+      end
+    end
+
+    def refresh_snapshot(placement)
+      raw = placement.refresh_snapshot
+      raw = { "accesses" => raw } if raw.is_a?(Array)
+      raw = {} unless raw.is_a?(Hash)
+      { "accesses" => Array(raw["accesses"]), "recoveries" => raw["recoveries"].to_i }
+    end
+
+    def reconcile_refreshed_services!(agent, snapshot, now)
+      snapshot["accesses"].each do |entry|
+        access = agent.agent_service_accesses.includes(:service_connection).find_by(id: entry["id"])
+        next unless access && access.enabled? == entry["enabled"] &&
+          access.service_connection.credential_revision.to_s == entry["revision"]
+
+        if access.enabled?
+          access.mark_provisioned!
         else
-          state = command&.state || "missing"
-          state = "no answer" unless command.nil? || command.terminal?
-          error = "VM restart with new credentials #{state}: #{command&.result&.dig('error') || 'no detail'}".first(255)
-          ids = Array(placement.refresh_snapshot).map { |entry| entry["id"] }
-          agent.agent_service_accesses.where(id: ids).update_all(provisioning_status: "failed",
-            provisioning_error_code: "vm_restart_#{state.tr(' ', '_')}", updated_at: now)
-          agent.update!(sandbox_last_error: error, sandbox_last_error_at: now)
-          placement.update!(refresh_command_id: nil, refresh_requested_at: nil, refresh_snapshot: nil,
-            refresh_last_error: error)
-          :failed
+          access.update!(provisioned_revision: nil, provisioned_at: now, provisioning_status: "removed",
+            provisioning_error_code: nil)
         end
       end
+    end
+
+    def record_refresh_problem!(placement, agent, snapshot, state, detail, now)
+      error = "VM restart with new credentials #{state}: #{detail || 'no detail'}".first(255)
+      ids = snapshot["accesses"].map { |entry| entry["id"] }
+      agent.agent_service_accesses.where(id: ids).update_all(provisioning_status: "failed",
+        provisioning_error_code: "vm_restart_#{state.tr(' ', '_')}", updated_at: now)
+      agent.update!(sandbox_last_error: error, sandbox_last_error_at: now)
+      placement.update!(refresh_last_error: error)
     end
 
     # Ready and alive: the placement is ready, the runner is live, and a VM

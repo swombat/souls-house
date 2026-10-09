@@ -12,7 +12,9 @@ class RemoteRefreshSettleJob < ApplicationJob
     return unless placement&.refresh_command_id
 
     result = Agents::RemoteRuntime.settle_refresh!(placement)
-    self.class.set(wait: RECHECK_AFTER).perform_later(placement.id) if result == :pending
+    # :held waits for an answer or an operator; the per-minute sweep looks
+    # again, so it isn't rescheduled tightly here.
+    self.class.set(wait: RECHECK_AFTER).perform_later(placement.id) if %i[pending recovering].include?(result)
   end
 
 end

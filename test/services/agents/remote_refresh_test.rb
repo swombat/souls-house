@@ -74,26 +74,56 @@ module Agents
       assert_not RemoteRuntime.refresh_pending?(@agent)
     end
 
-    test "failed and unknown stay visible on the services and the resident, and release the hold" do
-      %w[failed unknown].each do |outcome|
-        @placement.update_columns(refresh_command_id: nil)
+    test "unknown, failed or refused keep the hold, stay visible, and recover through one tracked start" do
+      %w[unknown failed refused].each do |outcome|
+        @placement.update_columns(refresh_command_id: nil, refresh_snapshot: nil, refresh_last_error: nil)
         @access.update_columns(provisioning_status: "pending", provisioning_error_code: nil)
         command = begin_refresh
         answer(command, outcome)
-        assert_equal :failed, RemoteRuntime.settle_refresh!(@placement.reload), outcome
+        assert_equal :recovering, RemoteRuntime.stub(:local_image_id, IMAGE) { RemoteRuntime.settle_refresh!(@placement.reload) }, outcome
+        assert RemoteRuntime.refresh_pending?(@agent), "#{outcome}: the hold stays"
+        assert_raises(ResidentTurn::SessionBusy, outcome) { queue_turn }
         assert_equal "failed", @access.reload.provisioning_status, outcome
         assert_equal "vm_restart_#{outcome}", @access.provisioning_error_code
         assert_match(/VM restart with new credentials #{outcome}/, @agent.reload.sandbox_last_error)
-        assert_match(/#{outcome}/, @placement.reload.refresh_last_error)
-        assert_not RemoteRuntime.refresh_pending?(@agent)
+
+        recovery = RunnerCommand.find(@placement.reload.refresh_command_id)
+        assert_not_equal command, recovery
+        assert_equal "start_resident", recovery.kind
+        answer(recovery, "done")
+        assert_equal :done, RemoteRuntime.settle_refresh!(@placement.reload), outcome
+        assert_not RemoteRuntime.refresh_pending?(@agent), "#{outcome}: known state releases the hold"
+        assert_equal "provisioned", @access.reload.provisioning_status, outcome
+        assert_kind_of ResidentTurn, queue_turn
+        ResidentTurn.update_all(finished_at: Time.current)
+        AgentRuntimeInteraction.update_all(finished_at: Time.current)
       end
     end
 
-    test "a runner that never answers is settled as failed after the bound" do
+    test "if the recovery start fails too, only an audited admin release opens admission" do
+      answer(begin_refresh, "unknown")
+      RemoteRuntime.stub(:local_image_id, IMAGE) { RemoteRuntime.settle_refresh!(@placement.reload) }
+      answer(RunnerCommand.find(@placement.reload.refresh_command_id), "failed")
+      assert_equal :held, RemoteRuntime.settle_refresh!(@placement.reload)
+      assert RemoteRuntime.refresh_pending?(@agent)
+      assert_equal 2, RunnerCommand.where(kind: "start_resident").count, "one recovery, no more"
+
+      assert_raises(ArgumentError) { RemoteRuntime.release_refresh_hold!(@agent, by: users(:regular_user), reason: "looked") }
+      assert_raises(ArgumentError) { RemoteRuntime.release_refresh_hold!(@agent, by: users(:site_admin_user), reason: " ") }
+      assert RemoteRuntime.release_refresh_hold!(@agent, by: users(:site_admin_user), reason: "container checked by hand")
+      assert_not RemoteRuntime.refresh_pending?(@agent)
+      assert AuditLog.exists?(action: "vm_refresh_hold_released", auditable: @placement)
+      assert_match(/failed/, @placement.reload.refresh_last_error, "the error stays visible after release")
+    end
+
+    test "a runner that never answers keeps the hold past the bound, with the error visible" do
       begin_refresh
       travel RemoteRuntime::REFRESH_ANSWER_WITHIN + 1.minute do
-        assert_equal :failed, RemoteRuntime.settle_refresh!(@placement.reload)
+        assert_equal :held, RemoteRuntime.settle_refresh!(@placement.reload)
+        assert RemoteRuntime.refresh_pending?(@agent), "an unanswered start may still run"
+        assert_raises(ResidentTurn::SessionBusy) { queue_turn }
         assert_match(/no answer/, @placement.reload.refresh_last_error)
+        assert_equal 1, RunnerCommand.where(kind: "start_resident").count, "no recovery queued behind an unanswered start"
       end
     end
 
@@ -110,13 +140,15 @@ module Agents
       assert_equal :busy, begin_refresh, "one refresh at a time"
     end
 
-    test "the refresh job defers during a VM backup hold and never touches local Docker" do
+    test "a VM backup hold makes the refresh busy under the turn gate, and the job defers without local Docker" do
+      Backup::VmResident.stub(:held?, true) do
+        assert_equal :busy, begin_refresh
+      end
       Agents::Sandbox.stub(:new, ->(*) { flunk "must not inspect local Docker" }) do
         RemoteRuntime.stub(:running?, true) do
-          job = AccountAgentCredentialsRefreshJob.new
-          job.stub(:vm_backup_holding?, true) do
+          Backup::VmResident.stub(:held?, true) do
             assert_enqueued_with(job: AccountAgentCredentialsRefreshJob, args: [ @account.id, @agent.id ]) do
-              job.perform(@account.id, @agent.id)
+              AccountAgentCredentialsRefreshJob.perform_now(@account.id, @agent.id)
             end
           end
           assert_nil @placement.reload.refresh_command_id

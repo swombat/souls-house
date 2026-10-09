@@ -190,6 +190,17 @@ class RunnerEnrollment < ApplicationRecord
     enrolled? && revoked_at.nil? && last_heartbeat_at.present? && last_heartbeat_at > now - HEALTHY_WITHIN
   end
 
+  def authorize_backup!(nonce:, now: Time.current)
+    with_lock do
+      placement = require_live!
+      raise Refused.new(:placement_unavailable, 409) if placement.state == "failed"
+      wanted = commands.where(kind: "backup_resident", state: "delivered", generation: placement.generation).exists?
+      raise Refused.new(:backup_not_requested, 404) unless wanted
+      consume_nonce!(nonce, now)
+      placement.agent
+    end
+  end
+
   # The runner asks for its resident's first home (#246 slice 3). Same rule
   # as images: only while this enrollment holds a delivered, unanswered
   # seed_home of the current generation naming exactly that digest, and only

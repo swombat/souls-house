@@ -22,6 +22,12 @@ class Mnemodyne::FirstCheckpointJob < ApplicationJob
     if vault.suspended_at? || vault.erasure_requested_at? || agent.agent_runtime_interactions.active.exists?
       return defer_until_idle(agent)
     end
+    if Agents::RemoteRuntime.remote?(agent)
+      return defer_until_idle(agent) if Backup::VmResident.held?(agent)
+      # The runner command is asynchronous; VmBackupCheckJob records the
+      # verified snapshot. A command receipt is not a synchronous snapshot.
+      return Backup::VmResident.issue!(placement: Agents::RemoteRuntime.placement_for(agent))
+    end
     snapshot = Backup::AgentResticJob.perform_now(agent_id)
     raise Backup::GraphCheckpoint::Error, "First checkpoint did not complete" unless snapshot&.ok?
   rescue Backup::AgentRestic::ResidentBusy

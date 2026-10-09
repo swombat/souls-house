@@ -33,6 +33,7 @@ class AgentRuntimeInteraction < ApplicationRecord
       if Agents::RemoteRuntime.refresh_pending?(agent)
         raise Agent::RuntimeAvailability::Unavailable, "Resident is restarting with new credentials"
       end
+      raise Agent::RuntimeAvailability::Unavailable, "Resident backup is pending" if Backup::VmResident.held?(agent)
       create!(
         agent: agent,
         chat: chat,

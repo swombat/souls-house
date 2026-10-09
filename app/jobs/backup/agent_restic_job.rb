@@ -8,6 +8,9 @@ module Backup
 
       agent = Agent.find(agent_id)
       return unless agent.externally_hosted?
+      if Agents::RemoteRuntime.remote?(agent)
+        return VmResident.issue!(placement: Agents::RemoteRuntime.placement_for(agent))
+      end
 
       if agent.memory_vault && agent.agent_runtime_interactions.active.exists?
         raise Backup::AgentRestic::ResidentBusy, "Backup requires an idle resident"
