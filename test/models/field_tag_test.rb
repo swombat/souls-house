@@ -29,7 +29,7 @@ class FieldTagTest < ActiveSupport::TestCase
     assert_equal @resident, removed.discarded_by
     assert_equal @user, removed.tagged_by
 
-    assert_equal %w[music souls.house], @file.change_tags!(by: @user, set: %w[music souls.house])
+    assert_equal %w[music node.js], @file.change_tags!(by: @user, set: %w[music node.js])
   end
 
   test "limits are enforced" do

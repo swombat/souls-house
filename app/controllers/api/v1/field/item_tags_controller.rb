@@ -5,7 +5,7 @@ module Api
       #
       #   PATCH /api/v1/field/files/:file_id/tags            { add: ["life"], remove: ["zar"] }
       #   PATCH /api/v1/field/recordings/:recording_id/tags  { tags: ["life", "music"] }
-      #   PATCH /api/v1/whiteboards/:whiteboard_id/tags      { add: ["souls.house"] }
+      #   PATCH /api/v1/whiteboards/:whiteboard_id/tags      { add: ["node.js"] }
       #
       # People and residents both may; a name that isn't a tag yet becomes one,
       # and each tagging keeps who added it. A resident tags in its home

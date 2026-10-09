@@ -155,8 +155,8 @@ class FieldSearchTest < ActiveSupport::TestCase
   test "a title that is a filename is found by its words, and dotted names still match themselves" do
     @recording.update!(title: "2024-11-02_zar-standup.m4a")
     assert_equal [ @recording.id ], search(query: "zar standup", kinds: [ "recording" ]).results.map { |r| r.record.id }
-    @note.update!(name: "souls.house pitch")
-    assert_equal [ @note.id ], search(query: "souls.house").results.map { |r| r.record.id }
+    @note.update!(name: "node.js pitch")
+    assert_equal [ @note.id ], search(query: "node.js").results.map { |r| r.record.id }
   end
 
   test "parse_fragment collapses whitespace and keeps offsets exact" do

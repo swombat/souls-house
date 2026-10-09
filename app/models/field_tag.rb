@@ -1,5 +1,5 @@
 # A tag in an account's Field: a name many items can carry ("life", "zar",
-# "souls.house"). Tags are the account's, not any one item's, which is why
+# "music"). Tags are the account's, not any one item's, which is why
 # changing a tag itself is a person's act (FieldTag#rename!, #discard_by!):
 # it changes every item that carries it, including other people's.
 #

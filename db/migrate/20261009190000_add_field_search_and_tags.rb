@@ -101,7 +101,7 @@ class AddFieldSearchAndTags < ActiveRecord::Migration[8.1]
   # Postgres reads "orchid-invoice.txt" or "2024-11-02 board.md" as single
   # file tokens, so "orchid" or "board" would never match a name. Titles often
   # are filenames (they default to one), so names are indexed twice: as
-  # written (so "souls.house" still matches itself) and with . _ - / as spaces.
+  # written (so "node.js" still matches itself) and with . _ - / as spaces.
   def split_names(expression)
     # repeat(), not a literal: the expression is squished, which would
     # collapse a run of spaces and turn the mapping into a deletion.
