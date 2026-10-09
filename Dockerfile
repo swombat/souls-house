@@ -85,6 +85,7 @@ COPY Rakefile config.ru VERSION ./
 COPY config/ config/
 COPY agent-runtime/command_preview_policy.json agent-runtime/command_preview_policy.json
 COPY host-runner/souls_house_runner.py host-runner/souls_house_runner.py
+COPY host-runner/backup_proxy.py host-runner/backup_proxy.py
 COPY bin/ bin/
 COPY *.config.js .
 COPY vite.config.ts .

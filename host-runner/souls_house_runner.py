@@ -57,7 +57,7 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 
 # The runner's whole vocabulary. Anything else is refused here, not only in
 # Rails.
-COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn"})
+COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "backup_resident"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
 
 
@@ -471,7 +471,7 @@ class ResidentHost:
     """Carries out the five commands. Docker and HTTP are injected so tests
     can see exactly what would run."""
 
-    def __init__(self, state_dir, docker=_docker, http=_http, sleep=time.sleep, load_image=None):
+    def __init__(self, state_dir, docker=_docker, http=_http, sleep=time.sleep, load_image=None, backup_request=None):
         self.state_dir = state_dir
         self.docker = docker
         self.http = http
@@ -479,6 +479,7 @@ class ResidentHost:
         # load_image(image_id) streams the image from the house into
         # `docker load`; returns (ok, error).
         self.load_image = load_image
+        self.backup_request = backup_request
 
     # Secrets for a resident live only in its root-owned env file.
     def _env_path(self, name):
@@ -605,6 +606,12 @@ class ResidentHost:
     def cancel_turn(self, payload):
         return self._turn("DELETE", payload)
 
+    def backup_resident(self, payload):
+        from backup_proxy import run_backup
+        if self.backup_request is None:
+            raise BadCommand("backup transport unavailable")
+        return run_backup(payload, self, signed_request=self.backup_request)
+
 
 def execute_command(command, state, host):
     """Validate, dedupe, refuse stale generations, run, remember. Returns the
@@ -627,8 +634,12 @@ def execute_command(command, state, host):
             result = {"outcome": "done", "result": getattr(host, command["kind"])(command["payload"])}
         except BadCommand as error:
             result = {"outcome": "refused", "error": str(error)}
+            if isinstance(getattr(error, "result", None), dict):
+                result["result"] = error.result
         except CommandFailed as error:
             result = {"outcome": "failed", "error": str(error)}
+            if isinstance(getattr(error, "result", None), dict):
+                result["result"] = error.result
         except Exception as error:  # the effect may or may not have happened
             result = {"outcome": "unknown", "error": f"{type(error).__name__}: {error}"}
     state.record(command["id"], command["generation"], result)
@@ -806,7 +817,9 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
         # Heartbeats keep their cadence; between them the runner polls for
         # commands, pausing COMMAND_IDLE_SECONDS when there is nothing to do.
         state = CommandState(state_dir)
-        host = ResidentHost(state_dir, sleep=sleep, load_image=docker_load_from_house(config, key))
+        from backup_proxy import make_signed_request
+        host = ResidentHost(state_dir, sleep=sleep, load_image=docker_load_from_house(config, key),
+                            backup_request=make_signed_request(config, key, signed_headers))
         last_beat = None
         while max_heartbeats is None or sent < max_heartbeats:
             if last_beat is None or clock() - last_beat >= HEARTBEAT_SECONDS:
@@ -829,4 +842,6 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
 
 
 if __name__ == "__main__":
+    # Keep one set of command exception types for the backup module.
+    sys.modules.setdefault("souls_house_runner", sys.modules[__name__])
     sys.exit(main())

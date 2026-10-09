@@ -97,6 +97,7 @@ module RunnerUserData
         file("/etc/systemd/system/souls-house-firewall.service", FIREWALL_UNIT, "0644"),
         file("/etc/systemd/system/souls-house-runner.service", SYSTEMD_UNIT, "0644"),
         file("/opt/souls-house-runner/souls_house_runner.py", runner_source, "0755", encode: :gzip),
+        file("/opt/souls-house-runner/backup_proxy.py", File.read(Rails.root.join("host-runner/backup_proxy.py")), "0644", encode: :gzip),
         file("/etc/souls-house-runner/config.json", JSON.generate(config), "0600")
       ],
       "runcmd" => [

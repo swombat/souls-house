@@ -12,6 +12,7 @@ class RunnerUserDataTest < ActiveSupport::TestCase
   test "the production image ships the runner source" do
     dockerfile = Rails.root.join("Dockerfile").read
     assert_includes dockerfile, "COPY host-runner/souls_house_runner.py host-runner/souls_house_runner.py"
+    assert_includes dockerfile, "COPY host-runner/backup_proxy.py host-runner/backup_proxy.py"
     assert_includes dockerfile, "COPY --from=build --chown=rails:rails /rails/host-runner /rails/host-runner"
   end
 
@@ -43,6 +44,8 @@ class RunnerUserDataTest < ActiveSupport::TestCase
     runner = parsed["write_files"].find { |f| f["path"] == "/opt/souls-house-runner/souls_house_runner.py" }
     assert_equal "gz+b64", runner["encoding"]
     assert_equal File.read(Rails.root.join("host-runner/souls_house_runner.py")), Zlib.gunzip(Base64.strict_decode64(runner["content"]))
+    backup = parsed["write_files"].find { |f| f["path"] == "/opt/souls-house-runner/backup_proxy.py" }
+    assert_equal File.read(Rails.root.join("host-runner/backup_proxy.py")), Zlib.gunzip(Base64.strict_decode64(backup["content"]))
   end
 
   test "the command channel is on only for a literal true" do
@@ -56,7 +59,8 @@ class RunnerUserDataTest < ActiveSupport::TestCase
   # create request. The real runner must fit with room to grow; a runner that
   # outgrew it would make every VM order fail (#238 part 1 nearly did).
   test "the document with the real runner fits Hetzner's limit with margin" do
-    assert_operator render.bytesize, :<, RunnerUserData::HETZNER_USER_DATA_LIMIT * 3 / 4
+    # The backup module is embedded too; reserve at least 2 KiB for config.
+    assert_operator render.bytesize, :<, RunnerUserData::HETZNER_USER_DATA_LIMIT - 2.kilobytes
     assert_equal render, render
   end
 

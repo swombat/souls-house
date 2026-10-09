@@ -7,6 +7,7 @@ module Backup
       return unless Agents::Config.backups_enabled?
 
       Agent.where(runtime: "external").find_each do |agent|
+        next if VmResident.held?(agent)
         next unless due?(agent)
         Backup::AgentResticJob.perform_later(agent.id)
       end
