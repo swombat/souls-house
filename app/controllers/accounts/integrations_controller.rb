@@ -20,8 +20,12 @@ class Accounts::IntegrationsController < ApplicationController
       focused_service: service_definitions.find { |definition| definition.key == params[:connect] }&.as_json,
       can_manage_account: can_manage_account,
       connections: connections.map do |connection|
+        comms = connection.credential_strategy == "connector"
         connection.as_connection_json(current_user: Current.user).merge(
           can_delegate: connection.owner?(Current.user),
+          # Sending as the owner: the owner alone grants it and reads the sends.
+          can_grant_send: comms && connection.owner?(Current.user),
+          comms_sends_url: (account_service_connection_comms_sends_path(current_account, connection.public_id) if comms && connection.owner?(Current.user)),
           residents: agents.map do |agent|
             access = accesses[[ agent.id, connection.id ]]
             {
@@ -29,8 +33,10 @@ class Accounts::IntegrationsController < ApplicationController
               name: agent.name,
               active: agent.active?,
               enabled: access&.enabled? || false,
+              can_send: access&.can_send? || false,
               provisioning_status: access&.provisioning_status,
-              access_update_url: account_agent_service_access_path(current_account, agent, connection.public_id)
+              access_update_url: account_agent_service_access_path(current_account, agent, connection.public_id),
+              send_grant_url: (account_agent_service_access_send_grant_path(current_account, agent, connection.public_id) if comms)
             }
           end
         )

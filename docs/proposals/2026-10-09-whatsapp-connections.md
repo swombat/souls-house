@@ -196,3 +196,32 @@ for 14 days, and how much history a new device receives.
    then the history import and cutover.
 
 Telegram (Telethon user session) follows the same shape in its own room.
+
+## Addendum (sending, PR #264): pacing and grant locking as built
+
+Sending came after milestone 1 (above, "no send code" was milestone 1). Two
+points from review that the code now fixes, recorded here because they change
+what a send may do:
+
+- **Pacing counts dispatch, not request.** The 6/minute and 100/day limits
+  count sends by `dispatched_at`, set when a send moves from `pending` to
+  `unknown` under the connection's row lock. The limit is checked again at
+  that moment. So a backlog of old `pending` claims (requests that died
+  before dispatch) retried together is paced like new sends. A send that
+  dispatch refuses for the limit fails with `refused_at_dispatch_rate_limited`
+  and the connector is not called, like the existing `refused_at_dispatch_*`
+  refusals. It does not stay pending. The send is terminal, so the house never
+  holds a backlog that could later go out without the resident asking again;
+  the resident sends again with a new `client_request_id` when there is room.
+  A send is charged once: a retry of a dispatched send neither calls the
+  connector nor counts again. At claim time a `pending` claim made inside the
+  window also counts, as a reservation, so concurrent new requests over the
+  cap get 429 rather than a record. Refused sends never count.
+- **One lock order for the grant.** Every path that sets or clears `can_send`
+  locks the connection's row first, then the access row, and reads owner,
+  status and `enabled` after both are held: the owner's grant, a resident's
+  access switched on or off, and the withdrawal on disconnect, re-pair,
+  number change or owner change (that one runs after the connection's
+  UPDATE, which holds the row lock). A disable therefore always clears
+  `can_send` and records the withdrawal, and a grant racing an owner change
+  or disconnect is refused or withdrawn, never kept.

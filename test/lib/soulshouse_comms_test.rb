@@ -46,12 +46,55 @@ class SoulshouseCommsTest < ActiveSupport::TestCase
     manifest&.unlink
   end
 
-  test "there is no send command" do
+  test "send posts stdin to the messages endpoint and prints the send record" do
+    stdout = stderr = status = nil
+    request = capture_request('{"send":{"id":"send_1","status":"sent"}}') do |base|
+      with_manifest(base) do |manifest|
+        stdout, stderr, status = Open3.capture3(
+          { "SOULSHOUSE_BEARER_TOKEN" => "hx_test", "SOULSHOUSE_SERVICES_FILE" => manifest },
+          "python3", SCRIPT.to_s, "send", "--chat", "447700900123@s.whatsapp.net", "--text", "-", "--client-request-id", "abc-1",
+          stdin_data: "On my way\nsee you soon\n"
+        )
+      end
+    end
+
+    assert status.success?, stderr
+    assert_equal "sent", JSON.parse(stdout).dig("send", "status")
+    assert_match %r{\APOST /api/v1/service_connections/svc_123/comms/messages }, request[:request_line]
+    assert_equal "Bearer hx_test", request[:headers]["authorization"]
+    assert_equal({ "chat" => "447700900123@s.whatsapp.net", "text" => "On my way\nsee you soon", "client_request_id" => "abc-1" },
+                 JSON.parse(request[:body]))
+  end
+
+  test "send generates a client_request_id when none is given and prints it" do
+    stderr = status = nil
+    request = capture_request('{"send":{"id":"send_1","status":"sent"}}') do |base|
+      with_manifest(base) do |manifest|
+        _stdout, stderr, status = Open3.capture3(
+          { "SOULSHOUSE_BEARER_TOKEN" => "hx_test", "SOULSHOUSE_SERVICES_FILE" => manifest },
+          "python3", SCRIPT.to_s, "send", "--chat", "x", "--text", "-", stdin_data: "hi"
+        )
+      end
+    end
+
+    assert status.success?, stderr
+    generated = JSON.parse(request[:body])["client_request_id"]
+    assert_match(/\Acli-[0-9a-f]{32}\z/, generated)
+    assert_includes stderr, generated
+  end
+
+  test "send reads the text only from stdin and refuses an empty message" do
     _stdout, stderr, status = Open3.capture3(
-      { "SOULSHOUSE_BEARER_TOKEN" => "hx_test" }, "python3", SCRIPT.to_s, "send", "--chat", "x", "hello"
+      { "SOULSHOUSE_BEARER_TOKEN" => "hx_test" }, "python3", SCRIPT.to_s, "send", "--chat", "x", "--text", "hello"
     )
     assert_not status.success?
-    assert_includes stderr, "invalid choice"
+    assert_includes stderr, "stdin"
+
+    _stdout, stderr, status = Open3.capture3(
+      { "SOULSHOUSE_BEARER_TOKEN" => "hx_test" }, "python3", SCRIPT.to_s, "send", "--chat", "x", "--text", "-", stdin_data: "  \n"
+    )
+    assert_not status.success?
+    assert_includes stderr, "empty"
   end
 
   private
@@ -85,7 +128,8 @@ class SoulshouseCommsTest < ActiveSupport::TestCase
         name, value = line.split(":", 2)
         headers[name.downcase] = value.to_s.strip
       end
-      captured << { request_line: request_line, headers: headers }
+      body = headers["content-length"] ? socket.read(headers["content-length"].to_i) : nil
+      captured << { request_line: request_line, headers: headers, body: body }
       socket.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
       socket.close
     ensure

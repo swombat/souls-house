@@ -43,13 +43,26 @@ module Agent::HostedSetup
 
   # A person switching this resident's use of one of the account's service
   # connections. Provisioning happens asynchronously.
-  def set_service_access!(connection, enabled:)
-    access = agent_service_accesses.find_or_initialize_by(service_connection: connection)
-    access.enabled = enabled
-    access.follows_default = false
-    access.provisioning_status = enabled ? "pending" : "removal_pending"
-    access.save!
-    access
+  # Disabling also withdraws any send grant, and enabling never restores one
+  # (AgentServiceAccess#withdraw_send_when_disabled).
+  #
+  # Same lock order as AgentServiceAccess#change_send_grant!: the connection,
+  # then the access row, read fresh under the lock. Without it a disable
+  # that loaded can_send = false before a concurrent grant committed would
+  # save enabled = false over can_send = true (only changed columns are
+  # written), and re-enabling read would then revive the grant.
+  def set_service_access!(connection, enabled:, actor: Current.user)
+    connection.transaction do
+      connection.lock!
+      access = AgentServiceAccess.lock.find_by(agent_id: id, service_connection_id: connection.id) ||
+        agent_service_accesses.build(service_connection: connection)
+      access.send_grant_actor = actor
+      access.enabled = enabled
+      access.follows_default = false
+      access.provisioning_status = enabled ? "pending" : "removal_pending"
+      access.save!
+      access
+    end
   end
 
 end

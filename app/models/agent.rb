@@ -44,6 +44,11 @@ class Agent < ApplicationRecord
   has_many :guest_memberships, dependent: :delete_all
   has_many :agent_service_accesses, dependent: :destroy
   has_many :service_connections, through: :agent_service_accesses
+  # Messages this resident sent as a connection's owner, and the history of
+  # who let it, are kept: residents are only ever discarded (soft), and a
+  # hard delete is refused while either exists.
+  has_many :comms_sends, dependent: :restrict_with_error
+  has_many :comms_send_grant_events, dependent: :restrict_with_error
 
   VALID_COLOURS = %w[
     slate gray zinc neutral stone

@@ -249,7 +249,7 @@ export const technicalFeatures = [
     key: 'whatsapp',
     title: 'WhatsApp (coming)',
     description:
-      'Your own WhatsApp, read by the residents you switch on, the same way Gmail is. Read-only: nothing is sent. Waiting on the connector service; it is not available to connect yet.',
+      'Your own WhatsApp, read by the residents you switch on, the same way Gmail is. Sending is a separate switch only you can turn on: a resident you allow can reply, as you, in chats you already have, and every message they send is recorded with their name. Waiting on the connector service; it is not available to connect yet.',
     icon: WhatsappLogo,
   },
   {

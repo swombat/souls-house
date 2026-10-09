@@ -14,6 +14,10 @@ class ServiceConnection < ApplicationRecord
   has_many :comms_chats, dependent: :restrict_with_error
   has_many :comms_messages, dependent: :restrict_with_error
   has_many :comms_request_nonces, dependent: :delete_all
+  # What residents said as the owner, and who let them, are kept like comms
+  # history.
+  has_many :comms_sends, dependent: :restrict_with_error
+  has_many :comms_send_grant_events, dependent: :restrict_with_error
 
   encrypts :credential_payload
   encrypts :pairing_qr
@@ -32,6 +36,9 @@ class ServiceConnection < ApplicationRecord
   validate :provider_contract
 
   after_create_commit :apply_default_accesses
+  # In the same transaction as the change, so no send can be claimed against
+  # a connection whose number or owner has changed.
+  after_update :withdraw_send_grants, if: :send_authority_changed?
   after_update_commit :reconcile_authority_change, if: :runtime_authority_changed?
 
   scope :connected, -> { where(status: "connected") }
@@ -113,6 +120,13 @@ class ServiceConnection < ApplicationRecord
     enabled ? provisionable_by?(user) : manageable_by?(user)
   end
 
+  # Sending speaks as the owner, so only the owner can grant it: account
+  # admins and freely_provisionable confer nothing. Anyone who can manage the
+  # connection can withdraw it.
+  def send_grant_changeable_by?(user, can_send:)
+    can_send ? owner?(user) : manageable_by?(user)
+  end
+
   def runtime_entry(agent:)
     {
       "connection_id" => public_id,
@@ -183,9 +197,10 @@ class ServiceConnection < ApplicationRecord
   end
 
   # Disconnected connections are destroyed unless they hold records the house
-  # keeps: reviewed GitHub import provenance, or comms history.
+  # keeps: reviewed GitHub import provenance, comms history, or the history
+  # of who was allowed to send as the owner.
   def retained_after_disconnect?
-    github_resident_imports.exists? || comms_chats.exists?
+    github_resident_imports.exists? || comms_chats.exists? || comms_send_grant_events.exists?
   end
 
   # The QR the owner scans to pair. Never served once expired.
@@ -264,6 +279,35 @@ class ServiceConnection < ApplicationRecord
     saved_change_to_credential_payload? ||
       saved_change_to_status? ||
       saved_change_to_credential_revision?
+  end
+
+  # No revival (spec §5): a grant to speak as the owner does not survive the
+  # connection leaving "connected" (disconnect, logout, re-pair), a change of
+  # number, or a change of owner.
+  def send_authority_changed?
+    (saved_change_to_status? && status != "connected") ||
+      saved_change_to_connected_by_user_id? ||
+      saved_change_to_external_subject_id? ||
+      saved_change_to_external_identity?
+  end
+
+  def withdraw_send_grants
+    reason = if saved_change_to_connected_by_user_id?
+      "owner_changed"
+    elsif status == "revoked"
+      "disconnected"
+    else
+      "repaired"
+    end
+    # Lock order (AgentServiceAccess#change_send_grant!): this runs after the
+    # UPDATE, which holds this connection's row lock until commit, so the
+    # access rows are locked second. A grant that locked the connection
+    # first has committed by now and is withdrawn here; one that comes later
+    # waits, then sees the new owner or status and is refused.
+    agent_service_accesses.where(can_send: true).lock.each do |access|
+      access.update_columns(can_send: false, updated_at: Time.current)
+      CommsSendGrantEvent.record!(access, granted: false, actor: nil, reason: reason)
+    end
   end
 
   def reconcile_authority_change

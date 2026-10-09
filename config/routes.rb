@@ -116,6 +116,8 @@ Rails.application.routes.draw do
     resources :service_authorizations, only: :create
     resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts do
       resource :pairing, only: :show, controller: "service_connection_pairings"
+      # What residents sent as the owner, and the send grant history. Owner only.
+      resource :comms_sends, only: :show, controller: "service_connection_sends"
     end
     resources :github_resident_imports, only: [ :new, :create, :show ] do
       post :approve, on: :member
@@ -182,7 +184,10 @@ Rails.application.routes.draw do
           post :code
         end
         resource :provider_subscription_usage, only: :show
-        resources :service_accesses, only: :update
+        resources :service_accesses, only: :update do
+          # Sending as a comms connection's owner: granted by the owner only.
+          resource :send_grant, only: :update, controller: "service_send_grants"
+        end
         resource :tailnet, only: [ :show, :create ]
         resources :memories, only: [ :create ] do
           resource :discard, only: [ :create, :destroy ], module: :memories
@@ -397,6 +402,7 @@ Rails.application.routes.draw do
           post :orientation_retry
           get :memory_overview
           patch "service_accesses/:connection_id", action: :service_access, as: :service_access
+          patch "service_accesses/:connection_id/send_grant", action: :service_send_grant, as: :service_send_grant
         end
       end
       resources :telegram_conversations, only: :show
@@ -419,7 +425,7 @@ Rails.application.routes.draw do
         resource :access_token, only: :show, controller: "service_connection_tokens"
         namespace :comms do
           resources :chats, only: :index
-          resources :messages, only: :index
+          resources :messages, only: %i[index create]
         end
       end
       resources :whiteboards, only: [ :index, :show, :create, :update, :destroy ] do
