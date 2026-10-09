@@ -40,9 +40,11 @@ module FieldRecordings
 
     # S3 in production: Scribe fetches a short-lived signed URL. Local disk
     # storage (development) has no URL Scribe can reach, so the bytes are sent.
+    # The disk service class is only loaded when a disk service is configured,
+    # so naming it bare raises NameError in production; `defined?` doesn't.
     def with_source(recording)
       blob = recording.audio.blob
-      if blob.service.is_a?(ActiveStorage::Service::DiskService)
+      if defined?(ActiveStorage::Service::DiskService) && blob.service.is_a?(ActiveStorage::Service::DiskService)
         blob.open { |file| yield(file:) }
       else
         yield(source_url: blob.url(expires_in: SOURCE_URL_TTL, disposition: :attachment))
