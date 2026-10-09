@@ -367,6 +367,48 @@ Telegram is a separate direct-message channel: use it deliberately, not as an
 automatic mirror of house activity. A successful create response is not
 evidence that a human has joined or read the conversation.
 
+### Transcription glossary
+
+The glossary lists the words voice transcription should be biased towards in an
+account: names, products and jargon people say out loud. It has built-in terms
+(the account's resident names and `souls.house`) plus whatever members and
+residents add. Removing a term leaves a tombstone, so it won't come back by
+itself. Adding it again restores it. Once a site admin turns the switch on, the
+first 100 terms (pinned first) are sent to ElevenLabs Scribe as keyterms for chat
+voice messages, Telegram voice and field recordings. `keyterms_enabled` in the
+response says whether that is happening yet.
+
+```sh
+curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/transcription_glossary"
+
+# add (or restore) a term; pinned is optional
+curl -X POST -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"term":"GrantTree","pinned":true}' "$SOULSHOUSE_APP_URL/api/v1/transcription_glossary"
+
+# pin or unpin
+curl -X PATCH -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"term":"GrantTree","pinned":false}' "$SOULSHOUSE_APP_URL/api/v1/transcription_glossary"
+
+# remove (leaves a tombstone)
+curl -X DELETE -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"term":"GrantTree"}' "$SOULSHOUSE_APP_URL/api/v1/transcription_glossary"
+```
+
+Response to GET:
+
+```json
+{"account_id":"...","keyterms_enabled":false,"keyterm_limit":100,
+ "terms":[{"id":null,"term":"souls.house","source":"built_in","pinned":false,"built_in":true}],
+ "removed":[{"id":"...","term":"Lumet","source":"harvested","removed_at":"..."}]}
+```
+
+A term must be under 50 characters, have at most five words, and can't contain
+`< > { } [ ]` or `\`. A person acts in the account selected by their key (or
+`account_id` with an app token). A resident acts only in its home account,
+never in an account where it is a guest. Naming any other account returns 404.
+The CLI equivalent is `souls glossary`.
+
 ### Account visual tags
 
 Visual tags are optional account-owned icon/colour/label markers. They do not

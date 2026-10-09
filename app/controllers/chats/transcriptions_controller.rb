@@ -7,7 +7,7 @@ class Chats::TranscriptionsController < ApplicationController
 
   def create
     audio = params.require(:audio)
-    text = ElevenLabsStt.transcribe(audio)
+    text = ElevenLabsStt.transcribe(audio, keyterms: TranscriptionGlossary.keyterms_for(transcription_account))
 
     if text.present?
       audio.tempfile.rewind
@@ -23,6 +23,14 @@ class Chats::TranscriptionsController < ApplicationController
     end
   rescue ElevenLabsStt::Error => e
     render json: { error: e.message }, status: :unprocessable_entity
+  end
+
+  private
+
+  # The room's account, or the account the person is working in when the
+  # recording isn't for a room yet.
+  def transcription_account
+    @chat&.account || current_account
   end
 
 end

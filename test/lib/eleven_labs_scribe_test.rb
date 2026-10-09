@@ -53,4 +53,20 @@ class ElevenLabsScribeTest < ActiveSupport::TestCase
     end
   end
 
+  test "submit sends one keyterms field per glossary term, and none without a glossary" do
+    sent = []
+    scribe = ElevenLabsScribe.new
+    scribe.define_singleton_method(:perform) do |request, expect:|
+      sent << request.instance_variable_get(:@body_data)
+      { "request_id" => "req_1" }
+    end
+    ElevenLabsScribe.stub(:webhook_id, "wh_1") do
+      scribe.submit(metadata: { recording: "r1" }, source_url: "https://example.test/a", keyterms: [ "Lume", "souls.house" ])
+      scribe.submit(metadata: { recording: "r2" }, source_url: "https://example.test/b")
+    end
+
+    assert_equal [ [ "keyterms", "Lume" ], [ "keyterms", "souls.house" ] ], sent.first.select { |name, _| name == "keyterms" }
+    assert_empty sent.last.select { |name, _| name == "keyterms" }
+  end
+
 end

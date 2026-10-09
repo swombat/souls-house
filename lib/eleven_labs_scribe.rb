@@ -17,7 +17,9 @@ class ElevenLabsScribe
   Submission = Struct.new(:request_id, :transcription_id, keyword_init: true)
 
   # Starts an async transcription. Exactly one of source_url / file.
-  def submit(metadata:, source_url: nil, file: nil, num_speakers: nil)
+  # `keyterms`: the account glossary's bias list (TranscriptionGlossary),
+  # sent as one repeated form field per term. Empty sends nothing.
+  def submit(metadata:, source_url: nil, file: nil, num_speakers: nil, keyterms: [])
     form = [
       [ "model_id", MODEL_ID ],
       [ "diarize", "true" ],
@@ -28,6 +30,7 @@ class ElevenLabsScribe
     ]
     form << [ "webhook_id", self.class.webhook_id ]
     form << [ "num_speakers", num_speakers.to_s ] if num_speakers
+    Array(keyterms).each { |term| form << [ "keyterms", term ] }
     if source_url
       form << [ "cloud_storage_url", source_url ]
     else

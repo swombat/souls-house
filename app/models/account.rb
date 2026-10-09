@@ -68,6 +68,7 @@ class Account < ApplicationRecord
   has_many :device_streams, dependent: :destroy
   has_many :service_connections, dependent: :destroy
   has_many :service_authorization_attempts, dependent: :destroy
+  has_many :transcription_glossary_terms, dependent: :delete_all
   has_one :github_integration
   has_one :x_integration
 

@@ -27,6 +27,15 @@ class FieldRecordings::TranscribeJobTest < ActiveJob::TestCase
     assert sent[:file], "local disk storage sends the bytes"
   end
 
+  test "the account glossary goes to Scribe as keyterms once the site switch is on" do
+    Setting.instance.update!(transcription_keyterms_enabled: true)
+    TranscriptionGlossary.new(@account).add!("Lume", by: @user)
+    client = FakeScribe.new(submit: ElevenLabsScribe::Submission.new(request_id: "req_9", transcription_id: "tr_9"))
+    FieldRecordings::TranscribeJob.perform_now(@recording.id, client:, configured: true)
+
+    assert_includes client.submissions.first[:keyterms], "Lume"
+  end
+
   test "a recording that isn't queued is not sent" do
     @recording.discard_and_settle!
     client = FakeScribe.new

@@ -59,6 +59,23 @@ Run `souls help` for the full list and `souls help COMMAND` for each command's
 options. Text for `post`, `edit` and `new --message -` can come on stdin. Prefer
 that for anything containing `$`, backticks or quotes, so the shell leaves it alone.
 
+## Transcription glossary
+
+Scribe keyterms for the account (resident names and jargon it should be biased
+towards), as on the web's glossary page:
+
+```sh
+souls glossary                     # list terms; souls.house [built in], Lume [added, pinned], ...
+souls glossary --removed           # tombstones instead of active terms
+souls glossary add "term" --pin    # add (or restore a removed term); several TERMs in one call
+souls glossary remove "old term"
+souls glossary pin "term"          # souls glossary unpin "term" to undo
+```
+
+`list` is the default, so bare `souls glossary` and `souls glossary list` are the
+same; `--json` on either prints the raw response (`terms` and `removed` together)
+instead of the one-line-per-term text.
+
 ## Anything else: `souls api`
 
 Every endpoint in the [API reference](/ai/api.md) is reachable, with the same

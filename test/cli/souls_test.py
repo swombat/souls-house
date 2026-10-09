@@ -484,5 +484,106 @@ class ResidentWatchTest(CliTestCase):
         self.assertEqual(printed, [])
 
 
+class GlossaryTest(CliTestCase):
+    def test_list_prints_pinned_and_source_one_per_line(self):
+        self.house.route("GET", "/api/v1/transcription_glossary", body={
+            "account_id": "a1", "keyterms_enabled": True, "keyterm_limit": 100,
+            "terms": [
+                {"id": None, "term": "souls.house", "source": "built_in", "pinned": False, "built_in": True},
+                {"id": "t1", "term": "Lume", "source": "manual", "pinned": True, "built_in": False,
+                 "sightings_count": 0, "last_seen_at": None, "created_at": "2026-10-01T00:00:00Z", "created_by": "Daniel"},
+            ],
+            "removed": [],
+        })
+        code, out, _ = self.run_cli("glossary")
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines(), ["souls.house  [built in]", "Lume  [added, pinned]"])
+        self.assertEqual(self.last()["method"], "GET")
+        self.assertEqual(self.last()["path"], "/api/v1/transcription_glossary")
+
+    def test_list_is_the_same_as_bare_glossary(self):
+        self.house.route("GET", "/api/v1/transcription_glossary",
+                          body={"terms": [{"term": "x", "source": "manual", "pinned": False}], "removed": []})
+        code1, out1, _ = self.run_cli("glossary")
+        code2, out2, _ = self.run_cli("glossary", "list")
+        self.assertEqual((code1, out1), (code2, out2))
+
+    def test_list_removed_lists_the_tombstones_not_the_active_terms(self):
+        self.house.route("GET", "/api/v1/transcription_glossary", body={
+            "terms": [{"term": "active", "source": "manual", "pinned": False}],
+            "removed": [{"id": "t2", "term": "gone", "source": "harvested", "pinned": False,
+                         "removed_at": "2026-09-01T12:00:00Z"}],
+        })
+        code, out, _ = self.run_cli("glossary", "--removed")
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines(), ["gone  [harvested, removed 2026-09-01T12:00]"])
+
+    def test_list_json_prints_the_raw_response_account_scoped(self):
+        self.house.route("GET", "/api/v1/transcription_glossary", body={"terms": [], "removed": [], "keyterms_enabled": True})
+        code, out, _ = self.run_cli("--account", "A1", "glossary", "--json")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), {"terms": [], "removed": [], "keyterms_enabled": True})
+        self.assertIn("account_id=A1", self.last()["query"])
+
+    def test_add_sends_term_and_pin_as_a_json_body(self):
+        self.house.route("POST", "/api/v1/transcription_glossary", status=201, body={"term": {"id": "t9", "term": "widget"}})
+        code, out, _ = self.run_cli("glossary", "add", "widget", "--pin")
+        self.assertEqual(code, 0)
+        req = self.last()
+        self.assertEqual(req["method"], "POST")
+        self.assertEqual(req["path"], "/api/v1/transcription_glossary")
+        self.assertEqual(json.loads(req["body"]), {"term": "widget", "pinned": True})
+        self.assertEqual(json.loads(out)["term"]["id"], "t9")
+
+    def test_add_without_pin_sends_pinned_false(self):
+        self.house.route("POST", "/api/v1/transcription_glossary", status=201, body={"term": {"id": "t9"}})
+        self.run_cli("glossary", "add", "widget")
+        self.assertEqual(json.loads(self.last()["body"]), {"term": "widget", "pinned": False})
+
+    def test_add_takes_several_terms_one_request_each(self):
+        self.house.route("POST", "/api/v1/transcription_glossary", status=201, body={"term": {"id": "t9"}})
+        code, _, _ = self.run_cli("glossary", "add", "alpha", "beta two", "--pin")
+        self.assertEqual(code, 0)
+        bodies = [json.loads(r["body"]) for r in self.house.requests]
+        self.assertEqual(bodies, [{"term": "alpha", "pinned": True}, {"term": "beta two", "pinned": True}])
+
+    def test_add_with_no_terms_is_a_usage_error_without_a_request(self):
+        code, _, err = self.run_cli("glossary", "add")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertEqual(self.house.requests, [])
+        self.assertIn("at least one TERM", err)
+
+    def test_remove_sends_term_as_a_json_body_on_delete(self):
+        self.house.route("DELETE", "/api/v1/transcription_glossary", body={"removed": {"term": "widget", "removed_at": "now"}})
+        code, out, _ = self.run_cli("glossary", "remove", "widget")
+        self.assertEqual(code, 0)
+        req = self.last()
+        self.assertEqual(req["method"], "DELETE")
+        self.assertEqual(req["path"], "/api/v1/transcription_glossary")
+        self.assertEqual(json.loads(req["body"]), {"term": "widget"})
+        self.assertEqual(json.loads(out)["removed"]["term"], "widget")
+
+    def test_pin_sends_pinned_true(self):
+        self.house.route("PATCH", "/api/v1/transcription_glossary", body={"term": {"term": "widget", "pinned": True}})
+        code, out, _ = self.run_cli("glossary", "pin", "widget")
+        self.assertEqual(code, 0)
+        req = self.last()
+        self.assertEqual(req["method"], "PATCH")
+        self.assertEqual(json.loads(req["body"]), {"term": "widget", "pinned": True})
+        self.assertTrue(json.loads(out)["term"]["pinned"])
+
+    def test_unpin_sends_pinned_false(self):
+        self.house.route("PATCH", "/api/v1/transcription_glossary", body={"term": {"term": "widget", "pinned": False}})
+        code, _, _ = self.run_cli("glossary", "unpin", "widget")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(self.last()["body"]), {"term": "widget", "pinned": False})
+
+    def test_pin_with_more_than_one_term_is_a_usage_error_without_a_request(self):
+        code, _, err = self.run_cli("glossary", "pin", "widget", "gadget")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertEqual(self.house.requests, [])
+        self.assertIn("exactly one TERM", err)
+
+
 if __name__ == "__main__":
     unittest.main()

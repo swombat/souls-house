@@ -42,6 +42,7 @@ class Admin::SettingsController < ApplicationController
       :allow_agents,
       :show_usage_in_chat,
       :safeguard_conversations_enabled,
+      :transcription_keyterms_enabled,
       :follow_through_scope,
       :logo
     )

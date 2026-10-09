@@ -143,4 +143,25 @@ class ElevenLabsSttTest < ActiveSupport::TestCase
     assert_requested request_stub
   end
 
+  test "sends each keyterm as its own form field, and none when there are none" do
+    with_keyterms = ElevenLabsStt.new.form_fields(@audio, keyterms: [ "Lume", "souls.house" ])
+    assert_equal [ [ "keyterms", "Lume" ], [ "keyterms", "souls.house" ] ], with_keyterms.select { |name, _| name == "keyterms" }
+    assert_equal "file", with_keyterms.last.first
+
+    assert_empty ElevenLabsStt.new.form_fields(@audio).select { |name, _| name == "keyterms" }
+  end
+
+  test "transcribe passes the keyterms through to the request" do
+    stub_request(:post, @api_url).to_return(status: 200, body: { text: "Lume" }.to_json)
+    received = nil
+    stt = ElevenLabsStt.new
+    original = stt.method(:form_fields)
+    stt.define_singleton_method(:form_fields) { |audio, keyterms: []| received = keyterms; original.call(audio, keyterms:) }
+
+    Rails.application.credentials.stub(:dig, "test-api-key") do
+      assert_equal "Lume", stt.transcribe(@audio, keyterms: [ "Lume" ])
+    end
+    assert_equal [ "Lume" ], received
+  end
+
 end

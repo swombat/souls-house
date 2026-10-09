@@ -19,24 +19,18 @@ class ElevenLabsStt
     SystemCallError
   ].freeze
 
-  def self.transcribe(audio_file)
-    new.transcribe(audio_file)
+  # `keyterms`: the account glossary's bias list (TranscriptionGlossary),
+  # sent as one repeated form field per term. Empty sends nothing.
+  def self.transcribe(audio_file, keyterms: [])
+    new.transcribe(audio_file, keyterms:)
   end
 
-  def transcribe(audio_file)
+  def transcribe(audio_file, keyterms: [])
     uri = URI(API_URL)
 
     request = Net::HTTP::Post.new(uri)
     request["xi-api-key"] = api_key
-    request.set_form(
-      [
-        [ "model_id", MODEL_ID ],
-        [ "tag_audio_events", "false" ],
-        [ "timestamps_granularity", "none" ],
-        [ "file", audio_file, { filename: filename_for(audio_file), content_type: content_type_for(audio_file) } ]
-      ],
-      "multipart/form-data"
-    )
+    request.set_form(form_fields(audio_file, keyterms:), "multipart/form-data")
 
     response = begin
       Net::HTTP.start(uri.hostname, uri.port, use_ssl: true,
@@ -47,6 +41,17 @@ class ElevenLabsStt
     end
 
     handle_response(response)
+  end
+
+  # The multipart fields, one "keyterms" field per term.
+  def form_fields(audio_file, keyterms: [])
+    form = [
+      [ "model_id", MODEL_ID ],
+      [ "tag_audio_events", "false" ],
+      [ "timestamps_granularity", "none" ]
+    ]
+    Array(keyterms).each { |term| form << [ "keyterms", term ] }
+    form << [ "file", audio_file, { filename: filename_for(audio_file), content_type: content_type_for(audio_file) } ]
   end
 
   private

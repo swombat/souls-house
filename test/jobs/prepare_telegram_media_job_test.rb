@@ -87,7 +87,7 @@ class PrepareTelegramMediaJobTest < ActiveSupport::TestCase
     stub_telegram_download("voice/file.webm", file_fixture("test_audio.webm").binread)
     received = nil
 
-    ElevenLabsStt.stub :transcribe, ->(upload) {
+    ElevenLabsStt.stub :transcribe, ->(upload, **) {
       received = [ upload.original_filename, upload.content_type ]
       "Machine words"
     } do

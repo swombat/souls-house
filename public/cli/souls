@@ -318,6 +318,18 @@ def conversation_line(conv):
     return f"{conv.get('id')}  {conv.get('updated_at', '')[:16]}  {conv.get('title') or '(untitled)'}{extra}"
 
 
+GLOSSARY_SOURCE_LABELS = {"built_in": "built in", "manual": "added", "correction": "correction", "harvested": "harvested"}
+
+
+def glossary_line(term):
+    bits = [GLOSSARY_SOURCE_LABELS.get(term.get("source"), term.get("source") or "?")]
+    if term.get("pinned"):
+        bits.append("pinned")
+    if term.get("removed_at"):
+        bits.append(f"removed {term['removed_at'][:16]}")
+    return f"{term.get('term')}  [{', '.join(bits)}]"
+
+
 # ---------------------------------------------------------------- commands
 
 def cmd_login(client, args):
@@ -575,6 +587,30 @@ def cmd_residents(client, args):
         emit(client.get("agents"))
 
 
+def cmd_glossary(client, args):
+    action = args.glossary_command
+    if action == "list":
+        data = client.get("transcription_glossary")
+        if args.json:
+            emit(data)
+        else:
+            for term in (data.get("removed") if args.removed else data.get("terms")) or []:
+                print(glossary_line(term))
+        return
+    if not args.terms:
+        raise CliError("give at least one TERM", EXIT_USAGE)
+    if action == "add":
+        for term in args.terms:
+            emit(client.post("transcription_glossary", json_body={"term": term, "pinned": args.pin}))
+    elif action == "remove":
+        for term in args.terms:
+            emit(client.delete("transcription_glossary", json_body={"term": term}))
+    else:  # pin / unpin
+        if len(args.terms) != 1:
+            raise CliError(f"souls glossary {action} takes exactly one TERM", EXIT_USAGE)
+        emit(client.patch("transcription_glossary", json_body={"term": args.terms[0], "pinned": action == "pin"}))
+
+
 def cmd_download(client, args):
     body = client.request("GET", args.path, raw=True)
     if args.output in (None, "-"):
@@ -635,7 +671,7 @@ COMMAND_GROUPS = [
     ("Rooms", ["rooms", "read", "new", "post", "edit", "delete", "wake", "watch", "changes", "activity",
                "rename", "archive", "unarchive", "discard", "restore", "fork", "search"]),
     ("Attention", ["attention", "dismiss", "invitations"]),
-    ("Other", ["residents", "download", "api"]),
+    ("Other", ["residents", "glossary", "download", "api"]),
 ]
 
 
@@ -761,6 +797,14 @@ def build_parser():
 
     p = add("residents", cmd_residents, "List residents you can see, or show one")
     p.add_argument("id", nargs="?")
+
+    p = add("glossary", cmd_glossary, "The account's transcription glossary: list, add, remove, pin, unpin")
+    p.add_argument("glossary_command", nargs="?", choices=["list", "add", "remove", "pin", "unpin"],
+                   default="list", metavar="list|add|remove|pin|unpin")
+    p.add_argument("terms", nargs="*", metavar="TERM", help="a term (quote multiword terms); add/remove take several, pin/unpin take one")
+    p.add_argument("--pin", action="store_true", help="with add, pin the term(s)")
+    p.add_argument("--removed", action="store_true", help="with list, show removed terms instead of active ones")
+    p.add_argument("--json", action="store_true", help="with list, print the raw response")
 
     p = add("download", cmd_download, "Download an attachment or file by its download_path")
     p.add_argument("path", help="e.g. /api/v1/conversations/X/messages/Y/attachments/Z")

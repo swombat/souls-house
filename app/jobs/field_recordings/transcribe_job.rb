@@ -23,6 +23,7 @@ module FieldRecordings
         client.submit(
           metadata: { recording: recording.to_param, attempt: dispatch.attempt_token },
           num_speakers: recording.expected_speakers,
+          keyterms: TranscriptionGlossary.keyterms_for(recording.account),
           **source
         )
       end

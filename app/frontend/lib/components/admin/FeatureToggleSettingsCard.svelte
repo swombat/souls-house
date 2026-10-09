@@ -32,6 +32,12 @@
       description:
         'Check new resident posts in conversations for generic provider safeguard scripts, as Telegram already does. Turning it off stops new checks only; existing labels, reclaims and pending resets keep working.',
     },
+    {
+      id: 'transcription_keyterms_enabled',
+      label: 'Use account glossaries in transcription',
+      description:
+        "Send each account's glossary to ElevenLabs as keyterms when transcribing voice messages, Telegram voice and field recordings. Keyterms add 20% to transcription cost. Leave off until the audio evaluation shows they help.",
+    },
   ];
 </script>
 
