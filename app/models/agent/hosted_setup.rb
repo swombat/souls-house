@@ -43,8 +43,11 @@ module Agent::HostedSetup
 
   # A person switching this resident's use of one of the account's service
   # connections. Provisioning happens asynchronously.
-  def set_service_access!(connection, enabled:)
+  # Disabling also withdraws any send grant, and enabling never restores one
+  # (AgentServiceAccess#withdraw_send_when_disabled).
+  def set_service_access!(connection, enabled:, actor: Current.user)
     access = agent_service_accesses.find_or_initialize_by(service_connection: connection)
+    access.send_grant_actor = actor
     access.enabled = enabled
     access.follows_default = false
     access.provisioning_status = enabled ? "pending" : "removal_pending"

@@ -5,6 +5,9 @@ class CommsMessage < ApplicationRecord
 
   belongs_to :service_connection
   belongs_to :comms_chat
+  # Attribution, not body: set when the echo and the send acknowledgement
+  # meet, whichever arrives second. The body is never rewritten.
+  belongs_to :comms_send, optional: true
 
   encrypts :sender_id, :sender_name, :body, :caption
 
@@ -21,7 +24,9 @@ class CommsMessage < ApplicationRecord
       sent_at: sent_at.utc.iso8601,
       body: body,
       media_kind: media_kind,
-      caption: caption
+      caption: caption,
+      from_me: from_me,
+      sent_by: comms_send && { resident_id: comms_send.agent.to_param, resident_name: comms_send.agent.name, send_id: comms_send.public_id }
     }
   end
 
