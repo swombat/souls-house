@@ -98,7 +98,9 @@ class Message < ApplicationRecord
     return unless resident && chat.respondable?
     return unless resident.eligible_for_conversation?
     return unless Agents::InferenceAvailability.dispatchable?(resident)
-    return if chat.agent_response_active?(resident)
+    # Busy with an earlier message: hold this one as a PendingWake rather
+    # than dropping it, so the resident is woken once when that run ends.
+    return chat.queue_wakes_for_busy!([ resident ], requested_by: "a message from #{author_name}", message: self) if chat.agent_response_active?(resident)
 
     @single_resident_dispatch = MessageDispatch.accept!(message: self, target_agent_ids: [ resident.id ], kind: "automatic")
   end
@@ -325,7 +327,10 @@ class Message < ApplicationRecord
   def update_as_author(attributes)
     with_dispatch_lock do
       updated = update(attributes)
-      message_dispatch&.source_edited! if updated && saved_change_to_content?
+      if updated && saved_change_to_content?
+        message_dispatch&.source_edited!
+        withdraw_from_held_wakes!
+      end
       updated
     end
   end
@@ -345,6 +350,16 @@ class Message < ApplicationRecord
 
   def human_message_in_group_chat?
     role == "user" && user_id.present? && chat.manual_responses?
+  end
+
+  # An edit withdraws this message from any wake still held for a busy
+  # resident (PendingWake), as an edit cancels a pending dispatch: the
+  # request it made is not re-read from the new text. A wake already released
+  # keeps it, as a reserved dispatch does. This runs while the edit holds the
+  # message row, and release locks that row before deciding, so the two are
+  # serialized.
+  def withdraw_from_held_wakes!
+    PendingWakeSource.where(message_id: id, pending_wake_id: PendingWake.open.select(:id)).delete_all
   end
 
   def with_dispatch_lock(&block)

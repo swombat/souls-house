@@ -48,21 +48,26 @@ class Chats::AgentTriggersControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test "rejects a specific agent trigger while that agent is already responding" do
+  test "queues a specific agent trigger while that agent is already responding" do
     @chat.agent_runtime_interactions.create!(
       agent: @agent,
       trigger_kind: "conversation",
       started_at: 1.minute.ago
     )
 
-    assert_no_enqueued_jobs only: ManualAgentResponseJob do
-      post account_chat_agent_trigger_path(@account, @chat),
-        params: { agent_id: @agent.to_param },
-        as: :json
+    assert_difference -> { PendingWake.open.count }, 1 do
+      assert_no_enqueued_jobs only: ManualAgentResponseJob do
+        post account_chat_agent_trigger_path(@account, @chat),
+          params: { agent_id: @agent.to_param },
+          as: :json
+      end
     end
 
-    assert_response :unprocessable_entity
-    assert_equal "#{@agent.name} is already responding", response.parsed_body["error"]
+    assert_response :success
+    assert_equal [ { "id" => @agent.to_param, "name" => @agent.name } ], response.parsed_body["queued"]
+    wake = PendingWake.open.sole
+    assert_equal [ @chat, @agent ], [ wake.chat, wake.agent ]
+    assert_equal @user.full_name.presence || @user.email_address.split("@").first, wake.requested_by
   end
 
   test "allows a specific agent trigger when an unfinished interaction is stale" do
@@ -83,7 +88,7 @@ class Chats::AgentTriggersControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test "rejects ask all while one agent is already responding" do
+  test "ask all queues the resident who is already responding" do
     @chat.agent_runtime_interactions.create!(
       agent: @agent,
       trigger_kind: "conversation",
@@ -94,8 +99,9 @@ class Chats::AgentTriggersControllerTest < ActionDispatch::IntegrationTest
       post account_chat_agent_trigger_path(@account, @chat), as: :json
     end
 
-    assert_response :unprocessable_entity
-    assert_equal "#{@agent.name} is already responding", response.parsed_body["error"]
+    assert_response :success
+    assert_equal [ @agent.to_param ], response.parsed_body["queued"].map { |a| a["id"] }
+    assert PendingWake.open.exists?(chat: @chat, agent: @agent)
   end
 
   test "missing credentials returns setup details without reserving or enqueueing a wake" do

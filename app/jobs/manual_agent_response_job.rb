@@ -9,9 +9,10 @@ class ManualAgentResponseJob < ApplicationJob
       return
     end
     agent.reload
-    # A follow-through nudge is an automatic wake: a pause after it was
-    # reserved still stops it before it reaches the runtime.
-    if interaction&.follow_through_of_id && agent.paused?
+    # A follow-through nudge and a released pending wake are deferred wakes:
+    # a pause after either was reserved still stops it before it reaches the
+    # runtime. (The wake's claim checks this again, with its sources.)
+    if (interaction&.follow_through_of_id || interaction&.released_pending_wake) && agent.paused?
       cancel_unclaimed(interaction)
       return
     end

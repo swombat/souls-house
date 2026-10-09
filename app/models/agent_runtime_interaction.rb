@@ -17,6 +17,7 @@ class AgentRuntimeInteraction < ApplicationRecord
     inverse_of: :follow_through_of, dependent: :nullify
   after_commit :broadcast_agent_runtime_interactions_refresh, on: [ :create, :update, :destroy ]
   after_update_commit :enqueue_follow_through_check, if: -> { saved_change_to_finished_at? && finished_at.present? }
+  after_update_commit :enqueue_pending_wake_release, if: -> { saved_change_to_finished_at? && finished_at.present? && trigger_kind == "conversation" }
 
   validates :trigger_kind, presence: true
   validates :started_at, presence: true
@@ -459,6 +460,16 @@ class AgentRuntimeInteraction < ApplicationRecord
     FollowThroughCheckJob.set(wait: FollowThroughCheckJob::DELAY).perform_later(id)
   rescue StandardError => error
     Rails.logger.warn("Follow-through check enqueue failed for interaction #{id}: #{error.class}")
+  end
+
+  # A request that arrived while this run was busy waits as a PendingWake;
+  # this run ending is what releases it. Enqueued unconditionally (the job
+  # takes the chat lock before looking), so a wake whose queue! had not yet
+  # committed is still found.
+  def enqueue_pending_wake_release
+    PendingWakeJob.set(wait: PendingWakeJob::DELAY).perform_later(chat_id, agent_id)
+  rescue StandardError => error
+    Rails.logger.warn("Pending wake release enqueue failed for interaction #{id}: #{error.class}")
   end
 
   def broadcast_agent_runtime_interactions_refresh

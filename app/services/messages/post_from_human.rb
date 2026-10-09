@@ -86,6 +86,10 @@ class Messages::PostFromHuman
 
         on_persisted&.call(message)
         dispatch = MessageDispatch.accept!(message: message, target_agent_ids: target_ids) if target_ids.any?
+        # A mention of a resident already responding here waits for that run.
+        unless @chat.sole_resident
+          @chat.queue_wakes_for_busy!(@chat.busy_mentioned_agents(@content.to_s), requested_by: "a mention from #{message.author_name}", message: message)
+        end
         saved_id = message.id
         true
       end
