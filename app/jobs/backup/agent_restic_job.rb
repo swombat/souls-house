@@ -36,7 +36,7 @@ module Backup
         ok: ok,
         stderr_tail: stderr_tail
       )
-      prune!(agent) if ok
+      record_prune_failure(snapshot, prune!(agent)) if ok
       raise "restic backup failed for #{agent.name}: #{stderr_tail.presence || 'unknown error'}" if force && !ok
 
       snapshot
@@ -64,6 +64,10 @@ module Backup
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       cmd = restic_env(agent) + [
         Backup::AgentRestic::IMAGE, "backup", "/data",
+        # Skip directories marked with CACHEDIR.TAG (Cargo's target/, and
+        # other tools' caches): rebuildable output that bloats every resident's
+        # backups and dedups badly.
+        "--exclude-caches",
         "--tag", "agent_id=#{agent.uuid}",
         "--tag", "agent_slug=#{agent.name.to_s.parameterize}",
         "--tag", "helixkit_volume_set=v1",
@@ -83,7 +87,17 @@ module Backup
         "--keep-monthly", agent.backup_keep_monthly.to_s,
         "--prune"
       ]
-      Open3.capture3(*docker_run_cmd(agent, *cmd))
+      _out, err, status = Open3.capture3(*docker_run_cmd(agent, *cmd))
+      status.success? ? nil : err.to_s.last(2000)
+    end
+
+    # The backup itself succeeded, so the snapshot stays ok; a failed forget/
+    # prune is recorded on it and logged instead of being silently ignored.
+    def record_prune_failure(snapshot, error)
+      return unless error
+
+      Rails.logger.error("restic forget/prune failed for agent #{snapshot.agent_id}: #{error}")
+      snapshot.update!(stderr_tail: [ snapshot.stderr_tail.presence, "Prune failed: #{error}" ].compact.join("\n").last(4000))
     end
 
     def docker_run_cmd(agent, *restic_args, graph_mounts: [])
