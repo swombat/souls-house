@@ -154,6 +154,30 @@ test('a resident already responding stays askable, and a queued ask says so with
   }
 });
 
+test('the wait for an ask ends when a run starts that was not running before', async () => {
+  const { fireEvent, waitFor } = await import('@testing-library/svelte');
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({}) });
+  try {
+    const { rerender } = render(AgentTriggerBar, {
+      accountId: 'account',
+      chatId: 'chat',
+      agents: [
+        { id: 'one', name: 'One' },
+        { id: 'two', name: 'Two' },
+      ],
+      activeRuntimeAgentIds: ['two'],
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'One' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'One' })).toBeDisabled());
+    await rerender({ activeRuntimeAgentIds: ['two'] });
+    expect(screen.getByRole('button', { name: 'One' })).toBeDisabled();
+    await rerender({ activeRuntimeAgentIds: ['two', 'one'] });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Two' })).toBeEnabled());
+  } finally {
+    fetchMock.mockRestore();
+  }
+});
+
 test('a network failure releases the trigger and gives a retryable error', async () => {
   const { fireEvent, waitFor } = await import('@testing-library/svelte');
   const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network unavailable'));

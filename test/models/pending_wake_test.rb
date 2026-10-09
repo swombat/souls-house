@@ -198,6 +198,24 @@ class PendingWakeTest < ActiveSupport::TestCase
     assert_nil run.released_pending_wake.dropped_at
   end
 
+  test "editing a held message withdraws its request, as an edit cancels a pending dispatch" do
+    message = human_message
+    wake = PendingWake.queue!(chat: @chat, agent: @resident, requested_by: "a message", message: message)
+    assert message.update_as_author(content: "Never mind")
+
+    PendingWake.release!(chat: @chat, agent: @resident)
+    assert_equal "sources_withdrawn", wake.reload.drop_reason
+  end
+
+  test "editing a message whose wake was already released does not retract the run" do
+    message = human_message
+    run = released_run(message: message)
+    assert message.update_as_author(content: "Edited after release")
+
+    assert run.claim_dispatch!
+    assert_equal 1, run.released_pending_wake.sources.count
+  end
+
   private
 
   def human_message

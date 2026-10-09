@@ -54,15 +54,16 @@ class PendingWake < ApplicationRecord
   # yet. Still busy is "not yet", not a drop: the run that is busy now will
   # call this again when it finishes.
   def self.release!(chat:, agent:)
-    chat.with_lock do
+    transaction do
       wake = open.find_by(chat: chat, agent: agent)
       next nil unless wake
-      next nil if chat.agent_response_active?(agent)
 
-      # Pause is read fresh under the resident's row lock, so a pause that
-      # lands during release wins (as a follow-through nudge does).
-      agent.lock!
-      wake.agent = agent
+      # Lock what a withdrawal writes, in the order those writers take it, so
+      # a discard, edit, pause or removal in flight is waited for and one
+      # already committed is seen. See lock_revocation_rows!.
+      wake.lock_revocation_rows!
+      next nil unless wake.reload.released_at.nil? && wake.dropped_at.nil?
+      next nil if chat.agent_response_active?(agent)
 
       reason = wake.lapse_reason
       next wake.drop!(reason) if reason
@@ -81,6 +82,28 @@ class PendingWake < ApplicationRecord
                    released_interaction: result.is_a?(AgentRuntimeInteraction) ? result : nil)
       wake
     end
+  end
+
+  # Row locks on everything a withdrawal of this wake writes, taken at
+  # release and at claim (inside the caller's transaction), so the decision
+  # and the withdrawal are serialized: a withdrawal that commits first is
+  # seen, one in flight is waited for, and one that comes after lands after
+  # the decision.
+  #
+  # Order matters. Writing a message touches its chat row, so the source
+  # messages (discard, edit) come before the chat (archive, the room lock
+  # queue! and reserve! hold). Then the account (disable), the resident
+  # (pause), the requesters' memberships (removal) and room seats (a
+  # knocking resident removed).
+  def lock_revocation_rows!
+    Message.where(id: sources.where.not(message_id: nil).select(:message_id)).order(:id).lock.load
+    chat.lock!
+    Account.where(id: chat.account_id).lock.load
+    self.agent = Agent.lock.find(agent_id)
+    user_ids = sources.where.not(user_id: nil).select(:user_id)
+    Membership.where(account_id: chat.account_id, user_id: user_ids).order(:id).lock.load
+    requester_ids = sources.where.not(requester_agent_id: nil).select(:requester_agent_id)
+    ChatAgent.where(chat_id: chat_id, agent_id: [ agent_id, *requester_ids.pluck(:requester_agent_id) ]).order(:id).lock.load
   end
 
   # Why this wake should not run, or nil. Checked at release, under the lock.
@@ -116,10 +139,13 @@ class PendingWake < ApplicationRecord
 
   # Checked when the released run claims, under this row's lock: the run
   # starts only if the wake would still be released now. Pause, the room and
-  # the sources can all change while the run waits in the queue.
+  # the sources can all change while the run waits in the queue, so the
+  # rows those changes write are locked first (lock_revocation_rows!) and
+  # stay locked until the claim commits.
   def claim_refusal_reason
-    return "paused" if agent.reload.paused?
-    return "not_respondable" unless chat.reload.respondable? && chat.manual_responses?
+    lock_revocation_rows!
+    return "paused" if agent.paused?
+    return "not_respondable" unless chat.respondable? && chat.manual_responses? && !chat.account.reload.disabled?
     return "not_in_room" unless chat.agents.exists?(agent.id)
     return "sources_withdrawn" unless standing_source?
 

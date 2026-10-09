@@ -23,6 +23,7 @@
   let triggeringAll = $state(false);
   let waitingForResponse = $state(false);
   let responseMarkerAtTrigger = $state(null);
+  let activeAtTrigger = new Set();
   let timeoutId = null;
   let errorOpen = $state(false);
   let errorTitle = $state('');
@@ -146,15 +147,20 @@
   function beginWaiting() {
     waitingForResponse = true;
     responseMarkerAtTrigger = responseMarker;
+    activeAtTrigger = new Set(activeRuntimeAgentIds);
     if (timeoutId) clearTimeout(timeoutId);
     timeoutId = setTimeout(() => {
       clearWaitingState();
     }, 120_000);
   }
 
-  // When disabled becomes true (streaming started), clear our waiting state
+  // When disabled becomes true (streaming started), or a run starts that was
+  // not running when we asked, the ask has been taken up: stop waiting. The
+  // bar is no longer disabled while a resident runs (a busy resident's ask is
+  // queued), so a new run is the signal now.
   $effect(() => {
-    if (disabled && waitingForResponse) {
+    if (!waitingForResponse) return;
+    if (disabled || activeRuntimeAgentIds.some((id) => !activeAtTrigger.has(id))) {
       clearWaitingState();
     }
   });
