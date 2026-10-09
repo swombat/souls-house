@@ -1279,6 +1279,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_110000) do
     t.index ["user_id"], name: "index_oura_integrations_on_user_id", unique: true
   end
 
+  create_table "pending_wakes", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.bigint "chat_id", null: false
+    t.datetime "created_at", null: false
+    t.string "drop_reason"
+    t.datetime "dropped_at"
+    t.datetime "first_requested_at", null: false
+    t.datetime "last_requested_at", null: false
+    t.bigint "released_interaction_id"
+    t.datetime "released_at"
+    t.integer "requests_count", default: 1, null: false
+    t.string "requested_by", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id"], name: "index_pending_wakes_on_agent_id"
+    t.index ["chat_id", "agent_id"], name: "index_pending_wakes_one_open_per_resident_room", unique: true, where: "((released_at IS NULL) AND (dropped_at IS NULL))"
+    t.index ["chat_id"], name: "index_pending_wakes_on_chat_id"
+    t.index ["released_interaction_id"], name: "index_pending_wakes_on_released_interaction_id"
+  end
+
   create_table "profiles", force: :cascade do |t|
     t.string "chat_colour"
     t.datetime "created_at", null: false
@@ -1876,6 +1895,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_110000) do
   add_foreign_key "oauth_access_tokens", "oauth_applications", column: "application_id"
   add_foreign_key "oauth_access_tokens", "users", column: "resource_owner_id"
   add_foreign_key "oura_integrations", "users"
+  add_foreign_key "pending_wakes", "agent_runtime_interactions", column: "released_interaction_id", on_delete: :nullify
+  add_foreign_key "pending_wakes", "agents", on_delete: :cascade
+  add_foreign_key "pending_wakes", "chats", on_delete: :cascade
   add_foreign_key "profiles", "users"
   add_foreign_key "prompt_outputs", "accounts"
   add_foreign_key "reply_dismissals", "chats", on_delete: :cascade

@@ -82,17 +82,20 @@ or a disabled account gets 404.
   caller-supplied author fields. Archived/deleted rooms reject sends.
 - Human messages automatically queue a response in rooms with exactly one resident,
   including opening messages. Resident replies never self-trigger. Unavailable or
-  already-responding residents are not started again. Message responses report
+  already-responding residents are not started again; a message to a resident
+  who is already responding is held as a pending wake (see below). Message responses report
   `ai_response_triggered: true` when this automatic response was queued; otherwise
   they report `false`. Multi-resident API rooms retain explicit invocation through
   the separate `agent_trigger` route.
 - `POST /api/v1/conversations/:id/agent_trigger` targets the participant named by
-  `agent_id`, or all participants when it is omitted. If a targeted participant
-  is already responding in that room (or any eligible participant for an
-  all-resident request), it returns `409` with JSON `code: "already_responding"`
-  and an `error` message, without queuing an additional wake. This refusal is
-  not a delivery receipt for the existing response; wait for it rather than
-  automatically retrying the trigger.
+  `agent_id`, or all participants when it is omitted. It answers `200` with
+  `triggered` (residents woken now) and `queued` (residents already responding
+  in that room). A queued resident is woken once when the run in progress
+  finishes, with everything posted since their previous run in the transcript
+  delta. Further asks while they are busy coalesce into that one wake, and the
+  wake is dropped if the run that just finished had already been shown every
+  newer message, if the resident is paused, or after six hours. Do not retry a
+  queued trigger; it is already held.
 - Optional `runtime_run_id` links a resident reply to its own admitted, unexpired
   interaction in that room. It is not an idempotency key for offline retry.
 - Attachment reads go through the authorized conversation/message route and can

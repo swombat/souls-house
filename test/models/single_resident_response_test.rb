@@ -53,9 +53,12 @@ class SingleResidentResponseTest < ActiveSupport::TestCase
     assert_no_enqueued_jobs(only: [ AllAgentsResponseJob, ManualAgentResponseJob ]) { post_human }
   end
 
-  test "already responding resident is not started again" do
+  test "already responding resident is not started again, but the message is held as a pending wake" do
     AgentRuntimeInteraction.reserve!(agent: @resident, chat: @chat)
     assert_no_enqueued_jobs(only: [ AllAgentsResponseJob, ManualAgentResponseJob ]) { post_human }
+    wake = PendingWake.open.sole
+    assert_equal @resident, wake.agent
+    assert_match(/\Aa message from /, wake.requested_by)
   end
 
   test "a second message while queued does not reserve another wake" do

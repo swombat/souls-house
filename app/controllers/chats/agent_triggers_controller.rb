@@ -7,18 +7,21 @@ class Chats::AgentTriggersController < ApplicationController
   # Triggers AI response from agent(s) in this chat.
   # Pass agent_id to trigger a specific agent, omit to trigger all.
   def create
+    requested_by = Current.user.full_name.presence || Current.user.email_address.split("@").first
+    queued = []
     if params[:agent_id].present?
       agent = @chat.agents.find(params[:agent_id])
       return if inference_unavailable?([ agent ])
-      @chat.trigger_agent_response!(agent)
+      queued << agent if @chat.request_agent_response!(agent, requested_by: requested_by) == :queued
     else
       return if inference_unavailable?(@chat.agents)
-      @chat.trigger_all_agents_response!
+      queued = @chat.request_all_agents_response!(requested_by: requested_by)[:queued]
     end
 
+    notice = queued.any? ? "#{queued.map(&:name).to_sentence} #{queued.one? ? "is" : "are"} still responding, and will be woken again when that finishes." : nil
     respond_to do |format|
-      format.html { redirect_to account_chat_path(current_account, @chat) }
-      format.json { head :ok }
+      format.html { redirect_to account_chat_path(current_account, @chat), notice: notice }
+      format.json { render json: { queued: queued.map { |a| { id: a.to_param, name: a.name } } } }
     end
   rescue ArgumentError => e
     respond_to do |format|

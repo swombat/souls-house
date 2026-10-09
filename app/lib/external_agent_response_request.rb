@@ -184,6 +184,7 @@ class ExternalAgentResponseRequest
       selection.prompt_section,
       safeguard_notice_text,
       trigger_intro_text,
+      queued_wake_text,
       rhythm_invitation_context,
       "Requested by: #{requested_by}.",
       confirmation_text,
@@ -200,6 +201,14 @@ class ExternalAgentResponseRequest
   end
 
   # The run a follow-through nudge continues, when this run is one.
+  # A run released from a PendingWake says so, so the resident knows the
+  # knock was held rather than lost, and by whom.
+  def queued_wake_text
+    return nil unless @interaction&.id
+
+    PendingWake.find_by(released_interaction_id: @interaction.id)&.prompt_note
+  end
+
   def follow_through_source
     @interaction&.follow_through_of
   end
@@ -476,6 +485,7 @@ class ExternalAgentResponseRequest
       SubagentPolicyRenderer.section_for(agent),
       selection.prompt_section,
       trigger_intro_text,
+      queued_wake_text,
       rhythm_invitation_context,
       "Requested by: #{requested_by}.",
       confirmation_text,
