@@ -155,9 +155,9 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     end
   end
 
-  def born!(model_id: HouseInference::Offering::OFFERINGS.keys.first)
+  def born!(model_id: HouseInference::Offering::OFFERINGS.keys.first, name: "Vm born")
     Agents::HostedBirth.new(account: @account, creator: @user,
-      attributes: { name: "Vm born", system_prompt: "Hello", model_id: }).create!
+      attributes: { name:, system_prompt: "Hello", model_id: }).create!
   end
 
   def run_job(agent)
@@ -340,7 +340,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     end
   end
 
-  test "admission is capped under the lock, and only house-inference residents are born on a VM for now" do
+  test "admission is capped under the lock, and a resident on an API-key model is born on a VM too" do
     with_house do
       @setting.update!(vm_resident_limit: 1)
       born!
@@ -349,10 +349,9 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert_equal Agents::VmBirthPolicy::LIMIT_REFUSAL, error.message
 
       @setting.update!(vm_resident_limit: 5)
-      assert_no_difference [ "Agent.count", "AgentPlacement.count" ] do
-        error = assert_raises(Agents::VmBirthPolicy::Refused) { born!(model_id: "openrouter/auto") }
-        assert_equal Agents::VmBirthPolicy::MODEL_REFUSAL, error.message
-      end
+      agent = born!(model_id: "openrouter/auto", name: "Vm born on a key")
+      assert agent.placement.vm_birth?
+      assert_equal "hetzner_cloud", agent.placement.backend
     end
   end
 

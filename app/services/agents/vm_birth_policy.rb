@@ -10,8 +10,9 @@ module Agents
   #
   # With the switch on, a birth is admitted only when everything a VM birth
   # needs exists: VM backups (no resident is ready before its first verified
-  # backup), configured procurement, room under the cap, and a model a VM can
-  # run today. The reasons are checked in order, so the one a person sees is
+  # backup), configured procurement and room under the cap. Any model a local
+  # resident can use runs on a VM too (house inference, account API keys,
+  # subscription logins); imported homes are still refused. The reasons are checked in order, so the one a person sees is
   # the one they can act on soonest. admit! re-checks under the procurement
   # admission lock and commits the placement in the same transaction, so two
   # births can't both take the last slot.
@@ -21,16 +22,12 @@ module Agents
 
     IMPORT_REFUSAL = "This house creates new residents on their own server, and imported residents can't " \
                      "be created that way yet. A site admin can switch it off in Site Admin → Settings.".freeze
-    SUBSCRIPTION_REFUSAL = "Residents on their own server can't use a subscription login yet. " \
-                           "Use an API key or an on-the-house model.".freeze
     NOT_CONFIGURED_REFUSAL = "This house creates new residents on their own server, but server ordering " \
                              "isn't configured. Ask a site admin.".freeze
     LIMIT_REFUSAL = "This house creates new residents on their own server, and it has reached its limit " \
                     "of resident servers. Ask a site admin.".freeze
     NOT_AVAILABLE_REFUSAL = "This house creates new residents on their own server, and that isn't available " \
                             "yet. Ask a site admin.".freeze
-    MODEL_REFUSAL = "Residents on their own server use an on-the-house model for now. Choose one, or ask a " \
-                    "site admin.".freeze
     # From admission to first verified backup. Past it the birth fails and its
     # server is cleaned up, so a stuck birth can't keep spending.
     BIRTH_DEADLINE = 45.minutes
@@ -54,7 +51,6 @@ module Agents
     def refusal(kind: :birth, model_id: nil)
       return nil unless enabled?
       return IMPORT_REFUSAL if kind == :import
-      return MODEL_REFUSAL if model_id && !vm_model?(model_id)
       return NOT_AVAILABLE_REFUSAL unless vm_backups_available?
       return NOT_CONFIGURED_REFUSAL unless procurement_configured?
       return LIMIT_REFUSAL if remaining <= 0
@@ -83,11 +79,6 @@ module Agents
         AgentPlacement.create!(agent:, backend: "hetzner_cloud", state: "pending", admitted_by_setting_at: now,
           birth_deadline_at: now + BIRTH_DEADLINE, birth_requested_by: requested_by)
       end
-    end
-
-    # A VM runs house-inference residents today (Agents::RemoteRuntime).
-    def vm_model?(model_id)
-      HouseInference::Offering.find(model_id.to_s).present?
     end
 
     # Slice 4 of #246: without VM backups no VM resident can become ready.

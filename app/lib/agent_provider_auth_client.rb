@@ -50,8 +50,23 @@ class AgentProviderAuthClient
 
   attr_reader :agent
 
+  # A resident on its own VM is reached through its runner, which relays only
+  # these same calls (#246 parity).
+  def remote_request(method, path, payload)
+    answer = Agents::RemoteRuntime.provider_auth!(agent, method: method.to_s.upcase, path:, params: payload.to_h)
+    status = answer.is_a?(Hash) ? answer["status"].to_i : 0
+    body = answer.is_a?(Hash) ? answer["body"] : nil
+    raise Error.new("Agent runtime returned an invalid authentication response", status:) unless body.is_a?(Hash)
+    return body if status.between?(200, 299)
+
+    raise Error.new(body["error"].presence || "Provider authentication request failed", status:, body:)
+  rescue Agents::RemoteRuntime::Unavailable => e
+    raise Error, e.message
+  end
+
   def request(method, path, payload = nil)
     raise Error, "Agent runtime is not available" if agent.trigger_bearer_token.blank?
+    return remote_request(method, path, payload) if Agents::RemoteRuntime.remote?(agent)
 
     uri = URI("#{Agents::Endpoint.url_for(agent).delete_suffix("/")}#{path}")
     uri.query = URI.encode_www_form(payload.compact) if method == :get && payload.present?
