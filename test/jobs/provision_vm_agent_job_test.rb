@@ -148,7 +148,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
     end
   end
 
-  def born!(model_id: HouseInference::Offering::MODEL_ID)
+  def born!(model_id: HouseInference::Offering::OFFERINGS.keys.first)
     Agents::HostedBirth.new(account: @account, creator: @user,
       attributes: { name: "Vm born", system_prompt: "Hello", model_id: }).create!
   end
