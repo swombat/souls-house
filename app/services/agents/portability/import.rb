@@ -14,6 +14,11 @@ module Agents::Portability
       imported_agent = nil
       success = false
       result = Agent.transaction do
+        # Checked again at admission: validation can take a while, and the
+        # switch may have gone on during it.
+        refusal = Agents::VmBirthPolicy.current.refusal(kind: :import)
+        raise Error, refusal if refusal
+
         # This is not a birth; no orientation, schedules or runtime job.
         custody = manifest.slice("export_id", "source_resident_id", "source_installation", "exported_by", "created_at")
         custody.merge!("imported_at" => Time.current.iso8601, "imported_by" => user.to_param.to_s, "source_preferences" => manifest["metadata"].slice("scheduled_wakes_enabled"))
