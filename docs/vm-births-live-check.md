@@ -39,7 +39,10 @@ kind of test (KjXOAe, 2026-10-09); this uses well under $1.
    fix in #268 exists for.
 6. Take a second backup (the scheduled sweeper, or
    `Backup::VmResident.issue!(placement: p)` once it's idle) and wait for
-   `verified`. A second backup is the one that exercises ranged reads. Then
+   `verified`. A second backup is the one that exercises ranged reads. While
+   it runs, check that heartbeats keep coming (`poll_with_heartbeats`): the
+   enrollment's `last_heartbeat_at` should stay within `HEALTHY_WITHIN`
+   (3 minutes) throughout. Then
    confirm the private file is in it, from the house:
    `restic ls <snapshot> /data/chaos/live-check-secret` with the house's
    repository credentials (the same environment `vm:restore_check` uses).
