@@ -28,3 +28,10 @@ Rails.application.config.filter_parameters += [ /\A(?:print|voiceprints?)\z/ ]
 # The draft API's `set: { provider: key }` shape is refused, but a client still
 # sending it would otherwise have its keys logged before the refusal.
 Rails.application.config.filter_parameters += [ /\Aset\z/ ]
+
+# Comms connector events carry Daniel's WhatsApp messages, contacts and the
+# pairing QR. `messages` and `code` are already filtered above; `chats`
+# covers chat names, and the exact field names cover any other nesting.
+Rails.application.config.filter_parameters += [
+  /\A(?:chats|body|caption|sender_name|sender_id|qr|pairing_qr)\z/, /\Achats\.name\z/
+]

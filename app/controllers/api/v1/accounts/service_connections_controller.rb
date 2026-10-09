@@ -39,9 +39,9 @@ module Api
         def destroy
           @connection.disconnect!
           audit(:disconnect_service, @connection, provider: @connection.provider)
-          # Keep reviewed provenance and its revoked reference. This does not
-          # retain the credential: disconnect! has already erased the payload.
-          @connection.destroy! unless @connection.github_resident_imports.exists?
+          # Keep reviewed provenance or comms history and the revoked
+          # reference. disconnect! has already erased the credential.
+          @connection.destroy! unless @connection.retained_after_disconnect?
           render json: { disconnected: { id: @connection.public_id, provider: @connection.provider } }
         end
 

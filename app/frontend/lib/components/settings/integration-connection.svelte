@@ -64,6 +64,8 @@
           </p>
           {#if connection.status === 'reauthorizing'}
             <p class="text-sm text-amber-700">Reauthorization required before residents can use this connection.</p>
+          {:else if connection.status === 'pairing'}
+            <p class="text-sm text-amber-700">Waiting for pairing. Residents can use this once it is linked.</p>
           {/if}
         </div>
       </div>

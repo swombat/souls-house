@@ -4,7 +4,8 @@ class Accounts::ServiceConnectionsController < ApplicationController
 
   def create
     definition = Services::Definition.fetch(params.require(:provider))
-    raise ArgumentError, "This service uses OAuth authorization" unless definition.connection_method == "credentials"
+    raise ArgumentError, "This service uses OAuth authorization" unless definition.connection_method.in?(%w[credentials pairing])
+    raise ArgumentError, "This service is not available on this house" unless definition.available?
 
     management_scope = params.require(:management_scope)
     authorize_management_scope!(definition, management_scope)
@@ -30,10 +31,11 @@ class Accounts::ServiceConnectionsController < ApplicationController
       credential_kind: result.fetch(:credential_kind),
       credential_fingerprint: result.fetch(:credential_fingerprint),
       credential_metadata: result.fetch(:credential_metadata),
-      status: "connected"
+      status: result.fetch(:status, "connected")
     )
     connection.credential_payload_hash = result.fetch(:credential_payload)
     connection.save!
+    definition.adapter.start_pairing(connection) if definition.connection_method == "pairing"
 
     audit(:connect_service, connection,
           provider: connection.provider,
@@ -41,7 +43,7 @@ class Accounts::ServiceConnectionsController < ApplicationController
           external_identity: connection.external_identity,
           authority_summary: connection.credential_metadata["authority_summary"])
     redirect_to account_integrations_path(current_account),
-                notice: "#{definition.name} connected"
+                notice: connection.status == "pairing" ? "Scan the pairing code to link #{definition.name}" : "#{definition.name} connected"
   rescue Services::Definition::UnknownProvider, Services::AdapterError, KeyError, ArgumentError, ActiveRecord::RecordInvalid => e
     redirect_back_or_to account_integrations_path(current_account), alert: e.message
   end
@@ -72,9 +74,9 @@ class Accounts::ServiceConnectionsController < ApplicationController
 
     @connection.disconnect!
     audit(:disconnect_service, @connection, provider: @connection.provider)
-    # Keep reviewed provenance and its revoked reference. This does not retain
-    # the credential: disconnect! has already erased the encrypted payload.
-    @connection.destroy! unless @connection.github_resident_imports.exists?
+    # Keep reviewed provenance or comms history and the revoked reference.
+    # This does not retain the credential: disconnect! has already erased it.
+    @connection.destroy! unless @connection.retained_after_disconnect?
     redirect_back fallback_location: account_integrations_path(current_account), notice: "Service disconnected"
   end
 
