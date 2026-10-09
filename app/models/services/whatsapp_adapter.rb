@@ -27,7 +27,7 @@ module Services
         credential_payload: { "callback_secret" => secret },
         credential_metadata: {
           "credential_strategy" => definition.credential_strategy,
-          "authority_summary" => "Residents you enable can read the chats and messages this linked device receives. Nothing can be sent."
+          "authority_summary" => "Residents you enable can read the chats and messages this linked device receives. Only residents you separately allow can send, as you, into existing chats."
         }
       }
     end
