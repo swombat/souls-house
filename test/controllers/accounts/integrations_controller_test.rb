@@ -78,6 +78,36 @@ class Accounts::IntegrationsControllerTest < ActionDispatch::IntegrationTest
     assert github.fetch("residents").all? { |resident| resident["tailnet_url"].nil? }
   end
 
+  test "a member who can neither provision nor manage the tailnet gets no sign-in panels" do
+    account = accounts(:team_account)
+    member = users(:existing_user)
+    tailnet = account.service_connections.create!(
+      connected_by_user: @user,
+      provider: "tailscale",
+      external_subject_id: "team-tailnet",
+      external_identity: "Tailnet",
+      label: "Tailnet",
+      management_scope: "account_managed",
+      credential_kind: "none",
+      credential_fingerprint: "team-tailnet-fingerprint",
+      credential_payload_hash: {},
+      credential_metadata: {}
+    )
+    agent = agents(:other_account_agent)
+    agent.agent_service_accesses.create!(service_connection: tailnet, enabled: true, provisioning_status: "provisioned")
+    sign_in member
+
+    get account_integrations_path(account)
+
+    assert_response :success
+    connection = inertia_shared_props.fetch("connections").find { |item| item.fetch("id") == tailnet.public_id }
+    assert_equal false, connection.fetch("can_provision")
+    assert_equal false, connection.fetch("can_manage")
+    resident = connection.fetch("residents").find { |item| item.fetch("id") == agent.to_param }
+    assert_nil resident.fetch("tailnet_url"), "the tailnet endpoint would refuse this member, so no panel"
+    assert_nil resident.fetch("integrations_url")
+  end
+
   test "exposes one focused provider setup when requested" do
     get account_integrations_path(@account), params: { connect: "google_workspace" }
 

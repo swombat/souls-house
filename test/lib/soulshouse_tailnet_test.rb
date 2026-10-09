@@ -320,6 +320,24 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
     assert_equal 0, world.fetch("logged_out", 0), "a node waiting for sign-in is this integration's, not stale state"
   end
 
+  test "only a node that needs login is told sign-in is the fix; other states get their own recovery" do
+    write_manifest(connection_id: "svc_1", key: nil, hosts: [])
+    assert tailnet("up").last.success?
+
+    { "Stopped" => /signed in but stopped.*soulshouse-tailnet up/,
+      "Starting" => /connecting/,
+      "NeedsMachineAuth" => /approve this machine/,
+      "NoState" => /state NoState/ }.each do |backend, expected|
+      set_world(world.merge("backend" => backend))
+      out, err, status = tailnet("status", "--json")
+      assert status.success?, err
+      help = JSON.parse(out)["help"]
+      assert_match expected, help, backend
+      assert_no_match(/nothing here is broken/, help, "#{backend} is not a missing sign-in")
+      assert_no_match(/Connect to Tailscale/, help, "#{backend} doesn't need another sign-in")
+    end
+  end
+
   test "once someone signs in, every machine on the tailnet becomes an ssh alias" do
     write_manifest(connection_id: "svc_1", key: nil, hosts: [])
     assert tailnet("up").last.success?

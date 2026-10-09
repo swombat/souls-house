@@ -74,6 +74,18 @@ SIGN_IN_HELP = (
     "When they've signed in, run `soulshouse-tailnet up`."
 )
 
+# Every other state that isn't Running has its own recovery. None of them is a
+# missing sign-in, so none of them gets the reassurance above.
+STATE_HELP = {
+    "Stopped": "The node is signed in but stopped. Run `soulshouse-tailnet up` to reconnect.",
+    "Starting": "The node is connecting. Check `soulshouse-tailnet status` again in a minute.",
+    "NeedsMachineAuth": (
+        "The node is signed in and waiting for the tailnet's admin to approve this machine "
+        "in the Tailscale admin console (Machines). Tell a person that once; then run "
+        "`soulshouse-tailnet up`."
+    ),
+}
+
 BEGIN_MARK = "# BEGIN soulshouse-tailnet (managed; edits here are overwritten)"
 END_MARK = "# END soulshouse-tailnet"
 
@@ -513,8 +525,16 @@ def build_report(entry: dict | None, state: dict | None, ping: bool) -> dict:
         report["node"] = (me.get("DNSName") or me.get("HostName") or "").rstrip(".") or None
         report["addresses"] = me.get("TailscaleIPs") or []
     running = report["backend_state"] == "Running"
-    if entry is not None and state is not None and not running and not auth_key_of(entry):
-        report["help"] = SIGN_IN_HELP
+    if entry is not None and state is not None and not running:
+        if report["backend_state"] == "NeedsLogin":
+            if not auth_key_of(entry):
+                report["help"] = SIGN_IN_HELP
+        else:
+            report["help"] = STATE_HELP.get(
+                report["backend_state"],
+                f"The node is in state {report['backend_state']}. Run `soulshouse-tailnet up`; "
+                "if the state doesn't change, tell a person what it says.",
+            )
     for host in all_hosts(entry or {}, state or {}) if running else hosts_of(entry or {}):
         online = host.get("online")
         if online is None and ping and running:

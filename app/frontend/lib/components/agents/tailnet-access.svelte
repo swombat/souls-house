@@ -123,8 +123,8 @@
     </p>
   {:else if running && compact}
     <p data-testid="tailnet-joined">
-      <span class="font-medium">On your tailnet</span> as <code>{report.node}</code>{#if report.hosts.length > 0}, can
-        reach {report.hosts.length}
+      <span class="font-medium">On your tailnet</span> as <code>{report.node}</code>{#if report.hosts.length > 0}, sees
+        {report.hosts.length}
         {report.hosts.length === 1 ? 'machine' : 'machines'}{/if}.
       {#if pageUrl}
         <a href={pageUrl} class="text-primary underline underline-offset-4">SSH key and machines</a>
