@@ -171,8 +171,13 @@ default `false`.
   `manageable_by?`, so an admin can still stop a resident sending.
 - `apply_default_accesses` and `follows_default` never set it. A new resident
   or an "enabled for new residents" connection gets read at most.
-- Turning `can_send` on is itself recorded (who, when) and shown on the owner's
-  connection page.
+- **No revival.** `set_service_access!` reuses the access row and changes only
+  `enabled` (`agent/hosted_setup.rb`), so default-false is not enough.
+  Disabling the row clears `can_send`, and re-enabling read never restores it.
+  `can_send` is also cleared on every access row when the connection is
+  disconnected, re-paired to another number, or its owner changes.
+- Grants **and** withdrawals of `can_send` are recorded (who, when, which
+  resident) and shown on the owner's connection page.
 
 **The endpoint.** `POST /api/v1/service_connections/:id/comms/messages` with
 `chat`, `text` and `client_request_id`. It uses the read scope, then requires
@@ -180,36 +185,61 @@ default `false`.
 resident can already see the connection, so 404 would hide nothing).
 
 - Text only, length-bounded. No media, no reactions, no edits or deletes.
-- The chat must already exist on this connection (`comms_chats`). Milestone 1
-  cannot start a conversation with a number Daniel has never exchanged messages
-  with; that is the "no unsolicited" rule made structural.
+- The chat must already exist on this connection (`comms_chats`), so
+  milestone 1 cannot start a conversation with a new number. This restricts
+  addressing; it does not prove a message is wanted, because having exchanged
+  messages once is not consent to every later one. "No bulk, no unsolicited"
+  stays an operational rule for residents.
 - One chat per request. There is no list or broadcast form.
-- `client_request_id` is unique per (connection, resident). A retry with the
-  same ID returns the original send record and does not send again.
-- Human pace, enforced per connection and per resident: a small number of
-  sends per minute and per day (proposed 6/minute and 100/day per connection,
-  for Daniel to adjust), returning 429 beyond it.
+- Actor and target come from server state: the resident is the authenticated
+  key's agent, the chat is resolved on this connection. Nothing the caller
+  supplies sets attribution.
+- **Idempotency.** `client_request_id` is unique per (connection, resident),
+  enforced by a unique index, and the send record is created or claimed
+  atomically. A retry with the same ID and the same chat and text returns the
+  original record and does not call the connector again. The same ID with a
+  different chat or text is refused (409). Concurrent retries produce one
+  record and at most one connector call.
+- **Checked at dispatch.** Inside the claim, under a lock: the connection is
+  `connected`, the access row is enabled with `can_send`, and the rate limit
+  has room. Rate limits are counted from `comms_sends` rows per connection and
+  per resident, so concurrent requests cannot pass the cap together, and a
+  retry of an existing send neither counts again nor calls again. Proposed
+  limits, provisional and for Daniel to adjust: 6/minute and 100/day per
+  connection. Beyond them, 429.
 - `soulshouse-comms send --chat X --text -` (text on stdin), printing the send
   record. The catalog's `runtime_notes` say plainly that it sends as the
   connection's owner.
 
 **The send record.** A new table, `comms_sends`: connection, resident
 (`agent_id`), chat, `text` (`encrypts`), `client_request_id`, status
-(`pending`, `sent`, `failed`, `unknown`), provider message ID, error code,
+(`pending`, `sent`, `failed`, `unknown`; `sent` means WhatsApp accepted it,
+not that it was delivered or read), provider message ID, error code,
 `requested_at`, `sent_at`. The row is written **before** the connector is
 called, so a send that happened always has a record. The owner's connection
-page lists them: which resident, when, to whom, what, and the outcome. A sent
-message also lands in `comms_messages` with `from_me: true` and
-`sent_by_agent_id`, so a resident reading a chat sees what another resident
-already said in it.
+page lists them: which resident, when, to whom, what, and the outcome.
+
+**Attribution survives the echo.** A sent message also appears in
+`comms_messages` with `from_me: true` and a link to its send record, so a
+resident reading a chat sees what another resident already said there. The
+provider's self-message event can arrive before the send acknowledgement, and
+#260's first-insert rule stores whichever comes first. So attribution is not
+part of the immutable body: `comms_messages.comms_send_id` is a separate
+reference, set when either side arrives second (the ack finds the message by
+provider ID, or the echo finds the send by provider ID). The body is never
+rewritten.
 
 **The connector side.** `send_text` is a signed Rails → connector command
-carrying the send record's ID, the chat and the text. The connector calls
-whatsmeow `SendMessage` with a message ID derived from the send record's ID and
-remembers completed send IDs, so a repeated command is not a second message.
-Rails waits with a bounded timeout. A timeout marks the record `unknown`, and
-Rails never retries an `unknown` send by itself: a duplicate message to a
-person is worse than a missing one. The connector logs no text, chat or JID;
+carrying the send record's ID, the chat and the text. Before calling whatsmeow
+`SendMessage`, the connector durably records the send ID as *attempted* in its
+store; afterwards it records the outcome. A command for a send ID already
+attempted is never sent again: it returns the stored outcome, or `unknown` if
+the connector stopped between the attempt and the outcome. The WhatsApp message
+ID is derived from the send ID, which helps matching but is not, on present
+evidence, an exactly-once guarantee. Rails waits with a bounded timeout. A
+timeout or an ambiguous restart leaves the record `unknown`, and nothing
+retries an `unknown` send by itself: a duplicate message to a person is worse
+than a missing one. Rails never invents `sent` or `failed`. The connector logs no text, chat or JID;
 Rails filters `text`.
 
 **Not in milestone 1:** media, new conversations, scheduled sends, sending as
@@ -240,8 +270,13 @@ for 14 days, and how much history a new device receives.
 - **Send:** a resident with read but not `can_send` gets 403 and no send record
   or connector call. Default accesses never carry `can_send`. A non-owner admin
   cannot grant it, including on a freely provisionable connection, and can
-  withdraw it. A chat not on this connection is 404. A repeated
-  `client_request_id` sends once. Rate limits return 429. Every send, including
+  withdraw it. Disable then re-enable leaves `can_send` off; disconnect clears
+  it. A chat not on this connection is 404. A repeated `client_request_id`
+  sends once; the same ID with different text is 409; simultaneous retries
+  make one record and one connector call. A connector restart between attempt
+  and outcome yields `unknown` and no resend. Concurrent requests cannot exceed
+  the rate limit. Echo-before-ack still links the message to its send record.
+  A grant revoked between request and dispatch stops the send. Every send, including
   failed and `unknown` ones, has a record the owner can read, naming the
   resident, chat, time and text, and no other user can read it. No text appears
   in either side's logs.
