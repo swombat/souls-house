@@ -62,6 +62,12 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       { state: state, reason: state == "failed" ? "snapshot missing" : nil, snapshot: nil }
     end
 
+    attr_reader :released
+
+    def release_after_retirement!(placement:)
+      (@released ||= []) << placement.id
+    end
+
   end
 
   setup do
@@ -120,7 +126,9 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
   def with_backups(&block)
     if Backup.const_defined?(:VmResident)
       Backup::VmResident.stub(:issue!, ->(**kwargs) { @backups.issue!(**kwargs) }) do
-        Backup::VmResident.stub(:status, ->(**kwargs) { @backups.status(**kwargs) }, &block)
+        Backup::VmResident.stub(:status, ->(**kwargs) { @backups.status(**kwargs) }) do
+          Backup::VmResident.stub(:release_after_retirement!, ->(**kwargs) { @backups.release_after_retirement!(**kwargs) }, &block)
+        end
       end
     else
       Backup.const_set(:VmResident, @backups)
@@ -257,6 +265,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
         assert_equal "retired", placement.reload.state
         assert operation(agent).runner_enrollment.reload.revoked_at
         assert_nil Agents::RemoteRuntime.enrollment_for(agent)
+        assert_equal [ placement.id ], @backups.released, "backup holds are released only after retirement"
       end
     end
   end
