@@ -6,6 +6,8 @@ class AgentPlacement < ApplicationRecord
   STATES = %w[pending ready failed retired].freeze
 
   belongs_to :agent, inverse_of: :placement
+  # Who created the resident whose birth admitted this placement (#246).
+  belongs_to :birth_requested_by, class_name: "User", optional: true
   # Purchases are history: a placement that has had one is never deleted.
   has_many :cloud_procurement_operations, dependent: :restrict_with_exception
 
@@ -24,6 +26,17 @@ class AgentPlacement < ApplicationRecord
   # never calls the VM, whose runner polls for commands (#238).
   validates :provider_server_id, presence: true, if: -> { backend == "hetzner_cloud" && state == "ready" }
   validate :runtime_endpoint_is_https
+
+  def vm_birth? = backend == "hetzner_cloud" && admitted_by_setting_at.present?
+  def cleanup_requested? = cleanup_requested_at.present?
+
+  # Records why this placement's server must go. Never deletes anything
+  # itself; VmCleanupJob does that, until the provider confirms.
+  def request_cleanup!(reason, now: Time.current)
+    with_lock do
+      update!(cleanup_requested_at: now, cleanup_reason: reason.to_s.first(255)) unless cleanup_requested?
+    end
+  end
 
   private
 

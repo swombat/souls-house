@@ -104,7 +104,6 @@ class ValidationTest(unittest.TestCase):
             spec(env={"TRIGGER_BEARER_TOKEN": "t", "PATH": "/evil"}),
             spec(env={"TRIGGER_BEARER_TOKEN": "t", "LD_PRELOAD": "/x.so"}),
             spec(env={"TRIGGER_BEARER_TOKEN": "t", "DOCKER_HOST": "tcp://x"}),
-            spec(env={"TRIGGER_BEARER_TOKEN": "t", "ANTHROPIC_API_KEY": "sk"}),
             spec(env={"TRIGGER_BEARER_TOKEN": "t\nPATH=/evil"}),
             spec(env={"TRIGGER_BEARER_TOKEN": "t\0"}),
             spec(env={"SOULSHOUSE_APP_URL": "https://house.example"}),

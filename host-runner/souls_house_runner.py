@@ -7,7 +7,7 @@ signed heartbeats with facts about the host.
 
 When its config says "commands_enabled": true it also polls Rails for
 commands; Rails answers at once with at most one. The vocabulary is fixed here (start_resident, stop_resident,
-submit_turn, turn_status, cancel_turn, seed_home) and anything else is refused locally,
+submit_turn, turn_status, cancel_turn, seed_home, provider_auth) and anything else is refused locally,
 whatever Rails asks. Rails supplies values, never Docker flags: the runner
 builds every docker argv itself from a fixed template and validates each value
 against a strict pattern. A turn is relayed to the resident's trigger server on
@@ -61,7 +61,8 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 
 # The runner's whole vocabulary. Anything else is refused here, not only in
 # Rails.
-COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home", "backup_resident"})
+COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home",
+                           "backup_resident", "provider_auth"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
 
 
@@ -287,16 +288,30 @@ DISPATCH_ID_RE = re.compile(r"\A[0-9a-f-]{36}\Z")
 LEDGER_ID_RE = re.compile(r"\A[0-9A-Za-z_\-]{1,64}\Z")
 ENV_KEY_RE = re.compile(r"\A[A-Z][A-Z0-9_]{0,63}\Z")
 # The environment a resident may be given. Rails cannot add PATH, LD_PRELOAD,
-# DOCKER_HOST or anything else that changes what the container is. This slice
-# runs house-inference residents only, so provider API keys and GitHub-import
-# settings are deliberately absent.
+# DOCKER_HOST or anything else that changes what the container is. Provider
+# API keys are the account's own, as a local resident gets them (#246 parity);
+# GitHub-import settings are still absent.
 RESIDENT_ENV_KEYS = frozenset({
     "AGENT_ID", "AGENT_SLUG", "AGENT_PROVIDER", "AGENT_DEFAULT_MODEL",
     "TRIGGER_BEARER_TOKEN", "SOULSHOUSE_BEARER_TOKEN", "SOULSHOUSE_APP_URL",
     "SOULSHOUSE_ACTIVITY_ORIGIN", "HELIXKIT_BEARER_TOKEN", "HELIXKIT_APP_URL",
     "SOULSHOUSE_HOME_PROFILE", "SOULSHOUSE_PORTABLE_HOME_ID", "AGENT_REPO_PATH",
     "SOULSHOUSE_REQUIRE_HOUSE_TRUST", "TZ",
+    "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
+    "XAI_API_KEY", "ZAI_API_KEY", "MOONSHOT_API_KEY", "MINIMAX_API_KEY",
 })
+# External-service credentials (Gmail and the like), copied into the
+# container before it starts, exactly as Agents::Sandbox does locally. The
+# entrypoint moves it into tmpfs; it never reaches a volume.
+SERVICE_MANIFEST_PATH = "/run/helixkit-source.yml"
+SERVICE_MANIFEST_MAX_BYTES = 256 * 1024
+# The provider-login calls a person makes from the house (AgentProviderAuthClient),
+# relayed to the resident's trigger server. Nothing else is reachable this way.
+PROVIDER_AUTH_CALLS = frozenset({
+    ("GET", "/auth/capabilities"), ("GET", "/auth/status"), ("GET", "/auth/usage"),
+    ("POST", "/auth/start"), ("POST", "/auth/cancel"), ("POST", "/auth/code"), ("POST", "/auth/disconnect"),
+})
+PROVIDER_AUTH_PARAMS = frozenset({"provider", "model", "refresh", "code"})
 VOLUME_MOUNTS = (
     ("identity", "/home/agent/identity"),
     ("chaos", "/home/agent/.chaos"),
@@ -356,7 +371,12 @@ def validate_resident_spec(payload):
                  f"bad env value for {key}")
     _require(env.get("TRIGGER_BEARER_TOKEN"), "TRIGGER_BEARER_TOKEN required")
     _require("registry_auth" not in payload, "registry credentials are not accepted")
-    return {"container_name": name, "image": image, "memory_mb": memory, "cpu_shares": shares, "env": dict(env)}
+    manifest = payload.get("service_manifest")
+    _require(manifest is None or (isinstance(manifest, str) and "\0" not in manifest
+                                  and len(manifest.encode("utf-8")) <= SERVICE_MANIFEST_MAX_BYTES),
+             "bad service_manifest")
+    return {"container_name": name, "image": image, "memory_mb": memory, "cpu_shares": shares, "env": dict(env),
+            "service_manifest": manifest}
 
 
 def volume_name(container_name, role):
@@ -553,6 +573,9 @@ class ResidentHost:
     def _spec_path(self, name):
         return os.path.join(self.state_dir, "residents", f"{name}.json")
 
+    def _manifest_path(self, name):
+        return os.path.join(self.state_dir, "residents", f"{name}.services.yml")
+
     def _write_private(self, path, text):
         os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
         tmp = path + ".tmp"
@@ -602,6 +625,12 @@ class ResidentHost:
         # A digest of the whole env, values included, so a rotated token
         # recreates the container; the values themselves stay in the env file.
         public_spec["env_digest"] = hashlib.sha256(env_text.encode("utf-8")).hexdigest()
+        manifest = spec["service_manifest"]
+        if manifest is not None:
+            self._write_private(self._manifest_path(name), manifest)
+            # The manifest is copied in only at creation, so a changed one
+            # recreates the container, as locally.
+            public_spec["manifest_digest"] = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
         previous = None
         if os.path.exists(self._spec_path(name)):
             with open(self._spec_path(name)) as handle:
@@ -615,6 +644,11 @@ class ResidentHost:
             ok, error = self.docker(create_argv(spec, self._env_path(name)))
             if not ok:
                 raise CommandFailed(f"could not create container: {error}")
+            if manifest is not None:
+                ok, error = self.docker(["docker", "cp", self._manifest_path(name), f"{name}:{SERVICE_MANIFEST_PATH}"])
+                if not ok:
+                    self.docker(["docker", "rm", "-f", name])
+                    raise CommandFailed(f"could not copy the service manifest: {error}")
         self._write_private(self._spec_path(name), json.dumps(public_spec))
         ok, error = self.docker(["docker", "start", name])
         if not ok:
@@ -677,6 +711,32 @@ class ResidentHost:
 
     def cancel_turn(self, payload):
         return self._turn("DELETE", payload)
+
+    def provider_auth(self, payload):
+        """One provider-login call, relayed to the resident's trigger server.
+        Only the fixed calls in PROVIDER_AUTH_CALLS, with fixed parameter
+        names; the answer is returned whatever its status."""
+        name = payload.get("container_name")
+        self._known_resident(name)
+        method = payload.get("method")
+        path = payload.get("path")
+        _require((method, path) in PROVIDER_AUTH_CALLS, f"provider auth call not allowed: {method} {path}")
+        params = payload.get("params") or {}
+        _require(isinstance(params, dict), "params must be an object")
+        for key, value in params.items():
+            _require(key in PROVIDER_AUTH_PARAMS, f"provider auth parameter not allowed: {key!r}")
+            _require(value is None or isinstance(value, (str, int)) and not isinstance(value, bool),
+                     f"bad provider auth parameter {key}")
+            _require(not isinstance(value, str) or len(value) <= 4096, f"provider auth parameter too long: {key}")
+        params = {key: value for key, value in params.items() if value is not None}
+        with open(self._env_path(name)) as handle:
+            token = next(line.split("=", 1)[1].strip() for line in handle if line.startswith("TRIGGER_BEARER_TOKEN="))
+        url = self._trigger_url(name) + path
+        if method == "GET":
+            if params:
+                url += "?" + urllib.parse.urlencode(params)
+            return self.http("GET", url, token, timeout=20)
+        return self.http("POST", url, token, body=params or None, timeout=20)
 
     def backup_resident(self, payload):
         from backup_proxy import run_backup

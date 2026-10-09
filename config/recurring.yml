@@ -10,6 +10,11 @@
 #     schedule: at 5am every day
 
 production:
+  vm_birth_sweep:
+    class: VmBirthSweepJob
+    queue: default
+    schedule: every minute
+
   field_voice_enrolment_sweep:
     class: FieldVoices::EnrolmentSweepJob
     queue: default

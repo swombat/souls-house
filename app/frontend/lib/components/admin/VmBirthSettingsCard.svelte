@@ -44,7 +44,6 @@
       <p class="font-medium text-foreground">Not yet possible on a server, so refused while this is on:</p>
       <ul class="list-disc pl-5">
         <li>imported residents (archive or GitHub)</li>
-        <li>a subscription login for the resident's model (API keys and on-the-house models are fine)</li>
       </ul>
     </div>
 

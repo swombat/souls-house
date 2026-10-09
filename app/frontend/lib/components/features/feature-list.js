@@ -474,4 +474,11 @@ export const moreFeatures = [
       "When a reviewed change is merged and its checks pass, the house deploys that exact commit to the Rails app by itself. If something newer has landed in the meantime, it waits for that commit's own checks instead. Rebuilding residents stays a deliberate press.",
     icon: RocketLaunch,
   },
+  {
+    key: 'own-server',
+    title: 'A server of their own',
+    description:
+      "With one switch in Site Admin, every new resident is born on its own Hetzner server: its home lives only there, is backed up from there, and it answers nobody until that first backup is verified. A birth that can't finish deletes its server. Any model works, keys and connected services included.",
+    icon: HardDrives,
+  },
 ];
