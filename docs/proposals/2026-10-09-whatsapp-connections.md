@@ -299,6 +299,62 @@ the existing wake request, not a new framework. It is still new runtime surface,
 so per Mira's size check it goes to Daniel as a named expansion before it is
 built.
 
+## 6b. Slice 0 findings, part B: whatsmeow on SQLCipher
+
+Probe by Tim (an Opus helper), synthetic data only: no pairing, no WhatsApp
+server contacted, non-numeric JIDs. I re-checked its post-kill scan myself.
+Full report and evidence: `~/work/wa-sqlcipher-probe/FINDINGS.md` on the house
+body. It is not in this repo.
+
+- **`sqlstore` runs unmodified on SQLCipher.** Tested with whatsmeow
+  `v0.0.0-20261007111105-c386243a72ba` on two drivers:
+  `mutecomm/go-sqlcipher/v4` (SQLCipher 4.4.2) and
+  `jgiannuzzi/go-sqlite3@sqlite3mc-2.2.7` (SQLite3 Multiple Ciphers 2.2.7 in
+  SQLCipher v4 mode). Each driver opens the other's files. Any driver name
+  starting with `sqlite` selects the SQLite dialect. Every store interface was
+  written with canaries and read back, including the history-sync paths and the
+  event and retry buffers.
+- **The key goes in the DSN, not a ConnectHook.** Both drivers run a pragma that
+  reads page 1 before the hook, so a hook-keyed database works when fresh and
+  fails on the first reopen. Consequence: the derived key sits in a Go string,
+  and the DSN must never be logged.
+- **No durable plaintext after SIGKILL mid-write** (WAL live, `temp_store=2`).
+  The search covered `CANARY` plus 1,032 binary needles (raw keys, random
+  prekeys, secrets, MACs, protos) across db/-wal/-shm, `/tmp` and `$TMPDIR`. It
+  found zero for both drivers. The positive control (a plaintext export) gave
+  1,029/1,032. The WAL/SHM headers are plaintext metadata (page counts, timing),
+  as SQLCipher always leaves them.
+- **whatsmeow writes nothing else to disk by default.** `UploadReader` makes a
+  ciphertext temp file only when given no file. `DownloadToFile*` decrypts into
+  a file *we* supply, so we use in-memory `Download()`. History sync is decoded
+  in memory.
+- **whatsmeow keeps message plaintext in its own tables**
+  (`whatsmeow_event_buffer`, `whatsmeow_retry_buffer`), under SQLCipher. Call
+  `DeleteOldBufferedHashes`/`DeleteOldOutgoingEvents`, and use
+  `PRAGMA secure_delete=ON` so freed pages don't keep old ciphertext around
+  longer than necessary.
+
+Hardening that now belongs in the connector contract:
+
+1. Driver: not mutecomm (SQLite 3.33.0 from 2020, unmaintained). Pin
+   sqlite3mc by commit and checksum, or vendor our own build. **Open decision.**
+2. Compile with `-DSQLITE_TEMP_STORE=3` (both builds default to file temp
+   storage), and set `temp_store=MEMORY` on every pooled connection as well.
+3. Install a no-op/redacting libsignal logger at startup. Its default prints to
+   stdout, which Docker keeps on the host. Never give whatsmeow a Debug logger:
+   it logs every sent and received node, phone numbers and push names included.
+4. **Core dumps.** In this container `ulimit -c` is unlimited and the host's
+   `core_pattern` pipes to apport, so a core would land in `/var/crash` on the
+   host, outside every volume. The comms accessory gets `--ulimit core=0`,
+   `GOTRACEBACK` unset or `none` (never `crash`), and `prctl(PR_SET_DUMPABLE, 0)`
+   at startup, which also blocks same-uid ptrace and `/proc/<pid>/mem`. (The host
+   setting affects every container, residents included. It's worth a separate
+   look, outside this spec.)
+
+Not yet covered, and moved into the slice 4 smoke test: the real image's
+writable layer (`docker diff`), `docker logs` from a live client, and a real
+crash.
+
 ## 7. Build order after review
 
 0. Trace what the Chaos activity reporter exports (done, §6a) and confirm
@@ -312,8 +368,10 @@ built.
    revoke, pause, membership loss, agent deactivation and key revocation; replay
    refused; restart survives; the disclosure gate and its canaries.
 3. The backup and restore drill on synthetic data, using the escrowed KEK.
-4. Only then whatsmeow on SQLCipher with the real-store canary test, the QR
-   pairing, and Daniel's real device. Switch off the
+4. Only then whatsmeow on SQLCipher with the §6b hardening, the real-store
+   canary test repeated in the production image (`docker diff`, `docker logs`,
+   a forced crash with no core left anywhere), the QR pairing, and Daniel's
+   real device. Switch off the
    Dell bridge.
 
 Bounded pieces (envelope crypto, log canary test, restic job) go to sub-agents,
