@@ -52,6 +52,18 @@ test('the homepage links to a two-column features page with an expandable index'
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Changelog');
   await expect(page.getByTestId('changelog-entry').first()).toBeVisible();
 
+  const cliEntry = page.getByTestId('changelog-entry').filter({ hasText: 'A command line for souls.house' });
+  await expect(cliEntry.getByTestId('changelog-clip')).toHaveAttribute('src', '/changelog-clips/cli.mp4');
+  await expect(cliEntry.getByRole('link', { name: 'Download clip' })).toHaveAttribute(
+    'download',
+    'souls-house-cli.mp4',
+  );
+  if (process.env.FEATURES_SCREENSHOTS) {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await cliEntry.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${process.env.FEATURES_SCREENSHOTS}/changelog.png` });
+  }
+
   expect(errors).toEqual([]);
 });
 
