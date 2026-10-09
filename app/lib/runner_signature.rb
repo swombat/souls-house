@@ -30,8 +30,8 @@ module RunnerSignature
 
   # Returns the verified nonce. Raises Invalid with a code the runner can act
   # on: clock_skew is retried by the runner, everything else is not.
-  def verify!(method:, path:, body:, headers:, public_key_b64:, expected_runner_id:, now: Time.current)
-    raise Invalid.new(:body_too_large) if body.bytesize > MAX_BODY_BYTES
+  def verify!(method:, path:, body:, headers:, public_key_b64:, expected_runner_id:, now: Time.current, max_body_bytes: MAX_BODY_BYTES)
+    raise Invalid.new(:body_too_large) if body.bytesize > max_body_bytes
 
     runner_id = headers["X-Runner-Id"].to_s
     timestamp = headers["X-Runner-Timestamp"].to_s
