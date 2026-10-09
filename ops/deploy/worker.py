@@ -159,6 +159,33 @@ class Worker:
         self.rails("RefreshTelegramWebhooksJob.perform_later; puts({ok:true}.to_json)")
         self.report("Rails healthy")
 
+    def container_exists(self, name):
+        result = subprocess.run(["docker", "container", "inspect", "--format", "{{.Id}}", name],
+                                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                timeout=60)
+        self.log.write(result.stdout + result.stderr)
+        self.log.flush()
+        if result.returncode and "No such container" not in result.stderr:
+            raise RuntimeError("Subprocess failed; private diagnostics retained")
+        return result.returncode == 0
+
+    def present_residents(self, residents):
+        """An inactive agent whose container was never made (or was removed) has
+        nothing to roll: leave it alone and say so. Its image tag, if it is a
+        stock alias, still moves with the fleet. A missing container on an
+        ACTIVE resident is real damage, so that still stops the run."""
+        present, absent = [], []
+        for resident in residents:
+            if self.container_exists(resident["container_name"]):
+                present.append(resident)
+            elif resident["active"]:
+                raise RuntimeError("Active resident has no container; operator review required")
+            else:
+                absent.append(resident["id"])
+        if absent:
+            self.report("inactive residents without containers left alone", absent=absent)
+        return present
+
     def inspect_image(self, image):
         return json.loads(self.run(["docker", "image", "inspect", image], capture=True))[0]
 
@@ -183,6 +210,7 @@ class Worker:
             "puts({residents:Agent.hosted.where.not(container_name:[nil,''])"
             ".order(:id).map{|a| a.attributes.slice('id','container_name','container_image','active','paused')}}.to_json)"
         )["residents"]
+        residents = self.present_residents(residents)
         if not residents:
             raise RuntimeError("No resident containers")
         atomic(self.directory / "previous-residents.json", residents)

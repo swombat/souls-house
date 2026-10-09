@@ -18,7 +18,7 @@ ROOT = Path("/var/lib/house-deploy")
 OPERATIONS = ("rails", "chaos", "both", "runtime")
 TERMINAL = ("success", "failed", "partial", "interrupted", "superseded")
 FIELDS = ("id", "operation", "state", "step", "rails_revision", "chaos_revision",
-          "chaos_version", "skipped", "resident_id", "expected_revision")
+          "chaos_version", "skipped", "absent", "resident_id", "expected_revision")
 
 
 def atomic(path, data):
