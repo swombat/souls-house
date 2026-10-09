@@ -58,12 +58,7 @@
         missingCredentials = data.code === 'missing_credentials' ? data.agents || [] : [];
         throw new Error(data.error || 'Could not ask the resident. Please try again.');
       }
-      let data = {};
-      try {
-        data = (await response.json()) || {};
-      } catch {
-        // An empty body is a plain success.
-      }
+      const data = (await response.json?.().catch(() => null)) || {};
       if (data.queued?.length) {
         // Nothing new starts now, so there is no response to wait for.
         clearWaitingState();
@@ -83,10 +78,7 @@
     const who = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
     queuedNotice = `${who} ${names.length > 1 ? 'are' : 'is'} still responding, and will look again when that finishes.`;
     if (queuedTimeoutId) clearTimeout(queuedTimeoutId);
-    queuedTimeoutId = setTimeout(() => {
-      queuedNotice = '';
-      queuedTimeoutId = null;
-    }, 15_000);
+    queuedTimeoutId = setTimeout(() => (queuedNotice = ''), 15_000);
   }
 
   function selectionFor(agent) {
@@ -154,10 +146,8 @@
     }, 120_000);
   }
 
-  // When disabled becomes true (streaming started), or a run starts that was
-  // not running when we asked, the ask has been taken up: stop waiting. The
-  // bar is no longer disabled while a resident runs (a busy resident's ask is
-  // queued), so a new run is the signal now.
+  // Stop waiting once the ask is taken up: streaming started (disabled), or a
+  // run started that wasn't running when we asked (busy residents stay askable).
   $effect(() => {
     if (!waitingForResponse) return;
     if (disabled || activeRuntimeAgentIds.some((id) => !activeAtTrigger.has(id))) {
