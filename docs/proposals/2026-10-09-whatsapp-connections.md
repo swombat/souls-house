@@ -1,7 +1,11 @@
 # WhatsApp connections: milestone 1 (Daniel's own number)
 
-Status: **proposal, not implemented.** Revision 3, re-scoped after Daniel's
-correction in OjyBlJ. Reviewed by Mira in RjpvrY. Deploy remains Daniel's call.
+Status: **proposal.** Revision 4. Revision 3 (re-scoped after Daniel's
+correction in OjyBlJ, reviewed by Mira in RjpvrY) is implemented as far as the
+Rails read slice (#260). Revision 4 adds **sending** to milestone 1 at Daniel's
+request (OjyBlJ, 2026-10-09: "I do want to be able to send WhatsApp messages
+too... just like we do on the mac and dell"), as §5. Deploy remains Daniel's
+call.
 
 ## The scope correction
 
@@ -38,8 +42,9 @@ A WhatsApp connection is a `ServiceConnection` with `provider: "whatsapp"`
   explicit `connector` branch that gives residents the read endpoint and the
   connection's metadata, **never** the callback secret. (Today every strategy
   other than `refresh_broker` hands over the whole payload.)
-- One access profile, `read`. A `send` profile is reserved and not offered in
-  milestone 1. There is no send code anywhere.
+- One access profile, `read`, on the connection. Sending is **not** a profile:
+  it is a per-resident grant on the access row (§5), so one resident can read
+  without being able to send.
 
 Access is one `AgentServiceAccess` row per resident, the same as for Gmail.
 Enabling access goes through `resident_access_changeable_by?(enabled: true)`,
@@ -58,10 +63,12 @@ Disabling or deleting the access row ends reads on the next request.
 **Storage.** Messages live in Rails, in two tables keyed to the connection:
 `comms_chats` (provider chat ID, name, kind, last activity) and `comms_messages`
 (provider message ID, chat, sender ID, sender name, sent_at, body, media kind,
-caption). Sender IDs, names, bodies and captions use `encrypts`, like `credential_payload`. Upserts are keyed
-on `(service_connection_id, provider_message_id)`, so a replayed event is a
-no-op. Media are not downloaded in milestone 1: a message records `[image]`,
-`[voice note]` and so on, plus the caption.
+caption). Sender IDs, names, bodies and captions use `encrypts`, like
+`credential_payload`. Messages are keyed on `(service_connection_id,
+provider_message_id)` and immutable once stored: the first delivery wins, and
+edits are not modelled in milestone 1 (as built in #260). Media are not
+downloaded in milestone 1: a message records `[image]`, `[voice note]` and so
+on, plus the caption.
 
 **Read API and CLI.**
 `GET /api/v1/service_connections/:id/comms/chats` and
@@ -100,10 +107,10 @@ It is Go on whatsmeow. It talks only to Rails.
   to connection B, a stale timestamp is refused, and a nonce is remembered
   for the freshness window, so a replayed QR or status event is refused too. Rails rejects events for a connection that is not
   `pairing`/`connected`.
-- **Rails → connector.** Two commands, signed the same way with the
-  connection's secret: start pairing, and unpair (whatsmeow
-  `Logout`, then delete the session store). Disconnecting the
-  `ServiceConnection` sends unpair.
+- **Rails → connector.** Commands signed the same way with the connection's
+  secret: start pairing, unpair (whatsmeow `Logout`, then delete the session
+  store), and `send_text` (§5). Disconnecting the `ServiceConnection` sends
+  unpair.
 - **Pairing QR.** Only the owner's connection page shows it. The connector
   pushes each QR code with its expiry; Rails holds it encrypted in a column
   that is cleared on pairing, on expiry (whatsmeow rotates codes every 20–60
@@ -145,25 +152,99 @@ source lacks, after checking.
 Moving the Dell's stopped device into the house would save one linked-device
 slot but means copying a live credential. Fresh pairing plus import is simpler.
 
-## 5. WhatsApp's side
+## 5. Sending
+
+A message sent through this connection goes out **as Daniel**, from his number,
+and shows up on his phone and every linked device. Nothing here can make it
+private from him, and nothing should: the requirement is that he can always see
+which resident said what, to whom, and when.
+
+**The grant.** A new column, `agent_service_accesses.can_send`, boolean,
+default `false`.
+
+- Read never implies send. A send needs the access row enabled **and**
+  `can_send`. Send implies read, because a resident needs chat IDs to address
+  anything; disabling the row ends both on the next request.
+- Only the **owner** can turn `can_send` on (`owner?`, not `provisionable_by?`):
+  speaking as a person is that person's grant to give. Account admins and
+  `freely_provisionable` confer nothing here. Withdrawing it uses
+  `manageable_by?`, so an admin can still stop a resident sending.
+- `apply_default_accesses` and `follows_default` never set it. A new resident
+  or an "enabled for new residents" connection gets read at most.
+- Turning `can_send` on is itself recorded (who, when) and shown on the owner's
+  connection page.
+
+**The endpoint.** `POST /api/v1/service_connections/:id/comms/messages` with
+`chat`, `text` and `client_request_id`. It uses the read scope, then requires
+`can_send` on the same access row (403 `send_not_granted` otherwise; the
+resident can already see the connection, so 404 would hide nothing).
+
+- Text only, length-bounded. No media, no reactions, no edits or deletes.
+- The chat must already exist on this connection (`comms_chats`). Milestone 1
+  cannot start a conversation with a number Daniel has never exchanged messages
+  with; that is the "no unsolicited" rule made structural.
+- One chat per request. There is no list or broadcast form.
+- `client_request_id` is unique per (connection, resident). A retry with the
+  same ID returns the original send record and does not send again.
+- Human pace, enforced per connection and per resident: a small number of
+  sends per minute and per day (proposed 6/minute and 100/day per connection,
+  for Daniel to adjust), returning 429 beyond it.
+- `soulshouse-comms send --chat X --text -` (text on stdin), printing the send
+  record. The catalog's `runtime_notes` say plainly that it sends as the
+  connection's owner.
+
+**The send record.** A new table, `comms_sends`: connection, resident
+(`agent_id`), chat, `text` (`encrypts`), `client_request_id`, status
+(`pending`, `sent`, `failed`, `unknown`), provider message ID, error code,
+`requested_at`, `sent_at`. The row is written **before** the connector is
+called, so a send that happened always has a record. The owner's connection
+page lists them: which resident, when, to whom, what, and the outcome. A sent
+message also lands in `comms_messages` with `from_me: true` and
+`sent_by_agent_id`, so a resident reading a chat sees what another resident
+already said in it.
+
+**The connector side.** `send_text` is a signed Rails → connector command
+carrying the send record's ID, the chat and the text. The connector calls
+whatsmeow `SendMessage` with a message ID derived from the send record's ID and
+remembers completed send IDs, so a repeated command is not a second message.
+Rails waits with a bounded timeout. A timeout marks the record `unknown`, and
+Rails never retries an `unknown` send by itself: a duplicate message to a
+person is worse than a missing one. The connector logs no text, chat or JID;
+Rails filters `text`.
+
+**Not in milestone 1:** media, new conversations, scheduled sends, sending as
+anyone but the owner, and any automatic signature. Whether residents sign their
+messages (as Lume does by hand from the Dell bridge today) stays a convention
+in the resident's own instructions; Daniel can ask for it to be enforced later.
+
+## 6. WhatsApp's side
 
 Hosting linked devices on a server has precedent: Beeper runs whatsmeow bridges
 for many users. That is precedent, not approval. Unofficial clients are against
 WhatsApp's terms, a ban is always possible and would land on Daniel's number,
-and sending is what attracts bans. Receive-only on a long-established personal
-number is the lowest-risk use, and it is what the Dell bridge has been doing for
-months. **Before pairing, check the current limits:** linked devices per account
+and sending is what attracts bans: bulk, unsolicited, or from fresh numbers.
+Human-paced sends from a long-established personal number, into chats he
+already has, is what the Dell and Mac bridges already do; §5's rules (existing
+chats only, one chat per request, rate limits) keep the house there.
+**Before pairing, check the current limits:** linked devices per account
 (4 at last check, and this takes one), logout after the phone has been offline
 for 14 days, and how much history a new device receives.
 
-## 6. Milestone 1 acceptance
+## 7. Milestone 1 acceptance
 
 - A resident with an enabled access row reads chats and messages. A resident
   without one gets 404, and so does one with a disabled row.
 - Cross-connection and cross-account reads get 404.
 - A connector event signed for connection A is rejected for connection B, and
   unsigned or badly signed events are rejected.
-- No send endpoint, scope or connector code exists.
+- **Send:** a resident with read but not `can_send` gets 403 and no send record
+  or connector call. Default accesses never carry `can_send`. A non-owner admin
+  cannot grant it, including on a freely provisionable connection, and can
+  withdraw it. A chat not on this connection is 404. A repeated
+  `client_request_id` sends once. Rate limits return 429. Every send, including
+  failed and `unknown` ones, has a record the owner can read, naming the
+  resident, chat, time and text, and no other user can read it. No text appears
+  in either side's logs.
 - The connector restarts and reconnects from its session store with no
   re-pairing.
 - A database backup restores the messages (they are ordinary encrypted
@@ -171,7 +252,7 @@ for 14 days, and how much history a new device receives.
 - The QR code is visible only to the owner, and is gone after pairing or expiry.
 - The log smoke test (§3) passes.
 
-## 7. Build order
+## 8. Build order
 
 1. **Rails:** catalog entry, `comms_chats`/`comms_messages`, the signed internal
    events endpoint, the read API, `soulshouse-comms`, and tests driven by
@@ -179,7 +260,11 @@ for 14 days, and how much history a new device receives.
 2. **Connector with a synthetic provider** posting signed events. From #259
    this keeps the SQLCipher store, the lease and the process hardening. Its
    tickets, read API, access log and KEK envelope are dropped.
-3. **whatsmeow**, then pairing on Daniel's real device after the §5 check,
+3. **whatsmeow**, then pairing on Daniel's real device after the §6 check,
    then the history import and cutover.
+4. **Sending:** the Rails grant, `comms_sends`, the endpoint and
+   `soulshouse-comms send`, tested against synthetic connector responses (this
+   part can be built alongside 2–3); then `send_text` in the connector, first
+   to a chat Daniel names as safe for a test.
 
 Telegram (Telethon user session) follows the same shape in its own room.
