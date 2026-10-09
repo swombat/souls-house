@@ -64,4 +64,14 @@ describe('rhythms helpers', () => {
     expect(formatWhen('2026-10-05T07:00:00Z', zoneIdentifier('Madrid', zones))).toContain('09:00');
     expect(zoneIdentifier('Europe/Madrid', [])).toBe('Europe/Madrid');
   });
+
+  it('sends a model for each selected resident, blank meaning default', () => {
+    const values = formValues({
+      resident_ids: ['a', 'b', 'c'],
+      resident_models: { a: 'anthropic/claude-fable-5.1', b: null, z: 'x' },
+    });
+    values.resident_ids = ['a', 'b'];
+    expect(submittableValues(values).resident_models).toEqual({ a: 'anthropic/claude-fable-5.1', b: 'default' });
+    expect(previewQuery(values)).not.toContain('resident_models');
+  });
 });

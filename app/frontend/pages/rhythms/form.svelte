@@ -26,6 +26,13 @@
   let { account, rhythm = null, residents = [], timezones = [] } = $props();
 
   const editing = $derived(Boolean(rhythm?.id));
+
+  // A model choice for each selected resident that has more than one model.
+  const modelPickers = $derived(
+    residents.filter(
+      (resident) => $form.rhythm.resident_ids.includes(resident.id) && (resident.model_choices?.length ?? 0) > 1
+    )
+  );
   const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
   let form = useForm({ rhythm: formValues(rhythm ?? {}, browserTimezone) });
@@ -136,7 +143,29 @@
     <section class="space-y-2">
       <Label>Residents</Label>
       <RhythmResidentPicker {residents} bind:selected={$form.rhythm.resident_ids} />
-      {#each [...errorsFor('resident_ids'), ...errorsFor('agents')] as error}<p class="text-sm text-destructive">
+      {#each modelPickers as resident (resident.id)}
+        <div class="flex items-center gap-3 pt-1">
+          <Label
+            for={`rhythm_model_${resident.id}`}
+            class="w-32 shrink-0 truncate text-xs font-normal text-muted-foreground">{resident.name} runs on</Label>
+          <select
+            id={`rhythm_model_${resident.id}`}
+            class={selectClass}
+            value={$form.rhythm.resident_models?.[resident.id] ?? ''}
+            onchange={(event) =>
+              ($form.rhythm.resident_models = {
+                ...$form.rhythm.resident_models,
+                [resident.id]: event.currentTarget.value,
+              })}>
+            <option value="">Their default ({resident.default_model_label})</option>
+            {#each resident.model_choices as choice (choice.model_id)}
+              <option value={choice.model_id}>{choice.label}</option>
+            {/each}
+          </select>
+        </div>
+      {/each}
+      {#each [...errorsFor('resident_ids'), ...errorsFor('agents'), ...errorsFor('resident_models')] as error}<p
+          class="text-sm text-destructive">
           {error}
         </p>{/each}
     </section>

@@ -13,9 +13,11 @@ module Api
     class RhythmsController < BaseController
 
       PAGE_SIZE = 100
-      FORBIDDEN_FIELDS = %w[resident_ids agent_ids agents creator creator_id creator_agent creator_agent_id user_id].freeze
-      # A human chooses residents the way the web form does, with resident_ids.
-      HUMAN_FORBIDDEN_FIELDS = (FORBIDDEN_FIELDS - %w[resident_ids]).freeze
+      FORBIDDEN_FIELDS = %w[resident_ids resident_models agent_ids agents creator creator_id creator_agent creator_agent_id user_id].freeze
+      # A human chooses residents (and their models) the way the web form does,
+      # with resident_ids and resident_models. A resident sets its own model
+      # with join's model_id.
+      HUMAN_FORBIDDEN_FIELDS = (FORBIDDEN_FIELDS - %w[resident_ids resident_models]).freeze
       HUMAN_MANAGER_ACTIONS = %i[update destroy pause resume start].freeze
 
       before_action :require_human_rhythm_access, if: :human_key?
@@ -96,7 +98,20 @@ module Api
       end
 
       def join
-        render_state(@rhythm.join!(agent: current_api_agent))
+        model_id = :unchanged
+        if params.key?(:model_id)
+          unless current_api_agent.resident_may_switch_model?
+            return render json: {
+              error: "Your account has not allowed you to choose your own model. The rhythm's creator or the account owner can set it on the rhythm."
+            }, status: :forbidden
+          end
+          unless params[:model_id].nil? || params[:model_id].is_a?(String)
+            return render json: { error: "model_id must be a model id from your choices, or \"default\"" }, status: :unprocessable_entity
+          end
+
+          model_id = params[:model_id]
+        end
+        render_state(@rhythm.join!(agent: current_api_agent, model_id: model_id))
       end
 
       def leave
@@ -231,11 +246,14 @@ module Api
       # account's eligible residents and accepted guests, failing closed (404).
       def human_rhythm_params(account)
         permitted = params[:rhythm].permit(:title, :opening, :append_date, :cadence, :time_of_day,
-          :weekday, :month_day, :month, :timezone, resident_ids: [])
+          :weekday, :month_day, :month, :timezone, resident_ids: [], resident_models: {})
         if permitted.key?(:resident_ids)
           permitted[:resident_ids] = Rhythm.selectable_resident_ids(account, permitted.delete(:resident_ids))
         end
-        permitted.to_h.symbolize_keys
+        models = permitted.delete(:resident_models)
+        attributes = permitted.to_h.symbolize_keys
+        attributes[:resident_models] = Rhythm.decode_resident_models(models) if models
+        attributes
       end
 
       def human_create

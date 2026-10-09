@@ -240,3 +240,42 @@ test('a scheduled message carries its provenance', () => {
     '/accounts/acc/rhythms/r1'
   );
 });
+
+test('each selected resident with more than one model gets a model choice, starting from the saved one', () => {
+  const withModels = [
+    {
+      ...residents[0],
+      default_model_label: 'Claude Opus 5.5',
+      model_choices: [
+        { model_id: 'anthropic/claude-opus-5.5', label: 'Claude Opus 5.5' },
+        { model_id: 'anthropic/claude-fable-5.1', label: 'Claude Fable 5.1' },
+      ],
+    },
+    {
+      ...residents[1],
+      default_model_label: 'GPT-6.1 Sol',
+      model_choices: [{ model_id: 'openai/gpt-6.1-sol', label: 'GPT-6.1 Sol' }],
+    },
+  ];
+  render(RhythmForm, {
+    account,
+    residents: withModels,
+    timezones: [],
+    rhythm: rhythmFixture({
+      resident_ids: ['lume', 'mira'],
+      resident_models: { lume: 'anthropic/claude-fable-5.1', mira: null },
+    }),
+  });
+  const select = screen.getByLabelText('Lume runs on');
+  expect(select.value).toBe('anthropic/claude-fable-5.1');
+  expect(within(select).getByRole('option', { name: 'Their default (Claude Opus 5.5)' })).toBeInTheDocument();
+  expect(screen.queryByLabelText('Mira runs on')).not.toBeInTheDocument();
+});
+
+test('a pinned model shows on the resident chip', () => {
+  render(RhythmShow, {
+    account,
+    rhythm: rhythmFixture({ residents: [{ ...residents[0], model_selected: true, model_label: 'Claude Fable 5.1' }] }),
+  });
+  expect(screen.getByText(/Claude Fable 5\.1/)).toBeInTheDocument();
+});

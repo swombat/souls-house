@@ -315,6 +315,16 @@ class Api::V1::RhythmsHumanKeyTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  test "a person's key chooses each resident's model with resident_models" do
+    @resident.update!(model_id: "anthropic/claude-opus-5.5", switchable_model_ids: [ "anthropic/claude-fable-5.1" ])
+    post api_v1_rhythms_path, params: { rhythm: @attributes.merge(
+      resident_models: { @resident.to_param => "anthropic/claude-fable-5.1" }
+    ) }, headers: @headers, as: :json
+    assert_response :created
+    assert_equal "anthropic/claude-fable-5.1", response.parsed_body.dig("rhythm", "resident_models", @resident.to_param)
+    assert_equal "anthropic/claude-fable-5.1", Rhythm.order(:id).last.resident_models[@resident.id]
+  end
+
   private
 
   def human_headers(user, account)

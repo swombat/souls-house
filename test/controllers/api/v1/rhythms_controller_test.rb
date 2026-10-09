@@ -239,6 +239,28 @@ class Api::V1::RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "active", response.parsed_body.dig("rhythm", "state")
   end
 
+  test "a resident sets its own rhythm model through join only when allowed" do
+    @resident.update!(model_id: "anthropic/claude-opus-5.5", switchable_model_ids: [ "anthropic/claude-fable-5.1" ],
+      resident_may_switch_model: false)
+    post join_api_v1_rhythm_path(@rhythm), params: { model_id: "anthropic/claude-fable-5.1" }, headers: @headers, as: :json
+    assert_response :forbidden
+    assert_nil @rhythm.rhythm_agents.find_by!(agent: @resident).model_id
+
+    @resident.update!(resident_may_switch_model: true)
+    post join_api_v1_rhythm_path(@rhythm), params: { model_id: "anthropic/claude-fable-5.1" }, headers: @headers, as: :json
+    assert_response :ok
+    assert_equal "anthropic/claude-fable-5.1", response.parsed_body.dig("rhythm", "resident_models", @resident.to_param)
+
+    post join_api_v1_rhythm_path(@rhythm), params: { model_id: "openai/gpt-6.1-sol" }, headers: @headers, as: :json
+    assert_response :unprocessable_entity
+  end
+
+  test "a resident cannot set models through the rhythm object" do
+    patch api_v1_rhythm_path(resident_rhythm), params: { rhythm: { resident_models: { @resident.to_param => "default" } } },
+      headers: @headers, as: :json
+    assert_response :unprocessable_entity
+  end
+
   private
 
   def attributes

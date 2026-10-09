@@ -13,6 +13,9 @@ class RhythmPresentation
     holds = @rhythm.persisted? ? @rhythm.open_holds.includes(:user, :agent).to_a : []
     at = @rhythm.next_run_at
     selected = @rhythm.agents.to_a
+    seat_models = @rhythm.persisted? ? @rhythm.rhythm_agents.pluck(:agent_id, :model_id).to_h : {}
+    # A form re-rendered after a rejected save shows what was asked for.
+    seat_models = seat_models.merge(@rhythm.pending_resident_models.to_h)
     present = @agent && @rhythm.account.conversation_agents.exists?(@agent.id)
     {
       id: @rhythm.persisted? ? @rhythm.to_param : nil,
@@ -31,7 +34,10 @@ class RhythmPresentation
         type: @rhythm.creator_agent ? "agent" : (@rhythm.creator ? "user" : nil)
       },
       resident_ids: selected.map(&:to_param),
-      residents: selected.map { |resident| { id: resident.to_param, name: resident.name, colour: resident.colour } },
+      # nil follows the resident's default; a model id pins the model the
+      # rhythm's conversations open with.
+      resident_models: selected.to_h { |resident| [ resident.to_param, seat_models[resident.id] ] },
+      residents: selected.map { |resident| resident_payload(resident, seat_models[resident.id]) },
       can_manage: manageable, can_resume: holds.any? { |hold| can_release?(hold) },
       can_join: !!(present && @agent.eligible_for_conversation? && !selected.include?(@agent)),
       can_leave: !!(present && selected.include?(@agent)),
@@ -56,6 +62,14 @@ class RhythmPresentation
   end
 
   private
+
+  def resident_payload(resident, model_id)
+    {
+      id: resident.to_param, name: resident.name, colour: resident.colour,
+      model_id: model_id, model_label: Agent.label_for_model(model_id.presence || resident.model_id),
+      model_selected: model_id.present?
+    }
+  end
 
   # The last few conversations, shown inline on the Rhythms page. Quiet runs
   # are off the conversation list (Chat::QuietRhythmRun), so this is where
