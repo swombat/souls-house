@@ -12,9 +12,13 @@
   import RecordingUploadDialog from '$lib/components/field/RecordingUploadDialog.svelte';
   import RecordingAllowance from '$lib/components/field/RecordingAllowance.svelte';
   import RecordingViewer from '$lib/components/field/RecordingViewer.svelte';
-  import { fieldItemLink, formatBytes, formatWhen } from '$lib/field';
-  import { formatDuration, recordingStatusLine } from '$lib/field-recordings';
-  import { FileArrowUp, File, Microphone, Notepad, NotePencil, Plant } from 'phosphor-svelte';
+  import FieldTagEditor from '$lib/components/field/FieldTagEditor.svelte';
+  import FieldTagManager from '$lib/components/field/FieldTagManager.svelte';
+  import FieldItemCard from '$lib/components/field/FieldItemCard.svelte';
+  import FieldSearchBar from '$lib/components/field/FieldSearchBar.svelte';
+  import FieldSearchResults from '$lib/components/field/FieldSearchResults.svelte';
+  import { fieldItemLink, formatBytes } from '$lib/field';
+  import { FileArrowUp, Microphone, NotePencil, Plant } from 'phosphor-svelte';
 
   let {
     files = [],
@@ -30,6 +34,10 @@
     max_file_label = '100 MB',
     account_name = '',
     account,
+    tags = [],
+    filter_tags = [],
+    query = '',
+    search = null,
   } = $props();
 
   const tabs = [
@@ -39,12 +47,19 @@
     { key: 'recordings', label: 'Recordings' },
   ];
 
+  // Tag filter: an item shows when it carries every chosen tag.
+  const tagged = (item) => filter_tags.every((name) => (item.tags || []).includes(name));
   const everything = $derived([...files, ...notes, ...recordings]);
-  const byTab = $derived({ all: everything, files, notes, recordings });
-  const items = $derived([...(byTab[tab] || everything)].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)));
+  const shown = $derived(everything.filter(tagged));
+  const byTab = $derived({
+    all: shown,
+    files: files.filter(tagged),
+    notes: notes.filter(tagged),
+    recordings: recordings.filter(tagged),
+  });
+  const items = $derived([...(byTab[tab] || shown)].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)));
   const fieldEmpty = $derived(everything.length === 0);
   const current = $derived(everything.find((item) => item.key === selected) || null);
-  const kindLabel = { file: 'File', note: 'Note', recording: 'Recording' };
   const accountLabel = $derived(account_name || 'this account');
   const sharedLine = $derived(
     `Shared with every human member and resident in ${accountLabel}, including anyone who joins later.`
@@ -53,16 +68,44 @@
   const updateSync = createDynamicSync();
   $effect(() => {
     const subs = {
-      [`Account:${account.id}:field_files`]: 'files',
-      [`Account:${account.id}:whiteboards`]: 'notes',
-      [`Account:${account.id}:field_recordings`]: ['recordings', 'recording_allowance'],
+      // An open search refreshes too: a transcript becoming ready, or a note
+      // being edited, can change what matches.
+      [`Account:${account.id}:field_files`]: ['files', 'search'],
+      [`Account:${account.id}:whiteboards`]: ['notes', 'search'],
+      [`Account:${account.id}:field_recordings`]: ['recordings', 'recording_allowance', 'search'],
     };
-    if (current?.kind === 'note') subs[`Whiteboard:${current.id}`] = 'notes';
+    if (current?.kind === 'note') subs[`Whiteboard:${current.id}`] = ['notes', 'search'];
     updateSync(subs);
   });
 
-  function visit(params) {
-    router.get(`/accounts/${account.id}/field`, params, { preserveState: true, preserveScroll: true });
+  // Search, tag filter and results page ride along in the URL so a link
+  // reopens them. A new query or filter starts again from the first page.
+  function visit(params, { q = query, tag = filter_tags, page = search?.page || 0 } = {}) {
+    const extra = {};
+    if (q) extra.q = q;
+    if (tag.length) extra.tag = tag;
+    if (q && page > 0) extra.page = page;
+    router.get(`/accounts/${account.id}/field`, { ...params, ...extra }, { preserveState: true, preserveScroll: true });
+  }
+
+  let tagsOpen = $state(false);
+
+  function toggleTag(name) {
+    const next = filter_tags.includes(name) ? filter_tags.filter((t) => t !== name) : [...filter_tags, name];
+    visit(selected ? { tab, item: selected } : { tab }, { tag: next, page: 0 });
+  }
+
+  // After a tag is renamed, merged or deleted, an active filter on its old
+  // name would match nothing and have no chip to clear it: follow the change.
+  function tagChanged(oldName, newName) {
+    if (!filter_tags.includes(oldName)) return false;
+    const next = [...new Set(filter_tags.map((name) => (name === oldName ? newName : name)).filter(Boolean))];
+    visit(selected ? { tab, item: selected } : { tab }, { tag: next, page: 0 });
+    return true;
+  }
+
+  function nextResults() {
+    visit(selected ? { tab, item: selected } : { tab }, { page: search.next_page });
   }
 
   function selectTab(key) {
@@ -177,7 +220,7 @@
       if (response.ok) {
         editing = false;
         conflict = null;
-        router.reload({ only: ['notes'], preserveScroll: true });
+        router.reload({ only: ['notes', 'search'], preserveScroll: true });
       } else {
         const data = await response.json();
         if (data.error === 'conflict') {
@@ -268,25 +311,36 @@
       </Card.Content>
     </Card.Root>
   {:else}
+    <FieldSearchBar
+      {query}
+      filterTags={filter_tags}
+      {tags}
+      onSearch={(q) => visit(selected ? { tab, item: selected } : { tab }, { q, page: 0 })}
+      onToggleTag={toggleTag}
+      onManage={() => (tagsOpen = true)} />
+
     <p class="text-sm text-muted-foreground mb-4" data-testid="field-sharing">
       {sharedLine} Adding something doesn't notify or wake residents; share its link in a chat to explore it together.
     </p>
 
-    <div class="flex gap-1 mb-4" role="tablist">
-      {#each tabs as t (t.key)}
-        <Button
-          variant={tab === t.key ? 'secondary' : 'ghost'}
-          size="sm"
-          role="tab"
-          aria-selected={tab === t.key}
-          onclick={() => selectTab(t.key)}>
-          {t.label}
-          <span class="text-muted-foreground ml-1">
-            {byTab[t.key].length}
-          </span>
-        </Button>
-      {/each}
-    </div>
+    <!-- The tabs sort the list; a search has its own results. -->
+    {#if !search}
+      <div class="flex gap-1 mb-4" role="tablist">
+        {#each tabs as t (t.key)}
+          <Button
+            variant={tab === t.key ? 'secondary' : 'ghost'}
+            size="sm"
+            role="tab"
+            aria-selected={tab === t.key}
+            onclick={() => selectTab(t.key)}>
+            {t.label}
+            <span class="text-muted-foreground ml-1">
+              {byTab[t.key].length}
+            </span>
+          </Button>
+        {/each}
+      </div>
+    {/if}
 
     {#if tab === 'recordings' && recording_allowance}
       <RecordingAllowance allowance={recording_allowance} />
@@ -294,55 +348,34 @@
 
     <div class="grid gap-6 lg:grid-cols-3">
       <div class="space-y-3">
-        {#if items.length === 0}
-          <p class="text-sm text-muted-foreground p-4">Nothing here yet.</p>
+        {#if search}
+          <FieldSearchResults
+            {search}
+            {query}
+            filterTags={filter_tags}
+            currentKey={current?.key}
+            onSelect={selectItem}
+            onMore={nextResults} />
+        {:else}
+          {#if items.length === 0}
+            <p class="text-sm text-muted-foreground p-4">
+              {filter_tags.length ? `Nothing here carries ${filter_tags.join(' and ')}.` : 'Nothing here yet.'}
+            </p>
+          {/if}
+          {#each items as item (item.key)}
+            <FieldItemCard {item} selected={current?.key === item.key} onSelect={selectItem} />
+          {/each}
         {/if}
-        {#each items as item (item.key)}
-          <button onclick={() => selectItem(item.key)} class="w-full text-left" data-testid="field-item">
-            <Card.Root
-              class="hover:border-primary/50 transition-colors {current?.key === item.key
-                ? 'border-primary ring-1 ring-primary'
-                : ''}">
-              <Card.Content class="p-4">
-                <div class="flex items-start gap-3">
-                  {#if item.kind === 'file'}
-                    <File class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
-                  {:else if item.kind === 'recording'}
-                    <Microphone class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
-                  {:else}
-                    <Notepad class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
-                  {/if}
-                  <div class="flex-1 min-w-0">
-                    <h3 class="font-semibold truncate">{item.title}</h3>
-                    {#if item.kind === 'recording'}
-                      <p
-                        class="text-sm line-clamp-2 mt-1 {item.status === 'rejected' || item.status === 'failed'
-                          ? 'text-destructive'
-                          : 'text-muted-foreground'}"
-                        data-testid="field-recording-line">
-                        {recordingStatusLine(item)}
-                      </p>
-                    {:else if item.kind === 'file' && item.note}
-                      <p class="text-sm text-muted-foreground line-clamp-2 mt-1">{item.note}</p>
-                    {:else if item.kind === 'note' && item.summary}
-                      <p class="text-sm text-muted-foreground line-clamp-2 mt-1">{item.summary}</p>
-                    {/if}
-                    <p class="text-xs text-muted-foreground mt-2">
-                      {kindLabel[item.kind]}
-                      {#if item.kind === 'recording' && item.duration_ms}· {formatDuration(item.duration_ms)}{/if}
-                      {#if item.kind !== 'note' && item.uploader_name}· {item.uploader_name}{/if}
-                      {#if item.kind === 'note' && item.editor_name}· {item.editor_name}{/if}
-                      · {formatWhen(item.created_at)}
-                    </p>
-                  </div>
-                </div>
-              </Card.Content>
-            </Card.Root>
-          </button>
-        {/each}
       </div>
 
       <div class="lg:col-span-2">
+        {#if current}
+          <div class="mb-3">
+            {#key current.key}
+              <FieldTagEditor accountId={account.id} itemKey={current.key} tags={current.tags || []} allTags={tags} />
+            {/key}
+          </div>
+        {/if}
         {#if current?.kind === 'file'}
           <FieldFileViewer file={current} link={fieldItemLink(account.id, current.key)} onDelete={deleteFile} />
         {:else if current?.kind === 'recording'}
@@ -457,5 +490,7 @@
     </form>
   </Dialog.Content>
 </Dialog.Root>
+
+<FieldTagManager bind:open={tagsOpen} accountId={account.id} {tags} onChanged={tagChanged} />
 
 <NoteHistory bind:open={historyOpen} accountId={account.id} note={current?.kind === 'note' ? current : null} />

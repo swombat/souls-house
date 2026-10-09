@@ -482,6 +482,54 @@ URL. This read never includes voice-recognition or name-suggestion data.
   `{ "error": ..., "match": { "voice_id", "name", "last_named_in" } }`; resend
   with `link_existing: true` to link to that voice. Returns `{ "speaker": {...} }`.
 
+**Search.** `GET /api/v1/field/search?query=granttree valuation` searches one
+account's Field: recording titles, notes and transcripts (once ready), file
+titles, filenames, notes and text (plain-text formats up to 2 MB; not PDFs), and
+note names and content. Names are also split on `. _ - /`, so `orchid` finds
+`orchid-invoice.pdf`. A body is searched up to its first 128 kB (about 128,000 characters of
+plain English text, fewer for scripts with multi-byte characters). Every word must appear, anywhere; `"a phrase"` keeps words
+together; `-word` leaves out. Case-insensitive, no stemming, so English and
+Spanish behave alike. Optional: `tag` (repeat for several; items must carry all
+of them), `kind` (`recording`, `file` or `note`), `sort` (`newest`, the default,
+or `relevance`) and `page` (from 0; 20 per page). A query can be left out when a
+tag is given. Residents search their home account; people the account they act
+in, as for the recordings list.
+
+```json
+{ "results": [ { "kind": "recording", "id": "aBcDeF", "title": "Board call",
+    "date": "2026-10-06T10:00:00Z", "tags": ["granttree"],
+    "excerpts": [ { "text": "[00:00] Daniel: So the valuation came back lower than Bob expected.",
+                    "matches": [[23, 9]] } ],
+    "web_path": "/accounts/XyZ/field/recordings/aBcDeF",
+    "api_path": "/api/v1/field/recordings/aBcDeF" } ],
+  "page": 0, "next_page": null }
+```
+
+`matches` are `[offset, length]` in Unicode characters of `text`. A match only
+in the title has no excerpt. An empty page adds `guidance`. `date` is when the
+item came into the Field (for a note, its last edit).
+
+**Tags.** Many per item, shared by the account. `GET /api/v1/field/tags` lists
+`{ id, name, item_count }`. Names are folded: `Life`, ` life ` and `#life` are
+one tag, at most 50 characters, 32 per item.
+
+- Every list (`add`, `remove`, `tags`) must be a JSON array of strings; anything
+  else is 422 and changes nothing. `tags: []` clears an item's tags.
+- `PATCH /api/v1/field/files/:file_id/tags`, `.../recordings/:recording_id/tags`
+  and `/api/v1/whiteboards/:whiteboard_id/tags` take `add: [...]` and/or
+  `remove: [...]`, or `tags: [...]` to set the whole list, and return
+  `{ "tags": [...] }`. A name that isn't a tag yet becomes one. Residents and
+  people may both; each tagging records who added or removed it.
+- `POST /api/v1/field/files` and `POST /api/v1/field/recordings` accept
+  `tags: [...]`, so an import can tag as it uploads.
+- `GET /api/v1/field/files` and `GET /api/v1/field/recordings` take `tag`
+  (repeatable) and include `tags` on each item.
+- `PATCH /api/v1/field/tags/:id` (`name`) renames a tag on every item;
+  onto an existing name it's 409 with `existing`, unless `merge: true`, which
+  moves the items over. `DELETE /api/v1/field/tags/:id` takes the tag off every
+  item (kept, hidden). Both are a person's key only: a resident gets 403,
+  because changing a tag changes items other people tagged.
+
 **Voices.** `GET /api/v1/field/voices` lists voices (`remembered`, `used_in`, and
 so on), `members_without_voice`, `my_voice_id`, `pending_enrolments`,
 `recognise_voices` and `can_change_setting`. It never returns a voice print.

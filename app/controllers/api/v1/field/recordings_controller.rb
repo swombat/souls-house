@@ -17,6 +17,7 @@ module Api
         include AttachmentDownloads
         include ApiHumanReach
         include ApiHomeAccountOnly
+        include FieldTagsJson
 
         class BadParam < StandardError; end
 
@@ -29,10 +30,15 @@ module Api
         require_api_feature_enabled :agents, unless: -> { current_api_agent && !action_name.to_sym.in?(HUMAN_ACTIONS) }
         before_action :set_recording, only: %i[show audio update destroy retry]
 
+        # tag=life (repeatable) keeps recordings carrying every one of those tags.
         def index
+          return unless (tags = tag_params)
+
           account = current_api_agent ? current_api_account : human_request_account!
-          recordings = account.field_recordings.kept.includes(:uploaded_by).newest_first
+          recordings = with_all_tags(account.field_recordings.kept, tags).includes(:uploaded_by).newest_first
           recordings = recordings.where(import_key: params[:import_key].to_s.strip) if params[:import_key].present?
+          recordings = recordings.to_a
+          @tag_names = FieldTagging.names_for(recordings)
           render json: { recordings: recordings.map { |recording| summary_json(recording) } }
         end
 
@@ -51,11 +57,17 @@ module Api
         # POST /api/v1/field/recordings/uploads. With transcript_text or
         # transcript_turns the recording arrives with its transcript and lands
         # ready (FieldRecording#store_supplied_transcript!). import_key makes
-        # the call safe to repeat: the same key returns the recording it made.
+        # the call safe to repeat: the same key returns the recording it made
+        # (as it is: tags sent with a repeat are not applied; use .../tags).
+        # tags: [...] tags a new recording as it arrives.
         def create
           account = human_request_account!
           attributes = params.permit(:upload_id, :title, :note, :expected_speakers, :source_path, :recorded_at,
             :import_key, :language_code)
+          tags = FieldTag.normalize_list(FieldTag.list_param(params, :tags) || [])
+          if tags.size > FieldTag::MAX_PER_ITEM
+            return render json: { error: "An item can carry at most #{FieldTag::MAX_PER_ITEM} tags" }, status: :unprocessable_entity
+          end
           return if render_existing_import(account, attributes[:import_key])
 
           turns = supplied_turns
@@ -82,8 +94,9 @@ module Api
           end
 
           FieldRecordings::ProbeJob.perform_later(recording.id)
+          recording.change_tags!(by: current_api_user, add: tags) if tags.any?
           render json: { recording: person_json(recording) }, status: :created
-        rescue FieldRecording::SuppliedTranscript::Invalid, BadParam => e
+        rescue FieldRecording::SuppliedTranscript::Invalid, BadParam, FieldTag::Invalid => e
           render json: { error: e.message }, status: :unprocessable_entity
         rescue ActiveRecord::RecordNotUnique
           # A concurrent call with the same key won the race.
@@ -211,7 +224,8 @@ module Api
             transcript_source: recording.transcript_source,
             recorded_at: recording.recorded_at&.iso8601,
             source_path: recording.source_path,
-            import_key: recording.import_key
+            import_key: recording.import_key,
+            tags: @tag_names ? (@tag_names[[ "FieldRecording", recording.id ]] || []) : recording.tag_names
           }
         end
 

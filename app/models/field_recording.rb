@@ -16,6 +16,7 @@ class FieldRecording < ApplicationRecord
   include ObfuscatesId
   include SyncAuthorizable
   include FieldRecording::Transcription
+  include FieldTaggable
 
   class NotRetryable < StandardError; end
 
