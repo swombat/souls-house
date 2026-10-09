@@ -70,8 +70,15 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
 
     attr_reader :released
 
+    attr_accessor :release_failures, :on_release
+
     def release_after_retirement!(placement:)
+      if (release_failures || 0).positive?
+        self.release_failures -= 1
+        raise "transient release failure"
+      end
       (@released ||= []) << placement.id
+      on_release&.call(placement)
     end
 
   end
@@ -453,6 +460,30 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert_equal [ placement.id ], @backups.released
       VmCleanupJob.perform_now(placement.id)
       assert_equal [ placement.id, placement.id ], @backups.released, "a retired placement still retries the release"
+    end
+  end
+
+
+  test "a release that failed after retirement is retried by the sweep, and finished placements stay out of it" do
+    with_house do
+      agent = born!
+      placement = agent.placement
+      placement.update!(cleanup_requested_at: Time.current, cleanup_reason: "operator", state: "retired")
+      enrollment, = RunnerEnrollment.mint!(placement:)
+      command = RunnerCommand.enqueue!(enrollment:, kind: "backup_resident", payload: {})
+      backup = VmBackup.create!(agent:, runner_command: command, checkpoint_file_digest: "x", deadline_at: 1.hour.from_now)
+
+      assert_enqueued_with(job: VmCleanupJob, args: [ placement.id ]) { VmBirthSweepJob.perform_now }
+      @backups.release_failures = 1
+      @backups.on_release = ->(_) { backup.update!(released_at: Time.current) }
+      VmCleanupJob.perform_now(placement.id) # fails transiently, logged and swallowed
+      assert_nil backup.reload.released_at
+      assert_enqueued_with(job: VmCleanupJob, args: [ placement.id ]) { VmBirthSweepJob.perform_now }
+      VmCleanupJob.perform_now(placement.id)
+      assert backup.reload.released_at
+      clear_enqueued_jobs
+      VmBirthSweepJob.perform_now
+      assert_no_enqueued_jobs(only: VmCleanupJob) # a retired placement with nothing held is finished
     end
   end
 

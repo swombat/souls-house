@@ -13,6 +13,13 @@ class VmBirthSweepJob < ApplicationJob
 
     AgentPlacement.where.not(cleanup_requested_at: nil).where.not(state: "retired")
       .pluck(:id).each { |placement_id| VmCleanupJob.perform_later(placement_id) }
+
+    # Retired, but a backup hold was never released (a transient failure in
+    # the release after retirement). Only these come back; every other
+    # retired placement is finished and stays out of the sweep.
+    AgentPlacement.where(state: "retired").where.not(cleanup_requested_at: nil)
+      .where(agent_id: VmBackup.holding.select(:agent_id))
+      .pluck(:id).each { |placement_id| VmCleanupJob.perform_later(placement_id) }
   end
 
 end
