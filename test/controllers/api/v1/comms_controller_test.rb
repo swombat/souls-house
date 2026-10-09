@@ -39,9 +39,19 @@ module Api
         get api_v1_service_connection_comms_messages_url(@connection.public_id, chat: @chat.public_id, limit: 2), headers: auth
         assert_equal %w[m1 m2], response.parsed_body["messages"].map { |message| message["provider_message_id"] }
 
-        get api_v1_service_connection_comms_messages_url(@connection.public_id, chat: @chat.public_id, since: "2026-10-09T10:00:00Z", limit: 1),
+        get api_v1_service_connection_comms_messages_url(@connection.public_id, chat: @chat.public_id, since: "2026-10-09T10:01:00Z", limit: 1),
             headers: auth
         assert_equal %w[m1], response.parsed_body["messages"].map { |message| message["provider_message_id"] }
+      end
+
+      test "since is inclusive, so messages sharing the boundary second are not skipped" do
+        @chat.comms_messages.create!(service_connection: @connection, provider_message_id: "m1b",
+                                     sent_at: Time.iso8601("2026-10-09T10:01:00Z"), body: "same second")
+        get api_v1_service_connection_comms_messages_url(@connection.public_id, chat: @chat.public_id, since: "2026-10-09T10:01:00Z", limit: 10),
+            headers: auth
+        ids = response.parsed_body["messages"].map { |message| message["provider_message_id"] }
+        assert_includes ids, "m1"
+        assert_includes ids, "m1b"
       end
 
       test "the limit is bounded" do

@@ -5,6 +5,7 @@ class Accounts::ServiceConnectionsController < ApplicationController
   def create
     definition = Services::Definition.fetch(params.require(:provider))
     raise ArgumentError, "This service uses OAuth authorization" unless definition.connection_method.in?(%w[credentials pairing])
+    raise ArgumentError, "This service is not available on this house" unless definition.available?
 
     management_scope = params.require(:management_scope)
     authorize_management_scope!(definition, management_scope)

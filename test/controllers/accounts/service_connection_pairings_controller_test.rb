@@ -79,9 +79,11 @@ class Accounts::ServiceConnectionPairingsControllerTest < ActionDispatch::Integr
   test "connecting WhatsApp creates a pairing connection with a secret and starts pairing" do
     started = []
     sign_in @owner
-    CommsConnector.stub(:start_pairing, ->(connection) { started << connection.id; :sent }) do
-      assert_difference -> { @account.service_connections.where(provider: "whatsapp").count }, 1 do
-        post account_service_connections_path(@account), params: { provider: "whatsapp", management_scope: "personal" }
+    with_connector_url do
+      CommsConnector.stub(:start_pairing, ->(connection) { started << connection.id; :sent }) do
+        assert_difference -> { @account.service_connections.where(provider: "whatsapp").count }, 1 do
+          post account_service_connections_path(@account), params: { provider: "whatsapp", management_scope: "personal" }
+        end
       end
     end
 
@@ -90,6 +92,27 @@ class Accounts::ServiceConnectionPairingsControllerTest < ActionDispatch::Integr
     assert_equal @owner, connection.connected_by_user
     assert_match(/\A[0-9a-f]{64}\z/, connection.credential_payload_hash["callback_secret"])
     assert_equal [ connection.id ], started
+  end
+
+  test "without a configured connector, WhatsApp is neither offered nor connectable" do
+    previous = ENV.delete("COMMS_CONNECTOR_URL")
+    sign_in @owner
+    assert_not Services::Definition.fetch("whatsapp").available?
+    get account_integrations_path(@account)
+    assert_response :success
+    keys = inertia_props.dig("props", "services").map { |service| service["key"] }
+    assert_includes keys, "github"
+    assert_not_includes keys, "whatsapp"
+    with_connector_url do
+      @inertia_props = nil
+      get account_integrations_path(@account)
+      assert_includes inertia_props.dig("props", "services").map { |service| service["key"] }, "whatsapp"
+    end
+    assert_no_difference -> { @account.service_connections.where(provider: "whatsapp").count } do
+      post account_service_connections_path(@account), params: { provider: "whatsapp", management_scope: "personal" }
+    end
+  ensure
+    ENV["COMMS_CONNECTOR_URL"] = previous if previous
   end
 
   test "disconnecting sends unpair and keeps a connection that has history" do
@@ -114,6 +137,16 @@ class Accounts::ServiceConnectionPairingsControllerTest < ActionDispatch::Integr
       delete account_service_connection_path(@account, @connection.public_id)
     end
     assert_not ServiceConnection.exists?(@connection.id)
+  end
+
+  private
+
+  def with_connector_url
+    previous = ENV["COMMS_CONNECTOR_URL"]
+    ENV["COMMS_CONNECTOR_URL"] = "http://souls-house-comms:8080"
+    yield
+  ensure
+    previous ? ENV["COMMS_CONNECTOR_URL"] = previous : ENV.delete("COMMS_CONNECTOR_URL")
   end
 
 end

@@ -2,15 +2,18 @@ module Api
   module V1
     module Comms
       # Messages in one chat, oldest first. With since, the first `limit`
-      # messages after it (page forward by passing the last sent_at back);
-      # without, the latest `limit`.
+      # messages at or after it (page forward by passing the last sent_at
+      # back; inclusive, because WhatsApp timestamps are whole seconds and a
+      # strict cursor would skip messages sharing the boundary second, so the
+      # boundary message repeats and readers dedupe by id); without, the
+      # latest `limit`.
       class MessagesController < BaseController
 
         def index
           chat = find_chat
           scope = chat.comms_messages.includes(:comms_chat)
           messages = if params[:since].present?
-            scope.where("comms_messages.sent_at > ?", since).order(:sent_at, :id).limit(limit).to_a
+            scope.where("comms_messages.sent_at >= ?", since).order(:sent_at, :id).limit(limit).to_a
           else
             scope.order(sent_at: :desc, id: :desc).limit(limit).to_a.reverse
           end
