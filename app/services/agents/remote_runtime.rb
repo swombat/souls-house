@@ -32,9 +32,13 @@ module Agents
     end
 
     # The newest enrolled, unrevoked enrollment of a ready remote placement.
+    # A resident born on a VM (#246) also needs runtime_ready_at, which is set
+    # only after its first verified backup: until then no user, scheduled or
+    # rhythm turn can be dispatched to it, whatever state its runner is in.
     def enrollment_for(agent, now: Time.current)
       placement = placement_for(agent)
       return nil unless placement&.backend == "hetzner_cloud" && placement.state == "ready"
+      return nil if placement.vm_birth? && agent.runtime_ready_at.nil?
       return nil unless ResidentTurn.enabled?
 
       enrollment = RunnerEnrollment.uncached do

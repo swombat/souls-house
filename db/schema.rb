@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_09_220000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_09_230000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -185,10 +185,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_220000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "location"
+    t.datetime "admitted_by_setting_at"
+    t.datetime "birth_deadline_at"
+    t.bigint "birth_requested_by_id"
+    t.string "cleanup_reason"
+    t.datetime "cleanup_requested_at"
+    t.bigint "first_backup_command_id"
     t.binary "seed_archive"
     t.string "seed_sha256"
     t.datetime "seeded_at"
     t.index ["agent_id"], name: "index_agent_placements_on_agent_id", unique: true
+    t.index ["cleanup_requested_at"], name: "index_agent_placements_on_cleanup_requested_at", where: "(cleanup_requested_at IS NOT NULL)"
     t.index ["provider_server_id"], name: "index_agent_placements_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
     t.check_constraint "generation >= 1", name: "agent_placements_positive_generation"
     t.check_constraint "provider_server_id > 0", name: "agent_placements_positive_server_id"
