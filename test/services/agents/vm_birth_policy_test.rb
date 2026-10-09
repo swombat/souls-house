@@ -78,10 +78,11 @@ class Agents::VmBirthPolicyTest < ActiveSupport::TestCase
     assert_equal Agents::VmBirthPolicy::NOT_AVAILABLE_REFUSAL, policy(backups: false).refusal
   end
 
-  test "with backups, configuration and room, a house-model birth is allowed and any other model is refused first" do
+  test "with backups, configuration and room, any model a local resident can use is allowed" do
     @setting.update!(new_residents_on_vm: true, vm_resident_limit: 3)
     assert_nil policy.refusal(model_id: HouseInference::Offering::MODEL_ID)
-    assert_equal Agents::VmBirthPolicy::MODEL_REFUSAL, policy(token: nil).refusal(model_id: "openrouter/auto")
+    assert_nil policy.refusal(model_id: "openrouter/auto")
+    assert_nil policy.refusal(model_id: "anthropic/claude-opus-5-5")
   end
 
   test "admit! commits the placement with its durable admission, and refuses at the cap under the lock" do

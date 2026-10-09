@@ -86,7 +86,10 @@ module Agents
         "image" => image,
         "memory_mb" => agent.container_memory_mb,
         "cpu_shares" => agent.container_cpu_shares,
-        "env" => environment(agent)
+        "env" => environment(agent),
+        # External-service credentials, copied into the container before it
+        # starts, as Agents::Sandbox#run_container! does locally.
+        "service_manifest" => Agents::ServiceManifest.new(agent).to_yaml
       }
       RunnerCommand.enqueue!(enrollment:, kind: "start_resident", payload:)
     end
@@ -116,26 +119,70 @@ module Agents
     end
 
     # The same values Agents::Sandbox#run_container! sets locally, except the
-    # house origin, which is public here. Only house-funded inference runs on
-    # a VM in this slice, and imported homes stay local.
+    # house origin, which is public here: the provider and model the resident
+    # runs on (house inference, an account API key, or a subscription login
+    # made from inside its runtime), and the account's provider keys unless it
+    # is house-funded. Imported homes are not yet seeded onto a VM.
     def environment(agent)
-      selection = Agents::Sandbox.chaos_selection_for(agent)
-      raise Unavailable, "Only house-inference residents can run on a VM" unless selection[:provider] == "house"
       raise Unavailable, "Imported homes cannot run on a VM yet" if agent.imported_home?
 
       origin = public_origin
       {
         "AGENT_ID" => agent.uuid,
         "AGENT_SLUG" => agent.name.to_s.parameterize.presence || agent.uuid,
-        "AGENT_PROVIDER" => selection[:provider],
-        "AGENT_DEFAULT_MODEL" => selection[:model],
+        "AGENT_PROVIDER" => Agents::Sandbox.chaos_provider_for(agent),
+        "AGENT_DEFAULT_MODEL" => Agents::Sandbox.chaos_model_for(agent),
         "TRIGGER_BEARER_TOKEN" => agent.trigger_bearer_token,
         "SOULSHOUSE_BEARER_TOKEN" => agent.outbound_api_token,
         "SOULSHOUSE_APP_URL" => origin,
         "SOULSHOUSE_ACTIVITY_ORIGIN" => origin,
         "HELIXKIT_BEARER_TOKEN" => agent.outbound_api_token,
         "HELIXKIT_APP_URL" => origin
-      }.tap { |env| env["SOULSHOUSE_REQUIRE_HOUSE_TRUST"] = "1" if Agents::Config.require_house_trust? }
+      }.tap do |env|
+        env["SOULSHOUSE_REQUIRE_HOUSE_TRUST"] = "1" if Agents::Config.require_house_trust?
+        env.merge!(provider_keys(agent))
+      end
+    end
+
+    # Agents::Sandbox#provider_env_args, for a VM: none for a house-funded
+    # resident, otherwise the account's own keys.
+    def provider_keys(agent)
+      return {} if HouseInference::Offering.find(agent.model_id)
+
+      agent.account.ai_provider_keys.select { |_name, value| value.present? }
+    end
+
+    # Ready and alive: the placement is ready, the runner is live, and a VM
+    # birth has finished. Used to decide whether changed credentials or
+    # services should restart the resident with them.
+    def running?(agent)
+      placement = placement_for(agent)
+      return false unless placement&.backend == "hetzner_cloud" && placement.state == "ready"
+      return false if placement.vm_birth? && agent.runtime_ready_at.nil?
+
+      healthy?(agent)
+    end
+
+    # One provider-login call relayed through the runner (AgentProviderAuthClient
+    # for a VM resident). The house never calls the VM, so it queues the call
+    # and waits briefly for the runner's answer.
+    PROVIDER_AUTH_WAIT = 25.seconds
+
+    def provider_auth!(agent, method:, path:, params: {}, wait: PROVIDER_AUTH_WAIT, poll: 0.5)
+      command = RunnerCommand.enqueue!(enrollment: live_enrollment!(agent), kind: "provider_auth", payload: {
+        "container_name" => agent.container_name, "method" => method, "path" => path, "params" => params.compact
+      })
+      deadline = Time.current + wait
+      loop do
+        command.reload
+        break if command.terminal?
+        raise Unavailable, "The resident's server did not answer in time. Try again in a moment." if Time.current >= deadline
+
+        sleep poll
+      end
+      raise Unavailable, "The resident's server could not relay that: #{command.result&.dig('error') || command.state}" unless command.state == "done"
+
+      command.result["result"]
     end
 
     # The resident on a VM reaches the house the way any outside client does.
