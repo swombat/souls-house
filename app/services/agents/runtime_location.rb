@@ -14,6 +14,7 @@ module Agents
 
     # Turns may be admitted for this resident: local, or ready on its VM.
     def self.dispatchable?(agent)
+      return false if Backup::VmResident.held?(agent)
       local?(agent) || Agents::RemoteRuntime.dispatchable?(agent)
     end
 

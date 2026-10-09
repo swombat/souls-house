@@ -19,6 +19,7 @@ class ResidentTurn < ApplicationRecord
   def self.enqueue!(interaction, body, completion_context: {})
     transaction do
       connection.execute("SELECT pg_advisory_xact_lock(1936680308, 1)")
+      raise SessionBusy, "Resident backup is pending" if Backup::VmResident.held?(interaction.agent)
       raise SessionBusy if pending.where(session_id: body.fetch(:session_id)).exists?
       raise SessionBusy, "Resident is restarting with new credentials" if Agents::RemoteRuntime.refresh_pending?(interaction.agent)
       turn = create!(
@@ -46,7 +47,7 @@ class ResidentTurn < ApplicationRecord
       selected = []
       candidates = where(state: "queued").order(:created_at, :id).to_a
       while selected.length < available
-        eligible = candidates.reject { |turn| busy_sessions.include?(turn.session_id) }
+        eligible = candidates.reject { |turn| busy_sessions.include?(turn.session_id) || Backup::VmResident.held?(turn.agent) }
         break if eligible.empty?
         turn = eligible.min_by { |item| [ last_admitted[item.agent_id] || Time.at(0), item.created_at, item.id ] }
         candidates.delete(turn)

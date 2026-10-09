@@ -32,6 +32,7 @@ import os
 import re
 import secrets
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -61,7 +62,7 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 # The runner's whole vocabulary. Anything else is refused here, not only in
 # Rails.
 COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home",
-                           "provider_auth"})
+                           "backup_resident", "provider_auth"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
 
 
@@ -499,7 +500,7 @@ class ResidentHost:
     """Carries out the six commands. Docker and HTTP are injected so tests
     can see exactly what would run."""
 
-    def __init__(self, state_dir, docker=_docker, http=_http, sleep=time.sleep, load_image=None, fetch_seed=None):
+    def __init__(self, state_dir, docker=_docker, http=_http, sleep=time.sleep, load_image=None, fetch_seed=None, backup_request=None):
         self.state_dir = state_dir
         self.docker = docker
         self.http = http
@@ -507,9 +508,63 @@ class ResidentHost:
         # load_image(image_id) streams the image from the house into
         # `docker load`; returns (ok, error).
         self.load_image = load_image
-        # fetch_seed(sha256, write) streams one seed archive from the house
-        # into write(); returns (ok, error).
+        # fetch_seed(sha256, write) streams a seed archive from the house.
         self.fetch_seed = fetch_seed
+        self.backup_request = backup_request
+        self.current_command_id = None
+
+    def _backup_marker(self):
+        return os.path.join(self.state_dir, "pending-backup.json")
+
+    def begin_backup_recovery(self, name):
+        _require(isinstance(self.current_command_id, str) and
+                 COMMAND_ID_RE.fullmatch(self.current_command_id), "backup command id is missing")
+        self._write_private(self._backup_marker(), json.dumps({
+            "command_id": self.current_command_id, "container_name": name}))
+
+    def backup_recovery_facts(self):
+        try:
+            with open(os.path.join(self.state_dir, "recovered-backup.json")) as handle:
+                return {"recovered_backup": json.load(handle)}
+        except (OSError, ValueError):
+            return {}
+
+    def recover_backup(self):
+        """Contain tools before unpausing a resident owned by a durable marker."""
+        path = self._backup_marker()
+        if not os.path.exists(path):
+            return
+        with open(path) as handle:
+            marker = json.load(handle)
+        name = marker.get("container_name")
+        self._known_resident(name)
+        _require(isinstance(marker.get("command_id"), str) and
+                 COMMAND_ID_RE.fullmatch(marker["command_id"]), "invalid backup recovery marker")
+        ok, output = self.docker(["docker", "ps", "-a", "--format", "{{.Names}}"])
+        if not ok:
+            raise CommandFailed("cannot inspect interrupted backup tools")
+        tools = [tool for tool in output.splitlines()
+                 if re.fullmatch(r"souls-house-backup-[0-9a-f]{24}", tool)]
+        if tools:
+            ok, _ = self.docker(["docker", "rm", "-f", *tools])
+            if not ok:
+                raise CommandFailed("cannot stop interrupted backup tools")
+        ok, output = self.docker(["docker", "ps", "-a", "--format", "{{.Names}}"])
+        if not ok or any(re.fullmatch(r"souls-house-backup-[0-9a-f]{24}", tool)
+                         for tool in output.splitlines()):
+            raise CommandFailed("interrupted backup tools not contained")
+        from backup_proxy import _state
+        state = _state(lambda argv, timeout: self.docker(argv), name, 10)
+        if state["Paused"]:
+            ok, _ = self.docker(["docker", "unpause", name])
+            if not ok:
+                raise CommandFailed("cannot recover interrupted backup pause")
+        state = _state(lambda argv, timeout: self.docker(argv), name, 10)
+        if state["Paused"] or state.get("Restarting") or state.get("Dead") or state.get("Status") not in ("running", "exited", "created"):
+            raise CommandFailed("interrupted backup runtime remains uncertain")
+        self._write_private(os.path.join(self.state_dir, "recovered-backup.json"),
+                            json.dumps({**marker, "unpaused": True, "tools_stopped": True}))
+        os.unlink(path)
 
     # Secrets for a resident live only in its root-owned env file.
     def _env_path(self, name):
@@ -527,7 +582,14 @@ class ResidentHost:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as handle:
             handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
         os.rename(tmp, path)
+        directory = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
     def _known_resident(self, name):
         _require(isinstance(name, str) and NAME_RE.match(name), "bad container_name")
@@ -676,6 +738,24 @@ class ResidentHost:
             return self.http("GET", url, token, timeout=20)
         return self.http("POST", url, token, body=params or None, timeout=20)
 
+    def backup_resident(self, payload):
+        from backup_proxy import run_backup
+        if self.backup_request is None:
+            raise BadCommand("backup transport unavailable")
+        _require(isinstance(self.current_command_id, str) and
+                 COMMAND_ID_RE.fullmatch(self.current_command_id), "backup command id is missing")
+        self._known_resident(payload.get("container_name"))
+        result = None
+        try:
+            result = run_backup(payload, self, signed_request=self.backup_request)
+            return result
+        except (BadCommand, CommandFailed) as error:
+            result = getattr(error, "result", None)
+            raise
+        finally:
+            if isinstance(result, dict) and result.get("unpaused") is True and result.get("tools_stopped") is True and os.path.exists(self._backup_marker()):
+                os.unlink(self._backup_marker())
+
     # seed_home (#246 slice 3): the first contents of a new resident's
     # identity volume, before its first start. The archive comes from the
     # house by digest, is checked against that digest, and is unpacked into a
@@ -760,11 +840,16 @@ def execute_command(command, state, host):
     else:
         state.begin(command["id"], command["generation"])
         try:
+            host.current_command_id = command["id"]
             result = {"outcome": "done", "result": getattr(host, command["kind"])(command["payload"])}
         except BadCommand as error:
             result = {"outcome": "refused", "error": str(error)}
+            if isinstance(getattr(error, "result", None), dict):
+                result["result"] = error.result
         except CommandFailed as error:
             result = {"outcome": "failed", "error": str(error)}
+            if isinstance(getattr(error, "result", None), dict):
+                result["result"] = error.result
         except Exception as error:  # the effect may or may not have happened
             result = {"outcome": "unknown", "error": f"{type(error).__name__}: {error}"}
     state.record(command["id"], command["generation"], result)
@@ -1017,6 +1102,30 @@ def poll_command_once(config, key, state, host, opener=urllib.request.urlopen):
     return True
 
 
+def poll_with_heartbeats(poll, config, key, state, host, heartbeat, facts, interval=HEARTBEAT_SECONDS):
+    stop = threading.Event()
+
+    def beats():
+        while not stop.wait(interval):
+            try:
+                heartbeat(config, key, {**facts(config.get("runtime_image")), **host.backup_recovery_facts()})
+            except Exception as error:
+                print(f"heartbeat failed: {type(error).__name__}", file=sys.stderr)
+
+    thread = threading.Thread(target=beats, daemon=True)
+    thread.start()
+    try:
+        recover = getattr(host, "recover_backup", None)
+        if callable(recover):
+            # A failed cleanup need not wait for a process restart. Contain
+            # the marked backup before allowing any later command to run.
+            recover()
+        return poll(config, key, state, host)
+    finally:
+        stop.set()
+        thread.join(timeout=35)
+
+
 def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=enroll_once, heartbeat=heartbeat_once,
          facts=collect_facts, max_heartbeats=None, poll=poll_command_once, clock=time.monotonic):
     with open(config_path) as handle:
@@ -1060,16 +1169,19 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
         # Heartbeats keep their cadence; between them the runner polls for
         # commands, pausing COMMAND_IDLE_SECONDS when there is nothing to do.
         state = CommandState(state_dir)
+        from backup_proxy import make_signed_request
         host = ResidentHost(state_dir, sleep=sleep, load_image=docker_load_from_house(config, key),
-                            fetch_seed=lambda digest, write: fetch_seed(config, key, digest, write))
+                            fetch_seed=lambda digest, write: fetch_seed(config, key, digest, write),
+                            backup_request=make_signed_request(config, key, signed_headers))
+        host.recover_backup()
         last_beat = None
         while max_heartbeats is None or sent < max_heartbeats:
             if last_beat is None or clock() - last_beat >= HEARTBEAT_SECONDS:
-                heartbeat(config, key, facts(config.get("runtime_image")))
+                heartbeat(config, key, {**facts(config.get("runtime_image")), **host.backup_recovery_facts()})
                 sent += 1
                 last_beat = clock()
             try:
-                handled = poll(config, key, state, host)
+                handled = poll_with_heartbeats(poll, config, key, state, host, heartbeat, facts)
             except Exception as error:  # a broken poll must not stop heartbeats
                 print(f"command poll failed: {error}", file=sys.stderr)
                 handled = False
@@ -1084,4 +1196,7 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
 
 
 if __name__ == "__main__":
+    # Keep one set of command exception types for the backup module.
+    sys.modules.setdefault("souls_house_runner", sys.modules[__name__])
+    signal.signal(signal.SIGTERM, lambda _signal, _frame: sys.exit(143))
     sys.exit(main())
