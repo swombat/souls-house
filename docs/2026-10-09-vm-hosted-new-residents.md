@@ -83,7 +83,10 @@ current state, so it's safe to re-run:
    local Docker step. (Slice 1, #247.)
 2. **Order.** This is a new, narrow entry point,
    `CloudProcurement#plan_for_vm_birth!(placement:)`. It is the only path
-   that accepts the system actor, and only while the setting is on. It
+   that accepts the system actor, and only for a placement whose birth was
+   durably admitted while the switch was on (the placement records
+   `admitted_by_setting_at`). It doesn't re-check the switch, so turning it
+   off can't strand an admitted birth. It
    writes an audit-log entry and uses `approval_reference:
    "setting:new_residents_on_vm/agent:<id>"`. The admin gate on `plan!`
    is unchanged. Then `submit!` as now.
@@ -192,14 +195,17 @@ is recorded as not ok.
 `/api/v1/host_runner/backup/*`. The repository prefix is
 `agents/<uuid>/`, taken from the enrollment's placement and never from
 the request.
-- **Grammar.** Only restic's own layout is accepted:
+- **Grammar.** Only restic's REST wire paths are accepted:
+  - `POST /?create=true` (repository initialisation, the only query
+    accepted; it creates nothing beyond what create-if-absent allows)
   - `config`
   - `keys/<64 hex>`, `locks/<64 hex>`, `snapshots/<64 hex>`,
-    `index/<64 hex>`
-  - `data/<2 hex>/<64 hex>`
-  - plus the listing endpoints
+    `index/<64 hex>`, `data/<64 hex>`
+  - the listing endpoints `GET <type>/`
 
-  Any other path, method or query is refused.
+  `data/<hash>` is sharded as `data/<2 hex>/<hash>` only when it is
+  translated to an S3 key, matching the layout local residents' repositories
+  already use. Any other path, method or query is refused.
 - **Create-if-absent.** Every POST is an S3 conditional put
   (`If-None-Match: *`). If the object already exists, the house compares
   it: identical bytes answer 200 (a retry), different bytes are refused.
