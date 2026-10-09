@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/svelte';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import IntegrationConnection from './integration-connection.svelte';
 
 const base = {
@@ -53,5 +53,37 @@ describe('existing integration permission controls', () => {
     expect(screen.getByLabelText('Let account admins switch this on for residents')).toBeEnabled();
     expect(screen.getByRole('switch', { name: /Disable Shared Dropbox/ })).toBeEnabled();
     expect(screen.getByRole('switch', { name: /Enable Shared Dropbox/ })).toBeDisabled();
+  });
+});
+
+describe('Tailscale sign-in on the account screen', () => {
+  it('shows a sign-in panel for each resident granted the tailnet, and none for the rest', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ available: true, backend_state: 'NoState', hosts: [], pubkey: null }),
+    });
+    mount({
+      provider: 'tailscale',
+      label: 'Tailnet',
+      can_manage: true,
+      can_provision: true,
+      residents: [
+        { id: 'mira', name: 'Mira', enabled: true, access_update_url: '/access/mira', tailnet_url: '/t/mira', integrations_url: '/r/mira' },
+        { id: 'lume', name: 'Lume', enabled: true, access_update_url: '/access/lume', tailnet_url: '/t/lume', integrations_url: '/r/lume' },
+        { id: 'off', name: 'Off', enabled: false, access_update_url: '/access/off', tailnet_url: null },
+      ],
+    });
+    const section = screen.getByTestId('tailnet-sign-ins');
+    expect(section).toHaveTextContent('Mira');
+    expect(section).toHaveTextContent('Lume');
+    expect(section).not.toHaveTextContent('Off');
+    expect(await screen.findAllByRole('button', { name: 'Connect to Tailscale' })).toHaveLength(2);
+    expect(globalThis.fetch.mock.calls.map(([url]) => url).sort()).toEqual(['/t/lume', '/t/mira']);
+  });
+
+  it('adds nothing to other providers', () => {
+    mount({ can_manage: true, can_provision: true });
+    expect(screen.queryByTestId('tailnet-sign-ins')).not.toBeInTheDocument();
   });
 });
