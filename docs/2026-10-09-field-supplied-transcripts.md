@@ -30,8 +30,10 @@ starts an unattributed one. Markdown list and heading lines are never speakers.
 Checked against the archive (699 files) for fidelity, not only acceptance:
 every alphabetic word and every line-start time in the source survives into the
 turns; 646 parse with speakers, 53 as prose, 224 with times, none refused.
-Known residue: about 14 files keep a one-off pseudo-speaker such as "Topics" or
-"Speaker attribution" from a note mid-file; the text is intact.
+Known residue: some files keep a one-off pseudo-speaker such as "Topics",
+"Source" or
+"Speaker attribution" from a note or a mixed header; the text is intact. The
+parser prefers that to swallowing a real opening voice.
 
 ## Guards that lived in dispatch
 

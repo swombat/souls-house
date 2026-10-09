@@ -52,6 +52,10 @@ class FieldRecording::SuppliedTranscriptTest < ActiveSupport::TestCase
 
     turns = Parse.parse("Alice: Opening.\n\nBob: Reply.\n\nBob: Again.")
     assert_equal %w[Alice Bob Bob], turns.map { |turn| turn["spk"] }
+
+    turns = Parse.parse("Alice: Opening.\nStill Alice.\n\nBob: Reply.\n\nBob: Again.")
+    assert_equal [ [ "Alice", "Opening.\nStill Alice." ], [ "Bob", "Reply." ], [ "Bob", "Again." ] ],
+      turns.map { |turn| turn.values_at("spk", "t") }
   end
 
   test "bold around the time and the label together" do

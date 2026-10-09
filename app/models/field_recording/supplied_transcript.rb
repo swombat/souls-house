@@ -119,16 +119,19 @@ module FieldRecording::SuppliedTranscript
   # A paragraph is metadata, not speech, only when all of these hold: it
   # carries no time (a timed line is speech, and a time alone dates speech);
   # none of its labels recurs anywhere in the transcript; and it looks like a
-  # block, not one utterance: two or more lines, a markdown heading or rule,
-  # or metadata keys ("Source:", "Date:").
+  # block: a markdown heading or rule, or labels that are all metadata keys
+  # ("Source:", "Date:"). Length alone never makes a header: an opening
+  # speaker's turn can run to several lines.
   # So "Source: ...\nSpeakers: ..." is a header, and a speaker who opens with
   # one untimed line in its own paragraph stays a speaker.
   def header_paragraph?(paragraph, counts)
     return false if paragraph.any? { |line| TIME_ALONE.match?(line) || labelled_line(line)&.[](:ts) || TIMESTAMP_START.match?(line) }
     return false if paragraph.any? { |line| (match = labelled_line(line)) && counts[match[:label].squish] >= 2 }
 
-    paragraph.size >= 2 || paragraph.any? { |line| line.match?(/\A\s*(#|---|===)/) } ||
-      paragraph.all? { |line| METADATA_KEYS.include?(labelled_line(line)&.[](:label)&.squish&.downcase) }
+    return true if paragraph.any? { |line| line.match?(/\A\s*(#|---|===)/) }
+
+    labels = paragraph.filter_map { |line| labelled_line(line)&.[](:label)&.squish&.downcase }
+    labels.any? && labels.all? { |label| METADATA_KEYS.include?(label) }
   end
 
   # "**Speaker A**: words" and "**Date:** 2026-03-25" read as plain labels.
