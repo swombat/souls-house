@@ -10,6 +10,7 @@
     Pulse,
     RocketLaunch,
     ListBullets,
+    ChartLine,
   } from 'phosphor-svelte';
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
   import { buttonVariants } from '$lib/components/shadcn/button/index.js';
@@ -54,6 +55,10 @@
     <span class="text-xs font-normal text-muted-foreground text-red-500 hidden md:inline"> Site Admin </span>
   </DropdownMenu.Trigger>
   <DropdownMenu.Content align="end">
+    <DropdownMenu.Item onclick={() => router.visit('/admin/dashboard')}>
+      <ChartLine class="mr-2 size-4" />
+      <span>Dashboard</span>
+    </DropdownMenu.Item>
     <DropdownMenu.Item onclick={() => router.visit('/admin/settings')}>
       <Gear class="mr-2 size-4" />
       <span>Site Settings</span>

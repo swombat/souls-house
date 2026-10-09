@@ -4,7 +4,7 @@ class Admin::AccountsController < ApplicationController
   skip_before_action :set_current_account
 
   before_action :require_site_admin
-  before_action :set_account, only: %i[disable enable convert shared_ai_credentials refresh_storage]
+  before_action :set_account, only: %i[disable enable convert shared_ai_credentials founding refresh_storage]
 
   def index
     @accounts = Account.includes(:owner, memberships: :user)
@@ -55,6 +55,14 @@ class Admin::AccountsController < ApplicationController
       use_system_ai_credentials: enabled
     )
     redirect_to admin_accounts_path(account_id: @account), notice: "Shared AI credential fallback updated"
+  end
+
+  def founding
+    founding = ActiveModel::Type::Boolean.new.cast(params.require(:account).require(:founding))
+    @account.update!(founding: founding)
+    audit(:admin_update_founding_account, @account, account_id: @account.id, founding: founding)
+    redirect_back_or_to admin_accounts_path(account_id: @account),
+      notice: founding ? "Marked as a founding account" : "No longer a founding account"
   end
 
   def refresh_storage

@@ -37,6 +37,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_070000) do
     t.text "zai_api_key"
     t.bigint "recording_ms_weekly_limit", default: 72000000, null: false
     t.boolean "recognise_voices", default: false, null: false
+    t.boolean "founding", default: false, null: false
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
