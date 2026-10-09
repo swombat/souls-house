@@ -163,6 +163,7 @@ module FieldItems
   def allowance_json(account, now: Time.current)
     {
       limit_ms: account.recording_ms_weekly_limit,
+      unlimited: account.recording_unlimited?,
       used_ms: FieldRecordingReservation.used_ms(account, now:),
       pending_ms: account.field_recording_reservations.where(state: "pending").sum(:audio_ms),
       window_days: FieldRecordingReservation::WINDOW.in_days.to_i

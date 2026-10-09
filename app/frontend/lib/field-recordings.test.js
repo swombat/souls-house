@@ -90,6 +90,12 @@ describe('recording wording', () => {
     );
   });
 
+  it('shows no limit, and never warns, when the account is unlimited', () => {
+    const allowance = { limit_ms: 360_000_000_000, used_ms: 12_000_000, pending_ms: 0, window_days: 7, unlimited: true };
+    expect(allowanceLine(allowance)).toBe('3 h 20 m used in the last 7 days (no weekly limit)');
+    expect(preflightProblem(400 * 3_600_000, allowance)).toBe('');
+  });
+
   it('warns before uploading something longer than what is left', () => {
     const allowance = { limit_ms: 6_000_000, used_ms: 0 };
     expect(preflightProblem(7_500_000, allowance)).toBe('This recording is 2 h 05 m; 1 h 40 m left this week.');
