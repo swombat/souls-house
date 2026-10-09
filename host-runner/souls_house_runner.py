@@ -32,6 +32,7 @@ import os
 import re
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -641,9 +642,7 @@ class ResidentHost:
         root = self._volume_mountpoint(volume_name(name, "identity"))
         marker = os.path.join(root, SEED_MARKER)
         if os.path.lexists(marker):
-            with open(marker) as handle:
-                found = handle.read().strip()
-            if found == digest:
+            if read_seed_marker(marker) == digest:
                 return {"state": "seeded", "sha256": digest, "already": True}
             raise SeedRefused("identity volume was seeded from a different archive")
         if os.listdir(root):
@@ -736,6 +735,29 @@ def _seed_member_path(name):
     return parts
 
 
+SEED_MARKER_MAX_BYTES = 128
+
+
+def read_seed_marker(path):
+    """The marker's contents, if it is a small regular file. A symlink is
+    never followed (it could point anywhere and vouch for a seed that never
+    happened), a FIFO or device is never read (it could block), and anything
+    else is refused rather than trusted."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as error:
+        raise SeedRefused(f"seed marker is not a regular file: {error.strerror}")
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise SeedRefused("seed marker is not a regular file")
+        if info.st_size > SEED_MARKER_MAX_BYTES:
+            raise SeedRefused("seed marker is too large")
+        return os.read(fd, SEED_MARKER_MAX_BYTES + 1).decode("utf-8", "replace").strip()
+    finally:
+        os.close(fd)
+
+
 def unpack_seed(fileobj, staging):
     """Unpack a gzipped tar into staging, which must not exist. Every member
     is checked before anything is written: regular files and directories
@@ -747,14 +769,18 @@ def unpack_seed(fileobj, staging):
     except (tarfile.TarError, OSError, EOFError) as error:
         raise CommandFailed(f"seed archive is not a gzipped tar: {error}")
     with archive:
-        try:
-            members = archive.getmembers()
-        except (tarfile.TarError, OSError, EOFError) as error:
-            raise CommandFailed(f"seed archive is unreadable: {error}")
-        _require(len(members) <= SEED_MAX_ENTRIES, "seed archive has too many entries")
+        # Members are read one at a time and every limit applies as each is
+        # met, so a hostile archive is refused at the cap, never parsed whole.
         total = 0
         plan = []
-        for member in members:
+        while True:
+            try:
+                member = archive.next()
+            except (tarfile.TarError, OSError, EOFError) as error:
+                raise CommandFailed(f"seed archive is unreadable: {error}")
+            if member is None:
+                break
+            _require(len(plan) < SEED_MAX_ENTRIES, "seed archive has too many entries")
             parts = _seed_member_path(member.name)
             _require(member.isfile() or member.isdir(), f"seed entry is not a file or directory: {member.name!r}")
             total += member.size if member.isfile() else 0
