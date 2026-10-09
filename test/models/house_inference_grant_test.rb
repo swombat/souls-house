@@ -5,7 +5,7 @@ class HouseInferenceGrantTest < ActiveSupport::TestCase
   setup do
     @user = users(:user_1)
     @agent = agents(:research_assistant)
-    @agent.update!(model_id: HouseInference::Offering::MODEL_ID)
+    @agent.update!(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID)
     @grant = HouseInferenceGrant.assign!(@agent, @user)
     @offering = HouseInference::Offering.find(@agent.model_id)
   end
@@ -30,11 +30,11 @@ class HouseInferenceGrantTest < ActiveSupport::TestCase
     @agent.update!(model_id: 'openrouter/auto')
     HouseInferenceGrant.assign!(@agent, @user)
     replacement = agents(:other_account_agent)
-    replacement.update!(model_id: HouseInference::Offering::MODEL_ID)
+    replacement.update!(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID)
     HouseInferenceGrant.assign!(replacement, @user)
     HouseInference::Offering.stub(:configured?, true) do
       assert_raises(HouseInference::Error) do
-        @grant.reserve!(@offering, HouseInference::Offering::MODEL_ID, agent_id: @agent.id)
+        @grant.reserve!(@offering, HouseInference::Offering::DEEPSEEK_MODEL_ID, agent_id: @agent.id)
       end
     end
     assert_equal 0, @grant.house_inference_calls.count

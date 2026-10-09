@@ -7,7 +7,7 @@ class HouseInferenceConcurrencyTest < ActiveSupport::TestCase
   test 'competing accounts claim only one slot and competing calls only one reservation' do
     agents = [ agents(:research_assistant), agents(:other_account_agent) ]
     original_models = agents.map(&:model_id)
-    agents.each { |agent| agent.update_columns(model_id: HouseInference::Offering::MODEL_ID) }
+    agents.each { |agent| agent.update_columns(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID) }
     user = users(:user_1)
     results = race(agents.map(&:id)) do |id|
       HouseInferenceGrant.assign!(Agent.find(id), user)
@@ -18,7 +18,7 @@ class HouseInferenceConcurrencyTest < ActiveSupport::TestCase
     grant = HouseInferenceGrant.find_by!(user: user)
     HouseInference::Offering.stub(:configured?, true) do
       results = race([ grant.id, grant.id ]) do |id|
-        HouseInferenceGrant.find(id).reserve!(HouseInference::Offering.find(HouseInference::Offering::MODEL_ID), HouseInference::Offering::MODEL_ID)
+        HouseInferenceGrant.find(id).reserve!(HouseInference::Offering.find(HouseInference::Offering::DEEPSEEK_MODEL_ID), HouseInference::Offering::DEEPSEEK_MODEL_ID)
       rescue HouseInference::Error
         :refused
       end

@@ -20,7 +20,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "birth claims funding atomically and a second birth creates no resident key or job" do
-    attrs = { name: "House birth", system_prompt: "Synthetic seed", model_id: HouseInference::Offering::MODEL_ID }
+    attrs = { name: "House birth", system_prompt: "Synthetic seed", model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID }
     assert_difference [ "Agent.count", "ApiKey.count", "HouseInferenceGrant.count" ], 1 do
       assert_enqueued_with(job: ProvisionAgentJob) do
         post account_agents_path(@account), params: { agent: attrs }
@@ -35,12 +35,12 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "house funding is an explicit model choice and a second resident rolls back" do
-    patch account_agent_path(@account, @agent), params: { agent: { model_id: HouseInference::Offering::MODEL_ID } }
+    patch account_agent_path(@account, @agent), params: { agent: { model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID } }
     assert_redirected_to account_agents_path(@account)
     assert_equal @agent.id, HouseInferenceGrant.find_by!(user: @user).agent_id
     other = agents(:code_reviewer)
     previous = other.model_id
-    patch account_agent_path(@account, other), params: { agent: { model_id: HouseInference::Offering::MODEL_ID } }
+    patch account_agent_path(@account, other), params: { agent: { model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID } }
     assert_redirected_to edit_account_agent_path(@account, other)
     assert_equal previous, other.reload.model_id
     get edit_account_agent_path(@account, @agent)
@@ -153,9 +153,10 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal @account.to_param, inertia_shared_props.dig("account", "id")
-    assert_equal HouseInference::Offering::MODEL_ID, inertia_shared_props.fetch("default_model_id")
+    assert_equal HouseInference::Offering::DEFAULT_MODEL_ID, inertia_shared_props.fetch("default_model_id")
+    assert_equal "house/claude-haiku-5.5", inertia_shared_props.fetch("default_model_id")
     house_models = inertia_shared_props.fetch("grouped_models").fetch("On the house")
-    assert_includes house_models.pluck("model_id"), inertia_shared_props.fetch("default_model_id")
+    assert_equal [ "house/claude-haiku-5.5", "house/deepseek-v4.1-flash" ], house_models.pluck("model_id")
     top_models = inertia_shared_props.fetch("grouped_models").fetch("Top Models")
     assert_includes top_models.pluck("model_id"), "openai/gpt-6-astra"
     assert_includes top_models.pluck("model_id"), "google/gemini-3.8-flash"
@@ -173,13 +174,40 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     end
 
     agent = Agent.last
-    assert_equal HouseInference::Offering::MODEL_ID, agent.model_id
+    assert_equal HouseInference::Offering::DEFAULT_MODEL_ID, agent.model_id
+    assert_equal "house/claude-haiku-5.5", agent.model_id
     assert_equal agent.id, HouseInferenceGrant.find_by!(user: @user).agent_id
     assert_redirected_to onboarding_account_agent_path(@account, agent)
   end
 
+  test "a new resident can choose DeepSeek on the house instead of the default" do
+    HouseInference::Offering.stub(:configured?, true) do
+      post account_agents_path(@account), params: {
+        agent: { name: "Open weights birth", system_prompt: "Synthetic seed", model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID }
+      }
+    end
+
+    agent = Agent.last
+    assert_equal "house/deepseek-v4.1-flash", agent.model_id
+    assert_equal agent.id, HouseInferenceGrant.find_by!(user: @user).agent_id
+  end
+
+  test "an existing DeepSeek resident keeps its model, and switching house models keeps the same allowance" do
+    @agent.update_columns(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID)
+    grant = HouseInferenceGrant.create!(user: @user, agent: @agent)
+
+    get edit_account_agent_path(@account, @agent)
+    assert_equal "house/deepseek-v4.1-flash", @agent.reload.model_id
+
+    patch account_agent_path(@account, @agent), params: { agent: { model_id: HouseInference::Offering::HAIKU_MODEL_ID } }
+    assert_redirected_to account_agents_path(@account)
+    assert_equal "house/claude-haiku-5.5", @agent.reload.model_id
+    assert_equal @agent.id, grant.reload.agent_id
+    assert_equal 1, HouseInferenceGrant.where(user: @user).count
+  end
+
   test "new resident default falls back when the user has a funded resident in another account" do
-    @agent.update_columns(model_id: HouseInference::Offering::MODEL_ID)
+    @agent.update_columns(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID)
     grant = HouseInferenceGrant.create!(user: @user, agent: @agent)
 
     HouseInference::Offering.stub(:configured?, true) do
@@ -187,7 +215,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_equal @agent.id, grant.reload.agent_id
-    assert_equal HouseInference::Offering::MODEL_ID, @agent.reload.model_id
+    assert_equal HouseInference::Offering::DEEPSEEK_MODEL_ID, @agent.reload.model_id
   end
 
   test "new resident default falls back for members without credential permission" do
@@ -214,7 +242,7 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :success
-    assert_equal HouseInference::Offering::MODEL_ID, inertia_shared_props.fetch("default_model_id")
+    assert_equal HouseInference::Offering::DEFAULT_MODEL_ID, inertia_shared_props.fetch("default_model_id")
   end
 
   test "should create born-hosted agent" do

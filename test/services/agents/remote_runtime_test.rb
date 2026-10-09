@@ -7,7 +7,7 @@ module Agents
 
     setup do
       @agent = agents(:research_assistant)
-      @agent.update!(model_id: HouseInference::Offering::MODEL_ID, trigger_bearer_token: "trig-secret")
+      @agent.update!(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID, trigger_bearer_token: "trig-secret")
       @placement = AgentPlacement.create!(agent: @agent, backend: "hetzner_cloud", state: "ready", provider_server_id: 4242)
       @enrollment, token = RunnerEnrollment.mint!(placement: @placement)
       @enrollment.confirm_provider_server!(4242)

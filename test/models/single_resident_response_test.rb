@@ -117,14 +117,14 @@ class SingleResidentResponseTest < ActiveSupport::TestCase
   end
 
   test "an unfunded house route does not automatically wake" do
-    @resident.update!(model_id: HouseInference::Offering::MODEL_ID)
+    @resident.update!(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID)
     assert_no_enqueued_jobs(only: [ AllAgentsResponseJob, ManualAgentResponseJob ]) { post_human }
     assert_match "allowance", @resident.inference_setup_message
   end
 
   test "a funded house model wakes without personal credentials" do
     @account.update!(use_system_ai_credentials: false, openrouter_api_key: nil)
-    @resident.update!(model_id: HouseInference::Offering::MODEL_ID)
+    @resident.update!(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID)
     HouseInferenceGrant.create!(agent: @resident, user: @user)
     HouseInference::Offering.stub :configured?, true do
       assert_nil @resident.inference_setup_message
@@ -142,7 +142,7 @@ class SingleResidentResponseTest < ActiveSupport::TestCase
 
   test "a pending house call is not a setup failure and another conversation can queue" do
     @account.update!(use_system_ai_credentials: false, openrouter_api_key: nil)
-    @resident.update!(model_id: HouseInference::Offering::MODEL_ID)
+    @resident.update!(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID)
     grant = HouseInferenceGrant.create!(agent: @resident, user: @user)
     grant.house_inference_calls.create!(month: HouseInference::Offering.month,
       model_id: @resident.model_id, provider_route: "fireworks/us", charge_usd: 0.75)
