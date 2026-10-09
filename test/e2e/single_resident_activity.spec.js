@@ -36,7 +36,11 @@ test('Enter shows the automatic wake without a manual trigger or websocket notif
     await expect(card).toHaveCount(1);
     await expect(card).toBeVisible();
     await expect(card).toContainText('E2E Researcher');
-    await expect(page.getByRole('button', { name: 'E2E Researcher', exact: true })).toBeDisabled();
+    // A busy resident stays askable: a second ask is held until this run
+    // ends (PendingWake, #252), and the button says so.
+    const residentButton = page.getByRole('button', { name: 'E2E Researcher', exact: true });
+    await expect(residentButton).toBeEnabled();
+    await expect(residentButton).toHaveAttribute('title', /is responding/);
     await page.screenshot({ path: testInfo.outputPath('automatic-wake-visible.png') });
   } finally {
     await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
