@@ -21,10 +21,11 @@ Parsing (`FieldRecording::SuppliedTranscript`) covers the shapes found in the
 `00:00 Daniel: …`, Meet notes (a time alone on a line, turns split by vertical
 tabs, bold around a time and a name) and prose. A label counts only if some
 label repeats. A leading paragraph is metadata, not speech, only if it has no
-time, none of its labels recurs, and it is shaped like a block (two or more
-lines, a markdown heading or rule, or keys like `Source:` / `Date:`); it is
-kept, verbatim, as one unattributed turn. A speaker heard once, first, stays a
-speaker. Nothing is dropped: an unlabelled line continues the turn before or
+time, none of its labels recurs, and it is marked as metadata (a markdown
+heading or rule, or labels that are all keys like `Source:` / `Date:`); length
+alone never makes a header. It is kept, verbatim, as one unattributed turn. A
+speaker heard once, first, stays a speaker, even over several lines. Nothing
+is dropped: an unlabelled line continues the turn before or
 starts an unattributed one. Markdown list and heading lines are never speakers.
 
 Checked against the archive (699 files) for fidelity, not only acceptance:
