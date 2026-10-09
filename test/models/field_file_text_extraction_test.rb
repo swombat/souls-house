@@ -3,6 +3,7 @@ require "test_helper"
 class FieldFileTextExtractionTest < ActiveSupport::TestCase
 
   include ActiveJob::TestHelper
+  include ActionCable::TestHelper
 
   setup do
     @account = agents(:research_assistant).account

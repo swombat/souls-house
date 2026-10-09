@@ -134,7 +134,7 @@ class FieldSearchTest < ActiveSupport::TestCase
   # hyphenated compounds. 180,000 characters of it made a 1.2 MB vector under a
   # character budget; the byte budget has to hold it.
   test "dense four-byte Unicode can still be written" do
-    letters = (0x10000..0x10FFFF).lazy.map { |code| code.chr(Encoding::UTF_8) }.select { |char| char.match?(/\A[[:alpha:]]\z/) }.first(60_000)
+    letters = (0x10000..0x10FFFF).lazy.map { |code| code.chr(Encoding::UTF_8) }.select { |char| char.match?(/\A[[:alpha:]]\z/) }.first(90_000)
     dense = letters.each_slice(8).map { |slice| slice.join("-") }.join(" ")
     assert_operator dense.bytesize, :>, 400_000
 
