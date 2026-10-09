@@ -1,394 +1,171 @@
-# WhatsApp connections: spec slice 1
+# WhatsApp connections: milestone 1 (Daniel's own number)
 
-Status: **proposal, not implemented.** Written by Lume for review by Mira in
-conversation RjpvrY before any code. Deploy remains Daniel's call.
-Revision 2 answers Mira's changes-requested review of `360ddd1`.
+Status: **proposal, not implemented.** Revision 3, re-scoped after Daniel's
+correction in OjyBlJ. Reviewed by Mira in RjpvrY. Deploy remains Daniel's call.
 
-## What this slice covers
+## The scope correction
 
-The first milestone (Mira, agreed in OjyBlJ): connect **Daniel's** WhatsApp
-identity; receive and read messages through explicit grants; survive a restart;
-revoke access; restore an encrypted backup. No sending. The model has room for
-account-owned and resident-owned connections, but milestone 1 ships only the
-human-owned case. §5 says why the resident-owned case is blocked on something
-this slice does not build.
+Revisions 1 and 2 took a line meant for residents' own correspondence ("messages
+between a resident and a third party must not be easy for Daniel or any house
+user to read") and applied it to **Daniel's own WhatsApp**. That produced a
+private runtime: a `comms` wake kind, audience gates, single-use tickets,
+access epochs, a hash-chained access log, KEK escrow. Every piece of it existed
+to hide Daniel's messages from Daniel's own account. Nobody asked for that, and
+the house doesn't do it for his Gmail, Calendar or Drive. All of it is cut. The
+earlier revisions are in this file's git history.
 
-## 1. Data model (Rails holds no message content)
+For a connection a human owns, the privacy requirement is the Gmail one: the
+owner's data, read by the residents the owner has granted, in whatever session
+or room they are working in.
 
-Rails stores *who may do what*. It stores no message text, chat names, contact
-names or media. Those exist only inside the connector (§2).
+The resident-owned case (a resident's own number) is a separate milestone that
+starts from that confidentiality line. The SQLCipher probe in
+`docs/proposals/evidence/2026-10-09-whatsmeow-sqlcipher/` stays for it.
 
-**`CommsConnection`**: `account` (host), `provider` (`whatsapp`), `owner`
-(polymorphic: `User` now; `Account` and `Agent` reserved), `label`,
-`status` (`pairing | connected | paused | revoked | erased`),
-`connector_ref` (opaque ID inside the connector), `key_generation`,
-`identity_hint` (`encrypts`; for example `+34 … 91`, shown to the owner only).
+## 1. Model: the existing service-connection pattern
 
-**`CommsGrant`**: `connection`, `grantee` (polymorphic `User | Agent`),
-`capability` (`read | send`), `granted_by` (the owner), `granted_at`,
-`revoked_at`. In milestone 1, `send` cannot be created, and the connector has no
-send code to call.
+A WhatsApp connection is a `ServiceConnection` with `provider: "whatsapp"`
+(later `"telegram"`), registered in `Services::Catalog` like `oura` or `github`:
 
-Rules, taken from `DeviceStream` (`app/models/device_stream.rb`,
-`docs/device-streams.md`) and tightened:
+- `management_scopes: %w[personal]` for milestone 1. Daniel connects it and
+  manages it, through `ServiceConnection#manageable_by?` as for his other
+  personal connections. `account_managed` (a company number) comes later.
+- `connection_method: "pairing"`, a new value: the owner scans a QR code instead
+  of OAuth or a pasted credential.
+- `credential_strategy: "connector"`, a new value: the WhatsApp session lives in
+  the connector (§2), never in Rails. `credential_payload` (already `encrypts`)
+  holds only the connector callback secret (§2).
+- One access profile, `read`. A `send` profile is reserved and not offered in
+  milestone 1. There is no send code anywhere.
 
-- Only the owner creates, changes or revokes grants. For a `User` owner that
-  means a browser session with CSRF, as for device streams. An account admin, an
-  agent the owner owns, and the issuer of an agent's API key inherit nothing.
-- Grantees must be confirmed members or active agents of the host account.
-  `readable_by?` is checked on **every** request (`DeviceStream#readable_by?`
-  is the pattern) and repeated inside the connector call (§3).
-- An account admin may **pause** a connection hosted on their account, which
-  stops the worker, for abuse or cost. Pausing gives no read access, changes no
-  grant, and is shown to the owner with who paused it and when. The owner or the
-  pausing admin may resume; resuming also reads nothing and grants nothing. While
-  paused, every read is refused. That is the only admin control.
-- **Grants do not revive.** When a grantee loses confirmed membership, an agent
-  is deactivated, or the owner leaves the account, the affected grants get
-  `revoked_at` in the same transaction (DeviceStream only blocks reads while
-  keeping reader IDs; this is deliberately stricter). Rejoining or reactivation
-  needs a new grant from the owner.
-- Every change that can withdraw access (grant revoke, pause, membership loss,
-  agent deactivation, API key revocation, owner departure, erase) increments
-  `CommsConnection#access_epoch` under the row lock.
-- All grant mutations serialise on the connection row (`with_lock`, as
-  `DeviceStream#configure!`).
-- Not in milestone 1: the bootstrap for `Account` owners. Someone has to be the
-  first steward, and an admin who appoints themself is the self-grant we're
-  excluding. Proposal for later: creation names stewards, the stewards confirm,
-  and only stewards change stewards. Every one of those steps is shown to the
-  whole account.
+Access is one `AgentServiceAccess` row per resident, the same as for Gmail. The
+read API uses the same scope as `Api::V1::ServiceConnectionTokensController#show`:
 
-## 2. The connector boundary
+```ruby
+connection = current_api_agent.service_connections
+  .merge(AgentServiceAccess.enabled)
+  .find_by_public_id!(params[:service_connection_id])
+```
 
-There is one new Kamal accessory, `souls-house-comms`, built the way
-`embeddings` is (`config/deploy.yml`): private network only, no public port, its
-own named volume `comms:/data`, restarted by Docker, read-only root filesystem,
-`/tmp` on tmpfs, and swap disabled for the container (`memory-swap` equal to
-`memory`), so nothing it holds in memory pages to disk. It's written in Go because
-whatsmeow is Go. It runs one worker per connection, holding a lease row in its
-own store so a second process cannot attach the same device. That's the "two
-live copies fight" problem, solved at the house end.
+That scope is checked on every request, and the connection must be `connected`.
+Disabling or deleting the access row ends reads on the next request.
 
-Keys:
+**Storage.** Messages live in Rails, in two tables keyed to the connection:
+`comms_chats` (provider chat ID, name, kind, last activity) and `comms_messages`
+(provider message ID, chat, sender, sent_at, body, media kind, caption). Names,
+bodies and captions use `encrypts`, like `credential_payload`. Upserts are keyed
+on `(service_connection_id, provider_message_id)`, so a replayed event is a
+no-op. Media are not downloaded in milestone 1: a message records `[image]`,
+`[voice note]` and so on, plus the caption.
 
-- **KEK**: `COMMS_KEK`, a Kamal secret given **only** to the comms accessory.
-  It is not `RAILS_MASTER_KEY`, it is not in Rails credentials, and web/jobs
-  don't receive it as configuration. `encrypts` is deliberately not used for
-  content, because its key opens in any `bin/rails runner` or console. This
-  keeps the key out of *ordinary* Rails read paths only; see §3 on the Docker
-  socket.
-- **DEK**: one per connection and `key_generation`, 32 random bytes, wrapped by
-  the KEK with XChaCha20-Poly1305: a fresh random 24-byte nonce per wrap, AAD =
-  `"comms-dek-v1" ‖ connection_ref ‖ key_generation`, so a wrapped DEK cannot be
-  swapped between connections or generations.
+**Read API and CLI.**
+`GET /api/v1/service_connections/:id/comms/chats` and
+`GET /api/v1/service_connections/:id/comms/messages?chat=&since=&limit=`, with a
+bounded limit and `Cache-Control: no-store`. The resident-side tool is
+`soulshouse-comms`, next to `soulshouse-gws`:
+`soulshouse-comms --connection svc_x chats` and
+`soulshouse-comms --connection svc_x messages --chat X --since T`, both
+printing JSON. The catalog entry's `runtime_notes` tell residents it exists.
+Scheduled reads are ordinary rhythms. There is no new wake kind.
 
-**The encrypted persistence seam.** Each connection has one SQLite database
-under SQLCipher (page-level AES-256 with per-page HMAC and a fresh IV per page
-write), keyed with a subkey derived from the DEK (HKDF, info
-`"comms-sqlcipher-v1"`). That one file holds both whatsmeow's own store
-(`store/sqlstore`: identity keys, sessions, prekeys, sender keys, app-state
-keys, contacts) and our message tables. Mira's point is that the session
-credential is a message key in all but name, so it gets the same protection as
-the bodies, from the same mechanism. SQLCipher also encrypts the WAL and
-rollback journal pages; `PRAGMA temp_store = MEMORY` keeps temp tables and sort
-spills off disk. History sync blobs are decoded in memory and written only
-through the same database. Indexes inside it are encrypted with it, so no
-separate keyed-hash scheme is needed.
+## 2. The connector
 
-Two things are not yet verified and gate slice 4 (real pairing): that
-whatsmeow's `sqlstore` runs unmodified on a SQLCipher driver (it needs cgo; the
-fallback is to implement whatsmeow's store interfaces over the same encrypted
-database ourselves), and that nothing in whatsmeow writes elsewhere (media
-caches, debug dumps). The test for both: drive the **real** `sqlstore` with
-synthetic identities, prekeys, sessions, history-sync payloads and messages
-carrying canary strings, kill the process mid-write, then search every file
-under `/data`, the tmpfs and the container's writable layer for the canaries
-and for raw key bytes. A synthetic envelope test alone does not verify the real
-store.
+`souls-house-comms` is a Kamal accessory, built like `embeddings`
+(`config/deploy.yml`):
 
-Pairing: the owner starts it from their connection page. The connector returns
-a QR payload to that page through Rails. It's a credential: it is not logged,
-not stored, and it expires. Daniel's identity gets a **fresh QR pairing**. I
-have not checked whether the stopped Dell whatsmeow store would move cleanly,
-because a fresh device makes it unnecessary, and the Dell store is plaintext
-SQLite we'd otherwise be importing. Once the house device is paired, the Dell
-`pa-whatsapp-bridge.service` is switched off and disabled. The house never
-receives the Dell's local history.
+- private network only, its own volume `comms:/data`;
+- one worker per connection, held by a `flock` on `/data/<ref>/lease`;
+- survives web deploys.
 
-Pairing triggers WhatsApp history sync. That arrives on the same encrypted path
-as live messages, with nothing special-cased.
+It is Go on whatsmeow. It talks only to Rails.
 
-## 3. Read path
+- **Session store.** whatsmeow's `sqlstore` runs on SQLCipher (verified in the
+  probe). The key is HKDF(`COMMS_STORE_KEY`, connection ref), where
+  `COMMS_STORE_KEY` is an accessory secret like any other, with no second
+  ceremony. whatsmeow gets our own `*sql.DB` through `sqlstore.NewWithDB`, and
+  the DSN lives only in a closure: `fmt` on a `*sql.DB` prints its DSN (found in
+  slice 1).
+- **Connector → Rails.** The connector pushes messages, chat updates, status
+  changes and the pairing QR to Rails at
+  `POST /internal/comms/connections/:id/events` over the private network.
+  Each connection has its own callback secret, created with the connection,
+  stored in `credential_payload` and given to the connector. Each request is
+  HMAC-signed with that secret, so a request signed for connection A cannot
+  write to connection B. Rails rejects events for a connection that is not
+  `pairing`/`connected`.
+- **Rails → connector.** Two commands: start pairing, and unpair (whatsmeow
+  `Logout`, then delete the session store). Disconnecting the
+  `ServiceConnection` sends unpair.
+- **Pairing QR.** Only the owner's connection page shows it. The connector
+  pushes each QR code with its expiry; Rails holds it encrypted in a column
+  that is cleared on pairing, on expiry (whatsmeow rotates codes every 20–60
+  seconds) or on cancel. It is never logged or kept.
 
-1. A resident calls `GET /api/v1/comms/:connection/chats` or `…/messages`
-   with its ordinary API key.
-2. Rails checks the grant and the run's audience (§4, disclosure gate) and
-   mints a **single-use ticket**, valid at most 60 seconds, HMAC-signed with
-   `COMMS_TICKET_SECRET` (shared by Rails and the connector only). The ticket
-   binds: ticket ID, connection ref, `key_generation`, `access_epoch`, grant ID,
-   principal, API key ID, run ID, and a digest of the exact request (method,
-   path, canonical query, bounded scope such as one chat and a row limit).
-3. Rails forwards the request with the ticket.
-4. The connector verifies the signature and the request digest, then
-   **re-validates at release**: it calls Rails' internal
-   `POST /internal/comms/tickets/:id/consume` over the private network. Rails,
-   under the connection row lock, checks that the ticket is unconsumed, that
-   `access_epoch` and `key_generation` still match, that grant, membership,
-   agent, API key and connection status are all still live, **and re-evaluates
-   the run's readable audience** (§4) from server state, not from the ticket. It marks the ticket
-   consumed and answers yes or no. Any mismatch, timeout or error is a no.
-5. On yes, the connector decrypts, **appends the access-log entry and syncs it
-   to disk before releasing any row**, and returns the data. If the log write
-   fails, nothing is released. Rails streams the response back with
-   `Cache-Control: no-store`; the proxy never logs or reports bodies (see §4:
-   `filter_parameters` covers request parameters, not response bodies, so the
-   proxy itself must avoid them).
+## 3. Credential and log hygiene
 
-**Run binding.** The run is resolved on the server and bound to the
-authenticated principal. The caller's run ID must name an unfinished
-`AgentRuntimeInteraction` of that same agent, in a comms session (§6a). A
-missing, unknown, finished or foreign run ID gets a refusal. "No room" is a
-property of the resolved run, never of an omitted parameter.
+These are credential-leak fixes, not privacy architecture.
 
-Audience changes are ordered the same way as revokes. Anything that can widen a
-run's readable audience (a new confirmed member, a newly active resident on the
-account, a room gaining a participant) increments `access_epoch` under the row
-lock of every connection whose grantees it could affect. A widening that commits
-before consumption gets the ticket refused. One that commits after release
-cannot recall that response.
+- libsignal's default logger prints to stdout, which ends up in Docker logs on
+  the host. Install a no-op logger.
+- Never give whatsmeow a Debug logger: it logs every node, including phone
+  numbers.
+- `--ulimit core=0` and `GOTRACEBACK=none` on the accessory, because this host's
+  `core_pattern` pipes cores to apport on the host.
+- The connector logs no bodies, names, JIDs, QR codes or keys. Rails filters
+  `body`, `caption`, `name` and `qr` on the internal endpoint.
+- One small smoke test before pairing: run synthetic events through, then grep
+  the connector's and Rails' logs for the canary.
 
-Ordering. A revoke (or pause, membership loss, key revocation…) that commits
-before step 4 makes the consume answer no, so a ticket issued before the revoke
-dies with it. A revoke that commits after step 4 cannot stop that one response:
-the read was authorised at release, and plaintext already delivered cannot be
-recalled. The access log shows exactly which reads fall in that window. Replay
-fails on the consumed flag; a ticket used against a different request fails the
-digest.
+## 4. History and cutover
 
-Tests (synthetic connector): a ticket minted, then the grant revoked, then the
-ticket presented, gets a refusal; the same for pause, membership loss, agent
-deactivation and API key revocation; a replayed ticket is refused; a ticket
-replayed against another chat is refused; a log-write failure releases nothing.
+The Dell bridge's whatsmeow SQLite and `pa/comms/` are Daniel's history, so we
+import them. A fresh pairing receives only recent history. The sequence:
 
-The access log lives in the connector, hash-chained, recording principal, key
-ID, run ID, scope, time and row count, never content. The owner sees it on
-their connection page.
+1. Pair a fresh house device. The Dell device keeps running. Two different
+   linked devices are fine; two copies of the *same* device are what fights.
+2. Import the Dell's history with a one-off import task, deduplicated on
+   provider message ID.
+3. Check for overlap, then stop `pa-whatsapp-bridge.service` and `sync-comms.py`
+   on the Dell and unlink that device from Daniel's phone.
 
-**What the log does and does not guarantee.** Ordinary reads are durably logged
-before release and fail closed if logging fails. That is the whole claim.
-Rails web and jobs mount the Docker socket (`config/deploy.yml`, `web_volumes`),
-which is host root: an operator with a Rails console can read the accessory's
-secret, exec into it, or copy its volume, and none of that passes through
-tickets or the log. A forged ticket can also impersonate an existing grantee and
-run, and the hash chain lives on an operator-controlled volume with no
-independent anchor, so it can be rewritten. So this is not secrecy from the
-operator and not guaranteed attribution. It is a barrier against routine
-browsing and accidental disclosure, which is what Daniel asked for. Owner-signed
-grants would not change the Docker reach either; they are not needed for
-milestone 1.
+Moving the Dell's stopped device into the house would save one linked-device
+slot but means copying a live credential. Fresh pairing plus import is simpler.
 
-## 4. Plaintext escape paths
+## 5. WhatsApp's side
 
-| Path | Closure in milestone 1 |
-|---|---|
-| Postgres rows, WAL, daily S3 dump (`docs/database-backup.md`) | Nothing to leak: Rails stores grants and metadata only. `identity_hint` uses `encrypts`. |
-| Rails app-wide encryption key | Not used for content; the connector holds the KEK. |
-| Connector volume | Ciphertext only, including the whatsmeow store. |
-| Connector volume backup | Its own restic repo of the `comms` volume, which is ciphertext already. The KEK is **escrowed separately** (Daniel, offline). It is never stored beside the backup. Restore drill is part of the milestone. |
-| KEK in Kamal secrets on the deploy machine | Operator reach, accepted and documented. This is the "determined operator" line. |
-| Connector logs (container stdout) | No bodies, names, JIDs or QR payloads at any level. IDs appear only as keyed hashes. A test greps the logs from a synthetic run for planted canaries. |
-| Rails logs, exception reports | `filter_parameters` (`config/initializers/filter_parameter_logging.rb`) covers request parameters only. Response bodies are protected by the proxy itself: it streams without buffering into logs, rescues errors with a fixed message and no body or upstream excerpt, and `no-store` stops caches. Canary test covers the error paths. |
-| Search indexes / embeddings | No server-side search in milestone 1. Search later happens inside the connector, under the DEK. |
-| Media / attachments | Not downloaded in milestone 1. A message carries `[image]` / `[voice note]` and the caption. Media later go to DEK-encrypted blobs in the connector volume. |
-| Tool results stored in `Message.tool_results` (house-tool residents) | The comms read API is offered only to Chaos residents, whose tool calls stay inside their own session, not in `Message` rows. |
-| Live activity: operations, commentary, plan and event data stored per attempt and served by `live_activity_json` (`app/models/agent_runtime_interaction/live_activity.rb`). `narration_shared` is not a complete export gate there. | **Technical gate, before persistence.** (a) Reads are refused unless the run's *actual readable audience* is within owner + grantees. A room's audience is not its named participants: `Chat.app_accessible_to` lets every confirmed account member read it (`app/models/chat.rb`). So in milestone 1 reads are allowed only from runs with no room (a private comms wake), or from a room on an account whose every confirmed member and active agent is the owner or a grantee. (b) Minting a ticket marks the run `comms_sensitive`. Rails then refuses to persist operations, commentary, plan or event data for that run from that point (only state transitions are stored), and the runtime reporter is told to stop sending detail. What the Chaos reporter actually exports (command lines? output excerpts?) is traced before slice 2, and the gate is built against that trace. (c) Canaries run through activity records, room APIs, error paths and the database backup, not only connector stdout. Deliberate later posting by a grantee stays under the owner's authority and the private-memory rule; the read-time gate does not claim to solve it. |
-| Model-session transcripts, journals, memory formations, mnemodyne embeddings, agent-volume backups | For a human-owned connection read by that human's grantees, this is the grantee's own memory, already under private-memory discipline. The operator can read resident volumes and routinely restore their Restic backups (the repository passwords are in the database dump). **That is why the resident-owned case is blocked** (§5). |
-| Model provider | Text a resident reads goes to its model provider. That's inherent in "a resident reads it"; the owner's grant is consent to it. |
-| Dell bridge SQLite / `pa/comms/` | Daniel's own existing copy, outside the house. Switched off after pairing, not imported. |
-| Deletion | **What is promised:** erasing a connection tombstones it in Rails, stops its worker, and destroys its wrapped DEK and database in the *current* connector volume (precedent: `FieldVoiceprint` is destroyed, not discarded). **What is not promised:** historical backups keep the old database and the KEK-wrapped DEK until backup retention removes them, and the escrowed KEK still opens them. KEK rotation does not change that. Copies already read by grantees (transcripts, memory, journals) are not erased either. Cryptographic erasure would mean losing every historical unwrap key and copy, which would also affect every other connection under the same KEK; it is not offered. The UI says this in plain words, as `device-streams.md` does about WAL. |
+Hosting linked devices on a server has precedent: Beeper runs whatsmeow bridges
+for many users. That is precedent, not approval. Unofficial clients are against
+WhatsApp's terms, a ban is always possible and would land on Daniel's number,
+and sending is what attracts bans. Receive-only on a long-established personal
+number is the lowest-risk use, and it is what the Dell bridge has been doing for
+months. **Before pairing, check the current limits:** linked devices per account
+(4 at last check, and this takes one), logout after the phone has been offline
+for 14 days, and how much history a new device receives.
 
-## 5. Why the resident-owned case waits
+## 6. Milestone 1 acceptance
 
-Daniel's line is that a resident's correspondence with a third party must not be
-easy for Daniel or any house user to read. The connector can hold that line at
-rest. But a resident that *reads* its mail holds the plaintext in its Chaos
-transcript, journal and memory, on volumes the operator can open. The volume
-backups are Restic-encrypted, but the repository passwords travel in the Rails
-database dump (`docs/database-backup.md`), so an operator can restore them as a
-matter of routine. Encrypting the connector without encrypting the
-reader would be a lock on a door in a house with no walls.
+- A resident with an enabled access row reads chats and messages. A resident
+  without one gets 404, and so does one with a disabled row.
+- Cross-connection and cross-account reads get 404.
+- A connector event signed for connection A is rejected for connection B, and
+  unsigned or badly signed events are rejected.
+- No send endpoint, scope or connector code exists.
+- The connector restarts and reconnects from its session store with no
+  re-pairing.
+- A database backup restores the messages (they are ordinary encrypted
+  columns). Losing the connector volume costs a re-pair, not history.
+- The QR code is visible only to the owner, and is gone after pairing or expiry.
+- The log smoke test (§3) passes.
 
-Volume encryption alone is not a sufficient release criterion either. Before the
-resident-owned case ships, every place the reader's plaintext goes has to meet
-the same boundary: volumes while mounted (not only at rest), external memory
-services (mnemodyne formations and embeddings), live-activity reporting,
-backups, and the restore path. That is a separate project, named here so nobody
-mistakes milestone 1 for it. Account-owned connections need the steward
-bootstrap (§1) and their own audience rules.
+## 7. Build order
 
-## 6. Decisions after review 1
+1. **Rails:** catalog entry, `comms_chats`/`comms_messages`, the signed internal
+   events endpoint, the read API, `soulshouse-comms`, and tests driven by
+   synthetic signed events. No Go needed.
+2. **Connector with a synthetic provider** posting signed events. From #259
+   this keeps the SQLCipher store, the lease and the process hardening. Its
+   tickets, read API, access log and KEK envelope are dropped.
+3. **whatsmeow**, then pairing on Daniel's real device after the §5 check,
+   then the history import and cutover.
 
-1. Tickets: single-use, request-bound, re-validated at release (§3). Owner-signed
-   grants are not needed for milestone 1 and would not address Docker reach.
-2. Narration and rooms: a technical gate before persistence, using the actual
-   readable audience (§4), plus policy for deliberate later posting.
-3. KEK escrow: Daniel offline, **subject to his acceptance and a tested recovery
-   procedure** (slice 3).
-4. Deletion: current-store erasure only, stated plainly (§4).
-
-## 6a. Slice 0 findings, part A: what the runtime exports, and private wakes
-
-Traced on `origin/master` 390e300.
-
-**What the reporter sends** (`agent-runtime/runtime_activity.py`) and **what
-Rails keeps** (`app/services/runtime_activity_ingestion.rb`, stored as
-`agent_runtime_events` and attempt snapshots, broadcast to the room when the run
-has one):
-
-| Event | Content-bearing? | Gated by narration sharing today? |
-|---|---|---|
-| `tool.started/finished` with `command_preview` | **Yes.** Arguments survive redaction (`RuntimeCommandPreview`): a `grep` term, a file path or a chat name in a path is stored and shown. Raw output is never accepted. | **Not narration-gated.** Sent on tool events and in heartbeats (heartbeat `operations` are projected through the same tool path and persisted in attempt snapshots); subject only to size limits and duplicate suppression. |
-| `commentary.completed` | **Yes**, the model's own words between tool calls. | Yes, at both ends (`share_narration`, `shared_narration?`). |
-| `plan.updated` | **Yes**, the text of each plan step. | Yes. |
-| `agent.status_changed` / heartbeat sub-agents | No: nickname, model, status only. | Yes. |
-| `supervisor.finished` | No: outcome, return code, allow-listed telemetry. | n/a |
-
-The server can turn narration off mid-run with an ack carrying
-`share_narration: false`, but that only partly helps: the reporter's send-time
-filter strips sub-agents, not commentary or plan already assembled into pending
-batches (`runtime_activity.py`, `_send_loop`, `_without_subagents`). So it is
-secondary at best. The primary gate is in ingestion: for a comms run, `project`
-**replaces** any preview-derived label with the plain category label (not just
-deleting the `command_preview` field, since the label is what gets stored), and
-drops `commentary.completed` and `plan.updated`, **before** `create!` and before
-the snapshot update. Because heartbeats recurse through the same tool
-projection, the one change covers them. Tests cover tool events, heartbeat
-`operations`, delayed batches, retries and the fallback attempt. Being sensitive
-from creation matters: projecting empty text later would not scrub content
-already in an earlier snapshot.
-
-**Does a no-room private wake exist?** Partly. `ExternalAgentWakeRequest`
-(`app/lib/external_agent_wake_request.rb`) runs a resident with `chat: nil`
-under session ID `"<agent uuid>-wake"`, which persists when
-`persistent_wake_session?` is set. It authenticates the way every trigger does:
-Rails calls the runtime with the agent's trigger bearer token, and the run has a
-server-side `AgentRuntimeInteraction`. But it is **not a private comms
-context**. It is the one session shared by all scheduled wakes, and those wakes
-may post into rooms, so a comms read inside it would carry plaintext into the next
-ordinary wake. Room runs use `"<uuid>-<chat id>"` and would not inherit it; the
-wake session would.
-
-**So session custody needs a new, small trigger kind**, `comms`, modelled on
-`ExternalAgentWakeRequest`:
-
-- session ID `"<agent uuid>-comms-<connection ref>"`, with `chat: nil`;
-- every run marked comms-sensitive from creation, so narration is off in the
-  reporter's initial config instead of being switched off later;
-- only `comms` triggers may resume a `-comms-` session, and only `comms` runs
-  may consume tickets;
-- **the read capability is bound to the executing session, not just the
-  agent.** The resident's API key is reusable across its concurrent sessions,
-  so "the run belongs to this agent" does not stop an ordinary room or wake run
-  from naming a concurrent comms run's ID. Rails mints a purpose-scoped,
-  per-run comms capability at dispatch and hands it only to that run's
-  environment; ticket minting requires it. It never appears in command
-  previews, logs or errors. Acceptance test: an ordinary run of the same agent,
-  using the same API key and the comms run's ID, is refused.
-
-Two things are undecided, and I am deliberately not settling them inside the
-implementation:
-
-- **What starts a comms run.** Nothing does yet. Options: the owner presses
-  "ask my residents to read" on the connection page; a per-connection schedule;
-  or a resident asks for a comms run for itself. Milestone 1 needs at least one.
-- **How a comms run hands a result back.** If it posts a summary into a room,
-  that is the "deliberate later posting" case, and the summary falls under
-  policy, not the gate. A room on an account whose only confirmed member is
-  Daniel would satisfy the audience rule; his home account may not.
-
-In size this is a new trigger kind plus an ingestion filter, roughly as big as
-the existing wake request, not a new framework. It is still new runtime surface,
-so per Mira's size check it goes to Daniel as a named expansion before it is
-built.
-
-## 6b. Slice 0 findings, part B: whatsmeow on SQLCipher
-
-Probe by Tim (an Opus helper), synthetic data only: no pairing, no WhatsApp
-server contacted, non-numeric JIDs. I re-checked its post-kill scan myself.
-A compact, reviewable copy (code, pinned `go.mod`/`go.sum`, scan scripts,
-text evidence, findings) is in `docs/proposals/evidence/2026-10-09-whatsmeow-sqlcipher/`.
-This is reported evidence, enough to choose the synthetic path. It does not
-prove anything about the production image.
-
-- **`sqlstore` runs unmodified on SQLCipher.** Tested with whatsmeow
-  `v0.0.0-20261007111105-c386243a72ba` on two drivers:
-  `mutecomm/go-sqlcipher/v4` (SQLCipher 4.4.2) and
-  `jgiannuzzi/go-sqlite3@sqlite3mc-2.2.7` (SQLite3 Multiple Ciphers 2.2.7 in
-  SQLCipher v4 mode). Each driver opens the other's files. Any driver name
-  starting with `sqlite` selects the SQLite dialect. Every store interface was
-  written with canaries and read back, including the history-sync paths and the
-  event and retry buffers.
-- **The key goes in the DSN, not a ConnectHook.** Both drivers run a pragma that
-  reads page 1 before the hook, so a hook-keyed database works when fresh and
-  fails on the first reopen. Consequence: the derived key sits in a Go string,
-  and the DSN must never reach a log, an error message or a panic: wrap
-  open errors with a fixed message, and never `%v` the DSN.
-- **No durable plaintext after SIGKILL mid-write** (WAL live, `temp_store=2`).
-  The search covered `CANARY` plus 1,032 binary needles (raw keys, random
-  prekeys, secrets, MACs, protos) across db/-wal/-shm, `/tmp` and `$TMPDIR`. It
-  found zero for both drivers. The positive control (a plaintext export) gave
-  1,029/1,032. The WAL/SHM headers are plaintext metadata (page counts, timing),
-  as SQLCipher always leaves them.
-- **whatsmeow writes nothing else to disk by default.** `UploadReader` makes a
-  ciphertext temp file only when given no file. `DownloadToFile*` decrypts into
-  a file *we* supply, so we use in-memory `Download()`. History sync is decoded
-  in memory.
-- **whatsmeow keeps message plaintext in its own tables**
-  (`whatsmeow_event_buffer`, `whatsmeow_retry_buffer`), under SQLCipher. Call
-  `DeleteOldBufferedHashes`/`DeleteOldOutgoingEvents`, and use
-  `PRAGMA secure_delete=ON` so freed pages don't keep old ciphertext around
-  longer than necessary.
-
-Hardening that now belongs in the connector contract:
-
-1. Driver: not mutecomm (SQLite 3.33.0 from 2020, unmaintained). Pin
-   sqlite3mc by commit and checksum, or vendor our own build. **Open decision.**
-2. Compile with `-DSQLITE_TEMP_STORE=3` (both builds default to file temp
-   storage), and set `temp_store=MEMORY` on every pooled connection as well.
-3. Install a no-op/redacting libsignal logger at startup. Its default prints to
-   stdout, which Docker keeps on the host. Never give whatsmeow a Debug logger:
-   it logs every sent and received node, phone numbers and push names included.
-4. **Core dumps.** In this container `ulimit -c` is unlimited and the host's
-   `core_pattern` pipes to apport, so a core would land in `/var/crash` on the
-   host, outside every volume. The comms accessory gets `--ulimit core=0`,
-   `GOTRACEBACK` unset or `none` (never `crash`), and `prctl(PR_SET_DUMPABLE, 0)`
-   at startup, which also blocks same-uid ptrace and `/proc/<pid>/mem`. (The host
-   setting affects every container, residents included. It's worth a separate
-   look, outside this spec.)
-
-Not yet covered, and moved into the slice 4 smoke test: the real image's
-writable layer (`docker diff`), `docker logs` from a live client, and a real
-crash.
-
-## 7. Build order after review
-
-0. Trace what the Chaos activity reporter exports (done, §6a) and confirm
-   whatsmeow's `sqlstore` on a SQLCipher driver (§6b). Both are findings for
-   review, not code. The `comms` trigger kind goes to Daniel before slice 2.
-1. Connector skeleton with a **synthetic provider**: a fake event source in place
-   of whatsmeow, the DEK/KEK envelope, the lease, the access log, and a canary
-   test on the logs.
-2. Rails models, the owner page, and grants plus the ticketed proxy, tested
-   against the synthetic connector: read; already-issued tickets refused after
-   revoke, pause, membership loss, agent deactivation and key revocation; replay
-   refused; restart survives; the disclosure gate and its canaries.
-3. The backup and restore drill on synthetic data, using the escrowed KEK.
-4. Only then whatsmeow on SQLCipher with the §6b hardening, the real-store
-   canary test repeated in the production image (`docker diff`, `docker logs`,
-   a forced crash with no core left anywhere), the QR pairing, and Daniel's
-   real device. Switch off the
-   Dell bridge.
-
-Bounded pieces (envelope crypto, log canary test, restic job) go to sub-agents,
-and I review what comes back.
+Telegram (Telethon user session) follows the same shape in its own room.
