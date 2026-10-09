@@ -198,7 +198,7 @@
       type="button"
       disabled={focusedService.authority_groups.length > 0 && !hasAuthority(focusedService)}
       onclick={() =>
-        focusedService.connection_method === 'credentials'
+        ['credentials', 'pairing'].includes(focusedService.connection_method)
           ? connectCredentials(focusedService)
           : connect(focusedService)}>
       Connect {focusedService.name}

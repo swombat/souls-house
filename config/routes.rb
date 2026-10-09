@@ -69,6 +69,16 @@ Rails.application.routes.draw do
   # ElevenLabs speech-to-text results for Field recordings (HMAC-signed, no session)
   post "webhooks/elevenlabs/stt", to: "eleven_labs_stt_webhooks#create", as: :eleven_labs_stt_webhook
 
+  # Comms connector events over the private network (HMAC-signed with each
+  # connection's callback secret, no session).
+  namespace :internal do
+    namespace :comms do
+      resources :connections, only: [] do
+        resources :events, only: :create
+      end
+    end
+  end
+
   resources :accounts, only: [ :new, :create, :show, :edit, :update ] do
     resources :rhythms do
       get :preview, on: :collection
@@ -104,7 +114,9 @@ Rails.application.routes.draw do
     resource :interface, only: %i[show update], module: :accounts
     resources :visual_tags, only: [ :create, :update, :destroy ], module: :accounts
     resources :service_authorizations, only: :create
-    resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts
+    resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts do
+      resource :pairing, only: :show, controller: "service_connection_pairings"
+    end
     resources :github_resident_imports, only: [ :new, :create, :show ] do
       post :approve, on: :member
       post :refresh, on: :member
@@ -405,6 +417,10 @@ Rails.application.routes.draw do
       resources :x_reads, only: :create
       resources :service_connections, only: [] do
         resource :access_token, only: :show, controller: "service_connection_tokens"
+        namespace :comms do
+          resources :chats, only: :index
+          resources :messages, only: :index
+        end
       end
       resources :whiteboards, only: [ :index, :show, :create, :update, :destroy ] do
         resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"

@@ -1,7 +1,7 @@
 class ServiceConnection < ApplicationRecord
 
   MANAGEMENT_SCOPES = %w[personal account_managed].freeze
-  STATUSES = %w[connected reauthorizing suspended revoked error].freeze
+  STATUSES = %w[pairing connected reauthorizing suspended revoked error].freeze
 
   belongs_to :account
   belongs_to :connected_by_user, class_name: "User"
@@ -9,8 +9,14 @@ class ServiceConnection < ApplicationRecord
   has_many :agent_service_accesses, dependent: :destroy
   has_many :agents, through: :agent_service_accesses
   has_many :github_resident_imports, dependent: :restrict_with_error
+  # Comms (WhatsApp) history is application data: a disconnect revokes the
+  # connection and keeps it, as for GitHub import provenance (ADR 0001).
+  has_many :comms_chats, dependent: :restrict_with_error
+  has_many :comms_messages, dependent: :restrict_with_error
+  has_many :comms_request_nonces, dependent: :delete_all
 
   encrypts :credential_payload
+  encrypts :pairing_qr
 
   validates :provider, :management_scope, :credential_kind, :status, presence: true
   validates :management_scope, inclusion: { in: MANAGEMENT_SCOPES }
@@ -133,9 +139,18 @@ class ServiceConnection < ApplicationRecord
   end
 
   def runtime_credentials(agent:)
-    if credential_strategy == "refresh_broker"
+    case credential_strategy
+    when "refresh_broker"
       {
         "access_token_endpoint" => "#{Agents::Config.internal_url}#{Rails.application.routes.url_helpers.api_v1_service_connection_access_token_path(public_id)}"
+      }
+    when "connector"
+      # The payload holds the connector's callback secret. Residents get the
+      # read endpoints only, never the payload.
+      routes = Rails.application.routes.url_helpers
+      {
+        "chats_endpoint" => "#{Agents::Config.internal_url}#{routes.api_v1_service_connection_comms_chats_path(public_id)}",
+        "messages_endpoint" => "#{Agents::Config.internal_url}#{routes.api_v1_service_connection_comms_messages_path(public_id)}"
       }
     else
       credential_payload_hash
@@ -160,15 +175,33 @@ class ServiceConnection < ApplicationRecord
     definition.adapter.revoke(self) if revoke_provider
     update!(
       credential_payload: nil,
+      pairing_qr: nil,
+      pairing_qr_expires_at: nil,
       status: "revoked",
       credential_revision: credential_revision + 1
     )
+  end
+
+  # Disconnected connections are destroyed unless they hold records the house
+  # keeps: reviewed GitHub import provenance, or comms history.
+  def retained_after_disconnect?
+    github_resident_imports.exists? || comms_chats.exists?
+  end
+
+  # The QR the owner scans to pair. Never served once expired.
+  def current_pairing_qr(now: Time.current)
+    return unless status == "pairing" && pairing_qr.present?
+    return unless pairing_qr_expires_at.present? && pairing_qr_expires_at > now
+
+    { code: pairing_qr, expires_at: pairing_qr_expires_at.utc.iso8601 }
   end
 
   def begin_reauthorization!
     definition.adapter.revoke!(self)
     update!(
       credential_payload: nil,
+      pairing_qr: nil,
+      pairing_qr_expires_at: nil,
       status: "reauthorizing",
       credential_revision: credential_revision + 1
     )

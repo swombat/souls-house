@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_09_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_09_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -613,6 +613,43 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_120000) do
     t.check_constraint "image_id > 0", name: "cloud_procurement_operations_positive_image_id"
     t.check_constraint "provider_server_id > 0", name: "cloud_procurement_operations_positive_server_id"
     t.check_constraint "state::text = ANY (ARRAY['planned'::character varying, 'create_in_flight'::character varying, 'reconciling'::character varying, 'provisioned'::character varying, 'unknown'::character varying, 'refused'::character varying, 'needs_review'::character varying, 'deleting'::character varying, 'deleted'::character varying]::text[])", name: "cloud_procurement_operations_state"
+  end
+
+  create_table "comms_chats", force: :cascade do |t|
+    t.bigint "service_connection_id", null: false
+    t.string "provider_chat_id", null: false
+    t.text "name"
+    t.string "kind"
+    t.datetime "last_activity_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["service_connection_id", "last_activity_at"], name: "idx_on_service_connection_id_last_activity_at_96e688631f"
+    t.index ["service_connection_id", "provider_chat_id"], name: "idx_on_service_connection_id_provider_chat_id_15d91caed6", unique: true
+    t.index ["service_connection_id"], name: "index_comms_chats_on_service_connection_id"
+  end
+
+  create_table "comms_messages", force: :cascade do |t|
+    t.bigint "service_connection_id", null: false
+    t.bigint "comms_chat_id", null: false
+    t.string "provider_message_id", null: false
+    t.text "sender_id"
+    t.text "sender_name"
+    t.datetime "sent_at", null: false
+    t.text "body"
+    t.string "media_kind"
+    t.text "caption"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["comms_chat_id", "sent_at", "id"], name: "index_comms_messages_on_comms_chat_id_and_sent_at_and_id"
+    t.index ["service_connection_id", "provider_message_id"], name: "idx_on_service_connection_id_provider_message_id_12b2c5454b", unique: true
+  end
+
+  create_table "comms_request_nonces", force: :cascade do |t|
+    t.bigint "service_connection_id", null: false
+    t.string "nonce", null: false
+    t.datetime "created_at", null: false
+    t.index ["created_at"], name: "index_comms_request_nonces_on_created_at"
+    t.index ["service_connection_id", "nonce"], name: "index_comms_request_nonces_on_service_connection_id_and_nonce", unique: true
   end
 
   create_table "conversation_compactions", force: :cascade do |t|
@@ -1603,6 +1640,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_120000) do
     t.string "provider", null: false
     t.string "status", default: "connected", null: false
     t.datetime "updated_at", null: false
+    t.text "pairing_qr"
+    t.datetime "pairing_qr_expires_at"
     t.index ["account_id", "provider", "credential_fingerprint"], name: "index_service_connections_on_account_provider_credential", unique: true, where: "(credential_fingerprint IS NOT NULL)"
     t.index ["account_id", "provider", "external_subject_id"], name: "index_service_connections_on_account_provider_subject", unique: true, where: "((external_subject_id IS NOT NULL) AND (credential_fingerprint IS NULL))"
     t.index ["account_id"], name: "index_service_connections_on_account_id"
@@ -1856,6 +1895,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_120000) do
   add_foreign_key "chats", "whiteboards", column: "active_whiteboard_id"
   add_foreign_key "cloud_procurement_operations", "agent_placements"
   add_foreign_key "cloud_procurement_operations", "users", column: "requested_by_id"
+  add_foreign_key "comms_chats", "service_connections"
+  add_foreign_key "comms_messages", "comms_chats"
+  add_foreign_key "comms_messages", "service_connections"
+  add_foreign_key "comms_request_nonces", "service_connections", on_delete: :cascade
   add_foreign_key "conversation_compactions", "chats"
   add_foreign_key "conversation_drafts", "chats"
   add_foreign_key "conversation_drafts", "users"

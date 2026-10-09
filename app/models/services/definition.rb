@@ -3,6 +3,9 @@ module Services
 
     class UnknownProvider < KeyError; end
 
+    CONNECTION_METHODS = %w[oauth2 credentials pairing].freeze
+    CREDENTIAL_STRATEGIES = %w[static self_refreshing refresh_broker connector].freeze
+
     attr_reader :key, :name, :management_scopes, :credential_strategy,
                  :api_origins, :documentation, :access_profiles,
                  :default_access_profile, :adapter_class, :connection_method,
@@ -51,6 +54,8 @@ module Services
       @connection_method = connection_method.to_s
       @credential_fields = credential_fields.map { |field| field.to_h.stringify_keys.freeze }.freeze
       @runtime_notes = Array(runtime_notes).map(&:to_s).freeze
+      raise ArgumentError, "Unknown connection method: #{@connection_method}" unless CONNECTION_METHODS.include?(@connection_method)
+      raise ArgumentError, "Unknown credential strategy: #{@credential_strategy}" unless CREDENTIAL_STRATEGIES.include?(@credential_strategy)
     end
 
     def scopes_for(profile)
