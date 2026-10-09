@@ -41,7 +41,11 @@ module CommsSending
 
   def request!(connection:, agent:, chat:, text:, client_request_id:, now: Time.current)
     send, created = claim!(connection:, agent:, chat:, text:, client_request_id:, now:)
-    send = deliver!(send) if created
+    # A claim still `pending` was never dispatched (the request died between
+    # claim and dispatch), so the connector has not been called and a retry
+    # may dispatch it. dispatch! moves it out of `pending` under the lock, so
+    # concurrent retries still make at most one connector call.
+    send = deliver!(send) if created || send.status == "pending"
     Result.new(send:, created:)
   end
 

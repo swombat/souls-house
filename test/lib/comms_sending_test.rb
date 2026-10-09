@@ -47,6 +47,24 @@ class CommsSendingTest < ActiveSupport::TestCase
     assert_equal "sent", send.reload.status
   end
 
+  test "a crash between claim and dispatch leaves pending, and a retry dispatches it exactly once" do
+    send, = claim("early")
+    # ...the process dies here: claimed, never dispatched, connector never called.
+    assert_equal "pending", send.reload.status
+
+    calls = with_fake_connector do
+      result = CommsSending.request!(connection: @connection, agent: @agent, chat: @chat, text: "hello", client_request_id: "early")
+      assert_not result.created
+      assert_equal "sent", result.send.status
+    end
+    assert_equal 1, calls.size
+
+    calls = with_fake_connector do
+      CommsSending.request!(connection: @connection, agent: @agent, chat: @chat, text: "hello", client_request_id: "early")
+    end
+    assert_empty calls
+  end
+
   test "a crash after dispatch leaves the send unknown, and a retry does not resend" do
     send, = claim("crash")
     assert CommsSending.dispatch!(send)
