@@ -288,9 +288,11 @@ Rails.application.routes.draw do
     namespace :v1 do
       # Host runners on house-ordered VMs: telemetry (#192) and commands (#238).
       namespace :host_runner do
+        match "backup(/*path)", to: "backups#repository", via: %i[get head post delete], format: false
         resource :enrollment, only: :create
         resource :heartbeat, only: :create
         resources :images, only: :show, constraints: { id: /sha256:[0-9a-f]{64}/ }
+        resources :seeds, only: :show, constraints: { id: /[0-9a-f]{64}/ }
         resources :commands, only: [] do
           post :next, on: :collection
           post :result, on: :member

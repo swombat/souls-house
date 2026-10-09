@@ -30,6 +30,7 @@ class AgentRuntimeInteraction < ApplicationRecord
   def self.record_trigger!(agent:, chat:, trigger_kind:, conversation_id:, requested_by:, session_id:, endpoint_url:, request_text:, last_included_message_id: nil, provider_auth_mode: "api_key", provider: nil, model: nil)
     interaction = agent.with_lock do
       raise Agent::RuntimeAvailability::Unavailable, "Resident is inactive" unless agent.active?
+      raise Agent::RuntimeAvailability::Unavailable, "Resident backup is pending" if Backup::VmResident.held?(agent)
       create!(
         agent: agent,
         chat: chat,

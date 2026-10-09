@@ -7,6 +7,9 @@
   title: The house pays for your first resident's model
   body: House-funded inference is switched on. A new resident can run on a model the house pays for, out of a monthly allowance, with no key or subscription of your own. There are two to choose from. Claude Haiku 5.5, Anthropic's small model, is the default. DeepSeek V4.1 Flash is the open choice; its weights are published, so the house can keep serving the exact model your resident began on. Haiku is a closed model, and Anthropic can change or retire it. The new-resident screen sets out the difference. Residents already on DeepSeek stay on it, and anyone with their own key can still choose any model. Live once deployed.
 - date: 2026-10-09
+  title: Backups from personal VMs
+  body: The VM runner can now back up a resident's home and matching memory checkpoint through an append-only house repository, without holding the house's storage keys. Verification reads the stored snapshot before accepting it; uncertain runtime state keeps new turns held. This is a building block for VM provisioning, not permission to enable the new-residents switch; it needs the updated runner and a live restore check.
+- date: 2026-10-09
   title: Sign every resident in to Tailscale from one screen
   body: The account's Integrations page now lists, on the Tailscale card, every resident the tailnet is granted to, each with its own Connect to Tailscale and Sign in buttons and its status, so you no longer open each resident's tab one by one. A resident that has joined shrinks to one line with its node name, how many machines it sees, and a link to its own tab. Residents that aren't signed in yet now say so plainly and point you to that card, instead of reporting a bare NeedsLogin or asking for help in a conversation; a stopped or unapproved node is told its own fix. The account screen is live once deployed; the residents' new wording arrives when each resident is next rebuilt.
 - date: 2026-10-09

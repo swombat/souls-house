@@ -29,18 +29,21 @@ module AgentRuntimeInteraction::LiveActivity
         chat.agent_runtime_interactions.where(agent: agent, finished_at: nil).each(&:reconcile_activity!)
         raise Chat::AlreadyResponding, "#{agent.name} is already responding" if chat.agent_response_active?(agent)
 
-        create!(
-          agent: agent, chat: chat, trigger_kind: "conversation",
-          conversation_obfuscated_id: chat.to_param, requested_by: "souls.house",
-          session_id: "#{agent.uuid}-#{chat.id}", started_at: Time.current,
-          run_id: SecureRandom.uuid, execution_state: "queued",
-          execution_deadline_at: [ PREPARATION_WINDOW.from_now, deadline ].compact.min,
-          message_dispatch: message_dispatch,
-          narration_shared: agent.share_working_narration?,
-          response_chain_agent_ids: response_chain_agent_ids,
-          follow_through_of: follow_through_of,
-          enqueue_dispatch: enqueue
-        )
+        agent.with_lock do
+          raise Agent::RuntimeAvailability::Unavailable, "Resident backup is pending" if Backup::VmResident.held?(agent)
+          create!(
+            agent: agent, chat: chat, trigger_kind: "conversation",
+            conversation_obfuscated_id: chat.to_param, requested_by: "souls.house",
+            session_id: "#{agent.uuid}-#{chat.id}", started_at: Time.current,
+            run_id: SecureRandom.uuid, execution_state: "queued",
+            execution_deadline_at: [ PREPARATION_WINDOW.from_now, deadline ].compact.min,
+            message_dispatch: message_dispatch,
+            narration_shared: agent.share_working_narration?,
+            response_chain_agent_ids: response_chain_agent_ids,
+            follow_through_of: follow_through_of,
+            enqueue_dispatch: enqueue
+          )
+        end
       end
     end
   end

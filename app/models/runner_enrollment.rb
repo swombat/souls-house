@@ -190,6 +190,44 @@ class RunnerEnrollment < ApplicationRecord
     enrolled? && revoked_at.nil? && last_heartbeat_at.present? && last_heartbeat_at > now - HEALTHY_WITHIN
   end
 
+  def authorize_backup!(nonce:, now: Time.current)
+    with_lock do
+      placement = require_live!
+      raise Refused.new(:placement_unavailable, 409) if placement.state == "failed"
+      wanted = commands.where(kind: "backup_resident", state: "delivered", generation: placement.generation).exists?
+      raise Refused.new(:backup_not_requested, 404) unless wanted
+      consume_nonce!(nonce, now)
+      placement.agent
+    end
+  end
+
+  # The runner asks for its resident's first home (#246 slice 3). Same rule
+  # as images: only while this enrollment holds a delivered, unanswered
+  # seed_home of the current generation naming exactly that digest, and only
+  # the archive stored on this enrollment's own placement. Returns the bytes.
+  SEED_DIGEST = /\A[0-9a-f]{64}\z/
+
+  def authorize_seed!(sha256:, nonce:, now: Time.current)
+    with_lock do
+      placement = require_live!
+      raise Refused.new(:bad_seed, 404) unless SEED_DIGEST.match?(sha256.to_s)
+
+      wanted = commands.where(kind: "seed_home", state: "delivered")
+        .where(generation: placement.generation).any? do |command|
+          JSON.parse(command.payload_json.to_s)["sha256"] == sha256
+        rescue JSON::ParserError
+          false
+        end
+      raise Refused.new(:seed_not_requested, 404) unless wanted
+
+      archive = AgentPlacement.uncached { AgentPlacement.where(id: placement.id).pick(:seed_sha256, :seed_archive) }
+      raise Refused.new(:seed_not_requested, 404) unless archive && archive[0] == sha256 && archive[1].present?
+
+      consume_nonce!(nonce, now)
+      archive[1]
+    end
+  end
+
   def revoke!(now: Time.current)
     update!(revoked_at: now)
   end

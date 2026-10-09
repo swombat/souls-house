@@ -7,7 +7,7 @@ signed heartbeats with facts about the host.
 
 When its config says "commands_enabled": true it also polls Rails for
 commands; Rails answers at once with at most one. The vocabulary is fixed here (start_resident, stop_resident,
-submit_turn, turn_status, cancel_turn) and anything else is refused locally,
+submit_turn, turn_status, cancel_turn, seed_home) and anything else is refused locally,
 whatever Rails asks. Rails supplies values, never Docker flags: the runner
 builds every docker argv itself from a fixed template and validates each value
 against a strict pattern. A turn is relayed to the resident's trigger server on
@@ -32,8 +32,12 @@ import os
 import re
 import secrets
 import shutil
+import signal
+import stat
 import subprocess
 import sys
+import tarfile
+import tempfile
 import threading
 import time
 import urllib.error
@@ -57,7 +61,7 @@ ENROLL_BACKOFF_SECONDS = (5, 15, 30, 60, 120, 300)
 
 # The runner's whole vocabulary. Anything else is refused here, not only in
 # Rails.
-COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn"})
+COMMAND_KINDS = frozenset({"start_resident", "stop_resident", "submit_turn", "turn_status", "cancel_turn", "seed_home", "backup_resident"})
 ALLOWED_ACTIONS = frozenset({"report_facts", "heartbeat"}) | COMMAND_KINDS
 
 
@@ -312,6 +316,11 @@ class CommandFailed(Exception):
     """The command was valid but could not be carried out."""
 
 
+class SeedRefused(BadCommand):
+    """The identity volume is not in a state a seed may touch. Refused, and the
+    volume is left exactly as it is for an operator."""
+
+
 def _require(condition, message):
     if not condition:
         raise BadCommand(message)
@@ -468,10 +477,10 @@ def _http(method, url, token, body=None, ledger_id=None, timeout=10, opener=None
 
 
 class ResidentHost:
-    """Carries out the five commands. Docker and HTTP are injected so tests
+    """Carries out the six commands. Docker and HTTP are injected so tests
     can see exactly what would run."""
 
-    def __init__(self, state_dir, docker=_docker, http=_http, sleep=time.sleep, load_image=None):
+    def __init__(self, state_dir, docker=_docker, http=_http, sleep=time.sleep, load_image=None, fetch_seed=None, backup_request=None):
         self.state_dir = state_dir
         self.docker = docker
         self.http = http
@@ -479,6 +488,63 @@ class ResidentHost:
         # load_image(image_id) streams the image from the house into
         # `docker load`; returns (ok, error).
         self.load_image = load_image
+        # fetch_seed(sha256, write) streams a seed archive from the house.
+        self.fetch_seed = fetch_seed
+        self.backup_request = backup_request
+        self.current_command_id = None
+
+    def _backup_marker(self):
+        return os.path.join(self.state_dir, "pending-backup.json")
+
+    def begin_backup_recovery(self, name):
+        _require(isinstance(self.current_command_id, str) and
+                 COMMAND_ID_RE.fullmatch(self.current_command_id), "backup command id is missing")
+        self._write_private(self._backup_marker(), json.dumps({
+            "command_id": self.current_command_id, "container_name": name}))
+
+    def backup_recovery_facts(self):
+        try:
+            with open(os.path.join(self.state_dir, "recovered-backup.json")) as handle:
+                return {"recovered_backup": json.load(handle)}
+        except (OSError, ValueError):
+            return {}
+
+    def recover_backup(self):
+        """Contain tools before unpausing a resident owned by a durable marker."""
+        path = self._backup_marker()
+        if not os.path.exists(path):
+            return
+        with open(path) as handle:
+            marker = json.load(handle)
+        name = marker.get("container_name")
+        self._known_resident(name)
+        _require(isinstance(marker.get("command_id"), str) and
+                 COMMAND_ID_RE.fullmatch(marker["command_id"]), "invalid backup recovery marker")
+        ok, output = self.docker(["docker", "ps", "-a", "--format", "{{.Names}}"])
+        if not ok:
+            raise CommandFailed("cannot inspect interrupted backup tools")
+        tools = [tool for tool in output.splitlines()
+                 if re.fullmatch(r"souls-house-backup-[0-9a-f]{24}", tool)]
+        if tools:
+            ok, _ = self.docker(["docker", "rm", "-f", *tools])
+            if not ok:
+                raise CommandFailed("cannot stop interrupted backup tools")
+        ok, output = self.docker(["docker", "ps", "-a", "--format", "{{.Names}}"])
+        if not ok or any(re.fullmatch(r"souls-house-backup-[0-9a-f]{24}", tool)
+                         for tool in output.splitlines()):
+            raise CommandFailed("interrupted backup tools not contained")
+        from backup_proxy import _state
+        state = _state(lambda argv, timeout: self.docker(argv), name, 10)
+        if state["Paused"]:
+            ok, _ = self.docker(["docker", "unpause", name])
+            if not ok:
+                raise CommandFailed("cannot recover interrupted backup pause")
+        state = _state(lambda argv, timeout: self.docker(argv), name, 10)
+        if state["Paused"] or state.get("Restarting") or state.get("Dead") or state.get("Status") not in ("running", "exited", "created"):
+            raise CommandFailed("interrupted backup runtime remains uncertain")
+        self._write_private(os.path.join(self.state_dir, "recovered-backup.json"),
+                            json.dumps({**marker, "unpaused": True, "tools_stopped": True}))
+        os.unlink(path)
 
     # Secrets for a resident live only in its root-owned env file.
     def _env_path(self, name):
@@ -493,7 +559,14 @@ class ResidentHost:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as handle:
             handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
         os.rename(tmp, path)
+        directory = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
     def _known_resident(self, name):
         _require(isinstance(name, str) and NAME_RE.match(name), "bad container_name")
@@ -605,6 +678,89 @@ class ResidentHost:
     def cancel_turn(self, payload):
         return self._turn("DELETE", payload)
 
+    def backup_resident(self, payload):
+        from backup_proxy import run_backup
+        if self.backup_request is None:
+            raise BadCommand("backup transport unavailable")
+        _require(isinstance(self.current_command_id, str) and
+                 COMMAND_ID_RE.fullmatch(self.current_command_id), "backup command id is missing")
+        self._known_resident(payload.get("container_name"))
+        result = None
+        try:
+            result = run_backup(payload, self, signed_request=self.backup_request)
+            return result
+        except (BadCommand, CommandFailed) as error:
+            result = getattr(error, "result", None)
+            raise
+        finally:
+            if isinstance(result, dict) and result.get("unpaused") is True and result.get("tools_stopped") is True and os.path.exists(self._backup_marker()):
+                os.unlink(self._backup_marker())
+
+    # seed_home (#246 slice 3): the first contents of a new resident's
+    # identity volume, before its first start. The archive comes from the
+    # house by digest, is checked against that digest, and is unpacked into a
+    # staging directory inside the volume, then moved into place. A marker
+    # holding the digest is written last, so a retry after a lost answer is
+    # recognised as done. Anything else already in the volume is refused and
+    # never wiped.
+    def _volume_mountpoint(self, volume):
+        ok, error = self.docker(["docker", "volume", "create", volume])
+        if not ok:
+            raise CommandFailed(f"could not create volume {volume}: {error}")
+        ok, mountpoint = self.docker(["docker", "volume", "inspect", "--format", "{{.Mountpoint}}", volume])
+        if not ok or not mountpoint.startswith("/") or not os.path.isdir(mountpoint):
+            raise CommandFailed(f"volume {volume} has no local mountpoint")
+        return mountpoint
+
+    def seed_home(self, payload):
+        name = payload.get("container_name")
+        _require(isinstance(name, str) and NAME_RE.match(name), "bad container_name")
+        digest = payload.get("sha256")
+        _require(isinstance(digest, str) and SEED_DIGEST_RE.match(digest), "bad sha256")
+        size = payload.get("bytes")
+        _require(isinstance(size, int) and not isinstance(size, bool) and 0 < size <= SEED_MAX_BYTES, "bad bytes")
+        root = self._volume_mountpoint(volume_name(name, "identity"))
+        marker = os.path.join(root, SEED_MARKER)
+        if os.path.lexists(marker):
+            if read_seed_marker(marker) == digest:
+                return {"state": "seeded", "sha256": digest, "already": True}
+            raise SeedRefused("identity volume was seeded from a different archive")
+        if os.listdir(root):
+            raise SeedRefused("identity volume is not empty and has no seed marker")
+        if self.fetch_seed is None:
+            raise CommandFailed("no way to fetch seed archives on this runner")
+        spool_dir = os.path.join(self.state_dir, "seeds")
+        os.makedirs(spool_dir, mode=0o700, exist_ok=True)
+        with tempfile.TemporaryFile(dir=spool_dir) as spool:
+            hasher = hashlib.sha256()
+            received = [0]
+
+            def write(chunk):
+                received[0] += len(chunk)
+                if received[0] > size:
+                    raise CommandFailed("seed archive is larger than announced")
+                hasher.update(chunk)
+                spool.write(chunk)
+
+            ok, error = self.fetch_seed(digest, write)
+            if not ok:
+                raise CommandFailed(f"could not fetch seed archive: {error}")
+            if received[0] != size or hasher.hexdigest() != digest:
+                raise CommandFailed("seed archive does not match its digest")
+            spool.seek(0)
+            entries = unpack_seed(spool, os.path.join(root, SEED_STAGING))
+        staging = os.path.join(root, SEED_STAGING)
+        for entry in sorted(os.listdir(staging)):
+            os.rename(os.path.join(staging, entry), os.path.join(root, entry))
+        os.rmdir(staging)
+        tmp = marker + ".tmp"
+        with open(tmp, "w") as handle:
+            handle.write(digest + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.rename(tmp, marker)
+        return {"state": "seeded", "sha256": digest, "already": False, "entries": entries}
+
 
 def execute_command(command, state, host):
     """Validate, dedupe, refuse stale generations, run, remember. Returns the
@@ -624,11 +780,16 @@ def execute_command(command, state, host):
     else:
         state.begin(command["id"], command["generation"])
         try:
+            host.current_command_id = command["id"]
             result = {"outcome": "done", "result": getattr(host, command["kind"])(command["payload"])}
         except BadCommand as error:
             result = {"outcome": "refused", "error": str(error)}
+            if isinstance(getattr(error, "result", None), dict):
+                result["result"] = error.result
         except CommandFailed as error:
             result = {"outcome": "failed", "error": str(error)}
+            if isinstance(getattr(error, "result", None), dict):
+                result["result"] = error.result
         except Exception as error:  # the effect may or may not have happened
             result = {"outcome": "unknown", "error": f"{type(error).__name__}: {error}"}
     state.record(command["id"], command["generation"], result)
@@ -637,6 +798,124 @@ def execute_command(command, state, host):
 
 IMAGE_PATH = "/api/v1/host_runner/images/{id}"
 IMAGE_CHUNK = 1024 * 1024
+
+SEED_PATH = "/api/v1/host_runner/seeds/{id}"
+SEED_DIGEST_RE = re.compile(r"\A[0-9a-f]{64}\Z")
+SEED_MARKER = ".souls-house-seed"
+SEED_STAGING = ".souls-house-seed-staging"
+SEED_MAX_BYTES = 64 * 1024 * 1024
+SEED_MAX_UNPACKED = 256 * 1024 * 1024
+SEED_MAX_ENTRIES = 20000
+SEED_DEADLINE = 10 * 60
+
+
+def _seed_member_path(name):
+    """A relative path with no '..', no absolute part and no empty segment."""
+    _require(isinstance(name, str) and name and "\0" not in name, "seed entry has a bad name")
+    name = name[2:] if name.startswith("./") else name
+    name = name.rstrip("/")
+    _require(name and not name.startswith("/") and "\\" not in name, f"seed entry is not relative: {name!r}")
+    parts = name.split("/")
+    _require(all(part not in ("", ".", "..") for part in parts), f"seed entry escapes the home: {name!r}")
+    return parts
+
+
+SEED_MARKER_MAX_BYTES = 128
+
+
+def read_seed_marker(path):
+    """The marker's contents, if it is a small regular file. A symlink is
+    never followed (it could point anywhere and vouch for a seed that never
+    happened), a FIFO or device is never read (it could block), and anything
+    else is refused rather than trusted."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as error:
+        raise SeedRefused(f"seed marker is not a regular file: {error.strerror}")
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise SeedRefused("seed marker is not a regular file")
+        if info.st_size > SEED_MARKER_MAX_BYTES:
+            raise SeedRefused("seed marker is too large")
+        return os.read(fd, SEED_MARKER_MAX_BYTES + 1).decode("utf-8", "replace").strip()
+    finally:
+        os.close(fd)
+
+
+def unpack_seed(fileobj, staging):
+    """Unpack a gzipped tar into staging, which must not exist. Every member
+    is checked before anything is written: regular files and directories
+    only, relative paths, bounded count and size. Files are written by hand,
+    never by tarfile.extract, so no owner, link or device from the archive
+    reaches the disk. Returns the number of entries."""
+    try:
+        archive = tarfile.open(fileobj=fileobj, mode="r:gz")
+    except (tarfile.TarError, OSError, EOFError) as error:
+        raise CommandFailed(f"seed archive is not a gzipped tar: {error}")
+    with archive:
+        # Members are read one at a time and every limit applies as each is
+        # met, so a hostile archive is refused at the cap, never parsed whole.
+        total = 0
+        plan = []
+        while True:
+            try:
+                member = archive.next()
+            except (tarfile.TarError, OSError, EOFError) as error:
+                raise CommandFailed(f"seed archive is unreadable: {error}")
+            if member is None:
+                break
+            _require(len(plan) < SEED_MAX_ENTRIES, "seed archive has too many entries")
+            parts = _seed_member_path(member.name)
+            _require(member.isfile() or member.isdir(), f"seed entry is not a file or directory: {member.name!r}")
+            total += member.size if member.isfile() else 0
+            _require(total <= SEED_MAX_UNPACKED, "seed archive unpacks too large")
+            plan.append((member, parts))
+        os.mkdir(staging, 0o700)
+        for member, parts in plan:
+            target = os.path.join(staging, *parts)
+            if member.isdir():
+                os.makedirs(target, mode=0o755, exist_ok=True)
+                continue
+            os.makedirs(os.path.dirname(target), mode=0o755, exist_ok=True)
+            fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644 | (member.mode & 0o111))
+            with os.fdopen(fd, "wb") as handle, archive.extractfile(member) as source:
+                remaining = member.size
+                while remaining > 0:
+                    chunk = source.read(min(IMAGE_CHUNK, remaining))
+                    if not chunk:
+                        raise CommandFailed(f"seed entry is truncated: {member.name!r}")
+                    handle.write(chunk)
+                    remaining -= len(chunk)
+        return len(plan)
+
+
+def fetch_seed(config, key, digest, write, opener=None, deadline=SEED_DEADLINE):
+    """Signed GET of one seed archive from the house. Same rules as an image:
+    no redirects, bounded in time. Returns (ok, error); CommandFailed raised by
+    write() (an oversized archive) propagates."""
+    if not SEED_DIGEST_RE.match(digest or ""):
+        return False, "bad seed digest"
+    path = SEED_PATH.format(id=digest)
+    request = urllib.request.Request(config["rails_url"].rstrip("/") + path, method="GET",
+                                     headers=signed_headers(key, "GET", path, b"", config["runner_id"]))
+    ends_at = time.monotonic() + deadline
+    try:
+        with (opener or _IMAGE_OPENER.open)(request, timeout=60) as response:
+            if response.status != 200:
+                return False, f"house answered {response.status}"
+            read = response.read1 if hasattr(response, "read1") else response.read
+            while True:
+                if time.monotonic() >= ends_at:
+                    return False, "seed fetch passed its deadline"
+                chunk = read(IMAGE_CHUNK)
+                if not chunk:
+                    return True, ""
+                write(chunk)
+    except urllib.error.HTTPError as error:
+        return False, f"house answered {error.code}"
+    except (OSError, ValueError, http.client.HTTPException) as error:
+        return False, f"{type(error).__name__}: {error}"
 
 
 # The image comes from the house and nowhere else: a redirect is answered as
@@ -763,6 +1042,30 @@ def poll_command_once(config, key, state, host, opener=urllib.request.urlopen):
     return True
 
 
+def poll_with_heartbeats(poll, config, key, state, host, heartbeat, facts, interval=HEARTBEAT_SECONDS):
+    stop = threading.Event()
+
+    def beats():
+        while not stop.wait(interval):
+            try:
+                heartbeat(config, key, {**facts(config.get("runtime_image")), **host.backup_recovery_facts()})
+            except Exception as error:
+                print(f"heartbeat failed: {type(error).__name__}", file=sys.stderr)
+
+    thread = threading.Thread(target=beats, daemon=True)
+    thread.start()
+    try:
+        recover = getattr(host, "recover_backup", None)
+        if callable(recover):
+            # A failed cleanup need not wait for a process restart. Contain
+            # the marked backup before allowing any later command to run.
+            recover()
+        return poll(config, key, state, host)
+    finally:
+        stop.set()
+        thread.join(timeout=35)
+
+
 def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=enroll_once, heartbeat=heartbeat_once,
          facts=collect_facts, max_heartbeats=None, poll=poll_command_once, clock=time.monotonic):
     with open(config_path) as handle:
@@ -806,15 +1109,19 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
         # Heartbeats keep their cadence; between them the runner polls for
         # commands, pausing COMMAND_IDLE_SECONDS when there is nothing to do.
         state = CommandState(state_dir)
-        host = ResidentHost(state_dir, sleep=sleep, load_image=docker_load_from_house(config, key))
+        from backup_proxy import make_signed_request
+        host = ResidentHost(state_dir, sleep=sleep, load_image=docker_load_from_house(config, key),
+                            fetch_seed=lambda digest, write: fetch_seed(config, key, digest, write),
+                            backup_request=make_signed_request(config, key, signed_headers))
+        host.recover_backup()
         last_beat = None
         while max_heartbeats is None or sent < max_heartbeats:
             if last_beat is None or clock() - last_beat >= HEARTBEAT_SECONDS:
-                heartbeat(config, key, facts(config.get("runtime_image")))
+                heartbeat(config, key, {**facts(config.get("runtime_image")), **host.backup_recovery_facts()})
                 sent += 1
                 last_beat = clock()
             try:
-                handled = poll(config, key, state, host)
+                handled = poll_with_heartbeats(poll, config, key, state, host, heartbeat, facts)
             except Exception as error:  # a broken poll must not stop heartbeats
                 print(f"command poll failed: {error}", file=sys.stderr)
                 handled = False
@@ -829,4 +1136,7 @@ def main(config_path=CONFIG_PATH, state_dir=STATE_DIR, sleep=time.sleep, enroll=
 
 
 if __name__ == "__main__":
+    # Keep one set of command exception types for the backup module.
+    sys.modules.setdefault("souls_house_runner", sys.modules[__name__])
+    signal.signal(signal.SIGTERM, lambda _signal, _frame: sys.exit(143))
     sys.exit(main())
