@@ -66,8 +66,9 @@ There is one new Kamal accessory, `souls-house-comms`, built the way
 own named volume `comms:/data`, restarted by Docker, read-only root filesystem,
 `/tmp` on tmpfs, and swap disabled for the container (`memory-swap` equal to
 `memory`), so nothing it holds in memory pages to disk. It's written in Go because
-whatsmeow is Go. It runs one worker per connection, holding a lease row in its
-own store so a second process cannot attach the same device. That's the "two
+whatsmeow is Go. It runs one worker per connection, holding an exclusive `flock`
+on `/data/<ref>/lease` (released by the kernel if the process dies), so a
+second process cannot attach the same device. That's the "two
 live copies fight" problem, solved at the house end.
 
 Keys:
@@ -370,6 +371,19 @@ Hardening that now belongs in the connector contract:
 Not yet covered, and moved into the slice 4 smoke test: the real image's
 writable layer (`docker diff`), `docker logs` from a live client, and a real
 crash.
+
+## 6c. Notes from slice 1 (synthetic connector)
+
+- whatsmeow must be given our own `*sql.DB` via `sqlstore.NewWithDB`: the
+  `sqlstore.New(dialect, dsn)` path keeps the DSN as a plain string, and
+  formatting a `*sql.DB` can print it. In slice 1 the DSN lives only in a
+  closure.
+- The consume answer is not authenticated. A spoofer on the private network
+  would still need a validly signed ticket. Rails signing its answer is an
+  open hardening item, not yet a requirement.
+- No clock skew is allowed (Rails and the connector run on one host). Key
+  rotation and how the current generation is agreed between Rails and the
+  connector are not yet specified.
 
 ## 7. Build order after review
 
