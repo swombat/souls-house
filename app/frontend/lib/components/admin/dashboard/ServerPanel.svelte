@@ -22,7 +22,7 @@
 
   const meters = $derived([
     {
-      label: 'CPU',
+      label: server.cores ? `CPU, all ${server.cores} cores` : 'CPU',
       share: server.cpu_percent !== null && server.cpu_percent !== undefined ? server.cpu_percent / 100 : null,
       value:
         server.cpu_percent !== null && server.cpu_percent !== undefined ? `${server.cpu_percent.toFixed(0)}%` : '—',
@@ -98,7 +98,9 @@
     </div>
     {#if server.busiest_residents.length}
       <div>
-        <div class="mb-1 text-xs text-muted-foreground">Busiest residents, 24h average</div>
+        <div class="mb-1 text-xs text-muted-foreground">
+          Busiest residents, 24h average · CPU as % of one core (100% = one busy core)
+        </div>
         <ul class="space-y-1 text-sm">
           {#each server.busiest_residents as row}
             <li class="flex justify-between gap-2">

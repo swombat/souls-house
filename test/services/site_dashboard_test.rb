@@ -157,4 +157,33 @@ class SiteDashboardTest < ActiveSupport::TestCase
     assert_equal 0.0, SiteDashboard.new.call[:storage][:hetzner_eur_per_month].to_f
   end
 
+  test "storage coverage marks missing and stale Restic readings instead of passing them off as complete" do
+    other = agents(:code_reviewer)
+    [ @public_agent, @founding_agent, other ].each do |agent|
+      AgentBackupSnapshot.create!(agent:, restic_snapshot_id: SecureRandom.hex(3), size_bytes: 10, ok: true, taken_at: 1.day.ago)
+    end
+    HouseSample.create!(kind: "restic_storage", agent: @public_agent, sampled_at: 2.hours.ago, metrics: { "bytes" => 1024**3 })
+    HouseSample.create!(kind: "restic_storage", agent: @founding_agent, sampled_at: 3.days.ago, metrics: { "bytes" => 2 * 1024**3 })
+
+    storage = SiteDashboard.new.call[:storage]
+    coverage = storage[:restic_coverage]
+    assert_equal({ expected: 3, fresh: 1, stale: 1, missing: 1 }, coverage.slice(:expected, :fresh, :stale, :missing))
+    assert_in_delta 3.days.ago.to_i, Time.iso8601(coverage[:oldest_sampled_at]).to_i, 5
+    assert_equal 3 * 1024**3, storage[:restic_stored_bytes]
+  end
+
+  test "disk coverage counts residents with no measurement and old measurements" do
+    hosted = Agent::HOSTED_RUNTIMES.first
+    @public_agent.update_columns(runtime: hosted, storage_usage: { "bytes" => 5, "measured_at" => 1.hour.ago.iso8601 })
+    @founding_agent.update_columns(runtime: hosted, storage_usage: { "bytes" => 7, "measured_at" => 2.days.ago.iso8601, "status" => "unavailable" })
+    agents(:code_reviewer).update_columns(runtime: hosted, storage_usage: {})
+
+    storage = SiteDashboard.new.call[:storage]
+    assert_equal 12, storage[:disk_bytes]
+    coverage = storage[:disk_coverage]
+    assert_equal 1, coverage[:fresh]
+    assert_equal 1, coverage[:stale]
+    assert_operator coverage[:missing], :>=, 1
+  end
+
 end

@@ -48,9 +48,12 @@ class HouseStorageSampleJob < ApplicationJob
     rescue ArgumentError, KeyError
       nil
     end
+    known = S3_STANDARD_USD_PER_GB_MONTH.key?(region.to_s)
     metrics = {
       "s3_region" => region,
-      "s3_usd_per_gb_month" => S3_STANDARD_USD_PER_GB_MONTH.fetch(region.to_s, S3_FALLBACK_USD_PER_GB_MONTH)
+      "s3_usd_per_gb_month" => S3_STANDARD_USD_PER_GB_MONTH.fetch(region.to_s, S3_FALLBACK_USD_PER_GB_MONTH),
+      # Not this region's verified price: the dashboard labels it an assumption.
+      "s3_price_assumed" => !known
     }
     types = CloudProcurementOperation::SERVER_TYPES
     begin

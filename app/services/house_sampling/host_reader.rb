@@ -1,11 +1,9 @@
-require "open3"
-require "timeout"
-
 module HouseSampling
   # Reads the host this process runs on. /proc/loadavg, /proc/stat and
-  # /proc/meminfo are host-wide even inside a container (no lxcfs here), and
-  # "/" in a container is the overlay on the host's Docker filesystem, so
-  # this is the house host as a whole, not the Rails container's share.
+  # /proc/meminfo are host-wide even inside a container (no lxcfs here), so
+  # load, CPU and memory are the house host as a whole. Disk is `df /` in
+  # the container: the filesystem backing Docker's overlay, which is not
+  # necessarily the host's root filesystem or every host mount.
   class HostReader
 
     def initialize(proc_root: "/proc")
@@ -66,12 +64,10 @@ module HouseSampling
     end
 
     def disk
-      output, status = Timeout.timeout(10) { Open3.capture2("df", "-B1", "-P", "/") }
-      return {} unless status.success?
-      _, total, used, available = output.lines.last.split
+      result = BoundedCommand.run("df", "-B1", "-P", "/", timeout: 10)
+      return {} unless result.ok
+      _, total, used, available = result.stdout.lines.last.to_s.split
       { "disk_total_bytes" => total.to_i, "disk_used_bytes" => used.to_i, "disk_available_bytes" => available.to_i }
-    rescue SystemCallError, Timeout::Error
-      {}
     end
 
   end

@@ -10,16 +10,17 @@ class HouseSampling::ContainerStatsTest < ActiveSupport::TestCase
       { Name: "souls-house-web", CPUPerc: "80.00%", MemUsage: "900MiB / 125GiB" }.to_json,
       "not json"
     ].join("\n")
-    status = Struct.new(:success?).new(true)
-    Open3.stub(:capture2, [ output, status ]) do
+    result = HouseSampling::BoundedCommand::Result.new(ok: true, stdout: output, timed_out: false)
+    HouseSampling::BoundedCommand.stub(:run, result) do
       result = HouseSampling::ContainerStats.new.call
       assert_equal({ agent.id.to_s => { "cpu" => 12.5, "mem" => (1.5 * 1024**3).round } }, result)
     end
   end
 
-  test "a failing docker call is an empty reading, not an error" do
+  test "a failing or timed-out docker call is an empty reading, not an error" do
     agents(:research_assistant).update_columns(container_name: "resident-abc")
-    Open3.stub(:capture2, ->(*) { raise Errno::ENOENT }) do
+    result = HouseSampling::BoundedCommand::Result.new(ok: false, stdout: "", timed_out: true)
+    HouseSampling::BoundedCommand.stub(:run, result) do
       assert_equal({}, HouseSampling::ContainerStats.new.call)
     end
   end

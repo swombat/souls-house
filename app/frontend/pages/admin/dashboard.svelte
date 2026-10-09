@@ -43,8 +43,13 @@
   const backups = $derived(dashboard.backups);
   const placement = $derived(dashboard.placement);
   const funnel = $derived(dashboard.funnel);
-  const server = $derived(dashboard.server);
-  const storage = $derived(dashboard.storage);
+  // Defaults keep the page standing if it is ever handed an older payload.
+  const server = $derived(dashboard.server ?? { available: false });
+  const storage = $derived(dashboard.storage ?? {});
+  const serverAgeMinutes = $derived(
+    server.available ? Math.round((new Date(dashboard.generated_at) - new Date(server.sampled_at)) / 60000) : null
+  );
+  const serverStale = $derived(serverAgeMinutes !== null && serverAgeMinutes > 15);
   const dedupShare = $derived(
     storage.restic_stored_bytes && backups.logical_bytes ? storage.restic_stored_bytes / backups.logical_bytes : null
   );
@@ -85,6 +90,61 @@
     if (!confirm(`Count ${account.name} as a normal account in the growth numbers?`)) return;
     router.patch(`/admin/accounts/${account.id}/founding`, { account: { founding: false } }, { preserveScroll: true });
   }
+
+  // "measured hourly" stops being true the moment readings go missing or old;
+  // say so next to the total instead of letting it pass as complete.
+  function coverageNote(coverage) {
+    if (!coverage || !coverage.expected) return null;
+    const parts = [];
+    if (coverage.missing) parts.push(`${coverage.missing} of ${coverage.expected} not measured`);
+    if (coverage.stale) parts.push(`${coverage.stale} stale since ${shortDateTime(coverage.oldest_sampled_at)}`);
+    return parts.length ? `Partial: ${parts.join(', ')}` : null;
+  }
+
+  function shortDateTime(iso) {
+    if (!iso) return '?';
+    return new Date(iso).toLocaleString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  const storageRows = $derived([
+    {
+      label: 'On resident disks',
+      bytes: storage.disk_bytes,
+      daily: storage.disk_daily_bytes,
+      color: TEAL,
+      note:
+        storage.disk_bytes === null || storage.disk_bytes === undefined
+          ? 'not measured yet'
+          : `${formatCount(storage.disk_residents_measured)} residents, measured hourly`,
+      warning: coverageNote(storage.disk_coverage),
+    },
+    {
+      label: 'Latest backups',
+      bytes: backups.logical_bytes,
+      daily: backups.daily_logical_bytes,
+      color: SLATE,
+      note: `${formatCount(backups.residents_backed_up)} residents' last good backup, before dedup`,
+      warning: null,
+    },
+    {
+      label: 'Stored in S3',
+      bytes: storage.restic_stored_bytes,
+      daily: storage.restic_daily_bytes,
+      color: VIOLET,
+      note: storage.restic_sampled
+        ? `repositories are ${formatPercent(dedupShare, 0)} of latest backups, history included · ~${formatUsd(
+            storage.restic_usd_per_month,
+            { precise: true }
+          )}/month`
+        : 'sampled daily; first reading pending',
+      warning: coverageNote(storage.restic_coverage),
+    },
+  ]);
 
   function backendLabel(row) {
     if (row.backend === 'hetzner_cloud') return `Hetzner${row.location ? ` · ${row.location}` : ''}`;
@@ -372,14 +432,17 @@
     <div class="rounded-xl border bg-card p-5 lg:col-span-2">
       <div class="mb-4 flex items-baseline justify-between">
         <h2 class="font-medium">House host</h2>
-        <span class="text-xs text-muted-foreground">
-          {#if server.available}sampled every 5 minutes · last {new Date(server.sampled_at).toLocaleTimeString(
-              'en-GB',
-              {
-                hour: '2-digit',
-                minute: '2-digit',
-              }
-            )}{:else}not sampled yet{/if}
+        <span class="text-xs" class:text-amber-600={serverStale} class:text-muted-foreground={!serverStale}>
+          {#if !server.available}
+            not sampled yet
+          {:else if serverStale}
+            stale: last sample {shortDateTime(server.sampled_at)}, {serverAgeMinutes} min ago
+          {:else}
+            sampled every 5 minutes · last {new Date(server.sampled_at).toLocaleTimeString('en-GB', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          {/if}
         </span>
       </div>
       {#if server.available}
@@ -411,19 +474,31 @@
           {#each server.vms as vm}
             <div class="flex justify-between gap-2 pl-3 text-xs">
               <dt class="truncate text-muted-foreground">{vm.name ?? 'VM'} · {vm.location}</dt>
-              <dd class="tabular-nums">{vm.cpu === null ? '—' : `${vm.cpu}% CPU`}</dd>
+              <dd class="tabular-nums" title="Hetzner's CPU metric, averaged over the last 5 minutes">
+                {vm.cpu === null ? '—' : `${vm.cpu}% (Hetzner)`}
+              </dd>
             </div>
           {/each}
         {/if}
       </dl>
       <p class="mt-4 text-[11px] text-muted-foreground">
         {#if storage.s3_usd_per_gb_month}
-          S3 at ${storage.s3_usd_per_gb_month}/GB-month ({storage.s3_region ?? 'region unknown'}, Standard list price).
+          Restic is the S3 Standard storage run-rate at ${storage.s3_usd_per_gb_month}/GB-month
+          {storage.s3_price_assumed
+            ? `(assumed: no verified price for ${storage.s3_region ?? 'this region'})`
+            : `(${storage.s3_region}, list price)`}, an estimate rather than the full bill: requests, transfer and
+          anything outside the resident repositories aren't included.
         {:else}
           Prices arrive with the first daily storage sample.
         {/if}
-        Hetzner at list price for each VM's type and location. The house host itself is a fixed cost and isn't counted.
+        Hetzner at list price for each confirmed VM's type and location. The house host itself is a fixed cost and isn't
+        counted.
       </p>
+      {#if coverageNote(storage.restic_coverage)}
+        <p class="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
+          Restic: {coverageNote(storage.restic_coverage)}
+        </p>
+      {/if}
     </div>
 
     <!-- Storage -->
@@ -434,12 +509,15 @@
       </div>
       <div class="grid gap-6 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <div class="space-y-4">
-          {#each [{ label: 'On resident disks', bytes: storage.disk_bytes, daily: storage.disk_daily_bytes, color: TEAL, note: storage.disk_bytes === null ? 'not measured yet' : `${formatCount(storage.disk_residents_measured)} residents, measured hourly` }, { label: 'Backed up (before dedup)', bytes: backups.logical_bytes, daily: backups.daily_logical_bytes, color: SLATE, note: `${formatCount(backups.residents_backed_up)} residents' last good backup` }, { label: 'Stored in S3', bytes: storage.restic_stored_bytes, daily: storage.restic_daily_bytes, color: VIOLET, note: storage.restic_sampled ? `${formatPercent(dedupShare, 0)} of backed-up size · ${formatUsd(storage.restic_usd_per_month, { precise: true })}/month` : 'sampled daily; first reading pending' }] as row}
+          {#each storageRows as row}
             <div class="flex items-center justify-between gap-3">
               <div class="min-w-0">
                 <div class="text-xs text-muted-foreground">{row.label}</div>
                 <div class="text-xl font-semibold tabular-nums">{formatBytes(row.bytes)}</div>
                 <div class="text-[11px] text-muted-foreground">{row.note}</div>
+                {#if row.warning}
+                  <div class="text-[11px] text-amber-600 dark:text-amber-400">{row.warning}</div>
+                {/if}
               </div>
               <Sparkline values={row.daily} width={120} height={34} color={row.color} label={`${row.label} per day`} />
             </div>

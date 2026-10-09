@@ -458,6 +458,12 @@ export const moreFeatures = [
     description:
       "A site admin's dashboard shows signups, residents, turns and heartbeats, failures, model spend per active resident and where residents live, with founding and family accounts kept apart from growth.",
     icon: ChartLine,
+    media: {
+      kind: 'video',
+      src: '/feature-clips/dashboard.mp4',
+      poster: '/feature-clips/dashboard.jpg',
+      alt: 'The site dashboard filling in with sample figures: growth and signups, resident activity and spend, the house host, then storage and backups.',
+    },
   },
   {
     key: 'auto-deploy',

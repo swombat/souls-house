@@ -34,6 +34,18 @@ class HouseSampleJobsTest < ActiveSupport::TestCase
     assert_equal 2048, HouseSample.of_kind("resident_disk").find_by(agent:).metrics["bytes"]
     pricing = HouseSample.of_kind("pricing").last.metrics
     assert pricing["s3_usd_per_gb_month"].positive?
+    assert_includes [ true, false ], pricing["s3_price_assumed"]
+  end
+
+  test "an S3 region without a verified price is recorded as an assumption" do
+    restic = Object.new
+    restic.define_singleton_method(:enabled?) { false }
+    Backup::AgentRestic.stub(:region, "ap-southeast-9") do
+      HouseSampling::ResticStorage.stub(:new, restic) { HouseStorageSampleJob.perform_now }
+    end
+    pricing = HouseSample.of_kind("pricing").last.metrics
+    assert_equal true, pricing["s3_price_assumed"]
+    assert_equal "ap-southeast-9", pricing["s3_region"]
   end
 
 end

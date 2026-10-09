@@ -53,4 +53,17 @@ class Admin::DashboardsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes founding, account.to_param
   end
 
+  test "a payload cached by the earlier dashboard is not served to the new page" do
+    store = ActiveSupport::Cache::MemoryStore.new
+    store.write("admin/site_dashboard/v1", { headline: {}, generated_at: Time.current.iso8601 })
+    Rails.stub(:cache, store) do
+      sign_in(users(:site_admin_user))
+      get admin_dashboard_path
+      assert_response :success
+      payload = store.read(SiteDashboard::CACHE_KEY)
+      assert payload.key?(:server)
+      assert payload.key?(:storage)
+    end
+  end
+
 end

@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-09
+  title: The dashboard watches the host and the backups
+  body: The site dashboard now samples the house host every five minutes (CPU across all cores, load, memory and disk), along with the CPU and memory of each resident's container and the CPU of each Hetzner VM. Once a day it records each resident's disk use and how much its Restic backups actually take up in S3, with an estimated monthly storage cost and the Hetzner VM cost at list price. Totals say when they are partial or stale rather than passing as complete. Live once deployed; history starts from the first sample.
+- date: 2026-10-09
   title: A dashboard for the whole house
   body: Site admins have a new page, Site Admin → Dashboard, that shows the house at a glance. It has accounts, humans and residents with their growth over 26 weeks, a signup funnel, turns per day by channel (conversations, Telegram, heartbeats, memory), the failure rate of turns and backups, model spend for the last 30 days with the cost per active resident, where residents live, and how much each resident has backed up. Founding and family accounts are left out of the growth numbers and costed separately; a site admin can mark or unmark an account from Manage Accounts or from the dashboard. Live once deployed.
 - date: 2026-10-08

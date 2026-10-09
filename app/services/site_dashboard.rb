@@ -11,7 +11,11 @@ class SiteDashboard
   WEEKS = 26
   HOURS = 7 * 24
   GIB = 1024**3
-  CACHE_KEY = "admin/site_dashboard/v1".freeze
+  RESTIC_FRESH_FOR = 36.hours
+  DISK_FRESH_FOR = 6.hours
+  # Bump the version whenever the payload shape changes: Solid Cache
+  # survives a deploy, and the page must never read an older shape.
+  CACHE_KEY = "admin/site_dashboard/v2".freeze
   # A finished turn failed if the runtime said error or timeout, if the live
   # activity path finished it as failed or timed out, or if the house
   # recorded an error and the runtime never reported a status (a refused or
@@ -476,25 +480,65 @@ class SiteDashboard
 
   # --- storage: on disk vs in Restic, and what it costs ---------------------
 
+  # Totals are each resident's last good reading. Coverage says how many
+  # residents those readings cover and how old they are, so a partial or
+  # stale total is shown as one rather than passed off as the whole.
   def storage
     pricing = HouseSample.of_kind("pricing").order(sampled_at: :desc).first&.metrics || {}
     restic = HouseSample.latest_per(:agent_id, "restic_storage").to_a
-    # The hourly du measurement; an "unavailable" refresh keeps the last bytes.
-    on_disk = Agent.hosted.pluck(:storage_usage).select { |usage| usage["bytes"].present? }
     stored = restic.sum { |sample| sample.metrics["bytes"].to_i }
     price = pricing["s3_usd_per_gb_month"]
+    hosted = Agent.hosted.pluck(:storage_usage)
+    on_disk = hosted.select { |usage| usage["bytes"].present? }
     {
       restic_sampled: restic.any?,
       restic_stored_bytes: restic.any? ? stored : nil,
       restic_objects: restic.sum { |sample| sample.metrics["objects"].to_i },
       restic_usd_per_month: restic.any? && price ? (stored.to_f / GIB * price).round(2) : nil,
+      restic_coverage: restic_coverage(restic),
       s3_usd_per_gb_month: price,
+      s3_price_assumed: pricing["s3_price_assumed"] == true,
       s3_region: pricing["s3_region"],
       restic_daily_bytes: daily_sample_totals("restic_storage"),
       disk_bytes: on_disk.any? ? on_disk.sum { |usage| usage["bytes"].to_i } : nil,
       disk_residents_measured: on_disk.size,
+      disk_coverage: disk_coverage(hosted, on_disk),
       disk_daily_bytes: daily_sample_totals("resident_disk"),
-      hetzner_eur_per_month: hetzner_monthly(pricing["hetzner_eur_per_month"])
+      hetzner_eur_per_month: hetzner_monthly(pricing["hetzner_eur_per_month"]),
+      pricing_sampled_at: HouseSample.of_kind("pricing").maximum(:sampled_at)&.iso8601
+    }
+  end
+
+  # Residents with at least one good backup have a repository to measure.
+  def restic_coverage(latest)
+    expected = AgentBackupSnapshot.where(ok: true).distinct.pluck(:agent_id)
+    by_agent = latest.index_by(&:agent_id)
+    fresh = expected.count { |id| by_agent[id] && by_agent[id].sampled_at >= now - RESTIC_FRESH_FOR }
+    measured = expected.count { |id| by_agent[id] }
+    {
+      expected: expected.size,
+      fresh: fresh,
+      stale: measured - fresh,
+      missing: expected.size - measured,
+      oldest_sampled_at: expected.filter_map { |id| by_agent[id]&.sampled_at }.min&.iso8601
+    }
+  end
+
+  def parse_time(value)
+    Time.zone.parse(value.to_s)
+  rescue ArgumentError
+    nil
+  end
+
+  def disk_coverage(hosted, measured)
+    times = measured.filter_map { |usage| parse_time(usage["measured_at"]) }
+    fresh = times.count { |time| time >= now - DISK_FRESH_FOR }
+    {
+      expected: hosted.size,
+      fresh: fresh,
+      stale: measured.size - fresh,
+      missing: hosted.size - measured.size,
+      oldest_sampled_at: times.min&.iso8601
     }
   end
 
