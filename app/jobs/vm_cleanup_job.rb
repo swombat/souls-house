@@ -50,6 +50,11 @@ class VmCleanupJob < ApplicationJob
       RunnerEnrollment.where(agent_placement_id: placement.id, revoked_at: nil).find_each(&:revoke!)
       placement.update!(state: "retired", provider_server_id: nil, location: nil)
     end
+    # Slice 4 keeps a backup hold whose outcome is unknown until nothing of
+    # the VM is left; now that is confirmed, it can let go.
+    if Backup.const_defined?(:VmResident) && Backup::VmResident.respond_to?(:release_after_retirement!)
+      Backup::VmResident.release_after_retirement!(placement:)
+    end
   end
 
 end

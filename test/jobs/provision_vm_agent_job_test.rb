@@ -58,8 +58,20 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       command
     end
 
+    attr_accessor :hold_after_failure
+
     def status(command:)
       { state: state, reason: state == "failed" ? "snapshot missing" : nil, snapshot: nil }
+    end
+
+    def held?(_agent)
+      state == "failed" && hold_after_failure == true
+    end
+
+    attr_reader :released
+
+    def release_after_retirement!(placement:)
+      (@released ||= []) << placement.id
     end
 
   end
@@ -120,7 +132,11 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
   def with_backups(&block)
     if Backup.const_defined?(:VmResident)
       Backup::VmResident.stub(:issue!, ->(**kwargs) { @backups.issue!(**kwargs) }) do
-        Backup::VmResident.stub(:status, ->(**kwargs) { @backups.status(**kwargs) }, &block)
+        Backup::VmResident.stub(:status, ->(**kwargs) { @backups.status(**kwargs) }) do
+          Backup::VmResident.stub(:held?, ->(agent) { @backups.held?(agent) }) do
+            Backup::VmResident.stub(:release_after_retirement!, ->(**kwargs) { @backups.release_after_retirement!(**kwargs) }, &block)
+          end
+        end
       end
     else
       Backup.const_set(:VmResident, @backups)
@@ -257,6 +273,7 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
         assert_equal "retired", placement.reload.state
         assert operation(agent).runner_enrollment.reload.revoked_at
         assert_nil Agents::RemoteRuntime.enrollment_for(agent)
+        assert_equal [ placement.id ], @backups.released, "backup holds are released only after retirement"
       end
     end
   end
@@ -275,6 +292,25 @@ class ProvisionVmAgentJobTest < ActiveJob::TestCase
       assert_match(/could not be seeded/, agent.sandbox_last_error)
       assert_equal "failed", agent.placement.reload.state
       assert_equal 0, RunnerCommand.where(agent_placement_id: agent.placement.id, kind: "start_resident").count
+    end
+  end
+
+  test "a failed first backup that kept its hold fails the birth at once and cleans up" do
+    with_house do
+      agent = born!
+      run_job(agent)
+      boot_and_enroll!(agent)
+      run_job(agent)
+      answer_latest(agent.placement, "seed_home")
+      run_job(agent)
+      answer_latest(agent.placement, "start_resident")
+      run_job(agent)
+      @backups.state = "failed"
+      @backups.hold_after_failure = true
+      assert_enqueued_with(job: VmCleanupJob) { run_job(agent) }
+      assert_equal 1, @backups.issued.size, "no retry into a held backup"
+      assert_match(/unknown state/, agent.sandbox_last_error)
+      assert_equal "failed", agent.placement.reload.state
     end
   end
 

@@ -144,6 +144,7 @@ class ProvisionVmAgentJob < ApplicationJob
   # storage, not from the runner's say-so.
   def backed_up?(placement)
     command = placement.first_backup_command_id && RunnerCommand.find_by(id: placement.first_backup_command_id)
+    command ||= adopt_pending_backup!(placement)
     if command.nil?
       issue_backup!(placement)
       return false
@@ -154,6 +155,11 @@ class ProvisionVmAgentJob < ApplicationJob
     when "verified" then true
     when "pending" then false
     else
+      # A failed backup that kept its hold left the runtime in a state nobody
+      # knows (paused or not). Containment is deleting the VM, not retrying.
+      if Backup::VmResident.held?(placement.agent)
+        raise Failed, "the first backup left the resident in an unknown state (#{status[:reason] || 'no detail'})"
+      end
       attempts = RunnerCommand.where(agent_placement_id: placement.id, kind: command.kind,
         generation: placement.generation).count
       raise Failed, "the first backup failed (#{status[:reason] || 'no detail'})" if attempts >= BACKUP_ATTEMPTS
@@ -161,6 +167,16 @@ class ProvisionVmAgentJob < ApplicationJob
       issue_backup!(placement)
       false
     end
+  end
+
+  # Something else (the first graph checkpoint) may have started a backup for
+  # this resident already; its outcome is the one that counts.
+  def adopt_pending_backup!(placement)
+    return nil unless defined?(VmBackup) && Backup::VmResident.respond_to?(:held?) && Backup::VmResident.held?(placement.agent)
+
+    command = VmBackup.holding.find_by(agent_id: placement.agent_id)&.runner_command
+    placement.update!(first_backup_command_id: command.id) if command
+    command
   end
 
   def issue_backup!(placement)
