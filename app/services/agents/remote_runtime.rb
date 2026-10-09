@@ -39,6 +39,8 @@ module Agents
       placement = placement_for(agent)
       return nil unless placement&.backend == "hetzner_cloud" && placement.state == "ready"
       return nil if placement.vm_birth? && agent.runtime_ready_at.nil?
+      # A credential/service restart is in flight: no new turn until it settles.
+      return nil if placement.refresh_command_id.present?
       return nil unless ResidentTurn.enabled?
 
       enrollment = RunnerEnrollment.uncached do
@@ -150,6 +152,89 @@ module Agents
       return {} if HouseInference::Offering.find(agent.model_id)
 
       agent.account.ai_provider_keys.select { |_name, value| value.present? }
+    end
+
+    # A credential/service restart queued for this resident has not settled.
+    # Turn admission (ResidentTurn.enqueue!, AgentRuntimeInteraction
+    # .record_trigger!) and dispatch refuse while it is true.
+    def refresh_pending?(agent)
+      placement_for(agent)&.refresh_command_id.present?
+    end
+
+    # Starts a refresh between turns, or says why not. Under the same gate as
+    # turn admission, so no turn can be admitted between the check and the
+    # hold: returns the start command, or :busy when a turn is pending or
+    # running, or another refresh hasn't settled (try again later). The
+    # snapshot records which service revisions this restart carries.
+    TURN_GATE = "1936680308, 1".freeze
+
+    def begin_refresh!(agent)
+      ResidentTurn.transaction do
+        ResidentTurn.connection.execute("SELECT pg_advisory_xact_lock(#{TURN_GATE})")
+        agent.with_lock do
+          placement = placement_for(agent)
+          placement.lock!
+          return :busy if placement.refresh_command_id.present?
+          return :busy if ResidentTurn.pending.where(agent_id: agent.id).exists? ||
+            agent.agent_runtime_interactions.active.exists?
+
+          snapshot = agent.agent_service_accesses.includes(:service_connection).map do |access|
+            { "id" => access.id, "enabled" => access.enabled?, "revision" => access.service_connection.credential_revision.to_s }
+          end
+          command = start!(agent)
+          placement.update!(refresh_command_id: command.id, refresh_requested_at: Time.current,
+            refresh_snapshot: snapshot, refresh_last_error: nil)
+          command
+        end
+      end
+    end
+
+    # Settles a refresh once its start command is answered. Success marks
+    # reconciled only the service accesses whose revision is still the one
+    # the restart carried; a failure stays visible on the accesses and the
+    # resident. Either way the turn hold is released. Returns :pending,
+    # :done or :failed.
+    REFRESH_ANSWER_WITHIN = 30.minutes
+
+    def settle_refresh!(placement, now: Time.current)
+      placement.with_lock do
+        return :done if placement.refresh_command_id.blank?
+
+        command = RunnerCommand.find_by(id: placement.refresh_command_id)
+        unless command.nil? || command.terminal?
+          return :pending if now < placement.refresh_requested_at + REFRESH_ANSWER_WITHIN
+        end
+
+        agent = placement.agent
+        if command&.state == "done"
+          Array(placement.refresh_snapshot).each do |entry|
+            access = agent.agent_service_accesses.includes(:service_connection).find_by(id: entry["id"])
+            next unless access && access.enabled? == entry["enabled"] &&
+              access.service_connection.credential_revision.to_s == entry["revision"]
+
+            if access.enabled?
+              access.mark_provisioned!
+            else
+              access.update!(provisioned_revision: nil, provisioned_at: now, provisioning_status: "removed",
+                provisioning_error_code: nil)
+            end
+          end
+          placement.update!(refresh_command_id: nil, refresh_requested_at: nil, refresh_snapshot: nil,
+            refresh_last_error: nil)
+          :done
+        else
+          state = command&.state || "missing"
+          state = "no answer" unless command.nil? || command.terminal?
+          error = "VM restart with new credentials #{state}: #{command&.result&.dig('error') || 'no detail'}".first(255)
+          ids = Array(placement.refresh_snapshot).map { |entry| entry["id"] }
+          agent.agent_service_accesses.where(id: ids).update_all(provisioning_status: "failed",
+            provisioning_error_code: "vm_restart_#{state.tr(' ', '_')}", updated_at: now)
+          agent.update!(sandbox_last_error: error, sandbox_last_error_at: now)
+          placement.update!(refresh_command_id: nil, refresh_requested_at: nil, refresh_snapshot: nil,
+            refresh_last_error: error)
+          :failed
+        end
+      end
     end
 
     # Ready and alive: the placement is ready, the runner is live, and a VM

@@ -20,6 +20,7 @@ class ResidentTurn < ApplicationRecord
     transaction do
       connection.execute("SELECT pg_advisory_xact_lock(1936680308, 1)")
       raise SessionBusy if pending.where(session_id: body.fetch(:session_id)).exists?
+      raise SessionBusy, "Resident is restarting with new credentials" if Agents::RemoteRuntime.refresh_pending?(interaction.agent)
       turn = create!(
         agent: interaction.agent, agent_runtime_interaction: interaction,
         dispatch_id: SecureRandom.uuid, session_id: body.fetch(:session_id),

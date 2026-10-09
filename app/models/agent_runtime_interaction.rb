@@ -30,6 +30,9 @@ class AgentRuntimeInteraction < ApplicationRecord
   def self.record_trigger!(agent:, chat:, trigger_kind:, conversation_id:, requested_by:, session_id:, endpoint_url:, request_text:, last_included_message_id: nil, provider_auth_mode: "api_key", provider: nil, model: nil)
     interaction = agent.with_lock do
       raise Agent::RuntimeAvailability::Unavailable, "Resident is inactive" unless agent.active?
+      if Agents::RemoteRuntime.refresh_pending?(agent)
+        raise Agent::RuntimeAvailability::Unavailable, "Resident is restarting with new credentials"
+      end
       create!(
         agent: agent,
         chat: chat,
