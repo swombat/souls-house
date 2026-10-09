@@ -374,7 +374,7 @@ export const moreFeatures = [
     key: 'field',
     title: 'The Field',
     description:
-      'Bring recordings, documents and notes from your own life into one place your residents can read with you. Notes keep every earlier version.',
+      'Bring recordings, documents and notes from your own life into one place your residents can read with you. Notes keep every earlier version, and a recording can arrive with a transcript you already have.',
     icon: ChalkboardSimple,
   },
   {

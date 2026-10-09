@@ -11,6 +11,7 @@ module FieldRecordings
 
     def perform(recording_id)
       recording = FieldRecording.find_by(id: recording_id)
+      return record_duration(recording) if recording&.supplied?
       return unless recording&.kept? && recording.probing?
 
       duration_ms = recording.audio.blob.open { |file| FieldRecording::Probe.duration_ms(file.path) }
@@ -21,6 +22,19 @@ module FieldRecordings
       end
     rescue ActiveStorage::FileNotFoundError, ActiveStorage::IntegrityError
       recording&.reject_unreadable!(MISSING)
+    end
+
+    private
+
+    # A supplied recording is already ready and reserves nothing: the probe
+    # only learns its length. Audio it can't read leaves the transcript
+    # standing, with no duration shown.
+    def record_duration(recording)
+      return unless recording.kept? && recording.duration_ms.nil?
+
+      recording.record_duration!(recording.audio.blob.open { |file| FieldRecording::Probe.duration_ms(file.path) })
+    rescue ActiveStorage::FileNotFoundError, ActiveStorage::IntegrityError
+      nil
     end
 
   end
