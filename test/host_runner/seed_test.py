@@ -1,6 +1,7 @@
 import hashlib
 import io
 import os
+import shutil
 import sys
 import tarfile
 import tempfile
@@ -195,6 +196,48 @@ class SeedHomeTest(unittest.TestCase):
             self.assertEqual([], os.listdir(self.volume))
         finally:
             runner.SEED_MAX_ENTRIES, runner.SEED_MAX_UNPACKED = original
+
+    def test_the_scan_stops_at_the_entry_cap_instead_of_parsing_everything(self):
+        many = archive([(f"f{i}.md", b"x") for i in range(50)])
+        calls = []
+        original_next = tarfile.TarFile.next
+
+        def counting_next(tar):
+            calls.append(1)
+            return original_next(tar)
+
+        original_cap = runner.SEED_MAX_ENTRIES
+        try:
+            runner.SEED_MAX_ENTRIES = 2
+            tarfile.TarFile.next = counting_next
+            result = self.run_seed(self.host(many), self.payload(many))
+        finally:
+            tarfile.TarFile.next = original_next
+            runner.SEED_MAX_ENTRIES = original_cap
+        self.assertEqual("refused", result["outcome"])
+        self.assertLessEqual(len(calls), 4, "the scan must stop at the cap")
+        self.assertEqual([], os.listdir(self.volume))
+
+    def test_a_marker_that_is_not_a_small_regular_file_is_refused_and_nothing_is_fetched(self):
+        digest = self.payload()["sha256"]
+        elsewhere = os.path.join(self.tmp.name, "forged")
+        with open(elsewhere, "w") as handle:
+            handle.write(digest)
+        cases = {
+            "symlink": lambda marker: os.symlink(elsewhere, marker),
+            "fifo": lambda marker: os.mkfifo(marker),
+            "directory": lambda marker: os.mkdir(marker),
+            "oversized": lambda marker: open(marker, "w").write(digest + " " * 200),
+        }
+        for index, (name, make) in enumerate(cases.items()):
+            with self.subTest(marker=name):
+                shutil.rmtree(self.volume, ignore_errors=True)
+                os.makedirs(self.volume)
+                make(os.path.join(self.volume, runner.SEED_MARKER))
+                result = self.run_seed(self.host(), self.payload(), cid=f"{index + 10:032x}")
+                self.assertEqual("refused", result["outcome"], result)
+                self.assertEqual([runner.SEED_MARKER], os.listdir(self.volume))
+                self.assertEqual([], self.served)
 
     def test_seed_home_is_in_the_runner_vocabulary(self):
         self.assertIn("seed_home", runner.COMMAND_KINDS)
