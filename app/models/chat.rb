@@ -379,16 +379,14 @@ class Chat < ApplicationRecord
   end
 
   # Queue a wake for each of these residents. They were busy when the message
-  # was read, but a run can finish before this lock is taken, so each also
-  # gets a release job: a no-op while the resident is still busy, a prompt
-  # wake if the run already ended. Returns the residents queued.
+  # was read; a run that has finished since is covered by queue!'s own
+  # after-commit release. Returns the residents queued.
   def queue_wakes_for_busy!(busy_agents, requested_by:, message:)
     return [] if busy_agents.empty?
 
     with_lock do
       busy_agents.each do |agent|
         PendingWake.queue!(chat: self, agent: agent, requested_by: requested_by, message: message)
-        PendingWakeJob.set(wait: PendingWakeJob::DELAY).perform_later(id, agent.id)
       end
     end
   end

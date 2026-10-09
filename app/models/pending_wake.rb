@@ -27,10 +27,9 @@ class PendingWake < ApplicationRecord
 
   scope :open, -> { where(released_at: nil, dropped_at: nil) }
 
-  # Record (or coalesce into) the open wake, with what asked for it. The
-  # caller holds the chat lock, and so does release!, which is what keeps a
-  # run that finishes between the busy check and this write from orphaning
-  # the wake. A source is one of: message: (a human message that named or
+  # Record (or coalesce into) the open wake, with what asked for it, and
+  # attempt a release once it commits. The caller holds the chat lock across
+  # its busy check and this write. A source is one of: message: (a human message that named or
   # addressed the resident), requester_agent: (a sibling's knock) or user:
   # (a person's button or API call).
   def self.queue!(chat:, agent:, requested_by:, message: nil, user: nil, requester_agent: nil)
@@ -46,16 +45,23 @@ class PendingWake < ApplicationRecord
     else
       wake.sources.create!(kind: "trigger", user: requester_agent ? nil : user, requester_agent: requester_agent)
     end
+    # A run that ended while this transaction was open could not see the
+    # wake; this job, after the commit, can. See PendingWakeJob for the rule.
+    chat_id, agent_id = chat.id, agent.id
+    ActiveRecord.after_all_transactions_commit { PendingWakeJob.perform_later(chat_id, agent_id) }
     wake
   end
 
   # Release the open wake for this resident in this room, if it is due.
   # Returns the wake (released or dropped), or nil when there is nothing to do
   # yet. Still busy is "not yet", not a drop: the run that is busy now will
-  # call this again when it finishes.
+  # call this again when it finishes. Seeing no wake is also "not yet" when a
+  # queue! is still uncommitted; its own after-commit job covers that.
   def self.release!(chat:, agent:)
     transaction do
-      wake = open.find_by(chat: chat, agent: agent)
+      # Uncached: a release earlier in the same unit of work may have seen no
+      # wake, and the wake's own after-commit release must not reuse that.
+      wake = uncached { open.find_by(chat: chat, agent: agent) }
       next nil unless wake
 
       # Lock what a withdrawal writes, in the order those writers take it, so

@@ -71,6 +71,44 @@ class PendingWakeClaimRaceTest < ActiveSupport::TestCase
     assert_equal 0, AgentRuntimeInteraction.where(chat: @chat).count
   end
 
+  # Mira's third review: the busy trigger's transaction has written its wake
+  # but not committed when the busy run ends. The run-end release can't see
+  # the wake and finds nothing to do; the wake's own after-commit release
+  # must then pick it up.
+  test "a wake committed after the run-end release looked is still released" do
+    busy = AgentRuntimeInteraction.reserve!(agent: @resident, chat: @chat)
+    @chat.messages.create!(role: "assistant", agent: @sibling, content: "Review posted mid-run")
+    @release = Queue.new
+    queued = Queue.new
+    AgentRuntimeInteraction.stub(:live_activity_enabled?, true) do
+      in_thread do
+        ActiveRecord::Base.transaction do
+          outcome = Chat.find(@chat.id).request_agent_response!(Agent.find(@resident.id),
+            requested_by: "Reviewer", requester_agent: Agent.find(@sibling.id))
+          queued << outcome
+          @release.pop
+        end
+      rescue StandardError => error
+        queued << error
+      end
+      assert_equal :queued, queued.pop(timeout: 10)
+
+      # The run ends, and its release job runs now, while the wake is still
+      # uncommitted: it can't see the wake and does nothing.
+      assert_enqueued_with(job: PendingWakeJob) { busy.finish_execution!("completed") }
+      perform_enqueued_jobs(only: PendingWakeJob)
+      assert_nil PendingWake.where(chat: @chat).pick(:released_at)
+
+      @release.push(true)
+      @threads.each { |thread| thread.join(10) }
+      perform_enqueued_jobs(only: PendingWakeJob)
+    end
+
+    wake = PendingWake.find_by!(chat: @chat, agent: @resident)
+    assert wake.released_at, "the wake's own after-commit release should have run"
+    assert_equal "queued", wake.released_interaction.execution_state
+  end
+
   private
 
   # A wake released into a reserved, unclaimed run.

@@ -1,9 +1,18 @@
-# Runs shortly after a resident's conversation run ends (see
-# AgentRuntimeInteraction#enqueue_pending_wake_release) and releases any wake
-# that was queued for that resident in that room while the run was busy.
-# Cheap when there is none, which is almost always. It deliberately does not
-# check for an open wake before taking the chat lock: a queue! that saw the
-# run as busy may not have committed yet, and the lock is what waits for it.
+# Releases the held wake for a resident in a room, if one is due.
+#
+# The rule (Mira's third review of #252): a release is attempted after every
+# commit that can make a wake due. There are two:
+#
+# - the busy run ending (AgentRuntimeInteraction#enqueue_pending_wake_release,
+#   on the commit that sets finished_at);
+# - the wake itself being written (PendingWake.queue!, after the commit that
+#   created or coalesced it).
+#
+# Whichever commits second finds the other already committed. If the run
+# ends first, the wake's own job sees it free and releases it. If the wake
+# commits first, the run-end job sees it. A release that finds the resident
+# still busy does nothing, and the later run end tries again. Neither job
+# relies on seeing an uncommitted row, so neither needs to wait for one.
 class PendingWakeJob < ApplicationJob
 
   DELAY = 2.seconds
