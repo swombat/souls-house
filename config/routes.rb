@@ -292,6 +292,7 @@ Rails.application.routes.draw do
         resource :enrollment, only: :create
         resource :heartbeat, only: :create
         resources :images, only: :show, constraints: { id: /sha256:[0-9a-f]{64}/ }
+        resources :seeds, only: :show, constraints: { id: /[0-9a-f]{64}/ }
         resources :commands, only: [] do
           post :next, on: :collection
           post :result, on: :member

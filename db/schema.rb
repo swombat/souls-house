@@ -185,6 +185,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_220000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.string "location"
+    t.binary "seed_archive"
+    t.string "seed_sha256"
+    t.datetime "seeded_at"
     t.index ["agent_id"], name: "index_agent_placements_on_agent_id", unique: true
     t.index ["provider_server_id"], name: "index_agent_placements_on_provider_server_id", unique: true, where: "(provider_server_id IS NOT NULL)"
     t.check_constraint "generation >= 1", name: "agent_placements_positive_generation"
