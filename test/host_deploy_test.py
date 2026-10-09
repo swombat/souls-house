@@ -376,11 +376,12 @@ class WorkerTest(unittest.TestCase):
         rebuild.assert_called_once()
         self.assertEqual("success", self.w.data["state"])
 
-    def pinned_fixture(self, refs, running="chaos 47.11.0.1"):
+    def pinned_fixture(self, refs, running="chaos 47.11.0.1", missing=(), inactive=()):
         self.w.settings.update(custom_residents={}, stock_repositories=["stock"],
                                stock_repository="stock", stock_aliases=["stock:latest"],
                                development_repository="dev", idle_wait_seconds=0)
-        residents = [dict(id=i, container_name=f"r{i}", container_image=f"stock:{i}")
+        residents = [dict(id=i, container_name=f"r{i}", container_image=f"stock:{i}",
+                          active=i not in inactive)
                      for i in range(len(refs))]
         labels = {f"stock:{i}": ref for i, ref in enumerate(refs)}
         commands = []
@@ -400,6 +401,8 @@ class WorkerTest(unittest.TestCase):
                          {"Config": {"Labels": {"house.souls.chaos-ref": labels[image]}}}),
             patch.object(self.w, "run", side_effect=run),
             patch.object(self.w, "check_runtime_permissions"),
+            patch.object(self.w, "container_exists",
+                         side_effect=lambda name: int(name[1:]) not in missing),
             patch.object(worker, "CODE", self.root),
         ]
         (self.root / "roll-resident.rb").write_text("")
@@ -427,6 +430,39 @@ class WorkerTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "differs from the running one"):
             self.w.rebuild_residents()
         self.w.rails.assert_called_once()
+
+    def test_inactive_resident_without_container_is_left_alone(self):
+        commands = self.pinned_fixture(["c" * 40, "c" * 40], missing=(1,), inactive=(1,))
+        self.w.rebuild_residents()
+        self.assertEqual("all residents healthy", self.w.data["step"])
+        self.assertEqual([1], self.w.data["absent"])
+        touched = [c for c in commands if c[:2] == ["docker", "exec"]]
+        self.assertTrue(touched)
+        self.assertFalse(any("r1" in c for c in touched))
+        rolled = [call.args[1]["DEPLOY_RESIDENT_ID"] for call in self.w.rails.call_args_list
+                  if call.args[1:]]
+        self.assertEqual(["0"], rolled)
+
+    def test_active_resident_without_container_stops_before_building(self):
+        commands = self.pinned_fixture(["c" * 40, "c" * 40], missing=(1,))
+        with self.assertRaisesRegex(RuntimeError, "Active resident has no container"):
+            self.w.rebuild_residents()
+        self.assertFalse(any(c[:2] == ["docker", "build"] for c in commands))
+
+    def test_container_probe_distinguishes_absent_from_docker_failure(self):
+        def fake(stderr, code):
+            return patch.object(worker.subprocess, "run", return_value=subprocess.CompletedProcess(
+                [], code, stdout="", stderr=stderr))
+        with fake("", 0):
+            self.assertTrue(self.w.container_exists("r0"))
+        with fake("Error response from daemon: No such container: r0", 1):
+            self.assertFalse(self.w.container_exists("r0"))
+        with fake("Cannot connect to the Docker daemon", 1):
+            with self.assertRaisesRegex(RuntimeError, "private diagnostics"):
+                self.w.container_exists("r0")
+
+    def test_absent_is_a_public_status_field(self):
+        self.assertIn("absent", gate.FIELDS)
 
     def test_permission_preflight_uses_resident_user_without_network(self):
         with patch.object(self.w, "run") as run:
