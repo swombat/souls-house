@@ -19,8 +19,7 @@ class HouseSampling::BoundedCommandTest < ActiveSupport::TestCase
     assert result.timed_out
     assert_not result.ok
     assert_operator elapsed, :<, 3, "waited #{elapsed.round(2)}s for a 0.3s deadline"
-    child = File.read(pid_file).to_i
-    assert_raises(Errno::ESRCH) { Process.kill(0, child) }
+    assert_gone(pid_file)
   ensure
     FileUtils.remove_entry(marker) if marker
   end
@@ -36,10 +35,22 @@ class HouseSampling::BoundedCommandTest < ActiveSupport::TestCase
     [ result, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started ]
   end
 
+  # Gone means no longer running. An orphan is reparented to whatever reaps
+  # orphans; in a container whose PID 1 doesn't, a killed descendant stays a
+  # zombie (state Z), so "the pid still exists" is not the question.
   def assert_gone(pid_file)
     pid = File.read(pid_file).to_i
     assert pid.positive?
-    assert_raises(Errno::ESRCH, "descendant #{pid} survived") { Process.kill(0, pid) }
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 1
+    sleep 0.02 while running?(pid) && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+    assert_not running?(pid), "descendant #{pid} is still running"
+  end
+
+  def running?(pid)
+    state = File.read("/proc/#{pid}/stat").split(") ").last.to_s[0]
+    !%w[Z X].include?(state)
+  rescue Errno::ENOENT, Errno::ESRCH
+    false
   end
 
   test "a descendant that ignores TERM and keeps the pipes open is killed even after its leader exits" do
