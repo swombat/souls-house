@@ -28,7 +28,7 @@
     other: SLATE,
   };
 
-  let activityScope = $state('growth');
+  let activityScope = $state('everyone');
   let refreshing = $state(false);
 
   const h = $derived(dashboard.headline);
@@ -211,7 +211,7 @@
       <div class="mb-4 flex flex-wrap items-baseline justify-between gap-2">
         <h2 class="font-medium">Resident activity</h2>
         <div class="flex items-center gap-1 rounded-full border p-0.5 text-xs">
-          {#each [['growth', 'New residents'], ['everyone', 'Everyone']] as [key, label]}
+          {#each [['everyone', 'Everyone'], ['growth', 'New residents']] as [key, label]}
             <button
               class="rounded-full px-2.5 py-0.5"
               class:bg-muted={activityScope === key}
