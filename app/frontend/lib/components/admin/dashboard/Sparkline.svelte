@@ -1,14 +1,23 @@
 <script>
   import { linePoints } from './format.js';
 
-  let { values = [], width = 120, height = 32, color = 'currentColor', fill = true, max = null, label = '' } = $props();
+  let {
+    values = [],
+    width = 120,
+    height = 32,
+    color = 'currentColor',
+    fill = true,
+    max = null,
+    label = '',
+    fluid = false,
+  } = $props();
 
   const segments = $derived(linePoints(values, width, height, { max }));
 </script>
 
 <svg
   viewBox={`0 0 ${width} ${height}`}
-  {width}
+  width={fluid ? '100%' : width}
   {height}
   class="overflow-visible"
   role="img"

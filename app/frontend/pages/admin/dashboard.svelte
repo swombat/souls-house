@@ -5,6 +5,7 @@
   import Sparkline from '$lib/components/admin/dashboard/Sparkline.svelte';
   import StackedBars from '$lib/components/admin/dashboard/StackedBars.svelte';
   import GrowthChart from '$lib/components/admin/dashboard/GrowthChart.svelte';
+  import ServerPanel from '$lib/components/admin/dashboard/ServerPanel.svelte';
   import {
     formatCount,
     formatUsd,
@@ -23,6 +24,7 @@
   const CORAL = '#f97366';
   const VIOLET = '#8b5cf6';
   const SLATE = '#94a3b8';
+  const AMBER = '#f59e0b';
   const CHANNEL_COLORS = {
     conversation: TEAL,
     telegram: '#38bdf8',
@@ -41,6 +43,11 @@
   const backups = $derived(dashboard.backups);
   const placement = $derived(dashboard.placement);
   const funnel = $derived(dashboard.funnel);
+  const server = $derived(dashboard.server);
+  const storage = $derived(dashboard.storage);
+  const dedupShare = $derived(
+    storage.restic_stored_bytes && backups.logical_bytes ? storage.restic_stored_bytes / backups.logical_bytes : null
+  );
 
   const channelKeys = $derived(activity.channels.map((c) => c.key));
   const activitySeries = $derived(activity[activityScope]);
@@ -361,30 +368,82 @@
       {/if}
     </div>
 
+    <!-- Server -->
+    <div class="rounded-xl border bg-card p-5 lg:col-span-2">
+      <div class="mb-4 flex items-baseline justify-between">
+        <h2 class="font-medium">House host</h2>
+        <span class="text-xs text-muted-foreground">
+          {#if server.available}sampled every 5 minutes · last {new Date(server.sampled_at).toLocaleTimeString(
+              'en-GB',
+              {
+                hour: '2-digit',
+                minute: '2-digit',
+              }
+            )}{:else}not sampled yet{/if}
+        </span>
+      </div>
+      {#if server.available}
+        <ServerPanel {server} colors={{ teal: TEAL, coral: CORAL, amber: AMBER, violet: VIOLET, slate: SLATE }} />
+      {:else}
+        <p class="text-sm text-muted-foreground">
+          The host sampler runs every five minutes. CPU, load, memory and disk appear here after its first run.
+        </p>
+      {/if}
+    </div>
+
+    <!-- Infrastructure cost -->
+    <div class="rounded-xl border bg-card p-5">
+      <h2 class="mb-4 font-medium">Infrastructure · per month</h2>
+      <dl class="space-y-3 text-sm">
+        <div class="flex justify-between gap-2">
+          <dt class="text-muted-foreground">Restic on S3</dt>
+          <dd class="tabular-nums font-medium">{formatUsd(storage.restic_usd_per_month, { precise: true })}</dd>
+        </div>
+        <div class="flex justify-between gap-2">
+          <dt class="text-muted-foreground">Hetzner VMs</dt>
+          <dd class="tabular-nums font-medium">
+            {storage.hetzner_eur_per_month === null || storage.hetzner_eur_per_month === undefined
+              ? '—'
+              : `€${storage.hetzner_eur_per_month.toFixed(2)}`}
+          </dd>
+        </div>
+        {#if server.available && server.vms?.length}
+          {#each server.vms as vm}
+            <div class="flex justify-between gap-2 pl-3 text-xs">
+              <dt class="truncate text-muted-foreground">{vm.name ?? 'VM'} · {vm.location}</dt>
+              <dd class="tabular-nums">{vm.cpu === null ? '—' : `${vm.cpu}% CPU`}</dd>
+            </div>
+          {/each}
+        {/if}
+      </dl>
+      <p class="mt-4 text-[11px] text-muted-foreground">
+        {#if storage.s3_usd_per_gb_month}
+          S3 at ${storage.s3_usd_per_gb_month}/GB-month ({storage.s3_region ?? 'region unknown'}, Standard list price).
+        {:else}
+          Prices arrive with the first daily storage sample.
+        {/if}
+        Hetzner at list price for each VM's type and location. The house host itself is a fixed cost and isn't counted.
+      </p>
+    </div>
+
     <!-- Storage -->
     <div class="rounded-xl border bg-card p-5 lg:col-span-2">
       <div class="mb-4 flex items-baseline justify-between">
-        <h2 class="font-medium">Backups</h2>
-        <span class="text-xs text-muted-foreground">Restic, one repository per resident</span>
+        <h2 class="font-medium">Storage &amp; backups</h2>
+        <span class="text-xs text-muted-foreground">largest backups, Restic one repository per resident</span>
       </div>
       <div class="grid gap-6 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <div>
-          <div class="text-2xl font-semibold tabular-nums">{formatBytes(backups.logical_bytes)}</div>
-          <div class="text-xs text-muted-foreground">
-            backed up across {formatCount(backups.residents_backed_up)} residents
-          </div>
-          <div class="mt-3">
-            <Sparkline
-              values={backups.daily_logical_bytes}
-              width={220}
-              height={44}
-              color={VIOLET}
-              label="Backed-up bytes per day" />
-          </div>
-          <p class="mt-3 text-xs text-muted-foreground">
-            This is the data each resident had at its last backup. What S3 actually stores after deduplication, and what
-            it costs, arrives with the storage sampler.
-          </p>
+        <div class="space-y-4">
+          {#each [{ label: 'On resident disks', bytes: storage.disk_bytes, daily: storage.disk_daily_bytes, color: TEAL, note: storage.disk_bytes === null ? 'not measured yet' : `${formatCount(storage.disk_residents_measured)} residents, measured hourly` }, { label: 'Backed up (before dedup)', bytes: backups.logical_bytes, daily: backups.daily_logical_bytes, color: SLATE, note: `${formatCount(backups.residents_backed_up)} residents' last good backup` }, { label: 'Stored in S3', bytes: storage.restic_stored_bytes, daily: storage.restic_daily_bytes, color: VIOLET, note: storage.restic_sampled ? `${formatPercent(dedupShare, 0)} of backed-up size · ${formatUsd(storage.restic_usd_per_month, { precise: true })}/month` : 'sampled daily; first reading pending' }] as row}
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <div class="text-xs text-muted-foreground">{row.label}</div>
+                <div class="text-xl font-semibold tabular-nums">{formatBytes(row.bytes)}</div>
+                <div class="text-[11px] text-muted-foreground">{row.note}</div>
+              </div>
+              <Sparkline values={row.daily} width={120} height={34} color={row.color} label={`${row.label} per day`} />
+            </div>
+          {/each}
         </div>
         <ul class="space-y-2 text-sm">
           {#each backups.largest as row}

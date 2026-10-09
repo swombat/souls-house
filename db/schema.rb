@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_09_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_09_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -967,6 +967,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_100000) do
     t.index ["user_id"], name: "index_house_inference_grants_on_user_id", unique: true
   end
 
+  create_table "house_samples", force: :cascade do |t|
+    t.string "kind", null: false
+    t.string "subject", default: "", null: false
+    t.bigint "agent_id"
+    t.datetime "sampled_at", null: false
+    t.jsonb "metrics", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "kind", "sampled_at"], name: "index_house_samples_on_agent_id_and_kind_and_sampled_at"
+    t.index ["agent_id"], name: "index_house_samples_on_agent_id"
+    t.index ["kind", "sampled_at"], name: "index_house_samples_on_kind_and_sampled_at"
+    t.index ["kind", "subject", "sampled_at"], name: "index_house_samples_on_kind_and_subject_and_sampled_at"
+  end
+
   create_table "memberships", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "confirmation_sent_at"
@@ -1828,6 +1842,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_100000) do
   add_foreign_key "house_inference_calls", "house_inference_grants"
   add_foreign_key "house_inference_grants", "agents"
   add_foreign_key "house_inference_grants", "users"
+  add_foreign_key "house_samples", "agents", on_delete: :cascade
   add_foreign_key "memberships", "accounts"
   add_foreign_key "memberships", "users"
   add_foreign_key "memberships", "users", column: "invited_by_id"
