@@ -37,8 +37,9 @@ class AccountAgentCredentialsRefreshJob < ApplicationJob
   # marked reconciled only when the restart is confirmed (RemoteRefreshSettleJob).
   def refresh_remote!(account, agent)
     return unless Agents::RemoteRuntime.running?(agent)
-    return defer!(account, agent) if vm_backup_holding?(agent)
 
+    # begin_refresh! answers :busy during a turn, a VM backup hold or another
+    # refresh, all checked under the turn gate.
     result = Agents::RemoteRuntime.begin_refresh!(agent)
     return defer!(account, agent) if result == :busy
 
@@ -47,10 +48,6 @@ class AccountAgentCredentialsRefreshJob < ApplicationJob
 
   def defer!(account, agent)
     self.class.set(wait: 5.minutes).perform_later(account.id, agent.id)
-  end
-
-  def vm_backup_holding?(agent)
-    Backup.const_defined?(:VmResident) && Backup::VmResident.respond_to?(:held?) && Backup::VmResident.held?(agent)
   end
 
   def mark_service_accesses_reconciled!(agent)
