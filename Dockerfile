@@ -52,7 +52,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       build-essential git openssh-client pkg-config \
       libvips libpq-dev libicu-dev libyaml-dev libssl-dev libreadline-dev libffi-dev zlib1g-dev \
       passwd vim neovim \
-      postgresql-client-16 ffmpeg poppler-utils docker-cli; \
+      postgresql-client-16 ffmpeg poppler-utils docker-cli python3; \
     docker --version; \
     rm -rf /var/lib/apt/lists/*
 

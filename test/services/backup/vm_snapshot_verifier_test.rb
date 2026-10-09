@@ -5,6 +5,7 @@ module Backup
 
     setup do
       @agent = agents(:research_assistant)
+      @agent.update!(uuid: SecureRandom.uuid)
       @id = "a" * 64
       payload = { "version" => Mnemodyne::Checkpoint::VERSION, "resident_uuid" => @agent.uuid, "nodes" => [] }
       @digest = Digest::SHA256.hexdigest(JSON.generate(payload))

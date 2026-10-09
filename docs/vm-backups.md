@@ -6,9 +6,13 @@ The runner source and `backup_proxy.py` must both ship in the Rails image
 and in the VM's cloud-init document. Existing runners are not updated by
 a Rails deployment.
 Cloud-init carries an XZ-compressed, deterministic two-file tar bundle and
-extracts it before enabling the runner. This preserves the exact reviewed
-source (including comments), rather than rewriting it to save bytes.
-`xz-utils` is already in the Rails image and is explicitly installed on the VM.
+extracts it before enabling the runner. Python's standard AST unparser removes
+comments and redundant formatting; each module is reparsed and its complete
+AST must equal the reviewed original (including docstrings), or packaging
+fails before purchase. Traceback line numbers change, not executable behavior.
+`python3` is explicit in the Rails image; `xz-utils` already is and is also
+explicitly installed on the VM. Tests prove AST equality and exercise the
+packaged Python modules, not just the readable source.
 
 ## Provisioning seam
 

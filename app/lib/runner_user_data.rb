@@ -100,8 +100,8 @@ module RunnerUserData
         file("/etc/nftables.d/souls-house-input.nft", NFTABLES, "0644"),
         file("/etc/systemd/system/souls-house-firewall.service", FIREWALL_UNIT, "0644"),
         file("/etc/systemd/system/souls-house-runner.service", SYSTEMD_UNIT, "0644"),
-        # XZ's larger dictionary preserves headroom without changing or
-        # stripping executable source. The Rails image already has xz-utils.
+        # AST-checked comment/format compaction plus XZ keeps the complete
+        # runner inside Hetzner's cap without dropping executable behavior.
         file("/opt/souls-house-runner/source.tar.xz", compressed_source_bundle, "0600", encode: true),
         file("/etc/souls-house-runner/config.json", JSON.generate(config), "0600")
       ],
@@ -142,8 +142,8 @@ module RunnerUserData
 
   def source_bundle
     io = StringIO.new("".b)
-    { "souls_house_runner.py" => [ runner_source, 0755 ],
-      "backup_proxy.py" => [ File.read(Rails.root.join("host-runner/backup_proxy.py")), 0644 ] }.each do |name, (source, mode)|
+    { "souls_house_runner.py" => [ compact_source(runner_source), 0755 ],
+      "backup_proxy.py" => [ compact_source(File.read(Rails.root.join("host-runner/backup_proxy.py"))), 0644 ] }.each do |name, (source, mode)|
       # Explicit mtime: TarWriter otherwise embeds the process's epoch.
       io.write(Gem::Package::TarHeader.new(name:, prefix: "", mode:, size: source.bytesize, mtime: 1).to_s)
       io.write(source)
@@ -153,8 +153,23 @@ module RunnerUserData
     io.string
   end
 
+  def compact_source(source)
+    script = <<~PYTHON
+      import ast, sys
+      original = ast.parse(sys.stdin.read())
+      compact = ast.unparse(original) + "\\n"
+      if ast.dump(original, include_attributes=False) != ast.dump(ast.parse(compact), include_attributes=False):
+          raise ValueError("runner AST changed")
+      sys.stdout.write(compact)
+    PYTHON
+    output, _error, status = Open3.capture3("timeout", "10", "python3", "-c", script, stdin_data: source)
+    raise PackagingFailed, "Cannot compact runner source safely" unless status.success?
+
+    output
+  end
+
   def compressed_source_bundle
-    output, _error, status = Open3.capture3("timeout", "10", "xz", "-3", "--stdout",
+    output, _error, status = Open3.capture3("timeout", "10", "xz", "-6", "--stdout",
       stdin_data: source_bundle, binmode: true)
     raise PackagingFailed, "Cannot package runner source with xz" unless status.success?
 

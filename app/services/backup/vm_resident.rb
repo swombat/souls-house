@@ -14,6 +14,7 @@ module Backup
     def self.issue!(placement:)
       raise Unavailable, "Backup requires a VM placement" unless placement.backend == "hetzner_cloud"
       agent = placement.agent
+      raise Unavailable, "Backup requires a valid resident UUID" unless VmRepository::UUID.match?(agent.uuid.to_s)
       Agent.transaction do
         # Same gate as asynchronous turn admission; lock order is gate, agent,
         # vault, enrollment. Interaction reservations also take the agent lock.

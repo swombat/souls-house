@@ -18,6 +18,7 @@ module Backup
     end
 
     def verify!(agent:, snapshot_id:, checkpoint_digest:, checkpoint_file_digest:)
+      raise Invalid, "Invalid resident identity" unless VmRepository::UUID.match?(agent.uuid.to_s)
       raise Invalid, "Invalid snapshot identity" unless snapshot_id.to_s.match?(/\A[0-9a-f]{64}\z/)
       snapshots = JSON.parse(capture(agent, "snapshots", snapshot_id, "--json"))
       snapshot = snapshots.find { |item| item["id"] == snapshot_id } if snapshots.is_a?(Array)

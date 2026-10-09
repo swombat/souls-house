@@ -45,6 +45,13 @@ module Backup
       end
     end
 
+    test "invalid UUID refuses before any backup hold or runner command is issued" do
+      @agent.update_column(:uuid, nil)
+      assert_no_difference [ "VmBackup.count", "RunnerCommand.count" ] do
+        assert_raises(VmResident::Unavailable) { issue }
+      end
+    end
+
     test "active interaction and uncertain runtime turn prevent issuing a checkpoint" do
       interaction = AgentRuntimeInteraction.create!(agent: @agent, trigger_kind: "wake", started_at: Time.current)
       assert_raises(AgentRestic::ResidentBusy) { issue }

@@ -40,7 +40,7 @@ class RunnerUserDataTest < ActiveSupport::TestCase
     assert_equal "0600", parsed["write_files"].find { |f| f["path"] == "/etc/souls-house-runner/config.json" }["permissions"]
   end
 
-  test "embeds exactly the runner in this repository" do
+  test "embeds AST-equivalent runner source in this repository" do
     bundle = parsed["write_files"].find { |f| f["path"] == "/opt/souls-house-runner/source.tar.xz" }
     assert_equal "b64", bundle["encoding"]
     unpacked, _error, status = Open3.capture3("xz", "--decompress", "--stdout",
@@ -57,7 +57,13 @@ class RunnerUserDataTest < ActiveSupport::TestCase
       end
     end
     assert_equal %w[backup_proxy.py souls_house_runner.py], sources.keys.sort
-    sources.each { |name, source| assert_equal File.read(Rails.root.join("host-runner", name)), source }
+    sources.each do |name, source|
+      original = File.read(Rails.root.join("host-runner", name))
+      script = "import ast,json,sys; a,b=json.load(sys.stdin); assert ast.dump(ast.parse(a), include_attributes=False)==ast.dump(ast.parse(b), include_attributes=False)"
+      _out, _err, proof = Open3.capture3("python3", "-c", script, stdin_data: JSON.generate([ original, source ]))
+      assert proof.success?, "embedded #{name} preserves the complete executable AST"
+      assert_equal RunnerUserData.compact_source(original), source
+    end
     extract = %w[tar -xJf /opt/souls-house-runner/source.tar.xz -C /opt/souls-house-runner]
     assert_operator parsed["runcmd"].index(extract), :<, parsed["runcmd"].index(%w[systemctl enable --now souls-house-runner])
   end
