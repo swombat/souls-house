@@ -1,7 +1,7 @@
 <script>
   import { Link, router } from '@inertiajs/svelte';
   import * as Select from '$lib/components/shadcn/select/index.js';
-  import { Buildings, Cpu, Plugs, PlugsConnected, Megaphone, CurrencyDollar, Palette } from 'phosphor-svelte';
+  import { Buildings, Cpu, Plugs, PlugsConnected, Megaphone, CurrencyDollar, Palette, BookOpenText } from 'phosphor-svelte';
   import { siteName } from '$lib/branding';
   import {
     accountPath,
@@ -22,6 +22,7 @@
     { id: 'house_api', label: `${$siteName} API`, icon: PlugsConnected, href: accountApiKeysPath(account.id) },
     { id: 'integrations', label: 'Integrations', icon: Plugs, href: `/accounts/${account.id}/integrations` },
     { id: 'notices', label: 'Notices', icon: Megaphone, href: accountNoticesPath(account.id) },
+    { id: 'glossary', label: 'Glossary', icon: BookOpenText, href: `/accounts/${account.id}/glossary` },
     { id: 'costs', label: 'Costs', icon: CurrencyDollar, href: accountCostsPath(account.id) },
   ]);
 

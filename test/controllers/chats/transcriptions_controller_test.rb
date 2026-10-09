@@ -32,6 +32,19 @@ class Chats::TranscriptionsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "the room's account glossary goes to transcription" do
+    TranscriptionGlossary.new(@account).add!("GrantTree", by: @user)
+    received = nil
+
+    ElevenLabsStt.stub(:transcribe, ->(_audio, keyterms:) { received = keyterms; "Hi" }) do
+      post account_chat_transcription_path(@account, @chat),
+        params: { audio: fixture_file_upload("test_audio.webm", "audio/webm") }
+    end
+
+    assert_response :success
+    assert_includes received, "GrantTree"
+  end
+
   test "transcribes before a chat exists without creating a chat" do
     ElevenLabsStt.stub(:transcribe, "First voice note") do
       assert_no_difference "Chat.count" do
@@ -103,7 +116,7 @@ class Chats::TranscriptionsControllerTest < ActionDispatch::IntegrationTest
   test "returns error when transcription fails" do
     audio = fixture_file_upload("test_audio.webm", "audio/webm")
 
-    mock_transcribe = ->(_audio) { raise ElevenLabsStt::Error, "Rate limit exceeded" }
+    mock_transcribe = ->(_audio, **) { raise ElevenLabsStt::Error, "Rate limit exceeded" }
 
     ElevenLabsStt.stub(:transcribe, mock_transcribe) do
       post account_chat_transcription_path(@account, @chat),

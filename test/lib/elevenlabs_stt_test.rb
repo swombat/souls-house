@@ -143,4 +143,56 @@ class ElevenLabsSttTest < ActiveSupport::TestCase
     assert_requested request_stub
   end
 
+  test "sends each keyterm as its own form field, and none when there are none" do
+    with_keyterms = ElevenLabsStt.new.form_fields(@audio, keyterms: [ "Lume", "souls.house" ])
+    assert_equal [ [ "keyterms", "Lume" ], [ "keyterms", "souls.house" ] ], with_keyterms.select { |name, _| name == "keyterms" }
+    assert_equal "file", with_keyterms.last.first
+
+    assert_empty ElevenLabsStt.new.form_fields(@audio).select { |name, _| name == "keyterms" }
+  end
+
+  test "transcribe passes the keyterms through to the request" do
+    stub_request(:post, @api_url).to_return(status: 200, body: { text: "Lume" }.to_json)
+    received = nil
+    stt = ElevenLabsStt.new
+    original = stt.method(:form_fields)
+    stt.define_singleton_method(:form_fields) { |audio, keyterms: []| received = keyterms; original.call(audio, keyterms:) }
+
+    Rails.application.credentials.stub(:dig, "test-api-key") do
+      assert_equal "Lume", stt.transcribe(@audio, keyterms: [ "Lume" ])
+    end
+    assert_equal [ "Lume" ], received
+  end
+
+  test "a request refused with keyterms is sent once more without them" do
+    stub_request(:post, @api_url).to_return(
+      { status: 422, body: { error: { message: "bad keyterms" } }.to_json },
+      { status: 200, body: { text: "Lume" }.to_json }
+    )
+    calls = []
+    stt = ElevenLabsStt.new
+    original = stt.method(:form_fields)
+    stt.define_singleton_method(:form_fields) do |audio, keyterms: []|
+      calls << { keyterms:, position: audio.pos }
+      original.call(audio, keyterms:)
+    end
+    @audio.read # as a first send leaves it
+
+    Rails.application.credentials.stub(:dig, "test-api-key") do
+      assert_equal "Lume", stt.transcribe(@audio, keyterms: [ "Lume" ])
+    end
+    assert_requested :post, @api_url, times: 2
+    assert_equal [ [ "Lume" ], [] ], calls.map { |call| call[:keyterms] }
+    assert_equal 0, calls.last[:position], "the audio is rewound and sent again, not an empty file"
+  end
+
+  test "a refusal without keyterms is not retried" do
+    stub_request(:post, @api_url).to_return(status: 422, body: { error: { message: "nope" } }.to_json)
+
+    Rails.application.credentials.stub(:dig, "test-api-key") do
+      assert_raises(ElevenLabsStt::Error) { ElevenLabsStt.transcribe(@audio) }
+    end
+    assert_requested :post, @api_url, times: 1
+  end
+
 end

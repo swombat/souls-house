@@ -19,37 +19,54 @@ class ElevenLabsStt
     SystemCallError
   ].freeze
 
-  def self.transcribe(audio_file)
-    new.transcribe(audio_file)
+  # A refusal of the request as malformed. With keyterms on it, the request
+  # is sent once more without them, so a glossary ElevenLabs won't take can
+  # never cost anyone their transcription.
+  KEYTERM_REFUSAL_CODES = [ 400, 422 ].freeze
+
+  # `keyterms`: the account glossary's bias list (TranscriptionGlossary),
+  # sent as one repeated form field per term. Empty sends nothing.
+  def self.transcribe(audio_file, keyterms: [])
+    new.transcribe(audio_file, keyterms:)
   end
 
-  def transcribe(audio_file)
-    uri = URI(API_URL)
-
-    request = Net::HTTP::Post.new(uri)
-    request["xi-api-key"] = api_key
-    request.set_form(
-      [
-        [ "model_id", MODEL_ID ],
-        [ "tag_audio_events", "false" ],
-        [ "timestamps_granularity", "none" ],
-        [ "file", audio_file, { filename: filename_for(audio_file), content_type: content_type_for(audio_file) } ]
-      ],
-      "multipart/form-data"
-    )
-
-    response = begin
-      Net::HTTP.start(uri.hostname, uri.port, use_ssl: true,
-        read_timeout: READ_TIMEOUT, open_timeout: OPEN_TIMEOUT) { |http| http.request(request) }
-    rescue *TRANSPORT_ERRORS => e
-      Rails.logger.warn("ElevenLabs STT transport failure: #{e.class}")
-      raise Error, "Transcription request failed (#{e.class}). Please try again."
+  def transcribe(audio_file, keyterms: [])
+    keyterms = Array(keyterms)
+    response = post(audio_file, keyterms)
+    if keyterms.any? && KEYTERM_REFUSAL_CODES.include?(response.code.to_i)
+      Rails.logger.warn("ElevenLabs STT refused a request with #{keyterms.size} keyterms (#{response.code}); retrying without them")
+      audio_file.rewind if audio_file.respond_to?(:rewind)
+      response = post(audio_file, [])
     end
 
     handle_response(response)
   end
 
+  # The multipart fields, one "keyterms" field per term.
+  def form_fields(audio_file, keyterms: [])
+    form = [
+      [ "model_id", MODEL_ID ],
+      [ "tag_audio_events", "false" ],
+      [ "timestamps_granularity", "none" ]
+    ]
+    Array(keyterms).each { |term| form << [ "keyterms", term ] }
+    form << [ "file", audio_file, { filename: filename_for(audio_file), content_type: content_type_for(audio_file) } ]
+  end
+
   private
+
+  def post(audio_file, keyterms)
+    uri = URI(API_URL)
+    request = Net::HTTP::Post.new(uri)
+    request["xi-api-key"] = api_key
+    request.set_form(form_fields(audio_file, keyterms:), "multipart/form-data")
+
+    Net::HTTP.start(uri.hostname, uri.port, use_ssl: true,
+      read_timeout: READ_TIMEOUT, open_timeout: OPEN_TIMEOUT) { |http| http.request(request) }
+  rescue *TRANSPORT_ERRORS => e
+    Rails.logger.warn("ElevenLabs STT transport failure: #{e.class}")
+    raise Error, "Transcription request failed (#{e.class}). Please try again."
+  end
 
   def api_key
     Rails.application.credentials.dig(:ai, :eleven_labs, :api_token) ||

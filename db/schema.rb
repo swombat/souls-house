@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_09_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_09_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1715,6 +1715,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_110000) do
     t.index ["tool_call_id"], name: "index_tool_calls_on_tool_call_id"
   end
 
+  create_table "transcription_glossary_terms", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "term", null: false
+    t.string "normalized_term", null: false
+    t.string "source", default: "manual", null: false
+    t.boolean "pinned", default: false, null: false
+    t.datetime "suppressed_at"
+    t.integer "sightings_count", default: 0, null: false
+    t.datetime "last_seen_at"
+    t.bigint "created_by_user_id"
+    t.bigint "created_by_agent_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "normalized_term"], name: "idx_on_account_id_normalized_term_19331d33d5", unique: true
+    t.index ["account_id"], name: "index_transcription_glossary_terms_on_account_id"
+    t.index ["created_by_agent_id"], name: "index_transcription_glossary_terms_on_created_by_agent_id"
+    t.index ["created_by_user_id"], name: "index_transcription_glossary_terms_on_created_by_user_id"
+    t.check_constraint "source::text = ANY (ARRAY['manual'::character varying, 'correction'::character varying, 'harvested'::character varying]::text[])", name: "transcription_glossary_terms_source"
+  end
+
   create_table "tweet_logs", force: :cascade do |t|
     t.bigint "agent_id", null: false
     t.datetime "created_at", null: false
@@ -1965,6 +1985,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_110000) do
   add_foreign_key "telegram_subscriptions", "safeguard_detections", column: "pending_safeguard_detection_id", on_delete: :nullify
   add_foreign_key "telegram_subscriptions", "users"
   add_foreign_key "tool_calls", "messages"
+  add_foreign_key "transcription_glossary_terms", "accounts"
+  add_foreign_key "transcription_glossary_terms", "agents", column: "created_by_agent_id", on_delete: :nullify
+  add_foreign_key "transcription_glossary_terms", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "tweet_logs", "agents"
   add_foreign_key "tweet_logs", "x_integrations"
   add_foreign_key "users", "accounts", column: "default_account_id", on_delete: :nullify
