@@ -248,20 +248,25 @@ has one):
 
 | Event | Content-bearing? | Gated by narration sharing today? |
 |---|---|---|
-| `tool.started/finished` with `command_preview` | **Yes.** Arguments survive redaction (`RuntimeCommandPreview`): a `grep` term, a file path or a chat name in a path is stored and shown. Raw output is never accepted. | **No.** Always sent, always stored. |
+| `tool.started/finished` with `command_preview` | **Yes.** Arguments survive redaction (`RuntimeCommandPreview`): a `grep` term, a file path or a chat name in a path is stored and shown. Raw output is never accepted. | **Not narration-gated.** Sent on tool events and in heartbeats (heartbeat `operations` are projected through the same tool path and persisted in attempt snapshots); subject only to size limits and duplicate suppression. |
 | `commentary.completed` | **Yes**, the model's own words between tool calls. | Yes, at both ends (`share_narration`, `shared_narration?`). |
 | `plan.updated` | **Yes**, the text of each plan step. | Yes. |
 | `agent.status_changed` / heartbeat sub-agents | No: nickname, model, status only. | Yes. |
 | `supervisor.finished` | No: outcome, return code, allow-listed telemetry. | n/a |
 
-The server can already turn narration off mid-run: an ack carrying
-`share_narration: false` makes the reporter drop queued commentary and plan
-events. That is the secondary protection. The primary one belongs in
-ingestion: for a comms run, `project` drops `command_preview` (keeping only the
-category label), `commentary.completed` and `plan.updated` **before** `create!`.
-It does so on every attempt and retry, including delayed batches, whatever the
-reporter sent. That is a few lines in one method, keyed on a server-side run
-property rather than on the reporter's config.
+The server can turn narration off mid-run with an ack carrying
+`share_narration: false`, but that only partly helps: the reporter's send-time
+filter strips sub-agents, not commentary or plan already assembled into pending
+batches (`runtime_activity.py`, `_send_loop`, `_without_subagents`). So it is
+secondary at best. The primary gate is in ingestion: for a comms run, `project`
+**replaces** any preview-derived label with the plain category label (not just
+deleting the `command_preview` field, since the label is what gets stored), and
+drops `commentary.completed` and `plan.updated`, **before** `create!` and before
+the snapshot update. Because heartbeats recurse through the same tool
+projection, the one change covers them. Tests cover tool events, heartbeat
+`operations`, delayed batches, retries and the fallback attempt. Being sensitive
+from creation matters: projecting empty text later would not scrub content
+already in an earlier snapshot.
 
 **Does a no-room private wake exist?** Partly. `ExternalAgentWakeRequest`
 (`app/lib/external_agent_wake_request.rb`) runs a resident with `chat: nil`
@@ -270,7 +275,7 @@ under session ID `"<agent uuid>-wake"`, which persists when
 Rails calls the runtime with the agent's trigger bearer token, and the run has a
 server-side `AgentRuntimeInteraction`. But it is **not a private comms
 context**. It is the one session shared by all scheduled wakes, and those wakes
-post into rooms, so a comms read inside it would carry plaintext into the next
+may post into rooms, so a comms read inside it would carry plaintext into the next
 ordinary wake. Room runs use `"<uuid>-<chat id>"` and would not inherit it; the
 wake session would.
 
@@ -281,7 +286,15 @@ wake session would.
 - every run marked comms-sensitive from creation, so narration is off in the
   reporter's initial config instead of being switched off later;
 - only `comms` triggers may resume a `-comms-` session, and only `comms` runs
-  may consume tickets.
+  may consume tickets;
+- **the read capability is bound to the executing session, not just the
+  agent.** The resident's API key is reusable across its concurrent sessions,
+  so "the run belongs to this agent" does not stop an ordinary room or wake run
+  from naming a concurrent comms run's ID. Rails mints a purpose-scoped,
+  per-run comms capability at dispatch and hands it only to that run's
+  environment; ticket minting requires it. It never appears in command
+  previews, logs or errors. Acceptance test: an ordinary run of the same agent,
+  using the same API key and the comms run's ID, is refused.
 
 Two things are undecided, and I am deliberately not settling them inside the
 implementation:
@@ -303,8 +316,10 @@ built.
 
 Probe by Tim (an Opus helper), synthetic data only: no pairing, no WhatsApp
 server contacted, non-numeric JIDs. I re-checked its post-kill scan myself.
-Full report and evidence: `~/work/wa-sqlcipher-probe/FINDINGS.md` on the house
-body. It is not in this repo.
+A compact, reviewable copy (code, pinned `go.mod`/`go.sum`, scan scripts,
+text evidence, findings) is in `docs/proposals/evidence/2026-10-09-whatsmeow-sqlcipher/`.
+This is reported evidence, enough to choose the synthetic path. It does not
+prove anything about the production image.
 
 - **`sqlstore` runs unmodified on SQLCipher.** Tested with whatsmeow
   `v0.0.0-20261007111105-c386243a72ba` on two drivers:
@@ -317,7 +332,8 @@ body. It is not in this repo.
 - **The key goes in the DSN, not a ConnectHook.** Both drivers run a pragma that
   reads page 1 before the hook, so a hook-keyed database works when fresh and
   fails on the first reopen. Consequence: the derived key sits in a Go string,
-  and the DSN must never be logged.
+  and the DSN must never reach a log, an error message or a panic: wrap
+  open errors with a fixed message, and never `%v` the DSN.
 - **No durable plaintext after SIGKILL mid-write** (WAL live, `temp_store=2`).
   The search covered `CANARY` plus 1,032 binary needles (raw keys, random
   prekeys, secrets, MACs, protos) across db/-wal/-shm, `/tmp` and `$TMPDIR`. It

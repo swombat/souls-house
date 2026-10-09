@@ -1,0 +1,45 @@
+runs/mc/data/comms.db: first16=2d115db9ba6c12ac3ec5deeda8acd59f grep-a-CANARY=0
+runs/mc/data/comms.db-shm: first16=18e22d0000000000440c000001000010 grep-a-CANARY=0
+runs/mc/data/comms.db-wal: first16=377f0682002de2180000100000000029 grep-a-CANARY=0
+plain sqlite3 open error: DatabaseError file is not a database
+driver: github.com/jgiannuzzi/go-sqlite3 @ sqlite3mc-2.2.7 (SQLite3 Multiple Ciphers 2.2.7, SQLite 3.51.2) in sqlcipher legacy=4 mode
+wrong key -> err: file is not a database
+driver: github.com/jgiannuzzi/go-sqlite3 @ sqlite3mc-2.2.7 (SQLite3 Multiple Ciphers 2.2.7, SQLite 3.51.2) in sqlcipher legacy=4 mode
+integrity_check: ok
+table comms_message                            rows=26402
+table whatsmeow_app_state_mutation_macs        rows=1
+table whatsmeow_app_state_sync_keys            rows=1
+table whatsmeow_app_state_version              rows=1
+table whatsmeow_chat_settings                  rows=1
+table whatsmeow_contacts                       rows=2
+table whatsmeow_device                         rows=1
+table whatsmeow_event_buffer                   rows=1
+table whatsmeow_identity_keys                  rows=501
+table whatsmeow_lid_map                        rows=2
+table whatsmeow_message_secrets                rows=2
+table whatsmeow_nct_salt                       rows=1
+table whatsmeow_pre_keys                       rows=6
+table whatsmeow_privacy_tokens                 rows=1
+table whatsmeow_retry_buffer                   rows=1
+table whatsmeow_sender_keys                    rows=1
+table whatsmeow_sessions                       rows=502
+table whatsmeow_version                        rows=1
+driver: github.com/jgiannuzzi/go-sqlite3 @ sqlite3mc-2.2.7 (SQLite3 Multiple Ciphers 2.2.7, SQLite 3.51.2) in sqlcipher legacy=4 mode
+exported plaintext control to control/plaintext-control-mc.db
+1032 binary patterns + 2 tokens (CANARY, 'SQLite format 3'); 0 needles had no >=10-byte newline-free segment
+=== POSITIVE CONTROL
+patterns: 1034 lines; paths: control
+regular files scanned: 1, bytes: 124116992
+grep exit: 0 (0=match, 1=no match, 2=error)
+FILES WITH HITS:
+control/plaintext-control-mc.db
+=== REAL: post-kill snapshot + /tmp + $TMPDIR
+patterns: 1034 lines; paths: runs/mc/snapshot /tmp /home/agent/work/.tmp
+regular files scanned: 41314, bytes: 1808680998
+grep exit: 0 (0=match, 1=no match, 2=error)
+FILES WITH HITS:
+/home/agent/work/.tmp/playwright_chromiumdev_profile-l3T82k/Default/Shared Dictionary/db
+27965 needles total, 1032 without the CANARY token searched individually
+HIT /home/agent/work/.tmp/playwright_chromiumdev_profile-l3T82k/Default/Shared Dictionary/db (45056 bytes): 0 binary-needle hits; tokens: ['plain-sqlite-header@0']
+    plain-sqlite-header @ 0
+scanned 1 files, 1032 needles, 1 hits

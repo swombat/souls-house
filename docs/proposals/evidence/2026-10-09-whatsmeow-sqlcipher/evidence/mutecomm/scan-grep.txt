@@ -1,0 +1,28 @@
+=== grep -a -c CANARY (original post-kill files, /tmp, $TMPDIR=)
+runs/mutecomm/data/comms.db: 0
+runs/mutecomm/data/comms.db-shm: 0
+runs/mutecomm/data/comms.db-wal: 0
+grep -r -a -l CANARY /tmp :
+(exit 2; 1 = no match)
+=== first 16 bytes of each file
+/bin/bash: line 6: xxd: command not found
+runs/mutecomm/data/comms.db: 
+/bin/bash: line 6: xxd: command not found
+runs/mutecomm/data/comms.db-shm: 
+/bin/bash: line 6: xxd: command not found
+runs/mutecomm/data/comms.db-wal: 
+=== plain sqlite open (python sqlite3 3.46.1) on a copy
+plain open error: DatabaseError file is not a database
+=== wrong key via cipher driver
+driver: github.com/mutecomm/go-sqlcipher/v4 v4.4.2 (SQLCipher 4.4.2 community, SQLite 3.33.0)
+wrong key -> err: file is not a database
+TMPDIR=/home/agent/work/.tmp GOTMPDIR=/home/agent/state/tools/gopath/tmp
+grep -r -a -l CANARY /tmp:
+(exit 1)
+grep -r -a -l CANARY $TMPDIR:
+(exit 1)
+=== first 16 bytes of each file (od)
+runs/mutecomm/data/comms.db: 5f87a91ebf43f21fc6376c4933ab0c47
+runs/mutecomm/data/comms.db-shm: 18e22d00000000006d09000001000010
+runs/mutecomm/data/comms.db-wal: 377f0682002de218000010000000001e
+(plain SQLite header would be 53514c69746520666f726d6174203300)
