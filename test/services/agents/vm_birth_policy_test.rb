@@ -80,20 +80,20 @@ class Agents::VmBirthPolicyTest < ActiveSupport::TestCase
 
   test "with backups, configuration and room, any model a local resident can use is allowed" do
     @setting.update!(new_residents_on_vm: true, vm_resident_limit: 3)
-    assert_nil policy.refusal(model_id: HouseInference::Offering::MODEL_ID)
+    assert_nil policy.refusal(model_id: HouseInference::Offering::OFFERINGS.keys.first)
     assert_nil policy.refusal(model_id: "openrouter/auto")
     assert_nil policy.refusal(model_id: "anthropic/claude-opus-5-5")
   end
 
   test "admit! commits the placement with its durable admission, and refuses at the cap under the lock" do
     @setting.update!(new_residents_on_vm: true, vm_resident_limit: 1)
-    agent = @account.agents.new(name: "Admitted", system_prompt: "Hello", model_id: HouseInference::Offering::MODEL_ID)
+    agent = @account.agents.new(name: "Admitted", system_prompt: "Hello", model_id: HouseInference::Offering::OFFERINGS.keys.first)
     placement = policy.admit!(agent:, requested_by: @user)
     assert agent.persisted?
     assert placement.vm_birth?
     assert_equal [ "hetzner_cloud", "pending", @user ], [ placement.backend, placement.state, placement.birth_requested_by ]
 
-    second = @account.agents.new(name: "Over the cap", system_prompt: "Hello", model_id: HouseInference::Offering::MODEL_ID)
+    second = @account.agents.new(name: "Over the cap", system_prompt: "Hello", model_id: HouseInference::Offering::OFFERINGS.keys.first)
     assert_no_difference [ "Agent.count", "AgentPlacement.count" ] do
       error = assert_raises(Agents::VmBirthPolicy::Refused) { policy.admit!(agent: second, requested_by: @user) }
       assert_equal Agents::VmBirthPolicy::LIMIT_REFUSAL, error.message
