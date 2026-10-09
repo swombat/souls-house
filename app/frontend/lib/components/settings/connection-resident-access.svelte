@@ -55,6 +55,14 @@
 
 <div class="space-y-3 border-t pt-4">
   <h4 class="text-sm font-semibold">Resident access</h4>
+  {#if connection.comms_sends_url}
+    <!-- Owner only: the controller sets comms_sends_url for the owner alone. -->
+    <p class="text-xs text-muted-foreground">
+      <a class="underline" href={connection.comms_sends_url} target="_blank" rel="noopener">
+        What residents sent as you, and who allowed it
+      </a>
+    </p>
+  {/if}
   {#if connection.residents.length === 0}
     <p class="text-sm text-muted-foreground">There are no residents in this account yet.</p>
   {:else}

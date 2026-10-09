@@ -104,4 +104,15 @@ describe('sending as the owner (WhatsApp)', () => {
     mount({ can_manage: true, can_provision: true });
     expect(screen.queryByLabelText('Can send as you')).not.toBeInTheDocument();
   });
+
+  it('links the owner to the sends and grant history', () => {
+    mount({ ...whatsapp, can_grant_send: true, comms_sends_url: '/accounts/a/service_connections/svc_1/comms_sends' });
+    const link = screen.getByRole('link', { name: /What residents sent as you/ });
+    expect(link).toHaveAttribute('href', '/accounts/a/service_connections/svc_1/comms_sends');
+  });
+
+  it('shows no sends link to anyone else', () => {
+    mount({ ...whatsapp, can_grant_send: false, comms_sends_url: null });
+    expect(screen.queryByRole('link', { name: /What residents sent as you/ })).not.toBeInTheDocument();
+  });
 });

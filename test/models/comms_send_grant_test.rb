@@ -147,4 +147,15 @@ class CommsSendGrantTest < ActiveSupport::TestCase
     assert @connection.retained_after_disconnect?
   end
 
+  test "a resident with send grant history cannot be hard-deleted, so the history is never lost" do
+    grant_send!
+    @access.change_send_grant!(false, actor: @owner)
+    assert_equal 0, @agent.comms_sends.count, "no sends, so only the grant history holds it"
+
+    assert_not @agent.destroy
+    assert @agent.errors.of_kind?(:base, :"restrict_dependent_destroy.has_many")
+    assert Agent.exists?(@agent.id)
+    assert_equal 2, CommsSendGrantEvent.where(agent_id: @agent.id).count
+  end
+
 end

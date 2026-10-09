@@ -10,10 +10,18 @@
 #    the rate limit, all checked under the lock, so concurrent requests
 #    cannot pass the cap together. The unique index on the claim is the
 #    backstop if anything gets past the lock.
-# 2. dispatch!: under the lock again, re-check connected and the grant (a
-#    grant withdrawn after the claim stops the send: failed, refused at
-#    dispatch, no connector call), then mark the send `unknown` and commit.
-#    From here a crash, a timeout or a lost answer leaves it unknown.
+# 2. dispatch!: under the lock again, re-check connected, the grant and the
+#    rate limit (a grant withdrawn after the claim, or a limit reached since,
+#    stops the send: failed, refused at dispatch, no connector call), then
+#    mark the send `unknown` with dispatched_at and commit. From here a
+#    crash, a timeout or a lost answer leaves it unknown.
+#
+# The rate limit counts sends by when they were handed to the connector
+# (dispatched_at), so a backlog of old pending claims retried together is
+# paced like new sends. A send is charged once: a retry of one already
+# dispatched neither calls the connector nor counts again. At claim time a
+# pending claim made inside the window also counts, as a reservation, so
+# concurrent new requests over the cap are refused with 429 up front.
 # 3. call the connector outside any lock, then record its outcome and link
 #    the echoed message under the lock. Only the connector's explicit answer
 #    makes a send sent or failed. Nothing retries an unknown send.
@@ -92,13 +100,15 @@ module CommsSending
       send.lock!
       next false unless send.status == "pending"
 
+      now = Time.current
       begin
         require_sendable!(connection, send.agent)
+        require_dispatch_room!(connection, now)
       rescue Refused => refusal
         send.update!(status: "failed", error_code: "refused_at_dispatch_#{refusal.code}")
         next false
       end
-      send.update!(status: "unknown")
+      send.update!(status: "unknown", dispatched_at: now)
       true
     end
   end
@@ -150,12 +160,30 @@ module CommsSending
     raise Refused.new(:send_not_granted, :forbidden, "This resident may read this connection but not send through it") unless access&.enabled? && access.can_send?
   end
 
+  # At claim: sends dispatched inside the window, plus pending claims made
+  # inside it (each will need a slot when it dispatches).
   def require_rate_room!(connection, now)
+    rate_refusal! if over_rate?(now) { |since| charged_or_reserved(connection, since) }
+  end
+
+  # At dispatch, under the connection's lock: only sends actually handed to
+  # the connector inside the window. The send being dispatched is pending,
+  # so it is not among them.
+  def require_dispatch_room!(connection, now)
+    rate_refusal! if over_rate?(now) { |since| connection.comms_sends.where(dispatched_at: since..) }
+  end
+
+  def over_rate?(now)
+    yield(now - 1.minute).count >= PER_MINUTE || yield(now - 1.day).count >= PER_DAY
+  end
+
+  def charged_or_reserved(connection, since)
     sends = connection.comms_sends
-    if sends.where(requested_at: (now - 1.minute)..).count >= PER_MINUTE ||
-        sends.where(requested_at: (now - 1.day)..).count >= PER_DAY
-      raise Refused.new(:rate_limited, :too_many_requests, "This connection's send limit is reached (#{PER_MINUTE}/minute, #{PER_DAY}/day)")
-    end
+    sends.where(dispatched_at: since..).or(sends.where(status: "pending", requested_at: since..))
+  end
+
+  def rate_refusal!
+    raise Refused.new(:rate_limited, :too_many_requests, "This connection's send limit is reached (#{PER_MINUTE}/minute, #{PER_DAY}/day)")
   end
 
 end

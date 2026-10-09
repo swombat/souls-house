@@ -49,7 +49,8 @@ class CommsSendingConcurrencyTest < ActiveSupport::TestCase
     now = Time.current
     CommsSend.insert_all!((1..(CommsSending::PER_MINUTE - room)).map do |n|
       { service_connection_id: @connection.id, agent_id: @agent.id, comms_chat_id: @chat.id, text: "earlier #{n}",
-        client_request_id: "earlier-#{n}", status: "sent", requested_at: now - 10.seconds, created_at: now, updated_at: now }
+        client_request_id: "earlier-#{n}", status: "sent", requested_at: now - 10.seconds, dispatched_at: now - 10.seconds,
+        created_at: now, updated_at: now }
     end)
 
     index = Concurrent::AtomicFixnum.new
@@ -64,6 +65,52 @@ class CommsSendingConcurrencyTest < ActiveSupport::TestCase
     assert refused.all? { |refusal| refusal.code == :rate_limited }
     assert_equal room, calls.size
     assert_equal CommsSending::PER_MINUTE, CommsSend.where(service_connection_id: @connection.id).count
+  end
+
+  test "concurrent retries of an old pending backlog cannot pass the rate limit together" do
+    room = 1
+    now = Time.current
+    CommsSend.insert_all!((1..(CommsSending::PER_MINUTE - room)).map do |n|
+      { service_connection_id: @connection.id, agent_id: @agent.id, comms_chat_id: @chat.id, text: "earlier #{n}",
+        client_request_id: "earlier-#{n}", status: "sent", requested_at: now - 10.seconds, dispatched_at: now - 10.seconds,
+        created_at: now, updated_at: now }
+    end)
+    backlog = THREADS.times.map do |n|
+      send = @connection.comms_sends.create!(agent: @agent, comms_chat: @chat, text: "old #{n}", client_request_id: "backlog-#{n}",
+                                             status: "pending", requested_at: now - 3.days)
+      send.update_columns(provider_message_id: CommsSend.provider_message_id_for(@connection.id, send.id))
+      send
+    end
+
+    index = Concurrent::AtomicFixnum.new(-1)
+    calls, results = race do
+      send = backlog.fetch(index.increment)
+      CommsSending.request!(connection: @connection, agent: @agent, chat: @chat, text: send.text, client_request_id: send.client_request_id)
+    end
+
+    assert results.all? { |result| result.is_a?(CommsSending::Result) }, results.inspect
+    assert_equal room, calls.size
+    assert_equal THREADS - room, CommsSend.where(id: backlog.map(&:id), error_code: "refused_at_dispatch_rate_limited").count
+    assert_equal CommsSending::PER_MINUTE, CommsSend.where(service_connection_id: @connection.id, dispatched_at: (now - 1.minute)..).count
+  end
+
+  test "concurrent retries against a full budget make no connector calls" do
+    now = Time.current
+    CommsSend.insert_all!((1..CommsSending::PER_MINUTE).map do |n|
+      { service_connection_id: @connection.id, agent_id: @agent.id, comms_chat_id: @chat.id, text: "earlier #{n}",
+        client_request_id: "earlier-#{n}", status: "sent", requested_at: now - 10.seconds, dispatched_at: now - 10.seconds,
+        created_at: now, updated_at: now }
+    end)
+    send = @connection.comms_sends.create!(agent: @agent, comms_chat: @chat, text: "old", client_request_id: "backlog",
+                                           status: "pending", requested_at: now - 3.days)
+
+    calls, results = race do
+      CommsSending.request!(connection: @connection, agent: @agent, chat: @chat, text: "old", client_request_id: "backlog")
+    end
+
+    assert results.all? { |result| result.is_a?(CommsSending::Result) }, results.inspect
+    assert_empty calls
+    assert_equal [ "failed", "refused_at_dispatch_rate_limited" ], [ send.reload.status, send.error_code ]
   end
 
   private

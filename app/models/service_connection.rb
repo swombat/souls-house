@@ -299,6 +299,11 @@ class ServiceConnection < ApplicationRecord
     else
       "repaired"
     end
+    # Lock order (AgentServiceAccess#change_send_grant!): this runs after the
+    # UPDATE, which holds this connection's row lock until commit, so the
+    # access rows are locked second. A grant that locked the connection
+    # first has committed by now and is withdrawn here; one that comes later
+    # waits, then sees the new owner or status and is refused.
     agent_service_accesses.where(can_send: true).lock.each do |access|
       access.update_columns(can_send: false, updated_at: Time.current)
       CommsSendGrantEvent.record!(access, granted: false, actor: nil, reason: reason)

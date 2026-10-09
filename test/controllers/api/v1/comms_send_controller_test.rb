@@ -196,7 +196,8 @@ module Api
         now = Time.current
         CommsSend.insert_all!((1..CommsSending::PER_DAY).map do |n|
           { service_connection_id: @connection.id, agent_id: @agent.id, comms_chat_id: @chat.id, text: "old #{n}",
-            client_request_id: "day-#{n}", status: "sent", requested_at: now - 2.hours, created_at: now, updated_at: now }
+            client_request_id: "day-#{n}", status: "sent", requested_at: now - 2.hours, dispatched_at: now - 2.hours,
+            created_at: now, updated_at: now }
         end)
         calls = with_fake_connector { send_text(client_request_id: "one-too-many") }
         assert_response :too_many_requests

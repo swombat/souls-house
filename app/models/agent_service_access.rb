@@ -55,19 +55,29 @@ class AgentServiceAccess < ApplicationRecord
   # Grants or withdraws sending as the connection's owner. Only the owner can
   # grant (speaking as a person is that person's grant to give); anyone who
   # can manage the connection can withdraw. Every change is recorded.
+  #
+  # Lock order, the same everywhere a grant is set or cleared (here,
+  # Agent#set_service_access!, ServiceConnection#withdraw_send_grants and
+  # CommsSending): the connection's row first, then the access row. Who owns
+  # the connection, its status and whether this row is enabled are all read
+  # after both locks are held, so a concurrent owner change, disconnect,
+  # re-pair or disable either commits first (and this sees it) or waits for
+  # this to commit (and then withdraws what this granted).
   def change_send_grant!(can_send, actor:)
     can_send = ActiveModel::Type::Boolean.new.cast(can_send)
-    unless service_connection.send_grant_changeable_by?(actor, can_send: can_send)
-      raise SendGrantRefused, can_send ? "Only the connection's owner can let a resident send" : "You cannot manage this connection"
-    end
-
-    with_lock do
+    connection = service_connection
+    connection.transaction do
+      connection.lock!
+      lock!
+      unless connection.send_grant_changeable_by?(actor, can_send: can_send)
+        raise SendGrantRefused, can_send ? "Only the connection's owner can let a resident send" : "You cannot manage this connection"
+      end
       next if self.can_send == can_send
 
       if can_send
         raise SendGrantRefused, "Enable this resident's access first" unless enabled?
-        raise SendGrantRefused, "This connection cannot send" unless service_connection.credential_strategy == "connector"
-        raise SendGrantRefused, "Reconnect this service before letting a resident send" unless service_connection.status == "connected"
+        raise SendGrantRefused, "This connection cannot send" unless connection.credential_strategy == "connector"
+        raise SendGrantRefused, "Reconnect this service before letting a resident send" unless connection.status == "connected"
       end
       update!(can_send: can_send)
       CommsSendGrantEvent.record!(self, granted: can_send, actor: actor, reason: can_send ? "granted" : "withdrawn")

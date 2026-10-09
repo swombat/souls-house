@@ -118,6 +118,54 @@ class Agents::ServiceSendGrantsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "the sends and the grant history page past 200 by cursor, so the oldest is reachable" do
+    count = Accounts::ServiceConnectionSendsController::LIMIT + 1
+    now = Time.current
+    # Half share one timestamp, so the cursor's id tie-break is what keeps
+    # the pages from skipping or repeating.
+    CommsSend.insert_all!((1..count).map do |n|
+      at = n <= 100 ? now - 1.day : now - 1.day + n.seconds
+      { service_connection_id: @connection.id, agent_id: @agent.id, comms_chat_id: @chat.id, text: "send #{n}",
+        client_request_id: "page-#{n}", status: "sent", requested_at: at, created_at: now, updated_at: now }
+    end)
+    CommsSendGrantEvent.insert_all!((1..count).map do |n|
+      { service_connection_id: @connection.id, agent_id: @agent.id, actor_user_id: @owner.id,
+        action: n.odd? ? "granted" : "withdrawn", reason: n.odd? ? "granted" : "withdrawn",
+        created_at: n <= 100 ? now - 1.day : now - 1.day + n.seconds }
+    end)
+    oldest_send = @connection.comms_sends.order(:requested_at, :id).first
+    oldest_grant = @connection.comms_send_grant_events.order(:created_at, :id).first
+
+    sign_in @owner
+    get account_service_connection_comms_sends_path(@account, @connection.public_id)
+    assert_response :ok
+    first = response.parsed_body
+    assert_equal Accounts::ServiceConnectionSendsController::LIMIT, first["sends"].size
+    assert_equal Accounts::ServiceConnectionSendsController::LIMIT, first["grant_history"].size
+    assert_not_includes first["sends"].map { |send| send["id"] }, oldest_send.public_id
+    assert first["sends_next_cursor"]
+    assert first["grant_history_next_cursor"]
+
+    get account_service_connection_comms_sends_path(@account, @connection.public_id,
+                                                     sends_before: first["sends_next_cursor"], grants_before: first["grant_history_next_cursor"])
+    assert_response :ok
+    second = response.parsed_body
+    assert_equal [ oldest_send.public_id ], second["sends"].map { |send| send["id"] }
+    assert_equal 1, second["grant_history"].size
+    assert_equal oldest_grant.created_at.utc.iso8601, second["grant_history"].sole["at"]
+    assert_nil second["sends_next_cursor"]
+    assert_nil second["grant_history_next_cursor"]
+
+    all_ids = (first["sends"] + second["sends"]).map { |send| send["id"] }
+    assert_equal count, all_ids.uniq.size, "nothing repeated or skipped"
+  end
+
+  test "a malformed sends cursor is a bad request" do
+    sign_in @owner
+    get account_service_connection_comms_sends_path(@account, @connection.public_id, sends_before: "not-a-cursor")
+    assert_response :bad_request
+  end
+
   test "residents cannot read the sends list" do
     key = ApiKey.generate_for(@owner, name: "Resident", agent: @agent)
     get account_service_connection_comms_sends_path(@account, @connection.public_id),

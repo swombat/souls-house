@@ -79,6 +79,75 @@ class CommsSendingTest < ActiveSupport::TestCase
     assert_empty calls
   end
 
+  test "an old pending backlog retried against a full minute is refused at dispatch with no connector call" do
+    backlog = old_pending_backlog(3)
+    fill_dispatched(CommsSending::PER_MINUTE, at: 10.seconds.ago)
+
+    calls = with_fake_connector do
+      backlog.each do |send|
+        result = CommsSending.request!(connection: @connection, agent: @agent, chat: @chat, text: send.text, client_request_id: send.client_request_id)
+        assert_not result.created
+      end
+    end
+
+    assert_empty calls
+    backlog.each do |send|
+      assert_equal [ "failed", "refused_at_dispatch_rate_limited", nil ], [ send.reload.status, send.error_code, send.dispatched_at ]
+    end
+  end
+
+  test "an old pending backlog retried in a burst is paced by dispatch time, not request time" do
+    backlog = old_pending_backlog(CommsSending::PER_MINUTE + 3)
+    room = 2
+    fill_dispatched(CommsSending::PER_MINUTE - room, at: 10.seconds.ago)
+
+    calls = with_fake_connector do
+      backlog.each { |send| CommsSending.request!(connection: @connection, agent: @agent, chat: @chat, text: send.text, client_request_id: send.client_request_id) }
+    end
+
+    assert_equal room, calls.size
+    assert_equal room, @connection.comms_sends.where(id: backlog.map(&:id), status: "sent").count
+    assert_equal backlog.size - room, @connection.comms_sends.where(id: backlog.map(&:id), error_code: "refused_at_dispatch_rate_limited").count
+    assert_equal CommsSending::PER_MINUTE, @connection.comms_sends.where(dispatched_at: 1.minute.ago..).count
+  end
+
+  test "the daily cap is counted by dispatch time too" do
+    backlog = old_pending_backlog(1)
+    fill_dispatched(CommsSending::PER_DAY, at: 2.hours.ago)
+    calls = with_fake_connector { CommsSending.deliver!(backlog.first) }
+    assert_empty calls
+    assert_equal "refused_at_dispatch_rate_limited", backlog.first.reload.error_code
+  end
+
+  test "a send is charged once: a retry of a dispatched send neither calls the connector nor counts again" do
+    fill_dispatched(CommsSending::PER_MINUTE - 1, at: 10.seconds.ago)
+    send, = claim("charged-once")
+    calls = with_fake_connector { CommsSending.deliver!(send) }
+    assert_equal 1, calls.size
+    dispatched_at = send.reload.dispatched_at
+    assert dispatched_at
+
+    calls = with_fake_connector do
+      3.times { CommsSending.request!(connection: @connection, agent: @agent, chat: @chat, text: "hello", client_request_id: "charged-once") }
+    end
+    assert_empty calls
+    assert_equal dispatched_at, send.reload.dispatched_at
+    assert_equal CommsSending::PER_MINUTE, @connection.comms_sends.where(dispatched_at: 1.minute.ago..).count
+  end
+
+  test "refused and never-dispatched sends do not use up the limit" do
+    CommsSend.insert_all!((1..CommsSending::PER_MINUTE).map do |n|
+      { service_connection_id: @connection.id, agent_id: @agent.id, comms_chat_id: @chat.id, text: "refused #{n}",
+        client_request_id: "refused-#{n}", status: "failed", error_code: "refused_at_dispatch_send_not_granted",
+        requested_at: 10.seconds.ago, created_at: Time.current, updated_at: Time.current }
+    end)
+    calls = with_fake_connector do
+      result = CommsSending.request!(connection: @connection, agent: @agent, chat: @chat, text: "hello", client_request_id: "after-refusals")
+      assert_equal "sent", result.send.status
+    end
+    assert_equal 1, calls.size
+  end
+
   test "echo before ack: the echo links to the send as soon as it arrives" do
     send, = claim
     linked_during_call = nil
@@ -144,6 +213,25 @@ class CommsSendingTest < ActiveSupport::TestCase
 
   def claim(id = "seam")
     CommsSending.claim!(connection: @connection, agent: @agent, chat: @chat, text: "hello", client_request_id: id)
+  end
+
+  # Pending claims made long ago (outside both windows) whose requests died
+  # before dispatch.
+  def old_pending_backlog(count)
+    (1..count).map do |n|
+      send = @connection.comms_sends.create!(agent: @agent, comms_chat: @chat, text: "old #{n}", client_request_id: "backlog-#{n}",
+                                             status: "pending", requested_at: 3.days.ago)
+      send.update_columns(provider_message_id: CommsSend.provider_message_id_for(@connection.id, send.id))
+      send
+    end
+  end
+
+  def fill_dispatched(count, at:)
+    CommsSend.insert_all!((1..count).map do |n|
+      { service_connection_id: @connection.id, agent_id: @agent.id, comms_chat_id: @chat.id, text: "earlier #{n}",
+        client_request_id: "earlier-#{at.to_i}-#{n}", status: "sent", requested_at: at, dispatched_at: at,
+        created_at: Time.current, updated_at: Time.current }
+    end)
   end
 
   def receive_message(provider_message_id:, from_me:, body:)
