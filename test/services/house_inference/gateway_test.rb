@@ -4,7 +4,7 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
 
   setup do
     @agent = agents(:research_assistant)
-    @agent.update!(model_id: HouseInference::Offering::MODEL_ID)
+    @agent.update!(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID)
     @grant = HouseInferenceGrant.assign!(@agent, users(:user_1))
     @input = { 'model' => @agent.model_id, 'stream' => true, 'messages' => [ { 'role' => 'user', 'content' => 'hello' } ] }
   end
@@ -69,6 +69,24 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
     @input['model'] = 'expensive/other-model'
     assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
     assert_equal 0, @grant.house_inference_calls.count
+  end
+
+  test 'a Haiku resident is billed on the Anthropic route and cannot ask for the other house model' do
+    @agent.update!(model_id: HouseInference::Offering::HAIKU_MODEL_ID)
+    deepseek = @input.merge('model' => HouseInference::Offering::DEEPSEEK_MODEL_ID)
+    error = assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: deepseek).call { |_| } }
+    assert_equal 403, error.status
+    assert_equal 0, @grant.house_inference_calls.count
+
+    chunks = [ "data: {\"id\":\"gen-h\",\"model\":\"anthropic/claude-haiku-5.5\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+      "data: {\"usage\":{\"cost\":0.0004}}\n\ndata: [DONE]\n\n" ]
+    output = +''
+    @input['model'] = HouseInference::Offering::HAIKU_MODEL_ID
+    upstream(chunks) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |chunk| output << chunk } }
+    assert_includes output, '"model":"house/claude-haiku-5.5"'
+    call = @grant.house_inference_calls.last
+    assert_equal [ 'anthropic', 'house/claude-haiku-5.5', 'settled' ], [ call.provider_route, call.model_id, call.status ]
+    assert_equal BigDecimal('0.0004'), @grant.spent
   end
 
 end

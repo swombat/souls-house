@@ -5,7 +5,7 @@ module Agents
       if HouseInference::Offering.configured? &&
           account.ai_credentials_manageable_by?(creator) &&
           !HouseInferenceGrant.where(user: creator).where.not(agent_id: nil).exists?
-        HouseInference::Offering::MODEL_ID
+        HouseInference::Offering::DEFAULT_MODEL_ID
       else
         Chat::MODELS.first.fetch(:model_id)
       end

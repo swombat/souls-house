@@ -17,7 +17,7 @@ class Chats::AgentTriggersControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "house exhaustion stops Ask All without a missing credentials dialog or paid fallback" do
-    @agent.update!(model_id: HouseInference::Offering::MODEL_ID)
+    @agent.update!(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID)
     grant = HouseInferenceGrant.assign!(@agent, @user)
     grant.house_inference_calls.create!(month: HouseInference::Offering.month, model_id: @agent.model_id,
       provider_route: "fireworks/us", charge_usd: 10, status: "settled")
