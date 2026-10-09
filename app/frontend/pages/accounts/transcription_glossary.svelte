@@ -8,7 +8,7 @@
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
 
-  let { account, path, terms = [], removed = [], keyterms_enabled = false, keyterm_limit = 100 } = $props();
+  let { account, path, terms = [], removed = [], keyterm_limit = 100 } = $props();
 
   let term = $state('');
   let submitting = $state(false);
@@ -62,9 +62,6 @@
         <Card.Description>
           A name, product or bit of jargon people say out loud, like a resident's name or your company's. Up to five
           words.
-          {#if !keyterms_enabled}
-            Transcription isn't using the glossary yet: that switches on once it's been tested on real recordings.
-          {/if}
         </Card.Description>
       </Card.Header>
       <Card.Content>

@@ -1633,7 +1633,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_110000) do
     t.datetime "updated_at", null: false
     t.string "follow_through_scope", default: "off", null: false
     t.boolean "safeguard_conversations_enabled", default: false, null: false
-    t.boolean "transcription_keyterms_enabled", default: false, null: false
   end
 
   create_table "stone_revisions", force: :cascade do |t|

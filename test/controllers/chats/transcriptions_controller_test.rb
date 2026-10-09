@@ -32,8 +32,7 @@ class Chats::TranscriptionsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the room's account glossary goes to transcription when the site switch is on" do
-    Setting.instance.update!(transcription_keyterms_enabled: true)
+  test "the room's account glossary goes to transcription" do
     TranscriptionGlossary.new(@account).add!("GrantTree", by: @user)
     received = nil
 

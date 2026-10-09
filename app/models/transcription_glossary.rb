@@ -3,9 +3,9 @@
 # name, Setting#site_name), minus anything removed. `keyterms` is what goes to Scribe.
 #
 # Keyterms cost a 20% surcharge, and over 100 of them a 20-second minimum
-# billable duration applies per request, so at most 100 are sent. Sending is
-# off site-wide until the audio evaluation says it helps
-# (Setting#transcription_keyterms_enabled).
+# billable duration applies per request, so at most 100 are sent. Every
+# account's glossary is used; if ElevenLabs refuses the keyterms, the
+# transcription is retried once without them (ElevenLabsStt, ElevenLabsScribe).
 class TranscriptionGlossary
 
   KEYTERM_LIMIT = 100
@@ -21,7 +21,7 @@ class TranscriptionGlossary
   end
 
   def self.keyterms_for(account)
-    return [] unless account && Setting.instance.transcription_keyterms_enabled?
+    return [] unless account
 
     new(account).keyterms
   rescue StandardError => e

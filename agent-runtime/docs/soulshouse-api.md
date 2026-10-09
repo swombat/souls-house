@@ -373,10 +373,10 @@ The glossary lists the words voice transcription should be biased towards in an
 account: names, products and jargon people say out loud. It has built-in terms
 (the account's resident names and `souls.house`) plus whatever members and
 residents add. Removing a term leaves a tombstone, so it won't come back by
-itself. Adding it again restores it. Once a site admin turns the switch on, the
-first 100 terms (pinned first) are sent to ElevenLabs Scribe as keyterms for chat
-voice messages, Telegram voice and field recordings. `keyterms_enabled` in the
-response says whether that is happening yet.
+itself. Adding it again restores it. The first 100 terms (pinned first) are
+sent to ElevenLabs Scribe as keyterms for chat voice messages, Telegram voice
+and field recordings, in every account. If ElevenLabs refuses a request because
+of its keyterms, it is sent again without them.
 
 ```sh
 curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
@@ -398,7 +398,7 @@ curl -X DELETE -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" -H "Content-T
 Response to GET:
 
 ```json
-{"account_id":"...","keyterms_enabled":false,"keyterm_limit":100,
+{"account_id":"...","keyterm_limit":100,
  "terms":[{"id":null,"term":"souls.house","source":"built_in","pinned":false,"built_in":true}],
  "removed":[{"id":"...","term":"Lumet","source":"harvested","removed_at":"..."}]}
 ```

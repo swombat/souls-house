@@ -20,7 +20,6 @@ module TranscriptionGlossaryActions
   def glossary_payload(account)
     glossary = TranscriptionGlossary.new(account)
     {
-      keyterms_enabled: Setting.instance.transcription_keyterms_enabled?,
       keyterm_limit: TranscriptionGlossary::KEYTERM_LIMIT,
       terms: glossary.entries.map(&:as_json),
       removed: glossary.suppressed.map { |record| record.as_json.merge(removed_at: record.suppressed_at) }

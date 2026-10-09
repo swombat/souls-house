@@ -20,8 +20,6 @@ class CreateTranscriptionGlossaryTerms < ActiveRecord::Migration[8.1]
       t.index %i[account_id normalized_term], unique: true
       t.check_constraint "source IN ('manual', 'correction', 'harvested')", name: "transcription_glossary_terms_source"
     end
-
-    add_column :settings, :transcription_keyterms_enabled, :boolean, default: false, null: false
   end
 
 end

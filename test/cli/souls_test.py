@@ -487,7 +487,7 @@ class ResidentWatchTest(CliTestCase):
 class GlossaryTest(CliTestCase):
     def test_list_prints_pinned_and_source_one_per_line(self):
         self.house.route("GET", "/api/v1/transcription_glossary", body={
-            "account_id": "a1", "keyterms_enabled": True, "keyterm_limit": 100,
+            "account_id": "a1", "keyterm_limit": 100,
             "terms": [
                 {"id": None, "term": "souls.house", "source": "built_in", "pinned": False, "built_in": True},
                 {"id": "t1", "term": "Lume", "source": "manual", "pinned": True, "built_in": False,
@@ -519,10 +519,10 @@ class GlossaryTest(CliTestCase):
         self.assertEqual(out.splitlines(), ["gone  [harvested, removed 2026-09-01T12:00]"])
 
     def test_list_json_prints_the_raw_response_account_scoped(self):
-        self.house.route("GET", "/api/v1/transcription_glossary", body={"terms": [], "removed": [], "keyterms_enabled": True})
+        self.house.route("GET", "/api/v1/transcription_glossary", body={"terms": [], "removed": [], "keyterm_limit": 100})
         code, out, _ = self.run_cli("--account", "A1", "glossary", "--json")
         self.assertEqual(code, 0)
-        self.assertEqual(json.loads(out), {"terms": [], "removed": [], "keyterms_enabled": True})
+        self.assertEqual(json.loads(out), {"terms": [], "removed": [], "keyterm_limit": 100})
         self.assertIn("account_id=A1", self.last()["query"])
 
     def test_add_sends_term_and_pin_as_a_json_body(self):

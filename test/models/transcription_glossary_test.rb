@@ -66,16 +66,12 @@ class TranscriptionGlossaryTest < ActiveSupport::TestCase
     assert @glossary.add!("one two three four five", by: @user).persisted?
   end
 
-  test "keyterms are only sent when the site switch is on" do
-    assert_equal [], TranscriptionGlossary.keyterms_for(@account)
-
-    Setting.instance.update!(transcription_keyterms_enabled: true)
+  test "every account's glossary is sent, and no account means no keyterms" do
     assert_includes TranscriptionGlossary.keyterms_for(@account), "souls.house"
     assert_equal [], TranscriptionGlossary.keyterms_for(nil)
   end
 
   test "a glossary failure never stops a transcription" do
-    Setting.instance.update!(transcription_keyterms_enabled: true)
     TranscriptionGlossary.stub(:new, ->(*) { raise ActiveRecord::StatementInvalid, "boom" }) do
       assert_equal [], TranscriptionGlossary.keyterms_for(@account)
     end

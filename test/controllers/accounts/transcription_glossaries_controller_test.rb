@@ -8,13 +8,13 @@ class Accounts::TranscriptionGlossariesControllerTest < ActionDispatch::Integrat
     sign_in @user
   end
 
-  test "a member sees the glossary with built-in terms and the switch state" do
+  test "a member sees the glossary with built-in terms" do
     get account_transcription_glossary_path(@account)
 
     assert_response :success
     terms = inertia_shared_props.fetch("terms").map { |term| term.fetch("term") }
     assert_includes terms, "souls.house"
-    assert_equal false, inertia_shared_props.fetch("keyterms_enabled")
+    assert_equal 100, inertia_shared_props.fetch("keyterm_limit")
   end
 
   test "a member adds, pins and removes a term, and the removal sticks" do
