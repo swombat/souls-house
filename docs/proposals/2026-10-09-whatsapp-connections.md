@@ -34,11 +34,16 @@ A WhatsApp connection is a `ServiceConnection` with `provider: "whatsapp"`
   of OAuth or a pasted credential.
 - `credential_strategy: "connector"`, a new value: the WhatsApp session lives in
   the connector (§2), never in Rails. `credential_payload` (already `encrypts`)
-  holds only the connector callback secret (§2).
+  holds only the connector callback secret (§2). `runtime_credentials` gets an
+  explicit `connector` branch that gives residents the read endpoint and the
+  connection's metadata, **never** the callback secret. (Today every strategy
+  other than `refresh_broker` hands over the whole payload.)
 - One access profile, `read`. A `send` profile is reserved and not offered in
   milestone 1. There is no send code anywhere.
 
-Access is one `AgentServiceAccess` row per resident, the same as for Gmail. The
+Access is one `AgentServiceAccess` row per resident, the same as for Gmail.
+Enabling access goes through `resident_access_changeable_by?(enabled: true)`,
+the existing granting check, which is not the same as `manageable_by?`. The
 read API uses the same scope as `Api::V1::ServiceConnectionTokensController#show`:
 
 ```ruby
@@ -52,8 +57,8 @@ Disabling or deleting the access row ends reads on the next request.
 
 **Storage.** Messages live in Rails, in two tables keyed to the connection:
 `comms_chats` (provider chat ID, name, kind, last activity) and `comms_messages`
-(provider message ID, chat, sender, sent_at, body, media kind, caption). Names,
-bodies and captions use `encrypts`, like `credential_payload`. Upserts are keyed
+(provider message ID, chat, sender ID, sender name, sent_at, body, media kind,
+caption). Sender IDs, names, bodies and captions use `encrypts`, like `credential_payload`. Upserts are keyed
 on `(service_connection_id, provider_message_id)`, so a replayed event is a
 no-op. Media are not downloaded in milestone 1: a message records `[image]`,
 `[voice note]` and so on, plus the caption.
@@ -90,10 +95,13 @@ It is Go on whatsmeow. It talks only to Rails.
   `POST /internal/comms/connections/:id/events` over the private network.
   Each connection has its own callback secret, created with the connection,
   stored in `credential_payload` and given to the connector. Each request is
-  HMAC-signed with that secret, so a request signed for connection A cannot
-  write to connection B. Rails rejects events for a connection that is not
+  HMAC-signed with that secret over the connection ID, method, path, a
+  timestamp and the raw body. A request signed for connection A cannot write
+  to connection B, a stale timestamp is refused, and a nonce is remembered
+  for the freshness window, so a replayed QR or status event is refused too. Rails rejects events for a connection that is not
   `pairing`/`connected`.
-- **Rails → connector.** Two commands: start pairing, and unpair (whatsmeow
+- **Rails → connector.** Two commands, signed the same way with the
+  connection's secret: start pairing, and unpair (whatsmeow
   `Logout`, then delete the session store). Disconnecting the
   `ServiceConnection` sends unpair.
 - **Pairing QR.** Only the owner's connection page shows it. The connector
@@ -125,8 +133,14 @@ import them. A fresh pairing receives only recent history. The sequence:
    linked devices are fine; two copies of the *same* device are what fights.
 2. Import the Dell's history with a one-off import task, deduplicated on
    provider message ID.
-3. Check for overlap, then stop `pa-whatsapp-bridge.service` and `sync-comms.py`
-   on the Dell and unlink that device from Daniel's phone.
+3. Check for overlap, then stop `pa-whatsapp-bridge.service`, disable **only
+   the WhatsApp branch** of `sync-comms.py` (it also ingests Telegram and Gmail,
+   which stay), and unlink the Dell device from Daniel's phone.
+
+The import reads the structured source first, the bridge's whatsmeow message
+SQLite with provider IDs. The mixed `pa/comms/` archive may not keep provider
+IDs good enough to deduplicate on, so it's used only for what the structured
+source lacks, after checking.
 
 Moving the Dell's stopped device into the house would save one linked-device
 slot but means copying a live credential. Fresh pairing plus import is simpler.
