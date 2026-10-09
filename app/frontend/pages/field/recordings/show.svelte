@@ -13,6 +13,7 @@
     recordingStatusLine,
     recordingsTabPath,
     speakerNames,
+    suppliedTurns,
     timedWords,
   } from '$lib/field-recordings';
   import { ArrowClockwise, ArrowLeft, X } from 'phosphor-svelte';
@@ -36,8 +37,11 @@
 
   const ready = $derived(recording.status === 'ready');
   const troubled = $derived(recording.status === 'rejected' || recording.status === 'failed');
-  const turns = $derived(buildTurns(recording.words));
-  const wordList = $derived(timedWords(turns));
+  // Supplied transcripts (brought in with the audio) have turns, not timed
+  // words: no word highlighting, talk time, clips or voice samples.
+  const supplied = $derived(recording.transcript_source === 'supplied');
+  const turns = $derived(supplied ? suppliedTurns(recording.turns) : buildTurns(recording.words));
+  const wordList = $derived(supplied ? [] : timedWords(turns));
   const names = $derived(speakerNames(speakers));
   const totalTalkMs = $derived(speakers.reduce((sum, speaker) => sum + (speaker.talk_ms || 0), 0));
   const me = $derived($page.props?.user);
@@ -46,6 +50,8 @@
   const meta = $derived(
     [
       recording.duration_ms != null ? formatDuration(recording.duration_ms) : null,
+      recording.recorded_at ? `Recorded ${formatWhen(recording.recorded_at)}` : null,
+      supplied ? 'Transcript brought with it' : null,
       recording.uploader_name ? `Brought by ${recording.uploader_name}` : null,
       formatWhen(recording.created_at),
     ]
@@ -78,7 +84,7 @@
   }
 
   function seek(ms) {
-    if (!audio) return;
+    if (!audio || ms == null) return;
     clip = null;
     audio.currentTime = ms / 1000;
     audio.play().catch(() => {});
@@ -121,6 +127,11 @@
     {#if recording.note}
       <p class="mt-3 whitespace-pre-wrap">{recording.note}</p>
     {/if}
+    {#if recording.source_path}
+      <p class="mt-1 text-xs text-muted-foreground break-all" data-testid="recording-source">
+        From {recording.source_path}
+      </p>
+    {/if}
   </div>
 
   {#if recording.audio_url}
@@ -161,7 +172,7 @@
           </button>
         </div>
       {/if}
-      {#if suggestions_enabled}
+      {#if suggestions_enabled && !supplied}
         <p class="text-xs text-muted-foreground" data-testid="suggestions-disclosure">
           Names may be suggested from what's said: the transcript, title and note, with the names of this Field's voices
           and members, are sent to Google Gemini (through OpenRouter) for that. A suggestion is only ever shown here,
@@ -181,7 +192,7 @@
             {totalTalkMs}
             onPlayClip={playClip}
             onSeek={seek}
-            recognitionEnabled={recognition_enabled}
+            recognitionEnabled={recognition_enabled && !supplied}
             accountId={account.id}
             recordingId={recording.id}
             url={`/accounts/${account.id}/field/recordings/${recording.id}/speakers/${speaker.id}`}

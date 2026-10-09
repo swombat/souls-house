@@ -53,6 +53,9 @@ module FieldItems
       byte_size: recording.byte_size,
       uploader_name: recording.uploader_name,
       uploader_kind: recording.uploader_kind,
+      transcript_source: recording.transcript_source,
+      recorded_at: recording.recorded_at&.iso8601,
+      source_path: recording.source_path,
       speaker_names: recording.ready? ? recording.speakers.includes(:field_voice).map(&:display_name) : [],
       # Deleting after this point doesn't give the minutes back (spec §5).
       dispatched: recording.dispatch_count.positive?,
@@ -72,7 +75,7 @@ module FieldItems
       named: speaker.field_voice&.kept? || false,
       voice_id: speaker.field_voice&.kept? ? speaker.field_voice.to_param : nil,
       naming_source: speaker.naming_source,
-      talk_ms: speaker.talk_ms,
+      talk_ms: speaker.known_talk_ms,
       clip_start_ms: speaker.clip_start_ms,
       clip_end_ms: speaker.clip_end_ms,
       recognition: (if speaker.recognition?
@@ -100,7 +103,7 @@ module FieldItems
       name: speaker.display_name,
       named: voice.present?,
       voice_id: voice&.to_param,
-      talk_ms: speaker.talk_ms,
+      talk_ms: speaker.known_talk_ms,
       clip_start_ms: speaker.clip_start_ms,
       clip_end_ms: speaker.clip_end_ms
     }

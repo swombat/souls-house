@@ -15,6 +15,11 @@ module FieldVoiceprints::Sample
   # [[start_ms, end_ms], ...] or raise Refused with a message for the page.
   def segments_for(speaker)
     recording = speaker.field_recording
+    if recording.supplied?
+      raise Refused, "This recording came with its own transcript, which has no word timings, so no sample of " \
+                     "#{speaker.display_name} can be cut from it."
+    end
+
     words = recording.transcript_words || []
     if recording.expected_speakers && recording.speakers.size < recording.expected_speakers
       raise Refused, "Fewer voices were found than expected, so #{speaker.display_name} may be merged with someone. " \

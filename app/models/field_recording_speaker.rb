@@ -24,7 +24,20 @@ class FieldRecordingSpeaker < ApplicationRecord
 
   scope :in_order, -> { order(:position) }
 
-  def default_name = "Speaker #{position + 1}"
+  # A supplied transcript names its speakers in its own words, which a person
+  # wrote, so a real name there is shown as it was written. Generic labels
+  # ("Speaker A", "speaker_0") read as "Speaker N", like the transcriber's.
+  GENERIC_LABEL = /\Aspeaker[\s_-]*[a-z0-9]{1,3}\z/i
+
+  def default_name
+    return label if field_recording.supplied? && !label.match?(GENERIC_LABEL)
+
+    "Speaker #{position + 1}"
+  end
+  # Talk time is measured from word timings; a supplied transcript has none,
+  # so it is unknown rather than zero.
+  def known_talk_ms = field_recording.supplied? ? nil : talk_ms
+
   def display_name = field_voice&.kept? ? field_voice.name : default_name
 
   # A human names this speaker. Every speaker decision (naming, un-naming,
