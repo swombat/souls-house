@@ -33,7 +33,9 @@ jobs:
           - { suite: components, shard: 1, total: 1 }
     services:
       postgres:
-        image: postgres:17
+        # Docker Official Image mirror: avoid Docker Hub's shared-runner
+        # anonymous pull quota. Pin the verified Linux/amd64 PG17 manifest.
+        image: public.ecr.aws/docker/library/postgres@sha256:3cec7eb015ba8adb28139fa5c83b8489cdf0e666e53dfdf20f598ae0cc8739e3
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
