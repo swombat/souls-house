@@ -23,6 +23,7 @@
     account,
     resident_import_url: residentImportUrl = null,
     github_resident_import_url: githubResidentImportUrl = null,
+    vm_birth_refusal: vmBirthRefusal = null,
   } = $props();
 
   const draftKey = `helixkit:agent-birth-draft:${account.id}`;
@@ -190,6 +191,13 @@
       {/each}
     </ol>
   </nav>
+
+  {#if vmBirthRefusal && !$form.errors.base}
+    <Alert class="mb-6" data-testid="vm-birth-refusal">
+      <AlertTitle>New residents can't be created right now</AlertTitle>
+      <AlertDescription>{vmBirthRefusal}</AlertDescription>
+    </Alert>
+  {/if}
 
   {#if $form.errors.base}
     <Alert variant="destructive" class="mb-6">

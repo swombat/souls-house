@@ -4,6 +4,14 @@ class GithubResidentImportJob < ApplicationJob
 
   def perform(id)
     request = GithubResidentImport.find(id)
+    # An import approved before new residents went on their own VM would
+    # otherwise make its home here. It fails with the reason instead.
+    if request.agent.nil? && (refusal = Agents::VmBirthPolicy.current.refusal(kind: :import))
+      request.with_lock do
+        request.update!(status: "failed", last_error: refusal) if request.status == "approved"
+      end
+      return
+    end
     request.with_lock do
       return unless request.status == "approved"
       request.require_approval!
@@ -15,6 +23,13 @@ class GithubResidentImportJob < ApplicationJob
         manifest["identity_id"] == request.portable_home_id && sha == request.commit_sha && branch == request.branch
       agent = request.agent
       unless agent
+        # Checked again here, after the checkout: the switch may have gone on
+        # while the repository was being fetched, and this is the point where
+        # a home would be made on the house.
+        if (refusal = Agents::VmBirthPolicy.current.refusal(kind: :import))
+          request.update!(status: "failed", last_error: refusal)
+          return
+        end
         owner, repo = request.repository.split("/", 2)
         agent = request.build_agent(account: request.account, name: request.name, model_id: request.model_id,
           home_profile: "portable_v1", portable_home_id: request.portable_home_id,

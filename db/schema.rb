@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_09_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_09_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1633,6 +1633,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_120000) do
     t.datetime "updated_at", null: false
     t.string "follow_through_scope", default: "off", null: false
     t.boolean "safeguard_conversations_enabled", default: false, null: false
+    t.boolean "new_residents_on_vm", default: false, null: false
+    t.integer "vm_resident_limit", default: 0, null: false
   end
 
   create_table "stone_revisions", force: :cascade do |t|

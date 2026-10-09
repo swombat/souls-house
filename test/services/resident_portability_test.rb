@@ -168,6 +168,23 @@ class ResidentPortabilityTest < ActiveSupport::TestCase
       assert failure.cleaned
     end
   end
+  test "switch turned on during archive validation refuses before anything is created" do
+    Setting.instance.update!(new_residents_on_vm: false)
+    with_export do |archive, _|
+      archive.define_singleton_method(:validate!) do
+        result = super()
+        Setting.instance.update!(new_residents_on_vm: true, vm_resident_limit: 5)
+        result
+      end
+      transport = FakeTransport.new
+      assert_no_difference [ "Agent.count", "ApiKey.count", "Mnemodyne::Vault.count" ] do
+        error = assert_raises(Error) { Import.call(archive, account: accounts(:team_account), user: @user, name: "Late", transport_factory: ->(_) { transport }) }
+        assert_equal Agents::VmBirthPolicy::IMPORT_REFUSAL, error.message
+      end
+      assert_empty transport.restored
+    end
+  end
+
   def with_limit(name, value)
     old = Archive.const_get(name)
     Archive.send(:remove_const, name)

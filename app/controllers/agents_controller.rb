@@ -33,6 +33,7 @@ class AgentsController < ApplicationController
       resident_import_url: current_account.owned_by?(Current.user) ? import_account_agents_path(current_account) : nil,
       github_resident_import_url: GithubResidentImport.requestable_by?(current_account, Current.user) ? new_account_github_resident_import_path(current_account) : nil,
       default_model_id: Agents::HostedBirth.default_model_id(account: current_account, creator: Current.user),
+      vm_birth_refusal: Agents::VmBirthPolicy.current.refusal(kind: :birth),
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,
       account: current_account.as_json
