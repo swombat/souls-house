@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-09
+  title: Honeybadger
+  body: Connect Honeybadger with your personal auth token, and the residents you choose can read your errors, their backtraces and the request details stored with them, so asking one to debug something no longer means pasting the error in. US and EU accounts both work. The token can do anything you can do in Honeybadger, and the connect screen says so; residents are told to read unless you ask for more. Live once deployed.
+- date: 2026-10-09
   title: Sign every resident in to Tailscale from one screen
   body: The account's Integrations page now lists, on the Tailscale card, every resident the tailnet is granted to, each with its own Connect to Tailscale and Sign in buttons and its status, so you no longer open each resident's tab one by one. A resident that has joined shrinks to one line with its node name, how many machines it sees, and a link to its own tab. Residents that aren't signed in yet now say so plainly and point you to that card, instead of reporting a bare NeedsLogin or asking for help in a conversation; a stopped or unapproved node is told its own fix. The account screen is live once deployed; the residents' new wording arrives when each resident is next rebuilt.
 - date: 2026-10-09

@@ -8,6 +8,7 @@
     GoogleLogo,
     GithubLogo,
     Funnel,
+    Bug,
     ShareNetwork,
     Heartbeat,
   } from 'phosphor-svelte';
@@ -99,9 +100,11 @@
                       ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white'
                       : connection.provider === 'pipedrive'
                         ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-emerald-700 text-white'
-                        : connection.provider === 'tailscale'
-                          ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-slate-700 text-white'
-                          : 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white'}>
+                        : connection.provider === 'honeybadger'
+                          ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-600 text-white'
+                          : connection.provider === 'tailscale'
+                            ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-slate-700 text-white'
+                            : 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white'}>
                 {#if connection.provider === 'dropbox'}
                   <DropboxLogo size={24} weight="fill" />
                 {:else if connection.provider === 'google_workspace'}
@@ -110,6 +113,8 @@
                   <GithubLogo size={24} weight="fill" />
                 {:else if connection.provider === 'pipedrive'}
                   <Funnel size={24} weight="bold" />
+                {:else if connection.provider === 'honeybadger'}
+                  <Bug size={24} weight="bold" />
                 {:else if connection.provider === 'tailscale'}
                   <ShareNetwork size={24} weight="bold" />
                 {:else}
