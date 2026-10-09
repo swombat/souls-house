@@ -35,7 +35,17 @@ module HouseInference
     }.freeze
 
     def self.find(model_id) = OFFERINGS[model_id]
-    def self.key = ENV['HOUSE_INFERENCE_OPENROUTER_API_KEY'].presence || Rails.application.credentials.dig(:house_inference, :openrouter_api_key)
+
+    # A dedicated house-inference key wins. Otherwise fall back to the house's
+    # own OpenRouter token (credentials.ai.openrouter.api_token). House-funded
+    # spend on either key is still capped by HOUSE_INFERENCE_MONTHLY_LIMIT_USD
+    # and metered per call in the ledger.
+    def self.key
+      ENV['HOUSE_INFERENCE_OPENROUTER_API_KEY'].presence ||
+        Rails.application.credentials.dig(:house_inference, :openrouter_api_key).presence ||
+        Rails.application.credentials.dig(:ai, :openrouter, :api_token).presence
+    end
+
     def self.configured? = key.present?
     def self.month = Time.now.utc.to_date.beginning_of_month
     def self.global_limit = BigDecimal(ENV.fetch('HOUSE_INFERENCE_MONTHLY_LIMIT_USD', '300'))

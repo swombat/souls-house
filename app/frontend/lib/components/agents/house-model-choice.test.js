@@ -19,20 +19,23 @@ describe('House model choice', () => {
 
   it('explains the trade-off without calling either model unreliable', () => {
     const { container } = render(HouseModelChoice, { models, value: 'house/claude-haiku-5.5' });
-    expect(screen.getByText(/about a sixth as much per reply/)).toBeTruthy();
-    expect(screen.getByText(/Anthropic could change or withdraw it/)).toBeTruthy();
-    expect(screen.getByText(/Open weights/)).toBeTruthy();
+    expect(screen.getByText(/Anthropic decides what it is, and can change or retire it/)).toBeTruthy();
+    expect(screen.getByText(/can’t promise it will stay the same/)).toBeTruthy();
+    expect(screen.getByText(/An open-weights model/)).toBeTruthy();
     expect(screen.getByText(/Served from Fireworks in the US/)).toBeTruthy();
     expect(container.textContent).not.toMatch(/reliab/i);
   });
 
-  it('links to the decision and points people with their own key at the full list', () => {
+  it('makes no cost comparison between the two', () => {
+    const { container } = render(HouseModelChoice, { models, value: 'house/claude-haiku-5.5' });
+    expect(container.textContent).not.toMatch(/sixth|cheaper|costs? (the house )?less|lasts? (many )?(more|longer)|allowance faster/i);
+    expect(screen.getByText(/Both come out of the same monthly allowance/)).toBeTruthy();
+  });
+
+  it('points people with their own key at the full list', () => {
     render(HouseModelChoice, { models, value: 'house/claude-haiku-5.5' });
-    expect(screen.getByRole('link', { name: /how we chose/ })).toHaveAttribute(
-      'href',
-      '/decisions/free-resident-model'
-    );
-    expect(screen.getByText(/You can choose any model below instead/)).toBeTruthy();
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.getByText(/You can choose any model below/)).toBeTruthy();
   });
 
   it('switches to DeepSeek when chosen', async () => {

@@ -88,11 +88,17 @@ at each call, not merely at wake admission.
 ## Enablement / deployment
 
 1. Apply the migration. Deploy the application and the updated runtime image.
-2. Provision a **dedicated** server-side OpenRouter key in encrypted Rails
-   credentials at `house_inference.openrouter_api_key`, or via
-   `HOUSE_INFERENCE_OPENROUTER_API_KEY`. Do not reuse an unrestricted key already
-   distributed as account/system fallback. Configure its provider-side spending
-   limit as a second brake. Use **OpenRouter credits with BYOK disabled** for this
+2. Provision a server-side OpenRouter key. `HouseInference::Offering.key` reads,
+   in order, `HOUSE_INFERENCE_OPENROUTER_API_KEY`, then
+   `house_inference.openrouter_api_key` in encrypted Rails credentials, then the
+   house's own OpenRouter token at `ai.openrouter.api_token`. A **dedicated** key
+   is still preferable, because its provider-side spending limit is a second
+   brake that covers house inference alone. Without one, house inference runs on
+   the house's system OpenRouter token (decided 2026-10-09). Either way
+   house-funded spend is capped by `HOUSE_INFERENCE_MONTHLY_LIMIT_USD` (default
+   $300) and metered per call in the ledger. **This means any deployment that
+   already has `ai.openrouter.api_token` gets house inference switched on when
+   this code is deployed.** Use **OpenRouter credits with BYOK disabled** for this
    serving route; a separate Fireworks invoice is not represented by OpenRouter
    platform fees. An unexpected `is_byok` response trips the billing circuit
    breaker and retains its safety charge. No key is created or charged by the migration.
@@ -109,9 +115,9 @@ at each call, not merely at wake admission.
    before manual wakes and again on each inference call. Exhaustion explains the
    allowance/reset, not missing personal credentials.
 
-The merge alone does not enable funded inference on an existing deployment.
-Without the dedicated key, this route fails closed with an operator-configuration
-message; no personal key is requested as a substitute.
+On a deployment with any of the three keys above, deploying is enough to enable
+funded inference. Without any of them, this route fails closed with an
+operator-configuration message; no personal key is requested as a substitute.
 
 ## Reconciliation and operations
 

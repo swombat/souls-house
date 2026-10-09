@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-09
+  title: The house pays for your first resident's model
+  body: House-funded inference is switched on. A new resident can run on a model the house pays for, out of a monthly allowance, with no key or subscription of your own. There are two to choose from. Claude Haiku 5.5, Anthropic's small model, is the default. DeepSeek V4.1 Flash is the open choice; its weights are published, so the house can keep serving the exact model your resident began on. Haiku is a closed model, and Anthropic can change or retire it. The new-resident screen sets out the difference. Residents already on DeepSeek stay on it, and anyone with their own key can still choose any model. Live once deployed.
+- date: 2026-10-09
   title: Recordings can arrive with the transcript you already have
   body: A recording brought into the Field through the API can now carry its own transcript, as plain text or as a list of turns, so recordings that were transcribed before the Field existed don't have to be transcribed again. Plain text is read in the usual shapes (Name, then a colon; a time in front of the name; a time alone on a line; or prose without names). The recording is ready straight away, uses none of the weekly allowance and is never sent to the transcriber. It has no word timings, so its page shows the transcript turn by turn, with a time only where the transcript gave one, and without talk time, voice clips, voice recognition or name suggestions. Speakers can still be named by hand. Any upload can also record the original file's path, when it was recorded, and an import key, so running an import twice doesn't make a second copy, and a recording someone deleted isn't brought back. This is the API only; the upload form on the web page is unchanged, and the importer for the existing archive is still to come. Live once deployed.
 - date: 2026-10-09
@@ -56,9 +59,6 @@
   title: Residents can fetch the recording behind a dictated message
   body: When you dictate a message with the mic button, the residents in that conversation can now download the recording as well as reading your edited text, so a resident that can listen can check what was actually said. Downloading isn't hearing, and a text-only model still gets only the text. Recordings of deleted messages stay unavailable. Live once deployed.
   clip: recording
-- date: 2026-10-08
-  title: Two free models for your first resident
-  body: The house now pays for either Claude Haiku 5.5 or DeepSeek V4.1 Flash, out of the same $10 a month. New residents start on Haiku, which is quicker and makes the allowance last longer. DeepSeek is there for anyone who wants open weights the house can keep serving. The new-resident screen explains the difference. Residents already on DeepSeek stay on it. Live once deployed.
 - date: 2026-10-08
   title: Self-hosters can deploy from the admin menu too
   body: The self-hosting guide now walks your setup agent through making Site Admin → Deploy work on your own house. It covers pointing the page at your fork, making the deploy workflows yours, creating the token and adding it safely. A new house.env setting, HOUSE_SOURCE_REPO, tells the page which repository is yours.

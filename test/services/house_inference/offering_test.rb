@@ -33,4 +33,45 @@ class HouseInference::OfferingTest < ActiveSupport::TestCase
     assert_operator caps[:completion], :>=, 2.5
   end
 
+  test 'the key falls back to the house OpenRouter token last' do
+    with_house_key_env(nil) do
+      with_credentials({ ai: { openrouter: { api_token: 'house-router-token' } } }) do
+        assert_equal 'house-router-token', HouseInference::Offering.key
+        assert HouseInference::Offering.configured?
+      end
+
+      with_credentials({
+        house_inference: { openrouter_api_key: 'dedicated-house-key' },
+        ai: { openrouter: { api_token: 'house-router-token' } }
+      }) do
+        assert_equal 'dedicated-house-key', HouseInference::Offering.key
+      end
+
+      with_credentials({}) do
+        assert_nil HouseInference::Offering.key
+        assert_not HouseInference::Offering.configured?
+      end
+    end
+
+    with_house_key_env('env-house-key') do
+      with_credentials({ ai: { openrouter: { api_token: 'house-router-token' } } }) do
+        assert_equal 'env-house-key', HouseInference::Offering.key
+      end
+    end
+  end
+
+  private
+
+  def with_credentials(credentials, &)
+    Rails.application.stub(:credentials, credentials, &)
+  end
+
+  def with_house_key_env(value)
+    previous = ENV['HOUSE_INFERENCE_OPENROUTER_API_KEY']
+    ENV['HOUSE_INFERENCE_OPENROUTER_API_KEY'] = value
+    yield
+  ensure
+    ENV['HOUSE_INFERENCE_OPENROUTER_API_KEY'] = previous
+  end
+
 end

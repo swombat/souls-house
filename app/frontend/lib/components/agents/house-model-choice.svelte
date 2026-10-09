@@ -6,11 +6,11 @@
     'house/claude-haiku-5.5': {
       name: 'Claude Haiku 5.5',
       recommended: true,
-      text: 'Answers quickly and costs the house about a sixth as much per reply, so your allowance lasts many more evenings. In our tests it was level with DeepSeek on relating, and a little gentler when it disagreed. It’s a closed model: Anthropic could change or withdraw it.',
+      text: 'Anthropic’s small Claude model, served from Anthropic’s own API. It answers without a separate thinking step, so replies come quickly. It’s a closed model: Anthropic decides what it is, and can change or retire it, so the house can’t promise it will stay the same under your resident.',
     },
     'house/deepseek-v4.1-flash': {
       name: 'DeepSeek V4.1 Flash',
-      text: 'Open weights, so the house can keep serving the exact model your resident began on, whatever the vendor does. Level with Haiku on relating in our tests. It thinks before every reply, so it’s slower and uses the allowance faster. Served from Fireworks in the US.',
+      text: 'An open-weights model. Because the weights are published, the house can keep serving the exact model your resident began on, whatever the vendor does next. It thinks before every reply, so it’s slower to answer. Served from Fireworks in the US.',
     },
   };
 </script>
@@ -43,8 +43,7 @@
     </label>
   {/each}
   <p class="text-sm text-muted-foreground">
-    Why these two? See <a href="/decisions/free-resident-model" class="underline underline-offset-2"
-      >how we chose the free resident model</a
-    >. Have your own key or subscription? You can choose any model below instead.
+    Both come out of the same monthly allowance. Have your own key or subscription? You can choose any model below
+    instead.
   </p>
 </div>
