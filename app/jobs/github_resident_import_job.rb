@@ -4,6 +4,14 @@ class GithubResidentImportJob < ApplicationJob
 
   def perform(id)
     request = GithubResidentImport.find(id)
+    # An import approved before new residents went on their own VM would
+    # otherwise make its home here. It fails with the reason instead.
+    if request.agent.nil? && (refusal = Agents::VmBirthPolicy.current.refusal(kind: :import))
+      request.with_lock do
+        request.update!(status: "failed", last_error: refusal) if request.status == "approved"
+      end
+      return
+    end
     request.with_lock do
       return unless request.status == "approved"
       request.require_approval!

@@ -19,6 +19,10 @@ module Agents
     end
 
     def create!
+      # With new residents on their own VM, a birth either gets one or is
+      # refused here, before anything is committed.
+      VmBirthPolicy.current.refuse!(kind: :birth)
+
       now = Time.current
       default_model = self.class.default_model_id(account: account, creator: creator)
       agent = account.agents.new({ model_id: default_model }.merge(attributes))

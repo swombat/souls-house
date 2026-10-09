@@ -2,6 +2,11 @@ module Agents::Portability
   class Import
 
     def self.call(archive, account:, user:, name:, transport_factory: ->(agent) { Transport.new(agent) })
+      # An import makes a new home on this house. With new residents on their
+      # own VM, that's refused rather than done locally.
+      refusal = Agents::VmBirthPolicy.current.refusal(kind: :import)
+      raise Error, refusal if refusal
+
       archive.validate!
       raise Error, "Choose a destination name" unless name.is_a?(String) && name.present? && name.length <= 100
       manifest = archive.manifest
