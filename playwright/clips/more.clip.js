@@ -4,7 +4,6 @@ import HeartbeatsClip from './HeartbeatsClip.svelte';
 import ComputerClip from './ComputerClip.svelte';
 import AttachmentsClip from './AttachmentsClip.svelte';
 import StonesClip from './StonesClip.svelte';
-import DashboardClip from './DashboardClip.svelte';
 import { renderClip } from './render.js';
 
 const clips = [
@@ -13,7 +12,6 @@ const clips = [
   ['computer', ComputerClip, 16],
   ['attachments', AttachmentsClip, 15],
   ['stones', StonesClip, 16],
-  ['dashboard', DashboardClip, 16],
 ];
 
 for (const [name, Component, duration] of clips) {
