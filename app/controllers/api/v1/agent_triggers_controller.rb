@@ -24,13 +24,13 @@ module Api
           unless agent
             return render json: { error: "Resident not found in this conversation" }, status: :not_found
           end
-          outcome = chat.request_agent_response!(agent, requested_by: requester_label)
+          outcome = chat.request_agent_response!(agent, requested_by: requester_label, **requester)
           render json: {
             triggered: outcome == :triggered ? [ agent_json(agent) ] : [],
             queued: outcome == :queued ? [ agent_json(agent) ] : []
           }
         else
-          outcome = chat.request_all_agents_response!(requested_by: requester_label)
+          outcome = chat.request_all_agents_response!(requested_by: requester_label, **requester)
           render json: {
             triggered: outcome[:triggered].map { |a| agent_json(a) },
             queued: outcome[:queued].map { |a| agent_json(a) }
@@ -42,6 +42,12 @@ module Api
 
       def agent_json(agent)
         { id: agent.to_param, name: agent.name }
+      end
+
+      # Who the queued wake's authority rests on: the knocking resident, or
+      # the person whose key this is.
+      def requester
+        current_api_agent ? { requester_agent: current_api_agent } : { user: current_api_user }
       end
 
       def requester_label

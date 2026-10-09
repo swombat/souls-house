@@ -11,6 +11,7 @@ module AgentRuntimeInteraction::LiveActivity
     has_many :linked_messages, class_name: "Message", foreign_key: :runtime_interaction_id, dependent: :nullify
     attr_accessor :enqueue_dispatch
     belongs_to :message_dispatch, optional: true
+    has_one :released_pending_wake, class_name: "PendingWake", foreign_key: :released_interaction_id, inverse_of: :released_interaction
     after_create_commit :enqueue_live_dispatch, if: :enqueue_dispatch
   end
 
@@ -54,12 +55,34 @@ module AgentRuntimeInteraction::LiveActivity
   # the run is queued. Once a claim wins, the run may reach the runtime and
   # nothing here can recall it.
   def claim_dispatch!
+    return claim_released_wake! if released_pending_wake
     return claim_dispatch_unchecked! unless message_dispatch
 
     message_dispatch.with_lock do
       next claim_dispatch_unchecked! if message_dispatch.deliverable!
 
       with_lock { finish_execution!("cancelled") if dispatch_claimed_at.nil? }
+      false
+    end
+  end
+
+  # A run released from a PendingWake starts only if the wake would still be
+  # released now (PendingWake#claim_refusal_reason), checked under the wake's
+  # lock. Lock order: wake, then this interaction.
+  def claim_released_wake!
+    wake = released_pending_wake
+    wake.with_lock do
+      reason = wake.claim_refusal_reason
+      next claim_dispatch_unchecked! unless reason
+
+      # A run already claimed (a duplicate delivery) is left alone.
+      refused = with_lock do
+        next false unless dispatch_claimed_at.nil? && !execution_state.in?(TERMINAL_STATES)
+
+        finish_execution!("cancelled")
+        true
+      end
+      wake.update!(dropped_at: Time.current, drop_reason: "claim_refused:#{reason}") if refused
       false
     end
   end
@@ -177,7 +200,7 @@ module AgentRuntimeInteraction::LiveActivity
 
   private
 
-  private :prepare_activity_configuration!, :claim_dispatch_unchecked!
+  private :prepare_activity_configuration!, :claim_dispatch_unchecked!, :claim_released_wake!
 
   def enqueue_live_dispatch
     ManualAgentResponseJob.perform_later(chat, agent, runtime_interaction_id: id)

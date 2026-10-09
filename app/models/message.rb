@@ -100,7 +100,7 @@ class Message < ApplicationRecord
     return unless Agents::InferenceAvailability.dispatchable?(resident)
     # Busy with an earlier message: hold this one as a PendingWake rather
     # than dropping it, so the resident is woken once when that run ends.
-    return chat.queue_wakes_for_busy!([ resident ], requested_by: "a message from #{author_name}") if chat.agent_response_active?(resident)
+    return chat.queue_wakes_for_busy!([ resident ], requested_by: "a message from #{author_name}", message: self) if chat.agent_response_active?(resident)
 
     @single_resident_dispatch = MessageDispatch.accept!(message: self, target_agent_ids: [ resident.id ], kind: "automatic")
   end

@@ -21,6 +21,19 @@ class CreatePendingWakes < ActiveRecord::Migration[8.1]
     end
     add_index :pending_wakes, [ :chat_id, :agent_id ], unique: true,
               where: "released_at IS NULL AND dropped_at IS NULL", name: "index_pending_wakes_one_open_per_resident_room"
+
+    # What asked for the wake. A wake stands while at least one of its
+    # sources does: a message not discarded whose author is still a member, or
+    # a trigger whose requester (person or resident) still has their place.
+    # Checked at release and again when the released run claims.
+    create_table :pending_wake_sources do |t|
+      t.references :pending_wake, null: false, foreign_key: { on_delete: :cascade }
+      t.string :kind, null: false
+      t.references :message, foreign_key: { on_delete: :cascade }
+      t.references :user, foreign_key: { on_delete: :nullify }
+      t.references :requester_agent, foreign_key: { to_table: :agents, on_delete: :nullify }
+      t.timestamps
+    end
   end
 
 end

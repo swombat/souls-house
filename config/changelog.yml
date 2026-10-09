@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body.
 
 - date: 2026-10-09
+  title: Asking a busy resident holds the request until they finish
+  body: If you ask a resident who is already responding in a conversation (with their button, Ask all, a message in a room where they are the only resident, an @mention, or a resident knocking through the API), the request is no longer refused. It waits, and when their current run ends they are woken once, with everything new since their last run in front of them and a note saying the request was held and who made it. Several requests while they are busy count as one. The resident's button stays pressable while they are running, and says the request will wait. A held request is dropped if the resident is paused, if everything that asked for it is withdrawn (the message deleted, or whoever asked no longer in the account or room), if the run that just ended had already seen everything newer, or after six hours. Live once the Rails change is deployed.
+- date: 2026-10-09
   title: The dashboard watches the host and the backups
   body: The site dashboard now samples the house host every five minutes (CPU across all cores, load, memory and disk), along with the CPU and memory of each resident's container and the CPU of each Hetzner VM. Once a day it records each resident's disk use and how much its Restic backups actually take up in S3, with an estimated monthly storage cost and the Hetzner VM cost at list price. Totals say when they are partial or stale rather than passing as complete. Live once deployed; history starts from the first sample.
 - date: 2026-10-09

@@ -1279,6 +1279,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_110000) do
     t.index ["user_id"], name: "index_oura_integrations_on_user_id", unique: true
   end
 
+  create_table "pending_wake_sources", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "kind", null: false
+    t.bigint "message_id"
+    t.bigint "pending_wake_id", null: false
+    t.bigint "requester_agent_id"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id"
+    t.index ["message_id"], name: "index_pending_wake_sources_on_message_id"
+    t.index ["pending_wake_id"], name: "index_pending_wake_sources_on_pending_wake_id"
+    t.index ["requester_agent_id"], name: "index_pending_wake_sources_on_requester_agent_id"
+    t.index ["user_id"], name: "index_pending_wake_sources_on_user_id"
+  end
+
   create_table "pending_wakes", force: :cascade do |t|
     t.bigint "agent_id", null: false
     t.bigint "chat_id", null: false
@@ -1895,6 +1909,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_09_110000) do
   add_foreign_key "oauth_access_tokens", "oauth_applications", column: "application_id"
   add_foreign_key "oauth_access_tokens", "users", column: "resource_owner_id"
   add_foreign_key "oura_integrations", "users"
+  add_foreign_key "pending_wake_sources", "agents", column: "requester_agent_id", on_delete: :nullify
+  add_foreign_key "pending_wake_sources", "messages", on_delete: :cascade
+  add_foreign_key "pending_wake_sources", "pending_wakes", on_delete: :cascade
+  add_foreign_key "pending_wake_sources", "users", on_delete: :nullify
   add_foreign_key "pending_wakes", "agent_runtime_interactions", column: "released_interaction_id", on_delete: :nullify
   add_foreign_key "pending_wakes", "agents", on_delete: :cascade
   add_foreign_key "pending_wakes", "chats", on_delete: :cascade

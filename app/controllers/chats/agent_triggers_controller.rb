@@ -12,10 +12,10 @@ class Chats::AgentTriggersController < ApplicationController
     if params[:agent_id].present?
       agent = @chat.agents.find(params[:agent_id])
       return if inference_unavailable?([ agent ])
-      queued << agent if @chat.request_agent_response!(agent, requested_by: requested_by) == :queued
+      queued << agent if @chat.request_agent_response!(agent, requested_by: requested_by, user: Current.user) == :queued
     else
       return if inference_unavailable?(@chat.agents)
-      queued = @chat.request_all_agents_response!(requested_by: requested_by)[:queued]
+      queued = @chat.request_all_agents_response!(requested_by: requested_by, user: Current.user)[:queued]
     end
 
     notice = queued.any? ? "#{queued.map(&:name).to_sentence} #{queued.one? ? "is" : "are"} still responding, and will be woken again when that finishes." : nil

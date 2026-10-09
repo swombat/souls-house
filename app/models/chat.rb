@@ -337,19 +337,19 @@ class Chat < ApplicationRecord
   # refused: the request becomes a PendingWake, released as one run when the
   # busy run finishes. Everything else trigger_agent_response! refuses is
   # still refused. Returns :triggered or :queued.
-  def request_agent_response!(agent, requested_by:)
+  def request_agent_response!(agent, requested_by:, user: nil, requester_agent: nil)
     with_lock do
       trigger_agent_response!(agent)
       :triggered
     rescue AlreadyResponding
-      PendingWake.queue!(chat: self, agent: agent, requested_by: requested_by)
+      PendingWake.queue!(chat: self, agent: agent, requested_by: requested_by, user: user, requester_agent: requester_agent)
       :queued
     end
   end
 
   # Ask all, with the same rule per resident: the free ones are woken now, the
   # busy ones are queued. Returns { triggered: [agents], queued: [agents] }.
-  def request_all_agents_response!(requested_by:)
+  def request_all_agents_response!(requested_by:, user: nil, requester_agent: nil)
     raise ArgumentError, "This chat does not support manual responses" unless manual_responses?
     raise ArgumentError, "No residents in this conversation" if agents.empty?
     raise ArgumentError, "This conversation is archived or deleted" unless respondable?
@@ -360,7 +360,9 @@ class Chat < ApplicationRecord
         raise Agent::RuntimeAvailability::Unavailable.new("No available residents in this conversation", code: "no_available_agents")
       end
       busy, free = ordered_agents.partition { |agent| agent.eligible_for_conversation? && agent_response_active?(agent) }
-      busy.each { |agent| PendingWake.queue!(chat: self, agent: agent, requested_by: requested_by) }
+      busy.each do |agent|
+        PendingWake.queue!(chat: self, agent: agent, requested_by: requested_by, user: user, requester_agent: requester_agent)
+      end
       AllAgentsResponseJob.perform_later(self, free.map(&:id)) if free.any?
       { triggered: free, queued: busy }
     end
@@ -380,12 +382,12 @@ class Chat < ApplicationRecord
   # was read, but a run can finish before this lock is taken, so each also
   # gets a release job: a no-op while the resident is still busy, a prompt
   # wake if the run already ended. Returns the residents queued.
-  def queue_wakes_for_busy!(busy_agents, requested_by:)
+  def queue_wakes_for_busy!(busy_agents, requested_by:, message:)
     return [] if busy_agents.empty?
 
     with_lock do
       busy_agents.each do |agent|
-        PendingWake.queue!(chat: self, agent: agent, requested_by: requested_by)
+        PendingWake.queue!(chat: self, agent: agent, requested_by: requested_by, message: message)
         PendingWakeJob.set(wait: PendingWakeJob::DELAY).perform_later(id, agent.id)
       end
     end

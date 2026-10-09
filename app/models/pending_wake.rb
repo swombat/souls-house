@@ -11,8 +11,11 @@
 # room coalesce into the one open row. When the busy run finishes,
 # PendingWakeJob releases it as one ordinary run, which sees everything posted
 # since its previous run through the usual transcript delta, or drops it with
-# a reason. A wake never carries more authority than the trigger that queued
-# it: a paused resident is not woken, and expired requests lapse.
+# a reason. A wake never carries more authority than what queued it: it
+# stands only while one of its sources does (PendingWakeSource), a paused
+# resident is not woken, and expired requests lapse. The same checks run
+# again when the released run claims, so a pause, a discard or a removal
+# while it waits in the queue still stops it.
 class PendingWake < ApplicationRecord
 
   EXPIRY = 6.hours
@@ -20,21 +23,30 @@ class PendingWake < ApplicationRecord
   belongs_to :chat
   belongs_to :agent
   belongs_to :released_interaction, class_name: "AgentRuntimeInteraction", optional: true
+  has_many :sources, class_name: "PendingWakeSource", dependent: :delete_all
 
   scope :open, -> { where(released_at: nil, dropped_at: nil) }
 
-  # Record (or coalesce into) the open wake. The caller holds the chat lock,
-  # and so does release!, which is what keeps a run that finishes between the
-  # busy check and this write from orphaning the wake.
-  def self.queue!(chat:, agent:, requested_by:)
+  # Record (or coalesce into) the open wake, with what asked for it. The
+  # caller holds the chat lock, and so does release!, which is what keeps a
+  # run that finishes between the busy check and this write from orphaning
+  # the wake. A source is one of: message: (a human message that named or
+  # addressed the resident), requester_agent: (a sibling's knock) or user:
+  # (a person's button or API call).
+  def self.queue!(chat:, agent:, requested_by:, message: nil, user: nil, requester_agent: nil)
     now = Time.current
     wake = open.find_by(chat: chat, agent: agent)
     if wake
       wake.update!(requests_count: wake.requests_count + 1, last_requested_at: now, requested_by: requested_by)
-      wake
     else
-      create!(chat: chat, agent: agent, requested_by: requested_by, first_requested_at: now, last_requested_at: now)
+      wake = create!(chat: chat, agent: agent, requested_by: requested_by, first_requested_at: now, last_requested_at: now)
     end
+    if message
+      wake.sources.create!(kind: "message", message: message, user: message.user)
+    else
+      wake.sources.create!(kind: "trigger", user: requester_agent ? nil : user, requester_agent: requester_agent)
+    end
+    wake
   end
 
   # Release the open wake for this resident in this room, if it is due.
@@ -46,6 +58,11 @@ class PendingWake < ApplicationRecord
       wake = open.find_by(chat: chat, agent: agent)
       next nil unless wake
       next nil if chat.agent_response_active?(agent)
+
+      # Pause is read fresh under the resident's row lock, so a pause that
+      # lands during release wins (as a follow-through nudge does).
+      agent.lock!
+      wake.agent = agent
 
       reason = wake.lapse_reason
       next wake.drop!(reason) if reason
@@ -72,6 +89,7 @@ class PendingWake < ApplicationRecord
     return "not_respondable" unless chat.respondable? && chat.manual_responses? && !chat.account.disabled?
     return "not_in_room" unless chat.agents.exists?(agent.id)
     return "paused" if agent.paused?
+    return "sources_withdrawn" unless standing_source?
     return "nothing_new" unless unseen_messages?
 
     nil
@@ -90,6 +108,22 @@ class PendingWake < ApplicationRecord
     scope = chat.messages.kept.where("agent_id IS NULL OR agent_id <> ?", agent.id)
     scope = scope.where("id > ?", cursor) if cursor
     scope.exists?
+  end
+
+  def standing_source?
+    sources.includes(:message, :user, :requester_agent).any? { |source| source.standing?(chat) }
+  end
+
+  # Checked when the released run claims, under this row's lock: the run
+  # starts only if the wake would still be released now. Pause, the room and
+  # the sources can all change while the run waits in the queue.
+  def claim_refusal_reason
+    return "paused" if agent.reload.paused?
+    return "not_respondable" unless chat.reload.respondable? && chat.manual_responses?
+    return "not_in_room" unless chat.agents.exists?(agent.id)
+    return "sources_withdrawn" unless standing_source?
+
+    nil
   end
 
   def drop!(reason)
