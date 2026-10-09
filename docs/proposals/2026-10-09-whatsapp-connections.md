@@ -134,8 +134,9 @@ as live messages, with nothing special-cased.
    **re-validates at release**: it calls Rails' internal
    `POST /internal/comms/tickets/:id/consume` over the private network. Rails,
    under the connection row lock, checks that the ticket is unconsumed, that
-   `access_epoch` and `key_generation` still match, and that grant, membership,
-   agent, API key and connection status are all still live. It marks the ticket
+   `access_epoch` and `key_generation` still match, that grant, membership,
+   agent, API key and connection status are all still live, **and re-evaluates
+   the run's readable audience** (§4) from server state, not from the ticket. It marks the ticket
    consumed and answers yes or no. Any mismatch, timeout or error is a no.
 5. On yes, the connector decrypts, **appends the access-log entry and syncs it
    to disk before releasing any row**, and returns the data. If the log write
@@ -143,6 +144,19 @@ as live messages, with nothing special-cased.
    `Cache-Control: no-store`; the proxy never logs or reports bodies (see §4:
    `filter_parameters` covers request parameters, not response bodies, so the
    proxy itself must avoid them).
+
+**Run binding.** The run is resolved on the server and bound to the
+authenticated principal. The caller's run ID must name an unfinished
+`AgentRuntimeInteraction` of that same agent, in a comms session (§6a). A
+missing, unknown, finished or foreign run ID gets a refusal. "No room" is a
+property of the resolved run, never of an omitted parameter.
+
+Audience changes are ordered the same way as revokes. Anything that can widen a
+run's readable audience (a new confirmed member, a newly active resident on the
+account, a room gaining a participant) increments `access_epoch` under the row
+lock of every connection whose grantees it could affect. A widening that commits
+before consumption gets the ticket refused. One that commits after release
+cannot recall that response.
 
 Ordering. A revoke (or pause, membership loss, key revocation…) that commits
 before step 4 makes the consume answer no, so a ticket issued before the revoke
@@ -189,7 +203,7 @@ milestone 1.
 | Media / attachments | Not downloaded in milestone 1. A message carries `[image]` / `[voice note]` and the caption. Media later go to DEK-encrypted blobs in the connector volume. |
 | Tool results stored in `Message.tool_results` (house-tool residents) | The comms read API is offered only to Chaos residents, whose tool calls stay inside their own session, not in `Message` rows. |
 | Live activity: operations, commentary, plan and event data stored per attempt and served by `live_activity_json` (`app/models/agent_runtime_interaction/live_activity.rb`). `narration_shared` is not a complete export gate there. | **Technical gate, before persistence.** (a) Reads are refused unless the run's *actual readable audience* is within owner + grantees. A room's audience is not its named participants: `Chat.app_accessible_to` lets every confirmed account member read it (`app/models/chat.rb`). So in milestone 1 reads are allowed only from runs with no room (a private comms wake), or from a room on an account whose every confirmed member and active agent is the owner or a grantee. (b) Minting a ticket marks the run `comms_sensitive`. Rails then refuses to persist operations, commentary, plan or event data for that run from that point (only state transitions are stored), and the runtime reporter is told to stop sending detail. What the Chaos reporter actually exports (command lines? output excerpts?) is traced before slice 2, and the gate is built against that trace. (c) Canaries run through activity records, room APIs, error paths and the database backup, not only connector stdout. Deliberate later posting by a grantee stays under the owner's authority and the private-memory rule; the read-time gate does not claim to solve it. |
-| Model-session transcripts, journals, memory formations, mnemodyne embeddings, agent-volume backups | For a human-owned connection read by that human's grantees, this is the grantee's own memory, already under private-memory discipline. The operator can read resident volumes and their S3 backups. **That is why the resident-owned case is blocked** (§5). |
+| Model-session transcripts, journals, memory formations, mnemodyne embeddings, agent-volume backups | For a human-owned connection read by that human's grantees, this is the grantee's own memory, already under private-memory discipline. The operator can read resident volumes and routinely restore their Restic backups (the repository passwords are in the database dump). **That is why the resident-owned case is blocked** (§5). |
 | Model provider | Text a resident reads goes to its model provider. That's inherent in "a resident reads it"; the owner's grant is consent to it. |
 | Dell bridge SQLite / `pa/comms/` | Daniel's own existing copy, outside the house. Switched off after pairing, not imported. |
 | Deletion | **What is promised:** erasing a connection tombstones it in Rails, stops its worker, and destroys its wrapped DEK and database in the *current* connector volume (precedent: `FieldVoiceprint` is destroyed, not discarded). **What is not promised:** historical backups keep the old database and the KEK-wrapped DEK until backup retention removes them, and the escrowed KEK still opens them. KEK rotation does not change that. Copies already read by grantees (transcripts, memory, journals) are not erased either. Cryptographic erasure would mean losing every historical unwrap key and copy, which would also affect every other connection under the same KEK; it is not offered. The UI says this in plain words, as `device-streams.md` does about WAL. |
@@ -199,8 +213,10 @@ milestone 1.
 Daniel's line is that a resident's correspondence with a third party must not be
 easy for Daniel or any house user to read. The connector can hold that line at
 rest. But a resident that *reads* its mail holds the plaintext in its Chaos
-transcript, journal and memory, on volumes the operator can open and that get
-backed up to S3 in the clear. Encrypting the connector without encrypting the
+transcript, journal and memory, on volumes the operator can open. The volume
+backups are Restic-encrypted, but the repository passwords travel in the Rails
+database dump (`docs/database-backup.md`), so an operator can restore them as a
+matter of routine. Encrypting the connector without encrypting the
 reader would be a lock on a door in a house with no walls.
 
 Volume encryption alone is not a sufficient release criterion either. Before the
@@ -221,10 +237,73 @@ bootstrap (§1) and their own audience rules.
    procedure** (slice 3).
 4. Deletion: current-store erasure only, stated plainly (§4).
 
+## 6a. Slice 0 findings, part A: what the runtime exports, and private wakes
+
+Traced on `origin/master` 390e300.
+
+**What the reporter sends** (`agent-runtime/runtime_activity.py`) and **what
+Rails keeps** (`app/services/runtime_activity_ingestion.rb`, stored as
+`agent_runtime_events` and attempt snapshots, broadcast to the room when the run
+has one):
+
+| Event | Content-bearing? | Gated by narration sharing today? |
+|---|---|---|
+| `tool.started/finished` with `command_preview` | **Yes.** Arguments survive redaction (`RuntimeCommandPreview`): a `grep` term, a file path or a chat name in a path is stored and shown. Raw output is never accepted. | **No.** Always sent, always stored. |
+| `commentary.completed` | **Yes**, the model's own words between tool calls. | Yes, at both ends (`share_narration`, `shared_narration?`). |
+| `plan.updated` | **Yes**, the text of each plan step. | Yes. |
+| `agent.status_changed` / heartbeat sub-agents | No: nickname, model, status only. | Yes. |
+| `supervisor.finished` | No: outcome, return code, allow-listed telemetry. | n/a |
+
+The server can already turn narration off mid-run: an ack carrying
+`share_narration: false` makes the reporter drop queued commentary and plan
+events. That is the secondary protection. The primary one belongs in
+ingestion: for a comms run, `project` drops `command_preview` (keeping only the
+category label), `commentary.completed` and `plan.updated` **before** `create!`.
+It does so on every attempt and retry, including delayed batches, whatever the
+reporter sent. That is a few lines in one method, keyed on a server-side run
+property rather than on the reporter's config.
+
+**Does a no-room private wake exist?** Partly. `ExternalAgentWakeRequest`
+(`app/lib/external_agent_wake_request.rb`) runs a resident with `chat: nil`
+under session ID `"<agent uuid>-wake"`, which persists when
+`persistent_wake_session?` is set. It authenticates the way every trigger does:
+Rails calls the runtime with the agent's trigger bearer token, and the run has a
+server-side `AgentRuntimeInteraction`. But it is **not a private comms
+context**. It is the one session shared by all scheduled wakes, and those wakes
+post into rooms, so a comms read inside it would carry plaintext into the next
+ordinary wake. Room runs use `"<uuid>-<chat id>"` and would not inherit it; the
+wake session would.
+
+**So session custody needs a new, small trigger kind**, `comms`, modelled on
+`ExternalAgentWakeRequest`:
+
+- session ID `"<agent uuid>-comms-<connection ref>"`, with `chat: nil`;
+- every run marked comms-sensitive from creation, so narration is off in the
+  reporter's initial config instead of being switched off later;
+- only `comms` triggers may resume a `-comms-` session, and only `comms` runs
+  may consume tickets.
+
+Two things are undecided, and I am deliberately not settling them inside the
+implementation:
+
+- **What starts a comms run.** Nothing does yet. Options: the owner presses
+  "ask my residents to read" on the connection page; a per-connection schedule;
+  or a resident asks for a comms run for itself. Milestone 1 needs at least one.
+- **How a comms run hands a result back.** If it posts a summary into a room,
+  that is the "deliberate later posting" case, and the summary falls under
+  policy, not the gate. A room on an account whose only confirmed member is
+  Daniel would satisfy the audience rule; his home account may not.
+
+In size this is a new trigger kind plus an ingestion filter, roughly as big as
+the existing wake request, not a new framework. It is still new runtime surface,
+so per Mira's size check it goes to Daniel as a named expansion before it is
+built.
+
 ## 7. Build order after review
 
-0. Trace what the Chaos activity reporter exports, and confirm whatsmeow's
-   `sqlstore` on a SQLCipher driver. Both are findings for review, not code.
+0. Trace what the Chaos activity reporter exports (done, §6a) and confirm
+   whatsmeow's `sqlstore` on a SQLCipher driver (§6b). Both are findings for
+   review, not code. The `comms` trigger kind goes to Daniel before slice 2.
 1. Connector skeleton with a **synthetic provider**: a fake event source in place
    of whatsmeow, the DEK/KEK envelope, the lease, the access log, and a canary
    test on the logs.
