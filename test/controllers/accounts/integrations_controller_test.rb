@@ -50,6 +50,34 @@ class Accounts::IntegrationsControllerTest < ActionDispatch::IntegrationTest
     )
   end
 
+  test "a Tailscale connection lists each granted resident's sign-in panel" do
+    tailnet = @account.service_connections.create!(
+      connected_by_user: @user,
+      provider: "tailscale",
+      external_subject_id: "tailnet-sign-in",
+      external_identity: "Tailnet",
+      label: "Tailnet",
+      management_scope: "personal",
+      credential_kind: "none",
+      credential_fingerprint: "tailnet-sign-in-fingerprint",
+      credential_payload_hash: {},
+      credential_metadata: {}
+    )
+    @enabled_agent.agent_service_accesses.create!(service_connection: tailnet, enabled: true, provisioning_status: "provisioned")
+
+    get account_integrations_path(@account)
+
+    residents = inertia_shared_props.fetch("connections").find { |item| item.fetch("id") == tailnet.public_id }.fetch("residents")
+    enabled = residents.find { |resident| resident.fetch("id") == @enabled_agent.to_param }
+    disabled = residents.find { |resident| resident.fetch("id") == @disabled_agent.to_param }
+    assert_equal account_agent_tailnet_path(@account, @enabled_agent), enabled.fetch("tailnet_url")
+    assert_equal edit_account_agent_path(@account, @enabled_agent, tab: "integrations"), enabled.fetch("integrations_url")
+    assert_nil disabled.fetch("tailnet_url"), "no node to sign in until the resident is granted Tailscale"
+
+    github = inertia_shared_props.fetch("connections").find { |item| item.fetch("id") == @connection.public_id }
+    assert github.fetch("residents").all? { |resident| resident["tailnet_url"].nil? }
+  end
+
   test "exposes one focused provider setup when requested" do
     get account_integrations_path(@account), params: { connect: "google_workspace" }
 

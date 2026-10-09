@@ -62,6 +62,18 @@ DAEMON_WAIT_SECONDS = float(os.environ.get("SOULSHOUSE_TAILNET_DAEMON_WAIT", "15
 LOGIN_WAIT_SECONDS = float(os.environ.get("SOULSHOUSE_TAILNET_LOGIN_WAIT", "10"))
 ADMIN_MACHINES_URL = "https://login.tailscale.com/admin/machines"
 
+# What a resident says when its node isn't on the tailnet yet. Not joined is the
+# normal state of a fresh grant, not a fault: a person signs in once, on a
+# screen, and the resident only has to say where.
+SIGN_IN_HELP = (
+    "Not on the tailnet yet. That is normal until a person signs this resident in once; "
+    "nothing here is broken and retrying won't change it. Tell them, once: "
+    "on souls.house open the account's Integrations page, Tailscale card, and press "
+    "\"Connect to Tailscale\" beside this resident's name (the same button is on this "
+    "resident's own Integrations tab). Don't paste the sign-in link into a conversation. "
+    "When they've signed in, run `soulshouse-tailnet up`."
+)
+
 BEGIN_MARK = "# BEGIN soulshouse-tailnet (managed; edits here are overwritten)"
 END_MARK = "# END soulshouse-tailnet"
 
@@ -264,11 +276,10 @@ def up(as_json: bool = False) -> int:
         print(f"on the tailnet as {report['node'] or node_hostname()}")
         for host in report["hosts"]:
             print(f"  ssh {host['alias']}  →  {host['target']}")
-    elif report["auth_url"]:
-        print(f"waiting for sign-in: {report['auth_url']}")
-        print("  (the resident's integrations page shows this link; open it and sign in to Tailscale)")
     else:
         print(f"not joined yet (state: {report['backend_state']})")
+        if report["help"]:
+            print(report["help"])
     return 0
 
 
@@ -472,8 +483,8 @@ def status(as_json: bool) -> int:
         print("tailscaled is not running." + ("  Run: soulshouse-tailnet up" if report["granted"] else ""))
         return 0 if report["granted"] else 3
     print(f"state: {report['backend_state']}")
-    if report["auth_url"]:
-        print(f"waiting for sign-in: {report['auth_url']}")
+    if report["help"]:
+        print(report["help"])
     if report["node"]:
         print(f"node:  {report['node']}  {' '.join(report['addresses'])}")
     for host in report["hosts"]:
@@ -493,6 +504,7 @@ def build_report(entry: dict | None, state: dict | None, ping: bool) -> dict:
         "hosts": [],
         "pubkey": None,
         "admin_url": ADMIN_MACHINES_URL,
+        "help": None,
     }
     if report["backend_state"] == "NeedsLogin":
         report["auth_url"] = (state or {}).get("AuthURL") or None
@@ -501,6 +513,8 @@ def build_report(entry: dict | None, state: dict | None, ping: bool) -> dict:
         report["node"] = (me.get("DNSName") or me.get("HostName") or "").rstrip(".") or None
         report["addresses"] = me.get("TailscaleIPs") or []
     running = report["backend_state"] == "Running"
+    if entry is not None and state is not None and not running and not auth_key_of(entry):
+        report["help"] = SIGN_IN_HELP
     for host in all_hosts(entry or {}, state or {}) if running else hosts_of(entry or {}):
         online = host.get("online")
         if online is None and ping and running:

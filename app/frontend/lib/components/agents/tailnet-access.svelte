@@ -1,12 +1,14 @@
 <!--
   A resident's Tailscale node on its integrations tab: the sign-in link while
   it waits to join, then the machines it can reach and the key to authorise.
+  `compact` is the account integrations screen's version: the same sign-in,
+  but once joined only a one-line summary and a link to the resident's tab.
 -->
 <script>
   import { onMount } from 'svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
 
-  let { url, agentName } = $props();
+  let { url, agentName, compact = false, pageUrl = null } = $props();
 
   let report = $state(null);
   let busy = $state(false);
@@ -119,6 +121,15 @@
         {agentName}'s node isn't reachable right now: {report.error}
       {/if}
     </p>
+  {:else if running && compact}
+    <p data-testid="tailnet-joined">
+      <span class="font-medium">On your tailnet</span> as <code>{report.node}</code>{#if report.hosts.length > 0}, can
+        reach {report.hosts.length}
+        {report.hosts.length === 1 ? 'machine' : 'machines'}{/if}.
+      {#if pageUrl}
+        <a href={pageUrl} class="text-primary underline underline-offset-4">SSH key and machines</a>
+      {/if}
+    </p>
   {:else if running}
     <p>
       <span class="font-medium">On your tailnet</span> as <code>{report.node}</code>.
@@ -169,7 +180,7 @@
       >{busy ? 'Getting a sign-in link…' : 'Connect to Tailscale'}</Button>
   {/if}
 
-  {#if report?.available && report.pubkey}
+  {#if report?.available && report.pubkey && !compact}
     <details class="text-xs" open={running}>
       <summary class="cursor-pointer text-muted-foreground">{agentName}'s SSH key</summary>
       <p class="mt-2 text-muted-foreground">

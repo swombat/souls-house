@@ -306,10 +306,17 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
     assert_match(/\Assh-ed25519 /, report["pubkey"], "the key exists before sign-in, so it can be authorised meanwhile")
     assert_equal [], report["hosts"]
 
+    assert_match(/Integrations page, Tailscale card/, report["help"])
+
     out, err, status = tailnet("up")
     assert status.success?, err
-    assert_includes out, "waiting for sign-in: https://login.tailscale.com/a/fake1"
+    assert_includes out, "Connect to Tailscale", "the resident is told where a person signs it in"
+    assert_not_includes out, "https://login.tailscale.com/a/", "the link belongs on the screen, not in a reply"
     assert_equal 1, world["login_starts"], "a pending login is reused, not restarted"
+
+    out, err, status = tailnet("status")
+    assert status.success?, err
+    assert_includes out, "nothing here is broken"
     assert_equal 0, world.fetch("logged_out", 0), "a node waiting for sign-in is this integration's, not stale state"
   end
 
@@ -326,6 +333,7 @@ class SoulshouseTailnetTest < ActiveSupport::TestCase
     assert status.success?, err
     report = JSON.parse(out)
     assert_nil report["auth_url"]
+    assert_nil report["help"], "a joined node needs no sign-in help"
     assert_equal %w[danbook dell], report["hosts"].map { |h| h["alias"] }
     assert_equal [ false, true ], report["hosts"].map { |h| h["online"] }
 

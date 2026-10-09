@@ -126,4 +126,16 @@ describe('a resident’s Tailscale node', () => {
       expect(screen.getByText(/picks up Tailscale access when its container next restarts/)).toBeInTheDocument()
     );
   });
+
+  it('on the account screen, a joined node is one line with a link to its tab', async () => {
+    respond(joined, joined);
+    render(TailnetAccess, { url, agentName: 'Lume', compact: true, pageUrl: '/accounts/a/residents/lume/edit?tab=integrations' });
+    const line = await screen.findByTestId('tailnet-joined');
+    expect(line).toHaveTextContent('can reach 2 machines');
+    expect(screen.getByRole('link', { name: 'SSH key and machines' })).toHaveAttribute(
+      'href',
+      '/accounts/a/residents/lume/edit?tab=integrations'
+    );
+    expect(screen.queryByText('ssh-ed25519 AAAA soulshouse-lume')).not.toBeInTheDocument();
+  });
 });

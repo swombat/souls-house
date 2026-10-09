@@ -20,6 +20,7 @@ class Accounts::IntegrationsController < ApplicationController
       focused_service: service_definitions.find { |definition| definition.key == params[:connect] }&.as_json,
       can_manage_account: can_manage_account,
       connections: connections.map do |connection|
+        tailnet_visible = tailnet_visible?(connection)
         connection.as_connection_json(current_user: Current.user).merge(
           can_delegate: connection.owner?(Current.user),
           residents: agents.map do |agent|
@@ -30,12 +31,24 @@ class Accounts::IntegrationsController < ApplicationController
               active: agent.active?,
               enabled: access&.enabled? || false,
               provisioning_status: access&.provisioning_status,
-              access_update_url: account_agent_service_access_path(current_account, agent, connection.public_id)
+              access_update_url: account_agent_service_access_path(current_account, agent, connection.public_id),
+              # Each granted resident is its own node and joins by its own
+              # sign-in; the account screen shows every one of them in one place.
+              tailnet_url: (account_agent_tailnet_path(current_account, agent) if tailnet_visible && access&.enabled?),
+              integrations_url: (edit_account_agent_path(current_account, agent, tab: "integrations") if tailnet_visible)
             }
           end
         )
       end
     }
+  end
+
+  private
+
+  # Same rule as Agents::TailnetsController, which the panel calls.
+  def tailnet_visible?(connection)
+    connection.provider == "tailscale" && connection.status == "connected" &&
+      (connection.provisionable_by?(Current.user) || connection.manageable_by?(Current.user))
   end
 
 end
