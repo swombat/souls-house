@@ -211,6 +211,7 @@ Rails.application.routes.draw do
   end
 
   namespace :admin do
+    resource :dashboard, only: :show
     resource :deploy_info, only: :show
     resources :deploys, only: [ :index, :create ] do
       get :status, on: :collection
@@ -228,6 +229,7 @@ Rails.application.routes.draw do
         patch :enable
         patch :convert
         patch :shared_ai_credentials
+        patch :founding
         post :refresh_storage
       end
       resources :memberships, only: [ :create, :destroy ], controller: "account_memberships"

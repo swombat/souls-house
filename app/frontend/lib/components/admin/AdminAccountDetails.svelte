@@ -42,6 +42,10 @@
     router.patch(`/admin/accounts/${account.id}/convert`, { account_type: 'personal' });
   }
 
+  function setFounding(enabled) {
+    router.patch(`/admin/accounts/${account.id}/founding`, { account: { founding: enabled } });
+  }
+
   function setSharedAiCredentials(enabled) {
     router.patch(`/admin/accounts/${account.id}/shared_ai_credentials`, {
       account: { use_system_ai_credentials: enabled },
@@ -169,6 +173,19 @@
           aria-label="Use shared keys as fallback"
           checked={account.use_system_ai_credentials}
           onCheckedChange={setSharedAiCredentials} />
+      </div>
+      <div class="mt-3 flex items-center justify-between gap-6 rounded-md border p-4">
+        <div class="space-y-1">
+          <Label for={`founding-${account.id}`}>Founding or family account</Label>
+          <p class="text-sm text-muted-foreground">
+            Kept out of growth numbers on the site dashboard and costed as its own band.
+          </p>
+        </div>
+        <Switch
+          id={`founding-${account.id}`}
+          aria-label="Founding or family account"
+          checked={account.founding}
+          onCheckedChange={setFounding} />
       </div>
     </CardContent>
   </Card>
