@@ -98,10 +98,14 @@ at each call, not merely at wake admission.
    house-funded spend is capped by `HOUSE_INFERENCE_MONTHLY_LIMIT_USD` (default
    $300) and metered per call in the ledger. **This means any deployment that
    already has `ai.openrouter.api_token` gets house inference switched on when
-   this code is deployed.** Use **OpenRouter credits with BYOK disabled** for this
-   serving route; a separate Fireworks invoice is not represented by OpenRouter
-   platform fees. An unexpected `is_byok` response trips the billing circuit
-   breaker and retains its safety charge. No key is created or charged by the migration.
+   this code is deployed.** BYOK is supported (Daniel, 2026-10-10: BYOK is cheaper
+   than OpenRouter's margin). For a BYOK call OpenRouter's `cost` is only its
+   own fee and the provider bills its key directly; the ledger charges the
+   sum of `cost` and `cost_details.upstream_inference_cost`, which OpenRouter
+   reports per call in both streamed and non-streamed usage. The provider
+   figure is OpenRouter's report, not an invoice the house can check per call.
+   A BYOK response without a usable numeric upstream cost still trips the
+   billing circuit breaker and retains its safety charge. No key is created or charged by the migration.
 3. Recreate existing resident containers on the updated runtime before selecting
    house funding there. On boot `runtime_settings.py` adds the reserved `house`
    provider using the resident's normal scoped bearer and the internal app URL.

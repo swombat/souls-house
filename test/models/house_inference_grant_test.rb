@@ -52,12 +52,38 @@ class HouseInferenceGrantTest < ActiveSupport::TestCase
     end
   end
 
-  test 'separately billed BYOK usage fails closed instead of appearing free' do
+  test 'separately billed BYOK usage without a usable upstream cost fails closed instead of appearing free' do
+    [ { 'cost' => 0, 'is_byok' => true },
+      { 'cost' => 0, 'is_byok' => true, 'cost_details' => {} },
+      { 'cost' => 0, 'is_byok' => true, 'cost_details' => { 'upstream_inference_cost' => nil } },
+      { 'cost' => 0, 'is_byok' => true, 'cost_details' => { 'upstream_inference_cost' => '0.001' } },
+      { 'cost' => 0, 'is_byok' => true, 'cost_details' => { 'upstream_inference_cost' => -0.001 } },
+      { 'cost' => 0, 'is_byok' => true, 'cost_details' => 'free' },
+      { 'is_byok' => true, 'cost_details' => { 'upstream_inference_cost' => 0.001 } } ].each do |usage|
+      call = @grant.house_inference_calls.create!(month: HouseInference::Offering.month, model_id: @agent.model_id,
+        provider_route: @offering[:provider], charge_usd: 0.75)
+      call.settle!(usage)
+      assert_equal [ 'overrun', BigDecimal('0.75') ], [ call.status, call.charge_usd ], usage.inspect
+    end
+  end
+
+  test 'BYOK usage is metered as the OpenRouter fee plus the provider upstream cost' do
     call = @grant.house_inference_calls.create!(month: HouseInference::Offering.month, model_id: @agent.model_id,
       provider_route: @offering[:provider], charge_usd: 0.75)
-    call.settle!({ 'cost' => 0, 'is_byok' => true })
-    assert_equal 'overrun', call.status
-    assert_equal BigDecimal('0.75'), call.charge_usd
+    # The shape OpenRouter returned for a house Haiku call on 2026-10-10.
+    call.settle!({ 'cost' => 0, 'is_byok' => true,
+      'cost_details' => { 'upstream_inference_cost' => 0.0000033, 'upstream_inference_prompt_cost' => 0.0000013 } })
+    assert_equal [ 'settled', BigDecimal('0.0000033') ], [ call.status, call.charge_usd ]
+
+    fee = @grant.house_inference_calls.create!(month: HouseInference::Offering.month, model_id: @agent.model_id,
+      provider_route: @offering[:provider], charge_usd: 0.75)
+    fee.settle!({ 'cost' => 0.0001, 'is_byok' => true, 'cost_details' => { 'upstream_inference_cost' => 0.002 } })
+    assert_equal [ 'settled', BigDecimal('0.0021') ], [ fee.status, fee.charge_usd ]
+
+    over = @grant.house_inference_calls.create!(month: HouseInference::Offering.month, model_id: @agent.model_id,
+      provider_route: @offering[:provider], charge_usd: 0.75)
+    over.settle!({ 'cost' => 0, 'is_byok' => true, 'cost_details' => { 'upstream_inference_cost' => 0.76 } })
+    assert_equal [ 'overrun', BigDecimal('0.76') ], [ over.status, over.charge_usd ]
   end
 
   test 'fractional upstream charges round up rather than disappearing' do
