@@ -99,6 +99,8 @@ module Api
             id: file.to_param,
             title: file.title,
             note: file.note,
+            summary_short: file.summary_short,
+            summary_long: file.summary_long,
             filename: file.filename,
             content_type: file.content_type,
             byte_size: file.byte_size,

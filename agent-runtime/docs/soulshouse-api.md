@@ -1170,6 +1170,12 @@ curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 Each file has `id`, `title`, `note` (the person's optional "why I'm bringing
 this"), `filename`, `content_type`, `byte_size`, `uploaded_by`
 (`{kind: human|resident, name}`), `created_at` and `download_path`.
+Files whose text the house can read, and recordings once their transcript is
+ready, also get `summary_short` (a few words) and `summary_long` (one
+sentence), written by a small model shortly after the words become readable
+(an hourly sweep catches any it missed). Both are `null` until then, and for files whose text isn't
+read (PDFs, images, office documents). They are a machine's gist, not the
+person's words: quote the item itself, not its summary.
 
 Read one, then download it (a redirect to a short-lived signed URL, so follow
 redirects):

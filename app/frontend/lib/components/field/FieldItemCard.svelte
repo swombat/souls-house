@@ -23,6 +23,12 @@
         {/if}
         <div class="flex-1 min-w-0">
           <h3 class="font-semibold truncate">{item.title}</h3>
+          {#if item.summary_short}
+            <!-- The house's few-word gist; the sentence is on hover until the layout is reworked. -->
+            <p class="text-sm truncate" title={item.summary_long || item.summary_short} data-testid="field-item-summary">
+              {item.summary_short}
+            </p>
+          {/if}
           {#if item.kind === 'recording'}
             <p
               class="text-sm line-clamp-2 mt-1 {item.status === 'rejected' || item.status === 'failed'

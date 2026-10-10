@@ -7,26 +7,32 @@ class FieldController < ApplicationController
   TABS = %w[all files notes recordings].freeze
 
   def index
-    files = current_account.field_files.kept.includes(:uploaded_by, file_attachment: :blob).newest_first.to_a
-    recordings = current_account.field_recordings.kept.includes(:uploaded_by, audio_attachment: :blob).newest_first.to_a
-    notes = current_account.whiteboards.active.includes(:last_edited_by).order(updated_at: :desc).to_a
-    tags = FieldTagging.names_for(files + recordings + notes)
+    tab = TABS.include?(params[:tab]) ? params[:tab] : "all"
+    listing = FieldListing.new(account: current_account, tab: tab, tags: filter_tags,
+      page: params[:q].present? ? 1 : list_page)
+    records = listing.records
+    current = FieldListing.find_item(current_account, params[:item])
+    tags = FieldTagging.names_for(records + [ current ])
     tags_for = ->(item) { tags[[ item.class.base_class.name, item.id ]] || [] }
+    current_json = (item_json(current, tags_for.(current)) if current)
 
     render inertia: "field/index", props: {
-      files: files.map { |file| FieldItems.file_json(file, tags_for.(file)) },
-      notes: notes.map { |note| FieldItems.note_json(note, tags_for.(note)) },
-      recordings: recordings.map { |recording| FieldItems.recording_json(recording, tags_for.(recording)) },
+      items: records.map { |record| item_json(record, tags_for.(record), content: false) },
+      current_item: current_json,
+      counts: listing.counts,
+      field_empty: listing.counts["all"].zero? && filter_tags.empty?,
+      pagination: { page: listing.page, pages: listing.pages, per_page: FieldListing::PER_PAGE, total: listing.total },
       tags: FieldItems.tags_json(current_account),
       filter_tags: filter_tags,
       query: params[:q].is_a?(String) ? params[:q].to_s.strip : "",
       search: search_props,
       recording_allowance: FieldItems.allowance_json(current_account),
       suggestions_enabled: FieldSuggestions.enabled?,
+      summaries_enabled: FieldSummaries.enabled?,
       max_recording_bytes: FieldRecording::MAX_BYTES,
       max_recording_label: FieldRecording::MAX_BYTES_LABEL,
-      tab: TABS.include?(params[:tab]) ? params[:tab] : "all",
-      selected: params[:item].to_s.presence,
+      tab: tab,
+      selected: current_json&.dig(:key),
       max_file_bytes: FieldFile::MAX_FILE_SIZE,
       max_file_label: FieldFile::MAX_FILE_SIZE_LABEL,
       account_name: current_account.name,
@@ -36,7 +42,23 @@ class FieldController < ApplicationController
 
   private
 
+  def list_page
+    params[:page].is_a?(String) ? params[:page].to_i : 1
+  end
+
+  def item_json(record, tags, content: true)
+    case record
+    when FieldFile then FieldItems.file_json(record, tags)
+    when FieldRecording then FieldItems.recording_json(record, tags)
+    else FieldItems.note_json(record, tags, content: content)
+    end
+  end
+
   def filter_tags
+    @filter_tags ||= parse_filter_tags
+  end
+
+  def parse_filter_tags
     raw = params[:tag]
     raw = [ raw ] if raw.is_a?(String)
     return [] unless raw.is_a?(Array) && raw.all?(String)

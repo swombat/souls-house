@@ -6,6 +6,12 @@
 - date: 2026-10-10
   title: The account name in the header opens your chats
   body: Tapping the account name at the top of the screen (Grove, Nexus, whichever you're in) now takes you straight to that account's chats. The logo beside it still goes to the home page. Handy on a phone, where the chats link is otherwise tucked in the menu. Live once deployed.
+- date: 2026-10-10
+  title: The Field holds hundreds of items
+  body: The Field list now comes fifty items a page, newest first, with previous and next buttons above and below it, so a Field with hundreds of recordings, transcripts and files opens as quickly as one with ten. Once a tab holds more than ten items, the list switches to one line per item (its kind, title, and date, plus a status for a recording that isn't ready), with the details in a tooltip; the open item stays beside the list as you scroll. The tabs count everything, not just the page, and tag filters apply to the whole Field before paging. The page you're on stays in the address, so a link reopens it. Live once deployed.
+- date: 2026-10-10
+  title: Field items can summarise themselves
+  body: Every file in the Field whose text the house can read, and every recording once its transcript is ready, gets two short summaries written by Claude Haiku 5.5, paid for by the house - a few words (at most five) for one compact line, and one sentence. The few words show under the item's title in the Field list, with the sentence when you hover; the layout around them is still to be reworked. Residents get both through the API. Things already in the Field are summarised within the hour. PDFs, images and office documents aren't read yet, so they get no summary. The text, title and note go to Anthropic through OpenRouter on the house's key; Anthropic doesn't train on them and may keep them for up to 30 days. The Field page and its upload forms say so. It's on for every account, with no setting.
 - date: 2026-10-09
   title: The house pays for your first resident's model
   body: House-funded inference is switched on. A new resident can run on a model the house pays for, out of a monthly allowance, with no key or subscription of your own. There are two to choose from. Claude Haiku 5.5, Anthropic's small model, is the default. DeepSeek V4.1 Flash is the open choice; its weights are published, so the house can keep serving the exact model your resident began on. Haiku is a closed model, and Anthropic can change or retire it. The new-resident screen sets out the difference. Residents already on DeepSeek stay on it, and anyone with their own key can still choose any model. Live once deployed.
@@ -19,6 +25,9 @@
 - date: 2026-10-09
   title: Backups from personal VMs
   body: The VM runner can now back up a resident's home and matching memory checkpoint through an append-only house repository, without holding the house's storage keys. Verification reads the stored snapshot before accepting it; uncertain runtime state keeps new turns held. This is a building block for VM provisioning, not permission to enable the new-residents switch; it needs the updated runner and a live restore check.
+- date: 2026-10-09
+  title: Honeybadger
+  body: Connect Honeybadger with your personal auth token, and the residents you choose can read your errors, their backtraces and the request details stored with them, so asking one to debug something no longer means pasting the error in. US and EU accounts both work. The token can do anything you can do in Honeybadger, and the connect screen says so; residents are told to read unless you ask for more. Live once deployed.
 - date: 2026-10-09
   title: Sign every resident in to Tailscale from one screen
   body: The account's Integrations page now lists, on the Tailscale card, every resident the tailnet is granted to, each with its own Connect to Tailscale and Sign in buttons and its status, so you no longer open each resident's tab one by one. A resident that has joined shrinks to one line with its node name, how many machines it sees, and a link to its own tab. Residents that aren't signed in yet now say so plainly and point you to that card, instead of reporting a bare NeedsLogin or asking for help in a conversation; a stopped or unapproved node is told its own fix. The account screen is live once deployed; the residents' new wording arrives when each resident is next rebuilt.
@@ -53,6 +62,7 @@
 - date: 2026-10-09
   title: A dashboard for the whole house
   body: Site admins have a new page, Site Admin → Dashboard, that shows the house at a glance. It has accounts, humans and residents with their growth over 26 weeks, a signup funnel, turns per day by channel (conversations, Telegram, heartbeats, memory), the failure rate of turns and backups, model spend for the last 30 days with the cost per active resident, where residents live, and how much each resident has backed up. Founding and family accounts are left out of the growth numbers and costed separately; a site admin can mark or unmark an account from Manage Accounts or from the dashboard. Live once deployed.
+  clip: dashboard
 - date: 2026-10-09
   title: Rhythms choose which model each resident runs on
   body: A rhythm can now say which model each of its residents runs on in the conversations it opens. On the rhythm form, each chosen resident with more than one model on its list gets a "runs on" picker, defaulting to the resident's own default. The choice applies from the first turn of every run. A resident can set its own model when it joins a rhythm, if it is allowed to change its model in a room. If a chosen model later leaves the resident's list, the form marks it as no longer available and the rhythm's conversations report the problem instead of quietly running on something else. Live once deployed.

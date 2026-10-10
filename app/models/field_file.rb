@@ -24,6 +24,7 @@ class FieldFile < ApplicationRecord
   # After the attachment: after_commit callbacks run in the order defined, and
   # extraction needs the bytes already uploaded.
   include FieldFile::TextExtraction
+  include FieldSummarizable
 
   validates :title, presence: true, length: { maximum: 200 }
   validates :note, length: { maximum: MAX_NOTE_LENGTH }
@@ -35,6 +36,9 @@ class FieldFile < ApplicationRecord
   broadcasts_to :account
 
   scope :newest_first, -> { order(created_at: :desc, id: :desc) }
+  # Files whose words have been read (FieldSummarizable). PDFs and other
+  # unread formats have none, so they get no summary yet.
+  scope :summary_readable, -> { where.not(text_extracted_at: nil).where("extracted_text ~ '[^[:space:]]'") }
 
   def uploader_name
     case uploaded_by
@@ -53,6 +57,8 @@ class FieldFile < ApplicationRecord
   def uploaded_by_agent?(agent)
     agent.present? && uploaded_by_type == "Agent" && uploaded_by_id == agent.id
   end
+
+  def summary_source = extracted_text
 
   def filename = file.attached? ? file.filename.to_s : nil
   def content_type = file.attached? ? file.content_type : nil

@@ -14,20 +14,25 @@
   import RecordingViewer from '$lib/components/field/RecordingViewer.svelte';
   import FieldTagEditor from '$lib/components/field/FieldTagEditor.svelte';
   import FieldTagManager from '$lib/components/field/FieldTagManager.svelte';
-  import FieldItemCard from '$lib/components/field/FieldItemCard.svelte';
+  import FieldList from '$lib/components/field/FieldList.svelte';
+  import FieldEmpty from '$lib/components/field/FieldEmpty.svelte';
   import FieldSearchBar from '$lib/components/field/FieldSearchBar.svelte';
   import FieldSearchResults from '$lib/components/field/FieldSearchResults.svelte';
+  import SummariesNotice from '$lib/components/field/SummariesNotice.svelte';
   import { fieldItemLink, formatBytes } from '$lib/field';
-  import { FileArrowUp, Microphone, NotePencil, Plant } from 'phosphor-svelte';
+  import { FileArrowUp, Microphone, NotePencil } from 'phosphor-svelte';
 
   let {
-    files = [],
-    notes = [],
-    recordings = [],
+    items = [],
+    current_item = null,
+    counts = { all: 0, files: 0, notes: 0, recordings: 0 },
+    field_empty = false,
+    pagination = { page: 1, pages: 1, per_page: 50, total: 0 },
     recording_allowance = null,
     max_recording_bytes = 2 * 1024 * 1024 * 1024,
     max_recording_label = '2 GB',
     suggestions_enabled = false,
+    summaries_enabled = false,
     tab = 'all',
     selected = null,
     max_file_bytes = 100 * 1024 * 1024,
@@ -47,45 +52,42 @@
     { key: 'recordings', label: 'Recordings' },
   ];
 
-  // Tag filter: an item shows when it carries every chosen tag.
-  const tagged = (item) => filter_tags.every((name) => (item.tags || []).includes(name));
-  const everything = $derived([...files, ...notes, ...recordings]);
-  const shown = $derived(everything.filter(tagged));
-  const byTab = $derived({
-    all: shown,
-    files: files.filter(tagged),
-    notes: notes.filter(tagged),
-    recordings: recordings.filter(tagged),
-  });
-  const items = $derived([...(byTab[tab] || shown)].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)));
-  const fieldEmpty = $derived(everything.length === 0);
-  const current = $derived(everything.find((item) => item.key === selected) || null);
+  // The server sends one page of the list (tab and tags already applied),
+  // the counts for each tab, and the open item wherever it sits.
+  const fieldEmpty = $derived(field_empty);
+  const current = $derived(current_item);
   const accountLabel = $derived(account_name || 'this account');
   const sharedLine = $derived(
     `Shared with every human member and resident in ${accountLabel}, including anyone who joins later.`
   );
 
+  const LIST_PROPS = ['items', 'current_item', 'selected', 'counts', 'field_empty', 'pagination'];
   const updateSync = createDynamicSync();
   $effect(() => {
     const subs = {
       // An open search refreshes too: a transcript becoming ready, or a note
       // being edited, can change what matches.
-      [`Account:${account.id}:field_files`]: ['files', 'search'],
-      [`Account:${account.id}:whiteboards`]: ['notes', 'search'],
-      [`Account:${account.id}:field_recordings`]: ['recordings', 'recording_allowance', 'search'],
+      [`Account:${account.id}:field_files`]: [...LIST_PROPS, 'search'],
+      [`Account:${account.id}:whiteboards`]: [...LIST_PROPS, 'search'],
+      [`Account:${account.id}:field_recordings`]: [...LIST_PROPS, 'recording_allowance', 'search'],
     };
-    if (current?.kind === 'note') subs[`Whiteboard:${current.id}`] = ['notes', 'search'];
+    if (current?.kind === 'note') subs[`Whiteboard:${current.id}`] = [...LIST_PROPS, 'search'];
     updateSync(subs);
   });
 
-  // Search, tag filter and results page ride along in the URL so a link
-  // reopens them. A new query or filter starts again from the first page.
-  function visit(params, { q = query, tag = filter_tags, page = search?.page || 0 } = {}) {
+  // Search, tag filter and page ride along in the URL so a link reopens
+  // them. A search pages its results from 0; the list pages from 1. A new
+  // query, filter or tab starts again from the first page.
+  function visit(params, { q = query, tag = filter_tags, page = q ? search?.page || 0 : pagination.page } = {}) {
     const extra = {};
     if (q) extra.q = q;
     if (tag.length) extra.tag = tag;
-    if (q && page > 0) extra.page = page;
+    if (q ? page > 0 : page > 1) extra.page = page;
     router.get(`/accounts/${account.id}/field`, { ...params, ...extra }, { preserveState: true, preserveScroll: true });
+  }
+
+  function goToPage(page) {
+    visit(selected ? { tab, item: selected } : { tab }, { page });
   }
 
   let tagsOpen = $state(false);
@@ -109,7 +111,7 @@
   }
 
   function selectTab(key) {
-    visit(selected ? { tab: key, item: selected } : { tab: key });
+    visit(selected ? { tab: key, item: selected } : { tab: key }, { page: 1 });
   }
 
   function selectItem(key) {
@@ -117,6 +119,12 @@
     conflict = null;
     visit({ tab, item: key });
   }
+
+  // A newly opened item starts at its top; the list keeps its own scroll.
+  let detailPane = $state(null);
+  $effect(() => {
+    if (detailPane && current?.key) detailPane.scrollTop = 0;
+  });
 
   let recordingOpen = $state(false);
 
@@ -220,7 +228,7 @@
       if (response.ok) {
         editing = false;
         conflict = null;
-        router.reload({ only: ['notes', 'search'], preserveScroll: true });
+        router.reload({ only: [...LIST_PROPS, 'search'], preserveScroll: true });
       } else {
         const data = await response.json();
         if (data.error === 'conflict') {
@@ -296,31 +304,19 @@
   </div>
 
   {#if fieldEmpty}
-    <Card.Root>
-      <Card.Content class="py-16 text-center max-w-xl mx-auto">
-        <Plant class="mx-auto size-16 text-muted-foreground mb-4" weight="duotone" />
-        <h2 class="text-xl font-semibold mb-2">Bring something into the Field.</h2>
-        <p class="text-muted-foreground mb-3">
-          Add files, write notes or bring in recordings to keep and return to together.
-        </p>
-        <p class="text-muted-foreground mb-3" data-testid="field-sharing">
-          Everything here is shared with every human member and resident in {accountLabel}. Adding something doesn't
-          notify or wake residents. To explore it together, share its link in a chat.
-        </p>
-        <p class="text-muted-foreground text-sm">Recordings are transcribed, so everyone can read them.</p>
-      </Card.Content>
-    </Card.Root>
+    <FieldEmpty {accountLabel} />
   {:else}
     <FieldSearchBar
       {query}
       filterTags={filter_tags}
       {tags}
-      onSearch={(q) => visit(selected ? { tab, item: selected } : { tab }, { q, page: 0 })}
+      onSearch={(q) => visit(selected ? { tab, item: selected } : { tab }, { q, page: q ? 0 : 1 })}
       onToggleTag={toggleTag}
       onManage={() => (tagsOpen = true)} />
 
     <p class="text-sm text-muted-foreground mb-4" data-testid="field-sharing">
       {sharedLine} Adding something doesn't notify or wake residents; share its link in a chat to explore it together.
+      {#if summaries_enabled}<SummariesNotice />{/if}
     </p>
 
     <!-- The tabs sort the list; a search has its own results. -->
@@ -335,7 +331,7 @@
             onclick={() => selectTab(t.key)}>
             {t.label}
             <span class="text-muted-foreground ml-1">
-              {byTab[t.key].length}
+              {counts[t.key] ?? 0}
             </span>
           </Button>
         {/each}
@@ -357,18 +353,20 @@
             onSelect={selectItem}
             onMore={nextResults} />
         {:else}
-          {#if items.length === 0}
-            <p class="text-sm text-muted-foreground p-4">
-              {filter_tags.length ? `Nothing here carries ${filter_tags.join(' and ')}.` : 'Nothing here yet.'}
-            </p>
-          {/if}
-          {#each items as item (item.key)}
-            <FieldItemCard {item} selected={current?.key === item.key} onSelect={selectItem} />
-          {/each}
+          <FieldList
+            {items}
+            {pagination}
+            filterTags={filter_tags}
+            currentKey={current?.key}
+            onSelect={selectItem}
+            onPage={goToPage} />
         {/if}
       </div>
 
-      <div class="lg:col-span-2">
+      <!-- Sticky, so a long list can be scrolled with the open item in view. -->
+      <div
+        bind:this={detailPane}
+        class="lg:col-span-2 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
         {#if current}
           <div class="mb-3">
             {#key current.key}
@@ -415,7 +413,7 @@
   <Dialog.Content class="sm:max-w-lg">
     <Dialog.Header>
       <Dialog.Title>Add a file to the Field</Dialog.Title>
-      <Dialog.Description>{sharedLine}</Dialog.Description>
+      <Dialog.Description>{sharedLine} {#if summaries_enabled}<SummariesNotice kind="file" />{/if}</Dialog.Description>
     </Dialog.Header>
     <form onsubmit={submitUpload} class="space-y-4">
       <div class="space-y-1">
@@ -459,6 +457,7 @@
   maxBytes={max_recording_bytes}
   maxLabel={max_recording_label}
   suggestionsEnabled={suggestions_enabled}
+  summariesEnabled={summaries_enabled}
   {sharedLine} />
 
 <Dialog.Root bind:open={noteOpen}>

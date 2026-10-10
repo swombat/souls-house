@@ -215,6 +215,8 @@ module Api
             id: recording.to_param,
             title: recording.title,
             note: recording.note,
+            summary_short: recording.summary_short,
+            summary_long: recording.summary_long,
             status: recording.status,
             duration_ms: recording.duration_ms,
             language_code: recording.language_code,

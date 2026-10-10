@@ -23,6 +23,37 @@ class UtilityInferenceTest < ActiveSupport::TestCase
     assert_equal({ effort: "none" }, captured[:parameters][:reasoning])
   end
 
+  test "house calls use the house inference key, pinned to one provider with retention denied" do
+    captured = {}
+    client = Object.new
+    client.define_singleton_method(:chat) do |parameters:|
+      captured[:parameters] = parameters
+      { "choices" => [ { "message" => { "content" => "{}" } } ] }
+    end
+    HouseInference::Offering.stub :key, "house-key" do
+      Account.stub :system_ai_api_key, ->(*) { flunk "Not the site utility key" } do
+        OpenAI::Client.stub :new, ->(**options) { captured[:options] = options; client } do
+          assert_equal "{}", UtilityInference.house_chat(model: "anthropic/claude-haiku-5.5", provider: "anthropic", system: "S", user: "U")
+        end
+      end
+    end
+    assert_equal "house-key", captured[:options][:access_token]
+    assert_equal "https://openrouter.ai/api/v1", captured[:options][:uri_base]
+    assert_equal({ only: [ "anthropic" ], allow_fallbacks: false, data_collection: "deny" }, captured[:parameters][:provider])
+    assert_equal "anthropic/claude-haiku-5.5", captured[:parameters][:model]
+    assert_equal 400, captured[:parameters][:max_tokens]
+  end
+
+  test "house calls without a house key make no request" do
+    HouseInference::Offering.stub :key, nil do
+      OpenAI::Client.stub :new, ->(*) { flunk "No request expected" } do
+        assert_raises(UtilityInference::MissingCredentials) do
+          UtilityInference.house_chat(model: "m", provider: "p", system: "S", user: "U")
+        end
+      end
+    end
+  end
+
   test "missing account credentials never borrow system credentials without permission" do
     account = accounts(:personal_account)
     account.update!(use_system_ai_credentials: false, openrouter_api_key: nil)

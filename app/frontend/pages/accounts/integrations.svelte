@@ -8,6 +8,7 @@
     DropboxLogo,
     GithubLogo,
     Funnel,
+    Bug,
     ShareNetwork,
     GoogleLogo,
     Heartbeat,
@@ -91,6 +92,8 @@
                   <GithubLogo size={22} weight="fill" />
                 {:else if service.key === 'pipedrive'}
                   <Funnel size={22} weight="bold" />
+                {:else if service.key === 'honeybadger'}
+                  <Bug size={22} weight="bold" />
                 {:else if service.key === 'tailscale'}
                   <ShareNetwork size={22} weight="bold" />
                 {:else}
