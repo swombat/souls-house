@@ -18,6 +18,7 @@ class AgentRuntimeInteraction < ApplicationRecord
   after_commit :broadcast_agent_runtime_interactions_refresh, on: [ :create, :update, :destroy ]
   after_update_commit :enqueue_follow_through_check, if: -> { saved_change_to_finished_at? && finished_at.present? }
   after_update_commit :enqueue_pending_wake_release, if: -> { saved_change_to_finished_at? && finished_at.present? && trigger_kind == "conversation" }
+  after_update_commit :enqueue_oom_check, if: -> { saved_change_to_finished_at? && finished_at.present? }
 
   validates :trigger_kind, presence: true
   validates :started_at, presence: true
@@ -182,6 +183,10 @@ class AgentRuntimeInteraction < ApplicationRecord
       finished_at: Time.current,
       duration_ms: elapsed_ms
     )
+  end
+
+  def ran_out_of_memory?
+    error_class == RuntimeOomCheckJob::ERROR_CLASS
   end
 
   def cache_read_ratio
@@ -466,6 +471,17 @@ class AgentRuntimeInteraction < ApplicationRecord
     Rails.logger.warn("Follow-through check enqueue failed for interaction #{id}: #{error.class}")
   end
 
+  OOM_CHECKED_STATES = %w[failed timed_out outcome_unknown].freeze
+
+  def enqueue_oom_check
+    ended_badly = execution_state.present? ? execution_state.in?(OOM_CHECKED_STATES) : chat_activity_status == "failed"
+    return unless ended_badly
+
+    RuntimeOomCheckJob.perform_later(id)
+  rescue StandardError => error
+    Rails.logger.warn("OOM check enqueue failed for interaction #{id}: #{error.class}")
+  end
+
   # A request that arrived while this run was busy waits as a PendingWake;
   # this run ending is what releases it. Enqueued unconditionally (the job
   # takes the chat lock before looking), so a wake whose queue! had not yet
@@ -564,6 +580,8 @@ class AgentRuntimeInteraction < ApplicationRecord
   end
 
   def chat_activity_status_label
+    return "ran out of memory" if chat_activity_status == "failed" && ran_out_of_memory?
+
     case chat_activity_status
     when "running"
       "is running"

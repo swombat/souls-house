@@ -87,6 +87,7 @@ module Agents
         "container_name" => agent.container_name,
         "image" => image,
         "memory_mb" => agent.container_memory_mb,
+        "pids_limit" => agent.container_pids_limit,
         "cpu_shares" => agent.container_cpu_shares,
         "env" => environment(agent),
         # External-service credentials, copied into the container before it

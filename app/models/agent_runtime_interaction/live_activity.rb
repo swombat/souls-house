@@ -180,7 +180,7 @@ module AgentRuntimeInteraction::LiveActivity
         "failed" => "finished with an error", "timed_out" => "timed out",
         "cancelled" => "was cancelled", "busy" => "is already busy",
         "outcome_unknown" => "lost contact; outcome unconfirmed"
-      }[state],
+      }[state].then { |label| !ongoing && ran_out_of_memory? ? "ran out of memory" : label },
       reporter_health: health, snapshot: snapshot,
       narration_shared: helpers_shared,
       last_report_at: latest&.last_report_at&.iso8601,
