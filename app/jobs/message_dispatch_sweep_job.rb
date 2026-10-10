@@ -9,15 +9,17 @@ class MessageDispatchSweepJob < ApplicationJob
   def perform
     each_isolated(MessageDispatch.where(status: "pending").where(expires_at: ..Time.current), &:settle_lapsed!)
     each_isolated(MessageDispatch.recovery_open, &:settle_lapsed!)
+    # A resident's handoff whose knock never ran is recorded the same way.
+    each_isolated(MessageHandoff.where(status: "pending").where(created_at: ..MessageHandoff::EXPIRY.ago), &:settle_lapsed!)
   end
 
   private
 
   def each_isolated(scope)
-    scope.find_each do |dispatch|
-      yield dispatch
+    scope.find_each do |record|
+      yield record
     rescue StandardError => e
-      Rails.logger.error "[MessageDispatchSweepJob] dispatch #{dispatch.id}: #{e.class}: #{e.message}"
+      Rails.logger.error "[MessageDispatchSweepJob] #{record.class.name} #{record.id}: #{e.class}: #{e.message}"
     end
   end
 

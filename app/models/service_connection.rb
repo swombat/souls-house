@@ -14,6 +14,9 @@ class ServiceConnection < ApplicationRecord
   has_many :comms_chats, dependent: :restrict_with_error
   has_many :comms_messages, dependent: :restrict_with_error
   has_many :comms_request_nonces, dependent: :delete_all
+  # Repository watches: hooks this connection installed. Removed (hook
+  # deleted while the token still works) on disconnect; see disconnect!.
+  has_many :watched_repositories, dependent: :destroy
 
   encrypts :credential_payload
   encrypts :pairing_qr
@@ -172,6 +175,7 @@ class ServiceConnection < ApplicationRecord
   end
 
   def disconnect!(revoke_provider: true)
+    remove_watched_repositories!(reason: "GitHub connection disconnected", delete_hook: true)
     definition.adapter.revoke(self) if revoke_provider
     update!(
       credential_payload: nil,
@@ -268,6 +272,17 @@ class ServiceConnection < ApplicationRecord
 
   def reconcile_authority_change
     agent_service_accesses.enabled.find_each(&:schedule_reconciliation!)
+    # A revoked or suspended GitHub connection can no longer stand behind
+    # its repositories: they are removed and their armed watches cancelled.
+    if status.in?(%w[revoked suspended])
+      remove_watched_repositories!(reason: "GitHub connection #{status}", delete_hook: false)
+    end
+  end
+
+  def remove_watched_repositories!(reason:, delete_hook:)
+    return unless provider == "github"
+
+    watched_repositories.live.find_each { |repository| repository.remove!(reason: reason, delete_hook: delete_hook) }
   end
 
 end

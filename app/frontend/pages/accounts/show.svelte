@@ -9,10 +9,18 @@
   import AccountTypeCard from '$lib/components/accounts/AccountTypeCard.svelte';
   import PendingInvitationsCard from '$lib/components/accounts/PendingInvitationsCard.svelte';
   import TeamMembersCard from '$lib/components/accounts/TeamMembersCard.svelte';
+  import ResidentHandoffCapCard from '$lib/components/accounts/ResidentHandoffCapCard.svelte';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import { useSync } from '$lib/use-sync';
 
-  let { account, can_be_personal, members = [], can_manage = false, current_user_id } = $props();
+  let {
+    account,
+    can_be_personal,
+    members = [],
+    can_manage = false,
+    current_user_id,
+    resident_handoff_cap = 6,
+  } = $props();
 
   // Subscribe to real-time updates for this account and its members
   useSync({
@@ -107,6 +115,8 @@
       </dl>
     </Card.Content>
   </Card.Root>
+
+  <ResidentHandoffCapCard accountId={account.id} cap={resident_handoff_cap} canManage={can_manage} />
 
   <AccountTypeCard
     {account}

@@ -50,7 +50,8 @@ class AccountsController < ApplicationController
       can_be_personal: @account.can_be_personal?,
       members: account_members_json,
       can_manage: @account.manageable_by?(Current.user),
-      current_user_id: Current.user.id
+      current_user_id: Current.user.id,
+      resident_handoff_cap: @account.resident_handoff_cap
     }
   end
 
@@ -113,8 +114,12 @@ class AccountsController < ApplicationController
     @account = find_current_user_account!(params[:id])
   end
 
+  # The resident handoff cap (MessageHandoff) is changed only by someone who
+  # can manage the account.
   def account_params
-    params.require(:account).permit(:name)
+    permitted = [ :name ]
+    permitted << :resident_handoff_cap if @account.manageable_by?(Current.user)
+    params.require(:account).permit(permitted)
   end
 
   def create_account_params

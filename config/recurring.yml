@@ -10,6 +10,12 @@
 #     schedule: at 5am every day
 
 production:
+  # Says when production stops following master (DeployAlarm).
+  deploy_alarm_check:
+    class: DeployAlarmCheckJob
+    queue: default
+    schedule: every 5 minutes
+
   vm_birth_sweep:
     class: VmBirthSweepJob
     queue: default
@@ -39,6 +45,11 @@ production:
     class: RhythmSweepJob
     queue: default
     schedule: every minute
+
+  repository_watch_sweep:
+    class: RepositoryWatchSweepJob
+    queue: default
+    schedule: every 5 minutes
 
   message_dispatch_sweep:
     class: MessageDispatchSweepJob

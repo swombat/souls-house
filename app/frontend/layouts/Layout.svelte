@@ -5,6 +5,7 @@
   import { toast } from 'svelte-sonner';
   import Navbar from '$lib/components/navigation/navbar.svelte'; // Adjust the path as necessary
   import Footer from '$lib/components/navigation/Footer.svelte';
+  import DeployAlarmBanner from '$lib/components/admin/DeployAlarmBanner.svelte';
   import { ModeWatcher, setMode, resetMode, mode } from 'mode-watcher';
   import { applyPersonalTint, applyAccountColour, browserChromeColours } from '$lib/theme';
 
@@ -52,6 +53,9 @@
   class:chat-viewport={!showFooter}
   class="flex flex-col bg-background {showFooter ? 'min-h-dvh' : 'overflow-hidden'}">
   <div class="shrink-0"><Navbar /></div>
+  {#if $page.props?.deploy_alarm}
+    <div class="shrink-0"><DeployAlarmBanner alarm={$page.props.deploy_alarm} /></div>
+  {/if}
   <main class={showFooter ? 'flex-1' : 'flex min-h-0 flex-1 flex-col'}>{@render children?.()}</main>
   {#if showFooter}
     <Footer />

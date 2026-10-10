@@ -34,6 +34,37 @@ class MessagesControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "index catches up handoff receipts for named messages in this room only, within a bound" do
+    lume = @account.agents.create!(name: "Lume", system_prompt: "Test", runtime: "external")
+    mira = @account.agents.create!(name: "Mira", system_prompt: "Test", runtime: "external")
+    @chat.agents << [ lume, mira ]
+    @chat.update!(manual_responses: true)
+    message = @chat.messages.create!(role: "assistant", agent: lume, content: "@Mira ready", handoff_recipient_ids: [])
+    handoff = message.handoffs.sole
+    elsewhere = @account.chats.new(model_id: "openrouter/auto", title: "Elsewhere", manual_responses: true)
+    elsewhere.agents = [ lume, mira ]
+    elsewhere.save!
+    foreign = elsewhere.messages.create!(role: "assistant", agent: lume, content: "@Mira there", handoff_recipient_ids: [])
+
+    get account_chat_messages_path(@account, @chat, receipts_for: [ message.to_param, foreign.to_param, "not-an-id" ].join(",")), as: :json
+    assert_response :success
+    receipts = response.parsed_body["receipts"]
+    assert_equal [ message.to_param ], receipts.keys
+    assert_equal "queued", receipts[message.to_param]["handoff_receipts"].sole["state"]
+    version = receipts[message.to_param]["handoff_receipts_version"]
+    assert_equal message.reload.handoff_receipts_version, version
+
+    travel 1.second do
+      handoff.update!(status: "delivered", delivered_at: Time.current)
+    end
+    get account_chat_messages_path(@account, @chat, receipts_for: message.to_param), as: :json
+    entry = response.parsed_body.dig("receipts", message.to_param)
+    assert_equal "delivered", entry["handoff_receipts"].sole["state"]
+    assert_operator entry["handoff_receipts_version"], :>, version
+
+    assert_equal 50, MessagesController::RECEIPTS_LIMIT
+  end
+
   test "index includes estimated interaction costs for paginated messages" do
     agent = agents(:research_assistant)
     started_at = 1.minute.ago

@@ -94,4 +94,26 @@ class Admin::DeploysControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "site admin pages carry the deploy alarm; other pages and other people don't" do
+    DeployAlarmState.create!(state: "stuck", since: 10.minutes.ago, deployed_sha: "f" * 40, master_sha: "e" * 40,
+      behind_by: 3, reason: "Last automatic deploy (eeeeeee) failed.", last_checked_at: 1.minute.ago)
+
+    sign_in users(:site_admin_user)
+    get admin_deploys_path
+    alarm = inertia_shared_props["deploy_alarm"]
+    assert_equal "stuck", alarm["state"]
+    assert alarm["banner"]
+    assert_equal "fffffff", alarm["deployed_short"]
+
+    get root_path
+    assert_nil inertia_shared_props_fresh["deploy_alarm"] if response.body.include?("data-page")
+  end
+
+  private
+
+  def inertia_shared_props_fresh
+    @inertia_props = nil
+    inertia_shared_props
+  end
+
 end

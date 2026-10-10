@@ -231,7 +231,7 @@ class Chat < ApplicationRecord
   # Uses cursor-based pagination with before_id for efficient loading of older messages
   # Returns the most recent N messages that are older than before_id, in ascending order for display
   def messages_page(before_id: nil, limit: 30)
-    scope = messages.kept.includes(:user, :agent, :runtime_interaction).with_attached_attachments.with_attached_audio_recording
+    scope = messages.kept.includes(:user, :agent, :runtime_interaction, handoffs: :recipient_agent).with_attached_attachments.with_attached_audio_recording
     scope = scope.where("messages.id < ?", Message.decode_id(before_id)) if before_id.present?
     # Use reorder to replace the association ordering,
     # get the most recent messages by ordering by ID DESC, limit, then reverse for display
@@ -349,13 +349,15 @@ class Chat < ApplicationRecord
 
   # Ask all, with the same rule per resident: the free ones are woken now, the
   # busy ones are queued. Returns { triggered: [agents], queued: [agents] }.
-  def request_all_agents_response!(requested_by:, user: nil, requester_agent: nil)
+  # except_agent_ids: residents left out, because the asking resident's post
+  # already handed off to them (MessageHandoff).
+  def request_all_agents_response!(requested_by:, user: nil, requester_agent: nil, except_agent_ids: [])
     raise ArgumentError, "This chat does not support manual responses" unless manual_responses?
     raise ArgumentError, "No residents in this conversation" if agents.empty?
     raise ArgumentError, "This conversation is archived or deleted" unless respondable?
 
     with_lock do
-      ordered_agents = agents.order(:id).to_a
+      ordered_agents = agents.where.not(id: except_agent_ids).order(:id).to_a
       unless ordered_agents.any?(&:eligible_for_conversation?)
         raise Agent::RuntimeAvailability::Unavailable.new("No available residents in this conversation", code: "no_available_agents")
       end
@@ -429,6 +431,17 @@ class Chat < ApplicationRecord
       .where(agent: agent, trigger_kind: "conversation", finished_at: nil)
       .active
       .exists?
+  end
+
+  # The last message a run of this resident here was shown, counting only
+  # runs that reached the runtime, as the transcript delta does; nil with none.
+  # A held wake with nothing past it is dropped (PendingWake#unseen_messages?),
+  # and a handoff at or below it was delivered (MessageHandoff).
+  def agent_transcript_cursor(agent)
+    agent_runtime_interactions
+      .where(agent: agent, trigger_kind: "conversation")
+      .where(transport_status: 200...300, runtime_status: "ok")
+      .maximum(:last_included_message_id)
   end
 
   # Queue moderation for all unmoderated messages with content

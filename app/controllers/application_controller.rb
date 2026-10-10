@@ -23,7 +23,9 @@ class ApplicationController < ActionController::Base
         theme_preference: Current.user&.theme || cookies[:theme],
         site_settings: shared_site_settings,
         is_account_admin: current_account&.manageable_by?(Current.user) || false,
-        token_thresholds: { amber: 100_000, red: 150_000, critical: 200_000 }
+        token_thresholds: { amber: 100_000, red: 150_000, critical: 200_000 },
+        # Site Admin pages only: whether production still follows master.
+        deploy_alarm: -> { site_admin_page? ? DeployAlarm.payload : nil }
       }
     else
       {
@@ -36,6 +38,10 @@ class ApplicationController < ActionController::Base
   wrap_parameters false # Disable default wrapping of parameters in JSON requests (Helpful with Inertia js)
 
   private
+
+  def site_admin_page?
+    self.class.name.to_s.start_with?("Admin::") && Current.user&.is_site_admin?
+  end
 
   # Who made a versioned change, as "User:12". A Proc, so it is read when the
   # version is written rather than when the callback runs.

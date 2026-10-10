@@ -308,6 +308,8 @@ module Api
               agent: current_api_agent,
               content: params[:message]
             )
+            # An @Name tag of an invited resident hands off to them, as in any post.
+            opening.handoff_recipient_ids = []
             SafeguardConversationPost.save(opening, check: safeguard_check) or
               raise ActiveRecord::RecordInvalid, opening
           end

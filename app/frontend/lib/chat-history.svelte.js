@@ -8,7 +8,10 @@ import {
 } from './chat-pagination-state';
 import {
   appendMessageIfMissing,
+  applyReceiptLedger,
   patchMessageInCollections,
+  receiptCatchUpBatches,
+  recordReceipts,
   removeMessageFromCollections,
 } from './chat-message-collections';
 import * as logging from './logging';
@@ -25,6 +28,9 @@ export function createChatHistory(context) {
   let chatId;
   let request;
   let releaseEntry;
+  // The newest handoff receipts seen per message, by version (see
+  // recordReceipts): applied to every copy that arrives afterwards.
+  let receiptLedger = new Map();
   const messages = $derived(combinePaginatedMessages(older, context().recent));
 
   $effect(() => {
@@ -41,6 +47,7 @@ export function createChatHistory(context) {
         chatId = id;
         older = [];
         previousRecent = [];
+        receiptLedger = new Map();
       } else {
         older = preserveDisplacedRecentMessages({
           olderMessages: older,
@@ -48,7 +55,10 @@ export function createChatHistory(context) {
           recentMessages: recent,
         });
       }
-      previousRecent = recent;
+      // A reload serialized before a receipt moved must not put it back.
+      const reconciled = applyReceiptLedger(recent, receiptLedger);
+      if (reconciled !== recent) current.setRecent(reconciled);
+      previousRecent = reconciled;
       if (older.length === 0) {
         hasMore = serverHasMore;
         oldestId = serverOldestId;
@@ -78,6 +88,63 @@ export function createChatHistory(context) {
   });
   onDestroy(() => request?.abort());
 
+  // A handoff receipt moved (cable.js). Remember it, then apply it wherever
+  // the message is loaded: the recent window, or older history fetched by
+  // scrolling, which a reload of the recent window never reaches. A copy
+  // still in flight (a page fetch, an Inertia reload) is reconciled against
+  // the same memory when it lands.
+  function applyReceipts() {
+    older = applyReceiptLedger(older, receiptLedger);
+    const recent = context().recent;
+    const reconciled = applyReceiptLedger(recent, receiptLedger);
+    if (reconciled !== recent) context().setRecent(reconciled);
+  }
+
+  $effect(() => {
+    const onReceipts = (event) => {
+      const {
+        chat_id: id,
+        message_id: messageId,
+        handoff_receipts: receipts,
+        handoff_receipts_version: version,
+      } = event.detail || {};
+      if (id !== context().chat.id) return;
+      if (recordReceipts(receiptLedger, messageId, receipts, version)) applyReceipts();
+    };
+    // After a reconnect the recent window reloads by itself; catch up the
+    // receipts of the older messages already shown, a bounded set, once.
+    const onReconnected = async (event) => {
+      const current = context();
+      if (event.detail?.id !== current.chat.id) return;
+      const batches = receiptCatchUpBatches(older);
+      try {
+        for (const ids of batches) {
+          const response = await fetch(
+            accountChatMessagesPath(current.account.id, current.chat.id, { receipts_for: ids.join(',') }),
+            { headers: { Accept: 'application/json' } }
+          );
+          if (!response.ok || context().chat.id !== current.chat.id) return;
+          const { receipts = {} } = await response.json();
+          let recorded = false;
+          for (const [messageId, entry] of Object.entries(receipts)) {
+            recorded =
+              recordReceipts(receiptLedger, messageId, entry.handoff_receipts, entry.handoff_receipts_version) ||
+              recorded;
+          }
+          if (recorded) applyReceipts();
+        }
+      } catch (error) {
+        logging.error('Failed to catch up handoff receipts:', error);
+      }
+    };
+    window.addEventListener('handoff-receipts', onReceipts);
+    window.addEventListener('chat-sync-connected', onReconnected);
+    return () => {
+      window.removeEventListener('handoff-receipts', onReceipts);
+      window.removeEventListener('chat-sync-connected', onReconnected);
+    };
+  });
+
   function scrollToBottom() {
     releaseEntry?.();
     tick().then(() => {
@@ -104,7 +171,7 @@ export function createChatHistory(context) {
       if (controller.signal.aborted || context().chat.id !== id) return;
       const result = prependOlderMessages({
         olderMessages: older,
-        newMessages: data.messages,
+        newMessages: applyReceiptLedger(data.messages, receiptLedger),
         hasMore: data.has_more,
         oldestId: data.oldest_id,
       });

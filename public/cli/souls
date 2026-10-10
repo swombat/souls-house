@@ -664,6 +664,54 @@ def cmd_config(client, args):
     })
 
 
+def cmd_repos(client, args):
+    emit(client.get("repositories"))
+
+
+def split_list(value):
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def cmd_watches_add(client, args):
+    """souls watches add OWNER/NAME --on ci|deploy ... -> POST /api/v1/watches.
+
+    --on ci arms a workflow_run watch (needs --sha); --on deploy arms a
+    deployment_status watch (--env and/or --sha; the house requires at least
+    one). Filters and wake/expiry are passed through for the house to validate."""
+    event = "workflow_run" if args.on == "ci" else "deployment_status"
+    if event == "workflow_run" and not args.sha:
+        raise CliError("--on ci needs --sha", EXIT_USAGE)
+    body = {"repository": args.repository, "event": event, "chat_id": args.chat_id, "wake": args.wake}
+    if args.sha:
+        body["sha"] = args.sha
+    if args.expires_in:
+        body["expires_in"] = args.expires_in
+    if event == "workflow_run":
+        if args.workflow:
+            body["workflow"] = args.workflow
+        if args.conclusions:
+            body["conclusions"] = split_list(args.conclusions)
+    else:
+        if args.environment:
+            body["environment"] = args.environment
+        if args.states:
+            body["states"] = split_list(args.states)
+    emit(client.post("watches", json_body=body))
+
+
+def cmd_watches_list(client, args):
+    query = [("repository", args.repository), ("state", args.state)]
+    emit(client.get("watches", query=query))
+
+
+def cmd_watches_show(client, args):
+    emit(client.get(f"watches/{args.id}"))
+
+
+def cmd_watches_cancel(client, args):
+    emit(client.delete(f"watches/{args.id}"))
+
+
 # ---------------------------------------------------------------- parser
 
 COMMAND_GROUPS = [
@@ -671,6 +719,7 @@ COMMAND_GROUPS = [
     ("Rooms", ["rooms", "read", "new", "post", "edit", "delete", "wake", "watch", "changes", "activity",
                "rename", "archive", "unarchive", "discard", "restore", "fork", "search"]),
     ("Attention", ["attention", "dismiss", "invitations"]),
+    ("Repository watches", ["repos", "watches"]),
     ("Other", ["residents", "glossary", "download", "api"]),
 ]
 
@@ -797,6 +846,39 @@ def build_parser():
 
     p = add("residents", cmd_residents, "List residents you can see, or show one")
     p.add_argument("id", nargs="?")
+
+    add("repos", cmd_repos, "Connected repositories you may watch")
+
+    p = add("watches", cmd_watches_list, "Repository watches: arm one, list, show, or cancel (souls watches help)")
+    p.add_argument("--repository", metavar="OWNER/NAME", help="list: only watches on this repository")
+    p.add_argument("--state", help="list: filter by state (armed, fulfilled, expired, undeliverable, cancelled)")
+    wsub = p.add_subparsers(dest="watches_command", metavar="add|list|show|cancel")
+
+    wp = wsub.add_parser("add", parents=[common], help="Arm a watch on a workflow run or deployment status")
+    wp.add_argument("repository", metavar="OWNER/NAME")
+    wp.add_argument("--on", required=True, choices=["ci", "deploy"], help="ci arms workflow_run, deploy arms deployment_status")
+    wp.add_argument("--sha", metavar="SHA", help="commit sha; required with --on ci")
+    wp.add_argument("--workflow", metavar="NAME", help="--on ci: only this workflow name")
+    wp.add_argument("--conclusions", metavar="LIST", help="--on ci: comma-separated conclusions to fire on")
+    wp.add_argument("--env", dest="environment", metavar="ENV", help="--on deploy: environment")
+    wp.add_argument("--states", metavar="LIST", help="--on deploy: comma-separated states to fire on")
+    wp.add_argument("--chat", required=True, dest="chat_id", metavar="ROOM", help="conversation to post the result in")
+    wp.add_argument("--wake", action="store_true", help="wake the arming resident once (residents only)")
+    wp.add_argument("--expires-in", dest="expires_in", metavar="DURATION", help="e.g. 30m, 24h, 7d (default 24h)")
+    wp.set_defaults(func=cmd_watches_add)
+
+    wp = wsub.add_parser("list", parents=[common], help="List watches")
+    wp.add_argument("--repository", metavar="OWNER/NAME")
+    wp.add_argument("--state")
+    wp.set_defaults(func=cmd_watches_list)
+
+    wp = wsub.add_parser("show", parents=[common], help="Show one watch")
+    wp.add_argument("id")
+    wp.set_defaults(func=cmd_watches_show)
+
+    wp = wsub.add_parser("cancel", parents=[common], help="Cancel an armed watch (the creator, or an account member)")
+    wp.add_argument("id")
+    wp.set_defaults(func=cmd_watches_cancel)
 
     p = add("glossary", cmd_glossary, "The account's transcription glossary: list, add, remove, pin, unpin")
     p.add_argument("glossary_command", nargs="?", choices=["list", "add", "remove", "pin", "unpin"],

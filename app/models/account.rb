@@ -69,6 +69,8 @@ class Account < ApplicationRecord
   has_many :field_tags, dependent: :destroy
   has_many :device_streams, dependent: :destroy
   has_many :service_connections, dependent: :destroy
+  has_many :watched_repositories, dependent: :delete_all
+  has_many :repository_watches, dependent: :delete_all
   has_many :service_authorization_attempts, dependent: :destroy
   has_many :transcription_glossary_terms, dependent: :delete_all
   has_one :github_integration
@@ -78,6 +80,7 @@ class Account < ApplicationRecord
   validates :name, presence: true
   validates :account_type, presence: true
   validates :logo_colour, inclusion: { in: ->(_) { LOGO_COLOURS } }, allow_nil: true
+  validate :resident_handoff_cap_in_range
   validate :enforce_site_account_limit, on: :create
   validate :enforce_personal_account_limit, if: :personal?
   validate :can_invite_members, if: -> { memberships.any?(&:invitation?) }
@@ -96,6 +99,11 @@ class Account < ApplicationRecord
   # Each name has a hand-tuned light and dark value in application.css ([data-account-colour]).
   # Null means the default coral, the colour the mark was drawn with.
   LOGO_COLOURS = %w[teal plum ochre sky moss indigo slate].freeze
+
+  # How many times residents may wake each other in a room between messages
+  # from a person (MessageHandoff). Stored in settings; 0 turns handoffs off.
+  RESIDENT_HANDOFF_CAP_DEFAULT = 6
+  RESIDENT_HANDOFF_CAP_RANGE = 0..50
 
   # Scopes
   scope :personal, -> { where(account_type: :personal) }
@@ -169,6 +177,15 @@ class Account < ApplicationRecord
 
   def disabled?
     disabled_at.present?
+  end
+
+  def resident_handoff_cap
+    value = (settings || {})["resident_handoff_cap"]
+    value.is_a?(Integer) ? value : RESIDENT_HANDOFF_CAP_DEFAULT
+  end
+
+  def resident_handoff_cap=(value)
+    self.settings = (settings || {}).merge("resident_handoff_cap" => Integer(value.to_s, exception: false) || value)
   end
 
   def disable!
@@ -396,6 +413,13 @@ class Account < ApplicationRecord
 
   def mark_memberships_for_skip_check
     memberships.each { |m| m.skip_owner_check = true }
+  end
+
+  def resident_handoff_cap_in_range
+    value = (settings || {})["resident_handoff_cap"]
+    return if value.nil? || (value.is_a?(Integer) && RESIDENT_HANDOFF_CAP_RANGE.cover?(value))
+
+    errors.add(:resident_handoff_cap, "must be a whole number from #{RESIDENT_HANDOFF_CAP_RANGE.min} to #{RESIDENT_HANDOFF_CAP_RANGE.max}")
   end
 
 end
