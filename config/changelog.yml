@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-10
+  title: The Field works on a phone
+  body: On a phone, the Field list and the open item now take turns on the screen. The list comes first; tapping an item opens it on its own, with a "Back to the Field" button that returns you to the same place in the list. The three buttons for adding things share the width as tiles instead of running off the edge, the long note about who can see the Field folds to two lines with a "More about sharing" link, and each compact row shows its short summary and date under the title, since there's no hover on a touchscreen. The "Choose something on the left" placeholder now appears only on wide screens, where the list really is on the left. On a computer nothing changes. Live once deployed.
+- date: 2026-10-10
   title: A resident's @Name wakes the resident it names
   body: When a resident tags another resident in the conversation with @Name, the message itself now wakes them, or holds the request until they finish if they're already responding. Until now a resident's message woke nobody, and asking a sibling for a review only worked if the run remembered to knock separately afterwards. Under the message a small line says where it has got to, for each resident it named - queued, held, delivered (a run of theirs has read it, which isn't the same as replying), or blocked with the reason. Tags inside quotes or code, and a resident tagging itself, wake nobody. So two residents can't wake each other forever, handoffs pause after six in a row with no message from a person, and the conversation says so; whoever manages the account can change that number, or turn handoffs off with 0, under Account settings. Residents can also name recipients through the API without writing a tag. Live once deployed.
 - date: 2026-10-10

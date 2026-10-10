@@ -1,7 +1,8 @@
 <script>
   // One item in the compact Field list: a single line with the kind, the
   // title, a status when a recording isn't ready, and the date. Used once a
-  // list holds more than a handful of items.
+  // list holds more than a handful of items. On a phone, where there's no
+  // hover, the gist and the date take a second line under the title.
   import { formatWhen } from '$lib/field';
   import { recordingStatusLine } from '$lib/field-recordings';
   import { File, Microphone, Notepad } from 'phosphor-svelte';
@@ -29,7 +30,7 @@
   onclick={() => onSelect(item.key)}
   title={hint}
   aria-current={selected ? 'true' : undefined}
-  class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-muted/60 {selected
+  class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/60 sm:py-1.5 {selected
     ? 'bg-primary/10 font-medium'
     : ''}"
   data-testid="field-item">
@@ -40,7 +41,12 @@
   {:else}
     <Notepad class="size-4 text-muted-foreground shrink-0" weight="duotone" aria-label={kindLabel.note} />
   {/if}
-  <span class="flex-1 min-w-0 truncate">{item.title}</span>
+  <span class="flex-1 min-w-0">
+    <span class="block truncate">{item.title}</span>
+    <span class="block truncate text-xs font-normal text-muted-foreground sm:hidden">
+      {[item.summary_short, formatWhen(item.created_at)].filter(Boolean).join(' · ')}
+    </span>
+  </span>
   {#if pending}
     <span
       class="shrink-0 text-xs {broken ? 'text-destructive' : 'text-muted-foreground'}"
@@ -48,5 +54,6 @@
       {broken ? 'Failed' : recordingStatusLine(item)}
     </span>
   {/if}
-  <span class="shrink-0 text-xs text-muted-foreground tabular-nums">{formatWhen(item.created_at)}</span>
+  <span class="hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:inline"
+    >{formatWhen(item.created_at)}</span>
 </button>

@@ -150,3 +150,57 @@ test('a full Field turns compact and pages through fifty at a time', async ({ pa
     await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
   }
 });
+
+test('on a phone the Field fits the screen and an open item takes it over', async ({ page, request }, testInfo) => {
+  const runId = `field-phone-${Date.now()}`;
+  const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });
+  expect(response.ok()).toBe(true);
+  const setup = await response.json();
+  const shot = (name) => page.screenshot({ path: testInfo.outputPath(`${name}.png`), fullPage: true });
+  const fitsWidth = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+
+  try {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.goto('/login');
+    await page.getByLabel(/email/i).fill(setup.primary_user.email);
+    await page.getByLabel(/password/i).fill(setup.password);
+    await page.getByRole('button', { name: /log in/i }).click();
+    await expect(page).toHaveURL(/\/$/);
+
+    const base = `/accounts/${setup.account_param}`;
+    await page.goto(`${base}/field`);
+    await page.evaluate(async (base) => {
+      const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      for (let i = 1; i <= 14; i++) {
+        const body = new FormData();
+        body.append(
+          'whiteboard[name]',
+          `Phone note ${String(i).padStart(2, '0')} with a rather long title to truncate`
+        );
+        body.append('whiteboard[content]', `Phone body ${i}`);
+        await fetch(`${base}/whiteboards`, { method: 'POST', body, headers: { 'X-CSRF-Token': token } });
+      }
+    }, base);
+
+    await page.goto(`${base}/field`);
+    await expect(page.getByTestId('field-compact-list')).toBeVisible();
+    await expect(page.getByTestId('field-add-recording')).toBeInViewport();
+    await expect(page.getByTestId('field-reader')).toBeHidden();
+    expect(await fitsWidth()).toBe(true);
+    await shot('8-phone-list');
+
+    await page.getByTestId('field-item').filter({ hasText: 'Phone note 03' }).click();
+    await expect(page.getByText('Phone body 3', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('field-compact-list')).toBeHidden();
+    await expect(page.getByTestId('field-back')).toBeInViewport();
+    expect(await fitsWidth()).toBe(true);
+    await shot('9-phone-open-item');
+
+    await page.getByTestId('field-back').click();
+    await expect(page).not.toHaveURL(/item=/);
+    await expect(page.getByTestId('field-compact-list')).toBeVisible();
+    await expect(page.getByTestId('field-reader')).toBeHidden();
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
+  }
+});
