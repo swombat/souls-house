@@ -1,7 +1,7 @@
 <script>
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
-  import { DropboxLogo, GithubLogo, Funnel, ShareNetwork, GoogleLogo, Heartbeat } from 'phosphor-svelte';
+  import { DropboxLogo, GithubLogo, Funnel, Bug, ShareNetwork, GoogleLogo, Heartbeat } from 'phosphor-svelte';
   import { serviceIconClass } from '$lib/service-presentation';
   import { submitNativePost } from '$lib/integration-forms';
   import TailscaleKeyNote from './tailscale-key-note.svelte';
@@ -93,6 +93,8 @@
         <GithubLogo size={26} weight="fill" />
       {:else if focusedService.key === 'pipedrive'}
         <Funnel size={26} weight="bold" />
+      {:else if focusedService.key === 'honeybadger'}
+        <Bug size={26} weight="bold" />
       {:else if focusedService.key === 'tailscale'}
         <ShareNetwork size={26} weight="bold" />
       {:else}
@@ -156,6 +158,14 @@
           Residents with this connection act as you in Pipedrive, with all of your Pipedrive permissions. Find the token
           under your profile menu → Personal preferences → API. Pipedrive allows one token per user, so anything else
           using it keeps working until you regenerate it.
+        </div>
+      {/if}
+      {#if focusedService.key === 'honeybadger'}
+        <div class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+          Residents with this connection see your errors, including the request details Honeybadger stored with them,
+          and act as you in Honeybadger. The token carries all of your permissions, so a resident could resolve or
+          delete errors too; they are told to read unless asked. Find it under User settings → Authentication. It is not
+          a project's API key.
         </div>
       {/if}
       {#if focusedService.key === 'tailscale'}

@@ -20,8 +20,8 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
     get account_field_path(@account)
     assert_response :success
     props = inertia_props
-    assert_equal [ "Tuesday meeting" ], props["files"].map { |f| f["title"] }
-    assert_includes props["notes"].map { |n| n["title"] }, "Week notes"
+    assert_equal [ "Tuesday meeting" ], props["items"].select { |i| i["kind"] == "file" }.map { |f| f["title"] }
+    assert_includes props["items"].select { |i| i["kind"] == "note" }.map { |n| n["title"] }, "Week notes"
     assert_equal @account.name, props["account_name"]
     assert_equal 100.megabytes, props["max_file_bytes"]
     assert_equal "100 MB", props["max_file_label"]
@@ -70,7 +70,7 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
     assert ActiveStorage::Blob.exists?(file.file.blob.id)
 
     get account_field_path(@account)
-    assert_not_includes inertia_props["files"].map { |f| f["id"] }, file.to_param
+    assert_not_includes inertia_props["items"].map { |f| f["id"] }, file.to_param
 
     get old_url
     follow_redirect! if response.redirect?
@@ -117,7 +117,62 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
   test "the Field page shows only this account's files" do
     accounts(:another_team).field_files.create!(file: upload, title: "Not ours")
     get account_field_path(@account)
-    assert_not_includes inertia_props["files"].map { |f| f["title"] }, "Not ours"
+    assert_not_includes inertia_props["items"].select { |i| i["kind"] == "file" }.map { |f| f["title"] }, "Not ours"
+  end
+
+  test "the list comes a page at a time, newest first, with counts per tab" do
+    @account.whiteboards.update_all(deleted_at: Time.current) # fixtures' notes
+    files = 53.times.map { |i| @account.field_files.create!(file: upload, title: "File #{i}", uploaded_by: @user, created_at: i.minutes.ago) }
+    @account.whiteboards.create!(name: "Old note", content: "# Old").update_columns(updated_at: 2.days.ago, last_edited_at: 2.days.ago)
+
+    get account_field_path(@account)
+    props = inertia_props
+    assert_equal 50, props["items"].size
+    assert_equal "File 0", props["items"].first["title"]
+    assert_equal({ "page" => 1, "pages" => 2, "per_page" => 50, "total" => 54 }, props["pagination"])
+    assert_equal({ "all" => 54, "files" => 53, "notes" => 1, "recordings" => 0 }, props["counts"])
+    assert_nil props["items"].find { |i| i["kind"] == "note" }
+
+    get account_field_path(@account, page: "2")
+    props = inertia_props
+    assert_equal [ "File 50", "File 51", "File 52", "Old note" ], props["items"].map { |i| i["title"] }
+    assert_nil props["items"].last["content"], "listed notes leave their content behind"
+
+    get account_field_path(@account, page: "9", tab: "notes")
+    props = inertia_props
+    assert_equal 1, props["pagination"]["page"], "a page past the end shows the last page"
+    assert_equal [ "Old note" ], props["items"].map { |i| i["title"] }
+
+    get account_field_path(@account, item: "file-#{files.last.to_param}")
+    props = inertia_props
+    assert_equal "File 52", props["current_item"]["title"], "the open item is sent even when it's on another page"
+    assert_equal "file-#{files.last.to_param}", props["selected"]
+  end
+
+  test "the tag filter narrows the list and its counts on the server" do
+    tagged = @account.field_files.create!(file: upload, title: "Tagged", uploaded_by: @user)
+    @account.field_files.create!(file: upload, title: "Plain", uploaded_by: @user)
+    tagged.change_tags!(by: @user, add: %w[life])
+
+    get account_field_path(@account, tag: "life")
+    props = inertia_props
+    assert_equal [ "Tagged" ], props["items"].map { |i| i["title"] }
+    assert_equal 1, props["counts"]["all"]
+    assert_not props["field_empty"]
+  end
+
+  test "an open note carries its content" do
+    note = @account.whiteboards.create!(name: "Week notes", content: "# Week")
+    get account_field_path(@account, item: "note-#{note.to_param}")
+    assert_equal "# Week", inertia_props["current_item"]["content"]
+  end
+
+  test "an unknown or foreign item opens nothing" do
+    other = accounts(:another_team).field_files.create!(file: upload, title: "Not ours")
+    get account_field_path(@account, item: "file-#{other.to_param}")
+    assert_nil inertia_props["current_item"]
+    get account_field_path(@account, item: "nonsense")
+    assert_nil inertia_props["current_item"]
   end
 
   private

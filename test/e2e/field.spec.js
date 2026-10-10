@@ -94,3 +94,59 @@ test('a member brings a file into the Field, writes a note, and deletes the file
     await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
   }
 });
+
+test('a full Field turns compact and pages through fifty at a time', async ({ page, request }, testInfo) => {
+  const runId = `field-pages-${Date.now()}`;
+  const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });
+  expect(response.ok()).toBe(true);
+  const setup = await response.json();
+  const shot = (name) => page.screenshot({ path: testInfo.outputPath(`${name}.png`), fullPage: true });
+
+  try {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto('/login');
+    await page.getByLabel(/email/i).fill(setup.primary_user.email);
+    await page.getByLabel(/password/i).fill(setup.password);
+    await page.getByRole('button', { name: /log in/i }).click();
+    await expect(page).toHaveURL(/\/$/);
+
+    const base = `/accounts/${setup.account_param}`;
+    await page.goto(`${base}/field?tab=notes`);
+    await expect(page.getByTestId('field-compact-list')).toHaveCount(0);
+
+    // Sixty notes, written the way the New note form writes them.
+    await page.evaluate(async (base) => {
+      const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      for (let i = 1; i <= 60; i++) {
+        const body = new FormData();
+        body.append('whiteboard[name]', `Pile note ${String(i).padStart(2, '0')}`);
+        body.append('whiteboard[content]', `Note ${i}`);
+        await fetch(`${base}/whiteboards`, { method: 'POST', body, headers: { 'X-CSRF-Token': token } });
+      }
+    }, base);
+
+    await page.goto(`${base}/field?tab=notes`);
+    await expect(page.getByTestId('field-compact-list')).toBeVisible();
+    await expect(page.getByTestId('field-item')).toHaveCount(50);
+    await expect(page.getByTestId('field-item').first()).toContainText('Pile note 60');
+    await expect(page.getByTestId('field-pager-status').first()).toContainText('page 1 of 2');
+    await shot('6-compact-page-1');
+
+    await page.getByRole('button', { name: 'Next page' }).first().click();
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.getByTestId('field-pager-status').first()).toContainText('page 2 of 2');
+    const second = page.getByTestId('field-item').filter({ hasText: 'Pile note 01' });
+    await expect(second).toBeVisible();
+
+    // Opening an item keeps the page; the note reads in full.
+    await second.click();
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.getByText('Note 1', { exact: true })).toBeVisible();
+    await shot('7-compact-page-2-open');
+
+    await page.getByRole('tab', { name: /Files/ }).click();
+    await expect(page).not.toHaveURL(/page=/);
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
+  }
+});

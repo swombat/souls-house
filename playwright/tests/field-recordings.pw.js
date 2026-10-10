@@ -173,9 +173,10 @@ test('the "is one of these you?" hint shows when asked for', async ({ mount, pag
 });
 
 const fieldProps = (recordings) => ({
-  files: [],
-  notes: [],
-  recordings,
+  items: recordings,
+  field_empty: recordings.length === 0,
+  counts: { all: recordings.length, files: 0, notes: 0, recordings: recordings.length },
+  pagination: { page: 1, pages: 1, per_page: 50, total: recordings.length },
   recording_allowance: { limit_ms: 72_000_000, used_ms: 12_000_000, pending_ms: 3_600_000, window_days: 7 },
   max_recording_bytes: 2 * 1024 ** 3,
   max_recording_label: '2 GB',
@@ -188,9 +189,7 @@ const fieldProps = (recordings) => ({
 test('the Recordings tab lists recordings in plain words, with the allowance gauge', async ({ mount, page }) => {
   const component = await mount(FieldPage, {
     props: {
-      files: [],
-      notes: [],
-      recordings: [
+      items: [
         recording,
         {
           ...recording,
@@ -213,6 +212,8 @@ test('the Recordings tab lists recordings in plain words, with the allowance gau
           dispatched: false,
         },
       ],
+      counts: { all: 3, files: 0, notes: 0, recordings: 3 },
+      pagination: { page: 1, pages: 1, per_page: 50, total: 3 },
       recording_allowance: { limit_ms: 72_000_000, used_ms: 12_000_000, pending_ms: 3_600_000, window_days: 7 },
       max_recording_bytes: 2 * 1024 ** 3,
       max_recording_label: '2 GB',
