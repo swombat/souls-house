@@ -111,6 +111,23 @@ class DeployAlarmTest < ActiveSupport::TestCase
     assert_empty @notices
   end
 
+  test "a Rails deploy queued before the failure but finished after it makes it old news" do
+    production(DEPLOYED, master: MASTER_B, behind: 2)
+    @auto_runs = [ auto_run(1, MASTER_A, conclusion: "failure") ]
+    @manual_runs = [ manual_run(9, status: "completed", conclusion: "success", at: T0 - 10.minutes, finished: T0 + 1.minute) ]
+
+    assert_equal "ok", check(T0 + 2.minutes).state
+    assert_empty @notices
+  end
+
+  test "a Rails deploy that finished before the failure doesn't retire it" do
+    production(DEPLOYED, master: MASTER_B, behind: 2)
+    @auto_runs = [ auto_run(1, MASTER_A, conclusion: "failure") ]
+    @manual_runs = [ manual_run(9, status: "completed", conclusion: "success", at: T0 - 10.minutes, finished: T0 - 2.minutes) ]
+
+    assert_equal "stuck", check(T0).state
+  end
+
   test "a process restart on the same image doesn't make a failure old news" do
     Rails.application.config.x.booted_at = T0 + 1.minute
     @auto_runs = [ auto_run(1, MASTER_A, conclusion: "failure") ]
@@ -163,6 +180,20 @@ class DeployAlarmTest < ActiveSupport::TestCase
     check(T0 + 10.minutes)
     assert_equal 1, @notices.size
     assert_equal T0, DeployAlarmState.current.since
+  end
+
+  test "a notice Honeybadger returned false for is retried, then not repeated" do
+    @auto_runs = [ auto_run(1, MASTER_A, conclusion: "failure") ]
+    attempts = 0
+    Honeybadger.stub(:notify, ->(*, **) { attempts += 1; false }) { DeployAlarm.check!(now: T0) }
+
+    assert_equal 1, attempts
+    assert_nil DeployAlarmState.current.notified_at
+
+    check(T0 + 5.minutes)
+    check(T0 + 10.minutes)
+    assert_equal 1, @notices.size
+    assert_not_nil DeployAlarmState.current.notified_at
   end
 
   test "behind for 29 minutes with no run is ok; at 31 it is stuck, once" do
@@ -323,7 +354,7 @@ class DeployAlarmTest < ActiveSupport::TestCase
   private
 
   def check(now)
-    Honeybadger.stub(:notify, ->(error, **options) { @notices << [ error, options ] }) do
+    Honeybadger.stub(:notify, ->(error, **options) { @notices << [ error, options ]; "notice-#{@notices.size}" }) do
       DeployAlarm.check!(now:)
     end
     DeployAlarmState.current
@@ -347,11 +378,11 @@ class DeployAlarmTest < ActiveSupport::TestCase
     }
   end
 
-  def manual_run(id, status:, conclusion: nil, sha: MASTER_B, path: "deploy-rails.yml", at: T0)
+  def manual_run(id, status:, conclusion: nil, sha: MASTER_B, path: "deploy-rails.yml", at: T0, finished: at)
     {
       "id" => id, "run_attempt" => 1, "path" => ".github/workflows/#{path}",
       "status" => status, "conclusion" => conclusion, "head_sha" => sha,
-      "created_at" => at.iso8601, "updated_at" => at.iso8601,
+      "created_at" => at.iso8601, "updated_at" => finished.iso8601,
       "html_url" => "https://github.com/swombat/souls-house/actions/runs/#{id}"
     }
   end

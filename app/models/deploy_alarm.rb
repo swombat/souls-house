@@ -187,7 +187,8 @@ class DeployAlarm
   end
 
   # The newest finished automatic deploy failed, for a commit that isn't the
-  # one running, and no Rails deploy has succeeded since. (Restarting a
+  # one running, and no Rails deploy has finished successfully since (by
+  # completion time: a run queued before the failure can still retire it). (Restarting a
   # process on the same image proves nothing: only a later successful deploy
   # shows the gate was cleared.)
   def failed_automatic?
@@ -198,7 +199,7 @@ class DeployAlarm
     failed_at = parse_time(run[:updated_at]) || parse_time(run[:created_at])
     runs.none? { |later|
       RAILS_WORKFLOWS.include?(later[:workflow]) && later[:status] == "completed" && later[:conclusion] == "success" &&
-        !%w[superseded not_deployed].include?(later[:outcome].to_s) && failed_at && (parse_time(later[:created_at]) || failed_at) > failed_at
+        !%w[superseded not_deployed].include?(later[:outcome].to_s) && failed_at && (finished = parse_time(later[:updated_at])) && finished > failed_at
     }
   end
 
@@ -239,8 +240,11 @@ class DeployAlarm
     }
     message = "Production is on #{deployed_sha.to_s.first(7).presence || "an unknown build"}" \
       "#{", #{behind_by} behind master" if behind_by}. #{attrs[:reason]}"
-    Honeybadger.notify(ProductionBehindMaster.new(message), context: context, fingerprint: "deploy-alarm-#{episode}")
-    true
+    # The gem returns the notice id when it takes the notice, and false
+    # (without raising) when it is disabled, ignored or rejected.
+    accepted = Honeybadger.notify(ProductionBehindMaster.new(message), context: context, fingerprint: "deploy-alarm-#{episode}")
+    Rails.logger.warn("[DeployAlarm] Honeybadger did not accept the notice") unless accepted
+    accepted ? true : false
   rescue StandardError => e
     Rails.logger.error("[DeployAlarm] Honeybadger notification failed: #{e.class}: #{e.message}")
     false
