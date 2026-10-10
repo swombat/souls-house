@@ -290,6 +290,35 @@ class RunBackupTest(unittest.TestCase):
             self.assertFalse(self.docker.paused)
             self.assertEqual(len(self.docker.paused_for_restic), 1)
 
+    def test_restic_init_accepts_pinned_existing_config_diagnostic_only(self):
+        repository = FakeProxy(self.callback, time.monotonic() + 600).repository
+        diagnostic = (
+            f"Fatal: create repository at {repository} failed: "
+            f"Fatal: unable to open repository at {repository}: config file already exists"
+        )
+        self.docker.init_output = diagnostic
+        result = self.run_backup()
+        self.assertEqual(result["snapshot_id"], SNAPSHOT)
+        self.assertTrue(result["unpaused"])
+        self.assertNotIn(repository, json.dumps(result))
+        for error in (
+            "config file already exists",
+            "Fatal: repository already exists",
+            diagnostic + ": permission denied",
+            "connection timeout\n" + diagnostic,
+            diagnostic.replace(" failed: Fatal:", " failed:\nFatal:"),
+            diagnostic.replace("unable to open repository", "unable to create repository"),
+            diagnostic.replace(f"open repository at {repository}", "open repository at rest:http://other/"),
+        ):
+            self.docker = FakeDocker()
+            self.docker.init_output = error
+            with self.subTest(error=error), self.assertRaises(backup.BackupFailed) as caught:
+                self.run_backup()
+            self.assertEqual(str(caught.exception), "restic init failed")
+            self.assertNotIn(repository, json.dumps(caught.exception.result))
+            self.assertFalse(self.docker.paused)
+            self.assertEqual(len(self.docker.paused_for_restic), 1)
+
     def test_backup_failure_and_missing_summary_unpause_in_finally(self):
         for summary in ({}, {"message_type": "summary", "snapshot_id": "d" * 8, "total_bytes_processed": 0},
                         {"message_type": "summary", "snapshot_id": SNAPSHOT, "total_bytes_processed": True}):
@@ -1055,6 +1084,15 @@ class BoundedDockerTest(unittest.TestCase):
         ok, output = backup.bounded_docker([sys.executable, "-c", "print('x' * 300000)"], timeout=2)
         self.assertTrue(ok)
         self.assertLessEqual(len(output), backup.OUTPUT_BYTES)
+
+    def test_failed_command_returns_stderr_not_stdout(self):
+        ok, output = backup.bounded_docker([
+            sys.executable, "-c",
+            "import sys; print('stdout decoy'); "
+            "print('config file already exists', file=sys.stderr); sys.exit(1)",
+        ], timeout=2)
+        self.assertFalse(ok)
+        self.assertEqual(output, "config file already exists")
 
     def test_timeout_kills_and_reaps_process(self):
         before = time.monotonic()
