@@ -93,6 +93,13 @@ logs. A failed sink cannot block the trigger, so a missing receipt is still
 unconfirmed, not proof the checker did not run. A receipt establishes completion
 of this boundary call, not working capability or descendant containment.
 
+Resident visibility is not established by this draft. The shim's Python logging
+defaults to stderr; it does not publish a resident-readable receipt path or API.
+These receipts support operator auditing, but do not yet let a resident
+distinguish a quiet hook from a dead one from inside their container.
+Do not describe resident self-verification as implemented. Any future readable
+receipt surface needs its own bounded-retention and access contract.
+
 Built-image interpreter/PATH and fresh/resume/fallback receipt verification
 remain pending; this draft is neither deployed nor submitted as a PR.
 
