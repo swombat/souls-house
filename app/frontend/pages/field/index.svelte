@@ -14,13 +14,12 @@
   import RecordingViewer from '$lib/components/field/RecordingViewer.svelte';
   import FieldTagEditor from '$lib/components/field/FieldTagEditor.svelte';
   import FieldTagManager from '$lib/components/field/FieldTagManager.svelte';
-  import FieldItemCard from '$lib/components/field/FieldItemCard.svelte';
-  import FieldItemRow from '$lib/components/field/FieldItemRow.svelte';
-  import FieldPager from '$lib/components/field/FieldPager.svelte';
+  import FieldList from '$lib/components/field/FieldList.svelte';
+  import FieldEmpty from '$lib/components/field/FieldEmpty.svelte';
   import FieldSearchBar from '$lib/components/field/FieldSearchBar.svelte';
   import FieldSearchResults from '$lib/components/field/FieldSearchResults.svelte';
   import { fieldItemLink, formatBytes } from '$lib/field';
-  import { FileArrowUp, Microphone, NotePencil, Plant } from 'phosphor-svelte';
+  import { FileArrowUp, Microphone, NotePencil } from 'phosphor-svelte';
 
   let {
     items = [],
@@ -53,9 +52,6 @@
 
   // The server sends one page of the list (tab and tags already applied),
   // the counts for each tab, and the open item wherever it sits.
-  // Past COMPACT_AFTER items the list turns into one-line rows.
-  const COMPACT_AFTER = 10;
-  const compact = $derived(pagination.total > COMPACT_AFTER);
   const fieldEmpty = $derived(field_empty);
   const current = $derived(current_item);
   const accountLabel = $derived(account_name || 'this account');
@@ -121,6 +117,12 @@
     conflict = null;
     visit({ tab, item: key });
   }
+
+  // A newly opened item starts at its top; the list keeps its own scroll.
+  let detailPane = $state(null);
+  $effect(() => {
+    if (detailPane && current?.key) detailPane.scrollTop = 0;
+  });
 
   let recordingOpen = $state(false);
 
@@ -300,20 +302,7 @@
   </div>
 
   {#if fieldEmpty}
-    <Card.Root>
-      <Card.Content class="py-16 text-center max-w-xl mx-auto">
-        <Plant class="mx-auto size-16 text-muted-foreground mb-4" weight="duotone" />
-        <h2 class="text-xl font-semibold mb-2">Bring something into the Field.</h2>
-        <p class="text-muted-foreground mb-3">
-          Add files, write notes or bring in recordings to keep and return to together.
-        </p>
-        <p class="text-muted-foreground mb-3" data-testid="field-sharing">
-          Everything here is shared with every human member and resident in {accountLabel}. Adding something doesn't
-          notify or wake residents. To explore it together, share its link in a chat.
-        </p>
-        <p class="text-muted-foreground text-sm">Recordings are transcribed, so everyone can read them.</p>
-      </Card.Content>
-    </Card.Root>
+    <FieldEmpty {accountLabel} />
   {:else}
     <FieldSearchBar
       {query}
@@ -361,33 +350,20 @@
             onSelect={selectItem}
             onMore={nextResults} />
         {:else}
-          {#if items.length === 0}
-            <p class="text-sm text-muted-foreground p-4">
-              {filter_tags.length ? `Nothing here carries ${filter_tags.join(' and ')}.` : 'Nothing here yet.'}
-            </p>
-          {/if}
-          {#if pagination.pages > 1}
-            <FieldPager {pagination} onPage={goToPage} />
-          {/if}
-          {#if compact}
-            <div class="rounded-md border divide-y" data-testid="field-compact-list">
-              {#each items as item (item.key)}
-                <FieldItemRow {item} selected={current?.key === item.key} onSelect={selectItem} />
-              {/each}
-            </div>
-          {:else}
-            {#each items as item (item.key)}
-              <FieldItemCard {item} selected={current?.key === item.key} onSelect={selectItem} />
-            {/each}
-          {/if}
-          {#if pagination.pages > 1}
-            <FieldPager {pagination} onPage={goToPage} />
-          {/if}
+          <FieldList
+            {items}
+            {pagination}
+            filterTags={filter_tags}
+            currentKey={current?.key}
+            onSelect={selectItem}
+            onPage={goToPage} />
         {/if}
       </div>
 
       <!-- Sticky, so a long list can be scrolled with the open item in view. -->
-      <div class="lg:col-span-2 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+      <div
+        bind:this={detailPane}
+        class="lg:col-span-2 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
         {#if current}
           <div class="mb-3">
             {#key current.key}

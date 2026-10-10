@@ -88,7 +88,7 @@ class FieldListing
     case kind
     when "file" then @account.field_files.where(id: ids).includes(:uploaded_by, file_attachment: :blob)
     when "note" then @account.whiteboards.where(id: ids).includes(:last_edited_by)
-    else @account.field_recordings.where(id: ids).includes(:uploaded_by, speakers: :field_voice)
+    else @account.field_recordings.where(id: ids).includes(:uploaded_by, audio_attachment: :blob, speakers: :field_voice)
     end
   end
 
