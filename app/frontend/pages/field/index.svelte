@@ -17,6 +17,7 @@
   import FieldItemCard from '$lib/components/field/FieldItemCard.svelte';
   import FieldSearchBar from '$lib/components/field/FieldSearchBar.svelte';
   import FieldSearchResults from '$lib/components/field/FieldSearchResults.svelte';
+  import SummariesNotice from '$lib/components/field/SummariesNotice.svelte';
   import { fieldItemLink, formatBytes } from '$lib/field';
   import { FileArrowUp, Microphone, NotePencil, Plant } from 'phosphor-svelte';
 
@@ -28,6 +29,7 @@
     max_recording_bytes = 2 * 1024 * 1024 * 1024,
     max_recording_label = '2 GB',
     suggestions_enabled = false,
+    summaries_enabled = false,
     tab = 'all',
     selected = null,
     max_file_bytes = 100 * 1024 * 1024,
@@ -321,6 +323,7 @@
 
     <p class="text-sm text-muted-foreground mb-4" data-testid="field-sharing">
       {sharedLine} Adding something doesn't notify or wake residents; share its link in a chat to explore it together.
+      {#if summaries_enabled}<SummariesNotice />{/if}
     </p>
 
     <!-- The tabs sort the list; a search has its own results. -->
@@ -415,7 +418,7 @@
   <Dialog.Content class="sm:max-w-lg">
     <Dialog.Header>
       <Dialog.Title>Add a file to the Field</Dialog.Title>
-      <Dialog.Description>{sharedLine}</Dialog.Description>
+      <Dialog.Description>{sharedLine} {#if summaries_enabled}<SummariesNotice kind="file" />{/if}</Dialog.Description>
     </Dialog.Header>
     <form onsubmit={submitUpload} class="space-y-4">
       <div class="space-y-1">
@@ -459,6 +462,7 @@
   maxBytes={max_recording_bytes}
   maxLabel={max_recording_label}
   suggestionsEnabled={suggestions_enabled}
+  summariesEnabled={summaries_enabled}
   {sharedLine} />
 
 <Dialog.Root bind:open={noteOpen}>
