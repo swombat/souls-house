@@ -287,7 +287,7 @@ class RepositoryWatch < ApplicationRecord
 
   def lifetime_label
     seconds = (expires_at - created_at).round
-    if seconds % 1.day.to_i == 0 then "#{seconds / 1.day.to_i} d"
+    if seconds >= 2.days.to_i && seconds % 1.day.to_i == 0 then "#{seconds / 1.day.to_i} d"
     elsif seconds % 1.hour.to_i == 0 then "#{seconds / 1.hour.to_i} h"
     else "#{(seconds / 60.0).round} min"
     end
