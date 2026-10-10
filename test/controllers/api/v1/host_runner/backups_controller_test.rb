@@ -122,7 +122,9 @@ class Api::V1::HostRunner::BackupsControllerTest < ActionDispatch::IntegrationTe
     assert_equal [ ID ], response.parsed_body
     fetch("#{BASE}/snapshots/", headers: { "Accept" => Backup::VmRepository::V2_MEDIA_TYPE })
     assert_response :ok
-    assert_equal Backup::VmRepository::V2_MEDIA_TYPE, response.media_type
+    # restic compares the whole header byte for byte (rest.go: Header.Get("Content-Type") == ContentTypeV2).
+    # media_type strips parameters, so it hid the "; charset=utf-8" Rails appends; the live check caught it.
+    assert_equal Backup::VmRepository::V2_MEDIA_TYPE, response.headers["Content-Type"]
     assert_equal [ { "name" => ID, "size" => 123 } ], JSON.parse(response.body)
   end
 
