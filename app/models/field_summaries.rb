@@ -12,8 +12,8 @@
 # "deny" excludes training providers; it is not zero retention. The Field page
 # says so wherever summaries are on.
 #
-# Off unless the house turns it on in deploy configuration
-# (SOULSHOUSE_FIELD_SUMMARIES=on): off means no inference is contacted.
+# On wherever the house has an inference key: there is deliberately no switch
+# (Daniel, 2026-10-10). Without a key, nothing is contacted.
 module FieldSummaries
 
   MODEL = "anthropic/claude-haiku-5.5"
@@ -25,9 +25,13 @@ module FieldSummaries
 
   SYSTEM = PromptTemplate.render("summarize_field_item", :system).freeze
 
+  # Not a setting. Test credentials carry a house key, so test_helper turns
+  # this off to keep tests that perform every queued job off the network.
+  mattr_accessor :live, default: true
+
   module_function
 
-  def enabled? = ENV["SOULSHOUSE_FIELD_SUMMARIES"] == "on" && HouseInference::Offering.configured?
+  def enabled? = live && HouseInference::Offering.configured?
 
   # => { short:, long: }. Raises UtilityInference::Error when the call fails
   # or the answer can't be used.
