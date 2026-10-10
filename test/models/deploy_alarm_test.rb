@@ -27,7 +27,10 @@ class DeployAlarmTest < ActiveSupport::TestCase
     fetches = @fetches
     DeployInfo.fetcher = ->(path) { fetches.fetch(path) { nil } }
     HouseDeploy.token_source = -> { "test-token" }
+    @github_down = false
     HouseDeploy.transport = lambda { |_method, path, _body|
+      next [ 503, {}, nil ] if @github_down
+
       case path
       when %r{/actions/runs\?event=workflow_dispatch} then [ 200, {}, { "workflow_runs" => @manual_runs } ]
       when %r{/workflows/deploy-rails-on-green\.yml/runs} then [ 200, {}, { "workflow_runs" => @auto_runs } ]
@@ -64,6 +67,7 @@ class DeployAlarmTest < ActiveSupport::TestCase
   end
 
   test "an automatic run in progress outranks an older failure" do
+    production(DEPLOYED, master: MASTER_B, behind: 2)
     @auto_runs = [ auto_run(2, MASTER_B, status: "in_progress", conclusion: nil), auto_run(1, MASTER_A, conclusion: "failure") ]
 
     assert_equal "ok", check(T0).state
@@ -98,11 +102,67 @@ class DeployAlarmTest < ActiveSupport::TestCase
     assert_equal MASTER_A, options[:context][:master_sha]
   end
 
-  test "a failure from before the running build started is old news" do
+  test "a successful Rails deploy after the failure makes it old news" do
+    production(DEPLOYED, master: MASTER_B, behind: 2)
+    @auto_runs = [ auto_run(1, MASTER_A, conclusion: "failure") ]
+    @manual_runs = [ manual_run(9, status: "completed", conclusion: "success", at: T0) ]
+
+    assert_equal "ok", check(T0 + 2.minutes).state
+    assert_empty @notices
+  end
+
+  test "a process restart on the same image doesn't make a failure old news" do
     Rails.application.config.x.booted_at = T0 + 1.minute
     @auto_runs = [ auto_run(1, MASTER_A, conclusion: "failure") ]
 
-    assert_equal "ok", check(T0 + 2.minutes).state
+    assert_equal "stuck", check(T0 + 2.minutes).state
+    assert_equal 1, @notices.size
+  end
+
+  test "a run for another commit doesn't clear a stuck alarm or re-notify when it ends" do
+    @auto_runs = [ auto_run(1, MASTER_A, conclusion: "failure") ]
+    check(T0)
+    old_runtime = manual_run(9, status: "in_progress", sha: DEPLOYED, path: "deploy-runtime.yml")
+    @manual_runs = [ old_runtime ]
+
+    state = check(T0 + 5.minutes)
+    assert_equal "stuck", state.state
+    assert_equal T0, state.since
+
+    @manual_runs = [ old_runtime.merge("status" => "completed", "conclusion" => "success") ]
+    check(T0 + 10.minutes)
+    assert_equal 1, @notices.size
+  end
+
+  test "with master unknown, an active run doesn't count as a deploy in flight" do
+    @auto_runs = [ auto_run(1, MASTER_A, conclusion: "failure") ]
+    @manual_runs = [ manual_run(9, status: "in_progress") ]
+    @fetches.clear
+
+    assert_equal "stuck", check(T0).state
+  end
+
+  test "a runtime deploy of master in flight counts" do
+    @auto_runs = [ auto_run(1, MASTER_A, conclusion: "failure") ]
+    @manual_runs = [ manual_run(9, status: "in_progress", sha: MASTER_A, path: "deploy-runtime.yml") ]
+
+    assert_equal "ok", check(T0).state
+  end
+
+  test "a notice Honeybadger refused is retried on the next check, then not repeated" do
+    @auto_runs = [ auto_run(1, MASTER_A, conclusion: "failure") ]
+    attempts = 0
+    Honeybadger.stub(:notify, ->(*) { attempts += 1; raise "honeybadger down" }) { DeployAlarm.check!(now: T0) }
+
+    state = DeployAlarmState.current
+    assert_equal "stuck", state.state
+    assert_nil state.notified_at
+    assert_equal 1, attempts
+
+    check(T0 + 5.minutes)
+    check(T0 + 10.minutes)
+    assert_equal 1, @notices.size
+    assert_equal T0, DeployAlarmState.current.since
   end
 
   test "behind for 29 minutes with no run is ok; at 31 it is stuck, once" do
@@ -183,16 +243,20 @@ class DeployAlarmTest < ActiveSupport::TestCase
     assert_equal "The running build has uncommitted changes.", state.reason
   end
 
-  test "a GitHub blip during a stuck episode doesn't cause a second notice" do
+  test "a GitHub blip during a stuck episode doesn't cause a second notice or move its start" do
     @auto_runs = [ auto_run(1, MASTER_A, conclusion: "failure") ]
     check(T0)
     saved = @fetches.dup
     @fetches.clear
-    check(T0 + 5.minutes)
+    @github_down = true
+    assert_equal "unknown", check(T0 + 5.minutes).state
     @fetches.merge!(saved)
-    check(T0 + 10.minutes)
+    @github_down = false
+    state = check(T0 + 10.minutes)
 
     assert_equal 1, @notices.size
+    assert_equal "stuck", state.state
+    assert_equal T0, state.since
   end
 
   test "a check that has gone quiet is reported, not read as fine" do
@@ -283,11 +347,11 @@ class DeployAlarmTest < ActiveSupport::TestCase
     }
   end
 
-  def manual_run(id, status:)
+  def manual_run(id, status:, conclusion: nil, sha: MASTER_B, path: "deploy-rails.yml", at: T0)
     {
-      "id" => id, "run_attempt" => 1, "path" => ".github/workflows/deploy-rails.yml",
-      "status" => status, "conclusion" => nil, "head_sha" => MASTER_B,
-      "created_at" => T0.iso8601, "updated_at" => T0.iso8601,
+      "id" => id, "run_attempt" => 1, "path" => ".github/workflows/#{path}",
+      "status" => status, "conclusion" => conclusion, "head_sha" => sha,
+      "created_at" => at.iso8601, "updated_at" => at.iso8601,
       "html_url" => "https://github.com/swombat/souls-house/actions/runs/#{id}"
     }
   end

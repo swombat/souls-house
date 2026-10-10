@@ -27,6 +27,9 @@ class DeployAlarm
   # "cancelled" is left out on purpose: the deploy concurrency group cancels
   # a waiting run when a newer one arrives, and that is not a failure.
   FAILED_CONCLUSIONS = %w[failure timed_out startup_failure].freeze
+  # Workflows whose success puts a new Rails build on the host and clears the
+  # gate. (Runtime and Chaos deploys don't touch the Rails app.)
+  RAILS_WORKFLOWS = [ "rails", "both", HouseDeploy::AUTOMATIC[:key] ].freeze
   RUNBOOK_URL = "https://github.com/swombat/souls-house/blob/master/docs/operations/github-deployments.md" \
     "#completion-interruptions-and-ordinary-recovery".freeze
 
@@ -98,19 +101,22 @@ class DeployAlarm
 
     case verdict
     when "stuck"
-      attrs[:since] = previous == "stuck" && @record.since ? @record.since : [ behind_since, @now ].compact.min
       # The episode is master's sha. When GitHub can't say where master is,
       # the episode already notified carries on; a blip must not start a new one.
-      episode = master_sha || (previous == "stuck" && @record.notified_master_sha) || newest_automatic&.dig(:head_sha)
-      if @record.notified_at.nil? || @record.notified_master_sha != episode
-        notify!(attrs, episode)
+      episode = master_sha || (%w[stuck unknown].include?(previous) && @record.notified_master_sha) || newest_automatic&.dig(:head_sha)
+      same_episode = @record.since && (previous == "stuck" || (previous == "unknown" && @record.notified_master_sha.present? && @record.notified_master_sha == episode))
+      attrs[:since] = same_episode ? @record.since : [ behind_since, @now ].compact.min
+      # Only a notice Honeybadger accepted counts; a failed one is retried
+      # on the next check.
+      if (@record.notified_at.nil? || @record.notified_master_sha != episode) && notify!(attrs, episode)
         attrs[:notified_at] = @now
         attrs[:notified_master_sha] = episode
       end
     when "unknown"
       # Keep the notification fields: a GitHub blip in the middle of a stuck
-      # episode must not cause a second notice for the same episode.
-      attrs[:since] = previous == "unknown" && @record.since ? @record.since : @now
+      # episode must not cause a second notice for the same episode, and the
+      # episode keeps its start time.
+      attrs[:since] = %w[stuck unknown].include?(previous) && @record.since ? @record.since : @now
     else
       Rails.logger.info("[DeployAlarm] production follows master again (#{deployed_sha.to_s.first(7)})") if previous == "stuck"
       attrs.merge!(since: nil, reason: nil, notified_at: nil, notified_master_sha: nil)
@@ -159,8 +165,19 @@ class DeployAlarm
     Array(@deploys[:runs])
   end
 
+  # A deploy in flight counts only if it is deploying master as it is now.
+  # A run for an older commit (or any run while master is unknown) says
+  # nothing about whether production will catch up.
   def active_run
-    runs.find { |run| ACTIVE_STATUSES.include?(run[:status].to_s) }
+    return nil if master_sha.blank?
+
+    runs.find { |run| ACTIVE_STATUSES.include?(run[:status].to_s) && same_commit?(run[:head_sha], master_sha) }
+  end
+
+  # HouseDeploy carries 7-character shas; DeployInfo carries full ones.
+  def same_commit?(short, full)
+    short = short.to_s
+    short.match?(/\A\h{7,}\z/) && full.to_s.start_with?(short)
   end
 
   def newest_automatic
@@ -170,18 +187,19 @@ class DeployAlarm
   end
 
   # The newest finished automatic deploy failed, for a commit that isn't the
-  # one running, after the running build started. (A failure older than the
-  # running build was dealt with by whatever deployed it.)
+  # one running, and no Rails deploy has succeeded since. (Restarting a
+  # process on the same image proves nothing: only a later successful deploy
+  # shows the gate was cleared.)
   def failed_automatic?
     run = newest_automatic
     return false unless run && FAILED_CONCLUSIONS.include?(run[:conclusion].to_s)
+    return false if same_commit?(run[:head_sha], deployed_sha)
 
-    tested = run[:head_sha].to_s
-    return false if tested.match?(/\A\h{7,}\z/) && deployed_sha.to_s.start_with?(tested)
-
-    booted_at = parse_time(@summary.dig(:deployed, :booted_at))
-    finished_at = parse_time(run[:updated_at])
-    !(booted_at && finished_at && finished_at < booted_at)
+    failed_at = parse_time(run[:updated_at]) || parse_time(run[:created_at])
+    runs.none? { |later|
+      RAILS_WORKFLOWS.include?(later[:workflow]) && later[:status] == "completed" && later[:conclusion] == "success" &&
+        !%w[superseded not_deployed].include?(later[:outcome].to_s) && failed_at && (parse_time(later[:created_at]) || failed_at) > failed_at
+    }
   end
 
   def failed_step_phrase(run)
@@ -222,8 +240,10 @@ class DeployAlarm
     message = "Production is on #{deployed_sha.to_s.first(7).presence || "an unknown build"}" \
       "#{", #{behind_by} behind master" if behind_by}. #{attrs[:reason]}"
     Honeybadger.notify(ProductionBehindMaster.new(message), context: context, fingerprint: "deploy-alarm-#{episode}")
+    true
   rescue StandardError => e
     Rails.logger.error("[DeployAlarm] Honeybadger notification failed: #{e.class}: #{e.message}")
+    false
   end
 
   def parse_time(value)
