@@ -67,6 +67,8 @@ class WatchedRepository < ApplicationRecord
   def install_hook!(client = RepositoryWatches::GithubClient.new(service_connection))
     hook = client.create_hook(full_name, url: receiver_url, secret: hook_secret)
     update!(hook_id: hook["id"], hook_status: "installing", hook_error: nil)
+  rescue ConnectError => error
+    update!(hook_status: "failed", hook_error: error.message.truncate(200))
   rescue RepositoryWatches::GithubClient::Error => error
     if error.access_refused?
       update!(hook_status: "manual", hook_error: "GitHub refused to install the hook (an admin of #{full_name} must add it)")
@@ -76,8 +78,10 @@ class WatchedRepository < ApplicationRecord
   end
 
   def receiver_url
-    base = Rails.configuration.x.public_url.presence || "https://#{ENV.fetch('SOULSHOUSE_DOMAIN', 'souls.house')}"
-    "#{base.to_s.chomp('/')}/webhooks/repositories/#{receiver_token}"
+    base = Rails.configuration.x.public_url.to_s
+    raise ConnectError, "The house has no public URL (set SOULSHOUSE_PUBLIC_URL), so GitHub has nowhere to send deliveries" if base.blank?
+
+    "#{base.chomp('/')}/webhooks/repositories/#{receiver_token}"
   end
 
   def removed?
@@ -131,12 +135,18 @@ class WatchedRepository < ApplicationRecord
       # The secret is shown only to people who may manage the repository, and
       # only while someone still has to paste it into GitHub.
       if include_setup && hook_status.in?(%w[manual failed installing])
-        json[:setup] = { url: receiver_url, secret: hook_secret, content_type: "application/json", events: %w[workflow_run deployment_status] }
+        json[:setup] = { url: setup_url, secret: hook_secret, content_type: "application/json", events: %w[workflow_run deployment_status] }
       end
     end
   end
 
   private
+
+  def setup_url
+    receiver_url
+  rescue ConnectError
+    nil
+  end
 
   def generate_secrets
     self.hook_secret ||= SecureRandom.hex(32)

@@ -3,6 +3,18 @@
 # that answers from canned data (or raises) instead of calling the API.
 module RepositoryWatchHelpers
 
+  PUBLIC_URL = "https://house.example.test".freeze
+
+  # The receiver URL needs the house's public URL, which the test
+  # environment leaves blank.
+  def self.included(base)
+    base.setup do
+      @previous_public_url = Rails.configuration.x.public_url
+      Rails.configuration.x.public_url = PUBLIC_URL
+    end
+    base.teardown { Rails.configuration.x.public_url = @previous_public_url }
+  end
+
   SHA = "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0".freeze
   OTHER_SHA = "0f0e0d0c0b0a09080706050403020100ffeeddcc".freeze
 

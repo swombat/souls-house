@@ -141,6 +141,20 @@ class RepositoryWatchTest < ActiveSupport::TestCase
     assert_equal "status not established", watch.as_watch_json[:status]
   end
 
+  test "with no public URL the hook is not installed and the repository says why" do
+    Rails.configuration.x.public_url = nil
+    github = FakeGithub.new
+    repository = with_fake_github(github) { WatchedRepository.connect!(connection: @connection, full_name: "swombat/third", user: @user) }
+    assert_equal "failed", repository.hook_status
+    assert_match(/no public URL/, repository.hook_error)
+    refute github.calls.any? { |call| call.first == :create_hook }
+    assert_nil repository.as_repository_json(include_setup: true).dig(:setup, :url)
+  end
+
+  test "the receiver URL is the house's public URL and the repository's token" do
+    assert_equal "https://house.example.test/webhooks/repositories/#{@repository.receiver_token}", @repository.receiver_url
+  end
+
   # --- removal ------------------------------------------------------------
 
   test "disconnecting the repository cancels armed watches with the reason" do

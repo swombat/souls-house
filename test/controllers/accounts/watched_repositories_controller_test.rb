@@ -4,11 +4,15 @@ require "webmock/minitest"
 class Accounts::WatchedRepositoriesControllerTest < ActionDispatch::IntegrationTest
 
   setup do
+    @previous_public_url = Rails.configuration.x.public_url
+    Rails.configuration.x.public_url = "https://house.example.test"
     @owner = users(:user_1)
     @member = users(:existing_user)
     @account = accounts(:team_account)
     @connection = github_connection(@account, @owner)
   end
+
+  teardown { Rails.configuration.x.public_url = @previous_public_url }
 
   test "a member who can manage the GitHub connection connects a repository and the hook is installed" do
     stub_request(:get, "https://api.github.com/repos/swombat/site")

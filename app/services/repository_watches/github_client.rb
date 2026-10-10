@@ -92,7 +92,7 @@ module RepositoryWatches
       request["Accept"] = "application/vnd.github+json"
       request["Authorization"] = "Bearer #{token}"
       request["X-GitHub-Api-Version"] = API_VERSION
-      request["User-Agent"] = "souls.house repository watches"
+      request["User-Agent"] = "repository-watches"
       if body
         request["Content-Type"] = "application/json"
         request.body = JSON.generate(body)

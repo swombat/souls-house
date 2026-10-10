@@ -210,7 +210,13 @@ class Accounts::IntegrationsControllerTest < ActionDispatch::IntegrationTest
       event_kind: "deployment_status", filter: { "environment" => "production" }, expires_at: 1.day.from_now
     )
 
-    get account_integrations_path(account)
+    previous_public_url = Rails.configuration.x.public_url
+    Rails.configuration.x.public_url = "https://house.example.test"
+    begin
+      get account_integrations_path(account)
+    ensure
+      Rails.configuration.x.public_url = previous_public_url
+    end
 
     card = inertia_shared_props.fetch("connections").find { |item| item.fetch("id") == github.public_id }
     assert_equal true, card.fetch("can_manage_repositories")
@@ -219,7 +225,7 @@ class Accounts::IntegrationsControllerTest < ActionDispatch::IntegrationTest
     listed = card.fetch("repositories").sole
     assert_equal "manual", listed.fetch("hook_status")
     assert_equal account_watched_repository_path(account, repository), listed.fetch("url")
-    assert_equal repository.receiver_url, listed.dig("setup", "url")
+    assert_equal "https://house.example.test/webhooks/repositories/#{repository.receiver_token}", listed.dig("setup", "url")
     assert_equal repository.hook_secret, listed.dig("setup", "secret")
     watches = listed.fetch("watches").index_by { |watch| watch.fetch("id") }
     assert_equal [ armed.to_param, done.to_param ], listed.fetch("watches").map { |watch| watch.fetch("id") }, "armed first"

@@ -68,7 +68,7 @@ const manual = {
   last_delivery_result: null,
   armed_watches: 0,
   url: '/accounts/house/repositories/rManual',
-  setup: { url: 'https://souls.house/webhooks/repositories/tok', secret: 'hook-secret-123' },
+  setup: { url: 'https://house.example.test/webhooks/repositories/tok', secret: 'hook-secret-123' },
   watches: [],
 };
 
@@ -124,7 +124,7 @@ describe('GitHub card repositories', () => {
   it('shows the receiver URL and secret for manual setup to people who can manage the connection', () => {
     mount();
     const setup = within(screen.getByTestId('repository-other/tool')).getByTestId('manual-setup');
-    expect(setup).toHaveTextContent('https://souls.house/webhooks/repositories/tok');
+    expect(setup).toHaveTextContent('https://house.example.test/webhooks/repositories/tok');
     expect(setup).toHaveTextContent('hook-secret-123');
   });
 
