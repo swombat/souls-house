@@ -95,6 +95,9 @@ module Api
             entries = repository.list(path.delete_suffix("/"))
             v2 = request.headers["Accept"].to_s.split(",").any? { |type| type.strip.split(";").first == Backup::VmRepository::V2_MEDIA_TYPE }
             render json: v2 ? entries : entries.pluck(:name), content_type: v2 ? Backup::VmRepository::V2_MEDIA_TYPE : "application/json"
+            # restic only parses a v2 listing when Content-Type is exactly the v2 media type. Rails would
+            # append "; charset=utf-8", and restic would then read it as v1 and fail (live check, 2026-10-10).
+            response.charset = false if v2
           end
         end
 
