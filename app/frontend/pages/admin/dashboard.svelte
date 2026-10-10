@@ -1,5 +1,6 @@
 <script>
-  import { router } from '@inertiajs/svelte';
+  import { router, page } from '@inertiajs/svelte';
+  import { followsMaster } from '$lib/components/admin/deployAlarm.js';
   import { ArrowClockwise, Warning } from 'phosphor-svelte';
   import StatTile from '$lib/components/admin/dashboard/StatTile.svelte';
   import StackedBars from '$lib/components/admin/dashboard/StackedBars.svelte';
@@ -34,6 +35,7 @@
   const h = $derived(dashboard.headline);
   const activity = $derived(dashboard.activity);
   const reliability = $derived(dashboard.reliability);
+  const follows = $derived(followsMaster($page.props?.deploy_alarm));
   const costs = $derived(dashboard.costs);
   const backups = $derived(dashboard.backups);
   const placement = $derived(dashboard.placement);
@@ -236,6 +238,16 @@
     <div class="rounded-xl border bg-card p-5">
       <h2 class="mb-4 font-medium">Reliability · 7d</h2>
       <dl class="space-y-3 text-sm">
+        <div class="flex justify-between gap-3" data-testid="follows-master">
+          <dt class="text-muted-foreground">Production follows master</dt>
+          <dd
+            class="text-right tabular-nums"
+            class:text-rose-600={follows.tone === 'alert'}
+            class:text-muted-foreground={follows.tone === 'neutral'}
+            title={follows.detail || ''}>
+            {follows.value}
+          </dd>
+        </div>
         <div class="flex justify-between">
           <dt class="text-muted-foreground">Turns failed</dt>
           <dd class="tabular-nums" class:text-rose-600={reliability.turns_failed > 0}>

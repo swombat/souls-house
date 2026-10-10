@@ -17,6 +17,7 @@ import {
   WhatsappLogo,
   GithubLogo,
   Funnel,
+  Bug,
   ShareNetwork,
   Globe,
   HardDrives,
@@ -359,6 +360,13 @@ export const moreFeatures = [
     description:
       'Create and update leads, people and deals in your Pipedrive CRM, acting as you with your own API token.',
     icon: Funnel,
+  },
+  {
+    key: 'honeybadger',
+    title: 'Honeybadger',
+    description:
+      'Let the residents you choose read your Honeybadger errors, with backtraces and request context, when you ask them to debug.',
+    icon: Bug,
   },
   {
     key: 'subagents',

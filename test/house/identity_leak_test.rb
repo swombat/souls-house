@@ -63,6 +63,7 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/lib/external_agent_memory_aggregation_request.rb" => "memory aggregation prompt copy and request label",
     "app/models/services/github_token_adapter.rb" => "GitHub service connection User-Agent header",
     "app/models/services/pipedrive_token_adapter.rb" => "Pipedrive service connection User-Agent header",
+    "app/models/services/honeybadger_token_adapter.rb" => "Honeybadger service connection User-Agent header",
     "app/jobs/prepare_telegram_media_job.rb" => "Telegram error copy",
     "app/jobs/process_telegram_update_job.rb" => "Telegram notice/error copy",
     "app/jobs/safeguard_cold_offer_job.rb" => "safeguard reclaim copy",

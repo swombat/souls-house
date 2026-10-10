@@ -697,6 +697,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_140000) do
     t.index ["user_id"], name: "index_conversation_drafts_on_user_id"
   end
 
+  create_table "deploy_alarm_states", force: :cascade do |t|
+    t.string "state", default: "ok", null: false
+    t.datetime "since"
+    t.string "deployed_sha"
+    t.string "master_sha"
+    t.integer "behind_by"
+    t.datetime "behind_since"
+    t.datetime "unknown_since"
+    t.string "reason"
+    t.string "last_run_url"
+    t.datetime "notified_at"
+    t.string "notified_master_sha"
+    t.datetime "last_checked_at"
+    t.text "last_error"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+  end
+
   create_table "device_stream_batches", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "device_stream_session_id", null: false
