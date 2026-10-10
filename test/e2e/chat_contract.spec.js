@@ -352,6 +352,14 @@ test.describe('browser contracts', () => {
     await fieldLink.click();
     await expect(page.getByRole('heading', { name: 'Field', exact: true })).toBeVisible();
     await expect(page.getByText('E2E Whiteboard').first()).toBeVisible();
+
+    // After the switch, the account name in the header opens the new account's chats, and the logo goes home.
+    const accountName = page.locator('nav').getByTestId('nav-account-name');
+    await expect(accountName).toHaveText(`E2E ${setup.run_id} Team`);
+    await accountName.click();
+    await expect(page).toHaveURL(`/accounts/${switchedAccountId}/chats`);
+    await page.locator('nav').getByTestId('nav-home-logo').click();
+    await expect(page).toHaveURL(/\/$/);
   });
 
   test('user can commit a new resident without an inline promotion step', async ({ page }) => {
