@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -785,6 +785,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_140000) do
     t.datetime "summarized_at"
     t.datetime "summary_claimed_at"
     t.integer "summary_attempts", default: 0, null: false
+    t.datetime "dated_at"
     t.index ["account_id", "created_at"], name: "index_field_files_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_field_files_on_account_id"
     t.index ["discarded_at"], name: "index_field_files_on_discarded_at"
@@ -2068,6 +2069,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_140000) do
     t.string "summary", limit: 250
     t.datetime "updated_at", null: false
     t.virtual "search_vector", type: :tsvector, as: "((setweight(to_tsvector('simple'::regconfig, \"left\"(COALESCE((((COALESCE(name, ''::character varying))::text || ' '::text) || translate((COALESCE(name, ''::character varying))::text, '._-/'::text, repeat(' '::text, 4))), ''::text), 1000)), 'A'::\"char\") || setweight(to_tsvector('simple'::regconfig, \"left\"((COALESCE(summary, ''::character varying))::text, 4000)), 'B'::\"char\")) || setweight(to_tsvector('simple'::regconfig,\nCASE\n    WHEN (octet_length(\"left\"(COALESCE(content, ''::text), 128000)) <= 128000) THEN \"left\"(COALESCE(content, ''::text), 128000)\n    WHEN (octet_length(\"left\"(COALESCE(content, ''::text), 121600)) <= 128000) THEN \"left\"(COALESCE(content, ''::text), 121600)\n    WHEN (octet_length(\"left\"(COALESCE(content, ''::text), 115200)) <= 128000) THEN \"left\"(COALESCE(content, ''::text), 115200)\n    WHEN (octet_length(\"left\"(COALESCE(content, ''::text), 102400)) <= 128000) THEN \"left\"(COALESCE(content, ''::text), 102400)\n    WHEN (octet_length(\"left\"(COALESCE(content, ''::text), 89600)) <= 128000) THEN \"left\"(COALESCE(content, ''::text), 89600)\n    WHEN (octet_length(\"left\"(COALESCE(content, ''::text), 76800)) <= 128000) THEN \"left\"(COALESCE(content, ''::text), 76800)\n    WHEN (octet_length(\"left\"(COALESCE(content, ''::text), 64000)) <= 128000) THEN \"left\"(COALESCE(content, ''::text), 64000)\n    WHEN (octet_length(\"left\"(COALESCE(content, ''::text), 51200)) <= 128000) THEN \"left\"(COALESCE(content, ''::text), 51200)\n    WHEN (octet_length(\"left\"(COALESCE(content, ''::text), 42240)) <= 128000) THEN \"left\"(COALESCE(content, ''::text), 42240)\n    ELSE \"left\"(COALESCE(content, ''::text), 32000)\nEND), 'C'::\"char\"))", stored: true
+    t.datetime "dated_at"
     t.index ["account_id", "deleted_at"], name: "index_whiteboards_on_account_id_and_deleted_at"
     t.index ["account_id", "name"], name: "index_whiteboards_on_account_id_and_name", unique: true, where: "(deleted_at IS NULL)"
     t.index ["account_id"], name: "index_whiteboards_on_account_id"

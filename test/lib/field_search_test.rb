@@ -86,6 +86,14 @@ class FieldSearchTest < ActiveSupport::TestCase
     assert_equal %w[file recording], search(query: "valuation").results.map(&:kind)
   end
 
+  test "a file or note is dated by when it is from, when that's known" do
+    @file.update_columns(dated_at: Time.zone.parse("2019-03-14"))
+    @note.update_columns(dated_at: Time.zone.parse("2018-05-01"))
+    assert_equal Time.zone.parse("2019-03-14"), search(query: "shopping").results.sole.date
+    assert_equal Time.zone.parse("2018-05-01"), search(query: "partita").results.sole.date
+    assert_equal %w[recording file], search(query: "valuation").results.map(&:kind)
+  end
+
   test "newest first by default, pages of twenty" do
     25.times { |i| @account.whiteboards.create!(name: "Page #{i}", content: "repeated word") }
     first = search(query: "repeated")

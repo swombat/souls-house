@@ -101,6 +101,24 @@ when it fires. `--expires-in` takes `30m`, `24h` or `7d` (default `24h`, max
 Named `watches` (plural) because `watch` is already the room-tailing command
 above.
 
+## The Field: `souls field`
+
+Bring a file or a note into the account's Field. `--date` says when it is from,
+for old material (a transcript from 2019, a diary page): an ISO 8601 date or time.
+The Field lists and searches it by that date instead of the upload time.
+
+```sh
+souls field upload transcript-2019-03-14.txt --date 2019-03-14 --tag archive
+souls field upload board-pack.pdf --title "Board pack" --note "Q1"
+souls field note "Call with Anna" --date 2021-06-02 --file call.md
+cat diary.md | souls field note "Diary, May 2018" --date 2018-05-01
+```
+
+`upload` sends `POST /api/v1/field/files` (`--title`, `--note`, `--tag`
+repeatable). `note` sends `POST /api/v1/whiteboards`; the title must be unique
+among the account's notes, and the text comes from TEXT, `--file`, or stdin.
+Recordings carry their date as `recorded_at` (see the API reference).
+
 ## Anything else: `souls api`
 
 Every endpoint in the [API reference](/ai/api.md) is reachable, with the same

@@ -59,10 +59,11 @@ class FieldListing
 
   def sort_column(kind)
     case kind
-    when "note" then "COALESCE(whiteboards.last_edited_at, whiteboards.updated_at)"
-    # An imported recording sorts by when it was recorded, not when it arrived.
+    # An imported item sorts by when it is from, not when it arrived or was
+    # last edited.
+    when "note" then "COALESCE(whiteboards.dated_at, whiteboards.last_edited_at, whiteboards.updated_at)"
     when "recording" then "COALESCE(field_recordings.recorded_at, field_recordings.created_at)"
-    else "#{table(kind)}.created_at"
+    else "COALESCE(field_files.dated_at, field_files.created_at)"
     end
   end
 

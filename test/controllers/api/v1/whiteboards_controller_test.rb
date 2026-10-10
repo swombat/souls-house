@@ -116,7 +116,7 @@ module Api
         assert_response :unprocessable_entity
 
         json = JSON.parse(response.body)
-        assert_equal "Provide name, summary, or content", json["error"]
+        assert_equal "Provide name, summary, content, or dated_at", json["error"]
         assert_equal "Initial content", @whiteboard.reload.content
       end
 
@@ -227,6 +227,47 @@ module Api
         assert_equal "New Board", json["whiteboard"]["name"]
         assert_equal 0, json["whiteboard"]["lock_version"]
         assert json["whiteboard"]["id"].present?
+      end
+
+      test "creates a note dated when it is from" do
+        post api_v1_whiteboards_url,
+             params: { name: "Diary, May 2018", content: "It rained.", dated_at: "2018-05-01" },
+             headers: { "Authorization" => "Bearer #{@token}" }
+        assert_response :created
+
+        note = @account.whiteboards.find(response.parsed_body.dig("whiteboard", "id"))
+        assert_equal Date.new(2018, 5, 1), note.dated_at.to_date
+        assert_equal note.dated_at.iso8601, response.parsed_body.dig("whiteboard", "dated_at")
+
+        get api_v1_whiteboard_url(note), headers: { "Authorization" => "Bearer #{@token}" }
+        assert_equal note.dated_at.iso8601, response.parsed_body.dig("whiteboard", "dated_at")
+      end
+
+      test "a date that isn't ISO 8601 makes no note" do
+        assert_no_difference -> { @account.whiteboards.count } do
+          post api_v1_whiteboards_url, params: { name: "Bad date", dated_at: "May 2018" },
+               headers: { "Authorization" => "Bearer #{@token}" }
+        end
+        assert_response :unprocessable_entity
+        assert_equal "dated_at must be an ISO 8601 date or time", response.parsed_body["error"]
+      end
+
+      test "redating a note alone is not an edit of what it says" do
+        revision = @whiteboard.revision
+        patch api_v1_whiteboard_url(@whiteboard), params: { dated_at: "2017-01-02", lock_version: 0 },
+              headers: { "Authorization" => "Bearer #{@token}" }
+        assert_response :success
+        assert_equal "2017-01-02", Time.iso8601(response.parsed_body.dig("whiteboard", "dated_at")).to_date.iso8601
+
+        @whiteboard.reload
+        assert_equal Date.new(2017, 1, 2), @whiteboard.dated_at.to_date
+        assert_equal revision, @whiteboard.revision
+        assert_nil @whiteboard.last_edited_by
+
+        patch api_v1_whiteboard_url(@whiteboard), params: { dated_at: "", lock_version: @whiteboard.lock_version },
+              headers: { "Authorization" => "Bearer #{@token}" }
+        assert_response :success
+        assert_nil @whiteboard.reload.dated_at
       end
 
       test "creates whiteboard with only name" do

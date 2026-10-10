@@ -44,7 +44,7 @@
   <span class="flex-1 min-w-0">
     <span class="block truncate">{item.title}</span>
     <span class="block truncate text-xs font-normal text-muted-foreground sm:hidden">
-      {[item.summary_short, formatWhen(item.recorded_at || item.created_at)].filter(Boolean).join(' · ')}
+      {[item.summary_short, formatWhen(item.dated_at || item.recorded_at || item.created_at)].filter(Boolean).join(' · ')}
     </span>
   </span>
   {#if pending}
@@ -55,5 +55,5 @@
     </span>
   {/if}
   <span class="hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:inline"
-    >{formatWhen(item.recorded_at || item.created_at)}</span>
+    >{formatWhen(item.dated_at || item.recorded_at || item.created_at)}</span>
 </button>

@@ -4,6 +4,7 @@
   import { mode } from 'mode-watcher';
   import { FloppyDisk, PencilSimple, Spinner, X } from 'phosphor-svelte';
   import { Streamdown } from 'svelte-streamdown';
+  import { formatWhen } from '$lib/field.js';
 
   let {
     selected,
@@ -26,6 +27,9 @@
     <div class="flex items-center justify-between px-4 py-3 border-b border-border">
       <div>
         <h3 class="font-semibold text-lg">{selected.name}</h3>
+        {#if selected.dated_at}
+          <p class="text-xs text-muted-foreground" data-testid="note-dated-at">Dated {formatWhen(selected.dated_at)}</p>
+        {/if}
         {#if selected.last_edited_at}
           <p class="text-xs text-muted-foreground">
             Last edited {selected.last_edited_at}

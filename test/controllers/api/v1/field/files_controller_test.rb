@@ -48,6 +48,26 @@ class Api::V1::Field::FilesControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.parsed_body["files"].map { |f| f["id"] }, other.to_param
   end
 
+  test "an imported file carries the date it is from, and the list orders by it" do
+    post api_v1_field_files_path, params: { file: upload, title: "2019 transcript", dated_at: "2019-03-14" }, headers: @headers
+    assert_response :created
+    created = @account.field_files.find(response.parsed_body.dig("file", "id"))
+    assert_equal Date.new(2019, 3, 14), created.dated_at.to_date
+    assert_equal created.dated_at.iso8601, response.parsed_body.dig("file", "dated_at")
+
+    later = @account.field_files.create!(file: upload, title: "Older upload", uploaded_by: @user, created_at: 1.day.ago)
+    get api_v1_field_files_path, headers: @headers
+    assert_equal [ @human_file, later, created ].map(&:to_param), response.parsed_body["files"].map { |f| f["id"] }
+  end
+
+  test "a date that isn't ISO 8601 is refused and nothing is made" do
+    assert_no_difference -> { @account.field_files.count } do
+      post api_v1_field_files_path, params: { file: upload, dated_at: "last tuesday" }, headers: @headers
+    end
+    assert_response :unprocessable_entity
+    assert_equal "dated_at must be an ISO 8601 date or time", response.parsed_body["error"]
+  end
+
   test "a resident brings a file in, attributed to itself" do
     assert_difference -> { @account.field_files.count }, 1 do
       post api_v1_field_files_path, params: { file: upload, note: "For Sunday" }, headers: @headers

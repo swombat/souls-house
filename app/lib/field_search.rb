@@ -48,13 +48,13 @@ class FieldSearch
     },
     "file" => {
       model: "FieldFile", table: "field_files",
-      date: "field_files.created_at",
+      date: "COALESCE(field_files.dated_at, field_files.created_at)",
       kept: "field_files.discarded_at IS NULL",
       body: "concat_ws(E'\\n\\n', field_files.note, field_files.extracted_text)"
     },
     "note" => {
       model: "Whiteboard", table: "whiteboards",
-      date: "COALESCE(whiteboards.last_edited_at, whiteboards.updated_at)",
+      date: "COALESCE(whiteboards.dated_at, whiteboards.last_edited_at, whiteboards.updated_at)",
       kept: "whiteboards.deleted_at IS NULL",
       body: "concat_ws(E'\\n\\n', whiteboards.summary, whiteboards.content)"
     }

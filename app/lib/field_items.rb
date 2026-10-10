@@ -59,6 +59,7 @@ module FieldItems
       byte_size: file.byte_size,
       uploader_name: file.uploader_name,
       uploader_kind: file.uploader_kind,
+      dated_at: file.dated_at&.iso8601,
       created_at: file.created_at.iso8601,
       tags: tags,
       download_url: (url_helpers.rails_blob_url(file.file, only_path: true, disposition: :attachment) if file.file.attached?)
@@ -79,6 +80,7 @@ module FieldItems
       content_length: note.content.to_s.length,
       revision: note.revision,
       editor_name: note.editor_name,
+      dated_at: note.dated_at&.iso8601,
       created_at: (note.last_edited_at || note.updated_at).iso8601,
       tags: tags,
       last_edited_at: note.last_edited_at&.strftime("%b %d at %l:%M %p")

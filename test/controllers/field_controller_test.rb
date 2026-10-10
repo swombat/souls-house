@@ -164,6 +164,18 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ imported ], @account.field_recordings.newest_first.to_a
   end
 
+  test "an imported file or note sorts and shows by the date it is from" do
+    @account.whiteboards.update_all(deleted_at: Time.current)
+    @account.field_files.create!(file: upload, title: "Yesterday's file", uploaded_by: @user, created_at: 1.day.ago)
+    old_file = @account.field_files.create!(file: upload, title: "2019 transcript", uploaded_by: @user, dated_at: Time.zone.parse("2019-03-14"))
+    old_note = @account.whiteboards.create!(name: "2018 diary", content: "It rained.", dated_at: Time.zone.parse("2018-05-01"))
+
+    get account_field_path(@account)
+    items = inertia_props["items"]
+    assert_equal [ "Yesterday's file", "2019 transcript", "2018 diary" ], items.map { |i| i["title"] }
+    assert_equal [ old_file.dated_at.iso8601, old_note.dated_at.iso8601 ], items.last(2).map { |i| i["dated_at"] }
+  end
+
   test "the tag filter narrows the list and its counts on the server" do
     tagged = @account.field_files.create!(file: upload, title: "Tagged", uploaded_by: @user)
     @account.field_files.create!(file: upload, title: "Plain", uploaded_by: @user)

@@ -35,17 +35,21 @@ module Api
         end
 
         # tags: [...] (or tags[]=… in the multipart form) tags the file as it
-        # arrives, e.g. with the folder an import came from.
+        # arrives, e.g. with the folder an import came from. dated_at (ISO
+        # 8601) is when the file is from, for an import of old material; the
+        # Field orders by it instead of the upload time.
         def create
           unless FieldFile::Upload.uploaded_file?(params[:file])
             return render json: { error: "file must be a multipart file upload" }, status: :unprocessable_entity
           end
 
           tags = FieldTag.normalize_list(FieldTag.list_param(params, :tags) || [])
+          dated_at = FieldDate.parse(params[:dated_at], param: "dated_at") if params[:dated_at].present?
 
           field_file = current_api_account.field_files.new(
             title: params[:title],
             note: params[:note],
+            dated_at:,
             file: params[:file],
             uploaded_by: current_api_agent || current_api_user
           )
@@ -62,7 +66,7 @@ module Api
           else
             render json: { error: field_file.errors.full_messages.to_sentence }, status: :unprocessable_entity
           end
-        rescue FieldTag::Invalid => e
+        rescue FieldTag::Invalid, FieldDate::Invalid => e
           render json: { error: e.message }, status: :unprocessable_entity
         end
 
@@ -76,16 +80,21 @@ module Api
           head :no_content
         end
 
+        # dated_at: an ISO 8601 date or time, or empty to go back to ordering
+        # by the upload time.
         def update
           file = find_human_record!(FieldFile.kept, params[:id])
           attributes = params.permit(:title, :note)
-          return render json: { error: "Provide title or note" }, status: :unprocessable_entity if attributes.empty?
+          attributes[:dated_at] = FieldDate.parse_or_clear(params[:dated_at], param: "dated_at") if params.key?(:dated_at)
+          return render json: { error: "Provide title, note or dated_at" }, status: :unprocessable_entity if attributes.empty?
 
           if file.update(attributes)
             render json: { file: file_json(file, file.tag_names) }
           else
             render json: { error: file.errors.full_messages.to_sentence }, status: :unprocessable_entity
           end
+        rescue FieldDate::Invalid => e
+          render json: { error: e.message }, status: :unprocessable_entity
         end
 
         private
@@ -105,6 +114,7 @@ module Api
             content_type: file.content_type,
             byte_size: file.byte_size,
             uploaded_by: { kind: file.uploader_kind, name: file.uploader_name },
+            dated_at: file.dated_at&.iso8601,
             created_at: file.created_at.iso8601,
             tags: tags,
             download_path: download_api_v1_field_file_path(file)

@@ -188,16 +188,10 @@ module Api
           values
         end
 
-        # ISO 8601, a date or a time. Anything else is refused rather than
-        # silently stored as nothing.
         def recorded_at(value)
-          Time.iso8601(value.to_s)
-        rescue ArgumentError
-          begin
-            Date.iso8601(value.to_s).in_time_zone
-          rescue Date::Error
-            raise BadParam, "recorded_at must be an ISO 8601 date or time"
-          end
+          FieldDate.parse(value, param: "recorded_at")
+        rescue FieldDate::Invalid => e
+          raise BadParam, e.message
         end
 
         # A resident reads in its home account, as before. A person finds the

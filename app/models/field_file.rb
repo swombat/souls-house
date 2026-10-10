@@ -35,7 +35,8 @@ class FieldFile < ApplicationRecord
 
   broadcasts_to :account
 
-  scope :newest_first, -> { order(created_at: :desc, id: :desc) }
+  # An imported file sorts by when it is from, not when it arrived.
+  scope :newest_first, -> { order(Arel.sql("COALESCE(field_files.dated_at, field_files.created_at) DESC"), id: :desc) }
   # Files whose words have been read (FieldSummarizable). PDFs and other
   # unread formats have none, so they get no summary yet.
   scope :summary_readable, -> { where.not(text_extracted_at: nil).where("extracted_text ~ '[^[:space:]]'") }

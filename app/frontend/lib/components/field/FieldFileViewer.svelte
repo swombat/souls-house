@@ -26,7 +26,7 @@
         {#if file.uploader_name}
           Brought by {file.uploader_name}{file.uploader_kind === 'resident' ? ' (resident)' : ''} ·
         {/if}
-        {formatWhen(file.created_at)}
+        {#if file.dated_at}Dated {formatWhen(file.dated_at)} · {/if}{formatWhen(file.created_at)}
       </p>
     </div>
 

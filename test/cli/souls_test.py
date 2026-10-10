@@ -286,6 +286,59 @@ class ApiEscapeHatchTest(CliTestCase):
         self.assertEqual(self.house.requests, [])
 
 
+class FieldTest(CliTestCase):
+    def test_upload_sends_the_file_with_its_date_and_tags(self):
+        self.house.route("POST", "/api/v1/field/files", status=201, body={"file": {"id": "f1"}})
+        path = os.path.join(self.config_dir, "call.txt")
+        with open(path, "w") as fh:
+            fh.write("Anna: hello")
+        code, out, _ = self.run_cli("field", "upload", path, "--title", "Call", "--date", "2019-03-14",
+                                    "--tag", "archive", "--tag", "calls")
+        self.assertEqual(code, 0)
+        body = self.last()["body"]
+        self.assertIn(b'name="file"; filename="call.txt"', body)
+        self.assertIn(b'name="dated_at"\r\n\r\n2019-03-14', body)
+        self.assertIn(b'name="title"\r\n\r\nCall', body)
+        self.assertEqual(body.count(b'name="tags[]"'), 2)
+        self.assertEqual(json.loads(out)["file"]["id"], "f1")
+
+    def test_upload_without_a_date_sends_none(self):
+        self.house.route("POST", "/api/v1/field/files", status=201, body={"file": {"id": "f1"}})
+        path = os.path.join(self.config_dir, "a.md")
+        with open(path, "w") as fh:
+            fh.write("x")
+        self.run_cli("field", "upload", path)
+        self.assertNotIn(b"dated_at", self.last()["body"])
+
+    def test_upload_of_a_missing_file_is_a_usage_error(self):
+        code, _, err = self.run_cli("field", "upload", "/nonexistent/x.md")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertIn("no such file", err)
+        self.assertEqual(self.house.requests, [])
+
+    def test_note_from_a_file_with_a_date(self):
+        self.house.route("POST", "/api/v1/whiteboards", status=201, body={"whiteboard": {"id": "w1"}})
+        path = os.path.join(self.config_dir, "diary.md")
+        with open(path, "w") as fh:
+            fh.write("# May\nIt rained.")
+        code, _, _ = self.run_cli("field", "note", "Diary, May 2018", "--file", path, "--date", "2018-05-01",
+                                  "--summary", "Rain")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(self.last()["body"]), {
+            "name": "Diary, May 2018", "content": "# May\nIt rained.", "summary": "Rain", "dated_at": "2018-05-01"})
+
+    def test_note_from_an_argument_without_a_date(self):
+        self.house.route("POST", "/api/v1/whiteboards", status=201, body={"whiteboard": {"id": "w1"}})
+        self.run_cli("field", "note", "Plan", "Buy milk")
+        self.assertEqual(json.loads(self.last()["body"]), {"name": "Plan", "content": "Buy milk"})
+
+    def test_field_without_a_subcommand_prints_help(self):
+        code, out, _ = self.run_cli("field")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertIn("upload|note", out)
+        self.assertEqual(self.house.requests, [])
+
+
 class OriginTest(CliTestCase):
     def test_a_foreign_absolute_url_is_refused_before_any_request(self):
         elsewhere = FakeHouse()

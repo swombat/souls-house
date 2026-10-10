@@ -592,6 +592,7 @@ Content-Type: application/json
 | `name` | Yes | Whiteboard name (max 100 chars, must be unique) |
 | `content` | No | Initial content (max 100,000 chars) |
 | `summary` | No | Short summary (max 250 chars) |
+| `dated_at` | No | When the note is from, for old notes and transcripts: an ISO 8601 date or time (`2019-03-14`, `2019-03-14T09:30:00Z`). The Field orders by it instead of the last edit. Anything else is 422. |
 
 **Response (201):**
 ```json
@@ -599,6 +600,7 @@ Content-Type: application/json
   "whiteboard": {
     "id": "wb456",
     "name": "My New Whiteboard",
+    "dated_at": null,
     "lock_version": 0
   }
 }
@@ -621,6 +623,7 @@ GET /api/v1/whiteboards/:id
     "content": "# Meeting Notes...",
     "summary": "Notes from team meetings",
     "lock_version": 3,
+    "dated_at": null,
     "last_edited_at": "2026-01-15T10:00:00Z",
     "editor_name": "Daniel"
   }
@@ -644,7 +647,9 @@ Content-Type: application/json
 ```
 
 Updates any supplied whiteboard fields and leaves omitted fields unchanged. At least one of
-`name`, `summary`, or `content` must be supplied.
+`name`, `summary`, `content`, or `dated_at` must be supplied. `dated_at` takes an ISO 8601
+date or time, or `""` to clear it; changing only the date is not an edit of the note (no new
+revision, no new editor).
 
 `lock_version` is required and uses optimistic locking to prevent conflicts.
 

@@ -1368,7 +1368,9 @@ audio (recordings are different, below). Say so plainly rather than guessing at 
 
 Bring a file into the Field yourself (multipart upload only, not a signed
 blob ID; `title` defaults to the filename, `note` is optional). It is shared
-with the whole account:
+with the whole account. For old material (a transcript from 2019), add
+`-F "dated_at=2019-03-14"` (ISO 8601 date or time) and the Field lists it by
+that date instead of the upload time:
 
 ```sh
 curl -X POST -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
@@ -1473,6 +1475,13 @@ curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"name":"...","content":"...","summary":"..."}' \
   "$SOULSHOUSE_APP_URL/api/v1/whiteboards"
+```
+
+A note from the past (an old transcript or diary page) can carry
+`"dated_at":"2018-05-01"` (ISO 8601 date or time); the Field orders it by that
+date rather than by its last edit. `PATCH` takes `dated_at` too (`""` clears it).
+
+```sh
 ```
 
 Update using the latest `lock_version`:

@@ -47,7 +47,7 @@
             {#if item.kind === 'recording' && item.duration_ms}· {formatDuration(item.duration_ms)}{/if}
             {#if item.kind !== 'note' && item.uploader_name}· {item.uploader_name}{/if}
             {#if item.kind === 'note' && item.editor_name}· {item.editor_name}{/if}
-            · {formatWhen(item.recorded_at || item.created_at)}
+            · {formatWhen(item.dated_at || item.recorded_at || item.created_at)}
           </p>
           {#if item.tags?.length}
             <p class="text-xs text-muted-foreground mt-1" data-testid="field-item-tags">

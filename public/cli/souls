@@ -587,6 +587,30 @@ def cmd_residents(client, args):
         emit(client.get("agents"))
 
 
+def cmd_field_upload(client, args):
+    if not os.path.isfile(args.file):
+        raise CliError(f"no such file: {args.file}", EXIT_USAGE)
+    fields = [(k, v) for k, v in (("title", args.title), ("note", args.note), ("dated_at", args.date)) if v]
+    fields += [("tags[]", tag) for tag in args.tag or []]
+    emit(client.post("field/files", fields=fields, files=[("file", args.file)]))
+
+
+def cmd_field_note(client, args):
+    if args.file:
+        if not os.path.isfile(args.file):
+            raise CliError(f"no such file: {args.file}", EXIT_USAGE)
+        with open(args.file, encoding="utf-8") as fh:
+            content = fh.read()
+    else:
+        content = read_text_arg(args.content, required=True)
+    body = {"name": args.title, "content": content}
+    if args.summary:
+        body["summary"] = args.summary
+    if args.date:
+        body["dated_at"] = args.date
+    emit(client.post("whiteboards", json_body=body))
+
+
 def cmd_glossary(client, args):
     action = args.glossary_command
     if action == "list":
@@ -720,6 +744,7 @@ COMMAND_GROUPS = [
                "rename", "archive", "unarchive", "discard", "restore", "fork", "search"]),
     ("Attention", ["attention", "dismiss", "invitations"]),
     ("Repository watches", ["repos", "watches"]),
+    ("Field", ["field"]),
     ("Other", ["residents", "glossary", "download", "api"]),
 ]
 
@@ -880,6 +905,34 @@ def build_parser():
     wp.add_argument("id")
     wp.set_defaults(func=cmd_watches_cancel)
 
+    p = add("field", None,
+            "Bring things into the Field: upload a file, or write a note (souls help field)",
+            epilog="--date is when the thing is from, for old material: an ISO 8601 date or time\n"
+                   "(2019-03-14, 2019-03-14T09:30:00Z). The Field orders by it instead of the\n"
+                   "upload time. Examples:\n"
+                   "  souls field upload transcript-2019-03-14.txt --date 2019-03-14 --tag archive\n"
+                   "  souls field note 'Call with Anna' --date 2021-06-02 --file call.md\n"
+                   "  cat diary.md | souls field note 'Diary, May 2018' --date 2018-05-01\n"
+                   "Recordings take recorded_at instead: see docs/api.md.",
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+    fsub = p.add_subparsers(dest="field_command", metavar="upload|note")
+
+    fp = fsub.add_parser("upload", parents=[common], help="Upload a file (a document, an old transcript)")
+    fp.add_argument("file", metavar="FILE")
+    fp.add_argument("--title", help="default: the filename")
+    fp.add_argument("--note", help="a short note shown with the file")
+    fp.add_argument("--tag", action="append", metavar="TAG", help="repeatable")
+    fp.add_argument("--date", metavar="ISO_DATE", help="when the file is from (sent as dated_at)")
+    fp.set_defaults(func=cmd_field_upload)
+
+    fp = fsub.add_parser("note", parents=[common], help="Write a note (text argument, --file, or stdin)")
+    fp.add_argument("title", metavar="TITLE", help="the note's name; unique among the account's notes")
+    fp.add_argument("content", nargs="?", metavar="TEXT", help="the note; - or omitted reads stdin")
+    fp.add_argument("--file", metavar="PATH", help="read the note from this file")
+    fp.add_argument("--summary", help="one line, up to 250 characters")
+    fp.add_argument("--date", metavar="ISO_DATE", help="when the note is from (sent as dated_at)")
+    fp.set_defaults(func=cmd_field_note)
+
     p = add("glossary", cmd_glossary, "The account's transcription glossary: list, add, remove, pin, unpin")
     p.add_argument("glossary_command", nargs="?", choices=["list", "add", "remove", "pin", "unpin"],
                    default="list", metavar="list|add|remove|pin|unpin")
@@ -939,6 +992,9 @@ def main(argv=None):
             print_overview(parser, sub)
         return EXIT_OK
     try:
+        if args.command == "field" and not args.field_command:
+            sub.choices["field"].print_help()
+            return EXIT_USAGE
         if args.command in ("login", "logout"):
             args.func(None, args)
             return EXIT_OK
