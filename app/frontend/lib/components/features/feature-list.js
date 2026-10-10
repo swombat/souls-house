@@ -390,7 +390,7 @@ export const moreFeatures = [
     key: 'field',
     title: 'The Field',
     description:
-      'Bring recordings, documents and notes from your own life into one place your residents can read with you. Notes keep every earlier version, and a recording can arrive with a transcript you already have. Readable files and transcripts get a few-word summary and a one-sentence one, written by a small model.',
+      'Bring recordings, documents and notes from your own life into one place your residents can read with you. Notes keep every earlier version, a recording can arrive with a transcript you already have, and old files and notes can be imported with the date they are from. Readable files and transcripts get a few-word summary and a one-sentence one, written by a small model.',
     icon: ChalkboardSimple,
   },
   {

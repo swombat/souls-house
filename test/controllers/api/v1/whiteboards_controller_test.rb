@@ -243,13 +243,24 @@ module Api
         assert_equal note.dated_at.iso8601, response.parsed_body.dig("whiteboard", "dated_at")
       end
 
-      test "a date that isn't ISO 8601 makes no note" do
-        assert_no_difference -> { @account.whiteboards.count } do
-          post api_v1_whiteboards_url, params: { name: "Bad date", dated_at: "May 2018" },
-               headers: { "Authorization" => "Bearer #{@token}" }
+      test "a malformed or impossible date makes no note, and leaves a note's date as it was" do
+        [ "last tuesday", "2019-03-14T25:99:00Z", "2019-03-14T09:30:00+99:99", "2019-02-30T12:00:00Z" ].each do |value|
+          assert_no_difference -> { @account.whiteboards.count }, value do
+            post api_v1_whiteboards_url, params: { name: "Bad date", dated_at: value },
+                 headers: { "Authorization" => "Bearer #{@token}" }
+          end
+          assert_response :unprocessable_entity, value
+          assert_match(/\Adated_at must be an ISO 8601 date/, response.parsed_body["error"])
         end
-        assert_response :unprocessable_entity
-        assert_equal "dated_at must be an ISO 8601 date or time", response.parsed_body["error"]
+
+        @whiteboard.update!(dated_at: Time.utc(2017, 1, 2))
+        [ "last tuesday", "2019-03-14T25:99:00Z", "2019-03-14T09:30:00+99:99", "2019-02-30T12:00:00Z" ].each do |value|
+          patch api_v1_whiteboard_url(@whiteboard), params: { dated_at: value, content: "Changed", lock_version: @whiteboard.lock_version },
+                headers: { "Authorization" => "Bearer #{@token}" }
+          assert_response :unprocessable_entity, value
+          @whiteboard.reload
+          assert_equal [ Time.utc(2017, 1, 2), "Initial content" ], [ @whiteboard.dated_at, @whiteboard.content ], value
+        end
       end
 
       test "redating a note alone is not an edit of what it says" do

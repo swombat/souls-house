@@ -127,6 +127,8 @@ class Api::V1::Field::SuppliedTranscriptsTest < ActionDispatch::IntegrationTest
       { transcript_text: "   " },
       { transcript_text: TEXT, language_code: "English" },
       { transcript_text: TEXT, recorded_at: "last tuesday" },
+      { transcript_text: TEXT, recorded_at: "2019-02-30T12:00:00Z" },
+      { transcript_text: TEXT, recorded_at: "2019-03-14T25:99:00Z" },
       { language_code: "en" }
     ].each do |params|
       assert_no_difference(-> { FieldRecording.count }, params.inspect) { import(**params) }

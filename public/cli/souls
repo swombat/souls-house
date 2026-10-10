@@ -599,8 +599,13 @@ def cmd_field_note(client, args):
     if args.file:
         if not os.path.isfile(args.file):
             raise CliError(f"no such file: {args.file}", EXIT_USAGE)
-        with open(args.file, encoding="utf-8") as fh:
-            content = fh.read()
+        try:
+            with open(args.file, encoding="utf-8") as fh:
+                content = fh.read()
+        except UnicodeDecodeError:
+            raise CliError(f"{args.file} is not UTF-8 text; convert it first (iconv -t UTF-8) or use field upload", EXIT_USAGE)
+        except OSError as err:
+            raise CliError(f"cannot read {args.file}: {err.strerror}", EXIT_USAGE)
     else:
         content = read_text_arg(args.content, required=True)
     body = {"name": args.title, "content": content}

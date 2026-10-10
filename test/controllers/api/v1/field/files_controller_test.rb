@@ -60,12 +60,14 @@ class Api::V1::Field::FilesControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ @human_file, later, created ].map(&:to_param), response.parsed_body["files"].map { |f| f["id"] }
   end
 
-  test "a date that isn't ISO 8601 is refused and nothing is made" do
-    assert_no_difference -> { @account.field_files.count } do
-      post api_v1_field_files_path, params: { file: upload, dated_at: "last tuesday" }, headers: @headers
+  test "a malformed or impossible date is refused and nothing is made" do
+    [ "last tuesday", "2019-03-14T25:99:00Z", "2019-03-14T09:30:00+99:99", "2019-02-30T12:00:00Z" ].each do |value|
+      assert_no_difference -> { @account.field_files.count }, value do
+        post api_v1_field_files_path, params: { file: upload, dated_at: value }, headers: @headers
+      end
+      assert_response :unprocessable_entity, value
+      assert_match(/\Adated_at must be an ISO 8601 date/, response.parsed_body["error"])
     end
-    assert_response :unprocessable_entity
-    assert_equal "dated_at must be an ISO 8601 date or time", response.parsed_body["error"]
   end
 
   test "a resident brings a file in, attributed to itself" do

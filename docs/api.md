@@ -438,8 +438,11 @@ and `POST /api/v1/whiteboards` take `dated_at`, an ISO 8601 date or time, for
 material from the past (old transcripts, diary pages). The Field list, search
 and `GET /api/v1/field/files` order by `COALESCE(dated_at, created_at)` for
 files and `COALESCE(dated_at, last_edited_at, updated_at)` for notes, as
-recordings already do with `recorded_at`. Anything that isn't ISO 8601 is 422
-and nothing is made. On `PATCH` (`/field/files/:id`, `/whiteboards/:id`)
+recordings already do with `recorded_at`. Accepted: `2019-03-14` (midnight in
+the app's zone) or `2019-03-14T09:30[:00[.5]]` with `Z`, an offset, or none
+(the app's zone). Anything else, or an impossible value (30 February, 25:00,
++99:99), is 422 and nothing is made or changed; `FieldDate` checks every
+component rather than rolling over. `recorded_at` uses the same parser. On `PATCH` (`/field/files/:id`, `/whiteboards/:id`)
 `dated_at: ""` clears it; redating a note alone is not an edit (no revision,
 editor unchanged). Responses carry `dated_at` (or `null`).
 

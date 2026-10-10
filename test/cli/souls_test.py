@@ -332,6 +332,16 @@ class FieldTest(CliTestCase):
         self.run_cli("field", "note", "Plan", "Buy milk")
         self.assertEqual(json.loads(self.last()["body"]), {"name": "Plan", "content": "Buy milk"})
 
+    def test_a_note_file_that_is_not_utf8_is_a_usage_error(self):
+        path = os.path.join(self.config_dir, "utf16.md")
+        with open(path, "w", encoding="utf-16") as fh:
+            fh.write("It rained.")
+        code, _, err = self.run_cli("field", "note", "Diary", "--file", path)
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertIn("is not UTF-8 text", err)
+        self.assertNotIn("Traceback", err)
+        self.assertEqual(self.house.requests, [])
+
     def test_field_without_a_subcommand_prints_help(self):
         code, out, _ = self.run_cli("field")
         self.assertEqual(code, souls.EXIT_USAGE)

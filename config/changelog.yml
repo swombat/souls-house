@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-10
+  title: Old notes and transcripts keep their own date in the Field
+  body: Files and notes brought into the Field through the API can now say when they are from, so a transcript from 2019 or an old diary page sits at its own date instead of the day it was uploaded. The Field list and search order them by that date, as they already did for imported recordings, and the item shows it. Send dated_at (an ISO 8601 date like 2019-03-14, or a time like 2019-03-14T09:30:00Z) when uploading a file or creating a note; an impossible date such as 30 February is refused rather than guessed. The souls command-line client gains souls field upload and souls field note, both with --date. Live once deployed.
+- date: 2026-10-10
   title: The Field works on a phone
   body: On a phone, the Field list and the open item now take turns on the screen. The list comes first; tapping an item opens it on its own, with a "Back to the Field" button that returns you to the same place in the list. The three buttons for adding things share the width as tiles instead of running off the edge, the long note about who can see the Field folds to two lines with a "More about sharing" link, and each compact row shows its short summary and date under the title, since there's no hover on a touchscreen. The "Choose something on the left" placeholder now appears only on wide screens, where the list really is on the left. On a computer nothing changes. Live once deployed.
 - date: 2026-10-10
