@@ -42,8 +42,14 @@ class RepositoryWebhooksController < ActionController::API
       unique_by: :delivery_guid,
       returning: %w[id]
     ).rows.first
-    # A redelivery of something already received: acknowledged, not redone.
-    return head(:ok) unless delivery
+    # A redelivery of something already received is acknowledged, not
+    # redone; but if the first receipt was never processed (its job lost),
+    # this is the moment to try again.
+    unless delivery
+      existing = repository.repository_deliveries.outstanding.find_by(delivery_guid: guid)
+      RepositoryDeliveryJob.perform_later(existing.id) if existing && interesting
+      return head(:ok)
+    end
 
     repository.confirm_hook! if event == "ping"
     repository.record_delivery_result!(interesting ? "verified" : "ignored")

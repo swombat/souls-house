@@ -15,7 +15,7 @@ class RepositoryWatchDeliverJob < ApplicationJob
     return unless watch && watch.state.in?(%w[fulfilled expired])
 
     delivery = watch.repository_watch_deliveries.find_by(fulfilment_key: watch.fulfilment_key)
-    return if delivery.nil? || delivery.completed?
+    return if delivery.nil? || delivery.completed? || delivery.failed?
 
     delivery.increment!(:attempts)
     begin

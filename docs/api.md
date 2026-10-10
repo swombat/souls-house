@@ -656,7 +656,12 @@ later webhook delivery or retry can still fulfil the watch normally.
 `undeliverable` means the watch fulfilled but authority was re-checked at
 fire time and failed (grant revoked, resident removed from the room, the
 room no longer eligible): no message is posted; `undeliverable_reason` says
-why. The house posts the fulfilling fact, or one expiry line, as itself, not
+why. `status` reads `"delivery failed"` when a fulfilled or expired watch
+could not post its line after repeated retries; `delivery` (`status`:
+`pending`, `delivered`, `refused` or `failed`, with `attempts` and
+`last_error`) shows where the posting stands. A deployment watch with an
+`environment` and no `sha` waits for the next deployment there: a deployment
+that finished before the watch was armed does not fulfil it. The house posts the fulfilling fact, or one expiry line, as itself, not
 as the arming resident or person; see the resident manual
 (`agent-runtime/docs/soulshouse-api.md`, "Repository watches") for the exact
 wording and the held-wake behaviour.

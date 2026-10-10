@@ -1503,10 +1503,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_120000) do
     t.datetime "received_at", null: false
     t.boolean "signature_ok", default: false, null: false
     t.datetime "processed_at"
+    t.integer "process_attempts", default: 0, null: false
+    t.string "last_error"
     t.jsonb "payload", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["delivery_guid"], name: "index_repository_deliveries_on_delivery_guid", unique: true
+    t.index ["received_at"], name: "index_repository_deliveries_unprocessed", where: "((processed_at IS NULL) AND signature_ok)"
     t.index ["watched_repository_id"], name: "index_repository_deliveries_on_watched_repository_id"
   end
 
@@ -1523,6 +1526,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_120000) do
     t.index ["message_id"], name: "index_repository_watch_deliveries_on_message_id"
     t.index ["repository_watch_id", "fulfilment_key"], name: "index_repository_watch_deliveries_on_watch_and_key", unique: true
     t.index ["repository_watch_id"], name: "index_repository_watch_deliveries_on_repository_watch_id"
+    t.index ["updated_at"], name: "index_repository_watch_deliveries_incomplete", where: "(completed_at IS NULL)"
   end
 
   create_table "repository_watches", force: :cascade do |t|

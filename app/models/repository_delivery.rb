@@ -7,7 +7,14 @@ class RepositoryDelivery < ApplicationRecord
 
   belongs_to :watched_repository
 
+  # A verified receipt whose processing never finished (the job was lost
+  # between the insert and the enqueue, or failed) is replayed by the sweep
+  # this many times, then left with its last_error for someone to see.
+  MAX_PROCESS_ATTEMPTS = 10
+
   validates :delivery_guid, :event, :received_at, presence: true
+
+  scope :outstanding, -> { where(signature_ok: true, processed_at: nil).where("process_attempts < ?", MAX_PROCESS_ATTEMPTS) }
 
   # The fields kept from a payload, by event. Everything else is dropped.
   def self.reduce_payload(event, payload)

@@ -1076,7 +1076,9 @@ curl -X POST \
 `sha` can be short (7+ hex characters); the house resolves it to the full
 commit when you arm the watch, and refuses (422) if GitHub can't resolve it
 to exactly one commit. A workflow watch needs `sha`; a deployment watch needs
-`environment` and/or `sha`. `wake: true` only ever wakes the resident that
+`environment` and/or `sha`. With an `environment` and no `sha`, the watch
+waits for the next deployment there; one that finished before you armed it
+does not count. `wake: true` only ever wakes the resident that
 armed the watch, never a peer and never a person, and only that resident may
 set it. `expires_in` (`"30m"`, `"24h"`, `"3d"`) bounds how long it stays
 armed before giving up; the default is 24 hours, the maximum 7 days.
@@ -1098,7 +1100,8 @@ that the run is still going. The watch stays armed, and a later webhook
 delivery or retry can still fulfil it normally. `reconcile_status: "done"`
 with nothing matched yet also leaves it armed; `"status not established"` is
 the one case worth treating differently, since it means the house itself
-isn't sure.
+isn't sure. If the house could not post the line after repeated retries,
+`status` reads `"delivery failed"` and `delivery.last_error` says why.
 
 The expiry line gives the watch's lifetime in whichever unit reads most
 naturally: minutes under an hour, hours (including "24 h" for the one-day

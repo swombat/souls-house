@@ -9,6 +9,8 @@ module RepositoryWatches
 
     API_ROOT = "https://api.github.com".freeze
     API_VERSION = "2022-11-28".freeze
+    PER_PAGE = 100
+    MAX_PAGES = 10
     FULL_NAME = %r{\A[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z}
 
     # status is GitHub's HTTP status (nil when GitHub could not be reached).
@@ -58,14 +60,21 @@ module RepositoryWatches
       request(:get, "/repos/#{checked(full_name)}/commits/#{ref}").fetch("sha")
     end
 
+    # Every run for the sha, across pages (bounded; see collect_pages).
     def workflow_runs(full_name, head_sha:)
-      data = request(:get, "/repos/#{checked(full_name)}/actions/runs", params: { head_sha: head_sha, per_page: 100 })
-      Array(data && data["workflow_runs"])
+      collect_pages("/repos/#{checked(full_name)}/actions/runs", params: { head_sha: head_sha }, key: "workflow_runs")
     end
 
-    def deployments(full_name, sha: nil, environment: nil)
-      params = { per_page: 30, sha: sha, environment: environment }.compact
-      Array(request(:get, "/repos/#{checked(full_name)}/deployments", params: params))
+    # Newest first, across pages. With since:, stops at the first deployment
+    # created before it (the list is newest first), so an environment-only
+    # search reads only recent deployments.
+    def deployments(full_name, sha: nil, environment: nil, since: nil)
+      params = { sha: sha, environment: environment }.compact
+      collect_pages("/repos/#{checked(full_name)}/deployments", params: params) do |deployment|
+        since && Time.iso8601(deployment["created_at"].to_s) < since
+      rescue ArgumentError
+        false
+      end
     end
 
     # Newest first, as GitHub returns them.
@@ -74,6 +83,24 @@ module RepositoryWatches
     end
 
     private
+
+    # Follows GitHub's page numbers until a short page, a stop condition, or
+    # MAX_PAGES. Past the bound it raises rather than answer from a partial
+    # list: a caller that saw no match must not conclude there is none.
+    def collect_pages(path, params:, key: nil, &stop)
+      items = []
+      1.upto(MAX_PAGES) do |page|
+        data = request(:get, path, params: params.merge(per_page: PER_PAGE, page: page))
+        batch = Array(key ? data&.fetch(key, nil) : data)
+        batch.each do |item|
+          return items if stop&.call(item)
+
+          items << item
+        end
+        return items if batch.size < PER_PAGE
+      end
+      raise Error.new("GitHub listed more than #{MAX_PAGES * PER_PAGE} results; not all could be searched")
+    end
 
     def token
       @connection.credential_payload_hash["token"].presence || raise(Error.new("The GitHub connection has no token"))

@@ -295,8 +295,13 @@ class RepositoryWatch < ApplicationRecord
 
   def status_label
     return "status not established" if armed? && reconcile_status == "error"
+    return "delivery failed" if current_delivery&.failed?
 
     state
+  end
+
+  def current_delivery
+    repository_watch_deliveries.find { |delivery| delivery.fulfilment_key == fulfilment_key }
   end
 
   def as_watch_json
@@ -318,6 +323,7 @@ class RepositoryWatch < ApplicationRecord
       cancelled_at: cancelled_at&.utc&.iso8601,
       cancel_reason: cancel_reason,
       undeliverable_reason: undeliverable_reason,
+      delivery: current_delivery && { status: current_delivery.status, attempts: current_delivery.attempts, last_error: current_delivery.last_error },
       created_by: created_by_agent ? { type: "resident", id: created_by_agent.to_param, name: created_by_agent.name } :
         (created_by_user ? { type: "person", name: created_by_user.full_name.presence || created_by_user.email_address.split("@").first } : nil),
       created_at: created_at.utc.iso8601

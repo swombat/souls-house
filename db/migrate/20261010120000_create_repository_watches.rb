@@ -61,10 +61,13 @@ class CreateRepositoryWatches < ActiveRecord::Migration[8.0]
       t.datetime :received_at, null: false
       t.boolean :signature_ok, null: false, default: false
       t.datetime :processed_at
+      t.integer :process_attempts, null: false, default: 0
+      t.string :last_error
       t.jsonb :payload, null: false, default: {}
       t.timestamps
     end
     add_index :repository_deliveries, :delivery_guid, unique: true
+    add_index :repository_deliveries, :received_at, where: "processed_at IS NULL AND signature_ok", name: "index_repository_deliveries_unprocessed"
 
     create_table :repository_watch_deliveries do |t|
       t.references :repository_watch, null: false, foreign_key: { on_delete: :cascade }
@@ -78,6 +81,7 @@ class CreateRepositoryWatches < ActiveRecord::Migration[8.0]
     end
     add_index :repository_watch_deliveries, [ :repository_watch_id, :fulfilment_key ], unique: true,
               name: "index_repository_watch_deliveries_on_watch_and_key"
+    add_index :repository_watch_deliveries, :updated_at, where: "completed_at IS NULL", name: "index_repository_watch_deliveries_incomplete"
   end
 
 end

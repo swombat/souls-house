@@ -20,6 +20,9 @@ class RepositoryWebhooksControllerTest < ActionDispatch::IntegrationTest
     body = workflow_body
     assert_enqueued_jobs 1, only: RepositoryDeliveryJob do
       deliver(body, event: "workflow_run", guid: "guid-1")
+    end
+    perform_enqueued_jobs(only: RepositoryDeliveryJob)
+    assert_no_enqueued_jobs(only: RepositoryDeliveryJob) do
       deliver(body, event: "workflow_run", guid: "guid-1")
     end
     assert_response :ok
@@ -28,6 +31,18 @@ class RepositoryWebhooksControllerTest < ActionDispatch::IntegrationTest
     refute delivery.payload.key?("sender"), "only the fields we read are kept"
     assert_equal SHA, delivery.payload.dig("workflow_run", "head_sha")
     assert_equal "verified", @repository.reload.last_delivery_result
+  end
+
+  test "a redelivery of a receipt that was never processed re-enqueues it" do
+    body = workflow_body
+    RepositoryDeliveryJob.stub(:perform_later, nil) { deliver(body, event: "workflow_run", guid: "lost-guid") }
+    assert_nil @repository.repository_deliveries.sole.processed_at
+
+    assert_enqueued_with(job: RepositoryDeliveryJob, args: [ @repository.repository_deliveries.sole.id ]) do
+      deliver(body, event: "workflow_run", guid: "lost-guid")
+    end
+    assert_response :ok
+    assert_equal 1, @repository.repository_deliveries.count
   end
 
   test "the acceptance flow: delivered twice, resident mid-run, one line and one held wake" do

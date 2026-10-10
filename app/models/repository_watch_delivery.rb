@@ -5,8 +5,32 @@
 # recurring watch would key by run id and attempt.
 class RepositoryWatchDelivery < ApplicationRecord
 
+  # The sweep retries an incomplete delivery (lost enqueue, or a job that
+  # ran out of retries) with backoff until this many attempts, then it is
+  # failed: the watch says so instead of going quiet.
+  MAX_ATTEMPTS = 12
+
   belongs_to :repository_watch
   belongs_to :message, optional: true
+
+  scope :incomplete, -> { where(completed_at: nil) }
+
+  def failed?
+    !completed? && attempts >= MAX_ATTEMPTS
+  end
+
+  # Due for another try: 2, 4, 8 ... minutes after the last, at most an hour.
+  def retry_due?(now = Time.current)
+    !completed? && !failed? && updated_at <= now - [ (2**attempts.clamp(1, 10)).minutes, 1.hour ].min
+  end
+
+  def status
+    return "delivered" if completed? && last_error.blank?
+    return "refused" if completed?
+    return "failed" if failed?
+
+    "pending"
+  end
 
   def woken?(agent_id)
     woken.to_h.key?(agent_id.to_s)
