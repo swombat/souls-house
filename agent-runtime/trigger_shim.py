@@ -102,6 +102,7 @@ except ModuleNotFoundError:  # Allows prompt-building tests without Flask instal
 # ----- config -----
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from resident_memory_policy import aggregation_context, aggregation_request, load_policy, command_reference as policy_reference, policy_notice
+from runtime_capability.boundary import capability_notice
 
 AGENT_ID = os.environ.get("AGENT_ID", "unknown")
 AGENT_LOG_LABEL = os.environ.get("AGENT_SLUG") or AGENT_ID
@@ -385,6 +386,12 @@ def trigger():
         prompt = append_runtime_notice(prompt, sibling_notice)
         if request_delta:
             request_delta = append_runtime_notice(request_delta, sibling_notice)
+        # Once per accepted trigger, shared by fresh, resume and fresh fallback.
+        # Only runtime configuration selects the manifest directory.
+        discovery_notice = capability_notice(AGENT_IDENTITY_PATH)
+        prompt = append_runtime_notice(prompt, discovery_notice)
+        if request_delta:
+            request_delta = append_runtime_notice(request_delta, discovery_notice)
         memory_notice = graph_memory_notice(payload.get("memory"))
         if persistent_session:
             response = persistent_trigger(
