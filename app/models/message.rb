@@ -173,37 +173,42 @@ class Message < ApplicationRecord
 
   # The receipts under a resident's message: one per resident it handed off to.
   def handoff_receipts
-    return [] unless role == "assistant"
-
-    loaded_handoffs.map(&:as_receipt_json)
+    handoff_receipts_snapshot.first
   end
 
   # Which state of the receipts a copy carries: the last change to any of
   # them, in microseconds. The room page keeps the newest it has seen, so a
   # page fetched or reloaded around a change never puts an older state back
-  # (chat-history.svelte.js). 0 with no handoffs.
+  # (chat-history.svelte.js). 0 with no handoffs. Read from the same records
+  # as handoff_receipts, so a copy's values and version always match.
   def handoff_receipts_version
-    return 0 unless role == "assistant"
-
-    latest = loaded_handoffs.map(&:updated_at).max
-    latest ? (latest.to_r * 1_000_000).to_i : 0
+    handoff_receipts_snapshot.last
   end
 
   # A targeted patch, not a refresh: the room page reloads only its recent
   # window, and a receipt under an older message already on screen must move
   # too (chat-history.svelte.js applies it to whichever window holds it).
   def broadcast_handoff_receipts
+    @handoff_receipts_snapshot = nil
     handoffs.reset
+    receipts, version = handoff_receipts_snapshot
     ActionCable.server.broadcast("Chat:#{chat.obfuscated_id}", {
       action: "handoff_receipts", chat_id: chat.to_param, message_id: to_param,
-      handoff_receipts: handoff_receipts, handoff_receipts_version: handoff_receipts_version
+      handoff_receipts: receipts, handoff_receipts_version: version
     })
   end
 
-  def loaded_handoffs
-    handoffs.loaded? ? handoffs.sort_by(&:id) : handoffs.includes(:recipient_agent).order(:id).to_a
+  # One read of the handoffs serves both the receipts and their version.
+  def handoff_receipts_snapshot
+    @handoff_receipts_snapshot ||= if role == "assistant"
+      records = handoffs.loaded? ? handoffs.sort_by(&:id) : handoffs.includes(:recipient_agent).order(:id).to_a
+      latest = records.map(&:updated_at).max
+      [ records.map(&:as_receipt_json), latest ? (latest.to_r * 1_000_000).to_i : 0 ]
+    else
+      [ [], 0 ]
+    end
   end
-  private :loaded_handoffs
+  private :handoff_receipts_snapshot
 
   def advance_runtime_response_chain
     runtime_interaction&.advance_response_chain! if role == "assistant"

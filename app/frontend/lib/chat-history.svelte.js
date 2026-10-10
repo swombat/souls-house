@@ -10,7 +10,7 @@ import {
   appendMessageIfMissing,
   applyReceiptLedger,
   patchMessageInCollections,
-  receiptCatchUpIds,
+  receiptCatchUpBatches,
   recordReceipts,
   removeMessageFromCollections,
 } from './chat-message-collections';
@@ -116,22 +116,23 @@ export function createChatHistory(context) {
     const onReconnected = async (event) => {
       const current = context();
       if (event.detail?.id !== current.chat.id) return;
-      const ids = receiptCatchUpIds(older);
-      if (ids.length === 0) return;
+      const batches = receiptCatchUpBatches(older);
       try {
-        const response = await fetch(
-          accountChatMessagesPath(current.account.id, current.chat.id, { receipts_for: ids.join(',') }),
-          { headers: { Accept: 'application/json' } }
-        );
-        if (!response.ok || context().chat.id !== current.chat.id) return;
-        const { receipts = {} } = await response.json();
-        let recorded = false;
-        for (const [messageId, entry] of Object.entries(receipts)) {
-          recorded =
-            recordReceipts(receiptLedger, messageId, entry.handoff_receipts, entry.handoff_receipts_version) ||
-            recorded;
+        for (const ids of batches) {
+          const response = await fetch(
+            accountChatMessagesPath(current.account.id, current.chat.id, { receipts_for: ids.join(',') }),
+            { headers: { Accept: 'application/json' } }
+          );
+          if (!response.ok || context().chat.id !== current.chat.id) return;
+          const { receipts = {} } = await response.json();
+          let recorded = false;
+          for (const [messageId, entry] of Object.entries(receipts)) {
+            recorded =
+              recordReceipts(receiptLedger, messageId, entry.handoff_receipts, entry.handoff_receipts_version) ||
+              recorded;
+          }
+          if (recorded) applyReceipts();
         }
-        if (recorded) applyReceipts();
       } catch (error) {
         logging.error('Failed to catch up handoff receipts:', error);
       }

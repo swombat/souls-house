@@ -164,6 +164,26 @@ class MessageHandoffTest < ActiveSupport::TestCase
     assert_equal updated_at, @chat.reload.updated_at
   end
 
+  # Mira's third review: values and version must come from one read, or a
+  # change between two reads labels old receipts with the newer version.
+  test "a copy's receipts and version come from one snapshot, and a broadcast takes a fresh one" do
+    handoff = post_as_lume("@Mira look").handoffs.sole.reload
+    message = Message.find(handoff.message_id)
+    queued = message.handoff_receipts
+    delivered_at = 1.second.from_now
+    MessageHandoff.where(id: handoff.id).update_all(status: "delivered", delivered_at: delivered_at, updated_at: delivered_at)
+
+    assert_equal queued, message.handoff_receipts
+    assert_equal (handoff.updated_at.to_r * 1_000_000).to_i, message.handoff_receipts_version
+
+    message.broadcast_handoff_receipts
+    assert_broadcast_on("Chat:#{@chat.obfuscated_id}",
+      action: "handoff_receipts", chat_id: @chat.to_param, message_id: message.to_param,
+      handoff_receipts: Message.find(message.id).handoff_receipts.map(&:stringify_keys),
+      handoff_receipts_version: (delivered_at.to_r * 1_000_000).to_i)
+    assert_equal "delivered", message.handoff_receipts.sole[:state]
+  end
+
   # Claim: an immediate wake is checked again before it starts, as a held
   # one's release is (Mira's review of #283).
 

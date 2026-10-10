@@ -45,7 +45,16 @@ export function recordReceipts(ledger, messageId, receipts, version) {
   return true;
 }
 
+// Every copy from the server is evidence too: remember its receipts if they
+// are the newest seen, then bring every copy up to the newest. A fresh fetch
+// therefore raises the floor, and a staler copy landing after it cannot
+// revert what is shown.
 export function applyReceiptLedger(messages = [], ledger) {
+  for (const message of messages) {
+    if (message.handoff_receipts_version > 0) {
+      recordReceipts(ledger, message.id, message.handoff_receipts, message.handoff_receipts_version);
+    }
+  }
   if (!ledger?.size) return messages;
   let changed = false;
   const result = messages.map((message) => {
@@ -57,11 +66,14 @@ export function applyReceiptLedger(messages = [], ledger) {
   return changed ? result : messages;
 }
 
-// The older loaded messages whose receipts could still move: the bounded
-// set a room page catches up after its cable reconnects.
-export function receiptCatchUpIds(messages = [], limit = 50) {
-  return messages
+// The older loaded messages whose receipts could still move, in batches of
+// at most `size`: a room page asks for each batch once after its cable
+// reconnects. Every such message is asked about; no request is unbounded.
+export function receiptCatchUpBatches(messages = [], size = 50) {
+  const ids = messages
     .filter((message) => (message.handoff_receipts || []).some((receipt) => receipt.state !== 'delivered'))
-    .slice(-limit)
     .map((message) => message.id);
+  const batches = [];
+  for (let i = 0; i < ids.length; i += size) batches.push(ids.slice(i, i + size));
+  return batches;
 }

@@ -3,7 +3,7 @@ import {
   appendMessageIfMissing,
   applyReceiptLedger,
   patchMessageInCollections,
-  receiptCatchUpIds,
+  receiptCatchUpBatches,
   recordReceipts,
   removeMessageFromCollections,
 } from './chat-message-collections';
@@ -96,10 +96,22 @@ describe('handoff receipt ledger', () => {
 
     const fresher = [{ id: 'm1', handoff_receipts: queued, handoff_receipts_version: 30 }];
     expect(applyReceiptLedger(fresher, ledger)).toBe(fresher);
-    expect(applyReceiptLedger(stale, new Map())).toBe(stale);
+    expect(applyReceiptLedger([{ id: 'm3' }], new Map())).toEqual([{ id: 'm3' }]);
   });
 
-  test('catches up only messages whose receipts can still move, within a bound', () => {
+  // Mira's third review: held v20, then a fetched delivered v30, then a stale
+  // queued v25 must stay delivered.
+  test('a fresh fetched copy raises the floor for copies that land after it', () => {
+    const held = [{ recipient_id: 'mira', recipient_name: 'Mira', state: 'held' }];
+    const ledger = new Map();
+    recordReceipts(ledger, 'm1', held, 20);
+    applyReceiptLedger([{ id: 'm1', handoff_receipts: delivered, handoff_receipts_version: 30 }], ledger);
+    const after = applyReceiptLedger([{ id: 'm1', handoff_receipts: queued, handoff_receipts_version: 25 }], ledger);
+    expect(after[0].handoff_receipts).toEqual(delivered);
+    expect(after[0].handoff_receipts_version).toBe(30);
+  });
+
+  test('catches up every message whose receipts can still move, in bounded batches', () => {
     const messages = [
       { id: 'a', handoff_receipts: delivered },
       { id: 'b', handoff_receipts: queued },
@@ -107,7 +119,11 @@ describe('handoff receipt ledger', () => {
       { id: 'd', handoff_receipts: [{ state: 'blocked' }] },
       { id: 'e', handoff_receipts: [{ state: 'held' }] },
     ];
-    expect(receiptCatchUpIds(messages)).toEqual(['b', 'd', 'e']);
-    expect(receiptCatchUpIds(messages, 2)).toEqual(['d', 'e']);
+    expect(receiptCatchUpBatches(messages)).toEqual([['b', 'd', 'e']]);
+    expect(receiptCatchUpBatches(messages, 2)).toEqual([['b', 'd'], ['e']]);
+    const many = Array.from({ length: 51 }, (_, i) => ({ id: `m${i}`, handoff_receipts: queued }));
+    const batches = receiptCatchUpBatches(many);
+    expect(batches.map((batch) => batch.length)).toEqual([50, 1]);
+    expect(batches.flat()).toContain('m0');
   });
 });
