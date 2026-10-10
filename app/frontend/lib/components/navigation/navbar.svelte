@@ -47,6 +47,9 @@
   const currentAccount = $derived($page.props?.account);
   const accounts = $derived($page.props?.accounts || []);
   const siteSettings = $derived($page.props?.site_settings);
+  const accountNameHref = $derived(
+    currentAccount?.id && siteSettings?.allow_chats ? accountChatsPath(currentAccount.id) : '/'
+  );
 
   const links = $derived([
     {
@@ -136,11 +139,14 @@
           <Link href="/" aria-label="Home" data-testid="nav-home-logo">
             <Logo class="h-8 w-8 shrink-0 md:h-10 md:w-10" />
           </Link>
-          <Link
-            href={siteSettings?.allow_chats ? accountChatsPath(currentAccount.id) : '/'}
-            class="block truncate max-w-[45vw] md:max-w-[16rem]"
-            title={currentAccount.name}
-            data-testid="nav-account-name">{currentAccount.name}</Link>
+          <!-- Remount when the destination changes, like the account-scoped links below, so the click handler cannot keep the previous account's URL. -->
+          {#key accountNameHref}
+            <Link
+              href={accountNameHref}
+              class="block truncate max-w-[45vw] md:max-w-[16rem]"
+              title={currentAccount.name}
+              data-testid="nav-account-name">{currentAccount.name}</Link>
+          {/key}
         </div>
       {:else}
         <Link href="/" class="flex min-w-0 items-center gap-2">
