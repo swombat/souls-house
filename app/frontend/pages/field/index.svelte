@@ -17,6 +17,7 @@
   import FieldItemCard from '$lib/components/field/FieldItemCard.svelte';
   import FieldSearchBar from '$lib/components/field/FieldSearchBar.svelte';
   import FieldSearchResults from '$lib/components/field/FieldSearchResults.svelte';
+  import SummariesNotice from '$lib/components/field/SummariesNotice.svelte';
   import { fieldItemLink, formatBytes } from '$lib/field';
   import { FileArrowUp, Microphone, NotePencil, Plant } from 'phosphor-svelte';
 
@@ -322,10 +323,7 @@
 
     <p class="text-sm text-muted-foreground mb-4" data-testid="field-sharing">
       {sharedLine} Adding something doesn't notify or wake residents; share its link in a chat to explore it together.
-      {#if summaries_enabled}
-        The short summaries under titles are written by Claude Haiku (Anthropic, through OpenRouter) from readable
-        files and transcripts; Anthropic doesn't train on them and may keep them for up to 30 days.
-      {/if}
+      {#if summaries_enabled}<SummariesNotice />{/if}
     </p>
 
     <!-- The tabs sort the list; a search has its own results. -->
@@ -420,12 +418,7 @@
   <Dialog.Content class="sm:max-w-lg">
     <Dialog.Header>
       <Dialog.Title>Add a file to the Field</Dialog.Title>
-      <Dialog.Description>
-        {sharedLine}{#if summaries_enabled}
-          If the house can read its text (plain-text formats), the text, title and note are sent to Claude Haiku
-          (Anthropic, through OpenRouter) to write a short summary. Anthropic doesn't train on it and may keep it for
-          up to 30 days.{/if}
-      </Dialog.Description>
+      <Dialog.Description>{sharedLine} {#if summaries_enabled}<SummariesNotice kind="file" />{/if}</Dialog.Description>
     </Dialog.Header>
     <form onsubmit={submitUpload} class="space-y-4">
       <div class="space-y-1">
