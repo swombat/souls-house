@@ -1,4 +1,5 @@
 <script>
+  import { tick } from 'svelte';
   import { router } from '@inertiajs/svelte';
   import { createDynamicSync } from '$lib/use-sync';
   import * as Card from '$lib/components/shadcn/card/index.js';
@@ -19,8 +20,11 @@
   import FieldSearchBar from '$lib/components/field/FieldSearchBar.svelte';
   import FieldSearchResults from '$lib/components/field/FieldSearchResults.svelte';
   import SummariesNotice from '$lib/components/field/SummariesNotice.svelte';
+  import FieldActions from '$lib/components/field/FieldActions.svelte';
+  import FieldSharing from '$lib/components/field/FieldSharing.svelte';
+  import FieldNoteDialog from '$lib/components/field/FieldNoteDialog.svelte';
   import { fieldItemLink, formatBytes } from '$lib/field';
-  import { FileArrowUp, Microphone, NotePencil } from 'phosphor-svelte';
+  import { CaretLeft } from 'phosphor-svelte';
 
   let {
     items = [],
@@ -78,12 +82,20 @@
   // Search, tag filter and page ride along in the URL so a link reopens
   // them. A search pages its results from 0; the list pages from 1. A new
   // query, filter or tab starts again from the first page.
-  function visit(params, { q = query, tag = filter_tags, page = q ? search?.page || 0 : pagination.page } = {}) {
+  function visit(
+    params,
+    { q = query, tag = filter_tags, page = q ? search?.page || 0 : pagination.page } = {},
+    opts = {}
+  ) {
     const extra = {};
     if (q) extra.q = q;
     if (tag.length) extra.tag = tag;
     if (q ? page > 0 : page > 1) extra.page = page;
-    router.get(`/accounts/${account.id}/field`, { ...params, ...extra }, { preserveState: true, preserveScroll: true });
+    router.get(
+      `/accounts/${account.id}/field`,
+      { ...params, ...extra },
+      { preserveState: true, preserveScroll: true, ...opts }
+    );
   }
 
   function goToPage(page) {
@@ -114,10 +126,47 @@
     visit(selected ? { tab: key, item: selected } : { tab: key }, { page: 1 });
   }
 
+  // Below lg the list and the open item take turns on screen: opening an
+  // item starts it at the top, and going back returns to the same place in
+  // the list. That place is kept in sessionStorage, keyed by the list it
+  // belongs to, because browser Back/Forward recreates this component.
+  const narrow = () => !window.matchMedia?.('(min-width: 1024px)').matches;
+  const returnKey = $derived(
+    `field-return:${account.id}:${tab}:${query}:${filter_tags.join(',')}:${search ? search.page : pagination.page}`
+  );
+
+  function rememberReturn(y) {
+    try {
+      sessionStorage.setItem(returnKey, String(y));
+    } catch {
+      // Storage can be unavailable (private mode); going back then lands at the top.
+    }
+  }
+
+  function recallReturn() {
+    try {
+      return Number(sessionStorage.getItem(returnKey)) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
   function selectItem(key) {
     editing = false;
     conflict = null;
-    visit({ tab, item: key });
+    if (narrow()) {
+      rememberReturn(window.scrollY);
+      visit({ tab, item: key }, {}, { onSuccess: () => tick().then(() => window.scrollTo(0, 0)) });
+    } else {
+      visit({ tab, item: key });
+    }
+  }
+
+  function backToList() {
+    editing = false;
+    conflict = null;
+    const y = recallReturn();
+    visit({ tab }, {}, { onSuccess: () => tick().then(() => window.scrollTo(0, y)) });
   }
 
   // A newly opened item starts at its top; the list keeps its own scroll.
@@ -170,33 +219,7 @@
     });
   }
 
-  // New note
   let noteOpen = $state(false);
-  let noteName = $state('');
-  let noteContent = $state('');
-  let creatingNote = $state(false);
-  let noteError = $state('');
-
-  function submitNote(event) {
-    event.preventDefault();
-    if (!noteName.trim()) return;
-    creatingNote = true;
-    noteError = '';
-    router.post(
-      `/accounts/${account.id}/whiteboards`,
-      { whiteboard: { name: noteName.trim(), content: noteContent } },
-      {
-        preserveState: true,
-        onSuccess: () => {
-          noteOpen = false;
-          noteName = '';
-          noteContent = '';
-        },
-        onError: (errors) => (noteError = errors.name || 'The note could not be saved. Please try again.'),
-        onFinish: () => (creatingNote = false),
-      }
-    );
-  }
 
   // Note editing, unchanged from the whiteboards page
   let editing = $state(false);
@@ -284,44 +307,37 @@
   <title>Field</title>
 </svelte:head>
 
-<div class="p-8 max-w-7xl mx-auto">
-  <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+<div class="px-4 py-6 sm:p-8 max-w-7xl mx-auto">
+  <div class="mb-6 flex-wrap items-end justify-between gap-4 {current ? 'hidden lg:flex' : 'flex'}">
     <div>
       <h1 class="text-3xl font-bold">Field</h1>
       <p class="text-muted-foreground mt-1">Things from your life, brought here to keep and return to together.</p>
     </div>
-    <div class="flex gap-2">
-      <Button onclick={() => (uploadOpen = true)} data-testid="field-add-file">
-        <FileArrowUp class="size-4" /> Add file
-      </Button>
-      <Button variant="outline" onclick={() => (noteOpen = true)} data-testid="field-new-note">
-        <NotePencil class="size-4" /> New note
-      </Button>
-      <Button variant="outline" onclick={() => (recordingOpen = true)} data-testid="field-add-recording">
-        <Microphone class="size-4" /> Bring in a recording
-      </Button>
-    </div>
+    <FieldActions
+      onFile={() => (uploadOpen = true)}
+      onNote={() => (noteOpen = true)}
+      onRecording={() => (recordingOpen = true)} />
   </div>
 
   {#if fieldEmpty}
     <FieldEmpty {accountLabel} />
   {:else}
-    <FieldSearchBar
-      {query}
-      filterTags={filter_tags}
-      {tags}
-      onSearch={(q) => visit(selected ? { tab, item: selected } : { tab }, { q, page: q ? 0 : 1 })}
-      onToggleTag={toggleTag}
-      onManage={() => (tagsOpen = true)} />
+    <!-- On a phone, an open item has the screen to itself. -->
+    <div class={current ? 'hidden lg:block' : ''}>
+      <FieldSearchBar
+        {query}
+        filterTags={filter_tags}
+        {tags}
+        onSearch={(q) => visit(selected ? { tab, item: selected } : { tab }, { q, page: q ? 0 : 1 })}
+        onToggleTag={toggleTag}
+        onManage={() => (tagsOpen = true)} />
 
-    <p class="text-sm text-muted-foreground mb-4" data-testid="field-sharing">
-      {sharedLine} Adding something doesn't notify or wake residents; share its link in a chat to explore it together.
-      {#if summaries_enabled}<SummariesNotice />{/if}
-    </p>
+      <FieldSharing {sharedLine} summariesEnabled={summaries_enabled} />
+    </div>
 
     <!-- The tabs sort the list; a search has its own results. -->
     {#if !search}
-      <div class="flex gap-1 mb-4" role="tablist">
+      <div class="mb-4 gap-1 overflow-x-auto {current ? 'hidden lg:flex' : 'flex'}" role="tablist">
         {#each tabs as t (t.key)}
           <Button
             variant={tab === t.key ? 'secondary' : 'ghost'}
@@ -339,11 +355,11 @@
     {/if}
 
     {#if tab === 'recordings' && recording_allowance}
-      <RecordingAllowance allowance={recording_allowance} />
+      <div class={current ? 'hidden lg:block' : ''}><RecordingAllowance allowance={recording_allowance} /></div>
     {/if}
 
     <div class="grid gap-6 lg:grid-cols-3">
-      <div class="space-y-3">
+      <div class="min-w-0 space-y-3 {current ? 'hidden lg:block' : ''}">
         {#if search}
           <FieldSearchResults
             {search}
@@ -366,8 +382,14 @@
       <!-- Sticky, so a long list can be scrolled with the open item in view. -->
       <div
         bind:this={detailPane}
-        class="lg:col-span-2 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+        class="min-w-0 lg:col-span-2 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto {current
+          ? ''
+          : 'hidden lg:block'}"
+        data-testid="field-reader">
         {#if current}
+          <Button variant="ghost" size="sm" class="-ml-2 mb-2 lg:hidden" onclick={backToList} data-testid="field-back">
+            <CaretLeft class="size-4" /> Back to the Field
+          </Button>
           <div class="mb-3">
             {#key current.key}
               <FieldTagEditor accountId={account.id} itemKey={current.key} tags={current.tags || []} allTags={tags} />
@@ -381,7 +403,7 @@
             <RecordingViewer recording={current} />
           {/key}
         {:else if current?.kind === 'note'}
-          <div class="mb-2 flex justify-end gap-1">
+          <div class="mb-2 flex flex-wrap justify-end gap-1">
             <Button size="sm" variant="ghost" onclick={() => (historyOpen = true)} data-testid="note-history-open">
               History
             </Button>
@@ -401,7 +423,8 @@
             onKeepMyVersion={keepMyVersion} />
         {:else}
           <Card.Root>
-            <Card.Content class="py-16 text-center text-muted-foreground">Choose something on the left.</Card.Content>
+            <Card.Content class="py-16 text-center text-muted-foreground"
+              >Choose something on the left to read it here.</Card.Content>
           </Card.Root>
         {/if}
       </div>
@@ -413,7 +436,9 @@
   <Dialog.Content class="sm:max-w-lg">
     <Dialog.Header>
       <Dialog.Title>Add a file to the Field</Dialog.Title>
-      <Dialog.Description>{sharedLine} {#if summaries_enabled}<SummariesNotice kind="file" />{/if}</Dialog.Description>
+      <Dialog.Description
+        >{sharedLine}
+        {#if summaries_enabled}<SummariesNotice kind="file" />{/if}</Dialog.Description>
     </Dialog.Header>
     <form onsubmit={submitUpload} class="space-y-4">
       <div class="space-y-1">
@@ -460,35 +485,7 @@
   summariesEnabled={summaries_enabled}
   {sharedLine} />
 
-<Dialog.Root bind:open={noteOpen}>
-  <Dialog.Content class="sm:max-w-lg">
-    <Dialog.Header>
-      <Dialog.Title>New note</Dialog.Title>
-      <Dialog.Description>{sharedLine} Residents can read and edit notes.</Dialog.Description>
-    </Dialog.Header>
-    <form onsubmit={submitNote} class="space-y-4">
-      <div class="space-y-1">
-        <Label for="note-name">Name</Label>
-        <Input id="note-name" bind:value={noteName} maxlength={100} required />
-      </div>
-      <div class="space-y-1">
-        <Label for="note-content">Note <span class="text-muted-foreground">(Markdown)</span></Label>
-        <textarea
-          id="note-content"
-          bind:value={noteContent}
-          rows="8"
-          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"></textarea>
-      </div>
-      {#if noteError}
-        <p class="text-sm text-destructive" role="alert">{noteError}</p>
-      {/if}
-      <Dialog.Footer>
-        <Button type="button" variant="ghost" onclick={() => (noteOpen = false)}>Cancel</Button>
-        <Button type="submit" disabled={!noteName.trim() || creatingNote}>Create note</Button>
-      </Dialog.Footer>
-    </form>
-  </Dialog.Content>
-</Dialog.Root>
+<FieldNoteDialog bind:open={noteOpen} accountId={account.id} {sharedLine} />
 
 <FieldTagManager bind:open={tagsOpen} accountId={account.id} {tags} onChanged={tagChanged} />
 
