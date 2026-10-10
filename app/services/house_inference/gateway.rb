@@ -39,6 +39,11 @@ module HouseInference
       # A retry is a new admitted call, never a hidden repeat of a billed POST.
       http.request(request) do |response|
         unless response.is_a?(Net::HTTPSuccess)
+          # A 4xx is OpenRouter refusing the request before any provider runs
+          # it (no route, bad parameters, rate limit), so nothing is billed and
+          # the reservation is released. Only 5xx and broken responses keep the
+          # conservative charge: there the provider may have done the work.
+          call.settle!({ 'cost' => 0 }) if response.code.to_i.between?(400, 499)
           raise Error.new('The pinned house provider could not complete this request. No personal credentials were used.', status: 502)
         end
         response.read_body do |chunk|

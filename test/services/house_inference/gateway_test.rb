@@ -65,6 +65,20 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
     assert_not @grant.house_inference_calls.where(status: 'pending').exists?
   end
 
+  test 'a refused request (4xx) releases its reservation; a 5xx keeps it' do
+    upstream([], status: '404') do
+      assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
+    end
+    call = @grant.house_inference_calls.last
+    assert_equal [ 'settled', BigDecimal('0') ], [ call.status, call.charge_usd ]
+    assert_equal BigDecimal('0'), @grant.spent
+    upstream([], status: '502') do
+      assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
+    end
+    assert_equal BigDecimal('0.75'), @grant.spent
+    assert_not @grant.house_inference_calls.where(status: 'pending').exists?
+  end
+
   test 'arbitrary model fails before a call is reserved' do
     @input['model'] = 'expensive/other-model'
     assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }

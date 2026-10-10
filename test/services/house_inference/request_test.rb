@@ -22,6 +22,16 @@ class HouseInference::RequestTest < ActiveSupport::TestCase
     assert_equal 'deepseek/deepseek-v4.1-flash', body['model']
   end
 
+  test 'parallel_tool_calls is accepted from the runtime but never sent upstream' do
+    tool = { 'type' => 'function', 'function' => { 'name' => 'noop', 'parameters' => { 'type' => 'object', 'properties' => {} } } }
+    [ true, false ].each do |value|
+      body = HouseInference::Request.build(@input.merge('tools' => [ tool ], 'parallel_tool_calls' => value), @offering)
+      assert_not body.key?('parallel_tool_calls'), "parallel_tool_calls=#{value} must not reach OpenRouter"
+      assert_equal true, body.dig('provider', 'require_parameters')
+      assert_equal [ tool ], body['tools']
+    end
+  end
+
   test 'Haiku is pinned to Anthropic with its own caps' do
     offering = HouseInference::Offering.find(HouseInference::Offering::HAIKU_MODEL_ID)
     body = HouseInference::Request.build(@input.merge('model' => HouseInference::Offering::HAIKU_MODEL_ID, 'max_tokens' => 999_999), offering)

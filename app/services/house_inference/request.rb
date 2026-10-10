@@ -34,7 +34,12 @@ module HouseInference
       unless requested.is_a?(Integer) && requested.positive?
         raise Error.new('max_tokens must be a positive integer.', status: 422)
       end
-      body = input.except('stream_options', 'max_completion_tokens').merge(
+      # parallel_tool_calls is accepted but never forwarded: with
+      # require_parameters, OpenRouter finds no endpoint for either house
+      # route when it is present (true or false), so every Chaos turn, which
+      # always sends it, was refused with 404 (live check, 2026-10-10). Both
+      # providers allow parallel tool calls by default.
+      body = input.except('stream_options', 'max_completion_tokens', 'parallel_tool_calls').merge(
         'model' => offering.fetch(:upstream_model), 'stream' => input['stream'] == true,
         'max_tokens' => [ requested, offering.fetch(:max_output_tokens) ].min,
         'provider' => { 'only' => [ offering.fetch(:provider) ], 'allow_fallbacks' => false, 'require_parameters' => true,
