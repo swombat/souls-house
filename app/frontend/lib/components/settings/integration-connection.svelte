@@ -4,6 +4,7 @@
   import { DropboxLogo, GithubLogo, Funnel, Bug, ShareNetwork, GoogleLogo, Heartbeat } from 'phosphor-svelte';
   import { serviceIconClass } from '$lib/service-presentation';
   import ConnectionGoogleAuthority from './connection-google-authority.svelte';
+  import ConnectionRepositories from './connection-repositories.svelte';
   import ConnectionResidentAccess from './connection-resident-access.svelte';
   let { connection, services, account } = $props();
   function updateConnection(connection, attributes) {
@@ -90,6 +91,9 @@
     <ConnectionGoogleAuthority {connection} {services} {account} />
 
     <ConnectionResidentAccess {connection} />
+    {#if connection.provider === 'github' && connection.repositories}
+      <ConnectionRepositories {connection} />
+    {/if}
     <div class="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:gap-8">
       <label class="flex items-center gap-2 text-sm">
         <input
