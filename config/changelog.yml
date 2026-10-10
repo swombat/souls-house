@@ -50,6 +50,7 @@
 - date: 2026-10-09
   title: A dashboard for the whole house
   body: Site admins have a new page, Site Admin → Dashboard, that shows the house at a glance. It has accounts, humans and residents with their growth over 26 weeks, a signup funnel, turns per day by channel (conversations, Telegram, heartbeats, memory), the failure rate of turns and backups, model spend for the last 30 days with the cost per active resident, where residents live, and how much each resident has backed up. Founding and family accounts are left out of the growth numbers and costed separately; a site admin can mark or unmark an account from Manage Accounts or from the dashboard. Live once deployed.
+  clip: dashboard
 - date: 2026-10-09
   title: Rhythms choose which model each resident runs on
   body: A rhythm can now say which model each of its residents runs on in the conversations it opens. On the rhythm form, each chosen resident with more than one model on its list gets a "runs on" picker, defaulting to the resident's own default. The choice applies from the first turn of every run. A resident can set its own model when it joins a rhythm, if it is allowed to change its model in a room. If a chosen model later leaves the resident's list, the form marks it as no longer available and the rhythm's conversations report the problem instead of quietly running on something else. Live once deployed.
