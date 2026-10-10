@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_091500) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1495,6 +1495,70 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_091500) do
     t.check_constraint "state = ANY (ARRAY[0, 1, 2])", name: "reply_expectation_state"
   end
 
+  create_table "repository_deliveries", force: :cascade do |t|
+    t.bigint "watched_repository_id", null: false
+    t.string "delivery_guid", null: false
+    t.string "event", null: false
+    t.string "action"
+    t.datetime "received_at", null: false
+    t.boolean "signature_ok", default: false, null: false
+    t.datetime "processed_at"
+    t.integer "process_attempts", default: 0, null: false
+    t.string "last_error"
+    t.jsonb "payload", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["delivery_guid"], name: "index_repository_deliveries_on_delivery_guid", unique: true
+    t.index ["received_at"], name: "index_repository_deliveries_unprocessed", where: "((processed_at IS NULL) AND signature_ok)"
+    t.index ["watched_repository_id"], name: "index_repository_deliveries_on_watched_repository_id"
+  end
+
+  create_table "repository_watch_deliveries", force: :cascade do |t|
+    t.bigint "repository_watch_id", null: false
+    t.string "fulfilment_key", null: false
+    t.bigint "message_id"
+    t.jsonb "woken", default: {}, null: false
+    t.integer "attempts", default: 0, null: false
+    t.string "last_error"
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["message_id"], name: "index_repository_watch_deliveries_on_message_id"
+    t.index ["repository_watch_id", "fulfilment_key"], name: "index_repository_watch_deliveries_on_watch_and_key", unique: true
+    t.index ["repository_watch_id"], name: "index_repository_watch_deliveries_on_repository_watch_id"
+    t.index ["updated_at"], name: "index_repository_watch_deliveries_incomplete", where: "(completed_at IS NULL)"
+  end
+
+  create_table "repository_watches", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "watched_repository_id", null: false
+    t.bigint "chat_id", null: false
+    t.bigint "created_by_agent_id"
+    t.bigint "created_by_user_id"
+    t.string "event_kind", null: false
+    t.jsonb "filter", default: {}, null: false
+    t.bigint "wake_agent_ids", default: [], null: false, array: true
+    t.boolean "one_shot", default: true, null: false
+    t.string "state", default: "armed", null: false
+    t.datetime "expires_at", null: false
+    t.datetime "fulfilled_at"
+    t.jsonb "fulfilment"
+    t.string "reconcile_status", default: "pending", null: false
+    t.string "reconcile_error"
+    t.string "cancel_reason"
+    t.datetime "cancelled_at"
+    t.string "undeliverable_reason"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_repository_watches_on_account_id"
+    t.index ["chat_id"], name: "index_repository_watches_on_chat_id"
+    t.index ["created_by_agent_id"], name: "index_repository_watches_on_created_by_agent_id"
+    t.index ["created_by_user_id"], name: "index_repository_watches_on_created_by_user_id"
+    t.index ["state", "expires_at"], name: "index_repository_watches_on_state_and_expires_at"
+    t.index ["watched_repository_id", "state", "event_kind"], name: "idx_on_watched_repository_id_state_event_kind_e3a2375804"
+    t.index ["watched_repository_id"], name: "index_repository_watches_on_watched_repository_id"
+  end
+
   create_table "resident_turns", force: :cascade do |t|
     t.datetime "admitted_at"
     t.bigint "agent_id", null: false
@@ -1939,6 +2003,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_091500) do
     t.index ["runner_command_id"], name: "index_vm_backups_on_runner_command_id", unique: true
   end
 
+  create_table "watched_repositories", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "service_connection_id", null: false
+    t.bigint "created_by_user_id"
+    t.string "provider", default: "github", null: false
+    t.string "owner", null: false
+    t.string "name", null: false
+    t.string "full_name", null: false
+    t.string "external_repository_id"
+    t.boolean "private_repository", default: true, null: false
+    t.bigint "hook_id"
+    t.text "hook_secret", null: false
+    t.string "receiver_token", null: false
+    t.string "hook_status", default: "installing", null: false
+    t.string "hook_error"
+    t.datetime "last_delivery_at"
+    t.string "last_delivery_result"
+    t.datetime "removed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "provider", "full_name"], name: "index_watched_repositories_on_live_full_name", unique: true, where: "(removed_at IS NULL)"
+    t.index ["account_id"], name: "index_watched_repositories_on_account_id"
+    t.index ["created_by_user_id"], name: "index_watched_repositories_on_created_by_user_id"
+    t.index ["receiver_token"], name: "index_watched_repositories_on_receiver_token", unique: true
+    t.index ["service_connection_id"], name: "index_watched_repositories_on_service_connection_id"
+  end
+
   create_table "whiteboards", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.text "content"
@@ -2104,6 +2195,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_091500) do
   add_foreign_key "reply_expectations", "messages", column: "answered_by_message_id", on_delete: :nullify
   add_foreign_key "reply_expectations", "messages", on_delete: :cascade
   add_foreign_key "reply_expectations", "users", on_delete: :cascade
+  add_foreign_key "repository_deliveries", "watched_repositories", on_delete: :cascade
+  add_foreign_key "repository_watch_deliveries", "messages", on_delete: :nullify
+  add_foreign_key "repository_watch_deliveries", "repository_watches", on_delete: :cascade
+  add_foreign_key "repository_watches", "accounts", on_delete: :cascade
+  add_foreign_key "repository_watches", "agents", column: "created_by_agent_id", on_delete: :nullify
+  add_foreign_key "repository_watches", "chats", on_delete: :cascade
+  add_foreign_key "repository_watches", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "repository_watches", "watched_repositories", on_delete: :cascade
   add_foreign_key "resident_turns", "agent_runtime_interactions"
   add_foreign_key "resident_turns", "agents"
   add_foreign_key "rhythm_agents", "agents", on_delete: :cascade
@@ -2156,6 +2255,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_091500) do
   add_foreign_key "vm_backups", "agent_backup_snapshots"
   add_foreign_key "vm_backups", "agents"
   add_foreign_key "vm_backups", "runner_commands"
+  add_foreign_key "watched_repositories", "accounts", on_delete: :cascade
+  add_foreign_key "watched_repositories", "service_connections", on_delete: :cascade
+  add_foreign_key "watched_repositories", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "whiteboards", "accounts"
   add_foreign_key "x_integrations", "accounts"
 end

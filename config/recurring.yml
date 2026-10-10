@@ -46,6 +46,11 @@ production:
     queue: default
     schedule: every minute
 
+  repository_watch_sweep:
+    class: RepositoryWatchSweepJob
+    queue: default
+    schedule: every 5 minutes
+
   message_dispatch_sweep:
     class: MessageDispatchSweepJob
     queue: default
