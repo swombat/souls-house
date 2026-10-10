@@ -1,4 +1,8 @@
 ENV["RAILS_ENV"] ||= "test"
+# Field summaries call house inference whenever a house key is configured (it
+# is, in test credentials). Off unless a test turns them on, so a test that
+# performs all enqueued jobs never reaches the network.
+ENV["SOULSHOUSE_FIELD_SUMMARIES"] ||= "off"
 
 module Warning
 

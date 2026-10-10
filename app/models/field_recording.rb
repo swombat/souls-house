@@ -17,6 +17,7 @@ class FieldRecording < ApplicationRecord
   include SyncAuthorizable
   include FieldRecording::Transcription
   include FieldTaggable
+  include FieldSummarizable
 
   class NotRetryable < StandardError; end
 
@@ -68,6 +69,11 @@ class FieldRecording < ApplicationRecord
   broadcasts_to :account
 
   scope :newest_first, -> { order(created_at: :desc, id: :desc) }
+  scope :summary_readable, -> { where(status: "ready").where("length(transcript_text) > 0") }
+
+  # Summarise once the transcript is ready (FieldSummarizable). The hourly
+  # sweep covers a queue that was missed.
+  after_commit :enqueue_summary, if: -> { saved_change_to_status? && ready? }
 
   STATUSES.each do |name|
     define_method(:"#{name}?") { status == name }
@@ -197,6 +203,8 @@ class FieldRecording < ApplicationRecord
     when Agent then "resident"
     end
   end
+
+  def summary_source = ready? ? transcript_text : nil
 
   def filename = audio.attached? ? audio.filename.to_s : nil
   def byte_size = audio.attached? ? audio.byte_size : nil

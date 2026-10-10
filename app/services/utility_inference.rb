@@ -89,6 +89,27 @@ class UtilityInference
     scores
   end
 
+  # House-paid: the house inference key (HouseInference::Offering.key), pinned
+  # to one provider with no fallback and prompt retention denied, as the
+  # on-the-house resident models are. Returns the text of the answer.
+  def self.house_chat(model:, provider:, system:, user:, max_tokens: 400)
+    validate_input!("#{system}#{user}")
+    response = client(key: HouseInference::Offering.key, openrouter: true).chat(
+      parameters: {
+        model: model, max_tokens: max_tokens,
+        messages: [ { role: "system", content: system }, { role: "user", content: user } ],
+        provider: { only: [ provider ], allow_fallbacks: false, data_collection: "deny" }
+      }
+    )
+    content = response.is_a?(Hash) && response.dig("choices", 0, "message", "content")
+    raise InvalidResponse, "Empty house utility response" unless content.is_a?(String) && content.present?
+
+    content
+  rescue Faraday::Error => error
+    # Never include transport exception text: it can contain request bodies/keys.
+    raise InvalidResponse, "House utility request failed (#{error.class})"
+  end
+
   def self.chat(key:, model:, user:, system: nil)
     validate_input!("#{system}#{user}")
     messages = []
