@@ -11,7 +11,7 @@ class RepositoryWebhooksController < ActionController::API
     return head(:not_found) unless repository
 
     raw = request.raw_post.to_s
-    return head(:payload_too_large) if raw.bytesize > RepositoryWebhookBodyLimit::MAX_BODY_BYTES
+    return head(:content_too_large) if raw.bytesize > RepositoryWebhookBodyLimit::MAX_BODY_BYTES
 
     unless repository.verify_signature(raw, request.headers["X-Hub-Signature-256"])
       repository.record_delivery_result!("rejected")
