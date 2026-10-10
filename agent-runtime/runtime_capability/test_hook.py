@@ -12,10 +12,12 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 with patch.dict("os.environ", {"TRIGGER_BEARER_TOKEN": "test"}):
     import trigger_shim as shim
+from runtime_capability import boundary
 
 
 class HookTests(unittest.TestCase):
-    def exercise(self, persistent, record, fail_resume=False, delta="delta"):
+    def exercise(self, persistent, record, fail_resume=False, delta="delta",
+                 actual_check=False):
         prompts = []
 
         def run(model, timeout, prompt, **kwargs):
@@ -42,7 +44,10 @@ class HookTests(unittest.TestCase):
                 patch.object(shim, "AGENT_IDENTITY_PATH", Path(directory)),
                 patch.object(shim, "AGENT_RUNTIME_DOCS_PATH", Path(directory)),
                 patch.object(shim, "graph_memory_notice", return_value=None),
-                patch.object(shim, "capability_notice", return_value="CHECK-NOTICE") as check,
+                patch.object(shim, "capability_notice",
+                             side_effect=boundary.capability_notice if actual_check else None,
+                             return_value="CHECK-NOTICE") as check,
+                patch.object(boundary.log, "info") as receipt,
                 patch.object(shim, "load_session_record", return_value=record),
                 patch.object(shim, "roll_decision", return_value=(None, [])),
                 patch.object(shim, "save_session_record"),
@@ -52,11 +57,14 @@ class HookTests(unittest.TestCase):
             ):
                 result, status = shim.trigger()
                 check.assert_called_once_with(Path(directory))
+                if actual_check:
+                    receipt.assert_called_once_with(
+                        "capability_discovery outcome=%s", "absent")
                 self.assertEqual(status, 200)
                 self.assertEqual(result["status"], "ok")
             self.assertTrue(prompts)
             for prompt, _ in prompts:
-                self.assertEqual(prompt.count("CHECK-NOTICE"), 1)
+                self.assertEqual(prompt.count("CHECK-NOTICE"), 0 if actual_check else 1)
             self.assertNotIn("synthetic-capability", shim._running_sessions)
             return prompts
 
@@ -84,6 +92,17 @@ class HookTests(unittest.TestCase):
         self.assertEqual(prompts[0][1], "synthetic")
         self.assertIsNone(prompts[1][1])
         self.assertIn("full", prompts[1][0])
+
+    def test_real_absent_worker_receipt_across_routing(self):
+        for persistent, record, fail_resume in [
+            (False, None, False),
+            (True, None, False),
+            (True, {"chaos_process_id": "synthetic"}, False),
+            (True, {"chaos_process_id": "synthetic"}, True),
+        ]:
+            with self.subTest(persistent=persistent, record=record,
+                              fail_resume=fail_resume):
+                self.exercise(persistent, record, fail_resume, actual_check=True)
 
 
 if __name__ == "__main__":

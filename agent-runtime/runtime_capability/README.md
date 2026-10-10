@@ -73,7 +73,26 @@ This is not CPU/memory isolation or descendant-process containment. Process
 creation and kill/reap are not themselves interruptibly deadline-bounded. Module
 probe children retain their own one-second deadlines; killing their parent does
 not establish descendant cleanup. Trusted parent paths and Python startup
-assumptions remain. No runtime hook or installation authority is added.
+assumptions remain. No installation authority is added.
+
+The draft trigger-shim hook runs once per accepted invocation and shares its
+notice across fresh, resume and failed-resume fallback prompts. Local routing
+tests use synthetic Chaos responses; they are not built-image evidence.
+Checks may add up to three seconds of capture time, plus launch and cleanup.
+
+The parent emits one runtime INFO log receipt after each check:
+`capability_discovery outcome=<class>`. Classes are `absent`, `empty`,
+`all-found`, `notice`, `invalid` and `incomplete`. Only a fixed class is emitted,
+never requirement names, reasons, paths, worker output or exception text.
+Existing shim logging supplies the timestamp and the operational log sink;
+no new resident file or unbounded append-only archive is created. This differs
+from the suggested state-file receipt and relies on operators retaining runtime
+logs. A failed sink cannot block the trigger, so a missing receipt is still
+unconfirmed, not proof the checker did not run. A receipt establishes completion
+of this boundary call, not working capability or descendant containment.
+
+Built-image interpreter/PATH and fresh/resume/fallback receipt verification
+remain pending; this draft is neither deployed nor submitted as a PR.
 
 The downloaded real fixture is local working material; it is deliberately
 excluded from the shared bundle because its reasons contain private citations.

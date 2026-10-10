@@ -14,6 +14,42 @@ def protocol(status="ok", items=None):
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_fixed_outcome_receipt_once_per_check(self):
+        cases = [
+            (protocol("absent"), "absent"),
+            (protocol(), "empty"),
+            (protocol(items=[{"channel": "pip", "name": "numpy",
+                              "state": "found"}]), "all-found"),
+            (protocol(items=[{"channel": "pip", "name": "other",
+                              "state": "unsupported"}]), "notice"),
+            (protocol("invalid"), "invalid"),
+            (protocol("error"), "incomplete"),
+            (b'{"reason":"PRIVATE_SENTINEL"}', "incomplete"),
+        ]
+        for raw, outcome in cases:
+            with (
+                self.subTest(outcome=outcome),
+                patch.object(boundary, "_capture", return_value=raw),
+                patch.object(boundary.log, "info") as receipt,
+            ):
+                boundary.capability_notice("/PRIVATE_PATH")
+                receipt.assert_called_once_with(
+                    "capability_discovery outcome=%s", outcome)
+
+    def test_receipt_on_timeout_and_failed_logging_is_nonfatal(self):
+        with (
+            patch.object(boundary, "_capture", side_effect=ValueError("PRIVATE")),
+            patch.object(boundary.log, "info") as receipt,
+        ):
+            self.assertEqual(boundary.capability_notice("/unused"), boundary.FAILURE)
+            receipt.assert_called_once_with(
+                "capability_discovery outcome=%s", "incomplete")
+        with (
+            patch.object(boundary, "_capture", return_value=protocol("absent")),
+            patch.object(boundary.log, "info", side_effect=OSError("broken sink")),
+        ):
+            self.assertEqual(boundary.capability_notice("/unused"), "")
+
     def test_real_absent_empty_and_invalid(self):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(boundary.capability_notice(directory), "")

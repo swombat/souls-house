@@ -1,6 +1,7 @@
 """Fail-open worker boundary for invocation-local discovery."""
 
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -12,6 +13,7 @@ import time
 MAX_OUTPUT = 16_384
 MAX_NOTICE = 4096
 WORKER_SECONDS = 3
+log = logging.getLogger(__name__)
 FAILURE = "Capability discovery could not complete. No installation performed."
 INVALID = "Invalid capability manifest. No installation performed."
 DISCLAIMER = (
@@ -67,7 +69,7 @@ def _unique_object(pairs):
     return result
 
 
-def render(raw):
+def _result(raw):
     """Validate the complete protocol before rendering any worker strings."""
     data = json.loads(raw, object_pairs_hook=_unique_object)
     if not isinstance(data, dict) or set(data) != {"status", "items"}:
@@ -80,7 +82,10 @@ def render(raw):
     if status != "ok":
         if items:
             raise ValueError("Protocol items")
-        return {"absent": "", "invalid": INVALID, "error": FAILURE}[status]
+        return (
+            {"absent": "", "invalid": INVALID, "error": FAILURE}[status],
+            {"absent": "absent", "invalid": "invalid", "error": "incomplete"}[status],
+        )
     seen = set()
     grouped = {state: [] for state in ("missing", "unsupported", "error")}
     reviewed = {("apt", "ffmpeg"), ("pip", "numpy"), ("pip", "scipy")}
@@ -104,7 +109,7 @@ def render(raw):
         if state != "found":
             grouped[state].append(f"{channel}:{name}")
     if not any(grouped.values()):
-        return ""
+        return "", "all-found" if items else "empty"
     text = "Capability discovery: " + "; ".join(
         f"{state}: {', '.join(names)}" for state, names in grouped.items() if names
     )
@@ -113,15 +118,28 @@ def render(raw):
     if len((text + suffix).encode()) > MAX_NOTICE:
         marker = " [truncated]"
         text = text[:MAX_NOTICE - len(suffix) - len(marker)] + marker
-    return text + suffix
+    return text + suffix, "notice"
+
+
+def render(raw):
+    """Render a validated worker response without emitting a receipt."""
+    return _result(raw)[0]
 
 
 def capability_notice(identity_path):
     """Path/interpreter are runtime configuration, never payload-selected."""
     try:
-        return render(_capture([
+        notice, outcome = _result(_capture([
             sys.executable, str(Path(__file__).with_name("worker.py")),
             str(identity_path),
         ]))
     except (OSError, ValueError, TypeError, RecursionError, subprocess.SubprocessError):
-        return FAILURE
+        notice, outcome = FAILURE, "incomplete"
+    # Existing runtime logging supplies timestamp/retention. No resident names,
+    # requirements, paths, reasons, worker output or exception text are logged.
+    try:
+        log.info("capability_discovery outcome=%s", outcome)
+    except Exception:
+        # A broken logging sink must not stop an otherwise accepted trigger.
+        pass
+    return notice
