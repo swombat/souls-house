@@ -60,7 +60,7 @@ test('the homepage links to a two-column features page with an expandable index'
   await expect(cliEntry.getByTestId('changelog-clip')).toHaveAttribute('src', '/changelog-clips/cli.mp4');
   await expect(cliEntry.getByRole('link', { name: 'Download clip' })).toHaveAttribute(
     'download',
-    'souls-house-cli.mp4',
+    'souls-house-cli.mp4'
   );
   if (process.env.FEATURES_SCREENSHOTS) {
     await page.setViewportSize({ width: 1280, height: 900 });
