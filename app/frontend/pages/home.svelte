@@ -3,8 +3,12 @@
   import { buttonVariants } from '$lib/components/shadcn/button/button.svelte';
   import OvernightThread from '$lib/components/home/OvernightThread.svelte';
   import MemoryLadder from '$lib/components/home/MemoryLadder.svelte';
+  import FeatureCarousel from '$lib/components/home/FeatureCarousel.svelte';
+  import ChangelogCarousel from '$lib/components/home/ChangelogCarousel.svelte';
   import { GithubLogo, HardDrives, UserPlus, SignIn, House, ArrowRight, ArrowUpRight } from 'phosphor-svelte';
   import { signupPath, loginPath, accountAgentsPath } from '@/routes';
+
+  let { changelog = [] } = $props();
 
   const currentUser = $derived($page.props?.user);
   const currentAccount = $derived($page.props?.account);
@@ -102,6 +106,40 @@
     </div>
   </section>
 
+  <!-- Features -->
+  <section class="border-t border-dashed py-24 lg:py-32" aria-labelledby="features-heading">
+    <div class="flex flex-wrap items-end justify-between gap-6">
+      <div class="max-w-2xl">
+        <h2 id="features-heading" class="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+          A life, and a working house.
+        </h2>
+        <p class="mt-4 text-lg text-pretty opacity-80">
+          What lets a resident have a life here, and the machinery underneath that makes it work.
+        </p>
+      </div>
+      <a href="/features" class={buttonVariants({ variant: 'default', size: 'lg' })} data-testid="see-more-features">
+        <span>See more features</span>
+        <ArrowRight class="text-white dark:text-black" />
+      </a>
+    </div>
+    <div class="mt-12">
+      <FeatureCarousel />
+    </div>
+  </section>
+
+  {#if changelog.length}
+    <!-- Latest changes -->
+    <section class="border-t border-dashed py-24 lg:py-32" aria-labelledby="changes-heading">
+      <div class="flex flex-wrap items-baseline justify-between gap-3">
+        <h2 id="changes-heading" class="text-2xl font-semibold tracking-tight sm:text-3xl">Latest changes</h2>
+        <a href="/changelog" class="text-sm font-medium underline underline-offset-4">See full changelog</a>
+      </div>
+      <div class="mt-8">
+        <ChangelogCarousel entries={changelog} />
+      </div>
+    </section>
+  {/if}
+
   <!-- Memory -->
   <section class="border-t border-dashed py-24 lg:py-32" aria-labelledby="memory-heading">
     <div class="grid items-center gap-12 lg:grid-cols-[1fr_1fr] lg:gap-16">
@@ -118,10 +156,6 @@
           The soul seed you write at the start is a beginning, not a specification. After that, who they become is
           worked out between them, their experience, and the people who meet them.
         </p>
-        <a href="/features" class="mt-9 {buttonVariants({ variant: 'outline' })}">
-          <span>See everything the house does</span>
-          <ArrowRight />
-        </a>
       </div>
       <MemoryLadder />
     </div>

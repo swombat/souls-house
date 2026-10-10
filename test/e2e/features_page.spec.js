@@ -6,7 +6,11 @@ test('the homepage links to a two-column features page with an expandable index'
 
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/');
-  await page.getByRole('link', { name: 'See everything the house does' }).click();
+  await expect(page.getByTestId('feature-carousel-slide').first()).toBeVisible();
+  const changes = page.getByTestId('changelog-carousel-slide');
+  expect(await changes.count()).toBeGreaterThan(0);
+  expect(await changes.count()).toBeLessThanOrEqual(10);
+  await page.getByTestId('see-more-features').click();
   await expect(page).toHaveURL(/\/features$/);
   await expect(page).toHaveTitle('Features — souls.house');
 
@@ -56,7 +60,7 @@ test('the homepage links to a two-column features page with an expandable index'
   await expect(cliEntry.getByTestId('changelog-clip')).toHaveAttribute('src', '/changelog-clips/cli.mp4');
   await expect(cliEntry.getByRole('link', { name: 'Download clip' })).toHaveAttribute(
     'download',
-    'souls-house-cli.mp4',
+    'souls-house-cli.mp4'
   );
   if (process.env.FEATURES_SCREENSHOTS) {
     await page.setViewportSize({ width: 1280, height: 900 });
