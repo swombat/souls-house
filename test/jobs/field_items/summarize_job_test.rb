@@ -29,12 +29,15 @@ class FieldItems::SummarizeJobTest < ActiveJob::TestCase
   setup do
     @account = accounts(:personal_account)
     @user = users(:user_1)
-    @previous = %w[HOUSE_INFERENCE_OPENROUTER_API_KEY SOULSHOUSE_FIELD_SUMMARIES].to_h { |key| [ key, ENV[key] ] }
+    @previous = ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"]
     ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"] = "test-key"
-    ENV["SOULSHOUSE_FIELD_SUMMARIES"] = "on"
+    FieldSummaries.live = true
   end
 
-  teardown { @previous.each { |key, value| ENV[key] = value } }
+  teardown do
+    ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"] = @previous
+    FieldSummaries.live = false
+  end
 
   def text_file(body = "We replant the north orchard with pears in March.", name: "orchard.md")
     file = @account.field_files.create!(file: upload(name, body), uploaded_by: @user, note: "for the spring")
@@ -94,15 +97,12 @@ class FieldItems::SummarizeJobTest < ActiveJob::TestCase
     assert_equal 0, pdf.reload.summary_attempts
   end
 
-  test "off unless the house turns it on, and never without a house key" do
+  test "on by default with no setting, and never without a house key" do
     file = text_file
-    [ nil, "off", "true" ].each do |value|
-      ENV["SOULSHOUSE_FIELD_SUMMARIES"] = value
-      assert_empty run_with(file, GOOD).calls
-      assert_no_enqueued_jobs(only: FieldItems::SummarizeJob) { file.enqueue_summary }
-    end
+    assert FieldSummaries.enabled?
+    assert_enqueued_with(job: FieldItems::SummarizeJob) { file.enqueue_summary }
+    clear_enqueued_jobs
 
-    ENV["SOULSHOUSE_FIELD_SUMMARIES"] = "on"
     ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"] = nil
     HouseInference::Offering.stub(:key, nil) { assert_empty run_with(file, GOOD).calls }
     assert_nil file.reload.summarized_at
