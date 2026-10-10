@@ -454,6 +454,21 @@ class CloudProcurementTest < ActiveSupport::TestCase
     assert_not Agents::RuntimeLocation.local?(@placement.agent)
   end
 
+  test "deleting the server of a ready placement leaves it retireable instead of failing validation" do
+    operation = provisioned!
+    @placement.reload.update!(state: "ready", provider_server_id: operation.provider_server_id)
+    service.request_delete!(operation, requested_by: @admin)
+    @client.servers.delete(operation.provider_server_id)
+
+    service.reconcile!(operation)
+
+    assert_equal "deleted", operation.reload.state
+    @placement.reload
+    assert_nil @placement.provider_server_id
+    assert_equal "failed", @placement.state
+    assert_empty @placement.cloud_procurement_operations.unresolved
+  end
+
   test "a lost delete reply is reconciled and the delete sent again on a later pass" do
     operation = provisioned!
     @client.on_delete = ->(_) { raise HetznerCloudClient::Error.new("dropped", code: "unavailable") }

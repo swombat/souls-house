@@ -87,6 +87,17 @@ class ResticRoundtripTest(unittest.TestCase):
                 return result.stdout
 
             restic("init")
+            # The runner initializes on every backup attempt. Verify the pinned
+            # executable's real existing-repository error, not a mock phrase.
+            repeated_init = subprocess.run(
+                [os.environ["RESTIC_TEST_BINARY"], "--no-cache",
+                 "-o", "rest.connections=1", "init"],
+                env=environment, capture_output=True, timeout=40,
+            )
+            self.assertEqual(1, repeated_init.returncode)
+            self.assertEqual(b"", repeated_init.stdout)
+            # Exercise the same matcher run_backup uses, with untouched stderr.
+            self.assertTrue(backup.restic_config_exists(repeated_init.stderr.decode()))
             restic("backup", source, "--json")
             # Same file/path makes the second backup read its parent's pack.
             output = restic("backup", source, "--json")

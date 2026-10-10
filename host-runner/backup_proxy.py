@@ -592,6 +592,15 @@ def restic_argv(spec, repository, env_file, checkpoint_dir, tool_name, command):
     return argv
 
 
+def restic_config_exists(output):
+    """Recognize only pinned restic 0.18.1's whole existing-config diagnostic."""
+    return re.fullmatch(
+        r"Fatal: create repository at (?P<repository>[^\r\n]+) failed: "
+        r"Fatal: unable to open repository at (?P=repository): config file already exists",
+        output.strip(),
+    ) is not None
+
+
 def run_backup(payload, host, *, signed_request, docker=None,
                proxy_factory=BackupProxy, clock=time.monotonic):
     """Run under the house's idle admission hold; do not acquire that hold here.
@@ -688,7 +697,9 @@ def run_backup(payload, host, *, signed_request, docker=None,
                     return run(restic_argv(spec, proxy.repository, env_file, checkpoint_dir, tool, command))
 
                 ok, output = restic(["init"])
-                if not ok and not re.search(r"\balready initialized\b", output):
+                # Pinned restic 0.18.1 reports an existing config after HEAD 200.
+                # Match its whole diagnostic, not arbitrary "already exists" errors.
+                if not ok and not (restic_config_exists(output) or re.search(r"\balready initialized\b", output)):
                     raise CommandFailed("restic init failed")
                 remaining()
                 ok, output = restic([

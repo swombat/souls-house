@@ -428,7 +428,13 @@ class CloudProcurement
 
       placement = operation.agent_placement
       if placement.provider_server_id == operation.provider_server_id
-        placement.update!(provider_server_id: nil, location: nil)
+        # A ready VM placement must name its server, so once that server is
+        # confirmed gone the placement can't stay ready. Cleanup of a healthy
+        # resident (request_cleanup! on a ready placement) otherwise failed this
+        # validation on every pass and never retired (live check, 2026-10-10).
+        attributes = { provider_server_id: nil, location: nil }
+        attributes[:state] = "failed" if placement.state == "ready"
+        placement.update!(attributes)
       end
       operation.runner_enrollment&.revoke!(now:)
       operation.update!(state: "deleted", deleted_at: now, last_reconciled_at: now)
