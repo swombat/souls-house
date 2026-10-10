@@ -585,5 +585,109 @@ class GlossaryTest(CliTestCase):
         self.assertIn("exactly one TERM", err)
 
 
+class RepositoryWatchesTest(CliTestCase):
+    """souls repos / souls watches add|list|show|cancel (repository watches)."""
+
+    def test_repos_lists_connected_repositories(self):
+        self.house.route("GET", "/api/v1/repositories",
+                          body={"repositories": [{"id": "r1", "full_name": "acme/widgets", "hook_status": "installed"}]})
+        code, out, _ = self.run_cli("repos")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.last()["method"], "GET")
+        self.assertEqual(json.loads(out)["repositories"][0]["full_name"], "acme/widgets")
+
+    def test_watches_add_ci_sends_workflow_run_event_and_split_conclusions(self):
+        self.house.route("POST", "/api/v1/watches", status=201,
+                          body={"watch": {"id": "w1", "event": "workflow_run", "state": "armed"}})
+        code, out, _ = self.run_cli(
+            "watches", "add", "acme/widgets", "--on", "ci", "--sha", "abc1234def",
+            "--workflow", "CI", "--conclusions", "success, failure", "--chat", "c1", "--wake",
+            "--expires-in", "12h",
+        )
+        self.assertEqual(code, 0)
+        req = self.last()
+        self.assertEqual(req["method"], "POST")
+        self.assertEqual(req["path"], "/api/v1/watches")
+        self.assertEqual(json.loads(req["body"]), {
+            "repository": "acme/widgets", "event": "workflow_run", "chat_id": "c1", "wake": True,
+            "sha": "abc1234def", "expires_in": "12h", "workflow": "CI", "conclusions": ["success", "failure"],
+        })
+        self.assertEqual(json.loads(out)["watch"]["id"], "w1")
+
+    def test_watches_add_deploy_sends_deployment_status_event_and_split_states(self):
+        self.house.route("POST", "/api/v1/watches", status=201, body={"watch": {"id": "w2"}})
+        code, _, _ = self.run_cli(
+            "watches", "add", "acme/widgets", "--on", "deploy", "--env", "production",
+            "--states", "success,failure", "--chat", "c1",
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(self.last()["body"]), {
+            "repository": "acme/widgets", "event": "deployment_status", "chat_id": "c1", "wake": False,
+            "environment": "production", "states": ["success", "failure"],
+        })
+
+    def test_watches_add_ci_without_sha_is_a_usage_error_without_a_request(self):
+        code, _, err = self.run_cli("watches", "add", "acme/widgets", "--on", "ci", "--chat", "c1")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertEqual(self.house.requests, [])
+        self.assertIn("--sha", err)
+
+    def test_watches_add_without_chat_is_an_argparse_usage_error(self):
+        # --chat is required by argparse itself (like --title on `new`); as a
+        # real process that exits 2 cleanly, but called in-process it raises
+        # SystemExit, same as every other required argparse option here.
+        with self.assertRaises(SystemExit) as raised:
+            self.run_cli("watches", "add", "acme/widgets", "--on", "deploy")
+        self.assertEqual(raised.exception.code, souls.EXIT_USAGE)
+        self.assertEqual(self.house.requests, [])
+
+    def test_watches_list_passes_repository_and_state_as_query_params(self):
+        self.house.route("GET", "/api/v1/watches", body={"watches": [{"id": "w1", "state": "armed"}]})
+        code, out, _ = self.run_cli("watches", "list", "--repository", "acme/widgets", "--state", "armed")
+        self.assertEqual(code, 0)
+        req = self.last()
+        self.assertIn("repository=acme%2Fwidgets", req["query"])
+        self.assertIn("state=armed", req["query"])
+        self.assertEqual(json.loads(out)["watches"][0]["id"], "w1")
+
+    def test_bare_watches_defaults_to_list_with_no_filters(self):
+        self.house.route("GET", "/api/v1/watches", body={"watches": []})
+        code, _, _ = self.run_cli("watches")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.last()["query"], "")
+
+    def test_watches_show_gets_one_watch_by_id(self):
+        self.house.route("GET", "/api/v1/watches/w1", body={"watch": {"id": "w1", "state": "fulfilled"}})
+        code, out, _ = self.run_cli("watches", "show", "w1")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.last()["method"], "GET")
+        self.assertEqual(self.last()["path"], "/api/v1/watches/w1")
+        self.assertEqual(json.loads(out)["watch"]["state"], "fulfilled")
+
+    def test_watches_cancel_deletes_one_watch_by_id(self):
+        self.house.route("DELETE", "/api/v1/watches/w1", body={"watch": {"id": "w1", "state": "cancelled"}})
+        code, out, _ = self.run_cli("watches", "cancel", "w1")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.last()["method"], "DELETE")
+        self.assertEqual(self.last()["path"], "/api/v1/watches/w1")
+        self.assertEqual(json.loads(out)["watch"]["state"], "cancelled")
+
+    def test_watches_refusal_maps_to_invalid_exit_code(self):
+        self.house.route("POST", "/api/v1/watches", status=422, body={"error": "A workflow watch needs the commit sha"})
+        code, _, err = self.run_cli("watches", "add", "acme/widgets", "--on", "ci", "--sha", "abc1234",
+                                     "--chat", "c1")
+        self.assertEqual(code, souls.EXIT_INVALID)
+        self.assertIn("A workflow watch needs the commit sha", err)
+
+    def test_watch_room_tailing_still_works_unchanged_by_the_new_watches_command(self):
+        # souls watch ROOM (singular) predates repository watches and must stay distinct
+        # from souls watches (plural): no collision between the two top-level commands.
+        self.house.route("GET", "/api/v1/conversations/c1/changes",
+                          body={"changes": [], "next_since": 0, "has_more": False, "latest_revision": 0})
+        code, out, _ = self.run_cli("watch", "c1", "--once", "--interval", "0", "--timeout", "0.2")
+        self.assertEqual(code, souls.EXIT_TIMEOUT)
+        self.assertEqual(out, "")
+
+
 if __name__ == "__main__":
     unittest.main()

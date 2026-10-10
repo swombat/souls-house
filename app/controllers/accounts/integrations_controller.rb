@@ -13,6 +13,7 @@ class Accounts::IntegrationsController < ApplicationController
     accesses = AgentServiceAccess
       .where(agent: agents, service_connection: connections)
       .index_by { |access| [ access.agent_id, access.service_connection_id ] }
+    repositories = watched_repositories_by_connection(connections)
 
     render inertia: "accounts/integrations", props: {
       account: current_account.as_json,
@@ -21,7 +22,7 @@ class Accounts::IntegrationsController < ApplicationController
       can_manage_account: can_manage_account,
       connections: connections.map do |connection|
         tailnet_visible = tailnet_visible?(connection)
-        connection.as_connection_json(current_user: Current.user).merge(
+        json = connection.as_connection_json(current_user: Current.user).merge(
           can_delegate: connection.owner?(Current.user),
           residents: agents.map do |agent|
             access = accesses[[ agent.id, connection.id ]]
@@ -39,11 +40,56 @@ class Accounts::IntegrationsController < ApplicationController
             }
           end
         )
+        json.merge!(repository_watch_props(connection, repositories.fetch(connection.id, []))) if connection.provider == "github"
+        json
       end
     }
   end
 
   private
+
+  WATCHES_PER_REPOSITORY = 20
+
+  def watched_repositories_by_connection(connections)
+    github = connections.select { |connection| connection.provider == "github" }
+    return {} if github.empty?
+
+    current_account.watched_repositories.live.where(service_connection: github)
+      .includes(:service_connection).order(:full_name).group_by(&:service_connection_id)
+  end
+
+  # The GitHub card's Repositories section. Who may connect or disconnect
+  # mirrors Accounts::WatchedRepositoriesController; any member may cancel an
+  # armed watch (Accounts::RepositoryWatchesController).
+  def repository_watch_props(connection, repositories)
+    can_manage = connection.provisionable_by?(Current.user) || connection.manageable_by?(Current.user)
+    {
+      can_manage_repositories: can_manage,
+      repositories_url: account_watched_repositories_path(current_account),
+      repositories: repositories.map do |repository|
+        repository.as_repository_json(include_setup: can_manage).merge(
+          url: account_watched_repository_path(current_account, repository),
+          watches: recent_watches(repository).map { |watch| watch_props(watch) }
+        )
+      end
+    }
+  end
+
+  # Armed watches first, then the latest others.
+  def recent_watches(repository)
+    repository.repository_watches
+      .includes(:chat, :created_by_agent, :created_by_user, :watched_repository)
+      .order(Arel.sql("CASE WHEN repository_watches.state = 'armed' THEN 0 ELSE 1 END"), id: :desc)
+      .limit(WATCHES_PER_REPOSITORY)
+  end
+
+  def watch_props(watch)
+    watch.as_watch_json.merge(
+      chat_title: watch.chat.title_or_default,
+      chat_url: account_chat_path(current_account, watch.chat),
+      cancel_url: (account_repository_watch_path(current_account, watch) if watch.armed?)
+    )
+  end
 
   # Same rule as Agents::TailnetsController, which the panel calls.
   def tailnet_visible?(connection)
