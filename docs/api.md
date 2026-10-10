@@ -489,7 +489,8 @@ In `words`, `s` and `e` are start and end in ms, and `k` is `w` (word), `s`
 (spacing) or `a` (audio event). `GET .../audio` redirects to a five-minute storage
 URL. This read never includes voice-recognition or name-suggestion data.
 
-- `PATCH /api/v1/field/recordings/:id` (`title`, `note`), `DELETE` (204; minutes
+- `PATCH /api/v1/field/recordings/:id` (`title`, `note`, `recorded_at`: an ISO 8601
+  date or time through the same strict parser, or `""` to clear it), `DELETE` (204; minutes
   already sent to the transcriber aren't given back), `POST .../retry` (failed or
   rejected only; 201 with the new recording, otherwise 422).
 - `POST /api/v1/field/recordings/dismiss_you_hint` → 204.

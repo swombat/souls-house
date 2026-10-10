@@ -105,6 +105,29 @@ class Api::V1::Field::HumanRecordingsTest < ActionDispatch::IntegrationTest
     assert @recording.reload.discarded?
   end
 
+  test "a person redates a recording, clears the date, and an impossible date changes nothing" do
+    patch api_v1_field_recording_path(@recording), params: { recorded_at: "2019-03-14" }, headers: @headers, as: :json
+    assert_response :success
+    assert_equal Time.zone.local(2019, 3, 14), @recording.reload.recorded_at
+    assert_equal Time.zone.local(2019, 3, 14).iso8601, response.parsed_body.dig("recording", "recorded_at")
+
+    patch api_v1_field_recording_path(@recording), params: { recorded_at: "2019-03-14T09:30:00Z" }, headers: @headers, as: :json
+    assert_equal Time.utc(2019, 3, 14, 9, 30), @recording.reload.recorded_at
+
+    %w[2019-02-30 2019-03-14T25:99:00Z 2019-03-14T09:30:00+99:99 yesterday].each do |bad|
+      patch api_v1_field_recording_path(@recording), params: { title: "Renamed", recorded_at: bad }, headers: @headers, as: :json
+      assert_response :unprocessable_entity, bad
+      assert_match "recorded_at must be", response.parsed_body["error"]
+    end
+    @recording.reload
+    assert_equal Time.utc(2019, 3, 14, 9, 30), @recording.recorded_at
+    assert_equal "Board call", @recording.title, "a refused PATCH changes nothing"
+
+    patch api_v1_field_recording_path(@recording), params: { recorded_at: "" }, headers: @headers, as: :json
+    assert_response :success
+    assert_nil @recording.reload.recorded_at
+  end
+
   test "a person dismisses the 'is one of these you?' hint" do
     post dismiss_you_hint_api_v1_field_recordings_path, headers: @headers
     assert_response :no_content

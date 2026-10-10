@@ -342,10 +342,40 @@ class FieldTest(CliTestCase):
         self.assertNotIn("Traceback", err)
         self.assertEqual(self.house.requests, [])
 
+    def test_date_redates_a_recording_or_file(self):
+        for kind, path, param in (("recording", "/api/v1/field/recordings/r1", "recorded_at"),
+                                  ("file", "/api/v1/field/files/r1", "dated_at")):
+            self.house.route("PATCH", path, body={"ok": True})
+            code, _, _ = self.run_cli("field", "date", kind, "r1", "2019-03-14")
+            self.assertEqual(code, 0, kind)
+            req = self.last()
+            self.assertEqual((req["method"], req["path"]), ("PATCH", path))
+            self.assertEqual(json.loads(req["body"]), {param: "2019-03-14"})
+
+    def test_date_on_a_note_sends_the_lock_version_it_read(self):
+        self.house.route("GET", "/api/v1/whiteboards/w1", body={"whiteboard": {"id": "w1", "lock_version": 4}})
+        self.house.route("PATCH", "/api/v1/whiteboards/w1", body={"whiteboard": {"id": "w1"}})
+        code, _, _ = self.run_cli("field", "date", "note", "w1", "2018-05-01")
+        self.assertEqual(code, 0)
+        self.assertEqual([r["method"] for r in self.house.requests], ["GET", "PATCH"])
+        self.assertEqual(json.loads(self.last()["body"]), {"dated_at": "2018-05-01", "lock_version": 4})
+
+    def test_date_clear_sends_an_empty_date(self):
+        self.house.route("PATCH", "/api/v1/field/recordings/r1", body={"ok": True})
+        self.run_cli("field", "date", "recording", "r1", "--clear")
+        self.assertEqual(json.loads(self.last()["body"]), {"recorded_at": ""})
+
+    def test_date_needs_exactly_one_of_a_date_or_clear(self):
+        for argv in (("field", "date", "recording", "r1"), ("field", "date", "recording", "r1", "2019-03-14", "--clear")):
+            code, _, err = self.run_cli(*argv)
+            self.assertEqual(code, souls.EXIT_USAGE, argv)
+            self.assertIn("--clear", err)
+        self.assertEqual(self.house.requests, [])
+
     def test_field_without_a_subcommand_prints_help(self):
         code, out, _ = self.run_cli("field")
         self.assertEqual(code, souls.EXIT_USAGE)
-        self.assertIn("upload|note", out)
+        self.assertIn("upload|note|date", out)
         self.assertEqual(self.house.requests, [])
 
 

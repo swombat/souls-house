@@ -616,6 +616,26 @@ def cmd_field_note(client, args):
     emit(client.post("whiteboards", json_body=body))
 
 
+FIELD_DATE_TARGETS = {
+    "recording": ("field/recordings", "recorded_at"),
+    "file": ("field/files", "dated_at"),
+    "note": ("whiteboards", "dated_at"),
+}
+
+
+def cmd_field_date(client, args):
+    if args.clear == bool(args.date):
+        raise CliError("give a DATE or --clear (not both)", EXIT_USAGE)
+    path, param = FIELD_DATE_TARGETS[args.kind]
+    body = {param: "" if args.clear else args.date}
+    if args.kind == "note":
+        # Notes are optimistically locked; redating alone is not an edit, but
+        # the PATCH still names the version it read.
+        note = client.get(f"{path}/{args.id}").get("whiteboard") or {}
+        body["lock_version"] = note.get("lock_version")
+    emit(client.patch(f"{path}/{args.id}", json_body=body))
+
+
 def cmd_glossary(client, args):
     action = args.glossary_command
     if action == "list":
@@ -918,9 +938,10 @@ def build_parser():
                    "  souls field upload transcript-2019-03-14.txt --date 2019-03-14 --tag archive\n"
                    "  souls field note 'Call with Anna' --date 2021-06-02 --file call.md\n"
                    "  cat diary.md | souls field note 'Diary, May 2018' --date 2018-05-01\n"
+                   "  souls field date recording REC_ID 2019-03-14\n"
                    "Recordings take recorded_at instead: see docs/api.md.",
             formatter_class=argparse.RawDescriptionHelpFormatter)
-    fsub = p.add_subparsers(dest="field_command", metavar="upload|note")
+    fsub = p.add_subparsers(dest="field_command", metavar="upload|note|date")
 
     fp = fsub.add_parser("upload", parents=[common], help="Upload a file (a document, an old transcript)")
     fp.add_argument("file", metavar="FILE")
@@ -937,6 +958,14 @@ def build_parser():
     fp.add_argument("--summary", help="one line, up to 250 characters")
     fp.add_argument("--date", metavar="ISO_DATE", help="when the note is from (sent as dated_at)")
     fp.set_defaults(func=cmd_field_note)
+
+    fp = fsub.add_parser("date", parents=[common],
+                         help="Change when a recording, file or note is from (or --clear it)")
+    fp.add_argument("kind", choices=sorted(FIELD_DATE_TARGETS), help="what ID names")
+    fp.add_argument("id", metavar="ID")
+    fp.add_argument("date", nargs="?", metavar="ISO_DATE", help="2019-03-14 or 2019-03-14T09:30:00Z")
+    fp.add_argument("--clear", action="store_true", help="remove the date; the Field orders it by upload time again")
+    fp.set_defaults(func=cmd_field_date)
 
     p = add("glossary", cmd_glossary, "The account's transcription glossary: list, add, remove, pin, unpin")
     p.add_argument("glossary_command", nargs="?", choices=["list", "add", "remove", "pin", "unpin"],

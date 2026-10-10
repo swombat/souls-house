@@ -182,6 +182,7 @@
   let uploadFile = $state(null);
   let uploadTitle = $state('');
   let uploadNote = $state('');
+  let uploadDate = $state('');
   let uploadError = $state('');
   let uploadTooLarge = $state(false);
   let uploading = $state(false);
@@ -205,6 +206,7 @@
     body.append('field_file[file]', uploadFile);
     if (uploadTitle.trim()) body.append('field_file[title]', uploadTitle.trim());
     if (uploadNote.trim()) body.append('field_file[note]', uploadNote.trim());
+    if (uploadDate) body.append('field_file[dated_at]', uploadDate);
     uploading = true;
     router.post(`/accounts/${account.id}/field/files`, body, {
       preserveState: true,
@@ -213,8 +215,9 @@
         uploadFile = null;
         uploadTitle = '';
         uploadNote = '';
+        uploadDate = '';
       },
-      onError: (errors) => (uploadError = errors.file || 'The upload failed. Please try again.'),
+      onError: (errors) => (uploadError = errors.dated_at || errors.file || 'The upload failed. Please try again.'),
       onFinish: () => (uploading = false),
     });
   }
@@ -461,6 +464,13 @@
           rows="3"
           class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           placeholder="I came away uneasy, but I don't know why."></textarea>
+      </div>
+      <div class="space-y-1">
+        <Label for="field-dated-at">Date <span class="text-muted-foreground">(optional)</span></Label>
+        <Input id="field-dated-at" type="date" class="w-44" bind:value={uploadDate} data-testid="field-file-date" />
+        <p class="text-xs text-muted-foreground">
+          When it's from, for older material. The Field orders it by this date.
+        </p>
       </div>
       {#if uploadError}
         <p class="text-sm text-destructive" role="alert">{uploadError}</p>

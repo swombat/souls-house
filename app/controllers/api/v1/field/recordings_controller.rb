@@ -106,15 +106,22 @@ module Api
           render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
         end
 
+        # recorded_at: an ISO 8601 date or time to correct when the recording
+        # was made, or empty to go back to ordering by the upload time.
         def update
           attributes = params.permit(:title, :note)
-          return render json: { error: "Provide title or note" }, status: :unprocessable_entity if attributes.empty?
+          if params.key?(:recorded_at)
+            attributes[:recorded_at] = FieldDate.parse_or_clear(params[:recorded_at], param: "recorded_at")
+          end
+          return render json: { error: "Provide title, note or recorded_at" }, status: :unprocessable_entity if attributes.empty?
 
           if @recording.update(attributes)
             render json: { recording: person_json(@recording) }
           else
             render json: { error: @recording.errors.full_messages.to_sentence }, status: :unprocessable_entity
           end
+        rescue FieldDate::Invalid => e
+          render json: { error: e.message }, status: :unprocessable_entity
         end
 
         def destroy

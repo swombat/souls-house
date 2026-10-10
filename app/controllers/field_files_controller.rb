@@ -10,7 +10,15 @@ class FieldFilesController < ApplicationController
         inertia: { errors: { file: "Choose a file to upload." } }
     end
 
-    field_file = current_account.field_files.new(attributes.merge(uploaded_by: Current.user))
+    # dated_at (optional): when the file is from, for old material.
+    dated_at = attributes.delete(:dated_at)
+    begin
+      dated_at = dated_at.present? ? FieldDate.parse(dated_at, param: "dated_at") : nil
+    rescue FieldDate::Invalid => e
+      return redirect_to account_field_path(current_account, tab: "files"), inertia: { errors: { dated_at: e.message } }
+    end
+
+    field_file = current_account.field_files.new(attributes.merge(dated_at:, uploaded_by: Current.user))
 
     if field_file.save
       redirect_to account_field_path(current_account, tab: "files", item: "file-#{field_file.to_param}"),
@@ -42,7 +50,7 @@ class FieldFilesController < ApplicationController
   end
 
   def field_file_params
-    params.require(:field_file).permit(:title, :note, :file)
+    params.require(:field_file).permit(:title, :note, :file, :dated_at)
   end
 
 end

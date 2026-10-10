@@ -24,6 +24,7 @@
   let file = $state(null);
   let title = $state('');
   let note = $state('');
+  let recordedOn = $state('');
   let speakers = $state('');
   let speakersTouched = $state(false);
   let durationMs = $state(null);
@@ -65,6 +66,7 @@
     file = null;
     title = '';
     note = '';
+    recordedOn = '';
     speakers = '';
     speakersTouched = false;
     durationMs = null;
@@ -177,6 +179,7 @@
           title: title.trim(),
           note: note.trim(),
           expected_speakers: count >= 1 && count <= 32 ? count : null,
+          recorded_at: recordedOn || null,
         },
       },
       {
@@ -186,7 +189,8 @@
           reset();
         },
         onError: (errors) => {
-          const message = errors.audio || 'The recording could not be brought in. Please try again.';
+          const message =
+            errors.recorded_at || errors.audio || 'The recording could not be brought in. Please try again.';
           // Closed while the POST was out: the chosen file input is gone, so
           // start the form afresh and keep only the message for the next open.
           if (!open) reset();
@@ -242,6 +246,18 @@
           maxlength={2000}
           rows="3"
           class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"></textarea>
+      </div>
+      <div class="space-y-1">
+        <Label for="recording-recorded-on"
+          >When was it recorded? <span class="text-muted-foreground">(optional)</span></Label>
+        <Input
+          id="recording-recorded-on"
+          type="date"
+          class="w-44"
+          bind:value={recordedOn}
+          disabled={busy}
+          data-testid="recording-recorded-on" />
+        <p class="text-xs text-muted-foreground">For an older recording. The Field orders it by this date.</p>
       </div>
       <div class="space-y-1">
         <Label for="recording-speakers">
