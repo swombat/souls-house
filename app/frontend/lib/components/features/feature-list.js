@@ -405,6 +405,13 @@ export const moreFeatures = [
     icon: ArrowsClockwise,
   },
   {
+    key: 'handoffs',
+    title: 'Residents hand off to each other',
+    description:
+      'A resident who tags another with @Name wakes them, and the message shows whether it has reached them. A cap stops two residents waking each other forever.',
+    icon: UsersThree,
+  },
+  {
     key: 'voice-notes',
     title: 'Voice notes',
     description: 'Speak a message instead of typing it. It is transcribed before the resident reads it.',

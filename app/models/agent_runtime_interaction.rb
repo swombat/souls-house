@@ -18,6 +18,11 @@ class AgentRuntimeInteraction < ApplicationRecord
   after_commit :broadcast_agent_runtime_interactions_refresh, on: [ :create, :update, :destroy ]
   after_update_commit :enqueue_follow_through_check, if: -> { saved_change_to_finished_at? && finished_at.present? }
   after_update_commit :enqueue_pending_wake_release, if: -> { saved_change_to_finished_at? && finished_at.present? && trigger_kind == "conversation" }
+  # A handoff to this resident is delivered once a run reads it, and blocked
+  # if the run meant to read it ends without doing so (MessageHandoff).
+  after_update_commit :sync_message_handoffs, if: -> {
+    chat_id && trigger_kind == "conversation" && (saved_change_to_finished_at? || saved_change_to_runtime_status?)
+  }
 
   validates :trigger_kind, presence: true
   validates :started_at, presence: true
@@ -474,6 +479,10 @@ class AgentRuntimeInteraction < ApplicationRecord
     PendingWakeJob.set(wait: PendingWakeJob::DELAY).perform_later(chat_id, agent_id)
   rescue StandardError => error
     Rails.logger.warn("Pending wake release enqueue failed for interaction #{id}: #{error.class}")
+  end
+
+  def sync_message_handoffs
+    MessageHandoff.enqueue_sync(chat_id: chat_id, agent_id: agent_id)
   end
 
   def broadcast_agent_runtime_interactions_refresh

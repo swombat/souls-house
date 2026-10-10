@@ -8,6 +8,11 @@ module Api
       # refused: the request is queued and they are woken once when that run
       # finishes (PendingWake). The response lists who was woken now
       # (triggered) and who was queued.
+      #
+      # A resident's post that tagged the recipient already carries the
+      # request (MessageHandoff); a knock from the same resident while that
+      # request is still on its way reports it as queued, with its receipt,
+      # and wakes no one again.
       def create
         chat = actionable_chats.find(params[:conversation_id])
 
@@ -24,6 +29,12 @@ module Api
           unless agent
             return render json: { error: "Resident not found in this conversation" }, status: :not_found
           end
+          # A handoff this resident's post already made to them is on its way;
+          # a knock for the same request must not buy a second run.
+          if (handoffs = open_handoffs(chat, agent)).any?
+            return render json: { triggered: [], queued: [ agent_json(agent) ], handoffs: handoffs.map(&:as_receipt_json) }
+          end
+
           outcome = chat.request_agent_response!(agent, requested_by: requester_label, **requester)
           render json: {
             triggered: outcome == :triggered ? [ agent_json(agent) ] : [],
@@ -39,6 +50,14 @@ module Api
       end
 
       private
+
+      def open_handoffs(chat, agent)
+        return [] unless current_api_agent
+
+        MessageHandoff.open_requests.includes(:runtime_interaction, :recipient_agent)
+          .where(chat: chat, requester_agent: current_api_agent, recipient_agent: agent)
+          .select(&:open_request?)
+      end
 
       def agent_json(agent)
         { id: agent.to_param, name: agent.name }

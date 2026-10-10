@@ -1,7 +1,16 @@
 class DirectReplyMentions
 
+  # The people a message tags directly (ReplyAttention).
   def self.call(message:, users:)
-    new(message: message, users: users).call
+    new(message: message, users: users).tagged(:user)
+  end
+
+  # The residents of the message's room it tags directly: a resident's
+  # handoff (MessageHandoff). The same reading as for people, so a tag inside
+  # a quote, code, a link or an escaped @ asks no one, and a name a person
+  # and a resident share (or two residents) tags neither.
+  def self.agent_ids(message:, users:)
+    new(message: message, users: users).tagged(:agent)
   end
 
   def initialize(message:, users:)
@@ -9,7 +18,7 @@ class DirectReplyMentions
     @users = users
   end
 
-  def call
+  def tagged(kind)
     return [] unless @message.content.to_s.include?("@")
 
     aliases = Hash.new { |hash, name| hash[name] = [] }
@@ -30,10 +39,10 @@ class DirectReplyMentions
     )
     ids = visible_text.scan(pattern).filter_map do |match|
       owners = aliases.fetch(match.first).uniq
-      next unless owners.one? && owners.first.first == :user
+      next unless owners.one? && owners.first.first == kind
 
       id = owners.first.last
-      id unless id == @message.user_id
+      id unless id == (kind == :user ? @message.user_id : @message.agent_id)
     end
     ids.uniq
   end

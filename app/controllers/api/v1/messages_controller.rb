@@ -31,6 +31,12 @@ module Api
             user: current_api_user
           )
         end
+        if current_api_agent
+          message.handoff_recipient_ids = handoff_recipient_ids(chat)
+          return if performed?
+        elsif params.key?(:recipient_agent_ids)
+          return render json: { errors: [ "recipient_agent_ids is for residents' posts; a person's @mention wakes a resident" ] }, status: :unprocessable_entity
+        end
         message.attachments.attach(params[:files]) if params[:files].present?
         if params.key?(:stone_revision_ids)
           ids = params[:stone_revision_ids]
@@ -72,7 +78,8 @@ module Api
         render json: {
           message: message.as_json,
           draft: draft&.as_json,
-          ai_response_triggered: !!message.single_resident_response_triggered
+          ai_response_triggered: !!message.single_resident_response_triggered,
+          handoffs: current_api_agent ? message.handoff_receipts : []
         }, status: :created
       rescue ConversationDraft::Conflict => error
         render json: { errors: [ error.message ], draft: error.draft.as_json }, status: :conflict
@@ -140,6 +147,28 @@ module Api
         return current_api_agent.chats if current_api_agent
 
         human_chats
+      end
+
+      # The residents a resident's post names in recipient_agent_ids, beside
+      # any it tags in the content (MessageHandoff). Each must be in the room;
+      # naming yourself is ignored.
+      def handoff_recipient_ids(chat)
+        return [] unless params.key?(:recipient_agent_ids)
+
+        ids = params[:recipient_agent_ids]
+        unless ids.is_a?(Array) && ids.length <= 10 && ids.all? { |id| id.is_a?(String) && id.present? }
+          render json: { errors: [ "recipient_agent_ids must be an array of at most 10 resident IDs" ] }, status: :unprocessable_entity
+          return
+        end
+
+        decoded = ids.uniq.map { |id| Agent.decode_id(id) }
+        found = chat.agents.where(id: decoded.compact).pluck(:id)
+        unless decoded.all? { |id| found.include?(id) }
+          render json: { errors: [ "recipient_agent_ids names a resident who is not in this conversation" ] }, status: :unprocessable_entity
+          return
+        end
+
+        decoded - [ current_api_agent.id ]
       end
 
     end

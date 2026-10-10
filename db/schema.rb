@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_070000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1139,6 +1139,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_070000) do
     t.check_constraint "user_id IS NOT NULL OR kind::text = 'rhythm'::text", name: "message_dispatches_human_author"
   end
 
+  create_table "message_handoffs", force: :cascade do |t|
+    t.bigint "chat_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "delivered_at"
+    t.bigint "message_id", null: false
+    t.bigint "pending_wake_id"
+    t.string "reason"
+    t.bigint "recipient_agent_id", null: false
+    t.bigint "requester_agent_id"
+    t.bigint "runtime_interaction_id"
+    t.string "source", null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.index ["chat_id", "recipient_agent_id", "status"], name: "index_message_handoffs_on_chat_recipient_status"
+    t.index ["chat_id"], name: "index_message_handoffs_on_chat_id"
+    t.index ["message_id", "recipient_agent_id"], name: "index_message_handoffs_on_message_id_and_recipient_agent_id", unique: true
+    t.index ["pending_wake_id"], name: "index_message_handoffs_on_pending_wake_id"
+    t.index ["recipient_agent_id"], name: "index_message_handoffs_on_recipient_agent_id"
+    t.index ["requester_agent_id"], name: "index_message_handoffs_on_requester_agent_id"
+    t.index ["runtime_interaction_id"], name: "index_message_handoffs_on_runtime_interaction_id"
+    t.check_constraint "source::text = ANY (ARRAY['tag'::character varying, 'field'::character varying]::text[])", name: "message_handoffs_source"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'triggered'::character varying, 'held'::character varying, 'delivered'::character varying, 'blocked'::character varying]::text[])", name: "message_handoffs_status"
+  end
+
   create_table "message_stone_revisions", force: :cascade do |t|
     t.bigint "message_id", null: false
     t.bigint "stone_revision_id", null: false
@@ -2046,6 +2070,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_070000) do
   add_foreign_key "message_dispatches", "chats"
   add_foreign_key "message_dispatches", "messages", on_delete: :cascade
   add_foreign_key "message_dispatches", "users"
+  add_foreign_key "message_handoffs", "agent_runtime_interactions", column: "runtime_interaction_id", on_delete: :nullify
+  add_foreign_key "message_handoffs", "agents", column: "recipient_agent_id", on_delete: :cascade
+  add_foreign_key "message_handoffs", "agents", column: "requester_agent_id", on_delete: :nullify
+  add_foreign_key "message_handoffs", "chats"
+  add_foreign_key "message_handoffs", "messages", on_delete: :cascade
+  add_foreign_key "message_handoffs", "pending_wakes", on_delete: :nullify
   add_foreign_key "message_stone_revisions", "messages", on_delete: :cascade
   add_foreign_key "message_stone_revisions", "stone_revisions", on_delete: :cascade
   add_foreign_key "messages", "agent_runtime_interactions", column: "runtime_interaction_id"
