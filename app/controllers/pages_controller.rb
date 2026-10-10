@@ -2,8 +2,10 @@ class PagesController < ApplicationController
 
   allow_unauthenticated_access
 
+  HOME_CHANGELOG_SIZE = 10
+
   def home
-    render inertia: "home"
+    render inertia: "home", props: { changelog: Changelog.entries.first(HOME_CHANGELOG_SIZE) }
   end
 
   def features
