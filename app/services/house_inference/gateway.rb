@@ -39,6 +39,12 @@ module HouseInference
       # A retry is a new admitted call, never a hidden repeat of a billed POST.
       http.request(request) do |response|
         unless response.is_a?(Net::HTTPSuccess)
+          # Only OpenRouter's own routing refusal is known to be unbilled: a 404
+          # saying no endpoint can serve the request, decided before any
+          # provider sees it (live check, 2026-10-10). It releases the
+          # reservation. Every other failure, including timeouts and other 4xx,
+          # keeps the conservative charge for reconciliation.
+          call.settle!({ 'cost' => 0 }) if self.class.routing_refusal?(response, deadline: deadline)
           raise Error.new('The pinned house provider could not complete this request. No personal credentials were used.', status: 502)
         end
         response.read_body do |chunk|
@@ -84,6 +90,28 @@ module HouseInference
       raise Error.new('House inference was interrupted. The call’s safety charge is retained pending reconciliation.', status: 502)
     ensure
       call&.settle!(nil, upstream_id: upstream_id)
+    end
+
+    ROUTING_REFUSAL = /\ANo endpoints found that (?:can handle|support) the requested parameters/
+    REFUSAL_BODY_LIMIT = 16.kilobytes
+    # Bounded in bytes and by the call's absolute deadline: the refusal body is
+    # a small JSON error, never a completion. Anything else, including valid
+    # JSON of another shape, is not a refusal.
+    def self.routing_refusal?(response, deadline:)
+      return false unless response.code == '404'
+      body = +''
+      response.read_body do |chunk|
+        return false if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+        body << chunk
+        return false if body.bytesize > REFUSAL_BODY_LIMIT
+      end
+      return false if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      parsed = JSON.parse(body)
+      error = parsed['error'] if parsed.is_a?(Hash)
+      message = error['message'] if error.is_a?(Hash)
+      message.is_a?(String) && ROUTING_REFUSAL.match?(message)
+    rescue JSON::ParserError, IOError, SystemCallError, Timeout::Error
+      false
     end
 
   end

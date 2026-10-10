@@ -26,6 +26,9 @@ module HouseInference
           raise Error.new('House inference currently supports text and function tools only.', status: 422)
         end
       end
+      if input.key?('parallel_tool_calls') && input['parallel_tool_calls'] != true
+        raise Error.new('House inference allows parallel tool calls only; parallel_tool_calls must be true or omitted.', status: 422)
+      end
       tools = input['tools']
       if tools && (!tools.is_a?(Array) || tools.any? { |tool| !tool.is_a?(Hash) || tool['type'] != 'function' })
         raise Error.new('Only function tools are supported.', status: 422)
@@ -34,7 +37,13 @@ module HouseInference
       unless requested.is_a?(Integer) && requested.positive?
         raise Error.new('max_tokens must be a positive integer.', status: 422)
       end
-      body = input.except('stream_options', 'max_completion_tokens').merge(
+      # With require_parameters, OpenRouter finds no endpoint for either house
+      # route when parallel_tool_calls is present (true or false), so every
+      # Chaos turn, which always sends true, was refused with 404 (live check,
+      # 2026-10-10). Both routes allow parallel tool calls by default, so true
+      # is honoured by omitting it. False can't be honoured, so it is refused
+      # here, before anything is reserved, rather than silently ignored.
+      body = input.except('stream_options', 'max_completion_tokens', 'parallel_tool_calls').merge(
         'model' => offering.fetch(:upstream_model), 'stream' => input['stream'] == true,
         'max_tokens' => [ requested, offering.fetch(:max_output_tokens) ].min,
         'provider' => { 'only' => [ offering.fetch(:provider) ], 'allow_fallbacks' => false, 'require_parameters' => true,
