@@ -158,6 +158,7 @@ test('on a phone the Field fits the screen and an open item takes it over', asyn
   const setup = await response.json();
   const shot = (name) => page.screenshot({ path: testInfo.outputPath(`${name}.png`), fullPage: true });
   const fitsWidth = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+  const scrollY = () => page.evaluate(() => window.scrollY);
 
   try {
     await page.setViewportSize({ width: 360, height: 740 });
@@ -169,9 +170,10 @@ test('on a phone the Field fits the screen and an open item takes it over', asyn
 
     const base = `/accounts/${setup.account_param}`;
     await page.goto(`${base}/field`);
+    // Enough notes for two pages, with titles long enough to truncate.
     await page.evaluate(async (base) => {
       const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-      for (let i = 1; i <= 14; i++) {
+      for (let i = 1; i <= 64; i++) {
         const body = new FormData();
         body.append(
           'whiteboard[name]',
@@ -189,17 +191,45 @@ test('on a phone the Field fits the screen and an open item takes it over', asyn
     expect(await fitsWidth()).toBe(true);
     await shot('8-phone-list');
 
-    await page.getByTestId('field-item').filter({ hasText: 'Phone note 03' }).click();
+    await page.getByRole('button', { name: 'Next page' }).first().click();
+    await expect(page).toHaveURL(/page=2/);
+    const row = page.getByTestId('field-item').filter({ hasText: 'Phone note 03' });
+    await row.scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollBy(0, 40));
+    const listY = await scrollY();
+    expect(listY).toBeGreaterThan(100);
+
+    // Open: the item gets the screen, from its top.
+    await row.click();
     await expect(page.getByText('Phone body 3', { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/page=2/);
     await expect(page.getByTestId('field-compact-list')).toBeHidden();
     await expect(page.getByTestId('field-back')).toBeInViewport();
+    expect(await scrollY()).toBe(0);
     expect(await fitsWidth()).toBe(true);
     await shot('9-phone-open-item');
 
+    // Back to the Field: same page, same place in the list.
     await page.getByTestId('field-back').click();
     await expect(page).not.toHaveURL(/item=/);
+    await expect(page).toHaveURL(/page=2/);
     await expect(page.getByTestId('field-compact-list')).toBeVisible();
     await expect(page.getByTestId('field-reader')).toBeHidden();
+    await expect.poll(scrollY).toBeGreaterThan(listY - 5);
+    expect(await scrollY()).toBeLessThan(listY + 5);
+
+    // Browser Back then Forward recreates the page; the return place survives.
+    await row.click();
+    await expect(page.getByText('Phone body 3', { exact: true })).toBeVisible();
+    await page.goBack();
+    await expect(page.getByTestId('field-compact-list')).toBeVisible();
+    await page.goForward();
+    await expect(page.getByText('Phone body 3', { exact: true })).toBeVisible();
+    await page.getByTestId('field-back').click();
+    await expect(page).not.toHaveURL(/item=/);
+    await expect(page).toHaveURL(/page=2/);
+    await expect.poll(scrollY).toBeGreaterThan(listY - 5);
+    expect(await scrollY()).toBeLessThan(listY + 5);
   } finally {
     await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
   }

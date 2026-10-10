@@ -1,4 +1,5 @@
 <script>
+  import { tick } from 'svelte';
   import { router } from '@inertiajs/svelte';
   import { createDynamicSync } from '$lib/use-sync';
   import * as Card from '$lib/components/shadcn/card/index.js';
@@ -127,16 +128,35 @@
 
   // Below lg the list and the open item take turns on screen: opening an
   // item starts it at the top, and going back returns to the same place in
-  // the list.
+  // the list. That place is kept in sessionStorage, keyed by the list it
+  // belongs to, because browser Back/Forward recreates this component.
   const narrow = () => !window.matchMedia?.('(min-width: 1024px)').matches;
-  let listScroll = 0;
+  const returnKey = $derived(
+    `field-return:${account.id}:${tab}:${query}:${filter_tags.join(',')}:${search ? search.page : pagination.page}`
+  );
+
+  function rememberReturn(y) {
+    try {
+      sessionStorage.setItem(returnKey, String(y));
+    } catch {
+      // Storage can be unavailable (private mode); going back then lands at the top.
+    }
+  }
+
+  function recallReturn() {
+    try {
+      return Number(sessionStorage.getItem(returnKey)) || 0;
+    } catch {
+      return 0;
+    }
+  }
 
   function selectItem(key) {
     editing = false;
     conflict = null;
     if (narrow()) {
-      listScroll = window.scrollY;
-      visit({ tab, item: key }, {}, { onSuccess: () => window.scrollTo(0, 0) });
+      rememberReturn(window.scrollY);
+      visit({ tab, item: key }, {}, { onSuccess: () => tick().then(() => window.scrollTo(0, 0)) });
     } else {
       visit({ tab, item: key });
     }
@@ -145,7 +165,8 @@
   function backToList() {
     editing = false;
     conflict = null;
-    visit({ tab }, {}, { onSuccess: () => window.scrollTo(0, listScroll) });
+    const y = recallReturn();
+    visit({ tab }, {}, { onSuccess: () => tick().then(() => window.scrollTo(0, y)) });
   }
 
   // A newly opened item starts at its top; the list keeps its own scroll.
