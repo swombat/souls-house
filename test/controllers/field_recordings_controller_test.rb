@@ -101,7 +101,7 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     props = inertia_props["props"]
     assert_equal "recordings", props["tab"]
-    assert_equal [ "Board call" ], props["recordings"].map { |r| r["title"] }
+    assert_equal [ "Board call" ], props["items"].map { |r| r["title"] }
     assert_equal 30.minutes.in_milliseconds, props["recording_allowance"]["used_ms"]
     assert_equal 20.hours.in_milliseconds, props["recording_allowance"]["limit_ms"]
   end

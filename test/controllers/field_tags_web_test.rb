@@ -17,8 +17,8 @@ class FieldTagsWebTest < ActionDispatch::IntegrationTest
     @note.change_tags!(by: @user, add: %w[music life])
     get account_field_path(@account)
     props = page_props
-    assert_equal %w[life music], props["notes"].find { |n| n["id"] == @note.to_param }["tags"]
-    assert_equal [], props["files"].first["tags"]
+    assert_equal %w[life music], props["items"].find { |n| n["key"] == "note-#{@note.to_param}" }["tags"]
+    assert_equal [], props["items"].find { |i| i["kind"] == "file" }["tags"]
     assert_equal %w[life music], props["tags"].map { |t| t["name"] }
     assert_nil props["search"]
   end

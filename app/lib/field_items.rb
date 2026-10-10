@@ -63,7 +63,9 @@ module FieldItems
     }
   end
 
-  def note_json(note, tags = [])
+  # In the Field list a note leaves its content behind (`content: false`);
+  # the open note carries it.
+  def note_json(note, tags = [], content: true)
     {
       key: "note-#{note.to_param}",
       kind: "note",
@@ -71,7 +73,7 @@ module FieldItems
       title: note.name,
       name: note.name,
       summary: note.summary,
-      content: note.content,
+      content: (note.content if content),
       content_length: note.content.to_s.length,
       revision: note.revision,
       editor_name: note.editor_name,
@@ -99,7 +101,7 @@ module FieldItems
       transcript_source: recording.transcript_source,
       recorded_at: recording.recorded_at&.iso8601,
       source_path: recording.source_path,
-      speaker_names: recording.ready? ? recording.speakers.includes(:field_voice).map(&:display_name) : [],
+      speaker_names: recording.ready? ? speakers_of(recording).map(&:display_name) : [],
       # Deleting after this point doesn't give the minutes back (spec §5).
       dispatched: recording.dispatch_count.positive?,
       retryable: recording.kept? && FieldRecording::RETRYABLE_STATUSES.include?(recording.status) && recording.audio.attached?,
@@ -107,6 +109,10 @@ module FieldItems
       created_at: recording.created_at.iso8601,
       tags: tags
     }
+  end
+
+  def speakers_of(recording)
+    recording.speakers.loaded? ? recording.speakers.sort_by(&:position) : recording.speakers.includes(:field_voice)
   end
 
   def speaker_json(speaker)
