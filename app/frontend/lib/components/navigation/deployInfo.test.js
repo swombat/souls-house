@@ -35,4 +35,23 @@ describe('deployLines', () => {
     expect(deployLines(null)[0].text).toBe('Loading deploy info…');
     expect(deployLines(null, { failed: true })[0].text).toBe('Deploy info unavailable');
   });
+
+  it('adds the deploy alarm verdict when there is one', () => {
+    const stuck = deployLines({
+      deployed,
+      master,
+      behind_by: 3,
+      alarm: { state: 'stuck', reason: 'Last automatic deploy failed.' },
+    });
+    expect(stuck.at(-1)).toEqual({
+      text: 'Deploy alarm: production has stopped following master',
+      title: 'Last automatic deploy failed.',
+    });
+    expect(deployLines({ deployed, master, behind_by: 0, alarm: { state: 'ok' } }).at(-1).text).toBe(
+      'Live build is up to date with master'
+    );
+    expect(deployLines({ deployed, master, behind_by: null, alarm: { state: 'unknown', banner: false } })).toHaveLength(
+      2
+    );
+  });
 });
