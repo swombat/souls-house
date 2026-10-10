@@ -1,9 +1,10 @@
 # Capability manifest validation and discovery — wake-hook draft
 
-Hook added against master `eeace591` on 2026-10-10. Twenty-nine local tests
-pass: the previous 24 plus five real shim-routing tests with synthetic Chaos
+Hook added against master `eeace591` on 2026-10-10. Thirty-two local tests
+pass, including real shim-routing tests with synthetic Chaos
 responses (legacy fresh, persistent fresh, resume with/without delta, failed
-resume fallback). They assert one check per trigger and one notice per invocation.
+resume fallback). They assert one check per trigger and one notice per invocation;
+real absent-file workers also verify one receipt across the routing paths.
 Run from this directory with `/usr/bin/python3 -m unittest -v`.
 
 The configured identity path alone selects `runtime-requirements.yml`; a
@@ -13,13 +14,13 @@ Dockerfile already installs PyYAML. Built-image/PATH alignment is not yet tested
 Each accepted trigger incurs a worker launch and up to three seconds of capture
 waiting; launch and kill/reap themselves are not interruptibly bounded.
 
-Review gate still open: Claude's proposal for a private, fixed-schema runtime
-outcome receipt, so normal silence can be distinguished from a hook that did
-not run. No receipt implementation, submitted PR or deployment exists yet.
+Review gate still open: built-image interpreter/PATH verification and review of
+the implemented runtime-log receipt contract, described below.
+No submitted PR or deployment exists yet.
 The notes below describe the earlier prototype and its limits.
 
 Source: Building souls.house, nJdXqJ/YwBEBe and YQXWPe.
-Not integrated, submitted as a PR, or deployed.
+Integrated in this source draft only; not submitted as a PR or deployed.
 
 Run: `python3 -m unittest -v` (requires PyYAML).
 
@@ -42,8 +43,9 @@ for both modules and executables. `missing`, `unsupported`, and `error` remain
 distinct. A real subprocess test finds a synthetic module whose import fails.
 This deliberately avoids executing the requested modules' code. A subprocess
 is not an OS sandbox; inherited Python startup customizations remain possible.
-Interpreter selection assumes the caller runs under the resident tools'
-interpreter; no wake integration has established that assumption yet.
+Interpreter selection uses the shim's system Python. This does not establish
+alignment with another interpreter a resident may choose for its tools;
+built-image verification remains pending.
 
 Local smoke on 2026-10-10: this interpreter found neither NumPy nor SciPy;
 ffmpeg was absent from this process's PATH. This is not another resident's
@@ -59,7 +61,7 @@ at 32 collection levels. Tests verify deep/token-heavy inputs never reach
 the object loader. These are structural limits, not a CPU/memory sandbox.
 
 Discovery-only semantics are settled for this prototype (Claude, nJdXqJ/YxxERY).
-Next: integrate and test the wake hook, keeping `found` distinct from working capability.
+Next: verify the built-image hook, keeping `found` distinct from working capability.
 Actual import checks and per-image caching are separate future work.
 The worker boundary now places file reading, YAML parsing and discovery in a
 separate process. The parent enforces a three-second capture deadline and reads
@@ -93,6 +95,29 @@ of this boundary call, not working capability or descendant containment.
 
 Built-image interpreter/PATH and fresh/resume/fallback receipt verification
 remain pending; this draft is neither deployed nor submitted as a PR.
+
+## Build-capable host handoff
+
+Run from the repository root on a host with Docker. This builds a candidate
+only; do not replace a resident runtime or mount an existing identity.
+
+```sh
+docker build -t souls-capability-candidate agent-runtime
+docker run --rm --network none --user agent \
+  --entrypoint /usr/bin/python3 \
+  --workdir /home/agent/runtime_capability \
+  souls-capability-candidate -m unittest -v
+docker run --rm --network none --user agent \
+  --entrypoint /usr/bin/python3 souls-capability-candidate -c \
+  'import os,sys,yaml; from pathlib import Path; sys.path.insert(0,"/home/agent"); from runtime_capability import probes; print("interpreter:",sys.executable); print("PATH:",os.environ.get("PATH","")); print("probes:",Path(probes.__file__))'
+```
+
+Retain the candidate image ID, build revision and test output. These commands
+exercise installed code and synthetic fresh/resume/fallback routing inside the
+image, without credentials or provider calls. They do **not** verify real Chaos
+resume behavior, production logging retention or a deployed resident's PATH.
+Those require a separately authorized selected-resident smoke; synthetic tests
+must not be represented as that evidence.
 
 The downloaded real fixture is local working material; it is deliberately
 excluded from the shared bundle because its reasons contain private citations.
