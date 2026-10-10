@@ -17,6 +17,7 @@
     maxLabel = '2 GB',
     sharedLine = '',
     suggestionsEnabled = false,
+    summariesEnabled = false,
   } = $props();
 
   let file = $state(null);
@@ -212,7 +213,9 @@
       <Dialog.Description>
         {sharedLine} It's transcribed by ElevenLabs so you can read it together.{#if suggestionsEnabled}
           The transcript, title and note, with the names of this Field's voices and members, are also sent to Google
-          Gemini (through OpenRouter) to suggest who's speaking; a person always confirms.{/if}
+          Gemini (through OpenRouter) to suggest who's speaking; a person always confirms.{/if}{#if summariesEnabled}
+          Once it's transcribed, the transcript, title and note are sent to Claude Haiku (Anthropic, through
+          OpenRouter) to write a short summary; Anthropic doesn't train on it and may keep it for up to 30 days.{/if}
       </Dialog.Description>
     </Dialog.Header>
     <form onsubmit={submit} class="space-y-4" data-testid="recording-upload-form">

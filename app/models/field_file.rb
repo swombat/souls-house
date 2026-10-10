@@ -38,7 +38,7 @@ class FieldFile < ApplicationRecord
   scope :newest_first, -> { order(created_at: :desc, id: :desc) }
   # Files whose words have been read (FieldSummarizable). PDFs and other
   # unread formats have none, so they get no summary yet.
-  scope :summary_readable, -> { where.not(text_extracted_at: nil).where("length(extracted_text) > 0") }
+  scope :summary_readable, -> { where.not(text_extracted_at: nil).where("extracted_text ~ '[^[:space:]]'") }
 
   def uploader_name
     case uploaded_by

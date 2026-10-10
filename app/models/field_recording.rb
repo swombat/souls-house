@@ -69,7 +69,7 @@ class FieldRecording < ApplicationRecord
   broadcasts_to :account
 
   scope :newest_first, -> { order(created_at: :desc, id: :desc) }
-  scope :summary_readable, -> { where(status: "ready").where("length(transcript_text) > 0") }
+  scope :summary_readable, -> { where(status: "ready").where("transcript_text ~ '[^[:space:]]'") }
 
   # Summarise once the transcript is ready (FieldSummarizable). The hourly
   # sweep covers a queue that was missed.

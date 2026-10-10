@@ -23,6 +23,9 @@ module FieldSummarizable
   end
 
   def summarizable? = kept? && summary_source.present?
+
+  # Read, but nothing in it but whitespace: nothing to summarise, ever.
+  def summary_source_blank? = !summary_source.nil? && summary_source.blank?
   def summarized? = summarized_at.present?
 
   def enqueue_summary
@@ -33,6 +36,12 @@ module FieldSummarizable
   # nothing to do or another call holds a fresh claim.
   def claim_summary!(now: Time.current)
     with_lock do
+      # A blank item is retired, so it can't hold a place in the sweep's
+      # oldest-first batch forever (Ken and Mira on #275).
+      if kept? && summary_source_blank? && summary_attempts < MAX_ATTEMPTS
+        update_columns(summary_attempts: MAX_ATTEMPTS, summary_claimed_at: nil)
+        next false
+      end
       next false unless summarizable? && !summarized? && summary_attempts < MAX_ATTEMPTS
       next false if summary_claimed_at && summary_claimed_at > now - CLAIM_TTL
 

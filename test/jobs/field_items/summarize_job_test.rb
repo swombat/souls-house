@@ -31,7 +31,7 @@ class FieldItems::SummarizeJobTest < ActiveJob::TestCase
     @user = users(:user_1)
     @previous = %w[HOUSE_INFERENCE_OPENROUTER_API_KEY SOULSHOUSE_FIELD_SUMMARIES].to_h { |key| [ key, ENV[key] ] }
     ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"] = "test-key"
-    ENV.delete("SOULSHOUSE_FIELD_SUMMARIES")
+    ENV["SOULSHOUSE_FIELD_SUMMARIES"] = "on"
   end
 
   teardown { @previous.each { |key, value| ENV[key] = value } }
@@ -94,12 +94,15 @@ class FieldItems::SummarizeJobTest < ActiveJob::TestCase
     assert_equal 0, pdf.reload.summary_attempts
   end
 
-  test "with the house switch off or no house key, no inference is contacted" do
+  test "off unless the house turns it on, and never without a house key" do
     file = text_file
-    ENV["SOULSHOUSE_FIELD_SUMMARIES"] = "off"
-    assert_empty run_with(file, GOOD).calls
+    [ nil, "off", "true" ].each do |value|
+      ENV["SOULSHOUSE_FIELD_SUMMARIES"] = value
+      assert_empty run_with(file, GOOD).calls
+      assert_no_enqueued_jobs(only: FieldItems::SummarizeJob) { file.enqueue_summary }
+    end
 
-    ENV.delete("SOULSHOUSE_FIELD_SUMMARIES")
+    ENV["SOULSHOUSE_FIELD_SUMMARIES"] = "on"
     ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"] = nil
     HouseInference::Offering.stub(:key, nil) { assert_empty run_with(file, GOOD).calls }
     assert_nil file.reload.summarized_at
@@ -148,6 +151,8 @@ class FieldItems::SummarizeJobTest < ActiveJob::TestCase
   test "parse holds the answer to the shapes we show" do
     assert_equal({ short: "Venue contract with Priya", long: "Priya and Sam go over the venue contract." },
       FieldSummaries.parse("Sure!\n{\"short\": \"Venue contract with Priya.\", \"sentence\": \"Priya and Sam go over the venue contract.\"}"))
+    assert_equal "Five words is the limit", FieldSummaries.parse('{"short": "Five words is the limit", "sentence": "x"}')[:short]
+    assert_raises(UtilityInference::InvalidResponse) { FieldSummaries.parse('{"short": "Six words is over the limit", "sentence": "x"}') }
     assert_raises(UtilityInference::InvalidResponse) { FieldSummaries.parse('{"short": "", "sentence": "x"}') }
     assert_raises(UtilityInference::InvalidResponse) { FieldSummaries.parse('{"short": 3, "sentence": "x"}') }
     assert_raises(UtilityInference::InvalidResponse) { FieldSummaries.parse('["short"]') }
@@ -186,6 +191,35 @@ class FieldItems::SummarizeJobTest < ActiveJob::TestCase
     assert_not_includes queued, claimed
     assert_not_includes queued, empty
     assert_not_includes queued, gone
+  end
+
+  test "whitespace-only files are retired, so they can't starve the sweep" do
+    blanks = Array.new(FieldItems::SummarySweepJob::BATCH) { |i| text_file(" \n\t ", name: "blank-#{i}.md") }
+    readable = text_file(name: "later.md")
+    clear_enqueued_jobs
+
+    FieldItems::SummarySweepJob.perform_now
+    queued = enqueued_jobs.select { |job| job["job_class"] == "FieldItems::SummarizeJob" }
+      .map { |job| job["arguments"].first["_aj_globalid"] }
+    assert_includes queued, readable.to_global_id.to_s
+
+    # Even if one slipped through the query, claiming it retires it without a call.
+    blank = blanks.first
+    assert_empty run_with(blank, GOOD).calls
+    assert_equal FieldSummarizable::MAX_ATTEMPTS, blank.reload.summary_attempts
+    assert_not_includes FieldFile.summary_due.pluck(:id), blank.id
+  end
+
+  test "the API and the Field page carry both summaries, null until written" do
+    file = text_file
+    assert_equal [ nil, nil ], FieldItems.file_json(file).values_at(:summary_short, :summary_long)
+    run_with(file, GOOD)
+    json = FieldItems.file_json(file.reload)
+    assert_equal "Orchard replanting plan", json[:summary_short]
+    assert_equal "A plan for replanting the north orchard with pears next spring.", json[:summary_long]
+
+    recording = ready_recording(account: @account, user: @user)
+    assert_nil FieldItems.recording_json(recording)[:summary_short]
   end
 
 end

@@ -90,8 +90,10 @@ class UtilityInference
   end
 
   # House-paid: the house inference key (HouseInference::Offering.key), pinned
-  # to one provider with no fallback and prompt retention denied, as the
-  # on-the-house resident models are. Returns the text of the answer.
+  # to one provider with no fallback, as the on-the-house resident models are.
+  # data_collection "deny" rules out providers that train on prompts; it does
+  # not stop a provider retaining them (Anthropic: up to 30 days). Not metered
+  # in the per-resident house ledger. Returns the text of the answer.
   def self.house_chat(model:, provider:, system:, user:, max_tokens: 400)
     validate_input!("#{system}#{user}")
     response = client(key: HouseInference::Offering.key, openrouter: true).chat(
