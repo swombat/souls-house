@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-10
+  title: Site admins are told when production stops following master
+  body: Every five minutes the house checks whether the running build has fallen behind master. If the newest automatic deploy failed for a commit that isn't running, or production has been behind master for 30 minutes with no deploy in progress, every Site Admin page shows a red banner saying which build is live, how far behind it is, since when and why, with links to the Deploys page, the failed run and the recovery runbook. The house also sends one error report per episode, and another only if master moves on while it's still stuck. When it catches up the banner goes away by itself. If the house can't tell (GitHub unreachable, or a build with uncommitted changes) it says that in a neutral line after 30 minutes rather than calling it fine, and the same applies if the check itself stops running. The dashboard's Reliability panel gains a "Production follows master" line, and the deploy menu says the same. Nothing about the deploy gate changes; clearing it is still an operator's job. Live once deployed.
+- date: 2026-10-10
   title: The account name in the header opens your chats
   body: Tapping the account name at the top of the screen (Grove, Nexus, whichever you're in) now takes you straight to that account's chats. The logo beside it still goes to the home page. Handy on a phone, where the chats link is otherwise tucked in the menu. Live once deployed.
 - date: 2026-10-10
