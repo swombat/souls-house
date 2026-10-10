@@ -75,6 +75,19 @@ class RepositoryWatchJobsTest < ActiveSupport::TestCase
     assert_equal 2, delivery.attempts
   end
 
+  test "a crash after the wake was recorded but before completion does not wake again" do
+    AgentRuntimeInteraction.reserve!(agent: @resident, chat: @chat)
+    watch = fulfilled_watch
+    RepositoryWatchDeliverJob.perform_now(watch.id)
+    delivery = watch.repository_watch_deliveries.sole
+    delivery.update_columns(completed_at: nil)
+
+    assert_no_difference [ -> { house_lines.count }, -> { PendingWakeSource.count } ] do
+      RepositoryWatchDeliverJob.perform_now(watch.id)
+    end
+    assert delivery.reload.completed?
+  end
+
   test "a transient failure posting the line is retried, and the line appears once" do
     watch = fulfilled_watch(wake: false)
     failures = 1
