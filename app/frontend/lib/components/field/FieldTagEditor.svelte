@@ -25,7 +25,7 @@
       });
       if (response.ok) {
         adding = '';
-        router.reload({ only: ['files', 'notes', 'recordings', 'tags', 'search'], preserveScroll: true });
+        router.reload({ only: ['items', 'current_item', 'counts', 'pagination', 'tags', 'search'], preserveScroll: true });
       } else {
         const data = await response.json().catch(() => ({}));
         error = data.error || 'The tags could not be changed.';

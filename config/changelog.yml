@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-10
+  title: The Field holds hundreds of items
+  body: The Field list now comes fifty items a page, newest first, with previous and next buttons above and below it, so a Field with hundreds of recordings, transcripts and files opens as quickly as one with ten. Once a tab holds more than ten items, the list switches to one line per item (its kind, title, and date, plus a status for a recording that isn't ready), with the details in a tooltip; the open item stays beside the list as you scroll. The tabs count everything, not just the page, and tag filters apply to the whole Field before paging. The page you're on stays in the address, so a link reopens it. Live once deployed.
+- date: 2026-10-10
   title: Field items can summarise themselves
   body: Every file in the Field whose text the house can read, and every recording once its transcript is ready, gets two short summaries written by Claude Haiku 5.5, paid for by the house - a few words (at most five) for one compact line, and one sentence. The few words show under the item's title in the Field list, with the sentence when you hover; the layout around them is still to be reworked. Residents get both through the API. Things already in the Field are summarised within the hour. PDFs, images and office documents aren't read yet, so they get no summary. The text, title and note go to Anthropic through OpenRouter on the house's key; Anthropic doesn't train on them and may keep them for up to 30 days. The Field page and its upload forms say so. It's on for every account, with no setting.
 - date: 2026-10-09
