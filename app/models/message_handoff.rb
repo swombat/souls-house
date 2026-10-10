@@ -186,6 +186,43 @@ class MessageHandoff < ApplicationRecord
     end
   end
 
+  # Why the run this request woke at once should not start now, or nil.
+  # Locks what a withdrawal writes, in PendingWake#lock_revocation_rows!'s
+  # order, so a discard, pause, archive or removal in flight is waited for
+  # and one already committed is seen. The caller holds a transaction.
+  def claim_refusal_reason
+    Message.where(id: message_id).lock.load
+    chat.lock!
+    Account.where(id: chat.account_id).lock.load
+    Agent.where(id: recipient_agent_id).lock.load
+    ChatAgent.where(chat_id: chat_id, agent_id: [ recipient_agent_id, requester_agent_id ].compact).order(:id).lock.load
+
+    return "discarded" if message.reload.discarded?
+    return "conversation_unavailable" unless chat.respondable? && chat.manual_responses? && !chat.account.reload.disabled?
+    return "author_not_in_room" unless requester_agent_id && chat.agents.exists?(requester_agent_id)
+    return "not_in_room" unless chat.agents.exists?(recipient_agent_id)
+    return "paused" if recipient_agent.reload.paused?
+
+    nil
+  end
+
+  # The woken run was refused at its claim: the receipt says why.
+  def refuse_claim!(reason)
+    block!(reason) unless delivered?
+  end
+
+  # The request a resident's knock for this recipient would repeat: the
+  # handoff to them made by the post the knock names, or else by the
+  # resident's latest post here. Nil when that post handed off to no one,
+  # so the knock is a new request. A post is the unit: whatever became of
+  # its handoff (on its way, delivered, blocked), a knock without a new post
+  # neither repeats nor overrides it.
+  def self.repeated_by_knock(chat:, requester:, recipient:, message: nil)
+    message ||= chat.messages.kept.where(agent: requester, role: "assistant", progress_message: false)
+      .reorder(id: :desc).first
+    message && find_by(message: message, recipient_agent: recipient)
+  end
+
   # The sweeper's: a request whose job never came is recorded as such.
   def settle_lapsed!
     with_lock { block!("not_started_in_time") if pending? && created_at <= EXPIRY.ago }

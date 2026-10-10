@@ -349,13 +349,15 @@ class Chat < ApplicationRecord
 
   # Ask all, with the same rule per resident: the free ones are woken now, the
   # busy ones are queued. Returns { triggered: [agents], queued: [agents] }.
-  def request_all_agents_response!(requested_by:, user: nil, requester_agent: nil)
+  # except_agent_ids: residents left out, because the asking resident's post
+  # already handed off to them (MessageHandoff).
+  def request_all_agents_response!(requested_by:, user: nil, requester_agent: nil, except_agent_ids: [])
     raise ArgumentError, "This chat does not support manual responses" unless manual_responses?
     raise ArgumentError, "No residents in this conversation" if agents.empty?
     raise ArgumentError, "This conversation is archived or deleted" unless respondable?
 
     with_lock do
-      ordered_agents = agents.order(:id).to_a
+      ordered_agents = agents.where.not(id: except_agent_ids).order(:id).to_a
       unless ordered_agents.any?(&:eligible_for_conversation?)
         raise Agent::RuntimeAvailability::Unavailable.new("No available residents in this conversation", code: "no_available_agents")
       end

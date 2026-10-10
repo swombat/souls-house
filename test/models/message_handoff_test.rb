@@ -152,14 +152,58 @@ class MessageHandoffTest < ActiveSupport::TestCase
     assert_equal "delivered", handoff.reload.status
   end
 
-  test "the receipt under the message moves live, without reordering the room" do
+  test "the receipt under the message moves live, as a patch, without reordering the room" do
     handoff = post_as_lume("@Mira look").handoffs.sole
     updated_at = @chat.reload.updated_at
 
-    assert_broadcasts("Message:#{handoff.message.obfuscated_id}", 1) do
-      live { handoff.dispatch! }
-    end
+    live { handoff.dispatch! }
+    assert_broadcast_on("Chat:#{@chat.obfuscated_id}",
+      action: "handoff_receipts", chat_id: @chat.to_param, message_id: handoff.message.to_param,
+      handoff_receipts: handoff.message.reload.handoff_receipts.map(&:stringify_keys))
     assert_equal updated_at, @chat.reload.updated_at
+  end
+
+  # Claim: an immediate wake is checked again before it starts, as a held
+  # one's release is (Mira's review of #283).
+
+  test "an immediate wake starts while its request stands" do
+    handoff = post_as_lume("@Mira look").handoffs.sole
+    live { handoff.dispatch! }
+    assert handoff.reload.runtime_interaction.claim_dispatch!
+  end
+
+  test "an immediate wake whose message was discarded after reservation is refused at its claim" do
+    handoff = post_as_lume("@Mira look").handoffs.sole
+    live { handoff.dispatch! }
+    run = handoff.reload.runtime_interaction
+    handoff.message.discard!
+
+    assert_not run.claim_dispatch!
+    assert_equal "cancelled", run.reload.execution_state
+    assert_equal [ "blocked", "discarded" ], [ handoff.reload.status, handoff.reason ]
+  end
+
+  test "an immediate wake whose recipient was paused after reservation is refused at its claim" do
+    handoff = post_as_lume("@Mira look").handoffs.sole
+    live { handoff.dispatch! }
+    run = handoff.reload.runtime_interaction
+    @mira.update!(paused: true)
+
+    assert_not run.claim_dispatch!
+    assert_equal "cancelled", run.reload.execution_state
+    assert_equal [ "blocked", "paused" ], [ handoff.reload.status, handoff.reason ]
+  end
+
+  test "an already claimed immediate wake is not cancelled by a later refusal" do
+    handoff = post_as_lume("@Mira look").handoffs.sole
+    live { handoff.dispatch! }
+    run = handoff.reload.runtime_interaction
+    assert run.claim_dispatch!
+    @mira.update!(paused: true)
+
+    assert_not run.claim_dispatch!
+    assert_equal "preparing", run.reload.execution_state
+    assert_equal "triggered", handoff.reload.status
   end
 
   # Authority

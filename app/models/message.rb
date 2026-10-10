@@ -179,8 +179,13 @@ class Message < ApplicationRecord
     records.map(&:as_receipt_json)
   end
 
+  # A targeted patch, not a refresh: the room page reloads only its recent
+  # window, and a receipt under an older message already on screen must move
+  # too (chat-history.svelte.js applies it to whichever window holds it).
   def broadcast_handoff_receipts
-    broadcast_refresh
+    ActionCable.server.broadcast("Chat:#{chat.obfuscated_id}", {
+      action: "handoff_receipts", chat_id: chat.to_param, message_id: to_param, handoff_receipts: handoff_receipts
+    })
   end
 
   def advance_runtime_response_chain

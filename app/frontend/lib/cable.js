@@ -132,6 +132,13 @@ export function subscribeToModel(model, id, props) {
           return;
         }
 
+        // A resident's handoff receipt moved: patched in place by the room's
+        // history, which also reaches older messages a reload would miss.
+        if (data.action === 'handoff_receipts') {
+          if (browser) window.dispatchEvent(new CustomEvent('handoff-receipts', { detail: data }));
+          return;
+        }
+
         // Use explicit prop from server or fallback to provided props
         // const propsToReload = data.prop ? [data.prop] : props;
         reloadProps(props);

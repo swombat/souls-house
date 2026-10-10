@@ -78,6 +78,19 @@ export function createChatHistory(context) {
   });
   onDestroy(() => request?.abort());
 
+  // A handoff receipt moved (cable.js). Patch the message wherever it is
+  // loaded: the recent window, or older history fetched by scrolling, which
+  // a refresh of the recent window never reaches.
+  $effect(() => {
+    const onReceipts = (event) => {
+      const { chat_id: id, message_id: messageId, handoff_receipts: receipts } = event.detail || {};
+      if (!messageId || id !== context().chat.id) return;
+      update(messageId, { handoff_receipts: receipts || [] });
+    };
+    window.addEventListener('handoff-receipts', onReceipts);
+    return () => window.removeEventListener('handoff-receipts', onReceipts);
+  });
+
   function scrollToBottom() {
     releaseEntry?.();
     tick().then(() => {
