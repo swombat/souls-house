@@ -12,6 +12,7 @@ module AgentRuntimeInteraction::LiveActivity
     attr_accessor :enqueue_dispatch
     belongs_to :message_dispatch, optional: true
     has_one :released_pending_wake, class_name: "PendingWake", foreign_key: :released_interaction_id, inverse_of: :released_interaction
+    has_many :message_handoffs, foreign_key: :runtime_interaction_id, inverse_of: :runtime_interaction
     after_create_commit :enqueue_live_dispatch, if: :enqueue_dispatch
   end
 
@@ -59,6 +60,7 @@ module AgentRuntimeInteraction::LiveActivity
   # nothing here can recall it.
   def claim_dispatch!
     return claim_released_wake! if released_pending_wake
+    return claim_handoff! if message_handoffs.exists?
     return claim_dispatch_unchecked! unless message_dispatch
 
     message_dispatch.with_lock do
@@ -86,6 +88,28 @@ module AgentRuntimeInteraction::LiveActivity
         true
       end
       wake.update!(dropped_at: Time.current, drop_reason: "claim_refused:#{reason}") if refused
+      false
+    end
+  end
+
+  # A run a resident's handoff woke at once (MessageHandoff#dispatch!) starts
+  # only while the request still stands, as a held one's release would:
+  # message kept, author and recipient still in the room, recipient not
+  # paused. Checked under the rows a withdrawal writes
+  # (MessageHandoff#claim_refusal_reason), then this interaction.
+  def claim_handoff!
+    handoffs = message_handoffs.order(:id).to_a
+    MessageHandoff.transaction do
+      reasons = handoffs.map(&:claim_refusal_reason)
+      next claim_dispatch_unchecked! if reasons.any?(&:nil?)
+
+      refused = with_lock do
+        next false unless dispatch_claimed_at.nil? && !execution_state.in?(TERMINAL_STATES)
+
+        finish_execution!("cancelled")
+        true
+      end
+      handoffs.zip(reasons).each { |handoff, reason| handoff.refuse_claim!(reason) } if refused
       false
     end
   end

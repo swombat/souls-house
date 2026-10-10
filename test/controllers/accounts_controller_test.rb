@@ -83,6 +83,19 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Focused Work", @personal_account.reload.name
   end
 
+  test "the resident handoff cap is shown and can be changed, within range" do
+    get account_path(@team_account)
+    assert_response :success
+
+    patch account_path(@team_account), params: { account: { resident_handoff_cap: "3" } }
+    assert_redirected_to @team_account
+    assert_equal 3, @team_account.reload.resident_handoff_cap
+
+    patch account_path(@team_account), params: { account: { resident_handoff_cap: "500" } }
+    assert_redirected_to @team_account
+    assert_equal 3, @team_account.reload.resident_handoff_cap
+  end
+
   test "account owners cannot change shared AI credential fallback" do
     @team_account.update!(use_system_ai_credentials: true)
 

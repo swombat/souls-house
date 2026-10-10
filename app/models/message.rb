@@ -37,6 +37,7 @@ class Message < ApplicationRecord
   belongs_to :runtime_interaction, class_name: "AgentRuntimeInteraction", optional: true
   has_one :account, through: :chat
   has_one :message_dispatch
+  has_many :handoffs, class_name: "MessageHandoff", dependent: :delete_all
   has_one :rhythm_occurrence
   has_many :message_stone_revisions, dependent: :destroy
   has_many :stone_revisions, through: :message_stone_revisions
@@ -44,6 +45,10 @@ class Message < ApplicationRecord
   attr_accessor :skip_content_validation
   attr_accessor :suppress_automatic_dispatch
   attr_reader :single_resident_response_triggered
+  # Set by the resident API when a resident posts: the residents named in
+  # recipient_agent_ids ([] for none). Tags in the content are read too. Nil
+  # means this message hands off to no one (every other way a message is made).
+  attr_accessor :handoff_recipient_ids
 
   broadcasts_to :chat
 
@@ -71,6 +76,8 @@ class Message < ApplicationRecord
   after_create :accept_single_resident_dispatch, if: :human_message_in_group_chat?
   after_create_commit :trigger_single_resident_response, if: :human_message_in_group_chat?
   after_create_commit :advance_runtime_response_chain
+  after_create :accept_resident_handoffs, if: -> { !handoff_recipient_ids.nil? && role == "assistant" && agent_id }
+  after_create_commit :enqueue_resident_handoffs, if: -> { @accepted_handoffs.present? }
   after_save_commit :refresh_chat_context_tokens, if: -> { role == "assistant" && saved_change_to_input_tokens? }
 
   def record_chat_message_time
@@ -145,6 +152,64 @@ class Message < ApplicationRecord
   end
   private :trigger_single_resident_directly
 
+  # A resident's post that tags (or names) another resident in the room
+  # carries the request to wake them, written with the message
+  # (MessageHandoff), and knocked for after the commit, so it never depends on
+  # the posting run surviving to make another call.
+  def accept_resident_handoffs
+    # A labelled safeguard script asks no one anything on the resident's behalf.
+    return if safeguard_labelled?
+
+    @accepted_handoffs = MessageHandoff.accept!(message: self, explicit_ids: handoff_recipient_ids)
+  end
+  private :accept_resident_handoffs
+
+  def enqueue_resident_handoffs
+    @accepted_handoffs.select(&:pending?).each { |handoff| MessageHandoffJob.perform_later(handoff) }
+  rescue StandardError => e
+    Rails.logger.warn "[Message] #{id} accepted; handoff enqueue failed, it will lapse: #{e.class}: #{e.message}"
+  end
+  private :enqueue_resident_handoffs
+
+  # The receipts under a resident's message: one per resident it handed off to.
+  def handoff_receipts
+    handoff_receipts_snapshot.first
+  end
+
+  # Which state of the receipts a copy carries: the last change to any of
+  # them, in microseconds. The room page keeps the newest it has seen, so a
+  # page fetched or reloaded around a change never puts an older state back
+  # (chat-history.svelte.js). 0 with no handoffs. Read from the same records
+  # as handoff_receipts, so a copy's values and version always match.
+  def handoff_receipts_version
+    handoff_receipts_snapshot.last
+  end
+
+  # A targeted patch, not a refresh: the room page reloads only its recent
+  # window, and a receipt under an older message already on screen must move
+  # too (chat-history.svelte.js applies it to whichever window holds it).
+  def broadcast_handoff_receipts
+    @handoff_receipts_snapshot = nil
+    handoffs.reset
+    receipts, version = handoff_receipts_snapshot
+    ActionCable.server.broadcast("Chat:#{chat.obfuscated_id}", {
+      action: "handoff_receipts", chat_id: chat.to_param, message_id: to_param,
+      handoff_receipts: receipts, handoff_receipts_version: version
+    })
+  end
+
+  # One read of the handoffs serves both the receipts and their version.
+  def handoff_receipts_snapshot
+    @handoff_receipts_snapshot ||= if role == "assistant"
+      records = handoffs.loaded? ? handoffs.sort_by(&:id) : handoffs.includes(:recipient_agent).order(:id).to_a
+      latest = records.map(&:updated_at).max
+      [ records.map(&:as_receipt_json), latest ? (latest.to_r * 1_000_000).to_i : 0 ]
+    else
+      [ [], 0 ]
+    end
+  end
+  private :handoff_receipts_snapshot
+
   def advance_runtime_response_chain
     runtime_interaction&.advance_response_chain! if role == "assistant"
   end
@@ -160,7 +225,7 @@ class Message < ApplicationRecord
                   :audio_source, :audio_url,
                   :voice_available, :voice_audio_url,
                   :reasoning_skip_reason, :reasoning_skip_reason_label, :rhythm_provenance, :safeguard,
-                  :runtime_model_label do |hash, options|
+                  :runtime_model_label, :handoff_receipts, :handoff_receipts_version do |hash, options|
     if options&.dig(:include_ruby_llm_telemetry) && (telemetry = ruby_llm_telemetry)
       hash["ruby_llm_telemetry"] = telemetry
     end

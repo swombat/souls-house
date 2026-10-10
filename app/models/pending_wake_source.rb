@@ -2,7 +2,9 @@
 # held. A source stands while what gave it authority still does:
 #
 # - a message: not discarded, and its author still a confirmed member of the
-#   room's account (as MessageDispatch requires of a mention);
+#   room's account (as MessageDispatch requires of a mention), or, for a
+#   resident's handoff (MessageHandoff), its author still in the room, as
+#   for that resident's knock;
 # - a trigger by a person: still a confirmed member of the room's account;
 # - a trigger by a resident (a sibling's knock): still in the room.
 #
@@ -22,7 +24,11 @@ class PendingWakeSource < ApplicationRecord
   def standing?(chat)
     case kind
     when "message"
-      message.present? && !message.reload.discarded? && member?(message.user, chat)
+      return false unless message.present? && !message.reload.discarded?
+
+      return member?(message.user, chat) unless message.role == "assistant" && message.agent_id
+
+      chat.agents.exists?(message.agent_id)
     when "trigger"
       if requester_agent
         chat.agents.exists?(requester_agent.id)

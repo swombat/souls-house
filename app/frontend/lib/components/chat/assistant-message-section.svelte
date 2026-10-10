@@ -8,6 +8,7 @@
   import ModerationIndicator from '$lib/components/chat/ModerationIndicator.svelte';
   import AudioPlayer from '$lib/components/chat/AudioPlayer.svelte';
   import MessageTelemetry from '$lib/components/chat/MessageTelemetry.svelte';
+  import HandoffReceipts from '$lib/components/chat/HandoffReceipts.svelte';
   import { Streamdown } from 'svelte-streamdown';
   import { formatTime, formatDateTime } from '$lib/utils';
   import { reasoningSkipTooltip } from '$lib/chat-utils';
@@ -136,6 +137,7 @@
     <MessageTelemetry telemetry={message.ruby_llm_telemetry} />
   {/if}
 </div>
+<HandoffReceipts receipts={message.handoff_receipts || []} />
 {#if message.voice_available && !message.streaming}
   <div class="mt-1">
     {#if message.voice_audio_url}

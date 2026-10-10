@@ -9,7 +9,14 @@ class MessagesController < ApplicationController
   before_action :require_respondable_chat, only: :create
   before_action :authorize_message_modification, only: [ :update, :destroy ]
 
+  # RECEIPTS_LIMIT bounds the catch-up a room page asks for after its cable
+  # reconnects: the receipts of older messages it already shows, which a
+  # reload of the recent window never reaches.
+  RECEIPTS_LIMIT = 50
+
   def index
+    return render json: { receipts: handoff_receipts_for(params[:receipts_for]) } if params.key?(:receipts_for)
+
     @messages = @chat.messages_page(before_id: params[:before_id])
     @has_more = @messages.any? && @chat.messages.kept.where("id < ?", @messages.first.id).exists?
     interaction_costs = InteractionCostsByMessage.new(chat: @chat, messages: @messages).call
@@ -115,6 +122,20 @@ class MessagesController < ApplicationController
 
   def message_params
     params.require(:message).permit(:content)
+  end
+
+  def handoff_receipts_for(ids)
+    ids = ids.to_s.split(",").map(&:strip).reject(&:blank?).first(RECEIPTS_LIMIT)
+    decoded = ids.filter_map do |id|
+      Message.decode_id(id)
+    rescue Hashids::InputError
+      nil
+    end
+    messages = @chat.messages.kept.where(id: decoded, role: "assistant")
+      .includes(handoffs: :recipient_agent)
+    messages.to_h do |message|
+      [ message.to_param, { handoff_receipts: message.handoff_receipts, handoff_receipts_version: message.handoff_receipts_version } ]
+    end
   end
 
   def message_json(message, interaction_cost = nil)

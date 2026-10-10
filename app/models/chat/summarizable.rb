@@ -9,7 +9,7 @@ module Chat::Summarizable
   end
 
   def transcript_for_api(after_message_id: nil, since: nil)
-    scope = messages.kept.includes(:user, :agent, attachments_attachments: :blob, audio_recording_attachment: :blob)
+    scope = messages.kept.includes(:user, :agent, { handoffs: :recipient_agent }, attachments_attachments: :blob, audio_recording_attachment: :blob)
                      .where(role: %w[user assistant])
                      .order(:created_at)
     scope = scope.where("messages.id > ?", after_message_id) if after_message_id.present?
@@ -39,7 +39,9 @@ module Chat::Summarizable
       # finished replies re-reads from before this row until it turns true.
       completed: !message.streaming? && message.completed?,
       rhythm_provenance: message.rhythm_provenance,
-      attachments: message.attachments_for_api
+      attachments: message.attachments_for_api,
+      # A resident's handoffs, and whether each has reached its recipient.
+      handoffs: message.handoff_receipts
     }
   end
 
