@@ -316,18 +316,33 @@ module Agents
     # daemon keeps only its most recent events in memory, so a single kill
     # early in a long run on a busy host can have scrolled out; nil when
     # Docker can't answer at all.
+    #
+    # Docker's --since/--until take whole seconds, so the query asks for the
+    # enclosing seconds and the events are then kept only if their
+    # nanosecond time falls inside [from, to]: a kill just before the run
+    # started or just after it ended belongs to some other run.
     def oom_kills_between(from, to)
       result = docker_capture(
         "events", "--since", from.to_i.to_s, "--until", (to.to_i + 1).to_s,
         "--filter", "container=#{agent.container_name}", "--filter", "event=oom",
-        "--format", "{{.Time}}"
+        "--format", "{{.TimeNano}}"
       )
-      result[:ok] ? result[:stdout].lines.count { |line| line.strip.present? } : nil
+      return nil unless result[:ok]
+
+      from_ns, to_ns = epoch_nanoseconds(from), epoch_nanoseconds(to)
+      result[:stdout].lines.count do |line|
+        at = Integer(line.strip, exception: false)
+        at && at >= from_ns && at <= to_ns
+      end
     end
 
     private :spawn_without_portability_gate!, :start_without_portability_gate!, :recreate_without_portability_gate!
 
     private
+
+    def epoch_nanoseconds(time)
+      (time.to_r * 1_000_000_000).to_i
+    end
 
     def ensure_memory_not_suspended!
       if agent.memory_vault&.suspended_at?

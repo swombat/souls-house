@@ -186,7 +186,21 @@ class AgentRuntimeInteraction < ApplicationRecord
   end
 
   def ran_out_of_memory?
-    error_class == RuntimeOomCheckJob::ERROR_CLASS
+    container_oom_kills.to_i.positive? && finished_at.present? && ended_badly?
+  end
+
+  def out_of_memory_message
+    return unless ran_out_of_memory?
+
+    "Ran out of memory: the kernel killed #{container_oom_kills} #{'process'.pluralize(container_oom_kills)} " \
+      "in this resident's container (limit #{agent&.container_memory_mb} MB) during the run."
+  end
+
+  OOM_CHECKED_STATES = %w[failed timed_out outcome_unknown].freeze
+
+  # Failed, timed out or lost; for a run without live activity, any failure.
+  def ended_badly?
+    execution_state.present? ? execution_state.in?(OOM_CHECKED_STATES) : chat_activity_status == "failed"
   end
 
   def cache_read_ratio
@@ -266,6 +280,8 @@ class AgentRuntimeInteraction < ApplicationRecord
       stderr: stderr,
       error_class: error_class,
       error_message: error_message,
+      container_oom_kills: container_oom_kills,
+      out_of_memory_message: out_of_memory_message,
       chaos_session_id: chaos_session_id,
       session_resumed: session_resumed,
       fresh_fallback: fresh_fallback,
@@ -390,6 +406,8 @@ class AgentRuntimeInteraction < ApplicationRecord
       stderr_may_be_truncated: stderr.to_s.length >= RUNTIME_OUTPUT_CAPTURE_LIMIT,
       error_class: error_class,
       error_message: error_message,
+      container_oom_kills: container_oom_kills,
+      out_of_memory_message: out_of_memory_message,
       chaos_session_id: chaos_session_id,
       prior_chaos_session_id: prior_chaos_session_id,
       session_roll_reason: session_roll_reason,
@@ -471,11 +489,8 @@ class AgentRuntimeInteraction < ApplicationRecord
     Rails.logger.warn("Follow-through check enqueue failed for interaction #{id}: #{error.class}")
   end
 
-  OOM_CHECKED_STATES = %w[failed timed_out outcome_unknown].freeze
-
   def enqueue_oom_check
-    ended_badly = execution_state.present? ? execution_state.in?(OOM_CHECKED_STATES) : chat_activity_status == "failed"
-    return unless ended_badly
+    return unless ended_badly?
 
     RuntimeOomCheckJob.perform_later(id)
   rescue StandardError => error

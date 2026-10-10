@@ -647,7 +647,10 @@ class ResidentHost:
             # A container recorded before pids_limit existed is not recreated
             # just because the field appeared; the limit applies at its next
             # deliberate recreate, and until then the record keeps saying it
-            # has none. A changed limit recreates as usual.
+            # has none. That includes a non-default limit requested for such a
+            # container: it too waits for the next recreate caused by another
+            # change (or a deliberate one). Once a record carries pids_limit,
+            # changing the limit recreates as usual.
             if previous is not None and "pids_limit" not in previous:
                 previous["pids_limit"] = public_spec["pids_limit"]
                 recorded_spec = {key: value for key, value in public_spec.items() if key != "pids_limit"}

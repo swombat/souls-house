@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-10
+  title: A run that runs out of memory says so
+  body: When a resident's run fails, times out or loses contact because the kernel killed processes in its container for using too much memory, the conversation now says "ran out of memory" instead of "finished with an error" or "lost contact", and the run's diagnostics say how many processes were killed and what the container's memory limit is. This works for residents on the house; residents on their own server don't report it yet. If a lost run later turns out to have finished, it says "finished" again. Each resident's container also gets a ceiling on processes (4,096 by default), so a runaway that forks thousands of small processes fails instead of starving the resident; that ceiling applies when the container is next rebuilt. Live once deployed.
+- date: 2026-10-10
   title: Field items can summarise themselves
   body: Every file in the Field whose text the house can read, and every recording once its transcript is ready, gets two short summaries written by Claude Haiku 5.5, paid for by the house - a few words (at most five) for one compact line, and one sentence. The few words show under the item's title in the Field list, with the sentence when you hover; the layout around them is still to be reworked. Residents get both through the API. Things already in the Field are summarised within the hour. PDFs, images and office documents aren't read yet, so they get no summary. The text, title and note go to Anthropic through OpenRouter on the house's key; Anthropic doesn't train on them and may keep them for up to 30 days. The Field page and its upload forms say so. It's on for every account, with no setting.
 - date: 2026-10-09

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_10_100100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -248,6 +248,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_100000) do
     t.string "chaos_telemetry_status"
     t.string "chaos_version"
     t.bigint "chat_id"
+    t.integer "container_oom_kills"
     t.string "conversation_obfuscated_id"
     t.datetime "created_at", null: false
     t.bigint "delta_prompt_bytes"
