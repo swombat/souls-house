@@ -93,6 +93,16 @@ module Api
         assert repository.dig("setup", "secret").present?, "the person who must paste it into GitHub sees the secret"
       end
 
+      test "a person who can manage the connection disconnects a repository, cancelling its watches" do
+        watch = arm_watch(by: @user, wake: false)
+        with_fake_github do
+          delete api_v1_repository_url(@repository.to_param), headers: human_headers(@user, @account)
+        end
+        assert_response :no_content
+        assert @repository.reload.removed?
+        assert_equal "cancelled", watch.reload.state
+      end
+
     end
   end
 end

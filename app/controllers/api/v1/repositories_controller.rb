@@ -29,6 +29,11 @@ module Api
       def destroy
         account = human_account!
         repository = account.watched_repositories.live.find(params[:id])
+        connection = repository.service_connection
+        unless connection.provisionable_by?(current_api_user) || connection.manageable_by?(current_api_user)
+          return render json: { error: "Only someone who can manage the GitHub connection can disconnect its repositories" }, status: :forbidden
+        end
+
         repository.remove!(reason: "repository disconnected")
         audit_human_action("repository_watch.disconnect", repository, account: account, full_name: repository.full_name)
         head :no_content
