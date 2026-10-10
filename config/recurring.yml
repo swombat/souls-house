@@ -25,6 +25,11 @@ production:
     queue: default
     schedule: every 10 minutes
 
+  field_summary_sweep:
+    class: FieldItems::SummarySweepJob
+    queue: default
+    schedule: every hour at minute 37
+
   field_recordings_orphan_sweep:
     class: FieldRecordings::OrphanSweepJob
     queue: default

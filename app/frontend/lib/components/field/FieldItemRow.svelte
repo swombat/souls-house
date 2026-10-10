@@ -14,6 +14,7 @@
   const hint = $derived(
     [
       item.title,
+      item.summary_long || item.summary_short,
       kindLabel[item.kind],
       item.kind === 'recording' ? recordingStatusLine(item) : null,
       item.kind === 'note' ? item.editor_name : item.uploader_name,

@@ -34,6 +34,7 @@ module FieldFile::TextExtraction
     # Not an edit, so no updated_at; but an open search on the Field page
     # should refresh now that the file's words are searchable.
     broadcast_refresh
+    enqueue_summary
     true
   end
 

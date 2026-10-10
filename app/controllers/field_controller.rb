@@ -28,6 +28,7 @@ class FieldController < ApplicationController
       search: search_props,
       recording_allowance: FieldItems.allowance_json(current_account),
       suggestions_enabled: FieldSuggestions.enabled?,
+      summaries_enabled: FieldSummaries.enabled?,
       max_recording_bytes: FieldRecording::MAX_BYTES,
       max_recording_label: FieldRecording::MAX_BYTES_LABEL,
       tab: tab,

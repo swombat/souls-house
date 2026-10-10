@@ -6,6 +6,7 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Input } from '$lib/components/shadcn/input/index.js';
   import { Label } from '$lib/components/shadcn/label/index.js';
+  import SummariesNotice from '$lib/components/field/SummariesNotice.svelte';
   import { formatBytes } from '$lib/field';
   import { formatDuration, guessSpeakers, preflightProblem } from '$lib/field-recordings';
 
@@ -17,6 +18,7 @@
     maxLabel = '2 GB',
     sharedLine = '',
     suggestionsEnabled = false,
+    summariesEnabled = false,
   } = $props();
 
   let file = $state(null);
@@ -212,7 +214,8 @@
       <Dialog.Description>
         {sharedLine} It's transcribed by ElevenLabs so you can read it together.{#if suggestionsEnabled}
           The transcript, title and note, with the names of this Field's voices and members, are also sent to Google
-          Gemini (through OpenRouter) to suggest who's speaking; a person always confirms.{/if}
+          Gemini (through OpenRouter) to suggest who's speaking; a person always confirms.{/if}{#if summariesEnabled}
+          <SummariesNotice kind="recording" />{/if}
       </Dialog.Description>
     </Dialog.Header>
     <form onsubmit={submit} class="space-y-4" data-testid="recording-upload-form">
