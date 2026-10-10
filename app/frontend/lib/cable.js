@@ -116,7 +116,11 @@ export function subscribeToModel(model, id, props) {
           // A FieldRecording that finished transcribing meanwhile would
           // otherwise sit on "Transcribing…" until a manual refresh.
           reloadProps(props);
-          if (model === 'Chat') window.dispatchEvent(new CustomEvent('runtime-activity-refresh'));
+          if (model === 'Chat') {
+            window.dispatchEvent(new CustomEvent('runtime-activity-refresh'));
+            // Older loaded history is not part of that reload (chat-history.svelte.js).
+            window.dispatchEvent(new CustomEvent('chat-sync-connected', { detail: { id } }));
+          }
         }
       },
 

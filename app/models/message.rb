@@ -175,18 +175,35 @@ class Message < ApplicationRecord
   def handoff_receipts
     return [] unless role == "assistant"
 
-    records = handoffs.loaded? ? handoffs.sort_by(&:id) : handoffs.includes(:recipient_agent).order(:id)
-    records.map(&:as_receipt_json)
+    loaded_handoffs.map(&:as_receipt_json)
+  end
+
+  # Which state of the receipts a copy carries: the last change to any of
+  # them, in microseconds. The room page keeps the newest it has seen, so a
+  # page fetched or reloaded around a change never puts an older state back
+  # (chat-history.svelte.js). 0 with no handoffs.
+  def handoff_receipts_version
+    return 0 unless role == "assistant"
+
+    latest = loaded_handoffs.map(&:updated_at).max
+    latest ? (latest.to_r * 1_000_000).to_i : 0
   end
 
   # A targeted patch, not a refresh: the room page reloads only its recent
   # window, and a receipt under an older message already on screen must move
   # too (chat-history.svelte.js applies it to whichever window holds it).
   def broadcast_handoff_receipts
+    handoffs.reset
     ActionCable.server.broadcast("Chat:#{chat.obfuscated_id}", {
-      action: "handoff_receipts", chat_id: chat.to_param, message_id: to_param, handoff_receipts: handoff_receipts
+      action: "handoff_receipts", chat_id: chat.to_param, message_id: to_param,
+      handoff_receipts: handoff_receipts, handoff_receipts_version: handoff_receipts_version
     })
   end
+
+  def loaded_handoffs
+    handoffs.loaded? ? handoffs.sort_by(&:id) : handoffs.includes(:recipient_agent).order(:id).to_a
+  end
+  private :loaded_handoffs
 
   def advance_runtime_response_chain
     runtime_interaction&.advance_response_chain! if role == "assistant"
@@ -203,7 +220,7 @@ class Message < ApplicationRecord
                   :audio_source, :audio_url,
                   :voice_available, :voice_audio_url,
                   :reasoning_skip_reason, :reasoning_skip_reason_label, :rhythm_provenance, :safeguard,
-                  :runtime_model_label, :handoff_receipts do |hash, options|
+                  :runtime_model_label, :handoff_receipts, :handoff_receipts_version do |hash, options|
     if options&.dig(:include_ruby_llm_telemetry) && (telemetry = ruby_llm_telemetry)
       hash["ruby_llm_telemetry"] = telemetry
     end

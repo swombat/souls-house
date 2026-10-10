@@ -159,7 +159,8 @@ class MessageHandoffTest < ActiveSupport::TestCase
     live { handoff.dispatch! }
     assert_broadcast_on("Chat:#{@chat.obfuscated_id}",
       action: "handoff_receipts", chat_id: @chat.to_param, message_id: handoff.message.to_param,
-      handoff_receipts: handoff.message.reload.handoff_receipts.map(&:stringify_keys))
+      handoff_receipts: handoff.message.reload.handoff_receipts.map(&:stringify_keys),
+      handoff_receipts_version: handoff.message.handoff_receipts_version)
     assert_equal updated_at, @chat.reload.updated_at
   end
 
