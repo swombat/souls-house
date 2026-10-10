@@ -44,6 +44,10 @@ test('personal tint, account logo colour and account name in the navbar', async 
     expect(box.x + box.width).toBeLessThan(390 * 0.75);
     await expect(page.getByRole('button', { name: 'User account menu' })).toBeInViewport();
 
+    // The logo goes home; the account name goes straight to the account's chats.
+    await expect(page.getByTestId('nav-home-logo')).toHaveAttribute('href', '/');
+    await expect(name).toHaveAttribute('href', `/accounts/${setup.account_id}/chats`);
+
     // Default look is untouched.
     await expect(page.locator('body')).toHaveCSS('background-color', 'oklch(1 0 0)');
     const dot = page.locator('nav svg circle').first();

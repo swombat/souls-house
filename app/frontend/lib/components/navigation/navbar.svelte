@@ -6,7 +6,14 @@
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
   import { Button, buttonVariants } from '$lib/components/shadcn/button/index.js';
   import { cn } from '$lib/utils.js';
-  import { loginPath, signupPath, logoutPath, searchAccountChatsPath, accountAgentsPath } from '@/routes';
+  import {
+    loginPath,
+    signupPath,
+    logoutPath,
+    accountChatsPath,
+    searchAccountChatsPath,
+    accountAgentsPath,
+  } from '@/routes';
   import { setMode, resetMode } from 'mode-watcher';
   import MobileNavMenu from '$lib/components/navigation/MobileNavMenu.svelte';
   import SiteAdminMenu from '$lib/components/navigation/SiteAdminMenu.svelte';
@@ -122,18 +129,25 @@
 <nav>
   <div class="flex items-center justify-between p-4 px-4 md:px-10 border-b gap-2 md:gap-4">
     <div class="flex min-w-0 items-center gap-4 md:gap-8">
-      <Link href="/" class="flex min-w-0 items-center gap-2">
-        <Logo class="h-8 w-8 shrink-0 md:h-10 md:w-10" />
-        {#if currentUser && currentAccount?.name}
-          <!-- The logo already names the site; signed in, this slot names the account you are in. -->
-          <span
-            class="truncate max-w-[45vw] md:max-w-[16rem]"
+      {#if currentUser && currentAccount?.name}
+        <!-- The logo already names the site; signed in, the name beside it is the account you are in.
+             The logo goes home; the account name goes straight to that account's chats. -->
+        <div class="flex min-w-0 items-center gap-2">
+          <Link href="/" aria-label="Home" data-testid="nav-home-logo">
+            <Logo class="h-8 w-8 shrink-0 md:h-10 md:w-10" />
+          </Link>
+          <Link
+            href={siteSettings?.allow_chats ? accountChatsPath(currentAccount.id) : '/'}
+            class="block truncate max-w-[45vw] md:max-w-[16rem]"
             title={currentAccount.name}
-            data-testid="nav-account-name">{currentAccount.name}</span>
-        {:else}
+            data-testid="nav-account-name">{currentAccount.name}</Link>
+        </div>
+      {:else}
+        <Link href="/" class="flex min-w-0 items-center gap-2">
+          <Logo class="h-8 w-8 shrink-0 md:h-10 md:w-10" />
           <span class="hidden sm:inline">{siteSettings?.site_name || DEFAULT_SITE_NAME}</span>
-        {/if}
-      </Link>
+        </Link>
+      {/if}
       <div class="hidden md:flex items-center">
         <!-- Remount Inertia links when their account-scoped href changes so the click handler cannot retain the previous URL. -->
         {#each links as link (`${link.label}:${link.href}`)}
