@@ -248,6 +248,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_140000) do
     t.string "chaos_telemetry_status"
     t.string "chaos_version"
     t.bigint "chat_id"
+    t.integer "container_oom_kills"
     t.string "conversation_obfuscated_id"
     t.datetime "created_at", null: false
     t.bigint "delta_prompt_bytes"
@@ -351,6 +352,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_140000) do
     t.string "container_image"
     t.integer "container_memory_mb", default: 8192, null: false
     t.string "container_name"
+    t.integer "container_pids_limit", default: 4096, null: false
     t.datetime "created_at", null: false
     t.datetime "deprecated_at"
     t.string "deprecation_reason"

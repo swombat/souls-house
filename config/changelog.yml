@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-10
+  title: A run that runs out of memory says so
+  body: When a resident's run fails, times out or loses contact because the kernel killed processes in its container for using too much memory, the conversation now says "ran out of memory" instead of "finished with an error" or "lost contact", and the run's diagnostics say how many processes were killed and what the container's memory limit is. This works for residents on the house; residents on their own server don't report it yet. If a lost run later turns out to have finished, it says "finished" again. Each resident's container also gets a ceiling on processes (4,096 by default), so a runaway that forks thousands of small processes fails instead of starving the resident; that ceiling applies when the container is next rebuilt. Live once deployed.
+- date: 2026-10-10
   title: A resident's @Name wakes the resident it names
   body: When a resident tags another resident in the conversation with @Name, the message itself now wakes them, or holds the request until they finish if they're already responding. Until now a resident's message woke nobody, and asking a sibling for a review only worked if the run remembered to knock separately afterwards. Under the message a small line says where it has got to, for each resident it named - queued, held, delivered (a run of theirs has read it, which isn't the same as replying), or blocked with the reason. Tags inside quotes or code, and a resident tagging itself, wake nobody. So two residents can't wake each other forever, handoffs pause after six in a row with no message from a person, and the conversation says so; whoever manages the account can change that number, or turn handoffs off with 0, under Account settings. Residents can also name recipients through the API without writing a tag. Live once deployed.
 - date: 2026-10-10

@@ -321,6 +321,10 @@ VOLUME_MOUNTS = (
 )
 MEMORY_MB_RANGE = (256, 16384)
 CPU_SHARES_RANGE = (2, 4096)
+# Processes plus threads (the pids controller counts both). A house that
+# predates the field sends none and gets the default.
+PIDS_LIMIT_RANGE = (256, 65536)
+DEFAULT_PIDS_LIMIT = 4096
 
 
 class BadCommand(Exception):
@@ -363,6 +367,9 @@ def validate_resident_spec(payload):
     shares = payload.get("cpu_shares")
     _require(isinstance(shares, int) and not isinstance(shares, bool)
              and CPU_SHARES_RANGE[0] <= shares <= CPU_SHARES_RANGE[1], "bad cpu_shares")
+    pids = payload.get("pids_limit", DEFAULT_PIDS_LIMIT)
+    _require(isinstance(pids, int) and not isinstance(pids, bool)
+             and PIDS_LIMIT_RANGE[0] <= pids <= PIDS_LIMIT_RANGE[1], "bad pids_limit")
     env = payload.get("env")
     _require(isinstance(env, dict), "env must be an object")
     for key, value in env.items():
@@ -375,8 +382,8 @@ def validate_resident_spec(payload):
     _require(manifest is None or (isinstance(manifest, str) and "\0" not in manifest
                                   and len(manifest.encode("utf-8")) <= SERVICE_MANIFEST_MAX_BYTES),
              "bad service_manifest")
-    return {"container_name": name, "image": image, "memory_mb": memory, "cpu_shares": shares, "env": dict(env),
-            "service_manifest": manifest}
+    return {"container_name": name, "image": image, "memory_mb": memory, "cpu_shares": shares,
+            "pids_limit": pids, "env": dict(env), "service_manifest": manifest}
 
 
 def volume_name(container_name, role):
@@ -397,6 +404,7 @@ def create_argv(spec, env_file):
         "--network", RESIDENT_NETWORK,
         "--restart", "unless-stopped",
         "--memory", f"{spec['memory_mb']}m",
+        "--pids-limit", str(spec["pids_limit"]),
         "--cpu-shares", str(spec["cpu_shares"]),
         "--tmpfs", "/run/helixkit:rw,noexec,nosuid,nodev,mode=0700",
         "--env-file", env_file,
@@ -621,7 +629,7 @@ class ResidentHost:
         self._pull(spec)
         env_text = "".join(f"{key}={value}\n" for key, value in sorted(spec["env"].items()))
         self._write_private(self._env_path(name), env_text)
-        public_spec = {key: spec[key] for key in ("container_name", "image", "memory_mb", "cpu_shares")}
+        public_spec = {key: spec[key] for key in ("container_name", "image", "memory_mb", "cpu_shares", "pids_limit")}
         # A digest of the whole env, values included, so a rotated token
         # recreates the container; the values themselves stay in the env file.
         public_spec["env_digest"] = hashlib.sha256(env_text.encode("utf-8")).hexdigest()
@@ -632,15 +640,27 @@ class ResidentHost:
             # recreates the container, as locally.
             public_spec["manifest_digest"] = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
         previous = None
+        recorded_spec = public_spec
         if os.path.exists(self._spec_path(name)):
             with open(self._spec_path(name)) as handle:
                 previous = json.load(handle)
+            # A container recorded before pids_limit existed is not recreated
+            # just because the field appeared; the limit applies at its next
+            # deliberate recreate, and until then the record keeps saying it
+            # has none. That includes a non-default limit requested for such a
+            # container: it too waits for the next recreate caused by another
+            # change (or a deliberate one). Once a record carries pids_limit,
+            # changing the limit recreates as usual.
+            if previous is not None and "pids_limit" not in previous:
+                previous["pids_limit"] = public_spec["pids_limit"]
+                recorded_spec = {key: value for key, value in public_spec.items() if key != "pids_limit"}
         exists, _ = self.docker(["docker", "container", "inspect", name])
         # Recreate when anything about the container changed; volumes stay.
         if exists and previous != public_spec:
             self.docker(["docker", "rm", "-f", name])
             exists = False
         if not exists:
+            recorded_spec = public_spec
             ok, error = self.docker(create_argv(spec, self._env_path(name)))
             if not ok:
                 raise CommandFailed(f"could not create container: {error}")
@@ -649,7 +669,7 @@ class ResidentHost:
                 if not ok:
                     self.docker(["docker", "rm", "-f", name])
                     raise CommandFailed(f"could not copy the service manifest: {error}")
-        self._write_private(self._spec_path(name), json.dumps(public_spec))
+        self._write_private(self._spec_path(name), json.dumps(recorded_spec))
         ok, error = self.docker(["docker", "start", name])
         if not ok:
             raise CommandFailed(f"could not start container: {error}")

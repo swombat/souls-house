@@ -310,9 +310,39 @@ module Agents
       false
     end
 
+    # How many times the kernel OOM-killed a process in this resident's
+    # container between two times, from Docker's "oom" events. Docker emits
+    # one per kill in the container's cgroup, even when PID 1 survives. The
+    # daemon keeps only its most recent events in memory, so a single kill
+    # early in a long run on a busy host can have scrolled out; nil when
+    # Docker can't answer at all.
+    #
+    # Docker's --since/--until take whole seconds, so the query asks for the
+    # enclosing seconds and the events are then kept only if their
+    # nanosecond time falls inside [from, to]: a kill just before the run
+    # started or just after it ended belongs to some other run.
+    def oom_kills_between(from, to)
+      result = docker_capture(
+        "events", "--since", from.to_i.to_s, "--until", (to.to_i + 1).to_s,
+        "--filter", "container=#{agent.container_name}", "--filter", "event=oom",
+        "--format", "{{.TimeNano}}"
+      )
+      return nil unless result[:ok]
+
+      from_ns, to_ns = epoch_nanoseconds(from), epoch_nanoseconds(to)
+      result[:stdout].lines.count do |line|
+        at = Integer(line.strip, exception: false)
+        at && at >= from_ns && at <= to_ns
+      end
+    end
+
     private :spawn_without_portability_gate!, :start_without_portability_gate!, :recreate_without_portability_gate!
 
     private
+
+    def epoch_nanoseconds(time)
+      (time.to_r * 1_000_000_000).to_i
+    end
 
     def ensure_memory_not_suspended!
       if agent.memory_vault&.suspended_at?
@@ -525,6 +555,7 @@ module Agents
         "--network", Agents::Config.network,
         "--restart", Agents::Config.restart_policy,
         "--memory", "#{agent.container_memory_mb}m",
+        "--pids-limit", agent.container_pids_limit.to_s,
         "--cpu-shares", agent.container_cpu_shares.to_s,
         "-v", "#{Agents::Volume.new(agent).volume_name}:/home/agent/identity",
         "-v", "#{Agents::Resources.new(agent).volumes.fetch(:chaos)}:/home/agent/.chaos",
