@@ -36,9 +36,9 @@ module RepositoryWatchHelpers
       runs
     end
 
-    def deployments(full_name, sha: nil, environment: nil, since: nil)
-      record(:deployments, full_name, sha, environment, since)
-      since ? @deployments.take_while { |deployment| Time.iso8601(deployment["created_at"]) >= since } : @deployments
+    def deployments(full_name, sha: nil, environment: nil)
+      record(:deployments, full_name, sha, environment)
+      @deployments
     end
 
     def deployment_statuses(full_name, deployment_id)

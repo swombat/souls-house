@@ -191,4 +191,110 @@ class RepositoryWatchRecoveryTest < ActiveSupport::TestCase
     assert_equal [ "fulfilled", "failure" ], [ watch.reload.state, watch.fulfilment["state"] ]
   end
 
+
+  # --- second review: fair recovery and one temporal rule ------------------
+
+  def with_sweep_batch(size)
+    original = RepositoryWatchSweepJob::BATCH
+    silence_warnings { RepositoryWatchSweepJob.const_set(:BATCH, size) }
+    yield
+  ensure
+    silence_warnings { RepositoryWatchSweepJob.const_set(:BATCH, original) }
+  end
+
+  def fulfilled_delivery(attempts:, updated_at:)
+    watch = arm_watch(wake: false)
+    watch.fulfil!(RepositoryWatch.workflow_fulfilment(completed_run, source: "webhook"))
+    watch.repository_watch_deliveries.sole.tap { |delivery| delivery.update_columns(attempts: attempts, updated_at: updated_at) }
+  end
+
+  test "failed and backing-off deliveries never fill the sweep batch ahead of a due one" do
+    3.times { fulfilled_delivery(attempts: RepositoryWatchDelivery::MAX_ATTEMPTS, updated_at: 3.hours.ago) }
+    2.times { fulfilled_delivery(attempts: 5, updated_at: 10.minutes.ago) }
+    due = fulfilled_delivery(attempts: 1, updated_at: 3.minutes.ago)
+    clear_enqueued_jobs
+
+    with_sweep_batch(2) do
+      RepositoryWatchSweepJob.perform_now
+    end
+    assert_equal [ [ due.repository_watch_id ] ], enqueued_jobs.select { |job| job["job_class"] == "RepositoryWatchDeliverJob" }.map { |job| job["arguments"] }
+  end
+
+  test "the SQL due rule agrees with retry_due? across the backoff" do
+    delivery = fulfilled_delivery(attempts: 0, updated_at: Time.current)
+    now = Time.current
+    [ 0, 1, 3, 6, 10, 11, RepositoryWatchDelivery::MAX_ATTEMPTS ].product([ 1, 3, 9, 33, 61, 200 ]).each do |attempts, minutes|
+      delivery.update_columns(attempts: attempts, updated_at: now - minutes.minutes)
+      expected = delivery.reload.retry_due?(now)
+      assert_equal expected, RepositoryWatchDelivery.retry_due(now).exists?(delivery.id), "attempts=#{attempts} minutes=#{minutes}"
+    end
+  end
+
+  def deployment_receipt(status_created_at:, sha: OTHER_SHA, guid: SecureRandom.uuid)
+    payload = {
+      "repository" => { "full_name" => "swombat/other-repo" },
+      "deployment_status" => { "id" => 31, "state" => "success", "environment" => "production", "created_at" => status_created_at },
+      "deployment" => { "id" => 30, "sha" => sha, "environment" => "production" }
+    }
+    @repository.repository_deliveries.create!(
+      delivery_guid: guid, event: "deployment_status", action: "created", received_at: Time.current,
+      signature_ok: true, payload: RepositoryDelivery.reduce_payload("deployment_status", payload)
+    )
+  end
+
+  test "a delayed webhook for a deploy that finished before arming does not fulfil a next-deploy watch" do
+    watch = arm_watch(event_kind: "deployment_status", filter: { "environment" => "production" }, wake: false)
+    RepositoryDeliveryJob.perform_now(deployment_receipt(status_created_at: (watch.created_at - 10.minutes).iso8601).id)
+    assert_equal "armed", watch.reload.state
+
+    RepositoryDeliveryJob.perform_now(deployment_receipt(status_created_at: (watch.created_at + 1.minute).iso8601).id)
+    assert_equal [ "fulfilled", "webhook" ], [ watch.reload.state, watch.fulfilment["source"] ]
+  end
+
+  test "a webhook status with no time does not fulfil a next-deploy watch" do
+    watch = arm_watch(event_kind: "deployment_status", filter: { "environment" => "production" }, wake: false)
+    RepositoryDeliveryJob.perform_now(deployment_receipt(status_created_at: nil).id)
+    assert_equal "armed", watch.reload.state
+  end
+
+  test "an exact-sha deployment watch still accepts a status from before arming" do
+    watch = arm_watch(event_kind: "deployment_status", filter: { "head_sha" => OTHER_SHA, "environment" => "production" }, wake: false)
+    RepositoryDeliveryJob.perform_now(deployment_receipt(status_created_at: (watch.created_at - 2.days).iso8601).id)
+    assert_equal "fulfilled", watch.reload.state
+  end
+
+  def deployments_url
+    "https://api.github.com/repos/swombat/other-repo/deployments"
+  end
+
+  def json_reply(body)
+    { status: 200, headers: { "Content-Type" => "application/json" }, body: body.to_json }
+  end
+
+  test "reconcile counts a deploy started long before arming that finished after it (real client)" do
+    watch = arm_watch(event_kind: "deployment_status", filter: { "environment" => "production" }, wake: false)
+    finished = (watch.created_at + 30.seconds).iso8601
+    stub_request(:get, deployments_url).with(query: hash_including("environment" => "production")).to_return(json_reply([
+      { id: 41, sha: SHA, environment: "production", created_at: (watch.created_at - 1.minute).iso8601, updated_at: (watch.created_at - 1.minute).iso8601 },
+      { id: 40, sha: SHA, environment: "production", created_at: (watch.created_at - 2.hours).iso8601, updated_at: finished }
+    ]))
+    stub_request(:get, "#{deployments_url}/40/statuses").with(query: hash_including({}))
+      .to_return(json_reply([ { id: 9, state: "success", environment: "production", created_at: finished } ]))
+
+    RepositoryWatchReconcileJob.perform_now(watch.id)
+    assert_equal [ "fulfilled", 40, "reconcile" ], [ watch.reload.state, watch.fulfilment["deployment_id"], watch.fulfilment["source"] ]
+    assert_not_requested :get, %r{/deployments/41/statuses}
+  end
+
+  test "reconcile of a next-deploy watch past the listing bound is not established, not absent (real client)" do
+    watch = arm_watch(event_kind: "deployment_status", filter: { "environment" => "production" }, wake: false)
+    old = (watch.created_at - 3.days).iso8601
+    page = Array.new(RepositoryWatches::GithubClient::PER_PAGE) { |index| { id: index, sha: SHA, environment: "production", created_at: old, updated_at: old } }
+    stub_request(:get, deployments_url).with(query: hash_including({})).to_return(json_reply(page))
+
+    RepositoryWatchReconcileJob.perform_now(watch.id)
+    assert_equal [ "armed", "error" ], [ watch.reload.state, watch.reconcile_status ]
+    assert_not_requested :get, %r{/deployments/\d+/statuses}
+  end
+
 end

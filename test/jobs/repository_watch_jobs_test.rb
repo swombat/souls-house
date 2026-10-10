@@ -159,7 +159,8 @@ class RepositoryWatchJobsTest < ActiveSupport::TestCase
   test "a deployment status delivery fulfils a deployment watch" do
     watch = arm_watch(event_kind: "deployment_status", filter: { "environment" => "production" }, wake: false)
     payload = RepositoryDelivery.reduce_payload("deployment_status", {
-      "deployment_status" => { "id" => 9, "state" => "success", "environment" => "production", "target_url" => "https://example.com/deploys/9" },
+      "deployment_status" => { "id" => 9, "state" => "success", "environment" => "production", "target_url" => "https://example.com/deploys/9",
+                                "created_at" => (watch.created_at + 1.minute).iso8601 },
       "deployment" => { "id" => 5, "sha" => SHA, "environment" => "production" }
     })
     delivery = @repository.repository_deliveries.create!(delivery_guid: "dep-1", event: "deployment_status", action: "created",

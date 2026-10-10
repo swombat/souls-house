@@ -175,8 +175,20 @@ class RepositoryWatch < ApplicationRecord
     return false if filter["environment"].present? && environment != filter["environment"]
     return false if head_sha.present? && deployment["sha"].to_s.downcase != head_sha
     return false if filter["states"].present? && !filter["states"].include?(state)
+    return false unless head_sha.present? || reached_since_armed?(status)
 
     true
+  end
+
+  # A watch with a sha accepts any terminal status of that sha, however old.
+  # Without one ("the next deploy to production") only a status reached at
+  # or after arming counts, on every path (webhook, replay, reconcile): an
+  # earlier deploy is not the one being waited for. A status with no
+  # readable time does not count.
+  def reached_since_armed?(status)
+    Time.iso8601(status["created_at"].to_s) >= created_at
+  rescue ArgumentError
+    false
   end
 
   def self.workflow_fulfilment(run, source:)

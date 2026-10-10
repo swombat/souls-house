@@ -31,8 +31,10 @@ class RepositoryWatchSweepJob < ApplicationJob
       RepositoryDeliveryJob.perform_later(delivery.id)
     end
 
-    RepositoryWatchDelivery.incomplete.where(updated_at: ..(now - GRACE)).order(:id).limit(BATCH).each do |delivery|
-      RepositoryWatchDeliverJob.perform_later(delivery.repository_watch_id) if delivery.retry_due?(now)
+    # Only rows that are due, longest-waiting first: failed rows and rows
+    # still in backoff never take a place in the batch.
+    RepositoryWatchDelivery.retry_due(now).where(updated_at: ..(now - GRACE)).order(:updated_at, :id).limit(BATCH).each do |delivery|
+      RepositoryWatchDeliverJob.perform_later(delivery.repository_watch_id)
     end
   end
 

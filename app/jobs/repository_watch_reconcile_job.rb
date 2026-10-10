@@ -4,7 +4,6 @@
 # error means "status not established", never "still running".
 class RepositoryWatchReconcileJob < ApplicationJob
 
-  DEPLOY_LOOKBACK = 1.hour
 
   queue_as :default
   limits_concurrency to: 1, key: ->(watch_id) { "repository-watch-reconcile-#{watch_id}" }
@@ -40,16 +39,20 @@ class RepositoryWatchReconcileJob < ApplicationJob
 
   # With a sha, any terminal status of a deployment of that sha counts,
   # however long ago. Without one ("the next deploy to production"), only a
-  # status reached after the watch was armed counts: an old successful
-  # deploy is not the one being waited for. Deployments started up to
-  # DEPLOY_LOOKBACK before arming are read, since one may finish after it.
+  # status reached after the watch was armed counts (the same rule as the
+  # webhook path, RepositoryWatch#matches_deployment_status?). However long
+  # ago a deployment started, it may finish after arming, so every listed
+  # deployment is considered (bounded: past the bound the client raises and
+  # the status is not established). A deployment whose updated_at, which
+  # GitHub sets when a status is added, is before arming has no status after
+  # it, so its statuses are not fetched.
   def deployment_match(client, repository, watch)
-    since = watch.head_sha ? nil : watch.created_at - DEPLOY_LOOKBACK
-    deployments = client.deployments(repository.full_name, sha: watch.head_sha, environment: watch.filter["environment"], since: since)
+    deployments = client.deployments(repository.full_name, sha: watch.head_sha, environment: watch.filter["environment"])
     deployments.each do |deployment|
+      next if watch.head_sha.blank? && settled_before?(deployment, watch.created_at)
+
       latest = client.deployment_statuses(repository.full_name, deployment["id"]).first
       next unless latest
-      next if since && !reached_after?(latest, watch.created_at)
 
       latest = latest.merge("environment" => latest["environment"].presence || deployment["environment"])
       return RepositoryWatch.deployment_fulfilment(latest, deployment, source: "reconcile") if watch.matches_deployment_status?(latest, deployment)
@@ -57,8 +60,8 @@ class RepositoryWatchReconcileJob < ApplicationJob
     nil
   end
 
-  def reached_after?(status, time)
-    Time.iso8601(status["created_at"].to_s) >= time
+  def settled_before?(deployment, time)
+    Time.iso8601(deployment["updated_at"].to_s) < time
   rescue ArgumentError
     false
   end

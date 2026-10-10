@@ -15,6 +15,14 @@ class RepositoryWatchDelivery < ApplicationRecord
 
   scope :incomplete, -> { where(completed_at: nil) }
 
+  # Incomplete, not yet failed, and past its backoff (the same rule as
+  # retry_due?), decided in SQL so a batch limit applies only to rows that
+  # can actually be retried: failed rows can never fill a sweep's batch.
+  scope :retry_due, ->(now = Time.current) {
+    incomplete.where(attempts: ...MAX_ATTEMPTS)
+      .where("updated_at <= ?::timestamp - (LEAST(POWER(2, LEAST(GREATEST(attempts, 1), 10)), 60) * INTERVAL '1 minute')", now)
+  }
+
   def failed?
     !completed? && attempts >= MAX_ATTEMPTS
   end

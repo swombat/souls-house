@@ -65,16 +65,10 @@ module RepositoryWatches
       collect_pages("/repos/#{checked(full_name)}/actions/runs", params: { head_sha: head_sha }, key: "workflow_runs")
     end
 
-    # Newest first, across pages. With since:, stops at the first deployment
-    # created before it (the list is newest first), so an environment-only
-    # search reads only recent deployments.
-    def deployments(full_name, sha: nil, environment: nil, since: nil)
+    # Newest first, across pages (bounded; see collect_pages).
+    def deployments(full_name, sha: nil, environment: nil)
       params = { sha: sha, environment: environment }.compact
-      collect_pages("/repos/#{checked(full_name)}/deployments", params: params) do |deployment|
-        since && Time.iso8601(deployment["created_at"].to_s) < since
-      rescue ArgumentError
-        false
-      end
+      collect_pages("/repos/#{checked(full_name)}/deployments", params: params)
     end
 
     # Newest first, as GitHub returns them.

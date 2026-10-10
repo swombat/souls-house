@@ -27,7 +27,7 @@ class RepositoryDelivery < ApplicationRecord
     when "deployment_status"
       status = payload["deployment_status"].to_h
       deployment = payload["deployment"].to_h
-      base.merge("deployment_status" => status.slice("id", "state", "environment", "target_url", "log_url")
+      base.merge("deployment_status" => status.slice("id", "state", "environment", "target_url", "log_url", "created_at")
         .merge("deployment" => deployment.slice("id", "sha", "environment")))
     else
       base
