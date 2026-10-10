@@ -11,15 +11,17 @@ class FieldItems::SummarizeJobTest < ActiveJob::TestCase
 
     attr_reader :calls
 
+    # One answer for every call, or an array answered in turn.
     def initialize(answer)
-      @answer, @calls = answer, []
+      @answers, @calls = Array(answer), []
     end
 
     def house_chat(**kwargs)
       @calls << kwargs
-      raise @answer if @answer.is_a?(Exception)
+      answer = @answers[[ @calls.size - 1, @answers.size - 1 ].min]
+      raise answer if answer.is_a?(Exception)
 
-      @answer
+      answer
     end
 
   end
@@ -132,7 +134,7 @@ class FieldItems::SummarizeJobTest < ActiveJob::TestCase
     file = text_file
     run_with(file, UtilityInference::InvalidResponse.new("boom"))
     run_with(file, "no json here")
-    run_with(file, '{"short": "this short summary is far far too long to fit", "sentence": "Fine."}')
+    run_with(file, '{"short": "Orchard plan", "sentence": ""}')
 
     file.reload
     assert_equal FieldSummarizable::MAX_ATTEMPTS, file.summary_attempts
@@ -151,13 +153,44 @@ class FieldItems::SummarizeJobTest < ActiveJob::TestCase
   test "parse holds the answer to the shapes we show" do
     assert_equal({ short: "Venue contract with Priya", long: "Priya and Sam go over the venue contract." },
       FieldSummaries.parse("Sure!\n{\"short\": \"Venue contract with Priya.\", \"sentence\": \"Priya and Sam go over the venue contract.\"}"))
-    assert_equal "Five words is the limit", FieldSummaries.parse('{"short": "Five words is the limit", "sentence": "x"}')[:short]
-    assert_raises(UtilityInference::InvalidResponse) { FieldSummaries.parse('{"short": "Six words is over the limit", "sentence": "x"}') }
+    assert_equal "Six words is over the limit", FieldSummaries.parse('{"short": "Six words is over the limit", "sentence": "x"}')[:short],
+      "word count is summarize's job, so a long short answer isn't thrown away"
     assert_raises(UtilityInference::InvalidResponse) { FieldSummaries.parse('{"short": "", "sentence": "x"}') }
     assert_raises(UtilityInference::InvalidResponse) { FieldSummaries.parse('{"short": 3, "sentence": "x"}') }
     assert_raises(UtilityInference::InvalidResponse) { FieldSummaries.parse('["short"]') }
     long = FieldSummaries.parse(%({"short": "Notes", "sentence": "#{'very ' * 200}long."}))[:long]
     assert_operator long.length, :<=, FieldSummaries::LONG_MAX_CHARS
+  end
+
+  test "a short summary over five words is asked for once more, with its count" do
+    file = text_file
+    long = '{"short": "Daniel and Anna on rest and album", "sentence": "A talk about rest and the album."}'
+    fixed = '{"short": "Rest and the album", "sentence": "Another sentence."}'
+    inference = run_with(file, [ long, fixed ])
+
+    file.reload
+    assert_equal "Rest and the album", file.summary_short
+    assert_equal "A talk about rest and the album.", file.summary_long, "the first sentence is kept"
+    assert_equal 2, inference.calls.size
+    assert_includes inference.calls.last[:user], "has 7 words"
+    assert_equal 1, file.summary_attempts, "the re-ask is part of one attempt"
+  end
+
+  test "still too long after the re-ask: the shorter answer is trimmed to five words" do
+    file = text_file
+    first = '{"short": "Daniel and Anna on rest and album", "sentence": "A talk."}'
+    second = '{"short": "Album visual concept and the Introphoria", "sentence": "x"}'
+    inference = run_with(file, [ first, second ])
+
+    assert_equal "Album visual concept", file.reload.summary_short, "no dangling 'and the'"
+    assert_equal 2, inference.calls.size
+  end
+
+  test "trim_short keeps five words and drops a dangling filler word or comma" do
+    assert_equal "Dog, food, and a reading", FieldSummaries.trim_short("Dog, food, and a reading on death")
+    assert_equal "Daniel and Anna talk album", FieldSummaries.trim_short("Daniel and Anna talk album, rest, control")
+    assert_equal "Appel famille", FieldSummaries.trim_short("Appel famille et de la caméra")
+    assert_equal "And", FieldSummaries.trim_short("And and and and and and")
   end
 
   test "extraction and a transcript becoming ready queue the summary" do

@@ -41,7 +41,8 @@ class UtilityInferenceTest < ActiveSupport::TestCase
     assert_equal "https://openrouter.ai/api/v1", captured[:options][:uri_base]
     assert_equal({ only: [ "anthropic" ], allow_fallbacks: false, data_collection: "deny" }, captured[:parameters][:provider])
     assert_equal "anthropic/claude-haiku-5.5", captured[:parameters][:model]
-    assert_equal 400, captured[:parameters][:max_tokens]
+    assert_equal 1_000, captured[:parameters][:max_tokens]
+    assert_equal({ effort: "none" }, captured[:parameters][:reasoning], "reasoning would eat the budget and leave no answer")
   end
 
   test "house calls without a house key make no request" do
