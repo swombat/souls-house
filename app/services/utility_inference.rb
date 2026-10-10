@@ -94,11 +94,16 @@ class UtilityInference
   # data_collection "deny" rules out providers that train on prompts; it does
   # not stop a provider retaining them (Anthropic: up to 30 days). Not metered
   # in the per-resident house ledger. Returns the text of the answer.
-  def self.house_chat(model:, provider:, system:, user:, max_tokens: 400)
+  #
+  # Reasoning is off: OpenRouter's max_tokens includes it, and with it on Haiku
+  # 5.5 sometimes spent the whole budget thinking and answered nothing
+  # (finish_reason "length", empty content; seen on live Field summaries,
+  # 2026-10-10).
+  def self.house_chat(model:, provider:, system:, user:, max_tokens: 1_000)
     validate_input!("#{system}#{user}")
     response = client(key: HouseInference::Offering.key, openrouter: true).chat(
       parameters: {
-        model: model, max_tokens: max_tokens,
+        model: model, max_tokens: max_tokens, reasoning: { effort: "none" },
         messages: [ { role: "system", content: system }, { role: "user", content: user } ],
         provider: { only: [ provider ], allow_fallbacks: false, data_collection: "deny" }
       }

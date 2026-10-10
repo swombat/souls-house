@@ -22,6 +22,12 @@ module FieldSummaries
   SHORT_MAX_WORDS = 5
   SHORT_MAX_CHARS = 80
   LONG_MAX_CHARS = 400
+  # Dropped from the end of a trimmed short summary so it doesn't stop on a
+  # dangling "and" or "the".
+  TRAILING_FILLER = %w[
+    a an and the of on in at to for with about or but by from
+    et de du des la le les un une sur avec pour ou
+  ].to_set.freeze
 
   SYSTEM = PromptTemplate.render("summarize_field_item", :system).freeze
 
@@ -35,10 +41,46 @@ module FieldSummaries
 
   # => { short:, long: }. Raises UtilityInference::Error when the call fails
   # or the answer can't be used.
+  #
+  # Haiku often answers the short one in six or seven words however the prompt
+  # puts it (live, 2026-10-10: four of seven recordings were refused three
+  # times and given up on). So a short one that is too long is not a failure:
+  # it is asked for once more with its word count, and if that is still too
+  # long the shorter answer is trimmed to five words.
   def summarize(item, inference: UtilityInference)
-    answer = inference.house_chat(model: MODEL, provider: PROVIDER, system: SYSTEM, user: user_prompt(item))
-    parse(answer)
+    user = user_prompt(item)
+    summary = parse(ask(inference, user))
+    return summary if short_fits?(summary[:short])
+
+    second = begin
+      parse(ask(inference, user + shorten_request(summary[:short])))[:short]
+    rescue UtilityInference::InvalidResponse
+      nil
+    end
+    return summary.merge(short: second) if second && short_fits?(second)
+
+    summary.merge(short: trim_short([ second, summary[:short] ].compact.min_by { it.split.size }))
   end
+
+  def ask(inference, user) = inference.house_chat(model: MODEL, provider: PROVIDER, system: SYSTEM, user: user)
+
+  def shorten_request(short)
+    "\nAn earlier answer's short summary, #{short.to_json}, has #{short.split.size} words. " \
+      "Answer again with a short summary of at most #{SHORT_MAX_WORDS} words.\n"
+  end
+
+  def short_fits?(short) = short.split.size <= SHORT_MAX_WORDS && short.length <= SHORT_MAX_CHARS
+
+  # The first five words, without a dangling filler word or punctuation at the
+  # end, and within the column's length.
+  def trim_short(short)
+    words = short.split.first(SHORT_MAX_WORDS)
+    words.pop while words.size > 1 && filler?(words[-1])
+    words.join(" ").sub(DANGLING, "").truncate(SHORT_MAX_CHARS, separator: " ", omission: "")
+  end
+
+  DANGLING = /[\s,;:&–—-]+\z/
+  def filler?(word) = (bare = word.sub(DANGLING, "")).empty? || TRAILING_FILLER.include?(bare.downcase)
 
   def user_prompt(item)
     source = item.summary_source.to_s
@@ -49,10 +91,10 @@ module FieldSummaries
       content: truncated ? "#{source[0, MAX_SOURCE_CHARS]}\n[… the rest is cut off]" : source)
   end
 
-  # The model is asked for a JSON object; take the first one in the answer and
-  # hold it to the shapes we display. The short one is enforced (at most five
-  # words); "one sentence" is only asked for, and the long one is capped by
-  # length, not checked for being a single sentence.
+  # The model is asked for a JSON object; take the first one in the answer.
+  # Both parts must be present. The short one's five words are held by
+  # summarize, not here; "one sentence" is only asked for, and the long one is
+  # capped by length, not checked for being a single sentence.
   def parse(answer)
     json = answer.to_s[/\{.*\}/m]
     data = json && JSON.parse(json)
@@ -60,7 +102,7 @@ module FieldSummaries
 
     short = clean(data["short"]).sub(/[.。]\z/, "")
     long = clean(data["sentence"])
-    if short.empty? || long.empty? || short.split.size > SHORT_MAX_WORDS || short.length > SHORT_MAX_CHARS
+    if short.empty? || long.empty?
       raise UtilityInference::InvalidResponse, "Summary answer has the wrong shape"
     end
 
