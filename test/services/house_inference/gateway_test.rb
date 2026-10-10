@@ -65,17 +65,24 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
     assert_not @grant.house_inference_calls.where(status: 'pending').exists?
   end
 
-  test 'a refused request (4xx) releases its reservation; a 5xx keeps it' do
-    upstream([], status: '404') do
+  test 'only the routing refusal releases its reservation; other 4xx and 5xx keep it' do
+    refusal = JSON.generate({ 'error' => { 'code' => 404, 'message' => 'No endpoints found that can handle the requested parameters. To learn more about provider routing, visit: https://openrouter.ai/docs' } })
+    upstream([ refusal ], status: '404') do
       assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
     end
     call = @grant.house_inference_calls.last
     assert_equal [ 'settled', BigDecimal('0') ], [ call.status, call.charge_usd ]
     assert_equal BigDecimal('0'), @grant.spent
-    upstream([], status: '502') do
-      assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
+
+    spent = BigDecimal('0')
+    [ [ '408', '' ], [ '400', refusal ], [ '404', JSON.generate({ 'error' => { 'message' => 'Model not found' } }) ],
+      [ '404', 'not json' ], [ '429', refusal ], [ '502', refusal ] ].each do |status, body|
+      upstream([ body ], status: status) do
+        assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
+      end
+      spent += BigDecimal('0.75')
+      assert_equal spent, @grant.spent, "#{status} #{body[0, 30]} must keep the conservative charge"
     end
-    assert_equal BigDecimal('0.75'), @grant.spent
     assert_not @grant.house_inference_calls.where(status: 'pending').exists?
   end
 

@@ -22,13 +22,17 @@ class HouseInference::RequestTest < ActiveSupport::TestCase
     assert_equal 'deepseek/deepseek-v4.1-flash', body['model']
   end
 
-  test 'parallel_tool_calls is accepted from the runtime but never sent upstream' do
+  test 'parallel_tool_calls true is honoured by omission; false and non-booleans are refused' do
     tool = { 'type' => 'function', 'function' => { 'name' => 'noop', 'parameters' => { 'type' => 'object', 'properties' => {} } } }
-    [ true, false ].each do |value|
-      body = HouseInference::Request.build(@input.merge('tools' => [ tool ], 'parallel_tool_calls' => value), @offering)
-      assert_not body.key?('parallel_tool_calls'), "parallel_tool_calls=#{value} must not reach OpenRouter"
-      assert_equal true, body.dig('provider', 'require_parameters')
-      assert_equal [ tool ], body['tools']
+    body = HouseInference::Request.build(@input.merge('tools' => [ tool ], 'parallel_tool_calls' => true), @offering)
+    assert_not body.key?('parallel_tool_calls'), 'parallel_tool_calls must not reach OpenRouter'
+    assert_equal true, body.dig('provider', 'require_parameters')
+    assert_equal [ tool ], body['tools']
+    [ false, nil, 'true', 1 ].each do |value|
+      error = assert_raises(HouseInference::Error, "parallel_tool_calls=#{value.inspect}") do
+        HouseInference::Request.build(@input.merge('tools' => [ tool ], 'parallel_tool_calls' => value), @offering)
+      end
+      assert_equal 422, error.status
     end
   end
 

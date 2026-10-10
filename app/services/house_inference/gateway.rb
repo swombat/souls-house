@@ -39,11 +39,12 @@ module HouseInference
       # A retry is a new admitted call, never a hidden repeat of a billed POST.
       http.request(request) do |response|
         unless response.is_a?(Net::HTTPSuccess)
-          # A 4xx is OpenRouter refusing the request before any provider runs
-          # it (no route, bad parameters, rate limit), so nothing is billed and
-          # the reservation is released. Only 5xx and broken responses keep the
-          # conservative charge: there the provider may have done the work.
-          call.settle!({ 'cost' => 0 }) if response.code.to_i.between?(400, 499)
+          # Only OpenRouter's own routing refusal is known to be unbilled: a 404
+          # saying no endpoint can serve the request, decided before any
+          # provider sees it (live check, 2026-10-10). It releases the
+          # reservation. Every other failure, including timeouts and other 4xx,
+          # keeps the conservative charge for reconciliation.
+          call.settle!({ 'cost' => 0 }) if self.class.routing_refusal?(response)
           raise Error.new('The pinned house provider could not complete this request. No personal credentials were used.', status: 502)
         end
         response.read_body do |chunk|
@@ -89,6 +90,21 @@ module HouseInference
       raise Error.new('House inference was interrupted. The call’s safety charge is retained pending reconciliation.', status: 502)
     ensure
       call&.settle!(nil, upstream_id: upstream_id)
+    end
+
+    ROUTING_REFUSAL = /\ANo endpoints found that (?:can handle|support) the requested parameters/
+    # Bounded: the refusal body is a small JSON error, never a completion.
+    def self.routing_refusal?(response)
+      return false unless response.code == '404'
+      body = +''
+      response.read_body do |chunk|
+        body << chunk
+        return false if body.bytesize > 16.kilobytes
+      end
+      message = JSON.parse(body).dig('error', 'message')
+      message.is_a?(String) && ROUTING_REFUSAL.match?(message)
+    rescue JSON::ParserError, IOError, SystemCallError, Timeout::Error
+      false
     end
 
   end
