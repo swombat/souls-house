@@ -67,6 +67,9 @@ Rails.application.routes.draw do
   post "telegram/webhook/:token", to: "telegram_webhooks#receive", as: :telegram_webhook
 
   # ElevenLabs speech-to-text results for Field recordings (HMAC-signed, no session)
+  # GitHub repository webhooks for repository watches (signed, no session)
+  post "webhooks/repositories/:receiver_token", to: "repository_webhooks#receive", as: :repository_webhook
+
   post "webhooks/elevenlabs/stt", to: "eleven_labs_stt_webhooks#create", as: :eleven_labs_stt_webhook
 
   # Comms connector events over the private network (HMAC-signed with each
@@ -426,6 +429,8 @@ Rails.application.routes.draw do
           resources :messages, only: :index
         end
       end
+      resources :repositories, only: %i[index create destroy]
+      resources :watches, only: %i[index show create destroy]
       resources :whiteboards, only: [ :index, :show, :create, :update, :destroy ] do
         resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"
         resource :tags, only: :update, controller: "field/item_tags"
