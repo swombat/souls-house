@@ -86,6 +86,37 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
     assert_not @grant.house_inference_calls.where(status: 'pending').exists?
   end
 
+  def refusal_response(chunks, status: '404')
+    response = Net::HTTPResponse::CODE_TO_OBJ.fetch(status).new('1.1', status, 'test')
+    response.define_singleton_method(:read_body) { |&block| chunks.each(&block) }
+    response
+  end
+
+  test 'routing refusal classifier honours the absolute deadline, the byte bound and the JSON shape' do
+    refusal = JSON.generate({ 'error' => { 'message' => 'No endpoints found that can handle the requested parameters.' } })
+    now = 100.0
+    Process.stub(:clock_gettime, ->(*) { now }) do
+      assert HouseInference::Gateway.routing_refusal?(refusal_response([ refusal ]), deadline: 200.0)
+      # Slow body: the deadline passes between chunks, or after the last one.
+      slow = refusal_response([ refusal[0, 10], refusal[10..] ])
+      slow.define_singleton_method(:read_body) { |&block| block.call(refusal[0, 10]); now = 300.0; block.call(refusal[10..]) }
+      assert_not HouseInference::Gateway.routing_refusal?(slow, deadline: 200.0)
+      now = 100.0
+      late = refusal_response([ refusal ])
+      late.define_singleton_method(:read_body) { |&block| block.call(refusal); now = 300.0 }
+      assert_not HouseInference::Gateway.routing_refusal?(late, deadline: 200.0)
+      now = 100.0
+      # Oversized body, even if it would otherwise match.
+      assert_not HouseInference::Gateway.routing_refusal?(refusal_response([ refusal, ' ' * 17.kilobytes ]), deadline: 200.0)
+      # Valid JSON of the wrong shape is not a refusal, and does not raise.
+      [ '[]', 'null', '"No endpoints found that can handle the requested parameters"', '{"error":"No endpoints found that can handle the requested parameters"}',
+        '{"error":{"message":["No endpoints found that can handle the requested parameters"]}}', '{"error":null}' ].each do |body|
+        assert_equal false, HouseInference::Gateway.routing_refusal?(refusal_response([ body ]), deadline: 200.0), body
+      end
+      assert_not HouseInference::Gateway.routing_refusal?(refusal_response([ refusal ], status: '400'), deadline: 200.0)
+    end
+  end
+
   test 'arbitrary model fails before a call is reserved' do
     @input['model'] = 'expensive/other-model'
     assert_raises(HouseInference::Error) { HouseInference::Gateway.new(agent: @agent, input: @input).call { |_| } }
