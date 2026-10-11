@@ -47,4 +47,16 @@ class StripeWebhooksControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, StripeEvent.where(stripe_event_id: "evt_1").count
   end
 
+
+  test "a signed retry recovers an event whose worker died mid-attempt, but not one still being worked" do
+    signed_post(payload)
+    event = StripeEvent.find_by!(stripe_event_id: "evt_1")
+    event.update_columns(status: "processing", attempts: StripeEvent::MAX_ATTEMPTS, updated_at: 1.minute.ago)
+    assert_no_enqueued_jobs(only: Billing::ProcessStripeEventJob) { signed_post(payload) }
+
+    event.update_columns(updated_at: 11.minutes.ago)
+    assert_enqueued_with(job: Billing::ProcessStripeEventJob, args: [ event.id ]) { signed_post(payload) }
+    assert_response :ok
+  end
+
 end

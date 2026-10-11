@@ -30,12 +30,15 @@ class StripeEvent < ApplicationRecord
   # Atomically takes an event for one attempt. Received and failed events can
   # be claimed, and so can one left in processing past STUCK_AFTER (its worker
   # died). Returns the claimed attempt number, or nil if another worker holds
-  # it or it is already processed.
+  # it or it is already processed. The attempt number comes back from the same
+  # UPDATE, so a worker stalled after claiming can't read a newer worker's.
   def self.claim(id, now: Time.current)
-    claimed = where(id: id)
-      .where("status IN ('received', 'failed') OR (status = 'processing' AND updated_at <= ?)", now - STUCK_AFTER)
-      .update_all([ "status = 'processing', attempts = attempts + 1, updated_at = ?", now ])
-    claimed == 1 ? where(id: id).pick(:attempts) : nil
+    sql = sanitize_sql_array([ <<~SQL, now, id, now - STUCK_AFTER ])
+      UPDATE stripe_events SET status = 'processing', attempts = attempts + 1, updated_at = ?
+      WHERE id = ? AND (status IN ('received', 'failed') OR (status = 'processing' AND updated_at <= ?))
+      RETURNING attempts
+    SQL
+    connection.select_value(sql)&.to_i
   end
 
   # Records the outcome of an attempt, only if that attempt still owns the
