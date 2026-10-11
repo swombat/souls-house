@@ -1,4 +1,5 @@
 <script>
+  import FieldSummary from '$lib/components/field/FieldSummary.svelte';
   import { Link, router } from '@inertiajs/svelte';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { Button, buttonVariants } from '$lib/components/shadcn/button/index.js';
@@ -83,11 +84,16 @@
           {#if recording.uploader_name}
             Brought by {recording.uploader_name}{recording.uploader_kind === 'resident' ? ' (resident)' : ''} ·
           {/if}
-          {#if recording.recorded_at}Recorded {formatWhen(recording.recorded_at)} · {/if}{formatWhen(recording.created_at)}
+          {#if recording.recorded_at}Recorded {formatWhen(recording.recorded_at)} ·
+          {/if}{formatWhen(recording.created_at)}
         </p>
       </div>
       {#if recording.summary_long}
-        <p class="text-sm" data-testid="field-recording-summary">{recording.summary_long}</p>
+        <FieldSummary
+          text={recording.summary_long}
+          pending={recording.summary_pending}
+          url={recording.resummarize_url}
+          testid="field-recording-summary" />
       {/if}
       {#if recording.note}
         <div>

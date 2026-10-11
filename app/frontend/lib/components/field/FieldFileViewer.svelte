@@ -1,4 +1,5 @@
 <script>
+  import FieldSummary from '$lib/components/field/FieldSummary.svelte';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { DownloadSimple, LinkSimple, Trash } from 'phosphor-svelte';
@@ -33,13 +34,16 @@
     </div>
 
     {#if file.summary_long}
-      <p class="text-sm" data-testid="field-file-summary">
-        {file.summary_long}
+      <FieldSummary
+        text={file.summary_long}
+        pending={file.summary_pending}
+        url={file.resummarize_url}
+        testid="field-file-summary">
         {#if file.summary_partial}
           <span class="text-muted-foreground" data-testid="field-file-summary-partial">
             (from the readable pages only)</span>
         {/if}
-      </p>
+      </FieldSummary>
     {/if}
 
     {#if file.note}

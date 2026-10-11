@@ -195,4 +195,46 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ %w[A speaker_0], %w[Yes speaker_1], %w[Yes speaker_2] ], spoken.map { |w| w.values_at("t", "spk") }
   end
 
+  test "the summary can be written again" do
+    recording = ready_recording(account: @account, user: @user)
+    recording.update_columns(summary_long: "Old.", summarized_at: 1.hour.ago)
+    with_house_summaries do
+      assert_enqueued_with(job: FieldItems::SummarizeJob) do
+        post resummarize_account_field_recording_path(@account, recording)
+      end
+    end
+    assert_response :redirect
+    assert_nil recording.reload.summarized_at
+  end
+
+  test "asking again while a summary is being written says so and queues nothing" do
+    recording = ready_recording(account: @account, user: @user)
+    recording.update_columns(summary_long: "Old.", summarized_at: nil, summary_claimed_at: 1.minute.ago)
+    with_house_summaries do
+      assert_no_enqueued_jobs(only: FieldItems::SummarizeJob) do
+        post resummarize_account_field_recording_path(@account, recording)
+      end
+    end
+    follow_redirect!
+    assert_equal "A summary is already being written.", inertia_props.dig("props", "errors", "summary")
+  end
+
+  test "another account's recording can't be resummarised" do
+    recording = ready_recording(account: accounts(:another_team), user: @user)
+    with_house_summaries { post resummarize_account_field_recording_path(@account, recording) }
+    assert_response :not_found
+  end
+
+  private
+
+  def with_house_summaries
+    previous = ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"]
+    ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"] = "test-key"
+    FieldSummaries.live = true
+    yield
+  ensure
+    ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"] = previous
+    FieldSummaries.live = false
+  end
+
 end

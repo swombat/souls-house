@@ -219,6 +219,27 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
     assert_nil pages.third["text"]
   end
 
+  test "a file's summary can be written again, and the list says one is coming" do
+    file = @account.field_files.create!(file: upload, title: "Orchard", uploaded_by: @user)
+    file.update_columns(extracted_text: "We replant the orchard.", text_extracted_at: Time.current,
+                        summary_long: "Old.", summarized_at: 1.hour.ago)
+    previous = ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"]
+    ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"] = "test-key"
+    FieldSummaries.live = true
+
+    assert_enqueued_with(job: FieldItems::SummarizeJob) do
+      post resummarize_account_field_file_path(@account, file)
+    end
+    assert_response :redirect
+    get account_field_path(@account, tab: "files", item: "file-#{file.to_param}")
+    item = inertia_props["items"].find { |i| i["id"] == file.to_param }
+    assert_equal [ true, "Old." ], item.values_at("summary_pending", "summary_long")
+    assert_equal resummarize_account_field_file_path(@account, file), item["resummarize_url"]
+  ensure
+    ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"] = previous
+    FieldSummaries.live = false
+  end
+
   private
 
   def inertia_props

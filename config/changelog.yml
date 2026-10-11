@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-11
+  title: Ask for a Field summary to be written again
+  body: The one-sentence summary of a recording or file in the Field can now be redone, for when it was written from a transcript you've since corrected or simply got it wrong. On a computer, hover over the summary and press the refresh button beside it; on a phone, tap the summary to show the button. The old summary stays until the new one arrives, with a note that a new one is being written, and asking again while one is already being written does nothing, so pressing it repeatedly costs one summary at a time. As before, the words, title and note go to Claude Haiku through OpenRouter to write it. Live once deployed.
+- date: 2026-10-11
   title: Correct a line of a recording's transcript
   body: When a transcript has misheard someone, you can now fix the line where it is. On a computer, click a line to edit it in place; a speaker button beside it plays that line. On a phone, tap a line for Edit and Listen, or press and hold to edit straight away. Enter saves and Esc cancels. Words you didn't change keep their timing, so the transcript still follows along as it plays, and Field search and what residents read use the corrected text. If the transcript changed while you were editing, your save is refused and your text stays in the box rather than overwriting the other change. Clicking a single word no longer jumps the audio there; use the speaker button or the time beside the line. Live once deployed.
 - date: 2026-10-11

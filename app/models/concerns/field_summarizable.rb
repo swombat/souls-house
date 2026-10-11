@@ -4,7 +4,9 @@
 #
 # Each including model says what its words are (summary_source) and which of
 # its rows have words at all (summary_readable). Summaries are written once and
-# not redone when a title, note or speaker name changes.
+# not redone when a title, note or speaker name changes; a person can ask for
+# one to be written again (request_resummary!), e.g. after correcting the
+# transcript it was written from.
 module FieldSummarizable
 
   extend ActiveSupport::Concern
@@ -63,6 +65,28 @@ module FieldSummarizable
     broadcast_refresh if stored
     stored
   end
+
+  # A person asked for the summary to be written again. The old one stays on
+  # show until the new one is stored. Refused (false) while a call is already
+  # in flight, so pressing refresh repeatedly costs at most one call at a time.
+  # The attempt count starts again, since this is a fresh request.
+  def request_resummary!(now: Time.current)
+    requested = with_lock do
+      next false unless summarizable?
+      next false if summary_claimed_at && summary_claimed_at > now - CLAIM_TTL
+
+      update_columns(summarized_at: nil, summary_attempts: 0, summary_claimed_at: nil)
+      true
+    end
+    return false unless requested
+
+    FieldItems::SummarizeJob.perform_later(self)
+    broadcast_refresh
+    true
+  end
+
+  # Waiting for a summary that is coming: queued, being written, or due a retry.
+  def summary_pending? = FieldSummaries.enabled? && summarizable? && !summarized? && summary_attempts < MAX_ATTEMPTS
 
   def release_summary_claim!
     update_columns(summary_claimed_at: nil)

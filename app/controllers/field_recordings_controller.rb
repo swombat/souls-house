@@ -3,7 +3,7 @@
 class FieldRecordingsController < ApplicationController
 
   require_feature_enabled :agents
-  before_action :set_field_recording, only: %i[show update destroy retry correct_line]
+  before_action :set_field_recording, only: %i[show update destroy retry correct_line resummarize]
 
   # The transcript page (spec §7). Words are sent whole: the page renders turns
   # from them, and clicking a word seeks the audio.
@@ -96,6 +96,21 @@ class FieldRecordingsController < ApplicationController
   def dismiss_you_hint
     Current.user.update_column(:field_you_hint_dismissed_at, Time.current)
     head :no_content
+  end
+
+  # Write the summary again, e.g. after correcting what it was written from.
+  # The page stays where it is; the new summary arrives by refresh.
+  def resummarize
+    item_path = account_field_path(current_account, tab: "recordings", item: "recording-#{@field_recording.to_param}")
+    unless FieldSummaries.enabled?
+      return redirect_back_or_to item_path, inertia: { errors: { summary: "Summaries aren't available right now." } }
+    end
+
+    if @field_recording.request_resummary!
+      redirect_back_or_to item_path
+    else
+      redirect_back_or_to item_path, inertia: { errors: { summary: "A summary is already being written." } }
+    end
   end
 
   private

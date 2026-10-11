@@ -1,7 +1,7 @@
 class FieldFilesController < ApplicationController
 
   require_feature_enabled :agents
-  before_action :set_field_file, only: %i[update destroy]
+  before_action :set_field_file, only: %i[update destroy resummarize]
 
   def create
     attributes = field_file_params
@@ -33,6 +33,21 @@ class FieldFilesController < ApplicationController
   def destroy
     @field_file.discard!
     redirect_to account_field_path(current_account, tab: "files"), notice: "Deleted from the Field."
+  end
+
+  # Write the summary again, e.g. after correcting what it was written from.
+  # The page stays where it is; the new summary arrives by refresh.
+  def resummarize
+    item_path = account_field_path(current_account, tab: "files", item: "file-#{@field_file.to_param}")
+    unless FieldSummaries.enabled?
+      return redirect_back_or_to item_path, inertia: { errors: { summary: "Summaries aren't available right now." } }
+    end
+
+    if @field_file.request_resummary!
+      redirect_back_or_to item_path
+    else
+      redirect_back_or_to item_path, inertia: { errors: { summary: "A summary is already being written." } }
+    end
   end
 
   private

@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/experimental-ct-svelte';
 import RecordingPage from '../../app/frontend/pages/field/recordings/show.svelte';
 import FieldPage from '../../app/frontend/pages/field/index.svelte';
 import VoicesPage from '../../app/frontend/pages/field/voices.svelte';
+import RecordingViewer from '../../app/frontend/lib/components/field/RecordingViewer.svelte';
 
 // Recordings in the Field (spec §7). Names here are made up.
 const account = { id: 'acct1', name: 'Wren House' };
@@ -852,4 +853,63 @@ test('the Voices page, house gate off: no switch, but a remembered voice can sti
   await expect(page.getByTestId('voices-forget-all')).toBeVisible();
   await expect(page.getByTestId('voice-meaning-backups')).toHaveCount(0);
   await page.screenshot({ path: 'tmp/field-voices-house-off.png', fullPage: true });
+});
+
+// Writing a summary again: a refresh button beside the summary, shown on
+// hover with a mouse and on tap on a phone.
+
+const summarised = {
+  ...recording,
+  summary_long: 'A father and his daughter talk through her feeling lost.',
+  summary_pending: false,
+  resummarize_url: '/accounts/acct1/field/recordings/r1/resummarize',
+};
+
+async function captureResummaries(page) {
+  const sent = [];
+  await page.route('**/accounts/acct1/field/recordings/r1/resummarize', async (route) => {
+    sent.push(route.request().method());
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  return sent;
+}
+
+test('with a mouse, the refresh button shows on hover and asks for a new summary', async ({ mount, page }) => {
+  const sent = await captureResummaries(page);
+  await mount(RecordingViewer, { props: { recording: summarised } });
+  const button = page.getByTestId('summary-refresh');
+  await expect(button).toHaveCSS('opacity', '0');
+  await page.getByTestId('field-recording-summary').hover();
+  await expect(button).toHaveCSS('opacity', '1');
+  await page.screenshot({ path: 'tmp/field-summary-refresh-desktop.png' });
+  await button.click();
+  await expect.poll(() => sent).toEqual(['POST']);
+});
+
+test('while a new summary is being written, the old one stays and the page says so', async ({ mount, page }) => {
+  await mount(RecordingViewer, { props: { recording: { ...summarised, summary_pending: true } } });
+  await expect(page.getByTestId('field-recording-summary')).toHaveText(summarised.summary_long);
+  await expect(page.getByTestId('summary-pending')).toHaveText('Writing a new summary…');
+  await expect(page.getByTestId('summary-refresh')).toBeDisabled();
+});
+
+test('with no way to redo it, there is no button', async ({ mount, page }) => {
+  await mount(RecordingViewer, { props: { recording: { ...summarised, resummarize_url: null } } });
+  await expect(page.getByTestId('field-recording-summary')).toBeVisible();
+  await expect(page.getByTestId('summary-refresh')).toHaveCount(0);
+});
+
+test.describe('summaries on a phone', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test('tapping the summary shows the refresh button', async ({ mount, page }) => {
+    const sent = await captureResummaries(page);
+    await mount(RecordingViewer, { props: { recording: summarised } });
+    await expect(page.getByTestId('summary-refresh')).toHaveCount(0);
+    await page.getByTestId('field-recording-summary').tap();
+    await expect(page.getByTestId('summary-refresh')).toBeVisible();
+    await page.screenshot({ path: 'tmp/field-summary-refresh-mobile.png' });
+    await page.getByTestId('summary-refresh').tap();
+    await expect.poll(() => sent).toEqual(['POST']);
+  });
 });
