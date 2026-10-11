@@ -39,3 +39,42 @@ export function agentNameWithUsage(name, remaining, showUsage) {
   const formatted = remaining.toFixed(remaining % 1 === 0 ? 0 : 1);
   return `${name} (${formatted}% left)`;
 }
+
+function compareNames(a, b) {
+  return (a?.name || '').localeCompare(b?.name || '', undefined, { sensitivity: 'base' });
+}
+
+function hasRemaining(value) {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+// Residents with a subscription (and so a weekly percentage left) come first,
+// most available first. Everyone else follows in alphabetical order. Ties on
+// percentage fall back to the name so the order stays stable.
+export function sortAgentsByAvailability(agents = [], remainingById = {}) {
+  return [...agents].sort((a, b) => {
+    const ra = remainingById[a.id];
+    const rb = remainingById[b.id];
+    const ha = hasRemaining(ra);
+    const hb = hasRemaining(rb);
+    if (ha && hb && ra !== rb) return rb - ra;
+    if (ha !== hb) return ha ? -1 : 1;
+    return compareNames(a, b);
+  });
+}
+
+// Loads every resident's weekly remaining percentage (cached per resident) and
+// calls onUpdate(agentId, percent | null) as each arrives. Callers merge into
+// their existing map, so a refresh keeps the current order until new numbers
+// land instead of flickering back to alphabetical. Returns a cancel function.
+export function watchAgentsWeeklyRemaining(accountId, agents, onUpdate) {
+  let cancelled = false;
+  for (const agent of agents) {
+    Promise.resolve(loadAgentWeeklyRemaining(accountId, agent)).then((value) => {
+      if (!cancelled) onUpdate(agent.id, value);
+    });
+  }
+  return () => {
+    cancelled = true;
+  };
+}

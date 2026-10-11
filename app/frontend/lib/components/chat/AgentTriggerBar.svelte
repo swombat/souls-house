@@ -5,6 +5,7 @@
   import { agentIconFor } from '$lib/agent-icons';
   import AgentUsageName from '$lib/components/chat/AgentUsageName.svelte';
   import AgentModelControl from '$lib/components/chat/AgentModelControl.svelte';
+  import { sortAgentsByAvailability, watchAgentsWeeklyRemaining } from '$lib/agent-subscription-usage';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { onDestroy } from 'svelte';
 
@@ -36,6 +37,14 @@
   // model_selection for that resident (the prop may not reload after a PATCH).
   let savedSelections = $state({});
   let savingModelFor = $state(null);
+  let remainingById = $state({});
+  let sortedAgents = $derived(sortAgentsByAvailability(agents, remainingById));
+
+  $effect(() =>
+    watchAgentsWeeklyRemaining(accountId, agents, (id, value) => {
+      if (remainingById[id] !== value) remainingById = { ...remainingById, [id]: value };
+    })
+  );
 
   function csrfHeaders() {
     return {
@@ -199,7 +208,7 @@
   <div class="border-t border-border px-3 md:px-6 py-3 bg-muted/20">
     <div class="flex items-center gap-2 flex-wrap">
       <span class="text-xs text-muted-foreground mr-2 hidden md:inline">Ask resident:</span>
-      {#each agents as agent (agent.id)}
+      {#each sortedAgents as agent (agent.id)}
         {@const IconComponent = agentIconFor(agent.icon)}
         {@const selection = selectionFor(agent)}
         {@const withModel = showsModelControl(selection)}
