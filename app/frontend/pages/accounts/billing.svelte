@@ -155,8 +155,8 @@
 
     <p class="text-xs text-muted-foreground">
       30-day money-back guarantee: if a plan isn't right for you, email
-      <a class="underline" href="mailto:hello@souls.house">hello@souls.house</a> within 30 days of a payment and we'll refund
-      it.
+      <a class="underline" href={`mailto:${billing.contact_email}`}>{billing.contact_email}</a> within 30 days of a payment
+      and we'll refund it.
     </p>
 
     {#if !billing.can_pay}

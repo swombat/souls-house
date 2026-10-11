@@ -18,7 +18,9 @@ class Accounts::BillingsController < ApplicationController
         configured: Billing.configured?,
         test_mode: Billing.test_mode?,
         has_customer: BillingCustomer.exists?(account: current_account),
-        can_pay: current_account.owned_by?(Current.user)
+        can_pay: current_account.owned_by?(Current.user),
+        # Where refund requests under the 30-day guarantee go: the house's own mail address.
+        contact_email: Mail::Address.new(ApplicationMailer.default[:from]).address
       },
       tiers: Billing::Tier.all.as_json,
       residents: residents_json
