@@ -74,10 +74,84 @@ module Api
         assert_empty response.parsed_body["repositories"]
       end
 
-      test "residents cannot connect repositories" do
-        post api_v1_repositories_url, params: { full_name: "swombat/third" }, headers: resident_headers(@user, @resident), as: :json
-        assert_includes [ 401, 403 ], response.status
+      test "a resident with a grant connects a repository through that connection, recorded as its own" do
+        github = FakeGithub.new
+        with_fake_github(github) do
+          post api_v1_repositories_url, params: { full_name: "swombat/third" }, headers: resident_headers(@user, @resident), as: :json
+        end
+        assert_response :created
+        body = response.parsed_body["repository"]
+        assert_equal [ "swombat/third", "installing", @connection.public_id ], body.values_at("full_name", "hook_status", "service_connection_id")
+        assert_equal({ "type" => "resident", "id" => @resident.to_param, "name" => "Watcher" }, body["connected_by"])
+        refute body.key?("setup"), "a resident never sees the hook secret"
+        assert_includes github.calls.map(&:first), :create_hook, "the hook is installed with the granted connection's token"
+
+        repository = WatchedRepository.find_by!(full_name: "swombat/third")
+        assert_equal [ @resident.id, nil, @connection.id ], [ repository.created_by_agent_id, repository.created_by_user_id, repository.service_connection_id ]
+        audit = AuditLog.find_by!(action: "repository_watch.connect", auditable: repository)
+        assert_equal [ @resident.id, "resident" ], audit.data.values_at("agent_id", "actor")
+      end
+
+      test "a resident without a grant cannot connect a repository" do
+        @resident.agent_service_accesses.update_all(enabled: false)
+        with_fake_github do
+          post api_v1_repositories_url, params: { full_name: "swombat/third" }, headers: resident_headers(@user, @resident), as: :json
+        end
+        assert_response :forbidden
         assert_equal 1, WatchedRepository.count
+      end
+
+      test "a resident cannot connect through a GitHub connection it holds no grant on" do
+        other = @account.service_connections.create!(
+          connected_by_user: @user, provider: "github", external_subject_id: "github-other", external_identity: "other",
+          management_scope: "personal", credential_kind: "token", credential_fingerprint: "fp-other",
+          credential_payload_hash: { "token" => "github_pat_other" }
+        )
+        with_fake_github do
+          post api_v1_repositories_url, params: { full_name: "swombat/third", service_connection_id: other.public_id },
+                                        headers: resident_headers(@user, @resident), as: :json
+        end
+        assert_response :not_found
+        assert_equal 1, WatchedRepository.count
+      end
+
+      test "a grant on a connection that is no longer connected does not let a resident connect" do
+        @connection.update_columns(status: "revoked")
+        with_fake_github do
+          post api_v1_repositories_url, params: { full_name: "swombat/third" }, headers: resident_headers(@user, @resident), as: :json
+        end
+        assert_response :forbidden
+        assert_equal 1, WatchedRepository.count
+      end
+
+      test "when GitHub refuses the resident's connection the hook, it is left for manual setup without the secret" do
+        github = FakeGithub.new
+        def github.create_hook(*, **) = raise(RepositoryWatches::GithubClient::Error.new("Not Found", status: 404))
+        with_fake_github(github) do
+          post api_v1_repositories_url, params: { full_name: "swombat/third" }, headers: resident_headers(@user, @resident), as: :json
+        end
+        assert_response :created
+        assert_equal "manual", response.parsed_body.dig("repository", "hook_status")
+        refute response.parsed_body["repository"].key?("setup"), "the secret is for a person who can manage the connection"
+      end
+
+      test "a resident disconnects a repository it connected, but not one someone else connected" do
+        with_fake_github do
+          post api_v1_repositories_url, params: { full_name: "swombat/third" }, headers: resident_headers(@user, @resident), as: :json
+        end
+        mine = WatchedRepository.find(response.parsed_body.dig("repository", "id"))
+
+        with_fake_github do
+          delete api_v1_repository_url(@repository.to_param), headers: resident_headers(@user, @resident)
+        end
+        assert_response :forbidden
+        refute @repository.reload.removed?
+
+        with_fake_github do
+          delete api_v1_repository_url(mine.to_param), headers: resident_headers(@user, @resident)
+        end
+        assert_response :no_content
+        assert mine.reload.removed?
       end
 
       test "a person connects a repository; GitHub refusing the hook leaves it for manual setup" do

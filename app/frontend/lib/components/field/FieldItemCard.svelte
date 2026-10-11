@@ -4,6 +4,7 @@
   import { formatWhen } from '$lib/field';
   import { formatDuration, recordingStatusLine } from '$lib/field-recordings';
   import { File, Microphone, Notepad } from 'phosphor-svelte';
+  import UnnamedSpeakersBadge from './UnnamedSpeakersBadge.svelte';
 
   let { item, selected = false, onSelect } = $props();
 
@@ -22,10 +23,18 @@
           <Notepad class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
         {/if}
         <div class="flex-1 min-w-0">
-          <h3 class="font-semibold truncate">{item.title}</h3>
+          <div class="flex items-center gap-2">
+            <h3 class="font-semibold truncate flex-1 min-w-0">{item.title}</h3>
+            {#if item.kind === 'recording' && item.status === 'ready'}
+              <UnnamedSpeakersBadge count={item.unnamed_speakers} size="md" />
+            {/if}
+          </div>
           {#if item.summary_short}
             <!-- The house's few-word gist; the sentence is on hover until the layout is reworked. -->
-            <p class="text-sm truncate" title={item.summary_long || item.summary_short} data-testid="field-item-summary">
+            <p
+              class="text-sm truncate"
+              title={item.summary_long || item.summary_short}
+              data-testid="field-item-summary">
               {item.summary_short}
             </p>
           {/if}

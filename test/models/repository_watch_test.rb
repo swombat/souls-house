@@ -144,7 +144,7 @@ class RepositoryWatchTest < ActiveSupport::TestCase
   test "with no public URL the hook is not installed and the repository says why" do
     Rails.configuration.x.public_url = nil
     github = FakeGithub.new
-    repository = with_fake_github(github) { WatchedRepository.connect!(connection: @connection, full_name: "swombat/third", user: @user) }
+    repository = with_fake_github(github) { WatchedRepository.connect!(connection: @connection, full_name: "swombat/third", by: @user) }
     assert_equal "failed", repository.hook_status
     assert_match(/no public URL/, repository.hook_error)
     refute github.calls.any? { |call| call.first == :create_hook }

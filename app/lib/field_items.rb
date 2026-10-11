@@ -99,6 +99,7 @@ module FieldItems
   end
 
   def recording_json(recording, tags = [])
+    speakers = recording.ready? ? speakers_of(recording).to_a : []
     {
       key: "recording-#{recording.to_param}",
       kind: "recording",
@@ -118,7 +119,10 @@ module FieldItems
       transcript_source: recording.transcript_source,
       recorded_at: recording.recorded_at&.iso8601,
       source_path: recording.source_path,
-      speaker_names: recording.ready? ? speakers_of(recording).map(&:display_name) : [],
+      speaker_names: speakers.map(&:display_name),
+      # How many speakers still read "Speaker N", so the list can show the
+      # recording is waiting for someone to name them.
+      unnamed_speakers: speakers.count(&:unnamed?),
       # Deleting after this point doesn't give the minutes back (spec §5).
       dispatched: recording.dispatch_count.positive?,
       retryable: recording.kept? && FieldRecording::RETRYABLE_STATUSES.include?(recording.status) && recording.audio.attached?,
