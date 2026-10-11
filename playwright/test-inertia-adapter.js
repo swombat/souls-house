@@ -272,16 +272,19 @@ export const router = {
 
   request: async (method, url, data = {}, options = {}) => {
     try {
+      // FormData goes as multipart, as Inertia sends it (the browser sets the
+      // boundary); anything else as JSON.
+      const multipart = typeof FormData !== 'undefined' && data instanceof FormData;
       const response = await fetch(url, {
         method: method,
         headers: {
-          'Content-Type': 'application/json',
+          ...(multipart ? {} : { 'Content-Type': 'application/json' }),
           'X-Inertia': 'true',
           'X-Requested-With': 'XMLHttpRequest',
           Accept: 'application/json',
         },
         credentials: 'include',
-        body: method !== 'GET' ? JSON.stringify(data) : undefined,
+        body: method === 'GET' ? undefined : multipart ? data : JSON.stringify(data),
       });
 
       let responseData = {};

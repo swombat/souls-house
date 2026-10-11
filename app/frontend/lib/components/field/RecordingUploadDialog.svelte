@@ -1,7 +1,6 @@
 <script>
   import { untrack } from 'svelte';
   import { router } from '@inertiajs/svelte';
-  import { DirectUpload } from '@rails/activestorage';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Input } from '$lib/components/shadcn/input/index.js';
@@ -9,6 +8,7 @@
   import SummariesNotice from '$lib/components/field/SummariesNotice.svelte';
   import { formatBytes } from '$lib/field';
   import { formatDuration, guessSpeakers, preflightProblem } from '$lib/field-recordings';
+  import { directUpload } from '$lib/field-direct-upload';
 
   let {
     open = $bindable(false),
@@ -116,36 +116,6 @@
     readDuration(chosen);
   }
 
-  function upload(chosen, current) {
-    return new Promise((resolve, reject) => {
-      current.fail = reject;
-      // DirectUpload hands over each XHR just before sending it. If the attempt
-      // was abandoned meanwhile (say, during the checksum), it is never sent.
-      const track = (xhr) => {
-        if (current.cancelled) xhr.send = () => {};
-        else current.xhrs.push(xhr);
-      };
-      const delegate = {
-        directUploadWillCreateBlobWithXHR: (xhr) => {
-          current.createXhr = xhr;
-          track(xhr);
-        },
-        directUploadWillStoreFileWithXHR: (xhr) => {
-          track(xhr);
-          xhr.upload.addEventListener('progress', (e) => {
-            if (attempt === current && e.lengthComputable) progress = e.loaded / e.total;
-          });
-        },
-      };
-      const direct = new DirectUpload(chosen, `/accounts/${accountId}/field/recordings/uploads`, delegate);
-      direct.create((failure, blob) => {
-        if (current.cancelled) return;
-        if (failure) reject(current.createXhr?.response?.error || 'The upload stopped. Please try again.');
-        else resolve(blob);
-      });
-    });
-  }
-
   async function submit(event) {
     event.preventDefault();
     if (!file || tooLarge || busy) return;
@@ -156,7 +126,9 @@
     progress = 0;
     let blob;
     try {
-      blob = await upload(file, current);
+      blob = await directUpload(file, `/accounts/${accountId}/field/recordings/uploads`, current, (fraction) => {
+        if (attempt === current) progress = fraction;
+      });
     } catch (failure) {
       if (failure === CANCELLED || current.cancelled) return;
       attempt = null;

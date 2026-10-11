@@ -129,7 +129,8 @@ souls field date note NOTE_ID --clear
 
 `date` sends `PATCH` with `recorded_at` (recordings) or `dated_at` (files and
 notes); for a note it reads the note's `lock_version` first. Redating a note is
-not an edit of it.
+not an edit of it. `--clear` returns the item to the Field's default date
+ordering: upload time for a recording or file, last edit for a note.
 
 ## Anything else: `souls api`
 

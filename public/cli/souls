@@ -964,7 +964,9 @@ def build_parser():
     fp.add_argument("kind", choices=sorted(FIELD_DATE_TARGETS), help="what ID names")
     fp.add_argument("id", metavar="ID")
     fp.add_argument("date", nargs="?", metavar="ISO_DATE", help="2019-03-14 or 2019-03-14T09:30:00Z")
-    fp.add_argument("--clear", action="store_true", help="remove the date; the Field orders it by upload time again")
+    fp.add_argument("--clear", action="store_true",
+                    help="remove the date; the Field goes back to its default date ordering "
+                         "(upload time; for a note, its last edit)")
     fp.set_defaults(func=cmd_field_date)
 
     p = add("glossary", cmd_glossary, "The account's transcription glossary: list, add, remove, pin, unpin")

@@ -3,10 +3,7 @@
   import { router } from '@inertiajs/svelte';
   import { createDynamicSync } from '$lib/use-sync';
   import * as Card from '$lib/components/shadcn/card/index.js';
-  import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { Input } from '$lib/components/shadcn/input/index.js';
-  import { Label } from '$lib/components/shadcn/label/index.js';
   import WhiteboardViewer from '$lib/components/whiteboards/WhiteboardViewer.svelte';
   import FieldFileViewer from '$lib/components/field/FieldFileViewer.svelte';
   import NoteHistory from '$lib/components/field/NoteHistory.svelte';
@@ -19,11 +16,11 @@
   import FieldEmpty from '$lib/components/field/FieldEmpty.svelte';
   import FieldSearchBar from '$lib/components/field/FieldSearchBar.svelte';
   import FieldSearchResults from '$lib/components/field/FieldSearchResults.svelte';
-  import SummariesNotice from '$lib/components/field/SummariesNotice.svelte';
   import FieldActions from '$lib/components/field/FieldActions.svelte';
   import FieldSharing from '$lib/components/field/FieldSharing.svelte';
   import FieldNoteDialog from '$lib/components/field/FieldNoteDialog.svelte';
-  import { fieldItemLink, formatBytes } from '$lib/field';
+  import FieldFileUploadDialog from '$lib/components/field/FieldFileUploadDialog.svelte';
+  import { fieldItemLink } from '$lib/field';
   import { CaretLeft } from 'phosphor-svelte';
 
   let {
@@ -177,50 +174,7 @@
 
   let recordingOpen = $state(false);
 
-  // Add file
   let uploadOpen = $state(false);
-  let uploadFile = $state(null);
-  let uploadTitle = $state('');
-  let uploadNote = $state('');
-  let uploadDate = $state('');
-  let uploadError = $state('');
-  let uploadTooLarge = $state(false);
-  let uploading = $state(false);
-
-  function chooseFile(event) {
-    const file = event.currentTarget.files?.[0] || null;
-    uploadError = '';
-    uploadTooLarge = false;
-    uploadFile = file;
-    if (file && file.size > max_file_bytes) {
-      uploadTooLarge = true;
-      uploadError = `${file.name} is ${formatBytes(file.size)}. The limit is ${max_file_label}.`;
-    }
-  }
-
-  function submitUpload(event) {
-    event.preventDefault();
-    if (!uploadFile || uploadTooLarge) return;
-    uploadError = '';
-    const body = new FormData();
-    body.append('field_file[file]', uploadFile);
-    if (uploadTitle.trim()) body.append('field_file[title]', uploadTitle.trim());
-    if (uploadNote.trim()) body.append('field_file[note]', uploadNote.trim());
-    if (uploadDate) body.append('field_file[dated_at]', uploadDate);
-    uploading = true;
-    router.post(`/accounts/${account.id}/field/files`, body, {
-      preserveState: true,
-      onSuccess: () => {
-        uploadOpen = false;
-        uploadFile = null;
-        uploadTitle = '';
-        uploadNote = '';
-        uploadDate = '';
-      },
-      onError: (errors) => (uploadError = errors.dated_at || errors.file || 'The upload failed. Please try again.'),
-      onFinish: () => (uploading = false),
-    });
-  }
 
   let noteOpen = $state(false);
 
@@ -435,55 +389,13 @@
   {/if}
 </div>
 
-<Dialog.Root bind:open={uploadOpen}>
-  <Dialog.Content class="sm:max-w-lg">
-    <Dialog.Header>
-      <Dialog.Title>Add a file to the Field</Dialog.Title>
-      <Dialog.Description
-        >{sharedLine}
-        {#if summaries_enabled}<SummariesNotice kind="file" />{/if}</Dialog.Description>
-    </Dialog.Header>
-    <form onsubmit={submitUpload} class="space-y-4">
-      <div class="space-y-1">
-        <Label for="field-file">File (up to {max_file_label})</Label>
-        <Input id="field-file" type="file" onchange={chooseFile} required />
-        <p class="text-xs text-muted-foreground">
-          Any kind of file can be kept here. Residents may not be able to read every format.
-        </p>
-      </div>
-      <div class="space-y-1">
-        <Label for="field-title">Title</Label>
-        <Input id="field-title" bind:value={uploadTitle} maxlength={200} placeholder={uploadFile?.name || ''} />
-      </div>
-      <div class="space-y-1">
-        <Label for="field-note">Why I'm bringing this <span class="text-muted-foreground">(optional)</span></Label>
-        <textarea
-          id="field-note"
-          bind:value={uploadNote}
-          maxlength={2000}
-          rows="3"
-          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          placeholder="I came away uneasy, but I don't know why."></textarea>
-      </div>
-      <div class="space-y-1">
-        <Label for="field-dated-at">Date <span class="text-muted-foreground">(optional)</span></Label>
-        <Input id="field-dated-at" type="date" class="w-44" bind:value={uploadDate} data-testid="field-file-date" />
-        <p class="text-xs text-muted-foreground">
-          When it's from, for older material. The Field orders it by this date.
-        </p>
-      </div>
-      {#if uploadError}
-        <p class="text-sm text-destructive" role="alert">{uploadError}</p>
-      {/if}
-      <Dialog.Footer>
-        <Button type="button" variant="ghost" onclick={() => (uploadOpen = false)}>Cancel</Button>
-        <Button type="submit" disabled={!uploadFile || uploadTooLarge || uploading}>
-          {uploading ? 'Uploading…' : 'Add to the Field'}
-        </Button>
-      </Dialog.Footer>
-    </form>
-  </Dialog.Content>
-</Dialog.Root>
+<FieldFileUploadDialog
+  bind:open={uploadOpen}
+  accountId={account.id}
+  {sharedLine}
+  summariesEnabled={summaries_enabled}
+  maxBytes={max_file_bytes}
+  maxLabel={max_file_label} />
 
 <RecordingUploadDialog
   bind:open={recordingOpen}
