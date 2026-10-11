@@ -71,18 +71,14 @@ module FieldFile::PdfExtraction
     store_pdf_result(result)
     broadcast_refresh
     # Scanned or nearly empty pages are transcribed first (FieldOcr), and the
-    # summary written once that's done.
-    if ocr_wanted?
-      pdf_coverage_merge!("ocr" => "pending")
+    # summary written once that's done. "pending" was stored with the text,
+    # in the same write, so no summary can slip in between.
+    if pdf_transcription_pending?
       FieldFiles::OcrPdfJob.perform_later(id)
     else
       enqueue_summary
     end
     true
-  end
-
-  def ocr_wanted?
-    pdf_readable? && FieldOcr.eligible?(self) && pages.any? { FieldOcr.candidate?(it) && it.model_status.nil? }
   end
 
   # Recomputes the joined text and coverage from the stored pages, after
@@ -98,9 +94,7 @@ module FieldFile::PdfExtraction
       extracted_text: joined, text_extracted_at: Time.current)
   end
 
-  def pdf_coverage_merge!(values)
-    update_columns(pdf_coverage: (pdf_coverage || {}).merge(values))
-  end
+
 
   def pdf_extraction_json
     return nil unless pdf_status
@@ -157,6 +151,12 @@ module FieldFile::PdfExtraction
     parts << "#{Pages.describe(truncated)}: text cut short." if truncated.any?
     cut = pages.where(model_status: "text").where("model_reason IS NOT NULL").pluck(:page_number)
     parts << "#{Pages.describe(cut)}: transcription cut short." if cut.any?
+    # A page with a little text of its own over a picture that wasn't
+    # transcribed: the picture's text is unread even though the page has some.
+    picture_unread = pages.where(native_status: "text", model_status: %w[failed skipped]).pluck(:page_number)
+    if picture_unread.any?
+      parts << "#{Pages.describe(picture_unread)}: a picture on the page could not be transcribed, so its text is not included."
+    end
     parts << "Only the beginning of the text is included." if (pdf_coverage || {})["search_text_truncated"]
     return nil if parts.size == 1
 
@@ -273,6 +273,9 @@ module FieldFile::PdfExtraction
       .map { |row| MODEL_COLUMNS.index_with { nil }.merge(row).merge(kept[row[:page_number]] || {}) }
     joined, joined_truncated = joined_text(rows)
     coverage = result[:status] ? nil : coverage_for(rows, result, joined_truncated)
+    if coverage && FieldOcr.eligible?(self) && rows.any? { FieldOcr.candidate?(it) && it[:model_status].nil? }
+      coverage["ocr"] = "pending"
+    end
     status, reason = result[:status] ? [ result[:status], result[:reason] ] : outcome(coverage)
 
     with_lock do
@@ -297,7 +300,9 @@ module FieldFile::PdfExtraction
     whole_model = ->(row) { row[:model_status] == "empty" || (row[:model_status] == "text" && row[:model_reason].nil?) }
     # A transcription that failed or was skipped leaves a picture unread, so
     # that page isn't covered even if it has a little text of its own.
-    own = ->(row) { row[:native_status] == "text" && row[:native_reason].nil? && !row[:model_status].in?(%w[failed skipped]) }
+    # Once a page was sent, only a whole transcription covers it: the page's
+    # own few words can't vouch for the picture under them.
+    own = ->(row) { row[:native_status] == "text" && row[:native_reason].nil? && row[:model_status].nil? }
     counts["covered"] = rows.count { own.(it) || whole_model.(it) }
     cut = rows.count { it[:model_status] == "text" && it[:model_reason] }
     counts["model_cut"] = cut if cut.positive?

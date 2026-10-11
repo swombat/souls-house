@@ -164,10 +164,10 @@ class FieldOcrTest < ActiveSupport::TestCase
   end
 
   test "a cut answer with no text is a failure, not a blank page" do
-    result = FieldOcr.transcribe("png", page_number: 1, page_count: 1,
+    result = FieldOcr.transcribe("png", page_number: 1, page_count: 1, timeout: 30,
       inference: Struct.new(:x) { def house_vision(**) = { text: "", usage: nil, id: "g", finish_reason: "content_filter" } }.new)
     assert_equal [ "failed", true ], result.values_at(:status, :cut)
-    result = FieldOcr.transcribe("png", page_number: 1, page_count: 1,
+    result = FieldOcr.transcribe("png", page_number: 1, page_count: 1, timeout: 30,
       inference: Struct.new(:x) { def house_vision(**) = { text: "[no text]", usage: nil, id: "g", finish_reason: "stop" } }.new)
     assert_equal [ "empty", false ], result.values_at(:status, :cut)
   end
@@ -275,13 +275,183 @@ class FieldOcrTest < ActiveSupport::TestCase
 
   test "the model's answer is cleaned and capped" do
     vision = FakeVision.new([ " \u0000Hello\u0000 " ])
-    result = FieldOcr.transcribe("png", page_number: 1, page_count: 1, inference: vision)
+    result = FieldOcr.transcribe("png", page_number: 1, page_count: 1, timeout: 30, inference: vision)
     assert_equal [ "text", "Hello", false ], result.values_at(:status, :text, :cut)
 
     with_constant(FieldOcr, :MAX_TEXT_CHARS, 3) do
-      result = FieldOcr.transcribe("png", page_number: 1, page_count: 1, inference: FakeVision.new([ "Hello" ]))
+      result = FieldOcr.transcribe("png", page_number: 1, page_count: 1, timeout: 30, inference: FakeVision.new([ "Hello" ]))
       assert_equal [ "Hel", true ], result.values_at(:text, :cut)
     end
+  end
+
+  # --- Mira's review of cc37f12 ---
+
+  test "while transcription is pending, neither the sweep nor a direct job can summarise" do
+    file = field_pdf(@account, "mixed.pdf")
+    file.extract_pdf!
+    file.reload
+    assert file.pdf_transcription_pending?, "pending is stored with the text, in the same write"
+
+    assert_not_includes FieldFile.summary_readable, file
+    assert_not_includes FieldFile.summary_due, file
+    assert_not file.summarizable?
+    assert_not file.claim_summary!
+
+    file.transcribe_pdf!(inference: FakeVision.new([ "Scanned receipt.", FieldOcr::NO_TEXT ]))
+    file.reload
+    assert_includes FieldFile.summary_due, file
+    assert file.claim_summary!
+  end
+
+  test "a page held by another worker keeps the file pending and looks again later" do
+    file = field_pdf(@account, "mixed.pdf")
+    file.extract_pdf!
+    FieldOcrCall.create!(account: @account, field_file: file, page_number: 3, day: FieldOcr.day,
+      charge_usd: FieldOcr::RESERVE_USD, model_id: FieldOcr::MODEL)
+
+    vision = FakeVision.new([ FieldOcr::NO_TEXT ])
+    assert_enqueued_with(job: FieldFiles::OcrPdfJob, args: [ file.id ]) { file.transcribe_pdf!(inference: vision) }
+    file.reload
+
+    assert_equal [ "Page 4 of 4. Transcribe it.\n" ], vision.calls.map { it[:text] }
+    assert_nil file.pages.third.model_status
+    assert file.pdf_transcription_pending?
+    assert_not file.summarizable?
+  end
+
+  test "turned off while pending, the file still reaches an honest end" do
+    file = field_pdf(@account, "mixed.pdf")
+    file.extract_pdf!
+    Setting.instance.update!(field_ocr_enabled: false)
+
+    vision = FakeVision.new
+    assert file.transcribe_pdf!(inference: vision)
+    file.reload
+    assert_empty vision.calls
+    assert_equal [ nil, nil, "skipped", "skipped" ], file.pages.map(&:model_status)
+    assert_equal "Transcription was turned off", file.pages.last.model_reason
+    assert_equal "done", file.pdf_extraction_json[:transcription]
+    assert_not file.pdf_complete?
+    assert file.summarizable?
+  end
+
+  test "a heading cannot vouch for a cut transcription of the scan under it" do
+    %w[length content_filter].each do |finish|
+      file = field_pdf(@account, "heading_over_scan.pdf")
+      file.extract_pdf!
+      vision = FakeVision.new
+      vision.define_singleton_method(:house_vision) { |**| { text: "Quarterly note\nBody", usage: { "cost" => 0.0003 }, id: "g", finish_reason: finish } }
+      file.transcribe_pdf!(inference: vision)
+      file.reload
+
+      assert_equal 1, file.pdf_extraction_json[:pages_transcription_cut], finish
+      assert_not file.pdf_extraction_json[:complete], finish
+      assert_includes FieldSummaries.user_prompt(file), "Page 1: transcription cut short.", finish
+    end
+  end
+
+  test "a heading over a scan that wasn't transcribed says the picture is unread" do
+    failed = field_pdf(@account, "heading_over_scan.pdf")
+    failed.extract_pdf!
+    failed.transcribe_pdf!(inference: FakeVision.new([ UtilityInference::InvalidResponse.new("boom") ]))
+
+    Setting.instance.update!(field_ocr_daily_usd_ceiling: 0)
+    skipped = field_pdf(@account, "heading_over_scan.pdf")
+    skipped.extract_pdf!
+    skipped.transcribe_pdf!(inference: FakeVision.new)
+
+    [ failed, skipped ].each do |file|
+      file.reload
+      assert_not file.pdf_complete?
+      prompt = FieldSummaries.user_prompt(file)
+      assert_includes prompt, "Page 1: a picture on the page could not be transcribed, so its text is not included."
+      assert_includes prompt.split("<material>", 2).last, "Quarterly note"
+    end
+  end
+
+  test "the model call gets no more than the time left after rendering" do
+    file = field_pdf(@account, "scanned_only.pdf")
+    file.extract_pdf!
+    now = 0.0
+    real_render = PdfText.method(:render_page)
+    slow_render = ->(path, n, timeout:) { now = FieldFile::PdfOcr::OCR_TIME_BUDGET - 30.4; real_render.(path, n, timeout:) }
+    vision = FakeVision.new
+    PdfText.stub(:render_page, slow_render) { file.transcribe_pdf!(inference: vision, clock: -> { now }) }
+
+    assert_equal 30, vision.calls.sole[:timeout]
+  end
+
+  test "rendering that uses up the time stops the call; the reservation is given back" do
+    file = field_pdf(@account, "mixed.pdf")
+    file.extract_pdf!
+    now = 0.0
+    real_render = PdfText.method(:render_page)
+    slow_render = ->(path, n, timeout:) { now = FieldFile::PdfOcr::OCR_TIME_BUDGET - 1; real_render.(path, n, timeout:) }
+    vision = FakeVision.new
+    PdfText.stub(:render_page, slow_render) { file.transcribe_pdf!(inference: vision, clock: -> { now }) }
+    file.reload
+
+    assert_empty vision.calls
+    assert_equal [ "skipped", "skipped" ], file.pages.last(2).map(&:model_status)
+    assert_equal FieldFile::PdfExtraction::TOO_LONG, file.pages.third.model_reason
+    assert_equal [ [ "failed", 0 ] ], FieldOcrCall.where(field_file: file).pluck(:status, :charge_usd)
+  end
+
+  test "no command or call outlives the OCR budget" do
+    file = field_pdf(@account, "mixed.pdf")
+    file.extract_pdf!
+    now = 0.0
+    real_render = PdfText.method(:render_page)
+    given = []
+    left = -> { 100 - now }
+    render = ->(path, n, timeout:) { given << [ :render, timeout, left.() ]; now += timeout; real_render.(path, n, timeout:) }
+    vision = FakeVision.new { |params, _| given << [ :call, params[:timeout], left.() ]; now += params[:timeout]; "Text" }
+    # A 100-second budget, so the second page meets its end: render 30, call
+    # 60, then 10 s left for the second render and nothing for its call.
+    with_constant(FieldFile::PdfOcr, :OCR_TIME_BUDGET, 100) do
+      PdfText.stub(:render_page, render) { file.transcribe_pdf!(inference: vision, clock: -> { now }) }
+    end
+
+    assert given.all? { |_, timeout, remaining| timeout <= remaining }, given.inspect
+    assert_operator now, :<=, 100
+    assert_equal [ [ :render, 30 ], [ :call, 60 ], [ :render, 10 ] ], given.map { it.first(2) }
+    assert_equal "skipped", file.reload.pages.last.model_status
+  end
+
+  test "turning OCR off during a call stops the next image leaving" do
+    file = field_pdf(@account, "mixed.pdf")
+    file.extract_pdf!
+    vision = FakeVision.new { |_, n| Setting.instance.update!(field_ocr_enabled: false) if n == 1; "Scanned receipt." }
+    file.transcribe_pdf!(inference: vision)
+    file.reload
+
+    assert_equal 1, vision.calls.size
+    assert_equal [ "text", "skipped" ], file.pages.last(2).map(&:model_status)
+    assert_equal "Transcription was turned off", file.pages.last.model_reason
+    assert_equal 1, FieldOcrCall.where(field_file: file).count
+  end
+
+  test "turning OCR off during rendering keeps that image home" do
+    file = field_pdf(@account, "scanned_only.pdf")
+    file.extract_pdf!
+    real_render = PdfText.method(:render_page)
+    render = ->(path, n, timeout:) { Setting.instance.update!(field_ocr_enabled: false); real_render.(path, n, timeout:) }
+    vision = FakeVision.new
+    PdfText.stub(:render_page, render) { file.transcribe_pdf!(inference: vision) }
+
+    assert_empty vision.calls
+    assert_equal "Transcription was turned off", file.reload.pages.sole.model_reason
+    assert_equal [ [ "failed", 0 ] ], FieldOcrCall.where(field_file: file).pluck(:status, :charge_usd)
+  end
+
+  test "discarding the file during a call stops the rest" do
+    file = field_pdf(@account, "mixed.pdf")
+    file.extract_pdf!
+    vision = FakeVision.new { |_, n| FieldFile.find(file.id).discard! if n == 1; "Scanned receipt." }
+    assert_not file.transcribe_pdf!(inference: vision)
+
+    assert_equal 1, vision.calls.size
+    assert_equal 1, FieldOcrCall.where(field_file: file).count
   end
 
   # FIELD_OCR_LIVE=1 sends one synthetic page to the real model, on the

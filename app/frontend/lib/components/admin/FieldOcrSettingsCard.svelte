@@ -12,8 +12,10 @@
       When this is on, a page of a PDF brought into the Field that has no text of its own (a scan), or very little, is
       turned into an image inside the house and sent to Claude Haiku 5.5 (Anthropic, through OpenRouter, on the house's
       key) to be transcribed. Anthropic doesn't train on it and may keep it for up to 30 days. Transcriptions are shown
-      as a model's and may contain mistakes. Only PDFs brought in after it is turned on are sent; the Field's existing
-      files are not. Up to 50 pages of a file and 500 pages per account a day.
+      as a model's and may contain mistakes. A transcribed page's text, with the file's title and note, is then
+      summarised like any readable file, also by Claude Haiku; files already transcribed stay summarised that way if
+      this is turned off. Only PDFs brought in after it is turned on are sent; the Field's existing files are not. Up to
+      50 pages of a file and 500 pages per account a day.
     </CardDescription>
   </CardHeader>
   <CardContent class="space-y-4">

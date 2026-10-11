@@ -60,11 +60,12 @@ module FieldOcr
     enabled? && file.created_at >= Setting.instance.field_ocr_enabled_at
   end
 
+  # page: a FieldFilePage or a row hash with the same keys.
   def candidate?(page)
-    case page.native_status
+    case page[:native_status]
     when "empty" then true
     # A little text and a picture: maybe a typed heading over a scan.
-    when "text" then page.has_images == true && page.native_text.to_s.strip.length < SPARSE_CHARS
+    when "text" then page[:has_images] == true && page[:native_text].to_s.strip.length < SPARSE_CHARS
     else false
     end
   end
@@ -109,10 +110,11 @@ module FieldOcr
 
   # => { status: "text"|"empty", text:, cut: } for one page image. Raises
   # UtilityInference::Error when the call fails.
-  def transcribe(png, page_number:, page_count:, inference: UtilityInference)
+  # timeout: seconds the call may take (the caller's remaining budget).
+  def transcribe(png, page_number:, page_count:, timeout:, inference: UtilityInference)
     answer = inference.house_vision(model: MODEL, provider: PROVIDER, system: SYSTEM,
       text: PromptTemplate.render("transcribe_field_page", :user, page_number:, page_count:),
-      image_png: png, max_tokens: MAX_TOKENS)
+      image_png: png, max_tokens: MAX_TOKENS, timeout: timeout)
     text = answer[:text].to_s.scrub("").delete("\u0000").strip
     # Anything but a normal stop means the answer may be incomplete: the
     # token limit ("length"), or the provider stopping it ("content_filter",

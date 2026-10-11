@@ -440,7 +440,7 @@
       <Dialog.Title>Add a file to the Field</Dialog.Title>
       <Dialog.Description
         >{sharedLine}
-        {#if summaries_enabled}<SummariesNotice kind="file" />{/if}
+        {#if summaries_enabled}<SummariesNotice kind="file" ocr={ocr_enabled} />{/if}
         {#if ocr_enabled}<OcrNotice kind="file" />{/if}</Dialog.Description>
     </Dialog.Header>
     <form onsubmit={submitUpload} class="space-y-4">
