@@ -122,6 +122,19 @@ repeatable). `note` sends `POST /api/v1/whiteboards`; the title must be unique
 among the account's notes, and the text comes from TEXT, `--file`, or stdin.
 Recordings carry their date as `recorded_at` (see the API reference).
 
+To change the date of something already in the Field, or remove it:
+
+```sh
+souls field date recording REC_ID 2019-03-14
+souls field date file FILE_ID 2019-03-14T09:30:00Z
+souls field date note NOTE_ID --clear
+```
+
+`date` sends `PATCH` with `recorded_at` (recordings) or `dated_at` (files and
+notes); for a note it reads the note's `lock_version` first. Redating a note is
+not an edit of it. `--clear` returns the item to the Field's default date
+ordering: upload time for a recording or file, last edit for a note.
+
 ## Anything else: `souls api`
 
 Every endpoint in the [API reference](/ai/api.md) is reachable, with the same

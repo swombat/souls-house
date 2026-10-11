@@ -46,6 +46,42 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_field_path(@account, tab: "recordings", item: "recording-#{recording.to_param}")
   end
 
+  test "creating with a recorded date keeps it, and an impossible one makes nothing" do
+    blob = pinned_blob(account: @account, user: @user)
+    post account_field_recordings_path(@account), params: {
+      field_recording: { upload_id: blob.signed_id, title: "Old call", recorded_at: "2019-03-14" }
+    }
+    assert_equal Time.zone.local(2019, 3, 14), @account.field_recordings.last.recorded_at
+
+    other = pinned_blob(account: @account, user: @user)
+    assert_no_difference -> { FieldRecording.count } do
+      post account_field_recordings_path(@account), params: {
+        field_recording: { upload_id: other.signed_id, title: "Bad date", recorded_at: "2019-02-30" }
+      }
+    end
+    assert_redirected_to account_field_path(@account, tab: "recordings")
+  end
+
+  test "editing changes when a recording was made, clears it, and refuses an impossible date" do
+    recording = claimed_recording(account: @account, user: @user, title: "Call")
+
+    patch account_field_recording_path(@account, recording), params: { field_recording: { recorded_at: "2019-03-14" } }
+    assert_equal Time.zone.local(2019, 3, 14), recording.reload.recorded_at
+
+    patch account_field_recording_path(@account, recording), params: { field_recording: { title: "Renamed" } }
+    assert_equal Time.zone.local(2019, 3, 14), recording.reload.recorded_at, "no date sent, date kept"
+
+    patch account_field_recording_path(@account, recording),
+      params: { field_recording: { title: "Again", recorded_at: "2019-02-30" } }
+    recording.reload
+    assert_equal Time.zone.local(2019, 3, 14), recording.recorded_at
+    assert_equal "Renamed", recording.title
+    assert_match "recorded_at must be", flash[:alert]
+
+    patch account_field_recording_path(@account, recording), params: { field_recording: { recorded_at: "" } }
+    assert_nil recording.reload.recorded_at
+  end
+
   test "a blob signed for something else can't become a recording" do
     message_blob = ActiveStorage::Blob.create_and_upload!(io: file_fixture("test_audio.mp3").open, filename: "voice.mp3")
 
@@ -119,6 +155,31 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
         props.dig("recording", "turns").map { |turn| turn["spk"] } ]
     assert_equal "media/a.md", props.dig("recording", "source_path")
     assert_equal [ nil, nil ], props["speakers"].map { |speaker| speaker["talk_ms"] }
+  end
+
+  test "a recording's notes are written on the transcript page, shown there and in the viewer, not in the grid" do
+    recording = ready_recording(account: @account, user: @user, title: "Board call")
+    show = account_field_recording_path(@account, recording)
+
+    patch show, params: { field_recording: { notes: "## Actions\n\n- Call Bob" } }, headers: { "Referer" => show }
+    assert_redirected_to show
+    assert_equal "## Actions\n\n- Call Bob", recording.reload.notes
+
+    get show
+    assert_equal "## Actions\n\n- Call Bob", inertia_props.dig("props", "recording", "notes")
+
+    get account_field_path(@account, tab: "recordings", item: "recording-#{recording.to_param}")
+    @inertia_props = nil # memoized per test
+    props = inertia_props["props"]
+    assert_equal "## Actions\n\n- Call Bob", props.dig("current_item", "notes")
+    assert_equal [ [ nil, true ] ], props["items"].map { |item| [ item["notes"], item["has_notes"] ] }
+
+    patch show, params: { field_recording: { notes: "x" * (FieldRecording::MAX_NOTES_LENGTH + 1) } }, headers: { "Referer" => show }
+    assert_redirected_to show
+    assert_equal "## Actions\n\n- Call Bob", recording.reload.notes, "too long leaves the notes as they were"
+
+    patch show, params: { field_recording: { notes: "  \n" } }, headers: { "Referer" => show }
+    assert_nil recording.reload.notes
   end
 
   test "a line of the transcript can be corrected" do

@@ -7,6 +7,7 @@
   import {
     DropboxLogo,
     GithubLogo,
+    XLogo,
     Funnel,
     Bug,
     ShareNetwork,
@@ -124,6 +125,24 @@
               </span>
               <span class="mt-0.5 block text-sm text-muted-foreground">
                 Publish your own device readings. Always personal; managed on the device streams page.
+              </span>
+            </span>
+          </a>
+        </li>
+        <li>
+          <a
+            href={`/x_integration?account_id=${account.id}`}
+            class="group flex h-full items-start gap-3 rounded-xl border bg-card p-4 transition hover:border-foreground/30 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <span class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-black text-white">
+              <XLogo size={22} weight="bold" />
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="flex items-center justify-between gap-2 font-medium">
+                X posting
+                <ArrowRight size={16} class="shrink-0 text-muted-foreground group-hover:text-foreground" />
+              </span>
+              <span class="mt-0.5 block text-sm text-muted-foreground">
+                Let this account's residents post to one connected X handle, with a daily limit. Managed on the X page.
               </span>
             </span>
           </a>

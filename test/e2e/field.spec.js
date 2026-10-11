@@ -95,6 +95,62 @@ test('a member brings a file into the Field, writes a note, and deletes the file
   }
 });
 
+test("a failed recording's meeting notes can still be opened, read whole and edited", async ({
+  page,
+  request,
+}, testInfo) => {
+  const runId = `field-notes-${Date.now()}`;
+  const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });
+  expect(response.ok()).toBe(true);
+  const setup = await response.json();
+  const shot = (name) => page.screenshot({ path: testInfo.outputPath(`${name}.png`), fullPage: true });
+
+  try {
+    const lines = Array.from({ length: 12 }, (_, i) => `- Action ${i + 1}`).join('\n');
+    const fixture = await request.post('/test/e2e/field_recording_fixture', {
+      data: {
+        account_id: setup.account_id,
+        title: 'Failed standup',
+        notes: `# Standup\n\n${lines}\n\nLast line of the notes`,
+      },
+    });
+    expect(fixture.ok()).toBe(true);
+    const { recording_param: recordingParam } = await fixture.json();
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto('/login');
+    await page.getByLabel(/email/i).fill(setup.primary_user.email);
+    await page.getByLabel(/password/i).fill(setup.password);
+    await page.getByRole('button', { name: /log in/i }).click();
+    await expect(page).toHaveURL(/\/$/);
+
+    const base = `/accounts/${setup.account_param}`;
+    await page.goto(`${base}/field?tab=recordings&item=recording-${recordingParam}`);
+    const viewer = page.getByTestId('field-recording-viewer');
+    await expect(viewer.getByTestId('field-recording-notes')).toContainText('Action 1');
+    await expect(viewer.getByTestId('open-transcript')).toHaveCount(0);
+    await shot('notes-1-viewer');
+
+    await viewer.getByTestId('open-recording-notes').click();
+    await expect(page).toHaveURL(new RegExp(`/field/recordings/${recordingParam}$`));
+    const notes = page.getByTestId('recording-notes');
+    await expect(notes).toContainText('Last line of the notes');
+    await expect(notes.getByRole('heading', { name: 'Standup' })).toBeVisible();
+    await shot('notes-2-page');
+
+    await notes.getByRole('button', { name: 'Edit' }).click();
+    await page.getByLabel(/^Notes/).fill('# Standup\n\nMoved to Wednesday.');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByTestId('recording-notes')).toContainText('Moved to Wednesday.');
+    await expect(page).toHaveURL(new RegExp(`/field/recordings/${recordingParam}$`));
+    await page.reload();
+    await expect(page.getByTestId('recording-notes')).toContainText('Moved to Wednesday.');
+    await shot('notes-3-edited');
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
+  }
+});
+
 test('a full Field turns compact and pages through fifty at a time', async ({ page, request }, testInfo) => {
   const runId = `field-pages-${Date.now()}`;
   const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });

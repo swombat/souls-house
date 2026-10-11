@@ -251,6 +251,21 @@ GEM
     nokogiri (1.19.4-x86_64-linux-musl)
       racc (~> 1.4)
     ostruct (0.6.3)
+    padded_cell (0.2.0)
+      minitest (~> 6.0)
+      rb_sys (~> 0.9.130)
+    padded_cell (0.2.0-aarch64-linux-gnu)
+      minitest (~> 6.0)
+    padded_cell (0.2.0-aarch64-linux-musl)
+      minitest (~> 6.0)
+    padded_cell (0.2.0-arm64-darwin)
+      minitest (~> 6.0)
+    padded_cell (0.2.0-x86_64-darwin)
+      minitest (~> 6.0)
+    padded_cell (0.2.0-x86_64-linux-gnu)
+      minitest (~> 6.0)
+    padded_cell (0.2.0-x86_64-linux-musl)
+      minitest (~> 6.0)
     pagy (43.6.2)
       json
       uri
@@ -308,6 +323,9 @@ GEM
       zeitwerk (~> 2.6)
     rainbow (3.1.1)
     rake (13.4.2)
+    rake-compiler-dock (1.12.0)
+    rb_sys (0.9.130)
+      rake-compiler-dock (= 1.12.0)
     rbs (4.2.0)
       logger
       prism (>= 1.6.0)
@@ -483,6 +501,7 @@ DEPENDENCIES
   letter_opener
   minitest (~> 6.0)
   minitest-mock
+  padded_cell (~> 0.2.0)
   pagy (~> 43.6.1)
   paper_trail (~> 17.0)
   pg (~> 1.1)

@@ -51,7 +51,7 @@ class FieldController < ApplicationController
   def item_json(record, tags, content: true)
     case record
     when FieldFile then FieldItems.file_json(record, tags, content: content)
-    when FieldRecording then FieldItems.recording_json(record, tags)
+    when FieldRecording then FieldItems.recording_json(record, tags, content: content)
     when FieldTweet then FieldItems.tweet_json(record, tags)
     else FieldItems.note_json(record, tags, content: content)
     end

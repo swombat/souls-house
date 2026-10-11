@@ -60,9 +60,10 @@ module Api
         # the call safe to repeat: the same key returns the recording it made
         # (as it is: tags sent with a repeat are not applied; use .../tags).
         # tags: [...] tags a new recording as it arrives.
+        # notes: the meeting's notes (Markdown, up to 100,000 characters).
         def create
           account = human_request_account!
-          attributes = params.permit(:upload_id, :title, :note, :expected_speakers, :source_path, :recorded_at,
+          attributes = params.permit(:upload_id, :title, :note, :notes, :expected_speakers, :source_path, :recorded_at,
             :import_key, :language_code)
           tags = FieldTag.normalize_list(FieldTag.list_param(params, :tags) || [])
           if tags.size > FieldTag::MAX_PER_ITEM
@@ -108,11 +109,11 @@ module Api
 
         # recorded_at: an ISO 8601 date or time (FieldDate), or empty to go
         # back to ordering by the upload time. For recordings brought in
-        # before they carried a date.
+        # before they carried a date. notes: Markdown, or empty to clear.
         def update
-          attributes = params.permit(:title, :note)
+          attributes = params.permit(:title, :note, :notes)
           attributes[:recorded_at] = FieldDate.parse_or_clear(params[:recorded_at], param: "recorded_at") if params.key?(:recorded_at)
-          return render json: { error: "Provide title, note or recorded_at" }, status: :unprocessable_entity if attributes.empty?
+          return render json: { error: "Provide title, note, notes or recorded_at" }, status: :unprocessable_entity if attributes.empty?
 
           if @recording.update(attributes)
             render json: { recording: person_json(@recording) }
@@ -187,7 +188,7 @@ module Api
         end
 
         def recording_attributes(attributes, supplied:)
-          permitted = %i[title note source_path import_key]
+          permitted = %i[title note notes source_path import_key]
           permitted << (supplied ? :language_code : :expected_speakers)
           values = attributes.slice(*permitted).to_h.symbolize_keys
           values[:recorded_at] = recorded_at(attributes[:recorded_at]) if attributes[:recorded_at].present?
@@ -210,11 +211,14 @@ module Api
           end
         end
 
+        # The list leaves notes out (up to 100 kB each); has_notes says
+        # whether reading the recording will find any.
         def summary_json(recording)
           {
             id: recording.to_param,
             title: recording.title,
             note: recording.note,
+            has_notes: recording.notes.present?,
             summary_short: recording.summary_short,
             summary_long: recording.summary_long,
             status: recording.status,
@@ -233,6 +237,7 @@ module Api
 
         def resident_json(recording)
           summary_json(recording).merge(
+            notes: recording.notes,
             transcript_text: (recording.transcript_text if recording.ready?),
             # One entry per person: diarized speakers a human linked to the
             # same voice are one speaker here, with the labels they were
@@ -250,6 +255,7 @@ module Api
         # speaker's label).
         def person_json(recording)
           summary_json(recording).merge(
+            notes: recording.notes,
             failure_reason: recording.failure_reason,
             expected_speakers: recording.expected_speakers,
             filename: recording.filename,

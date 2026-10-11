@@ -44,7 +44,8 @@ class FieldSearch
       # it came into the Field.
       date: "COALESCE(field_recordings.recorded_at, field_recordings.created_at)",
       kept: "field_recordings.discarded_at IS NULL",
-      body: "concat_ws(E'\\n\\n', field_recordings.note, CASE WHEN field_recordings.status = 'ready' THEN field_recordings.transcript_text END)"
+      body: "concat_ws(E'\\n\\n', field_recordings.note, field_recordings.notes, " \
+        "CASE WHEN field_recordings.status = 'ready' THEN field_recordings.transcript_text END)"
     },
     "file" => {
       model: "FieldFile", table: "field_files",

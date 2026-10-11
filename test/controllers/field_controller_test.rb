@@ -42,6 +42,16 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_field_path(@account, tab: "files", item: "file-#{file.to_param}")
   end
 
+  test "a human dates a file as it comes in; an impossible date makes nothing" do
+    post account_field_files_path(@account), params: { field_file: { file: upload, dated_at: "2019-03-14" } }
+    assert_equal Time.zone.local(2019, 3, 14), @account.field_files.last.dated_at
+
+    assert_no_difference -> { FieldFile.count } do
+      post account_field_files_path(@account), params: { field_file: { file: upload, dated_at: "2019-02-30" } }
+    end
+    assert_redirected_to account_field_path(@account, tab: "files")
+  end
+
   test "an upload without a file is refused" do
     assert_no_difference -> { FieldFile.count } do
       post account_field_files_path(@account), params: { field_file: { title: "Empty" } }

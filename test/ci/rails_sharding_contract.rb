@@ -92,11 +92,11 @@ class RailsTestShardTest < Minitest::Test
 
   def test_runner_executes_from_root_and_preserves_parent_worker_setting
     write("test/a_test.rb")
-    write("bin/rails", <<~RUBY)
+    write("bin/test", <<~RUBY)
       #!#{RbConfig.ruby}
       exit(Dir.pwd == #{ @root.inspect } && ENV["PARALLEL_WORKERS"] == "4" ? 0 : 9)
     RUBY
-    File.chmod(0o700, File.join(@root, "bin/rails"))
+    File.chmod(0o700, File.join(@root, "bin/test"))
     previous = ENV["PARALLEL_WORKERS"]
     ENV["PARALLEL_WORKERS"] = "4"
     assert_equal 0, RailsTestShard.run(["1", "3"], root: @root, out: StringIO.new)
@@ -133,7 +133,7 @@ class RailsTestShardTest < Minitest::Test
     command = nil
     assert_equal 0, RailsTestShard.run(["1", "3"], root: @root,
       executor: ->(args) { command = args; true }, out: StringIO.new)
-    assert_equal [File.join(@root, "bin/rails"), "test", "test/a_test.rb"], command
+    assert_equal [File.join(@root, "bin/test"), "test/a_test.rb"], command
   end
 
   def test_child_failure_status_propagates_without_credentials

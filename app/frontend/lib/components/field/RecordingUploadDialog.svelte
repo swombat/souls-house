@@ -1,7 +1,6 @@
 <script>
   import { untrack } from 'svelte';
   import { router } from '@inertiajs/svelte';
-  import { DirectUpload } from '@rails/activestorage';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Input } from '$lib/components/shadcn/input/index.js';
@@ -9,6 +8,7 @@
   import SummariesNotice from '$lib/components/field/SummariesNotice.svelte';
   import { formatBytes } from '$lib/field';
   import { formatDuration, guessSpeakers, preflightProblem } from '$lib/field-recordings';
+  import { directUpload } from '$lib/field-direct-upload';
 
   let {
     open = $bindable(false),
@@ -24,6 +24,7 @@
   let file = $state(null);
   let title = $state('');
   let note = $state('');
+  let recordedOn = $state('');
   let speakers = $state('');
   let speakersTouched = $state(false);
   let durationMs = $state(null);
@@ -65,6 +66,7 @@
     file = null;
     title = '';
     note = '';
+    recordedOn = '';
     speakers = '';
     speakersTouched = false;
     durationMs = null;
@@ -114,36 +116,6 @@
     readDuration(chosen);
   }
 
-  function upload(chosen, current) {
-    return new Promise((resolve, reject) => {
-      current.fail = reject;
-      // DirectUpload hands over each XHR just before sending it. If the attempt
-      // was abandoned meanwhile (say, during the checksum), it is never sent.
-      const track = (xhr) => {
-        if (current.cancelled) xhr.send = () => {};
-        else current.xhrs.push(xhr);
-      };
-      const delegate = {
-        directUploadWillCreateBlobWithXHR: (xhr) => {
-          current.createXhr = xhr;
-          track(xhr);
-        },
-        directUploadWillStoreFileWithXHR: (xhr) => {
-          track(xhr);
-          xhr.upload.addEventListener('progress', (e) => {
-            if (attempt === current && e.lengthComputable) progress = e.loaded / e.total;
-          });
-        },
-      };
-      const direct = new DirectUpload(chosen, `/accounts/${accountId}/field/recordings/uploads`, delegate);
-      direct.create((failure, blob) => {
-        if (current.cancelled) return;
-        if (failure) reject(current.createXhr?.response?.error || 'The upload stopped. Please try again.');
-        else resolve(blob);
-      });
-    });
-  }
-
   async function submit(event) {
     event.preventDefault();
     if (!file || tooLarge || busy) return;
@@ -154,7 +126,9 @@
     progress = 0;
     let blob;
     try {
-      blob = await upload(file, current);
+      blob = await directUpload(file, `/accounts/${accountId}/field/recordings/uploads`, current, (fraction) => {
+        if (attempt === current) progress = fraction;
+      });
     } catch (failure) {
       if (failure === CANCELLED || current.cancelled) return;
       attempt = null;
@@ -177,6 +151,7 @@
           title: title.trim(),
           note: note.trim(),
           expected_speakers: count >= 1 && count <= 32 ? count : null,
+          recorded_at: recordedOn || null,
         },
       },
       {
@@ -186,7 +161,8 @@
           reset();
         },
         onError: (errors) => {
-          const message = errors.audio || 'The recording could not be brought in. Please try again.';
+          const message =
+            errors.recorded_at || errors.audio || 'The recording could not be brought in. Please try again.';
           // Closed while the POST was out: the chosen file input is gone, so
           // start the form afresh and keep only the message for the next open.
           if (!open) reset();
@@ -242,6 +218,18 @@
           maxlength={2000}
           rows="3"
           class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"></textarea>
+      </div>
+      <div class="space-y-1">
+        <Label for="recording-recorded-on"
+          >When was it recorded? <span class="text-muted-foreground">(optional)</span></Label>
+        <Input
+          id="recording-recorded-on"
+          type="date"
+          class="w-44"
+          bind:value={recordedOn}
+          disabled={busy}
+          data-testid="recording-recorded-on" />
+        <p class="text-xs text-muted-foreground">For an older recording. The Field orders it by this date.</p>
       </div>
       <div class="space-y-1">
         <Label for="recording-speakers">

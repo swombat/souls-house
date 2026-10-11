@@ -14,6 +14,7 @@
   let editing = $state(false);
   let title = $state('');
   let note = $state('');
+  let recordedOn = $state('');
   let saving = $state(false);
 
   const statusLine = $derived(recordingStatusLine(recording));
@@ -22,15 +23,26 @@
   function startEditing() {
     title = recording.title || '';
     note = recording.note || '';
+    recordedOn = recordedDay(recording.recorded_at);
     editing = true;
+  }
+
+  // The day part of recorded_at as the server sent it (in the app's zone),
+  // for the date input.
+  function recordedDay(value) {
+    return value ? value.slice(0, 10) : '';
   }
 
   function save(event) {
     event.preventDefault();
     saving = true;
+    const changes = { title: title.trim(), note: note.trim() };
+    // Only a changed date is sent, so saving a title keeps a recorded time
+    // of day rather than resetting it to midnight.
+    if (recordedOn !== recordedDay(recording.recorded_at)) changes.recorded_at = recordedOn;
     router.patch(
       recording.show_url,
-      { field_recording: { title: title.trim(), note: note.trim() } },
+      { field_recording: changes },
       {
         preserveScroll: true,
         preserveState: true,
@@ -72,6 +84,16 @@
             rows="3"
             class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"></textarea>
         </div>
+        <div class="space-y-1">
+          <Label for="recording-edit-recorded-on">Recorded on</Label>
+          <Input
+            id="recording-edit-recorded-on"
+            type="date"
+            class="w-44"
+            bind:value={recordedOn}
+            data-testid="recording-edit-recorded-on" />
+          <p class="text-xs text-muted-foreground">Leave empty to order it by when it was brought in.</p>
+        </div>
         <div class="flex gap-2">
           <Button type="submit" size="sm" disabled={saving || !title.trim()}>Save</Button>
           <Button type="button" size="sm" variant="ghost" onclick={() => (editing = false)}>Cancel</Button>
@@ -102,6 +124,12 @@
           <p class="whitespace-pre-wrap">{recording.note}</p>
         </div>
       {/if}
+      {#if recording.notes}
+        <div data-testid="field-recording-notes">
+          <p class="text-xs uppercase tracking-wide text-muted-foreground mb-1">Notes</p>
+          <p class="whitespace-pre-wrap text-sm line-clamp-6">{recording.notes}</p>
+        </div>
+      {/if}
     {/if}
 
     <p class="text-sm {troubled ? 'text-destructive' : ''}" data-testid="field-recording-status">
@@ -127,6 +155,11 @@
       {#if recording.status === 'ready'}
         <Link href={recording.show_url} class={buttonVariants({ size: 'sm' })} data-testid="open-transcript">
           <Scroll class="size-4" /> Open transcript
+        </Link>
+      {:else if recording.notes}
+        <!-- The notes are clamped here; the recording page shows them whole, ready or not. -->
+        <Link href={recording.show_url} class={buttonVariants({ size: 'sm' })} data-testid="open-recording-notes">
+          <Scroll class="size-4" /> Open notes
         </Link>
       {/if}
       {#if recording.retryable}

@@ -8,6 +8,19 @@ module TestSupport
 
     PASSWORD = "password123"
 
+    # A recording that never became ready (failed), carrying meeting notes:
+    # its notes must still be reachable from the Field viewer.
+    def field_recording_fixture
+      account = Account.find(params.fetch(:account_id))
+      raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
+
+      audio = ActiveStorage::Blob.create_and_upload!(io: file_fixture_audio, filename: "standup.mp3", content_type: "audio/mpeg")
+      recording = account.field_recordings.create!(title: params.fetch(:title, "Failed standup"), notes: params[:notes],
+        uploaded_by: account.users.first!, audio: audio)
+      recording.update_columns(status: "failed", failure_reason: "The transcriber couldn't read this file.")
+      render json: { recording_param: recording.to_param }
+    end
+
     def stone_fixture
       account = Account.find(params.fetch(:account_id))
       raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
@@ -466,6 +479,10 @@ module TestSupport
 
     def ensure_test_environment
       head :not_found unless Rails.env.test?
+    end
+
+    def file_fixture_audio
+      StringIO.new(File.binread(Rails.root.join("test/fixtures/files/test_audio.mp3")))
     end
 
     def cleanup_run(run_id)

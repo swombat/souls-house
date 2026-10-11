@@ -4,6 +4,7 @@
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import SpeakerCard from '$lib/components/field/SpeakerCard.svelte';
+  import RecordingNotes from '$lib/components/field/RecordingNotes.svelte';
   import TranscriptTurns from '$lib/components/field/TranscriptTurns.svelte';
   import { formatWhen } from '$lib/field';
   import {
@@ -177,6 +178,8 @@
       onseeking={seeking}
       data-testid="recording-audio"></audio>
   {/if}
+
+  <RecordingNotes {recording} />
 
   {#if !ready}
     <Card.Root>

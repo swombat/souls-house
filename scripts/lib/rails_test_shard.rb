@@ -191,7 +191,7 @@ module RailsTestShard
     out.puts("Rails shard #{shard}/#{total}: #{selected.length} files")
     selected.each { |file| out.puts(file) }
     return 0 if selected.empty?
-    command = [File.join(File.expand_path(root), "bin/rails"), "test", *selected]
+    command = [File.join(File.expand_path(root), "bin/test"), *selected]
     success = executor ? executor.call(command) : system(*command, chdir: root)
     success ? 0 : ($?&.exitstatus || 1)
   rescue Error, SystemCallError => error

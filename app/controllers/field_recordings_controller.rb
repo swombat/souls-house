@@ -33,12 +33,20 @@ class FieldRecordingsController < ApplicationController
   end
 
   def create
-    attributes = params.require(:field_recording).permit(:upload_id, :title, :note, :expected_speakers)
+    attributes = params.require(:field_recording).permit(:upload_id, :title, :note, :expected_speakers, :recorded_at)
+    values = attributes.slice(:title, :note, :expected_speakers).to_h.symbolize_keys
+    begin
+      values[:recorded_at] = FieldDate.parse(attributes[:recorded_at], param: "recorded_at") if attributes[:recorded_at].present?
+    rescue FieldDate::Invalid => e
+      return redirect_to account_field_path(current_account, tab: "recordings"),
+        inertia: { errors: { recorded_at: e.message } }
+    end
+
     recording = FieldRecording::Upload.claim!(
       account: current_account,
       user: Current.user,
       signed_id: attributes[:upload_id],
-      attributes: attributes.slice(:title, :note, :expected_speakers).to_h.symbolize_keys
+      attributes: values
     )
 
     if recording
@@ -54,12 +62,23 @@ class FieldRecordingsController < ApplicationController
       inertia: { errors: { audio: e.record.errors.full_messages.to_sentence } }
   end
 
+  # From the item viewer (title, note, recorded_at) and the transcript page
+  # (notes); each returns to where it was edited. recorded_at, when sent: a
+  # date or time to correct when the recording was made, or empty to clear it.
   def update
-    if @field_recording.update(params.require(:field_recording).permit(:title, :note))
-      redirect_to item_path(@field_recording)
-    else
-      redirect_to item_path(@field_recording), alert: @field_recording.errors.full_messages.to_sentence
+    submitted = params.require(:field_recording)
+    attributes = submitted.permit(:title, :note, :notes)
+    if submitted.key?(:recorded_at)
+      attributes[:recorded_at] = FieldDate.parse_or_clear(submitted[:recorded_at], param: "recorded_at")
     end
+
+    if @field_recording.update(attributes)
+      redirect_back_or_to item_path(@field_recording)
+    else
+      redirect_back_or_to item_path(@field_recording), alert: @field_recording.errors.full_messages.to_sentence
+    end
+  rescue FieldDate::Invalid => e
+    redirect_to item_path(@field_recording), alert: e.message
   end
 
   def destroy

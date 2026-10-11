@@ -501,6 +501,10 @@ allowance. It has `turns` instead of timed `words`, and its speakers'
 `talk_ms` is `null`.
 
 Any upload may carry `source_path`, `recorded_at` (ISO 8601) and `import_key`.
+It may also carry `notes`: the meeting's notes (summary, action items), Markdown,
+up to 100,000 characters, kept in the recording and shown above its transcript.
+`note` stays the short "why I'm bringing this" (2,000 characters). Reading a
+recording returns `notes`; the list returns only `has_notes`.
 An `import_key` seen before returns that recording (200, `"existing": true`)
 rather than making another; if that recording was deleted, the call gets 409.
 `GET /api/v1/field/recordings?import_key=...` finds it first.
@@ -522,7 +526,7 @@ In `words`, `s` and `e` are start and end in ms, and `k` is `w` (word), `s`
 (spacing) or `a` (audio event). `GET .../audio` redirects to a five-minute storage
 URL. This read never includes voice-recognition or name-suggestion data.
 
-- `PATCH /api/v1/field/recordings/:id` (`title`, `note`, `recorded_at`: ISO 8601 date or time, empty clears it), `DELETE` (204; minutes
+- `PATCH /api/v1/field/recordings/:id` (`title`, `note`, `notes` (empty clears them), `recorded_at`: ISO 8601 date or time, empty clears it), `DELETE` (204; minutes
   already sent to the transcriber aren't given back), `POST .../retry` (failed or
   rejected only; 201 with the new recording, otherwise 422).
 - `POST /api/v1/field/recordings/dismiss_you_hint` → 204.
@@ -533,11 +537,14 @@ URL. This read never includes voice-recognition or name-suggestion data.
   with `link_existing: true` to link to that voice. Returns `{ "speaker": {...} }`.
 
 **Search.** `GET /api/v1/field/search?query=granttree valuation` searches one
-account's Field: recording titles, notes and transcripts (once ready), file
+account's Field: recording titles, notes, meeting notes and transcripts (once ready), file
 titles, filenames, notes and text (plain-text formats up to 2 MB, and the first 2 MB of a PDF's own text layer; not scanned pages), and
 note names and content. Names are also split on `. _ - /`, so `orchid` finds
 `orchid-invoice.pdf`. A body is searched up to its first 128 kB (about 128,000 characters of
-plain English text, fewer for scripts with multi-byte characters). Every word must appear, anywhere; `"a phrase"` keeps words
+plain English text, fewer for scripts with multi-byte characters); for a recording that is its meeting notes
+followed by its transcript, sharing those 128 kB: the transcript is searched only as far as
+the notes leave room, and notes longer than 128 kB themselves (multi-byte text can be) are
+searched only to there, with none of the transcript. Every word must appear, anywhere; `"a phrase"` keeps words
 together; `-word` leaves out. Case-insensitive, no stemming, so English and
 Spanish behave alike. Optional: `tag` (repeat for several; items must carry all
 of them), `kind` (`recording`, `file` or `note`), `sort` (`newest`, the default,

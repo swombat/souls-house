@@ -24,6 +24,9 @@ class FieldRecording < ApplicationRecord
   MAX_BYTES = 2.gigabytes # Scribe's limit for a file fetched by URL
   MAX_BYTES_LABEL = "2 GB"
   MAX_NOTE_LENGTH = FieldFile::MAX_NOTE_LENGTH
+  # A meeting's notes (summary, action items), Markdown, kept with the
+  # recording rather than as a separate item. The same bound as a note's content.
+  MAX_NOTES_LENGTH = 100_000
   MAX_SPEAKERS = 32 # Scribe's num_speakers ceiling
   MAX_DISPATCHES = 3
 
@@ -51,6 +54,7 @@ class FieldRecording < ApplicationRecord
 
   validates :title, presence: true, length: { maximum: 200 }
   validates :note, length: { maximum: MAX_NOTE_LENGTH }
+  validates :notes, length: { maximum: MAX_NOTES_LENGTH }
   validates :status, inclusion: { in: STATUSES }
   validates :expected_speakers, numericality: { only_integer: true, in: 1..MAX_SPEAKERS }, allow_nil: true
   validates :transcript_source, inclusion: { in: TRANSCRIPT_SOURCES }
@@ -217,7 +221,7 @@ class FieldRecording < ApplicationRecord
       raise NotRetryable unless kept? && RETRYABLE_STATUSES.include?(status) && audio.attached?
 
       account.field_recordings.create!(
-        title:, note:, expected_speakers:, uploaded_by: by, retried_from: self, audio: audio.blob
+        title:, note:, notes:, expected_speakers:, uploaded_by: by, retried_from: self, audio: audio.blob
       )
     end
   end
@@ -247,6 +251,9 @@ class FieldRecording < ApplicationRecord
     self.source_path = source_path.to_s.strip.presence
     self.import_key = import_key.to_s.strip.presence
     self.language_code = language_code.to_s.strip.presence
+    # Blank notes are no notes; otherwise kept as written (Markdown can mean
+    # something by its leading spaces).
+    self.notes = nil if notes.blank?
   end
 
   def default_title_from_filename

@@ -81,6 +81,9 @@ group :test do
   gem "minitest", "~> 6.0"
   # Minitest 6 moved Minitest::Mock and Object#stub into their own gem.
   gem "minitest-mock"
+  # Test runner used by bin/test and CI: forked workers, class scheduling,
+  # timeouts and flaky-test retries. `bin/rails test` still works as a fallback.
+  gem "padded_cell", "~> 0.2.0"
 
   # Use system testing [https://guides.rubyonrails.org/testing.html#system-testing]
   gem "capybara"

@@ -50,13 +50,13 @@ other long-lived Ruby processes through their normal supervisor when convenient.
 ## Tests and process ownership
 
 ```sh
-mise exec -- bin/rails test
+mise exec -- bin/test               # Rails suite via padded_cell (bin/rails test also works)
 mise exec -- bun run test           # E2E with an owned Rails test backend
 mise exec -- bun run test:ct        # component suite with an owned backend
 ```
 
-Run commands from their checkout. Ordinary `bin/rails test` and the browser
-runners take the same checkout-local test lock. One test runner per checkout;
+Run commands from their checkout. `bin/test`, ordinary `bin/rails test` and the
+browser runners take the same checkout-local test lock. One test runner per checkout;
 parallel Minitest workers within that runner are supported. Development can stay
 running while tests run. For other test entrypoints, use
 `bin/instance exec test -- <command>` (and `SOULSHOUSE_TEST_LOCKED=1` if wrapping
