@@ -9,10 +9,13 @@ import selectors
 import subprocess
 import sys
 import time
+import tempfile
+from datetime import datetime, timezone
 
 MAX_OUTPUT = 16_384
 MAX_NOTICE = 4096
 WORKER_SECONDS = 3
+RECEIPT_PATH = Path("/run/helixkit/capability-discovery-latest.json")
 log = logging.getLogger(__name__)
 FAILURE = "Capability discovery could not complete. No installation performed."
 INVALID = "Invalid capability manifest. No installation performed."
@@ -126,6 +129,32 @@ def render(raw):
     return _result(raw)[0]
 
 
+def _write_receipt(outcome):
+    """Replace one local observation; not a trusted audit or durable archive."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=RECEIPT_PATH.parent,
+            prefix=".capability-receipt-", delete=False,
+        ) as stream:
+            temporary = stream.name
+            json.dump({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "outcome": outcome,
+            }, stream)
+            stream.write("\n")
+        os.replace(temporary, RECEIPT_PATH)
+    except Exception:
+        # Missing directory, permissions, or disk failure must not stop a wake.
+        pass
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+
+
 def capability_notice(identity_path):
     """Path/interpreter are runtime configuration, never payload-selected."""
     try:
@@ -142,4 +171,5 @@ def capability_notice(identity_path):
     except Exception:
         # A broken logging sink must not stop an otherwise accepted trigger.
         pass
+    _write_receipt(outcome)
     return notice

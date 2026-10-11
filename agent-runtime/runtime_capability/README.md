@@ -1,6 +1,6 @@
 # Capability manifest validation and discovery — wake-hook draft
 
-Hook added against master `eeace591` on 2026-10-10. Thirty-two local tests
+Hook added against master `eeace591` on 2026-10-10. Thirty-five local tests
 pass, including real shim-routing tests with synthetic Chaos
 responses (legacy fresh, persistent fresh, resume with/without delta, failed
 resume fallback). They assert one check per trigger and one notice per invocation;
@@ -87,18 +87,24 @@ The parent emits one runtime INFO log receipt after each check:
 `all-found`, `notice`, `invalid` and `incomplete`. Only a fixed class is emitted,
 never requirement names, reasons, paths, worker output or exception text.
 Existing shim logging supplies the timestamp and the operational log sink;
-no new resident file or unbounded append-only archive is created. This differs
-from the suggested state-file receipt and relies on operators retaining runtime
-logs. A failed sink cannot block the trigger, so a missing receipt is still
+Operators must retain logs for audit history. A failed sink cannot block the
+trigger, so a missing receipt is still
 unconfirmed, not proof the checker did not run. A receipt establishes completion
 of this boundary call, not working capability or descendant containment.
 
-Resident visibility is not established by this draft. The shim's Python logging
-defaults to stderr; it does not publish a resident-readable receipt path or API.
-These receipts support operator auditing, but do not yet let a resident
-distinguish a quiet hook from a dead one from inside their container.
-Do not describe resident self-verification as implemented. Any future readable
-receipt surface needs its own bounded-retention and access contract.
+The parent also atomically replaces
+`/run/helixkit/capability-discovery-latest.json` with `timestamp` (UTC) and
+`outcome` only. Residents can read this latest local observation without a
+network call; it contains no names, reasons or paths. The containing directory
+must already exist and be writable; failures are nonfatal. Mode is 0600.
+Only the latest completed write is kept, not wake history or an invocation ID.
+Concurrent checks are last-write-wins, not necessarily trigger order.
+Missing/stale means unconfirmed, not proof of a dead hook. This directory is
+resident-owned, so the file is not tamper-proof operator audit evidence.
+Replacement is atomic but not fsynced durable storage. Abrupt termination can
+leave a small temporary file; normal failure paths clean it up.
+Local filesystem writes add latency and are not covered by the worker deadline.
+This readable surface is implemented in the draft, not verified in a built image.
 
 Built-image interpreter/PATH and fresh/resume/fallback receipt verification
 remain pending; this draft is neither deployed nor submitted as a PR.

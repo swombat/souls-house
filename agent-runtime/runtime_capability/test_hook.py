@@ -16,6 +16,14 @@ from runtime_capability import boundary
 
 
 class HookTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        patcher = patch.object(
+            boundary, "RECEIPT_PATH", Path(directory.name) / "latest.json")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def exercise(self, persistent, record, fail_resume=False, delta="delta",
                  actual_check=False):
         prompts = []

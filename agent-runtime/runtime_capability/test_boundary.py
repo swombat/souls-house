@@ -14,6 +14,45 @@ def protocol(status="ok", items=None):
 
 
 class BoundaryTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.receipt_path = Path(directory.name) / "latest.json"
+        patcher = patch.object(boundary, "RECEIPT_PATH", self.receipt_path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_local_receipt_replaced_with_fixed_fields(self):
+        for status, outcome in [("absent", "absent"), ("invalid", "invalid")]:
+            with patch.object(boundary, "_capture", return_value=protocol(status)):
+                boundary.capability_notice("/PRIVATE_PATH")
+            raw = self.receipt_path.read_text()
+            row = json.loads(raw)
+            self.assertEqual(set(row), {"timestamp", "outcome"})
+            self.assertEqual(row["outcome"], outcome)
+            self.assertNotIn("PRIVATE", raw)
+            self.assertLess(len(raw), 160)
+            self.assertEqual(self.receipt_path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(list(self.receipt_path.parent.iterdir()), [self.receipt_path])
+
+    def test_local_replace_failure_preserves_previous_and_cleans_temp(self):
+        boundary._write_receipt("absent")
+        previous = self.receipt_path.read_bytes()
+        with (
+            patch.object(boundary.os, "replace", side_effect=OSError("PRIVATE")),
+            patch.object(boundary, "_capture", return_value=protocol()),
+        ):
+            self.assertEqual(boundary.capability_notice("/unused"), "")
+        self.assertEqual(self.receipt_path.read_bytes(), previous)
+        self.assertEqual(list(self.receipt_path.parent.iterdir()), [self.receipt_path])
+
+    def test_missing_receipt_directory_is_nonfatal(self):
+        with (
+            patch.object(boundary, "RECEIPT_PATH", self.receipt_path / "missing"),
+            patch.object(boundary, "_capture", return_value=protocol("absent")),
+        ):
+            self.assertEqual(boundary.capability_notice("/unused"), "")
+
     def test_fixed_outcome_receipt_once_per_check(self):
         cases = [
             (protocol("absent"), "absent"),
