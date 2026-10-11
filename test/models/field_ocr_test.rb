@@ -303,6 +303,33 @@ class FieldOcrTest < ActiveSupport::TestCase
     assert file.claim_summary!
   end
 
+  test "a scanned-only file waiting on OCR isn't retired as blank, and is summarised once transcribed" do
+    file = field_pdf(@account, "scanned_only.pdf")
+    file.extract_pdf!
+    file.reload
+    assert file.pdf_transcription_pending?
+    assert_equal "", file.extracted_text
+
+    assert_not file.claim_summary!
+    assert_equal 0, file.reload.summary_attempts, "not retired while its text may still arrive"
+    assert_not file.summary_source_blank?
+
+    file.transcribe_pdf!(inference: FakeVision.new([ "Scanned receipt: 3 crates of figs." ]))
+    assert file.reload.claim_summary!
+    assert_equal 1, file.summary_attempts
+  end
+
+  test "a scanned file that turns out blank is still retired, once transcription is done" do
+    file = field_pdf(@account, "scanned_only.pdf")
+    file.extract_pdf!
+    file.transcribe_pdf!(inference: FakeVision.new([ FieldOcr::NO_TEXT ]))
+    file.reload
+
+    assert file.summary_source_blank?
+    assert_not file.claim_summary!
+    assert_equal FieldSummarizable::MAX_ATTEMPTS, file.reload.summary_attempts
+  end
+
   test "a page held by another worker keeps the file pending and looks again later" do
     file = field_pdf(@account, "mixed.pdf")
     file.extract_pdf!

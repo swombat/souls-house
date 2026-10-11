@@ -72,6 +72,10 @@ class FieldFile < ApplicationRecord
   # FieldSummarizable: not while transcription is pending (see summary_readable).
   def summarizable? = super && !pdf_transcription_pending?
 
+  # Nor is a pending file blank yet: a scan's text may still arrive, and a
+  # blank item is retired for good (claim_summary!).
+  def summary_source_blank? = !pdf_transcription_pending? && super
+
   def pdf_transcription_pending? = (pdf_coverage || {})["ocr"] == "pending"
 
   # The summaries were written from part of the file only: a PDF with pages
