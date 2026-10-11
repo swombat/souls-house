@@ -33,7 +33,13 @@
     </div>
 
     {#if file.summary_long}
-      <p class="text-sm" data-testid="field-file-summary">{file.summary_long}</p>
+      <p class="text-sm" data-testid="field-file-summary">
+        {file.summary_long}
+        {#if file.summary_partial}
+          <span class="text-muted-foreground" data-testid="field-file-summary-partial">
+            (from the readable pages only)</span>
+        {/if}
+      </p>
     {/if}
 
     {#if file.note}

@@ -103,6 +103,48 @@ test('partial, encrypted and failed PDFs say so', async ({ mount, page }) => {
   await expect(broken).toContainText('The house could not read this PDF: Not a PDF the house can open.');
 });
 
+test('a cut page, cut search text and a partial summary are labelled', async ({ mount, page }) => {
+  await mount(FieldFileViewer, {
+    props: {
+      file: {
+        ...base,
+        summary_long: 'An orchard ledger.',
+        summary_partial: true,
+        text_extraction: {
+          ...extraction,
+          status: 'partial',
+          reason: '1 page cut short (too much text)',
+          pages_with_text: 1,
+          pages_without_text: 0,
+          pages_truncated: 1,
+          search_text_truncated: true,
+          page_count: 1,
+        },
+        pages: [
+          {
+            number: 1,
+            status: 'text',
+            source: 'native',
+            text: 'Apricots',
+            reason: 'Text cut at 256 kB; the rest of this page was not read',
+          },
+        ],
+      },
+      link: 'x',
+      onDelete: () => {},
+    },
+  });
+  await expect(page.getByTestId('field-file-summary-partial')).toContainText('from the readable pages only');
+  await expect(page.getByTestId('field-file-pdf-status')).toContainText(
+    'Partly read: 1 page cut short (too much text).'
+  );
+  await expect(page.getByTestId('field-file-pdf-status')).toContainText(
+    'Search and summaries use only the beginning of the text.'
+  );
+  await expect(page.getByTestId('field-file-pdf-page-cut')).toContainText('the rest of this page was not read');
+  await page.screenshot({ path: 'tmp/field-pdf-text-cut.png', fullPage: true });
+});
+
 test('files that are not PDFs show no text section', async ({ mount, page }) => {
   await mount(FieldFileViewer, {
     props: { file: { ...base, content_type: 'text/plain', text_extraction: null }, link: 'x', onDelete: () => {} },

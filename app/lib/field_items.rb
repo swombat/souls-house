@@ -58,6 +58,7 @@ module FieldItems
       note: file.note,
       summary_short: file.summary_short,
       summary_long: file.summary_long,
+      summary_partial: file.summary_partial?,
       filename: file.filename,
       content_type: file.content_type,
       byte_size: file.byte_size,

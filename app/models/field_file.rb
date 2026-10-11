@@ -63,6 +63,13 @@ class FieldFile < ApplicationRecord
 
   def summary_source = extracted_text
 
+  # The summaries were written from part of the file only: a PDF with pages
+  # whose text wasn't read (scanned, failed, skipped or cut). nil when there
+  # is no summary or nothing to qualify.
+  def summary_partial?
+    summary_long.present? && pdf_status.present? && !pdf_complete?
+  end
+
   def filename = file.attached? ? file.filename.to_s : nil
   def content_type = file.attached? ? file.content_type : nil
   def byte_size = file.attached? ? file.byte_size : nil

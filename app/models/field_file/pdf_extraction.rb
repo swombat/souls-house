@@ -1,29 +1,36 @@
 # A PDF's own text, read page by page with Poppler (PdfText) so residents can
 # read it and Field search and summaries cover it. Only the text layer the PDF
-# already carries is read here; nothing is sent anywhere, and a scanned page
-# comes out `empty` (a page without a text layer).
+# already carries is read here, inside the house; a scanned page comes out
+# `empty` (a page without a text layer). Once a PDF has text it is summarised
+# like any readable file (FieldSummarizable), which does send its text, title
+# and note to the summary model.
 #
 # pdf_status, for a PDF:
 #
 #   pending     waiting for FieldFiles::ExtractPdfJob
-#   extracted   every page was read (some may be empty)
-#   partial     some pages failed or were skipped by a limit (pdf_status_reason)
+#   extracted   every page was read whole (some may have no text layer)
+#   partial     some pages failed, were skipped by a limit, or had their text
+#               cut; pdf_status_reason says which
 #   failed      the file could not be read at all (pdf_status_reason)
 #   encrypted   the PDF needs a password to open; nothing is read
 #
-# The pages' text, joined, is also kept in extracted_text (cut to
-# MAX_JOINED_BYTES), which is what Field search and summaries read.
+# Bounds: TIME_BUDGET for the whole read, every command included; rows only
+# for the first MAX_PAGES pages (pages past it are counted in pdf_coverage,
+# not stored); PdfText::MAX_PAGE_BYTES per page; MAX_JOINED_BYTES of joined
+# text for search and summaries (pdf_coverage "search_text_truncated").
 module FieldFile::PdfExtraction
 
   extend ActiveSupport::Concern
 
   STATUSES = %w[pending extracted partial failed encrypted].freeze
-  # Pages past this are not read.
   MAX_PAGES = 500
-  # The whole read stops after this long; pages not reached are skipped.
   TIME_BUDGET = 5.minutes
+  # A command isn't started with less time than this left; its pages are
+  # skipped instead.
+  MIN_COMMAND_SECONDS = 2
   MAX_JOINED_BYTES = FieldFile::TextExtraction::MAX_BYTES
   PAGE_SEPARATOR = "\n\n"
+  TOO_LONG = "Reading the file took too long".freeze
 
   included do
     has_many :pages, -> { in_order }, class_name: "FieldFilePage", dependent: :delete_all
@@ -42,13 +49,24 @@ module FieldFile::PdfExtraction
 
   def pdf_readable? = pdf_status.in?(%w[extracted partial])
 
+  # Every page's own text read whole, and all of it in the search text. A
+  # page without a text layer counts against this: what is on it is unknown.
+  def pdf_complete?
+    return false unless pdf_status == "extracted"
+
+    coverage = pdf_coverage || {}
+    coverage["text"].to_i == pdf_page_count.to_i && !coverage["search_text_truncated"]
+  end
+
   # Reads the file and stores what came out. Safe to run again: the pages are
   # replaced as a whole. update_columns, as for text files: derived data, not
-  # an edit.
+  # an edit. Then summarised if there is text (which leaves the house; see
+  # FieldSummaries).
   def extract_pdf!(clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
     return false unless kept? && pdf?
 
-    result = file.open { |tempfile| read_pdf(tempfile.path, clock) }
+    deadline = Deadline.new(clock, TIME_BUDGET)
+    result = file.open { |tempfile| read_pdf(tempfile.path, deadline) }
     store_pdf_result(result)
     broadcast_refresh
     enqueue_summary
@@ -67,30 +85,82 @@ module FieldFile::PdfExtraction
       pages_without_text: coverage["empty"].to_i,
       pages_failed: coverage["failed"].to_i,
       pages_skipped: coverage["skipped"].to_i,
+      pages_truncated: coverage["truncated"].to_i,
+      pages_listed: coverage["listed"].to_i,
+      search_text_truncated: coverage["search_text_truncated"] == true,
+      complete: pdf_complete?,
       text_source: "native"
     }
   end
 
+  # For the summary prompt: what the material is and which parts of the PDF
+  # it doesn't cover. Metadata, kept apart from the document's own text.
+  def pdf_summary_coverage
+    return nil unless pdf_readable?
+
+    by_status = pages.where.not(native_status: "text").pluck(:page_number, :native_status).group_by(&:last)
+    listed = (pdf_coverage || {})["listed"].to_i
+    parts = [ "This is the text layer of a PDF of #{pdf_page_count} #{"page".pluralize(pdf_page_count)}." ]
+    {
+      "empty" => "no text of their own (blank or scanned) and were not read",
+      "failed" => "could not be read",
+      "skipped" => "were not read (a limit was reached)"
+    }.each do |status, words|
+      numbers = Array(by_status[status]).map(&:first)
+      numbers += ((listed + 1)..pdf_page_count.to_i).to_a if status == "skipped" && pdf_page_count.to_i > listed
+      parts << "#{Pages.describe(numbers)} #{words}." if numbers.any?
+    end
+    truncated = pages.where(native_status: "text").where("native_reason IS NOT NULL").pluck(:page_number)
+    parts << "#{Pages.describe(truncated)}: text cut short." if truncated.any?
+    parts << "Only the beginning of the text is included." if (pdf_coverage || {})["search_text_truncated"]
+    return nil if parts.size == 1
+
+    parts << "Summarise only what is in the material and don't guess at what the unread parts contain."
+    parts.join(" ")
+  end
+
+  # "Page 3", "Pages 3-4, 7".
+  module Pages
+
+    module_function
+
+    def describe(numbers)
+      ranges = numbers.sort.slice_when { |a, b| b != a + 1 }.map { it.size == 1 ? it.first.to_s : "#{it.first}-#{it.last}" }
+      "#{numbers.size == 1 ? "Page" : "Pages"} #{ranges.join(", ")}"
+    end
+
+  end
+
+  # Time left in the read; every command is given at most this.
+  class Deadline
+
+    def initialize(clock, budget)
+      @clock = clock
+      @ends = clock.call + budget.to_f
+    end
+
+    def remaining = @ends - @clock.call
+
+    # A command's timeout: its own limit or what is left, whichever is
+    # smaller; nil when too little is left to start one.
+    def allow(limit)
+      left = remaining
+      left >= MIN_COMMAND_SECONDS ? [ limit, left.floor ].min : nil
+    end
+
+  end
+
   private
 
-  def read_pdf(path, clock)
-    info = PdfText.info(path)
-    started = clock.call
-    readable = [ info[:pages], MAX_PAGES ].min
-    pages = {}
+  def read_pdf(path, deadline)
+    info_timeout = deadline.allow(PdfText::INFO_TIMEOUT) or return { status: "failed", reason: TOO_LONG }
+    info = PdfText.info(path, timeout: info_timeout)
+    listed = [ info[:pages], MAX_PAGES ].min
+    rows = []
 
-    (1..readable).each_slice(PdfText::BATCH_PAGES) do |numbers|
-      if clock.call - started > TIME_BUDGET
-        numbers.each { |n| pages[n] = page_row(n, "skipped", reason: "Reading the file took too long") }
-        next
-      end
-      read_batch(path, numbers).each { |row| pages[row[:page_number]] = row }
-    end
-    ((readable + 1)..info[:pages]).each do |n|
-      pages[n] = page_row(n, "skipped", reason: "Only the first #{MAX_PAGES} pages are read")
-    end
+    (1..listed).each_slice(PdfText::BATCH_PAGES) { |numbers| rows.concat(read_batch(path, numbers, deadline)) }
 
-    { page_count: info[:pages], pages: pages.values }
+    { page_count: info[:pages], listed: listed, pages: rows }
   rescue PdfText::Encrypted => e
     { status: "encrypted", reason: e.message }
   rescue PdfText::Error => e
@@ -98,18 +168,31 @@ module FieldFile::PdfExtraction
   end
 
   # One pdftotext run for the batch; if that fails, each page on its own so
-  # one bad page doesn't lose the rest.
-  def read_batch(path, numbers)
-    PdfText.pages(path, numbers.first, numbers.last).each_with_index.map do |text, i|
-      page_row(numbers.first + i, text.strip.empty? ? "empty" : "text", text: text)
+  # one bad page doesn't lose the rest. Pages the deadline doesn't reach are
+  # skipped; what was read is kept.
+  def read_batch(path, numbers, deadline)
+    timeout = deadline.allow(PdfText::BATCH_TIMEOUT)
+    return numbers.map { |n| page_row(n, "skipped", reason: TOO_LONG) } unless timeout
+
+    PdfText.pages(path, numbers.first, numbers.last, timeout: timeout).each_with_index.map do |page, i|
+      text_row(numbers.first + i, page)
     end
   rescue PdfText::CommandFailed
     numbers.map do |n|
-      text = PdfText.page(path, n)
-      page_row(n, text.strip.empty? ? "empty" : "text", text: text)
+      timeout = deadline.allow(PdfText::PAGE_TIMEOUT)
+      next page_row(n, "skipped", reason: TOO_LONG) unless timeout
+
+      text_row(n, PdfText.pages(path, n, n, timeout: timeout).first)
     rescue PdfText::CommandFailed => e
       page_row(n, "failed", reason: e.message)
     end
+  end
+
+  def text_row(number, page)
+    return page_row(number, "empty") if page.text.strip.empty?
+
+    reason = "Text cut at #{PdfText::MAX_PAGE_BYTES / 1.kilobyte} kB; the rest of this page was not read" if page.truncated
+    page_row(number, "text", text: page.text, reason: reason)
   end
 
   def page_row(number, status, text: nil, reason: nil)
@@ -119,7 +202,8 @@ module FieldFile::PdfExtraction
   def store_pdf_result(result)
     now = Time.current
     rows = Array(result[:pages]).sort_by { it[:page_number] }
-    coverage = rows.group_by { it[:native_status] }.transform_values(&:size)
+    joined, joined_truncated = joined_text(rows)
+    coverage = result[:status] ? nil : coverage_for(rows, result, joined_truncated)
     status, reason = result[:status] ? [ result[:status], result[:reason] ] : outcome(coverage)
 
     with_lock do
@@ -127,24 +211,36 @@ module FieldFile::PdfExtraction
       FieldFilePage.insert_all(rows.map { it.merge(field_file_id: id, created_at: now, updated_at: now) }) if rows.any?
       update_columns(
         pdf_status: status, pdf_status_reason: reason&.truncate(500),
-        pdf_page_count: result[:page_count], pdf_coverage: (coverage if rows.any?),
-        extracted_text: joined_text(rows), text_extracted_at: now
+        pdf_page_count: result[:page_count], pdf_coverage: coverage,
+        extracted_text: joined, text_extracted_at: now
       )
     end
   end
 
+  # Page counts by state. Pages past the listed ones have no row and are
+  # counted as skipped.
+  def coverage_for(rows, result, joined_truncated)
+    counts = rows.group_by { it[:native_status] }.transform_values(&:size)
+    tail = result[:page_count].to_i - result[:listed].to_i
+    counts["skipped"] = counts["skipped"].to_i + tail if tail.positive?
+    truncated = rows.count { it[:native_status] == "text" && it[:native_reason] }
+    counts["truncated"] = truncated if truncated.positive?
+    counts.merge("listed" => result[:listed].to_i, "search_text_truncated" => joined_truncated)
+  end
+
   def outcome(coverage)
-    failed, skipped = coverage["failed"].to_i, coverage["skipped"].to_i
-    return [ "extracted", nil ] if failed.zero? && skipped.zero?
+    failed, skipped, truncated = coverage["failed"].to_i, coverage["skipped"].to_i, coverage["truncated"].to_i
+    return [ "extracted", nil ] if failed.zero? && skipped.zero? && truncated.zero?
 
     parts = []
     parts << "#{failed} #{"page".pluralize(failed)} could not be read" if failed.positive?
     parts << "#{skipped} #{"page".pluralize(skipped)} not read (a limit was reached)" if skipped.positive?
+    parts << "#{truncated} #{"page".pluralize(truncated)} cut short (too much text)" if truncated.positive?
     [ "partial", parts.join("; ") ]
   end
 
   # The pages' text in order, for search and summaries, cut whole-page where
-  # it can be and never mid-character.
+  # it can be and never mid-character. => [text, cut?]
   def joined_text(rows)
     joined = +""
     rows.each do |row|
@@ -153,11 +249,11 @@ module FieldFile::PdfExtraction
       piece = joined.empty? ? row[:native_text] : PAGE_SEPARATOR + row[:native_text]
       if joined.bytesize + piece.bytesize > MAX_JOINED_BYTES
         joined << piece.byteslice(0, MAX_JOINED_BYTES - joined.bytesize).scrub("")
-        break
+        return [ joined, true ]
       end
       joined << piece
     end
-    joined
+    [ joined, false ]
   end
 
 end

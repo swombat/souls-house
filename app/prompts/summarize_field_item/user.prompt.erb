@@ -1,6 +1,7 @@
 Kind: <%= kind %>
 Title: <%= title %>
 <% if note.present? %>Why it was brought in: <%= note %>
+<% end %><% if coverage.present? %>About the material (from the house, not from the document): <%= coverage %>
 <% end %>
 <material>
 <%= content %>

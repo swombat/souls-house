@@ -23,6 +23,7 @@
           line += ` ${plural(e.pages_without_text, 'page')} ${e.pages_without_text === 1 ? 'has' : 'have'} no text of its own (blank or scanned), so nothing was read from ${e.pages_without_text === 1 ? 'it' : 'them'}.`;
         }
         if (e.status === 'partial' && e.reason) line += ` Partly read: ${e.reason}.`;
+        if (e.search_text_truncated) line += ' Search and summaries use only the beginning of the text.';
         return line;
       }
     }
@@ -46,6 +47,9 @@
           <p class="text-xs text-muted-foreground mb-1">Page {page.number}</p>
           {#if page.status === 'text'}
             <p class="whitespace-pre-wrap text-sm break-words">{page.text}</p>
+            {#if page.reason}
+              <p class="text-sm italic text-muted-foreground" data-testid="field-file-pdf-page-cut">{page.reason}.</p>
+            {/if}
           {:else}
             <p class="text-sm italic text-muted-foreground">{pageNote(page)}</p>
           {/if}

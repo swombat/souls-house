@@ -2,10 +2,12 @@
 # pdfinfo for the page count and encryption, pdftotext for each page's text
 # layer. Nothing here sends anything anywhere.
 #
-# Every call is bounded: wall-clock time (`timeout`, then SIGKILL), address
-# space and file size (`prlimit`), and the text read back. Arguments go to the
-# process as an argv array, never through a shell. Output files live in a
-# temporary directory that is removed afterwards.
+# Every call is bounded. Arguments go to the process as an argv array, never
+# through a shell. The child runs under `timeout` (the caller's limit, then
+# SIGKILL after KILL_GRACE) and `prlimit` (address space, and a size cap on
+# every file it writes). Its stdout and stderr go to files in a temporary
+# directory, not pipes, so the size cap holds for them too and the worker
+# never buffers more than it reads back; the directory is removed afterwards.
 module PdfText
 
   class Error < StandardError; end
@@ -17,11 +19,16 @@ module PdfText
   # A command was killed for time, memory or output size, or exited badly.
   class CommandFailed < Error; end
 
+  Page = Data.define(:text, :truncated)
+
   INFO_TIMEOUT = 30
   BATCH_TIMEOUT = 60
   PAGE_TIMEOUT = 20
+  KILL_GRACE = 2
   MEMORY_LIMIT = 1.gigabyte
-  # Per page: a page's text layer above this is cut off at this many bytes.
+  # pdfinfo's report is a screenful; anything past this is not read.
+  MAX_INFO_BYTES = 64.kilobytes
+  # A page's text past this is cut, and the page says so.
   MAX_PAGE_BYTES = 256.kilobytes
   # What one page alone may write before pdftotext is stopped; a page that
   # passes this is recorded as failed rather than cut.
@@ -32,72 +39,83 @@ module PdfText
   module_function
 
   # => { pages: Integer, permissions_only: true|false }
-  def info(path)
-    stdout, stderr, status = run([ "pdfinfo", path.to_s ], timeout: INFO_TIMEOUT)
-    unless status.success?
-      raise Encrypted, "The PDF needs a password to open" if stderr.include?("Incorrect password")
+  def info(path, timeout: INFO_TIMEOUT)
+    result = run([ "pdfinfo", path.to_s ], timeout: timeout, max_bytes: MAX_INFO_BYTES)
+    unless result.success
+      raise Encrypted, "The PDF needs a password to open" if result.stderr.include?("Incorrect password")
+      raise CommandFailed, "pdfinfo #{result.failure}" if result.killed
       raise Unreadable, "Not a PDF the house can open"
     end
 
-    fields = stdout.scrub.lines.to_h { |line| line.split(":", 2).map(&:strip) }
+    fields = result.stdout.scrub.lines.to_h { |line| line.split(":", 2).map(&:strip) }
     pages = Integer(fields["Pages"].to_s, exception: false).to_i
     raise Unreadable, "The PDF has no pages" unless pages.positive?
 
     { pages: pages, permissions_only: fields["Encrypted"].to_s.start_with?("yes") }
   end
 
-  # The text layer of pages first..last, one String per page (possibly
-  # empty). Read in one pdftotext run; Poppler ends every page with a form
-  # feed, so the run splits into exactly last - first + 1 pages or is refused.
-  def pages(path, first, last, timeout: BATCH_TIMEOUT, max_bytes: MAX_PAGE_BYTES * (last - first + 1))
+  # The text layer of pages first..last, one Page per page (text possibly
+  # empty). One pdftotext run; Poppler ends every page with a form feed, so
+  # the output splits into exactly last - first + 1 pages or is refused.
+  def pages(path, first, last, timeout: BATCH_TIMEOUT, max_bytes: nil)
     count = last - first + 1
-    text = pdftotext(path, first, last, timeout: timeout, max_bytes: max_bytes)
+    max_bytes ||= count == 1 ? MAX_SINGLE_PAGE_OUTPUT : MAX_PAGE_BYTES * count
+    text = Dir.mktmpdir("pdftext") do |dir|
+      out = File.join(dir, "pages.txt")
+      result = run([ "pdftotext", "-q", "-enc", "UTF-8", "-f", first.to_s, "-l", last.to_s, path.to_s, out ],
+        timeout: timeout, max_bytes: max_bytes, dir: dir)
+      raise CommandFailed, "pdftotext #{result.failure}" unless result.success && File.exist?(out)
+
+      File.binread(out, max_bytes).to_s
+    end
+
     parts = text.split("\f", -1)
     parts.pop if parts.last == ""
     raise CommandFailed, "Expected #{count} pages, read #{parts.size}" unless parts.size == count
 
-    parts.map { |page| clean(page) }
+    parts.map { |part| clean(part) }
   end
 
-  def page(path, number)
-    pages(path, number, number, timeout: PAGE_TIMEOUT, max_bytes: MAX_SINGLE_PAGE_OUTPUT).first
-  end
+  Result = Data.define(:stdout, :stderr, :success, :killed, :exitstatus) do
+    def failure
+      return "took too long" if killed
+      return "was stopped" if exitstatus.nil?
 
-  def pdftotext(path, first, last, timeout:, max_bytes:)
-    Dir.mktmpdir("pdftext") do |dir|
-      out = File.join(dir, "out.txt")
-      _stdout, stderr, status = run(
-        [ "pdftotext", "-q", "-enc", "UTF-8", "-f", first.to_s, "-l", last.to_s, path.to_s, out ],
-        timeout: timeout, max_file_bytes: max_bytes
-      )
-      raise CommandFailed, failure(status, stderr) unless status.success? && File.exist?(out)
-
-      File.binread(out, max_bytes)
+      stderr.to_s.scrub.squish.last(STDERR_LIMIT).presence || "exited #{exitstatus}"
     end
   end
 
-  def run(command, timeout:, max_file_bytes: 0)
-    limits = [ "prlimit", "--as=#{MEMORY_LIMIT}", "--fsize=#{max_file_bytes}", "--" ]
-    Open3.capture3("timeout", "-k", "5", timeout.to_s, *limits, *command)
+  # Runs command bounded as described above. stdout and stderr are read back
+  # up to max_bytes and STDERR_LIMIT bytes.
+  def run(command, timeout:, max_bytes:, dir: nil)
+    owned = dir.nil?
+    dir ||= Dir.mktmpdir("pdfcmd")
+    out, err = File.join(dir, "stdout"), File.join(dir, "stderr")
+    seconds = [ timeout.to_f, 1 ].max.ceil
+    argv = [ "timeout", "-k", KILL_GRACE.to_s, seconds.to_s,
+             "prlimit", "--as=#{MEMORY_LIMIT}", "--fsize=#{max_bytes}", "--", *command ]
+    pid = Process.spawn(*argv, in: File::NULL, out: out, err: err, pgroup: true)
+    _, status = Process.wait2(pid)
+    Result.new(
+      stdout: File.exist?(out) ? File.binread(out, max_bytes).to_s : "",
+      stderr: File.exist?(err) ? File.binread(err, STDERR_LIMIT).to_s : "",
+      success: status.success?,
+      killed: [ 124, 137 ].include?(status.exitstatus),
+      exitstatus: status.exitstatus
+    )
   rescue Errno::ENOENT => e
     raise CommandFailed, "Missing tool: #{e.message}"
-  end
-
-  def failure(status, stderr)
-    reason = case status.exitstatus
-    when 124, 137 then "took too long"
-    when nil then "was stopped"
-    else stderr.to_s.scrub.squish.last(STDERR_LIMIT).presence || "exited #{status.exitstatus}"
-    end
-    "pdftotext #{reason}"
+  ensure
+    FileUtils.rm_rf(dir) if owned && dir
   end
 
   # UTF-8, no NULs (Postgres text can't hold them), trailing space trimmed,
-  # and capped per page.
+  # and cut at MAX_PAGE_BYTES on a character boundary.
   def clean(page)
     text = page.dup.force_encoding(Encoding::UTF_8).scrub("�").delete("\u0000")
-    text = text.byteslice(0, MAX_PAGE_BYTES).scrub("") if text.bytesize > MAX_PAGE_BYTES
-    text.rstrip
+    truncated = text.bytesize > MAX_PAGE_BYTES
+    text = text.byteslice(0, MAX_PAGE_BYTES).scrub("") if truncated
+    Page.new(text: text.rstrip, truncated: truncated)
   end
 
 end

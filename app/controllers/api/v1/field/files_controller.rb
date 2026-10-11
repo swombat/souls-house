@@ -110,6 +110,9 @@ module Api
             note: file.note,
             summary_short: file.summary_short,
             summary_long: file.summary_long,
+            # true when the summaries cover only the readable part of a PDF
+            # (text_extraction says which part).
+            summary_partial: file.summary_partial?,
             filename: file.filename,
             content_type: file.content_type,
             byte_size: file.byte_size,

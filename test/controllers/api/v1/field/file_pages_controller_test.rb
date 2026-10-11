@@ -68,6 +68,32 @@ class Api::V1::Field::FilePagesControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "pages past the reading limit exist, unread; pages past the end don't" do
+    @pdf.update_columns(pdf_page_count: 10, pdf_status: "partial",
+      pdf_coverage: @pdf.pdf_coverage.merge("skipped" => 6))
+
+    get api_v1_field_file_pages_path(@pdf), headers: @headers
+    assert_equal 4, response.parsed_body["pages"].size
+    assert_equal 4, response.parsed_body.dig("text_extraction", "pages_listed")
+
+    get api_v1_field_file_page_path(@pdf, 7), headers: @headers
+    assert_response :success
+    page = response.parsed_body["page"]
+    assert_equal "skipped", page["status"]
+    assert_nil page["text"]
+    assert_match(/Only the first/, page["reason"])
+
+    get api_v1_field_file_page_path(@pdf, 11), headers: @headers
+    assert_response :not_found
+  end
+
+  test "a summary of part of a PDF says so" do
+    @pdf.update_columns(summary_short: "Orchard ledger", summary_long: "An orchard ledger.")
+    get api_v1_field_file_path(@pdf), headers: @headers
+    assert response.parsed_body.dig("file", "summary_partial")
+    assert_equal false, response.parsed_body.dig("file", "text_extraction", "complete")
+  end
+
   test "requires a token" do
     get api_v1_field_file_pages_path(@pdf)
     assert_response :unauthorized

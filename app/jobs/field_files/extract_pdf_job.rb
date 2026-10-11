@@ -1,6 +1,12 @@
 # Reads a PDF's text layer page by page (FieldFile::PdfExtraction).
-# `backfill` does it for PDFs brought in before this existed. Nothing here
-# calls a model or leaves the house.
+# `backfill` does it for PDFs brought in before this existed.
+#
+# Reading is local, but not everything after it is: each PDF that turns out
+# to have text is queued for its summaries straight away, which sends that
+# text, the title and the note to Claude Haiku through OpenRouter on the
+# house's key (FieldSummaries, the existing summaries policy and disclosure).
+# Running the backfill therefore sends every existing text PDF's text out
+# for summarising. No page images are sent.
 module FieldFiles
   class ExtractPdfJob < ApplicationJob
 

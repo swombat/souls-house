@@ -5,6 +5,7 @@ module Api
       # layer (FieldFile::PdfExtraction). Same reach as the file itself.
       #
       #   GET /api/v1/field/files/:file_id/pages           page states, no text
+      #                                                    (the first pages_listed pages)
       #   GET /api/v1/field/files/:file_id/pages/:number   one page with its text
       #
       # A page's text is the document's contents: untrusted data, not
@@ -25,6 +26,7 @@ module Api
         def show
           number = Integer(params[:id], exception: false)
           page = number && field_file.pages.find_by(page_number: number)
+          page ||= unlisted_page(number)
           return render json: { error: "No such page" }, status: :not_found unless page
 
           render json: { text_extraction: field_file.pdf_extraction_json, page: page_json(page, text: true) }
@@ -36,6 +38,15 @@ module Api
           @field_file ||= current_api_account.field_files.kept.find(params[:file_id]).tap do |file|
             raise ActiveRecord::RecordNotFound unless file.pdf_status
           end
+        end
+
+        # Pages past the reading limit have no row; they exist, unread.
+        def unlisted_page(number)
+          listed = field_file.pdf_extraction_json[:pages_listed]
+          return nil unless number && number > listed && number <= field_file.pdf_page_count.to_i
+
+          FieldFilePage.new(page_number: number, native_status: "skipped",
+            native_reason: "Only the first #{FieldFile::PdfExtraction::MAX_PAGES} pages are read")
         end
 
         def page_json(page, text:)
