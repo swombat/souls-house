@@ -3,6 +3,7 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { DownloadSimple, LinkSimple, Trash } from 'phosphor-svelte';
   import { formatBytes, formatWhen } from '$lib/field';
+  import PdfText from '$lib/components/field/PdfText.svelte';
 
   let { file, link, onDelete } = $props();
   let copied = $state(false);
@@ -26,7 +27,8 @@
         {#if file.uploader_name}
           Brought by {file.uploader_name}{file.uploader_kind === 'resident' ? ' (resident)' : ''} ·
         {/if}
-        {#if file.dated_at}Dated {formatWhen(file.dated_at)} · {/if}{formatWhen(file.created_at)}
+        {#if file.dated_at}Dated {formatWhen(file.dated_at)} ·
+        {/if}{formatWhen(file.created_at)}
       </p>
     </div>
 
@@ -44,6 +46,10 @@
     <p class="text-sm text-muted-foreground">
       {file.filename} · {formatBytes(file.byte_size)}{file.content_type ? ` · ${file.content_type}` : ''}
     </p>
+
+    {#if file.text_extraction}
+      <PdfText extraction={file.text_extraction} pages={file.pages} />
+    {/if}
 
     <div class="flex flex-wrap gap-2">
       {#if file.download_url}

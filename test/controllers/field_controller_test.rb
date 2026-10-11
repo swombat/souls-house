@@ -202,6 +202,23 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
     assert_nil inertia_props["current_item"]
   end
 
+  test "an open PDF carries its pages' text; the list carries only the reading state" do
+    pdf = @account.field_files.create!(uploaded_by: @user,
+      file: Rack::Test::UploadedFile.new(Rails.root.join("test/fixtures/files/field_pdfs/mixed.pdf"), "application/pdf"))
+    pdf.extract_pdf!
+
+    get account_field_path(@account, item: "file-#{pdf.to_param}")
+    props = inertia_props
+    listed = props["items"].find { it["id"] == pdf.to_param }
+    assert_equal "extracted", listed.dig("text_extraction", "status")
+    assert_nil listed["pages"]
+
+    pages = props["current_item"]["pages"]
+    assert_equal %w[text text empty empty], pages.map { it["status"] }
+    assert_equal "Orchard ledger, page one: apricots and quinces.", pages.first["text"]
+    assert_nil pages.third["text"]
+  end
+
   private
 
   def inertia_props

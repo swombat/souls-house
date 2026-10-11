@@ -44,7 +44,11 @@ module FieldItems
     account.field_tags.kept.by_name.map { |tag| { id: tag.to_param, name: tag.name, item_count: counts.fetch(tag.id, 0) } }
   end
 
-  def file_json(file, tags = [])
+  # The open file (`content: true`) carries its PDF pages' text, up to
+  # VIEWER_PAGES pages; the Field list does not.
+  VIEWER_PAGES = 50
+
+  def file_json(file, tags = [], content: false)
     url_helpers = Rails.application.routes.url_helpers
     {
       key: "file-#{file.to_param}",
@@ -62,8 +66,17 @@ module FieldItems
       dated_at: file.dated_at&.iso8601,
       created_at: file.created_at.iso8601,
       tags: tags,
+      text_extraction: file.pdf_extraction_json,
+      pages: (viewer_pages(file) if content && file.pdf_readable?),
       download_url: (url_helpers.rails_blob_url(file.file, only_path: true, disposition: :attachment) if file.file.attached?)
     }
+  end
+
+  def viewer_pages(file)
+    file.pages.limit(VIEWER_PAGES).map do |page|
+      { number: page.page_number, status: page.native_status, source: (page.native_status == "text" ? "native" : nil),
+        reason: page.native_reason, text: page.native_text }
+    end
   end
 
   # In the Field list a note leaves its content behind (`content: false`);

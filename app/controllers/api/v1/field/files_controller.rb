@@ -117,6 +117,10 @@ module Api
             dated_at: file.dated_at&.iso8601,
             created_at: file.created_at.iso8601,
             tags: tags,
+            # PDFs only (nil otherwise): how much of the file the house could
+            # read, and from where. Page text is under pages_path.
+            text_extraction: file.pdf_extraction_json,
+            pages_path: (api_v1_field_file_pages_path(file) if file.pdf_status),
             download_path: download_api_v1_field_file_path(file)
           }
         end

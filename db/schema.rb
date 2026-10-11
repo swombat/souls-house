@@ -778,6 +778,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_090000) do
     t.index ["subject_user_id"], name: "index_device_streams_on_subject_user_id"
   end
 
+  create_table "field_file_pages", force: :cascade do |t|
+    t.bigint "field_file_id", null: false
+    t.integer "page_number", null: false
+    t.string "native_status", null: false
+    t.text "native_text"
+    t.string "native_reason", limit: 500
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["field_file_id", "page_number"], name: "index_field_file_pages_on_field_file_id_and_page_number", unique: true
+  end
+
   create_table "field_files", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "uploaded_by_type"
@@ -797,6 +808,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_090000) do
     t.datetime "summary_claimed_at"
     t.integer "summary_attempts", default: 0, null: false
     t.datetime "dated_at"
+    t.string "pdf_status"
+    t.string "pdf_status_reason", limit: 500
+    t.integer "pdf_page_count"
+    t.jsonb "pdf_coverage"
     t.index ["account_id", "created_at"], name: "index_field_files_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_field_files_on_account_id"
     t.index ["discarded_at"], name: "index_field_files_on_discarded_at"
@@ -2205,6 +2220,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_090000) do
   add_foreign_key "device_stream_sessions", "device_streams"
   add_foreign_key "device_streams", "accounts"
   add_foreign_key "device_streams", "users", column: "subject_user_id"
+  add_foreign_key "field_file_pages", "field_files"
   add_foreign_key "field_files", "accounts"
   add_foreign_key "field_recording_dispatches", "accounts"
   add_foreign_key "field_recording_dispatches", "field_recordings"

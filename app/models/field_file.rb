@@ -24,6 +24,7 @@ class FieldFile < ApplicationRecord
   # After the attachment: after_commit callbacks run in the order defined, and
   # extraction needs the bytes already uploaded.
   include FieldFile::TextExtraction
+  include FieldFile::PdfExtraction
   include FieldSummarizable
 
   validates :title, presence: true, length: { maximum: 200 }
@@ -37,8 +38,9 @@ class FieldFile < ApplicationRecord
 
   # An imported file sorts by when it is from, not when it arrived.
   scope :newest_first, -> { order(Arel.sql("COALESCE(field_files.dated_at, field_files.created_at) DESC"), id: :desc) }
-  # Files whose words have been read (FieldSummarizable). PDFs and other
-  # unread formats have none, so they get no summary yet.
+  # Files whose words have been read (FieldSummarizable): plain text, and
+  # PDFs with a text layer. Scanned PDFs, images and office documents have
+  # none, so they get no summary yet.
   scope :summary_readable, -> { where.not(text_extracted_at: nil).where("extracted_text ~ '[^[:space:]]'") }
 
   def uploader_name

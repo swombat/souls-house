@@ -451,6 +451,7 @@ Rails.application.routes.draw do
         resources :files, only: [ :index, :show, :create, :update, :destroy ] do
           get :download, on: :member
           resource :tags, only: :update, controller: "item_tags"
+          resources :pages, only: [ :index, :show ], controller: "file_pages"
         end
         resources :recording_uploads, path: "recordings/uploads", only: :create
         resources :recordings, only: [ :index, :show, :create, :update, :destroy ] do
