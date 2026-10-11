@@ -13,7 +13,8 @@ module Chat::Forkable
         title: new_title,
         model_id: model_id,
         web_access: web_access,
-        manual_responses: manual_responses
+        manual_responses: manual_responses,
+        room: room
       )
 
       forked.agent_ids = agent_ids if manual_responses?

@@ -49,6 +49,9 @@ class Account < ApplicationRecord
   has_one :owner, through: :owner_membership, source: :user
   has_many :chats, dependent: :destroy
   has_many :visual_tags, dependent: :destroy
+  has_many :rooms, -> { ordered }, dependent: :destroy
+  # Where conversations residents start land unless they choose; nil is Main.
+  belongs_to :resident_room, class_name: "Room", optional: true
   has_one :pin_tag, -> { pinned }, class_name: "VisualTag"
   has_many :agents, dependent: :destroy
   has_many :github_resident_imports, dependent: :restrict_with_error
@@ -84,6 +87,7 @@ class Account < ApplicationRecord
   validates :account_type, presence: true
   validates :logo_colour, inclusion: { in: ->(_) { LOGO_COLOURS } }, allow_nil: true
   validate :resident_handoff_cap_in_range
+  validate :resident_room_belongs_to_account
   validate :enforce_site_account_limit, on: :create
   validate :enforce_personal_account_limit, if: :personal?
   validate :can_invite_members, if: -> { memberships.any?(&:invitation?) }
@@ -423,6 +427,11 @@ class Account < ApplicationRecord
     return if value.nil? || (value.is_a?(Integer) && RESIDENT_HANDOFF_CAP_RANGE.cover?(value))
 
     errors.add(:resident_handoff_cap, "must be a whole number from #{RESIDENT_HANDOFF_CAP_RANGE.min} to #{RESIDENT_HANDOFF_CAP_RANGE.max}")
+  end
+
+
+  def resident_room_belongs_to_account
+    errors.add(:resident_room, "must belong to this account") if resident_room && resident_room.account_id != id
   end
 
 end

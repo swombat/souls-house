@@ -122,6 +122,8 @@ Rails.application.routes.draw do
     resource :integrations, only: :show, module: :accounts
     resource :interface, only: %i[show update], module: :accounts
     resources :visual_tags, only: [ :create, :update, :destroy ], module: :accounts
+    resources :rooms, only: [ :index, :create, :update, :destroy ], module: :accounts
+    resource :resident_room, only: :update, module: :accounts
     resources :service_authorizations, only: :create
     resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts do
       resource :pairing, only: :show, controller: "service_connection_pairings"
@@ -140,9 +142,11 @@ Rails.application.routes.draw do
       collection do
         get :search
         post :transcription, to: "chats/transcriptions#create"
+        post :move, to: "chats/moves#create"
       end
       scope module: :chats do
         resource :visual_tag, only: :update
+        resource :room, only: :update
         resource :reply_dismissal, only: :create
         resource :draft, only: [ :show, :update ]
         resource :archive, only: [ :create, :destroy ]

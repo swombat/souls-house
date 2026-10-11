@@ -26,7 +26,8 @@ module Chat::Initiable
           manual_responses: true,
           model_id: agent.model_id,
           initiated_by_agent: agent,
-          initiation_reason: reason
+          initiation_reason: reason,
+          room: agent.account.resident_room
         )
         chat.agent_ids = [ agent.id ] + invited_agents.map(&:id)
         chat.save!

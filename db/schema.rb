@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_11_183000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_11_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -38,8 +38,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_183000) do
     t.bigint "recording_ms_weekly_limit", default: 72000000, null: false
     t.boolean "recognise_voices", default: false, null: false
     t.boolean "founding", default: false, null: false
+    t.bigint "resident_room_id"
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
+    t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
     t.index ["slug"], name: "index_accounts_on_slug", unique: true
   end
 
@@ -590,6 +592,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_183000) do
     t.datetime "updated_at", null: false
     t.boolean "web_access", default: false, null: false
     t.bigint "visual_tag_id"
+    t.bigint "room_id"
     t.index ["account_id", "client_conversation_id"], name: "index_chats_on_client_conversation_identity", unique: true, where: "(client_conversation_id IS NOT NULL)"
     t.index ["account_id", "created_at"], name: "index_chats_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_chats_on_account_id"
@@ -600,6 +603,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_183000) do
     t.index ["initiated_by_agent_id"], name: "index_chats_on_initiated_by_agent_id"
     t.index ["last_consolidated_at"], name: "index_chats_on_last_consolidated_at"
     t.index ["manual_responses"], name: "index_chats_on_manual_responses"
+    t.index ["room_id"], name: "index_chats_on_room_id"
     t.index ["visual_tag_id"], name: "index_chats_on_visual_tag_id"
     t.index ["web_access"], name: "index_chats_on_web_access"
   end
@@ -1878,6 +1882,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_183000) do
     t.check_constraint "creator_id IS NULL OR creator_agent_id IS NULL", name: "rhythms_one_creator"
   end
 
+  create_table "rooms", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", limit: 40, null: false
+    t.integer "position", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "account_id, lower((name)::text)", name: "index_rooms_on_account_and_lower_name", unique: true
+    t.index ["account_id"], name: "index_rooms_on_account_id"
+    t.index ["id", "account_id"], name: "index_rooms_on_id_and_account_id", unique: true
+  end
+
   create_table "runner_commands", force: :cascade do |t|
     t.string "public_id", null: false
     t.bigint "runner_enrollment_id", null: false
@@ -2308,6 +2323,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_183000) do
     t.index ["account_id"], name: "index_x_integrations_on_account_id", unique: true
   end
 
+  add_foreign_key "accounts", "rooms", column: "resident_room_id", on_delete: :nullify
   add_foreign_key "action_mcp_session_messages", "action_mcp_sessions", column: "session_id", name: "fk_action_mcp_session_messages_session_id", on_update: :cascade, on_delete: :cascade
   add_foreign_key "action_mcp_session_subscriptions", "action_mcp_sessions", column: "session_id", on_delete: :cascade
   add_foreign_key "action_mcp_session_tasks", "action_mcp_sessions", column: "session_id", name: "fk_action_mcp_session_tasks_session_id", on_update: :cascade, on_delete: :cascade
@@ -2343,6 +2359,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_183000) do
   add_foreign_key "chats", "accounts"
   add_foreign_key "chats", "agents", column: "initiated_by_agent_id"
   add_foreign_key "chats", "ai_models"
+  add_foreign_key "chats", "rooms", column: ["room_id", "account_id"], primary_key: ["id", "account_id"]
   add_foreign_key "chats", "visual_tags", column: ["visual_tag_id", "account_id"], primary_key: ["id", "account_id"]
   add_foreign_key "chats", "whiteboards", column: "active_whiteboard_id"
   add_foreign_key "cloud_procurement_operations", "agent_placements"
@@ -2483,6 +2500,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_183000) do
   add_foreign_key "rhythms", "accounts", on_delete: :cascade
   add_foreign_key "rhythms", "agents", column: "creator_agent_id", on_delete: :nullify
   add_foreign_key "rhythms", "users", column: "creator_id", on_delete: :nullify
+  add_foreign_key "rooms", "accounts"
   add_foreign_key "runner_commands", "agent_placements"
   add_foreign_key "runner_commands", "resident_turns"
   add_foreign_key "runner_commands", "runner_enrollments"

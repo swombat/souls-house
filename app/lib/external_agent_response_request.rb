@@ -285,11 +285,19 @@ class ExternalAgentResponseRequest
     <<~TEXT.strip
       Conversation metadata:
       - id: #{chat.to_param}
-      - title: #{chat.title_or_default}
+      - title: #{chat.title_or_default}#{room_line}
       - agents: #{agents.any? ? agents.join(", ") : "_none recorded_"}
       - humans_seen_in_transcript: #{humans.any? ? humans.join(", ") : "_none in stored messages_"}
       #{account_line}
     TEXT
+  end
+
+  # The room is a hint about what the conversation is for, not an instruction.
+  # Only residents at home see it, and only once the account has rooms.
+  def room_line
+    return "" unless chat.account_id == agent.account_id && chat.account.rooms.exists?
+
+    "\n- room: #{chat.room&.name || Room::MAIN}"
   end
 
   # Say plainly when the resident is a guest in the room's account, so context

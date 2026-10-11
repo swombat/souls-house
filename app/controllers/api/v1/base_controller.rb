@@ -43,6 +43,21 @@ module Api
         reachable.find(params[:account_id])
       end
 
+      # Room names and ids are private to an account's own people and
+      # residents: a guest resident never sees them.
+      def rooms_visible_in?(account)
+        current_api_agent.nil? || current_api_agent.account_id == account.id
+      end
+
+      # A room by public id or by name ("Main", any case, is no room).
+      # Raises RecordNotFound for an unknown room.
+      def resolve_room(account, value)
+        return nil if value.nil? || (value.is_a?(String) && value.strip.casecmp?(Room::MAIN))
+        raise ActiveRecord::RecordNotFound unless value.is_a?(String) && value.strip.present?
+
+        account.rooms.find_by("lower(name) = ?", value.strip.downcase) || Room.resolve_for(account, value)
+      end
+
       # Rooms a key may act in: its account's rooms and, for a resident key,
       # every room where that resident holds a seat, at home or as a guest.
       def actionable_chats

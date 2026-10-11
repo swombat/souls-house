@@ -18,7 +18,14 @@ module ApiConversationJson
       deleted: chat.discarded?,
       message_count: chat.message_count,
       updated_at: chat.updated_at.iso8601
-    }
+    }.merge(conversation_room_json(chat))
+  end
+
+  # { room: { id:, name: } }, id nil for Main; nothing at all for a guest resident.
+  def conversation_room_json(chat)
+    return {} unless rooms_visible_in?(chat.account)
+
+    { room: chat.room ? chat.room.as_json : { "id" => nil, "name" => Room::MAIN } }
   end
 
 end

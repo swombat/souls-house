@@ -21,6 +21,9 @@ class Chat < ApplicationRecord
   belongs_to :account
   belongs_to :visual_tag, optional: true
   validate :visual_tag_belongs_to_account
+  # No room means Main (see Room).
+  belongs_to :room, optional: true
+  validate :room_belongs_to_account
   belongs_to :active_whiteboard, class_name: "Whiteboard", optional: true
 
   has_many :chat_agents, dependent: :destroy
@@ -37,6 +40,7 @@ class Chat < ApplicationRecord
                   :participants_json, :archived_at, :discarded_at, :archived, :discarded, :respondable, :summary do |hash, options|
     hash["visual_tag"] = visual_tag&.as_json
     hash.delete("visual_tag_id")
+    hash["room_id"] = room_id && Room.encode_id(room_id)
     # For sidebar format, only include attributes used by the chat list UI.
     if options&.dig(:as) == :sidebar_json
       hash.slice!(
@@ -51,6 +55,7 @@ class Chat < ApplicationRecord
         "manual_responses",
         "participants_json",
         "visual_tag",
+        "room_id",
         "archived",
         "discarded"
       )
@@ -87,6 +92,8 @@ class Chat < ApplicationRecord
   after_create_commit -> { GenerateTitleJob.perform_later(self) }, unless: :title?
   after_update_commit :refresh_reply_attention, if: :saved_change_to_discarded_at?
 
+  # nil is Main; :all is every room.
+  scope :in_room, ->(room) { room == :all ? all : where(room_id: room&.id) }
   scope :latest, -> { order(Arel.sql("COALESCE(chats.last_message_at, chats.created_at) DESC"), id: :desc) }
   # Pinned conversations lead; chain before `latest` so each group keeps recency order.
   scope :pinned_first, -> { left_joins(:visual_tag).order(Arel.sql("visual_tags.pinned IS TRUE DESC")) }
@@ -452,6 +459,10 @@ class Chat < ApplicationRecord
   end
 
   private
+
+  def room_belongs_to_account
+    errors.add(:room, "must belong to this account") if room && room.account_id != account_id
+  end
 
   def visual_tag_belongs_to_account
     if visual_tag && visual_tag.account_id != account_id

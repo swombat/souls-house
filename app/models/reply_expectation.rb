@@ -26,11 +26,15 @@ class ReplyExpectation < ApplicationRecord
     chats = Chat.where(id: counts.filter_map { |aid, cid| cid if aid == account&.id }).index_by(&:id)
     by_account = Hash.new(0)
     by_chat = {}
+    by_room = Hash.new(0)
     through_messages = {}
     counts.each do |aid, cid, count, through_id|
       by_account[accounts.fetch(aid).to_param] += 1
       next unless chats.key?(cid)
       by_chat[chats.fetch(cid).to_param] = count
+      # Conversations waiting on you, per room ("main" for no room).
+      room_id = chats.fetch(cid).room_id
+      by_room[room_id ? Room.encode_id(room_id) : "main"] += 1
       through_messages[chats.fetch(cid).to_param] = Message.encode_id(through_id)
     end
     message_ids = if chat && chat.account_id == account&.id
@@ -38,7 +42,7 @@ class ReplyExpectation < ApplicationRecord
     else
       []
     end
-    { total: counts.size, accounts: by_account, chats: by_chat, through_messages: through_messages, messages: message_ids }
+    { total: counts.size, accounts: by_account, chats: by_chat, rooms: by_room, through_messages: through_messages, messages: message_ids }
   end
 
   # The person's open flags in one account (and optionally one conversation),

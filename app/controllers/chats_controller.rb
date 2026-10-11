@@ -8,6 +8,7 @@ class ChatsController < ApplicationController
   before_action :require_available_agents, only: [ :index, :new ]
 
   def index
+    select_room_from_params
     @chats = sidebar_chats
 
     render inertia: "chats/new", props: {
@@ -20,6 +21,7 @@ class ChatsController < ApplicationController
   end
 
   def new
+    select_room_from_params
     @chats = sidebar_chats
 
     render inertia: "chats/new", props: {
@@ -32,6 +34,8 @@ class ChatsController < ApplicationController
   end
 
   def show
+    # A direct link opens the conversation's own room, unless you are viewing All chats.
+    select_room!(@chat.room) unless selected_room == :all || selected_room == @chat.room
     props = {
       account: current_account.as_json,
       show_usage_in_chat: Setting.instance.show_usage_in_chat
@@ -82,7 +86,7 @@ class ChatsController < ApplicationController
     end
 
     @chat = current_account.chats.create_with_message!(
-      chat_create_params.merge(manual_responses: true),
+      chat_create_params.merge(manual_responses: true, room: room_for_new_chat),
       message_content: params[:message],
       user: Current.user,
       files: params[:files],
@@ -132,8 +136,21 @@ class ChatsController < ApplicationController
 
   private
 
+  def select_room_from_params
+    select_room!(room_from_key(params[:room])) if params[:room].is_a?(String)
+  end
+
+  # An explicit choice from the form wins; otherwise the room being viewed.
+  def room_for_new_chat
+    if params.key?(:room_id)
+      Room.resolve_for(current_account, params[:room_id].presence)
+    else
+      selected_room == :all ? nil : selected_room
+    end
+  end
+
   def sidebar_chats
-    base_scope = current_account.chats.includes(:visual_tag)
+    base_scope = current_account.chats.in_room(selected_room).includes(:visual_tag)
 
     if params[:show_deleted].present? && can_manage_account?
       chats = base_scope.with_discarded
@@ -282,6 +299,7 @@ class ChatsController < ApplicationController
       id: message.to_param,
       chat_id: message.chat.to_param,
       chat_title: message.chat.title_or_default,
+      room_name: message.chat.room&.name,
       snippet: snippet_around(message.content, query),
       author_name: message.author_name,
       role: message.role,

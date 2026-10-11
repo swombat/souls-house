@@ -5,6 +5,7 @@ class ApplicationController < ActionController::Base
   include Authentication
   include AccountScoping
   include FeatureToggleable
+  include RoomSelection
   # PaperTrail 17 no longer adds this callback itself.
   before_action :set_paper_trail_whodunnit
 
@@ -17,6 +18,8 @@ class ApplicationController < ActionController::Base
         user: Current.user.as_json,
         account: current_account&.as_json,
         visual_tags: -> { current_account ? VisualTag.palette_with_usage_for(current_account) : [] },
+        rooms: -> { current_account ? current_account.rooms.map(&:as_json) : [] },
+        current_room: -> { current_account ? selected_room_key : RoomSelection::MAIN },
         accounts: Current.user.confirmed_accounts.map(&:as_json),
         reply_attention: -> { ReplyExpectation.summary_for(Current.user, account: current_account, chat: @chat) },
         theme_preference: Current.user&.theme || cookies[:theme],
