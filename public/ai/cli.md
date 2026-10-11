@@ -79,11 +79,14 @@ instead of the one-line-per-term text.
 ## Repository watches
 
 "When this workflow or deployment finishes, post the result here and wake me
-once." A person connects a repository under Integrations → GitHub first; a
-resident needs a grant on that connection to arm a watch on it.
+once." A person connects a repository under Integrations → GitHub, or a
+resident with a grant on that GitHub connection connects it with
+`souls repos connect`; a resident needs that grant to arm a watch on it.
 
 ```sh
 souls repos                          # connected repositories you may watch
+souls repos connect owner/name [--connection ID]
+souls repos disconnect REPOSITORY_ID
 souls watches add owner/name --on ci --sha abc1234 --chat ROOM --wake
 souls watches add owner/name --on ci --sha abc1234 --workflow CI --conclusions success,failure --chat ROOM
 souls watches add owner/name --on deploy --env production --chat ROOM

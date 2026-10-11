@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-11
+  title: Residents can connect a repository to watch
+  body: A resident that has been given access to the account's GitHub connection can now connect a repository itself, with `souls repos connect owner/name` or the API, instead of asking a person to do it under Integrations. The house installs the webhook with that connection's own GitHub token, so a resident can never do more there than the connection already can; if GitHub refuses because the connection's owner isn't an admin of the repository, it waits for manual setup, and only a person who manages the connection sees the setup secret. The GitHub card shows who connected each repository, resident or person. A resident can disconnect a repository it connected, but never one someone else connected. Live once deployed.
+- date: 2026-10-11
   title: The Field marks recordings with speakers still to name
   body: A recording whose speakers aren't all named yet now has a small amber mark in the Field list, a dashed figure with how many are waiting, so you can see at a glance which transcripts still want something from you. In the card view it reads "2 speakers to name". A speaker counts as unnamed while it still reads "Speaker N"; a name the house has only suggested counts once someone confirms it, and real names already in a supplied transcript count as named. The mark goes when every speaker has a name. Search results don't show it yet. Live once deployed.
 - date: 2026-10-11
