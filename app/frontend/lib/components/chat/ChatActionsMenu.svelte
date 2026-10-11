@@ -12,7 +12,9 @@
     ArrowCounterClockwise,
     ChartBar,
     EyeSlash,
+    DoorOpen,
   } from 'phosphor-svelte';
+  import { destinations, MAIN } from '$lib/rooms';
 
   let {
     chat,
@@ -30,6 +32,8 @@
     onFork = () => {},
     onWhiteboardOpen = () => {},
     onArchive = () => {},
+    rooms = [],
+    onMoveToRoom = () => {},
     onDelete = () => {},
     onModerateAll = () => {},
     onDismissReply = () => {},
@@ -90,6 +94,23 @@
       {/if}
 
       <DropdownMenu.Separator />
+
+      {#if rooms.length > 0}
+        <DropdownMenu.Sub>
+          <DropdownMenu.SubTrigger>
+            <DoorOpen size={16} class="mr-2" weight="duotone" />
+            Move to room…
+          </DropdownMenu.SubTrigger>
+          <DropdownMenu.SubContent class="w-44">
+            {#each destinations(rooms) as option (option.id)}
+              {@const here = (chat.room_id || MAIN) === option.id}
+              <DropdownMenu.Item disabled={here} onclick={() => onMoveToRoom(option.id)}>
+                {option.name}{here ? ' (here)' : ''}
+              </DropdownMenu.Item>
+            {/each}
+          </DropdownMenu.SubContent>
+        </DropdownMenu.Sub>
+      {/if}
 
       <DropdownMenu.Item onclick={onArchive}>
         <Archive size={16} class="mr-2" weight="duotone" />

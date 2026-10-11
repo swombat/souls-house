@@ -1,11 +1,12 @@
 <script>
-  import { router } from '@inertiajs/svelte';
+  import { page, router } from '@inertiajs/svelte';
   import { onDestroy, onMount } from 'svelte';
   import ChatList from '@/pages/chats/ChatList.svelte';
   import GroupChatAgentPicker from './GroupChatAgentPicker.svelte';
   import NewChatComposer from './NewChatComposer.svelte';
   import NewChatEmptyState from './NewChatEmptyState.svelte';
   import NewChatHeader from './NewChatHeader.svelte';
+  import NewChatRoomPicker from './NewChatRoomPicker.svelte';
   import { accountChatsPath } from '@/routes';
   import { NewConversationDraft } from '$lib/new-conversation-draft';
 
@@ -32,6 +33,8 @@
   let message = $state(restored.message);
   let title = $state(restored.title);
   let sidebarOpen = $state(false);
+  // A new conversation starts in the room being viewed; from All chats, Main.
+  let roomId = $state($page.props.current_room === 'all' ? 'main' : $page.props.current_room || 'main');
   let textareaRef = $state(null);
   const placeholder =
     Math.random() < 0.1
@@ -85,6 +88,7 @@
     if (pendingAudioSignedId) formData.append('audio_signed_id', pendingAudioSignedId);
     selectedFiles.forEach((file) => formData.append('files[]', file));
     selectedAgentIds.forEach((agentId) => formData.append('agent_ids[]', agentId));
+    if (($page.props.rooms || []).length) formData.append('room_id', roomId === 'main' ? '' : roomId);
 
     router.post(accountChatsPath(account.id), formData, {
       headers: userId ? { 'X-Draft-User': userId } : {},
@@ -143,6 +147,7 @@
       <NewChatEmptyState {chats} accountId={account.id} />
     </div>
 
+    <NewChatRoomPicker bind:roomId />
     {#if error}
       <p role="alert" class="px-4 py-2 text-destructive">{error}</p>
     {/if}

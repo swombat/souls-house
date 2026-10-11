@@ -11,6 +11,7 @@
     CreditCard,
     Palette,
     BookOpenText,
+    DoorOpen,
   } from 'phosphor-svelte';
   import { siteName } from '$lib/branding';
   import {
@@ -28,6 +29,7 @@
   const tabs = $derived([
     { id: 'general', label: 'General', icon: Buildings, href: accountPath(account.id) },
     { id: 'interface', label: 'Interface', icon: Palette, href: `/accounts/${account.id}/interface` },
+    { id: 'rooms', label: 'Rooms', icon: DoorOpen, href: `/accounts/${account.id}/rooms` },
     { id: 'model_api_keys', label: 'Model API keys', icon: Cpu, href: accountAgentApiKeysPath(account.id) },
     { id: 'house_api', label: `${$siteName} API`, icon: PlugsConnected, href: accountApiKeysPath(account.id) },
     { id: 'integrations', label: 'Integrations', icon: Plugs, href: `/accounts/${account.id}/integrations` },

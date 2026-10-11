@@ -88,6 +88,9 @@
               <div class="flex items-center gap-2 text-sm font-medium text-foreground">
                 <ChatText size={16} class="text-muted-foreground" />
                 <span class="truncate">{result.chat_title}</span>
+                {#if result.room_name}
+                  <span class="shrink-0 rounded bg-muted px-1.5 text-xs text-muted-foreground">{result.room_name}</span>
+                {/if}
               </div>
               <ArrowRight
                 size={14}

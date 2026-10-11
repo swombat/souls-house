@@ -18,6 +18,7 @@
   import MobileNavMenu from '$lib/components/navigation/MobileNavMenu.svelte';
   import SiteAdminMenu from '$lib/components/navigation/SiteAdminMenu.svelte';
   import UserAccountMenu from '$lib/components/navigation/UserAccountMenu.svelte';
+  import ChatRoomsNavMenu from '$lib/components/navigation/ChatRoomsNavMenu.svelte';
   import * as logging from '$lib/logging';
   import { DEFAULT_SITE_NAME } from '$lib/branding';
   import { clearLocalDrafts } from '$lib/conversation-draft';
@@ -157,7 +158,9 @@
       <div class="hidden md:flex items-center">
         <!-- Remount Inertia links when their account-scoped href changes so the click handler cannot retain the previous URL. -->
         {#each links as link (`${link.label}:${link.href}`)}
-          {#if link.show}
+          {#if link.show && link.label === 'Chats' && $page.props?.rooms?.length && currentAccount?.id}
+            <ChatRoomsNavMenu accountId={currentAccount.id} label={link.label} />
+          {:else if link.show}
             <Link
               href={link.href}
               class={cn(buttonVariants({ variant: 'ghost' }), 'rounded-full text-muted-foreground')}>{link.label}</Link>

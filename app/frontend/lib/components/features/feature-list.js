@@ -458,6 +458,13 @@ export const moreFeatures = [
     icon: Tag,
   },
   {
+    key: 'rooms',
+    title: 'Rooms for different parts of life',
+    description:
+      'Give development, personal conversations, or anything else a room of its own, so one never buries another.',
+    icon: DoorOpen,
+  },
+  {
     key: 'colour-themes',
     title: 'Your own colours',
     description: 'Tint the whole site in a colour of your choosing, and give each account its own dot in the logo.',

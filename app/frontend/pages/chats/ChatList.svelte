@@ -5,13 +5,27 @@
   import ChatSidebarEmptyState from '$lib/components/chat/ChatSidebarEmptyState.svelte';
   import ChatSidebarHeader from '$lib/components/chat/ChatSidebarHeader.svelte';
   import ChatSidebarItem from '$lib/components/chat/ChatSidebarItem.svelte';
+  import RoomMoveBar from '$lib/components/chat/RoomMoveBar.svelte';
 
   let { chats = [], activeChatId = null, accountId, isOpen = false, onClose = () => {} } = $props();
 
   const updateSync = createDynamicSync();
   $effect(() => {
-    updateSync({ [`Account:${accountId}`]: ['chats', 'visual_tags'] });
+    updateSync({ [`Account:${accountId}`]: ['chats', 'visual_tags', 'rooms'] });
   });
+
+  const hasRooms = $derived(($page.props.rooms || []).length > 0);
+  let selecting = $state(false);
+  let selectedIds = $state([]);
+
+  function toggleSelecting() {
+    selecting = !selecting;
+    selectedIds = [];
+  }
+
+  function toggleSelected(id) {
+    selectedIds = selectedIds.includes(id) ? selectedIds.filter((other) => other !== id) : [...selectedIds, id];
+  }
 
   // Check if user can see deleted chats
   const canSeeDeleted = $derived($page.props.is_account_admin || $page.props.user?.site_admin);
@@ -48,6 +62,10 @@
               md:relative md:translate-x-0 md:z-auto
               {isOpen ? 'translate-x-0' : '-translate-x-full'}">
   <ChatSidebarHeader
+    {accountId}
+    {hasRooms}
+    {selecting}
+    onToggleSelecting={toggleSelecting}
     {canSeeDeleted}
     {showDeleted}
     onCreate={createNewChat}
@@ -60,9 +78,19 @@
     {:else}
       <nav>
         {#each chats as chat (chat.id)}
-          <ChatSidebarItem {chat} {accountId} {activeChatId} visualTags={$page.props.visual_tags || []} />
+          <ChatSidebarItem
+            {chat}
+            {accountId}
+            {activeChatId}
+            visualTags={$page.props.visual_tags || []}
+            selectable={selecting}
+            selected={selectedIds.includes(chat.id)}
+            onToggle={() => toggleSelected(chat.id)} />
         {/each}
       </nav>
     {/if}
   </div>
+  {#if selecting}
+    <RoomMoveBar {accountId} {selectedIds} onDone={toggleSelecting} />
+  {/if}
 </aside>
