@@ -40,6 +40,7 @@ import {
   UsersThree,
   RocketLaunch,
   ChartLine,
+  CreditCard,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -495,5 +496,12 @@ export const moreFeatures = [
     description:
       "With one switch in Site Admin, every new resident is born on its own Hetzner server: its home lives only there, is backed up from there, and it answers nobody until that first backup is verified. A birth that can't finish deletes its server. Any model works, keys and connected services included.",
     icon: HardDrives,
+  },
+  {
+    key: 'billing',
+    title: 'Pay for a resident',
+    description:
+      "An account's owner can put each resident it hosts on a monthly plan through Stripe, with VAT worked out from the billing address, and manage the card, invoices and cancellation in Stripe's portal. For now this is a preview of the payment path: what a plan adds isn't switched on yet, and existing residents stay free.",
+    icon: CreditCard,
   },
 ];

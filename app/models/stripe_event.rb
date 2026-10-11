@@ -15,12 +15,39 @@ class StripeEvent < ApplicationRecord
   scope :retryable, ->(now = Time.current) {
     unfinished.where(updated_at: ..(now - STUCK_AFTER)).where(attempts: ...MAX_ATTEMPTS)
   }
+  # A worker that died mid-attempt on its last try: nothing else will pick it up.
+  scope :abandoned, ->(now = Time.current) {
+    where(status: "processing", updated_at: ..(now - STUCK_AFTER)).where(attempts: MAX_ATTEMPTS..)
+  }
 
   def self.record!(stripe_event_id:, event_type:, payload:)
     create_or_find_by!(stripe_event_id: stripe_event_id) do |event|
       event.event_type = event_type
       event.payload = payload
     end
+  end
+
+  # Atomically takes an event for one attempt. Received and failed events can
+  # be claimed, and so can one left in processing past STUCK_AFTER (its worker
+  # died). Returns the claimed attempt number, or nil if another worker holds
+  # it or it is already processed.
+  def self.claim(id, now: Time.current)
+    claimed = where(id: id)
+      .where("status IN ('received', 'failed') OR (status = 'processing' AND updated_at <= ?)", now - STUCK_AFTER)
+      .update_all([ "status = 'processing', attempts = attempts + 1, updated_at = ?", now ])
+    claimed == 1 ? where(id: id).pick(:attempts) : nil
+  end
+
+  # Records the outcome of an attempt, only if that attempt still owns the
+  # event, so a late worker can't overwrite a newer result.
+  def finish!(attempt:, status:, error: nil, now: Time.current)
+    self.class.where(id: id, status: "processing", attempts: attempt).update_all(
+      status: status, last_error: error, processed_at: (status == "processed" ? now : nil), updated_at: now
+    ) == 1
+  end
+
+  def recoverable?(now = Time.current)
+    status.in?(%w[received failed]) || (status == "processing" && updated_at <= now - STUCK_AFTER)
   end
 
   def processed? = status == "processed"

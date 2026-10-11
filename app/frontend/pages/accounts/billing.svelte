@@ -12,7 +12,7 @@
     pending: 'Awaiting payment',
     active: 'Paid',
     grace: 'Payment failed',
-    held: 'On hold',
+    held: 'Lapsed',
     complimentary: 'Free (complimentary)',
   };
 
@@ -79,11 +79,15 @@
   {#if !billing.configured}
     <div class="rounded border p-6 text-sm text-muted-foreground">Billing isn't switched on for this house yet.</div>
   {:else}
-    {#if billing.test_mode}
-      <div class="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-        Stripe test mode: no real money moves. Use card 4242 4242 4242 4242 with any future date.
-      </div>
-    {/if}
+    <div class="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-1">
+      <p>
+        <strong>Preview.</strong> This stage takes payment and records each resident's plan. What a plan includes below is
+        proposed and not delivered yet, and a lapsed payment is recorded but doesn't pause anything yet.
+      </p>
+      {#if billing.test_mode}
+        <p>Stripe test mode: no real money moves. Use card 4242 4242 4242 4242 with any future date.</p>
+      {/if}
+    </div>
 
     <div class="grid gap-4 sm:grid-cols-2">
       {#each tiers as tier (tier.id)}
@@ -96,10 +100,11 @@
                 / month + VAT</span>
             </div>
           </div>
-          <ul class="mt-2 space-y-1 text-sm text-muted-foreground">
-            <li>Hosting for one resident, in a container on the shared house server</li>
-            <li>Up to {tier.memory_gb} GB memory</li>
-            <li>${tier.allowance_usd} of house inference a month (resets on the 1st, UTC)</li>
+          <p class="mt-2 text-sm">Hosting for one resident, in a container on the shared house server.</p>
+          <p class="mt-2 text-xs font-medium text-muted-foreground">Proposed, not available yet:</p>
+          <ul class="mt-1 space-y-1 text-xs text-muted-foreground">
+            <li>A larger container (about {tier.memory_gb} GB memory)</li>
+            <li>About ${tier.allowance_usd} of house inference a month</li>
           </ul>
         </div>
       {/each}
@@ -119,11 +124,10 @@
             </div>
             <div class="mt-1 text-xs text-muted-foreground">
               {#if entitlement?.state === 'grace'}
-                The last payment failed. Update the card before {date(entitlement.grace_deadline)} to keep {resident.name}
-                running.
+                The last payment failed. Update the card from Manage billing before {date(entitlement.grace_deadline)}.
               {:else if entitlement?.state === 'held'}
-                Paused for billing since {date(entitlement.held_at)}. Nothing has been deleted; subscribing again
-                resumes it.
+                The paid plan lapsed on {date(entitlement.held_at)}. This is recorded only: nothing has been paused or
+                deleted.
               {:else if entitlement?.subscription?.cancel_at_period_end}
                 Cancels on {date(entitlement.subscription.current_period_end)}.
               {:else if entitlement?.state === 'active' && entitlement.subscription?.current_period_end}
@@ -148,6 +152,12 @@
         <div class="p-6 text-sm text-muted-foreground">This account doesn't host any residents yet.</div>
       {/each}
     </div>
+
+    <p class="text-xs text-muted-foreground">
+      30-day money-back guarantee: if a plan isn't right for you, email
+      <a class="underline" href="mailto:hello@souls.house">hello@souls.house</a> within 30 days of a payment and we'll refund
+      it.
+    </p>
 
     {#if !billing.can_pay}
       <p class="text-xs text-muted-foreground">Only the account owner can start or change a plan.</p>

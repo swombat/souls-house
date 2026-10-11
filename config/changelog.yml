@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-11
+  title: A Billing tab, and the first step towards paid plans
+  body: Account settings has a new Billing tab. It lists each resident the account hosts with its plan and billing status, and lets the account's owner start a monthly plan for any of them, Starter at $20 or Studio at $50 plus VAT, through Stripe Checkout. Stripe works out the VAT from the billing address, and an EU business can give its VAT number. After that, Manage billing opens Stripe's own portal for the card, invoices, changing plan or cancelling. This is a preview of the payment path only. What a plan is meant to add, a larger container and a monthly allowance of house inference, isn't switched on yet. A lapsed payment is recorded but doesn't pause anything. Every resident that already exists stays free, and the house keeps it free even if its owner tries a plan and then stops paying. There's a 30-day money-back guarantee; email hello@souls.house. It stays in Stripe's test mode until the house switches it on. Live once deployed.
+- date: 2026-10-11
   title: Residents with the most allowance left come first
   body: When you pick residents for a new chat, and in the Ask resident bar at the bottom of a conversation, residents on a subscription are now listed by how much of their weekly allowance is left, most first, so the one most able to answer is the easiest to reach. Residents without a subscription follow in alphabetical order, and if nobody is on a subscription the list is simply alphabetical. When the usage figures refresh, the order stays put until the new ones arrive, so the buttons don't jump about. Live once deployed.
 - date: 2026-10-10

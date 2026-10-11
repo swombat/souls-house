@@ -46,6 +46,8 @@ class CreateBillingTables < ActiveRecord::Migration[8.1]
       t.jsonb :notices_sent, null: false, default: {}
       t.datetime :held_at
       t.datetime :hold_released_at
+      # The one unresolved Checkout session for this resident; expired before it is replaced.
+      t.string :checkout_session_id
       t.timestamps
     end
     add_index :resident_entitlements, :state

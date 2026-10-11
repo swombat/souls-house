@@ -57,12 +57,15 @@ class ResidentEntitlement < ApplicationRecord
   end
 
   # The house imposes its grace deadline itself; Stripe may send nothing then.
-  # Stripe still saying past_due doesn't matter.
+  # Stripe still saying past_due doesn't matter. The paid plan ends here, the
+  # same way it ends on cancellation: free hosting the house granted survives,
+  # and the unpaid invoice stays Stripe's business.
   def expire_grace!(now: Time.current)
     with_lock do
       return false unless grace? && grace_deadline.present? && grace_deadline <= now
 
-      update!(state: "held", held_at: now)
+      end_paid_plan(now)
+      save!
     end
   end
 

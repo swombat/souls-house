@@ -127,4 +127,26 @@ class ResidentEntitlementTest < ActiveSupport::TestCase
     assert_nil entitlement.held_at
   end
 
+
+  test "free hosting survives a grace deadline as it survives a cancellation" do
+    entitlement.update!(state: "complimentary", source: "complimentary", complimentary_granted_at: @now)
+    sub = subscription("sub_1", "active")
+    entitlement.apply_subscription!(sub, now: @now)
+    sub.update!(stripe_status: "past_due")
+    entitlement.apply_subscription!(sub, now: @now)
+    assert entitlement.reload.grace?
+
+    assert entitlement.expire_grace!(now: @now + 14.days)
+    entitlement.reload
+    assert entitlement.complimentary?
+    assert_equal "complimentary", entitlement.source
+    assert_nil entitlement.held_at
+    assert_nil entitlement.grace_deadline
+
+    # Stripe later giving up on the invoice changes nothing further.
+    sub.update!(stripe_status: "unpaid")
+    entitlement.apply_subscription!(sub, now: @now + 20.days)
+    assert entitlement.reload.complimentary?
+  end
+
 end

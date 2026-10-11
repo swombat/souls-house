@@ -27,8 +27,56 @@ class Billing::ProcessStripeEventJobTest < ActiveJob::TestCase
       assert ResidentEntitlement.find_by!(agent: @agent).active?
 
       Billing::ProcessStripeEventJob.perform_now(@event.id)
-      assert_equal 2, @event.reload.attempts
+      assert_equal 2, @event.reload.attempts, "a processed event is not claimed again"
     end
+  end
+
+  test "a worker killed mid-attempt is recovered once it goes stale, not before" do
+    attempt = StripeEvent.claim(@event.id)
+    assert_equal 1, attempt
+    # The worker dies here: the event is left in processing.
+    assert_nil StripeEvent.claim(@event.id), "a live worker's claim is respected"
+
+    travel 11.minutes do
+      assert_equal 2, StripeEvent.claim(@event.id)
+    end
+  end
+
+  test "two workers can't both run an attempt, and a late one can't overwrite a newer result" do
+    first = StripeEvent.claim(@event.id)
+    assert_nil StripeEvent.claim(@event.id)
+
+    travel 11.minutes do
+      second = StripeEvent.claim(@event.id)
+      assert @event.finish!(attempt: second, status: "processed")
+      assert_not @event.finish!(attempt: first, status: "failed", error: "late")
+    end
+    assert_equal "processed", @event.reload.status
+    assert_nil @event.last_error
+  end
+
+  test "a worker killed on the final attempt is escalated by the sweeper" do
+    @event.update_columns(status: "processing", attempts: StripeEvent::MAX_ATTEMPTS, updated_at: 11.minutes.ago)
+    reports = []
+    subscriber = Object.new
+    subscriber.define_singleton_method(:report) { |error, **| reports << error }
+    Rails.error.subscribe(subscriber)
+
+    assert_no_enqueued_jobs(only: Billing::ProcessStripeEventJob) { Billing::SweepJob.perform_now }
+
+    @event.reload
+    assert_equal "failed", @event.status
+    assert_match(/final attempt/, @event.last_error)
+    assert(reports.any? { |error| error.is_a?(Billing::SweepJob::AbandonedEvent) })
+  ensure
+    Rails.error.unsubscribe(subscriber) if subscriber
+  end
+
+  test "a Stripe retry recovers a stale processing event through the webhook path" do
+    @event.update_columns(status: "processing", attempts: StripeEvent::MAX_ATTEMPTS, updated_at: 11.minutes.ago)
+    assert @event.reload.recoverable?
+    @event.update_columns(updated_at: 1.minute.ago)
+    assert_not @event.reload.recoverable?
   end
 
   test "the sweeper retries events left unfinished" do

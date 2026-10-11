@@ -7,15 +7,19 @@ class FakeStripe
     def initialize(**handlers) = super(handlers)
     def retrieve(id, *) = handlers.fetch(:retrieve).call(id)
     def create(params = {}, opts = {}) = handlers.fetch(:create).call(params, opts)
+    def expire(id, *) = handlers.fetch(:expire).call(id)
   end
 
-  attr_reader :created_customers, :checkout_sessions, :portal_sessions
+  attr_reader :created_customers, :checkout_sessions, :portal_sessions, :expired_sessions, :session_states
 
   def initialize
     @subscriptions = {}
     @created_customers = []
     @checkout_sessions = []
     @portal_sessions = []
+    @expired_sessions = []
+    # Checkout session id => { status:, subscription: }, as Stripe would report it.
+    @session_states = {}
   end
 
   def put_subscription(id:, agent:, customer:, price:, status:, period_end: 1.month.from_now, cancel_at_period_end: false)
@@ -44,10 +48,23 @@ class FakeStripe
   end
 
   def checkout
-    sessions = Service.new(create: lambda { |params, opts|
-      @checkout_sessions << [ params, opts ]
-      Stripe::StripeObject.construct_from(id: "cs_test_1", url: "https://checkout.stripe.com/c/pay/cs_test_1")
-    })
+    sessions = Service.new(
+      create: lambda { |params, opts|
+        @checkout_sessions << [ params, opts ]
+        id = "cs_test_#{@checkout_sessions.size}"
+        @session_states[id] = { status: "open", subscription: nil }
+        Stripe::StripeObject.construct_from(id: id, url: "https://checkout.stripe.com/c/pay/#{id}")
+      },
+      retrieve: lambda { |id|
+        Stripe::StripeObject.construct_from({ id: id }.merge(@session_states.fetch(id)))
+      },
+      expire: lambda { |id|
+        raise Stripe::InvalidRequestError.new("Session is not open", "id") unless @session_states.dig(id, :status) == "open"
+
+        @expired_sessions << id
+        @session_states[id][:status] = "expired"
+      }
+    )
     Struct.new(:sessions).new(sessions)
   end
 

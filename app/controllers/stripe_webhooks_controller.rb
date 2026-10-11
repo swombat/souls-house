@@ -13,7 +13,10 @@ class StripeWebhooksController < ApplicationController
     payload = request.raw_post
     event = Stripe::Webhook.construct_event(payload, request.headers["Stripe-Signature"].to_s, secret)
     record = StripeEvent.record!(stripe_event_id: event.id, event_type: event.type, payload: JSON.parse(payload))
-    Billing::ProcessStripeEventJob.perform_later(record.id) unless record.processed? || record.status == "processing"
+    # A Stripe retry is a recovery path: anything unfinished, including a
+    # worker that died mid-attempt, is queued again. The job's claim keeps
+    # two workers from running one attempt.
+    Billing::ProcessStripeEventJob.perform_later(record.id) if record.recoverable?
 
     head :ok
   rescue Stripe::SignatureVerificationError

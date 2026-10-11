@@ -1608,6 +1608,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_090000) do
     t.jsonb "notices_sent", default: {}, null: false
     t.datetime "held_at"
     t.datetime "hold_released_at"
+    t.string "checkout_session_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_resident_entitlements_on_account_id"

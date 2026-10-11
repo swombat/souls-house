@@ -294,9 +294,16 @@ advisory lock; Checkout (Stripe Tax, VAT ID collection, required billing
 address) and the Customer Portal; an account **Billing** tab; complimentary
 backfill of existing hosted residents.
 
-One addition from implementation: `complimentary_granted_at`. A resident the
-house hosts free whose owner then subscribes and later cancels goes back to
-complimentary, not to `held`, since "existing residents stay free".
+Additions from implementation and Mira's review of `c79c406`:
+`complimentary_granted_at`, so a resident the house hosts free goes back to
+complimentary (not `held`) when a paid plan ends by cancellation *or* by the
+grace deadline. One unresolved Checkout session per resident
+(`checkout_session_id`), expired at Stripe before it is replaced, under a row
+lock, so two links can't both be paid. Events are claimed atomically per
+attempt; a worker that dies mid-attempt is recovered once stale, and one that
+dies on the final attempt is escalated by the sweeper. The Billing tab is
+labelled a preview: plan benefits are shown as proposed, a lapse as recorded
+only, with the 30-day guarantee.
 
 **Not yet, in order:** the hold boundary (turn admission, reservations,
 rhythms, queued-turn cancel, drain, container stop and restart); the paid
