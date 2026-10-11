@@ -625,4 +625,45 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes text, "authenticated_download_path: /api/v1/conversations/#{chat.to_param}/messages/#{message.to_param}/attachments/#{message.audio_recording_attachment.id}"
   end
 
+  test "conversation metadata names the room for a home resident once the account has rooms" do
+    agent = agents(:research_assistant)
+    life = agent.account.rooms.create!(name: "Life")
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Roomed", room: life)
+
+    metadata = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:conversation_metadata)
+
+    assert_includes metadata, "- room: Life"
+  end
+
+  test "conversation metadata names Main for a home resident's room-less conversation, once rooms exist" do
+    agent = agents(:research_assistant)
+    agent.account.rooms.create!(name: "Life")
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Unroomed")
+
+    metadata = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:conversation_metadata)
+
+    assert_includes metadata, "- room: Main"
+  end
+
+  test "conversation metadata has no room line while the account has no rooms at all" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "No rooms yet")
+
+    metadata = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:conversation_metadata)
+
+    refute_includes metadata, "- room:"
+  end
+
+  test "conversation metadata has no room line for a guest resident, even where the account has rooms" do
+    agent = agents(:research_assistant)
+    guest_account = accounts(:team_account)
+    guest_account.rooms.create!(name: "Life")
+    guest_account.guest_memberships.create!(agent: agent, added_by: users(:user_1))
+    chat = guest_account.chats.create!(model_id: "openrouter/auto", title: "Guest room", agents: [ agent ])
+
+    metadata = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:conversation_metadata)
+
+    refute_includes metadata, "- room:"
+  end
+
 end
