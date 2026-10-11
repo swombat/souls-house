@@ -88,6 +88,7 @@ module FieldSummaries
     PromptTemplate.render("summarize_field_item", :user,
       kind: item.is_a?(FieldRecording) ? "recording transcript" : "file",
       title: item.title.to_s, note: item.note.to_s,
+      coverage: item.try(:pdf_summary_coverage),
       content: truncated ? "#{source[0, MAX_SOURCE_CHARS]}\n[… the rest is cut off]" : source)
   end
 

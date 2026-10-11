@@ -33,6 +33,23 @@ class Api::V1::Field::RecordingsControllerTest < ActionDispatch::IntegrationTest
     %w[audio voice_id field_voice print words naming_source suggest].each { |key| assert_not_includes json, "\"#{key}" }
   end
 
+  test "a resident reads a recording's notes" do
+    @recording.update!(notes: "- Ask Priya about the board pack")
+    get api_v1_field_recording_path(@recording), headers: @headers
+    assert_equal "- Ask Priya about the board pack", response.parsed_body.dig("recording", "notes")
+  end
+
+  test "two diarized speakers linked to one voice are one speaker to a resident" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    @recording.speakers.each { |speaker| speaker.name_as!(ioan, by: @user) }
+
+    get api_v1_field_recording_path(@recording), headers: @headers
+    body = response.parsed_body["recording"]
+    assert_equal [ { "label" => "Speaker 1", "name" => "Ioan", "talk_ms" => @recording.speakers.sum(:talk_ms),
+                     "diarized_as" => [ "Speaker 1", "Speaker 2" ] } ], body["speakers"]
+    assert_equal 1, body["transcript_text"].lines.size, "their consecutive turns join"
+  end
+
   test "unfinished recordings have no transcript yet, and discarded ones are gone" do
     queued = queued_recording(account: @account, user: @user)
     get api_v1_field_recording_path(queued), headers: @headers

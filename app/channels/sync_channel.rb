@@ -30,6 +30,10 @@ class SyncChannel < ApplicationCable::Channel
       model: FieldRecording,
       collections: []
     },
+    "FieldTweet" => {
+      model: FieldTweet,
+      collections: []
+    },
     "Setting" => {
       allow_all: true
     }

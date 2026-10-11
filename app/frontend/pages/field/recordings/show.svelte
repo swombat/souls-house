@@ -4,14 +4,17 @@
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import SpeakerCard from '$lib/components/field/SpeakerCard.svelte';
+  import RecordingNotes from '$lib/components/field/RecordingNotes.svelte';
   import TranscriptTurns from '$lib/components/field/TranscriptTurns.svelte';
   import { formatWhen } from '$lib/field';
   import {
     activeWordIndex,
     buildTurns,
     formatDuration,
+    groupSpeakers,
     recordingStatusLine,
     recordingsTabPath,
+    speakerKeys,
     speakerNames,
     suppliedTurns,
     timedWords,
@@ -40,7 +43,12 @@
   // Supplied transcripts (brought in with the audio) have turns, not timed
   // words: no word highlighting, talk time, clips or voice samples.
   const supplied = $derived(recording.transcript_source === 'supplied');
-  const turns = $derived(supplied ? suppliedTurns(recording.turns) : buildTurns(recording.words));
+  const turns = $derived(
+    supplied ? suppliedTurns(recording.turns) : buildTurns(recording.words, speakerKeys(speakers))
+  );
+  // One card per person: diarized speakers linked to one voice share a card.
+  const groups = $derived(groupSpeakers(speakers));
+  const speakerUrl = (speaker) => `/accounts/${account.id}/field/recordings/${recording.id}/speakers/${speaker.id}`;
   const wordList = $derived(supplied ? [] : timedWords(turns));
   const names = $derived(speakerNames(speakers));
   const totalTalkMs = $derived(speakers.reduce((sum, speaker) => sum + (speaker.talk_ms || 0), 0));
@@ -97,6 +105,31 @@
     audio.play().catch(() => {});
   }
 
+  // One line corrected by hand. Resolves {ok} only when the server took it;
+  // a refusal (the transcript changed meanwhile, an empty line) or a failed
+  // request resolves {ok: false} with why, and the editor keeps the text.
+  function saveLine(edit, text) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (result) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+      router.patch(
+        `${recording.show_url}/line`,
+        { line: { ...edit.address, text, was: edit.was, revision: edit.revision } },
+        {
+          preserveScroll: true,
+          preserveState: true,
+          onSuccess: () => settle({ ok: true }),
+          onError: (errors) => settle({ ok: false, error: errors?.line }),
+          onFinish: () => settle({ ok: false }),
+        }
+      );
+    });
+  }
+
   function retry() {
     router.post(`${recording.show_url}/retry`);
   }
@@ -146,6 +179,8 @@
       data-testid="recording-audio"></audio>
   {/if}
 
+  <RecordingNotes {recording} />
+
   {#if !ready}
     <Card.Root>
       <Card.Content class="py-10 text-center space-y-3">
@@ -186,16 +221,19 @@
           >Voices this Field knows</Link>
       </div>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {#each speakers as speaker (speaker.id)}
+        {#each groups as group (group.key)}
           <SpeakerCard
-            {speaker}
+            speaker={group.speaker}
+            parts={group.parts}
+            {speakerUrl}
             {totalTalkMs}
             onPlayClip={playClip}
             onSeek={seek}
             recognitionEnabled={recognition_enabled && !supplied}
             accountId={account.id}
             recordingId={recording.id}
-            url={`/accounts/${account.id}/field/recordings/${recording.id}/speakers/${speaker.id}`}
+            url={speakerUrl(group.speaker)}
+            with={group.parts.filter((part) => part.id !== group.speaker.id).map((part) => part.id)}
             {voices}
             members={members_without_voice}
             myVoiceId={my_voice_id}
@@ -208,7 +246,13 @@
     {#if turns.length}
       <Card.Root>
         <Card.Content class="p-6">
-          <TranscriptTurns {turns} {names} {activeIndex} onSeek={seek} />
+          <TranscriptTurns
+            {turns}
+            {names}
+            {activeIndex}
+            onSeek={seek}
+            onSave={saveLine}
+            revision={recording.transcript_revision} />
         </Card.Content>
       </Card.Root>
     {:else}

@@ -15,6 +15,7 @@ Rails.application.routes.draw do
         post :state, to: "/test_support/e2e#state"
         post :cleanup, to: "/test_support/e2e#cleanup"
         post :stone_fixture, to: "/test_support/e2e#stone_fixture"
+        post :field_recording_fixture, to: "/test_support/e2e#field_recording_fixture"
       end
     end
   end
@@ -71,6 +72,8 @@ Rails.application.routes.draw do
   post "webhooks/repositories/:receiver_token", to: "repository_webhooks#receive", as: :repository_webhook
 
   post "webhooks/elevenlabs/stt", to: "eleven_labs_stt_webhooks#create", as: :eleven_labs_stt_webhook
+  # Stripe billing events (signed, no session)
+  post "webhooks/stripe", to: "stripe_webhooks#create", as: :stripe_webhook
 
   # Comms connector events over the private network (HMAC-signed with each
   # connection's callback secret, no session).
@@ -108,6 +111,10 @@ Rails.application.routes.draw do
     resource :agent_api_keys, only: [ :show, :update ], module: :accounts
     resources :guest_memberships, only: [ :create, :destroy ], module: :accounts
     resource :costs, only: :show, module: :accounts
+    resource :billing, only: :show, module: :accounts do
+      post :checkout
+      post :portal
+    end
     resources :notices, only: [ :index, :create, :destroy ], module: :accounts
     resource :transcription_glossary, path: "glossary", only: [ :show, :create, :update, :destroy ], module: :accounts
     resources :api_keys, path: "external_access", only: [ :index, :create, :destroy ]
@@ -201,10 +208,19 @@ Rails.application.routes.draw do
     get "field", to: "field#index", as: :field
     resources :field_tags, path: "field/tags", only: [ :update, :destroy ]
     patch "field/item_tags", to: "field_item_tags#update", as: :field_item_tags
-    resources :field_files, path: "field/files", only: [ :create, :update, :destroy ]
+    resources :field_files, path: "field/files", only: [ :create, :update, :destroy ] do
+      post :resummarize, on: :member
+    end
+    resources :field_tweets, path: "field/tweets", only: [ :destroy ]
+    resource :field_tweet_source, path: "field/tweet_stream", only: [ :create, :update, :destroy ] do
+      post :pause
+      post :resume
+    end
     resources :field_recording_uploads, path: "field/recordings/uploads", only: [ :create ]
     resources :field_recordings, path: "field/recordings", only: [ :show, :create, :update, :destroy ] do
       post :retry, on: :member
+      post :resummarize, on: :member
+      patch :line, on: :member, action: :correct_line
       post :dismiss_you_hint, on: :collection
       resources :speakers, only: [ :update ], controller: "field_recording_speakers" do
         resources :enrolments, only: [ :create ], controller: "field_voice_enrolments"
@@ -445,7 +461,12 @@ Rails.application.routes.draw do
         resources :files, only: [ :index, :show, :create, :update, :destroy ] do
           get :download, on: :member
           resource :tags, only: :update, controller: "item_tags"
+          resources :pages, only: [ :index, :show ], controller: "file_pages"
         end
+        resources :tweets, only: [ :index, :show, :destroy ] do
+          resource :tags, only: :update, controller: "item_tags"
+        end
+        get :tweet_stream, to: "tweets#stream"
         resources :recording_uploads, path: "recordings/uploads", only: :create
         resources :recordings, only: [ :index, :show, :create, :update, :destroy ] do
           member do

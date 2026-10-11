@@ -7,6 +7,10 @@
 #                          page is asked "same Priya?" unless link_existing
 #   unname: true           back to "Speaker N"
 #
+# with: [<speaker id>, ...] applies the naming (or unnaming) to other speakers
+# on this recording linked to the same voice as this one: the transcriber
+# heard one person as several speakers, and the page shows them as one.
+#
 # Naming never touches other recordings, and never builds anything biometric.
 class FieldRecordingSpeakersController < ApplicationController
 
@@ -16,10 +20,14 @@ class FieldRecordingSpeakersController < ApplicationController
   def update
     attributes = params.require(:speaker).permit(:me, :voice_id, :member_user_id, :name, :link_existing, :unname,
       :confirm_suggestion, :dismiss_suggestion, :suggestion_generation, :confirm_recognition, :dismiss_recognition,
-      recognition: %i[voice_id print_generation decision_generation])
+      recognition: %i[voice_id print_generation decision_generation], with: [])
+    companion_ids = decode_ids(attributes[:with])
 
     if truthy?(attributes[:unname])
-      @speaker.unname!
+      with_companions(companion_ids) do |companions|
+        @speaker.unname!
+        companions.each(&:unname!)
+      end
     elsif truthy?(attributes[:dismiss_recognition])
       return out_of_date unless @speaker.dismiss_recognition!(shown: attributes[:recognition])
     elsif truthy?(attributes[:confirm_recognition])
@@ -34,8 +42,13 @@ class FieldRecordingSpeakersController < ApplicationController
       voice = resolve_voice(attributes)
       return if performed?
 
-      @speaker.name_as!(voice, by: Current.user)
+      with_companions(companion_ids, voices: [ voice ]) do |companions|
+        @speaker.name_as!(voice, by: Current.user)
+        companions.each { |companion| companion.name_as!(voice, by: Current.user) }
+      end
     end
+    return out_of_date(STALE_GROUP) if @stale_group
+
     redirect_to recording_path
   rescue ActiveRecord::RecordInvalid => e
     redirect_to recording_path, inertia: { errors: { name: e.record.errors.full_messages.to_sentence } }
@@ -47,6 +60,33 @@ class FieldRecordingSpeakersController < ApplicationController
     recording = current_account.field_recordings.kept.find(params[:field_recording_id])
     # Association finders decode with the owner's salt, so decode explicitly.
     @speaker = recording.speakers.find_by!(id: FieldRecordingSpeaker.decode_id(params[:id]))
+  end
+
+  STALE_GROUP = "This person changed since the page loaded. Please look again."
+
+  def decode_ids(ids) = Array(ids).filter_map { |id| FieldRecordingSpeaker.decode_id(id.to_s) }
+
+  # A merged card's decision, made as one. The group is chosen under the
+  # naming locks (account → recording → voices) and the whole batch is one
+  # transaction, so nothing can change membership between choosing and
+  # writing, and a part that can't be updated rolls back the rest. Companions
+  # are only speakers on this recording still linked to the voice this one
+  # had when the request arrived: one corrected to someone else in the
+  # meantime keeps that correction. If this speaker itself has moved, the
+  # page was stale and nothing changes.
+  def with_companions(ids, voices: [])
+    return yield([]) if ids.empty?
+
+    shown_voice_id = @speaker.field_voice_id
+    return yield([]) if shown_voice_id.nil?
+
+    FieldVoiceprints::Locks.with(account: current_account, recording: @speaker.field_recording,
+      voices: [ *voices, FieldVoice.find_by(id: shown_voice_id) ].compact) do |_account, recording, _voices|
+      @speaker.reload
+      next @stale_group = true unless @speaker.field_voice_id == shown_voice_id
+
+      yield recording.speakers.where(id: ids, field_voice_id: shown_voice_id).where.not(id: @speaker.id).order(:id).to_a
+    end
   end
 
   def recording_path
@@ -85,8 +125,8 @@ class FieldRecordingSpeakersController < ApplicationController
     end
   end
 
-  def out_of_date
-    redirect_to recording_path, inertia: { errors: { name: "This suggestion is out of date." } }
+  def out_of_date(message = "This suggestion is out of date.")
+    redirect_to recording_path, inertia: { errors: { name: message } }
   end
 
   def match_json(voice)

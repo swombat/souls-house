@@ -7,7 +7,8 @@ class FieldItemTagsController < ApplicationController
   KINDS = {
     "file" => ->(account) { account.field_files.kept },
     "recording" => ->(account) { account.field_recordings.kept },
-    "note" => ->(account) { account.whiteboards.active }
+    "note" => ->(account) { account.whiteboards.active },
+    "tweet" => ->(account) { account.field_tweets.kept }
   }.freeze
 
   def update

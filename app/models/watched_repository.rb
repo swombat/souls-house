@@ -1,11 +1,13 @@
 # One repository an account has connected for watches: one webhook on GitHub,
-# however many watches are armed on it. Connected by a person through a GitHub
-# ServiceConnection; residents never connect repositories, they arm watches
-# on the ones that are connected (RepositoryWatch).
+# however many watches are armed on it. Connected through a GitHub
+# ServiceConnection by a person who can manage it, or by a resident holding an
+# enabled grant on it; watches are then armed on it (RepositoryWatch).
 #
 # The hook is installed with the connection's token. GitHub refuses that
-# unless the connecting user is an admin of the repository; then the status is
+# unless the token's owner is an admin of the repository; then the status is
 # "manual" and the card shows the receiver URL and secret for someone who is.
+# So a grant never becomes more than the connection's own GitHub permission:
+# GitHub, not the house, decides whether the hook can be installed.
 # Either way the hook counts as installed only once GitHub's signed ping
 # arrives (RepositoryWebhooksController).
 class WatchedRepository < ApplicationRecord
@@ -16,6 +18,7 @@ class WatchedRepository < ApplicationRecord
   belongs_to :account
   belongs_to :service_connection
   belongs_to :created_by_user, class_name: "User", optional: true
+  belongs_to :created_by_agent, class_name: "Agent", optional: true
   has_many :repository_watches, dependent: :delete_all
   has_many :repository_deliveries, dependent: :delete_all
 
@@ -36,7 +39,8 @@ class WatchedRepository < ApplicationRecord
 
   # Connect a repository and try to install its hook. Returns the record, in
   # whatever hook status GitHub's answer leaves it.
-  def self.connect!(connection:, full_name:, user:)
+  # `by` is the User or Agent connecting it; authority is the caller's check.
+  def self.connect!(connection:, full_name:, by:)
     raise ConnectError, "Repository watches need a GitHub connection" unless connection.provider == "github"
     raise ConnectError, "That GitHub connection is not connected" unless connection.status == "connected"
 
@@ -51,7 +55,8 @@ class WatchedRepository < ApplicationRecord
     repository = create!(
       account: connection.account,
       service_connection: connection,
-      created_by_user: user,
+      created_by_user: (by if by.is_a?(User)),
+      created_by_agent: (by if by.is_a?(Agent)),
       owner: owner,
       name: name,
       full_name: info.fetch("full_name"),
@@ -130,7 +135,8 @@ class WatchedRepository < ApplicationRecord
       hook_error: hook_error,
       last_delivery_at: last_delivery_at&.utc&.iso8601,
       last_delivery_result: last_delivery_result,
-      armed_watches: repository_watches.armed.count
+      armed_watches: repository_watches.armed.count,
+      connected_by: connected_by_json
     }.tap do |json|
       # The secret is shown only to people who may manage the repository, and
       # only while someone still has to paste it into GitHub.
@@ -141,6 +147,14 @@ class WatchedRepository < ApplicationRecord
   end
 
   private
+
+  def connected_by_json
+    if created_by_agent
+      { type: "resident", id: created_by_agent.to_param, name: created_by_agent.name }
+    elsif created_by_user
+      { type: "person", name: created_by_user.full_name.presence || created_by_user.email_address.split("@").first }
+    end
+  end
 
   def setup_url
     receiver_url

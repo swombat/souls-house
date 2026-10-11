@@ -1,4 +1,4 @@
-# Search across one account's Field: recordings, files and notes.
+# Search across one account's Field: recordings, files, notes and tweets.
 #
 # Matching is Postgres full text with the `simple` configuration over each
 # item's search_vector (title, note, body; see the migration): every word
@@ -18,7 +18,7 @@ class FieldSearch
   PAGE_SIZE = 20
   MAX_QUERY_LENGTH = 200
   MAX_TAGS = 10
-  KINDS = %w[recording file note].freeze
+  KINDS = %w[recording file note tweet].freeze
   SORTS = %w[newest relevance].freeze
   BODY_LIMIT = 128_000 # the migration's body cap (bytes there; excerpts read this many characters)
 
@@ -44,13 +44,20 @@ class FieldSearch
       # it came into the Field.
       date: "COALESCE(field_recordings.recorded_at, field_recordings.created_at)",
       kept: "field_recordings.discarded_at IS NULL",
-      body: "concat_ws(E'\\n\\n', field_recordings.note, CASE WHEN field_recordings.status = 'ready' THEN field_recordings.transcript_text END)"
+      body: "concat_ws(E'\\n\\n', field_recordings.note, field_recordings.notes, " \
+        "CASE WHEN field_recordings.status = 'ready' THEN field_recordings.transcript_text END)"
     },
     "file" => {
       model: "FieldFile", table: "field_files",
       date: "COALESCE(field_files.dated_at, field_files.created_at)",
       kept: "field_files.discarded_at IS NULL",
       body: "concat_ws(E'\\n\\n', field_files.note, field_files.extracted_text)"
+    },
+    "tweet" => {
+      model: "FieldTweet", table: "field_tweets",
+      date: "field_tweets.posted_at",
+      kept: "field_tweets.discarded_at IS NULL",
+      body: "field_tweets.text"
     },
     "note" => {
       model: "Whiteboard", table: "whiteboards",

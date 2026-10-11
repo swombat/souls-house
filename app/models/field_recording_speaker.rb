@@ -40,6 +40,23 @@ class FieldRecordingSpeaker < ApplicationRecord
 
   def display_name = field_voice&.kept? ? field_voice.name : default_name
 
+  # Who this speaker is, for grouping: the voice a human linked it to, or this
+  # diarized speaker alone. Scribe sometimes hears one person as two speakers;
+  # once both are linked to one voice they are one person everywhere they are
+  # shown. Never by name equality: only the link counts.
+  def identity = field_voice&.kept? ? [ :voice, field_voice_id ] : [ :speaker, label ]
+
+  # Speakers grouped by identity, in order of first appearance.
+  def self.grouped(speakers) = speakers.sort_by(&:position).group_by(&:identity).values
+
+  # Still waiting for a name: no kept voice, and no real name from a supplied
+  # transcript. A pending suggestion doesn't count until someone confirms it.
+  def unnamed?
+    return false if field_voice&.kept?
+
+    !(field_recording.supplied? && !label.match?(GENERIC_LABEL))
+  end
+
   # A human names this speaker. Every speaker decision (naming, un-naming,
   # confirming or dismissing a suggestion or a guess) takes the one lock order,
   # account → recording → voice, and reloads the speaker under it, so it is

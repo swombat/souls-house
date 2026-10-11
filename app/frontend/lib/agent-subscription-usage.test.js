@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentNameWithUsage } from './agent-subscription-usage';
+import { agentNameWithUsage, sortAgentsByAvailability } from './agent-subscription-usage';
 
 describe('agent subscription usage labels', () => {
   it('shows usage when the site setting is enabled', () => {
@@ -13,5 +13,35 @@ describe('agent subscription usage labels', () => {
   it('always shows usage below 25 percent', () => {
     expect(agentNameWithUsage('Wing', 24.5, false)).toBe('Wing (24.5% left)');
     expect(agentNameWithUsage('Wing', 25, false)).toBe('Wing');
+  });
+});
+
+describe('sortAgentsByAvailability', () => {
+  const agents = [
+    { id: 'z', name: 'Zed' },
+    { id: 'm', name: 'mira' },
+    { id: 'l', name: 'Lume' },
+    { id: 'a', name: 'Ash' },
+  ];
+  const names = (list) => list.map((agent) => agent.name);
+
+  it('sorts alphabetically when nobody has a weekly percentage', () => {
+    expect(names(sortAgentsByAvailability(agents, {}))).toEqual(['Ash', 'Lume', 'mira', 'Zed']);
+    expect(names(sortAgentsByAvailability(agents, { z: null, m: null }))).toEqual(['Ash', 'Lume', 'mira', 'Zed']);
+  });
+
+  it('puts residents with a percentage first, most available first', () => {
+    const sorted = sortAgentsByAvailability(agents, { l: 12, z: 80, m: null });
+    expect(names(sorted)).toEqual(['Zed', 'Lume', 'Ash', 'mira']);
+  });
+
+  it('breaks percentage ties by name', () => {
+    expect(names(sortAgentsByAvailability(agents, { z: 50, a: 50 }))).toEqual(['Ash', 'Zed', 'Lume', 'mira']);
+  });
+
+  it('does not mutate the input', () => {
+    const copy = [...agents];
+    sortAgentsByAvailability(agents, { z: 90 });
+    expect(agents).toEqual(copy);
   });
 });

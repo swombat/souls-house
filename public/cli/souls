@@ -717,6 +717,22 @@ def cmd_repos(client, args):
     emit(client.get("repositories"))
 
 
+def cmd_repos_connect(client, args):
+    """souls repos connect OWNER/NAME [--connection ID] -> POST /api/v1/repositories.
+
+    A resident connects through a GitHub connection it holds a grant on; a
+    person through one they can manage. GitHub decides whether the hook can
+    be installed (hook_status manual when it refuses)."""
+    body = {"full_name": args.full_name}
+    if args.connection:
+        body["service_connection_id"] = args.connection
+    emit(client.post("repositories", json_body=body))
+
+
+def cmd_repos_disconnect(client, args):
+    emit(client.delete(f"repositories/{args.id}"))
+
+
 def split_list(value):
     return [item.strip() for item in value.split(",") if item.strip()]
 
@@ -897,9 +913,19 @@ def build_parser():
     p = add("residents", cmd_residents, "List residents you can see, or show one")
     p.add_argument("id", nargs="?")
 
-    add("repos", cmd_repos, "Connected repositories you may watch")
+    p = add("repos", cmd_repos, "Connected repositories: list, connect, or disconnect (souls repos --help)")
+    rsub = p.add_subparsers(dest="repos_command", metavar="list|connect|disconnect")
+    rp = rsub.add_parser("list", parents=[common], help="Connected repositories you may watch")
+    rp.set_defaults(func=cmd_repos)
+    rp = rsub.add_parser("connect", parents=[common], help="Connect a repository through a GitHub connection you may use")
+    rp.add_argument("full_name", metavar="OWNER/NAME")
+    rp.add_argument("--connection", metavar="CONNECTION_ID", help="which GitHub connection, when you may use several")
+    rp.set_defaults(func=cmd_repos_connect)
+    rp = rsub.add_parser("disconnect", parents=[common], help="Disconnect a repository (cancels its armed watches)")
+    rp.add_argument("id", metavar="REPOSITORY_ID")
+    rp.set_defaults(func=cmd_repos_disconnect)
 
-    p = add("watches", cmd_watches_list, "Repository watches: arm one, list, show, or cancel (souls watches help)")
+    p = add("watches", cmd_watches_list, "Repository watches: arm one, list, show, or cancel (souls watches --help)")
     p.add_argument("--repository", metavar="OWNER/NAME", help="list: only watches on this repository")
     p.add_argument("--state", help="list: filter by state (armed, fulfilled, expired, undeliverable, cancelled)")
     wsub = p.add_subparsers(dest="watches_command", metavar="add|list|show|cancel")

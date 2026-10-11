@@ -110,6 +110,9 @@ module Api
             note: file.note,
             summary_short: file.summary_short,
             summary_long: file.summary_long,
+            # true when the summaries cover only the readable part of a PDF
+            # (text_extraction says which part).
+            summary_partial: file.summary_partial?,
             filename: file.filename,
             content_type: file.content_type,
             byte_size: file.byte_size,
@@ -117,6 +120,10 @@ module Api
             dated_at: file.dated_at&.iso8601,
             created_at: file.created_at.iso8601,
             tags: tags,
+            # PDFs only (nil otherwise): how much of the file the house could
+            # read, and from where. Page text is under pages_path.
+            text_extraction: file.pdf_extraction_json,
+            pages_path: (api_v1_field_file_pages_path(file) if file.pdf_status),
             download_path: download_api_v1_field_file_path(file)
           }
         end

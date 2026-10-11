@@ -61,22 +61,28 @@ class MessageHandoff < ApplicationRecord
 
   # The residents a resident's message hands off to, in a stable order:
   # tagged ones, then any named in recipient_agent_ids. Never the author.
-  def self.recipient_ids_for(message, explicit_ids: [])
-    users = message.chat.account.users.joins(:memberships)
-      .where(memberships: { account_id: message.chat.account_id }).merge(Membership.confirmed)
-      .distinct.includes(:profile).to_a
-    tagged = DirectReplyMentions.agent_ids(message: message, users: users)
-    sources = tagged.index_with { "tag" }
+  def self.recipient_ids_for(message, explicit_ids: [], tags: tags_for(message))
+    sources = tags.ids.index_with { "tag" }
     explicit_ids.each { |id| sources[id] ||= "field" }
     sources.except(message.agent_id)
   end
+
+  def self.tags_for(message)
+    users = message.chat.account.users.joins(:memberships)
+      .where(memberships: { account_id: message.chat.account_id }).merge(Membership.confirmed)
+      .distinct.includes(:profile).to_a
+    DirectReplyMentions.agent_tags(message: message, users: users)
+  end
+  private_class_method :tags_for
 
   # Written in the transaction that saves the message, which holds the chat
   # row lock (Message#record_chat_message_time), so the loop count is
   # serialized with every other post in the room. Returns the rows written.
   def self.accept!(message:, explicit_ids: [])
     chat = message.chat
-    recipients = recipient_ids_for(message, explicit_ids: explicit_ids)
+    tags = tags_for(message)
+    announce_ambiguous_tags!(chat, message, tags.ambiguous_ids) if tags.ambiguous_ids.any?
+    recipients = recipient_ids_for(message, explicit_ids: explicit_ids, tags: tags)
     return [] if recipients.empty?
 
     chat.lock!
@@ -107,6 +113,19 @@ class MessageHandoff < ApplicationRecord
     last_human_id = chat.messages.where(role: "user").where.not(user_id: nil).maximum(:id)
     scope = where(chat: chat)
     last_human_id ? scope.where("message_id > ?", last_human_id) : scope
+  end
+
+  # A tag that two or more residents here answer to wakes neither, and the
+  # room is told so instead of the tag failing silently.
+  def self.announce_ambiguous_tags!(chat, message, groups)
+    groups.each do |ids|
+      names = chat.agents.where(id: ids).order(:id).pluck(:name)
+      chat.messages.create!(
+        role: "system",
+        content: "#{message.author_name}'s tag matches #{names.size} residents here (#{names.to_sentence}), " \
+          "so it woke none of them. Tag one by a name only they have, or name them in recipient_agent_ids."
+      )
+    end
   end
 
   # Said once per run of resident handoffs, in the room, as the house.

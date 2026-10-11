@@ -112,6 +112,9 @@
               {:else}
                 No delivery received yet
               {/if}
+              {#if repository.connected_by}
+                · Connected by {watchCreator({ created_by: repository.connected_by })}
+              {/if}
             </p>
             {#if repository.hook_status === 'failed' && repository.hook_error}
               <p class="text-sm text-red-700">{repository.hook_error}</p>

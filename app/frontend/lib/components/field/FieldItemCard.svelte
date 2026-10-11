@@ -3,11 +3,13 @@
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { formatWhen } from '$lib/field';
   import { formatDuration, recordingStatusLine } from '$lib/field-recordings';
-  import { File, Microphone, Notepad } from 'phosphor-svelte';
+  import { tweetBadge } from '$lib/field-tweets';
+  import { File, Microphone, Notepad, XLogo } from 'phosphor-svelte';
+  import UnnamedSpeakersBadge from './UnnamedSpeakersBadge.svelte';
 
   let { item, selected = false, onSelect } = $props();
 
-  const kindLabel = { file: 'File', note: 'Note', recording: 'Recording' };
+  const kindLabel = { file: 'File', note: 'Note', recording: 'Recording', tweet: 'Tweet' };
 </script>
 
 <button onclick={() => onSelect(item.key)} class="w-full text-left" data-testid="field-item">
@@ -18,14 +20,24 @@
           <File class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
         {:else if item.kind === 'recording'}
           <Microphone class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
+        {:else if item.kind === 'tweet'}
+          <XLogo class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
         {:else}
           <Notepad class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
         {/if}
         <div class="flex-1 min-w-0">
-          <h3 class="font-semibold truncate">{item.title}</h3>
+          <div class="flex items-center gap-2">
+            <h3 class="font-semibold truncate flex-1 min-w-0">{item.title}</h3>
+            {#if item.kind === 'recording' && item.status === 'ready'}
+              <UnnamedSpeakersBadge count={item.unnamed_speakers} size="md" />
+            {/if}
+          </div>
           {#if item.summary_short}
             <!-- The house's few-word gist; the sentence is on hover until the layout is reworked. -->
-            <p class="text-sm truncate" title={item.summary_long || item.summary_short} data-testid="field-item-summary">
+            <p
+              class="text-sm truncate"
+              title={item.summary_long || item.summary_short}
+              data-testid="field-item-summary">
               {item.summary_short}
             </p>
           {/if}
@@ -41,6 +53,16 @@
             <p class="text-sm text-muted-foreground line-clamp-2 mt-1">{item.note}</p>
           {:else if item.kind === 'note' && item.summary}
             <p class="text-sm text-muted-foreground line-clamp-2 mt-1">{item.summary}</p>
+          {:else if item.kind === 'tweet'}
+            <p class="text-sm text-muted-foreground truncate" data-testid="field-tweet-author">
+              {item.author_name}
+              {#if tweetBadge(item.kinds)}
+                <span
+                  class="ml-1 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide"
+                  >{tweetBadge(item.kinds)}</span>
+              {/if}
+            </p>
+            <p class="text-sm text-muted-foreground line-clamp-2 mt-1">{item.text}</p>
           {/if}
           <p class="text-xs text-muted-foreground mt-2">
             {kindLabel[item.kind]}

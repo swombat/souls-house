@@ -3,7 +3,7 @@
 class FieldRecordingsController < ApplicationController
 
   require_feature_enabled :agents
-  before_action :set_field_recording, only: %i[show update destroy retry]
+  before_action :set_field_recording, only: %i[show update destroy retry correct_line resummarize]
 
   # The transcript page (spec §7). Words are sent whole: the page renders turns
   # from them, and clicking a word seeks the audio.
@@ -16,6 +16,7 @@ class FieldRecordingsController < ApplicationController
         words: recording.ready? ? recording.transcript_words : [],
         turns: (recording.transcript_turns if recording.ready? && recording.supplied?),
         language_code: recording.language_code,
+        transcript_revision: (recording.transcript_revision if recording.ready?),
         ready_at: recording.ready_at&.iso8601
       ),
       speakers: recording.speakers.includes(:field_voice, :recognised_voice, :enrolments).map do |speaker|
@@ -61,19 +62,20 @@ class FieldRecordingsController < ApplicationController
       inertia: { errors: { audio: e.record.errors.full_messages.to_sentence } }
   end
 
-  # recorded_at, when sent: a date or time to correct when the recording was
-  # made, or empty to clear it.
+  # From the item viewer (title, note, recorded_at) and the transcript page
+  # (notes); each returns to where it was edited. recorded_at, when sent: a
+  # date or time to correct when the recording was made, or empty to clear it.
   def update
     submitted = params.require(:field_recording)
-    attributes = submitted.permit(:title, :note)
+    attributes = submitted.permit(:title, :note, :notes)
     if submitted.key?(:recorded_at)
       attributes[:recorded_at] = FieldDate.parse_or_clear(submitted[:recorded_at], param: "recorded_at")
     end
 
     if @field_recording.update(attributes)
-      redirect_to item_path(@field_recording)
+      redirect_back_or_to item_path(@field_recording)
     else
-      redirect_to item_path(@field_recording), alert: @field_recording.errors.full_messages.to_sentence
+      redirect_back_or_to item_path(@field_recording), alert: @field_recording.errors.full_messages.to_sentence
     end
   rescue FieldDate::Invalid => e
     redirect_to item_path(@field_recording), alert: e.message
@@ -92,10 +94,42 @@ class FieldRecordingsController < ApplicationController
     redirect_to item_path(@field_recording), alert: "This recording can't be tried again."
   end
 
+  # One line of the transcript corrected by hand ("Dan", not "Dad").
+  # Refusals come back as Inertia errors, so the page keeps the unsaved text.
+  def correct_line
+    attributes = params.require(:line).permit(:first, :last, :index, :text, :was, :revision)
+    @field_recording.correct_line!(
+      attributes.slice(:first, :last, :index).to_h.symbolize_keys,
+      text: attributes[:text].to_s, was: attributes[:was].to_s, revision: attributes[:revision].to_s
+    )
+    redirect_to account_field_recording_path(current_account, @field_recording)
+  rescue FieldRecording::LineCorrection::Stale
+    redirect_to account_field_recording_path(current_account, @field_recording),
+      inertia: { errors: { line: "The transcript changed while you were editing. Your text is still here: " \
+                                  "copy it, cancel, and open the line again." } }
+  rescue FieldRecording::LineCorrection::Invalid => e
+    redirect_to account_field_recording_path(current_account, @field_recording), inertia: { errors: { line: e.message } }
+  end
+
   # "Is one of these you?" is shown once, until dismissed or answered.
   def dismiss_you_hint
     Current.user.update_column(:field_you_hint_dismissed_at, Time.current)
     head :no_content
+  end
+
+  # Write the summary again, e.g. after correcting what it was written from.
+  # The page stays where it is; the new summary arrives by refresh.
+  def resummarize
+    item_path = account_field_path(current_account, tab: "recordings", item: "recording-#{@field_recording.to_param}")
+    unless FieldSummaries.enabled?
+      return redirect_back_or_to item_path, inertia: { errors: { summary: "Summaries aren't available right now." } }
+    end
+
+    if @field_recording.request_resummary!
+      redirect_back_or_to item_path
+    else
+      redirect_back_or_to item_path, inertia: { errors: { summary: "A summary is already being written." } }
+    end
   end
 
   private

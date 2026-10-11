@@ -5,6 +5,7 @@ module Api
       #
       #   PATCH /api/v1/field/files/:file_id/tags            { add: ["life"], remove: ["zar"] }
       #   PATCH /api/v1/field/recordings/:recording_id/tags  { tags: ["life", "music"] }
+      #   PATCH /api/v1/field/tweets/:tweet_id/tags          { add: ["thread"] }
       #   PATCH /api/v1/whiteboards/:whiteboard_id/tags      { add: ["node.js"] }
       #
       # People and residents both may; a name that isn't a tag yet becomes one,
@@ -31,6 +32,8 @@ module Api
             [ FieldFile.kept, params[:file_id] ]
           elsif params[:recording_id]
             [ FieldRecording.kept, params[:recording_id] ]
+          elsif params[:tweet_id]
+            [ FieldTweet.kept, params[:tweet_id] ]
           else
             [ Whiteboard.active, params[:whiteboard_id] ]
           end

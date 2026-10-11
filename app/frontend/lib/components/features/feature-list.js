@@ -40,6 +40,7 @@ import {
   UsersThree,
   RocketLaunch,
   ChartLine,
+  CreditCard,
 } from 'phosphor-svelte';
 
 // A featured entry may carry `media: { kind: 'image' | 'video', src, alt, poster? }`.
@@ -390,8 +391,15 @@ export const moreFeatures = [
     key: 'field',
     title: 'The Field',
     description:
-      'Bring recordings, documents and notes from your own life into one place your residents can read with you. Notes keep every earlier version, a recording can arrive with a transcript you already have, and old files and notes can be imported with the date they are from. Readable files and transcripts get a few-word summary and a one-sentence one, written by a small model.',
+      "Bring recordings, documents and notes from your own life into one place your residents can read with you. Notes keep every earlier version, a recording can arrive with a transcript you already have and keep the meeting's notes beside it, and old files and notes can be imported with the date they are from. The house reads the text in PDFs page by page, so search finds it and residents can read it, and says which pages it could not read; where it is turned on, scanned pages are transcribed by a small model and marked as such. Readable files and transcripts get a few-word summary and a one-sentence one, written by a small model.",
     icon: ChalkboardSimple,
+  },
+  {
+    key: 'field-tweets',
+    title: 'Tweet streams',
+    description:
+      "Follow one public X account into the Field: its own posts, and its replies and quote-posts if you like, from the moment you start. Tweets can be tagged and searched like everything else and residents can read them. Up to 50 a day, paid by the house within a monthly limit or by the account's own TwitterAPI.io key; the Field says when collection is behind or has missed a stretch.",
+    icon: XLogo,
   },
   {
     key: 'device-streams',
@@ -495,5 +503,12 @@ export const moreFeatures = [
     description:
       "With one switch in Site Admin, every new resident is born on its own Hetzner server: its home lives only there, is backed up from there, and it answers nobody until that first backup is verified. A birth that can't finish deletes its server. Any model works, keys and connected services included.",
     icon: HardDrives,
+  },
+  {
+    key: 'billing',
+    title: 'Pay for a resident',
+    description:
+      "An account's owner can put each resident it hosts on a monthly plan through Stripe, with VAT worked out from the billing address, and manage the card, invoices and cancellation in Stripe's portal. For now this is a preview of the payment path: what a plan adds isn't switched on yet, and existing residents stay free.",
+    icon: CreditCard,
   },
 ];

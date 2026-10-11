@@ -39,6 +39,20 @@ class FieldRecording::TranscriptTest < ActiveSupport::TestCase
     assert_equal "[00:00] Speaker 1: Hello there.\n[01:05] Speaker 2: Hi.", text
   end
 
+  test "two labels with one identity read as one speaker, and their turns join" do
+    words = FieldRecording::Transcript.compact(scribe_words(
+      [ "speaker_0", 0.0, 0.4, "Hello" ], [ "speaker_2", 0.6, 1.0, "again." ], [ "speaker_1", 2.0, 2.4, "Hi." ],
+      [ "speaker_2", 3.0, 3.4, "Bye." ]
+    ))
+    names = { "speaker_0" => "Ioan", "speaker_1" => "Daniel", "speaker_2" => "Ioan" }
+    keys = { "speaker_0" => [ :voice, 1 ], "speaker_1" => [ :speaker, "speaker_1" ], "speaker_2" => [ :voice, 1 ] }
+
+    assert_equal "[00:00] Ioan: Hello again.\n[00:02] Daniel: Hi.\n[00:03] Ioan: Bye.",
+      FieldRecording::Transcript.render(words, names, keys)
+    assert_equal "[00:00] Ioan: Hello\n[00:00] Ioan: again.\n[00:02] Daniel: Hi.\n[00:03] Ioan: Bye.",
+      FieldRecording::Transcript.render(words, names), "without keys, labels stay apart"
+  end
+
   test "a speaker who is never heard alone gets no clip rather than someone else's voice" do
     words = FieldRecording::Transcript.compact(scribe_words(
       [ "speaker_0", 0.0, 2.0, "talking" ], [ "speaker_1", 2.3, 2.6, "yes" ], [ "speaker_0", 2.9, 4.0, "over" ]

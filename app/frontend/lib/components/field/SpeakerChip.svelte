@@ -5,7 +5,18 @@
   import { Input } from '$lib/components/shadcn/input/index.js';
   import { parseNameMatch } from '$lib/field-recordings';
 
-  let { speaker, url, voices = [], members = [], myVoiceId = null, myUserId = null, myName = '' } = $props();
+  // `with`: the other diarized speakers on this card (linked to the same
+  // voice). Naming the card names them all, in one request.
+  let {
+    speaker,
+    url,
+    with: companions = [],
+    voices = [],
+    members = [],
+    myVoiceId = null,
+    myUserId = null,
+    myName = '',
+  } = $props();
 
   let open = $state(false);
   let typed = $state('');
@@ -29,7 +40,7 @@
     error = '';
     router.patch(
       url,
-      { speaker: choice },
+      { speaker: companions.length ? { ...choice, with: companions } : choice },
       {
         preserveScroll: true,
         preserveState: true,

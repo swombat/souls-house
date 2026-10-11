@@ -8,8 +8,10 @@ export const UNATTRIBUTED = 'Unattributed';
 // text, the kind ('w' word, 's' spacing, 'a' audio event) and the speaker
 // label. A turn is consecutive words/events with the same speaker and gaps of
 // at most 1.5 s; spacing between two words of one turn joins them. Every
-// word/event gets `i`, its position among the timed words.
-export function buildTurns(words = []) {
+// word/event gets `i`, its position among the timed words. With `keys`
+// (label → identity, from speakerKeys), two labels for one voice count as one
+// speaker, so their consecutive words join into one turn.
+export function buildTurns(words = [], keys = null) {
   const turns = [];
   let current = null;
   let spacing = null;
@@ -23,7 +25,7 @@ export function buildTurns(words = []) {
     }
     const part = { ...word, spk: word.spk || null, i: index++ };
     const end = part.e ?? part.s;
-    if (current && current.spk === part.spk && part.s - current.end <= TURN_GAP_MS) {
+    if (current && sameSpeaker(current.spk, part.spk, keys) && part.s - current.end <= TURN_GAP_MS) {
       current.parts.push({ k: 's', t: spacing || ' ' });
       current.parts.push(part);
       current.end = Math.max(current.end, end);
@@ -42,17 +44,27 @@ export function buildTurns(words = []) {
 // without word highlighting and seeks only where a start was given.
 export function suppliedTurns(turns = []) {
   return (turns || [])
-    .filter((turn) => turn && turn.t)
-    .map((turn) => {
+    .map((turn, index) => ({ turn, index }))
+    .filter(({ turn }) => turn && turn.t)
+    .map(({ turn, index }) => {
       const start = Number.isFinite(turn.s) ? turn.s : null;
       return {
         spk: turn.spk || null,
         start,
         end: start,
+        index,
         parts: [{ k: 'w', t: turn.t, s: start, i: null, whole: true }],
         text: turn.t,
       };
     });
+}
+
+// What the server needs to find a line again: its first and last timed word,
+// or, for a supplied transcript, the turn's position in the stored list.
+export function lineAddress(turn) {
+  if (turn.index != null) return { index: turn.index };
+  const timed = turn.parts.filter((part) => part.k !== 's');
+  return { first: timed[0].i, last: timed[timed.length - 1].i };
 }
 
 // The timed words across all turns, in order, for finding the one playing.
@@ -86,6 +98,55 @@ export function speakerNames(speakers = []) {
   const names = Object.create(null);
   for (const speaker of speakers || []) names[speaker.label] = speaker.name || speaker.default_name || speaker.label;
   return names;
+}
+
+function sameSpeaker(a, b, keys) {
+  if (a === b) return true;
+  if (!keys || !a || !b) return false;
+  return (keys[a] ?? a) === (keys[b] ?? b);
+}
+
+// Who a speaker is: the voice a person linked it to, or this diarized speaker
+// alone. Scribe sometimes hears one person as two speakers; once both are
+// linked to one voice they are one person. Never by name equality.
+export function speakerIdentity(speaker) {
+  return speaker.voice_id ? `voice:${speaker.voice_id}` : `speaker:${speaker.label}`;
+}
+
+export function speakerKeys(speakers = []) {
+  const keys = Object.create(null);
+  for (const speaker of speakers || []) keys[speaker.label] = speakerIdentity(speaker);
+  return keys;
+}
+
+// One entry per person, in order of first appearance: `parts` are the
+// diarized speakers, `speaker` stands for them all (the part with the longest
+// clean clip, carrying the summed talk time, or null when any is unknown).
+export function groupSpeakers(speakers = []) {
+  const groups = new Map();
+  const ordered = [...(speakers || [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  for (const speaker of ordered) {
+    const key = speakerIdentity(speaker);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(speaker);
+  }
+  return [...groups].map(([key, parts]) => {
+    const clipped = parts.filter((part) => part.clip_start_ms != null && part.clip_end_ms != null);
+    const representative = clipped.length
+      ? clipped.reduce((best, part) => ((part.talk_ms || 0) > (best.talk_ms || 0) ? part : best))
+      : parts[0];
+    const talk = parts.every((part) => part.talk_ms != null)
+      ? parts.reduce((sum, part) => sum + part.talk_ms, 0)
+      : null;
+    return { key, parts, speaker: { ...representative, talk_ms: talk } };
+  });
+}
+
+// Parts of a merged card, other than the one standing for it, that have a
+// voice sample waiting for a decision or being remembered. Those states are
+// per diarized speaker, so the card shows each with its own enrolment.
+export function partsWithOwnEnrolment(parts = [], representative = null) {
+  return (parts || []).filter((part) => part.id !== representative?.id && (part.pending_enrolment || part.remembering));
 }
 
 export function turnSpeakerName(turn, names) {

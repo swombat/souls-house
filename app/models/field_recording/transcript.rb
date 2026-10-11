@@ -23,15 +23,18 @@ module FieldRecording::Transcript
   end
 
   # Turns: consecutive spoken entries by one speaker, broken by a change of
-  # speaker or a long gap. Spacing joins words inside a turn.
-  def turns(words)
+  # speaker or a long gap. Spacing joins words inside a turn. With `keys`
+  # (label => identity), two labels with one identity count as one speaker:
+  # Scribe split one person in two and a human linked both to the same voice.
+  def turns(words, keys = nil)
+    same = ->(a, b) { keys ? keys.fetch(a, a) == keys.fetch(b, b) : a == b }
     words.each_with_object([]) do |word, turns|
       next if word["k"] == "s" && turns.empty?
 
       last = turns.last
       if word["k"] == "s"
         last[:words] << word
-      elsif last && last[:spk] == word["spk"] && word["s"] - last[:e] <= TURN_GAP_MS
+      elsif last && same.(last[:spk], word["spk"]) && word["s"] - last[:e] <= TURN_GAP_MS
         last[:words] << word
         last[:e] = [ last[:e], word["e"] ].max
       else
@@ -69,8 +72,9 @@ module FieldRecording::Transcript
 
   # Plain text for residents and search: "[mm:ss] Name: words". Names come from
   # the caller; slice A uses "Speaker N" (only human-set names ever appear).
-  def render(words, names)
-    turns(words).map do |turn|
+  # `keys` as for turns: one voice heard as two labels reads as one speaker.
+  def render(words, names, keys = nil)
+    turns(words, keys).map do |turn|
       text = turn[:words].map { |word| word["k"] == "a" ? "(#{word['t'].delete('()')})" : word["t"] }.join.squeeze(" ").strip
       next if text.empty?
 

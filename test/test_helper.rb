@@ -132,3 +132,4 @@ require "support/vcr_setup"
 # one. Off here so a test that performs every queued job never calls out; the
 # summary tests turn it back on.
 FieldSummaries.live = false
+FieldOcr.live = false

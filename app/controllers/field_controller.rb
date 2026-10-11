@@ -4,7 +4,7 @@ class FieldController < ApplicationController
 
   require_feature_enabled :agents
 
-  TABS = %w[all files notes recordings].freeze
+  TABS = %w[all files notes recordings tweets].freeze
 
   def index
     tab = TABS.include?(params[:tab]) ? params[:tab] : "all"
@@ -29,6 +29,8 @@ class FieldController < ApplicationController
       recording_allowance: FieldItems.allowance_json(current_account),
       suggestions_enabled: FieldSuggestions.enabled?,
       summaries_enabled: FieldSummaries.enabled?,
+      ocr_enabled: FieldOcr.enabled?,
+      tweet_stream: FieldItems.tweet_stream_json(current_account),
       max_recording_bytes: FieldRecording::MAX_BYTES,
       max_recording_label: FieldRecording::MAX_BYTES_LABEL,
       tab: tab,
@@ -48,8 +50,9 @@ class FieldController < ApplicationController
 
   def item_json(record, tags, content: true)
     case record
-    when FieldFile then FieldItems.file_json(record, tags)
-    when FieldRecording then FieldItems.recording_json(record, tags)
+    when FieldFile then FieldItems.file_json(record, tags, content: content)
+    when FieldRecording then FieldItems.recording_json(record, tags, content: content)
+    when FieldTweet then FieldItems.tweet_json(record, tags)
     else FieldItems.note_json(record, tags, content: content)
     end
   end

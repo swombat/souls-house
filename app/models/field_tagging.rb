@@ -5,7 +5,7 @@ class FieldTagging < ApplicationRecord
 
   include Discard::Model
 
-  TAGGABLE_TYPES = %w[FieldFile FieldRecording Whiteboard].freeze
+  TAGGABLE_TYPES = %w[FieldFile FieldRecording Whiteboard FieldTweet].freeze
 
   belongs_to :account
   belongs_to :field_tag
@@ -23,6 +23,7 @@ class FieldTagging < ApplicationRecord
         (taggable_type = 'FieldFile' AND taggable_id IN (SELECT id FROM field_files WHERE discarded_at IS NULL))
         OR (taggable_type = 'FieldRecording' AND taggable_id IN (SELECT id FROM field_recordings WHERE discarded_at IS NULL))
         OR (taggable_type = 'Whiteboard' AND taggable_id IN (SELECT id FROM whiteboards WHERE deleted_at IS NULL))
+        OR (taggable_type = 'FieldTweet' AND taggable_id IN (SELECT id FROM field_tweets WHERE discarded_at IS NULL))
       SQL
   end
 

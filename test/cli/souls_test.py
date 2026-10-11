@@ -689,6 +689,30 @@ class RepositoryWatchesTest(CliTestCase):
         self.assertEqual(self.last()["method"], "GET")
         self.assertEqual(json.loads(out)["repositories"][0]["full_name"], "acme/widgets")
 
+    def test_repos_list_is_the_same_as_bare_repos(self):
+        self.house.route("GET", "/api/v1/repositories", body={"repositories": []})
+        code, _, _ = self.run_cli("repos", "list")
+        self.assertEqual(code, 0)
+        self.assertEqual((self.last()["method"], self.last()["path"]), ("GET", "/api/v1/repositories"))
+
+    def test_repos_connect_posts_full_name_and_optional_connection(self):
+        self.house.route("POST", "/api/v1/repositories", status=201,
+                          body={"repository": {"id": "r2", "full_name": "acme/tool", "hook_status": "installing"}})
+        code, out, _ = self.run_cli("repos", "connect", "acme/tool")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(self.last()["body"]), {"full_name": "acme/tool"})
+        self.assertEqual(json.loads(out)["repository"]["id"], "r2")
+
+        code, _, _ = self.run_cli("repos", "connect", "acme/tool", "--connection", "svc_7")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(self.last()["body"]), {"full_name": "acme/tool", "service_connection_id": "svc_7"})
+
+    def test_repos_disconnect_deletes_the_repository(self):
+        self.house.route("DELETE", "/api/v1/repositories/r2", status=204, body=None)
+        code, _, _ = self.run_cli("repos", "disconnect", "r2")
+        self.assertEqual(code, 0)
+        self.assertEqual((self.last()["method"], self.last()["path"]), ("DELETE", "/api/v1/repositories/r2"))
+
     def test_watches_add_ci_sends_workflow_run_event_and_split_conclusions(self):
         self.house.route("POST", "/api/v1/watches", status=201,
                           body={"watch": {"id": "w1", "event": "workflow_run", "state": "armed"}})

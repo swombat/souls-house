@@ -2,7 +2,7 @@
   import { chatViewport } from '$lib/chat-viewport';
   import { page } from '@inertiajs/svelte';
   import { Toaster } from '$lib/components/shadcn/sonner/index.js';
-  import { toast } from 'svelte-sonner';
+  import { showFlashToasts } from '$lib/flash-toasts.js';
   import Navbar from '$lib/components/navigation/navbar.svelte'; // Adjust the path as necessary
   import Footer from '$lib/components/navigation/Footer.svelte';
   import DeployAlarmBanner from '$lib/components/admin/DeployAlarmBanner.svelte';
@@ -26,10 +26,7 @@
   });
 
   $effect(() => {
-    let flash = $page.props?.flash || {};
-
-    flash.notice && toast.success(flash.notice);
-    flash.alert && toast.error(flash.alert);
+    showFlashToasts($page.props?.flash);
   });
 
   // Apply user's theme preference on initial load only

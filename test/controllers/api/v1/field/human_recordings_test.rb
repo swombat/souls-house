@@ -156,4 +156,47 @@ class Api::V1::Field::HumanRecordingsTest < ActionDispatch::IntegrationTest
     assert @recording.reload.kept?
   end
 
+
+  test "a person redates a recording brought in without a date, and can clear it" do
+    patch api_v1_field_recording_path(@recording), params: { recorded_at: "2026-10-09T15:22:00+02:00" }, headers: @headers, as: :json
+    assert_response :success
+    assert_equal Time.zone.parse("2026-10-09 13:22 UTC"), @recording.reload.recorded_at
+    assert_equal "Board call", @recording.title
+    assert_equal @recording.recorded_at.iso8601, response.parsed_body.dig("recording", "recorded_at")
+
+    patch api_v1_field_recording_path(@recording), params: { recorded_at: "2026-02-30" }, headers: @headers, as: :json
+    assert_response :unprocessable_entity
+    assert_not_nil @recording.reload.recorded_at, "a refused date leaves the old one"
+
+    patch api_v1_field_recording_path(@recording), params: { recorded_at: "" }, headers: @headers, as: :json
+    assert_response :success
+    assert_nil @recording.reload.recorded_at
+  end
+
+  test "a recording arrives with its meeting's notes, and they can be changed or cleared" do
+    blob = pinned_blob(account: @account, user: @user)
+    post api_v1_field_recordings_path, params: { upload_id: blob.signed_id, title: "Standup", notes: "# Summary\n\nShipped." },
+      headers: @headers, as: :json
+    assert_response :created
+    assert_equal "# Summary\n\nShipped.", response.parsed_body.dig("recording", "notes")
+    recording = @account.field_recordings.find(response.parsed_body.dig("recording", "id"))
+    assert_equal "# Summary\n\nShipped.", recording.notes
+
+    get api_v1_field_recordings_path, headers: @headers
+    listed = response.parsed_body["recordings"].find { |r| r["id"] == recording.to_param }
+    assert_equal true, listed["has_notes"]
+    assert_not listed.key?("notes"), "the list leaves notes out"
+
+    patch api_v1_field_recording_path(recording), params: { notes: "# Summary\n\nShipped late." }, headers: @headers, as: :json
+    assert_response :success
+    assert_equal "# Summary\n\nShipped late.", recording.reload.notes
+
+    patch api_v1_field_recording_path(recording), params: { notes: "x" * (FieldRecording::MAX_NOTES_LENGTH + 1) }, headers: @headers, as: :json
+    assert_response :unprocessable_entity
+
+    patch api_v1_field_recording_path(recording), params: { notes: "" }, headers: @headers, as: :json
+    assert_response :success
+    assert_nil recording.reload.notes
+  end
+
 end

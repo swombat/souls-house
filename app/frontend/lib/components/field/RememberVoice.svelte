@@ -10,12 +10,14 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import VoiceMeaning from '$lib/components/field/VoiceMeaning.svelte';
 
-  let { speaker, accountId, recordingId, isMe = false } = $props();
+  // offer: false shows only this speaker's own preview or progress, for a part
+  // of a merged card whose offer the card already makes once.
+  let { speaker, accountId, recordingId, isMe = false, offer = true } = $props();
 
   const name = $derived(speaker.name);
   const pending = $derived(speaker.pending_enrolment);
   const voicesUrl = $derived(`/accounts/${accountId}/field/voices`);
-  const showOffer = $derived(speaker.can_remember && !pending && !speaker.remembering);
+  const showOffer = $derived(offer && speaker.can_remember && !pending && !speaker.remembering);
   const offerLabel = $derived(
     isMe
       ? speaker.remembered
@@ -99,7 +101,7 @@
   <p class="text-xs text-muted-foreground" data-testid="voice-status">
     Remembering {isMe ? 'your' : `${name}'s`} voice…
   </p>
-{:else if speaker.remembered}
+{:else if speaker.remembered && offer}
   <p class="text-xs text-muted-foreground" data-testid="voice-status">
     This Field remembers {isMe ? 'your' : `${name}'s`} voice ·
     <Link href={voicesUrl} class="underline underline-offset-2 hover:text-foreground">Voices</Link>

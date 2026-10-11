@@ -43,7 +43,7 @@ class CiImageTest(unittest.TestCase):
             self.assertRegex(dockerfile, r"\b" + re.escape(package) + r"\b")
         self.assertIn("import sys, yaml, tomllib", workflow)
         self.assertIn("sys.version_info >= (3, 11)", workflow)
-        self.assertIn("python3 git ssh-keygen /usr/bin/script ffmpeg ffprobe sh date sleep", workflow)
+        self.assertIn("python3 git ssh-keygen /usr/bin/script ffmpeg ffprobe pdfinfo pdftotext pdftoppm sh date sleep", workflow)
 
 
 if __name__ == "__main__":

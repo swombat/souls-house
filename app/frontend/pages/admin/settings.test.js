@@ -68,3 +68,24 @@ test('says plainly when the switch is on and births are being refused', () => {
     "New residents are being refused: that isn't available yet"
   );
 });
+
+test('turns on scanned-page transcription with a daily ceiling, and says what is sent', async () => {
+  render(Settings, {
+    setting: {
+      site_name: 'Test House',
+      max_accounts: 30,
+      field_ocr_enabled: false,
+      field_ocr_daily_usd_ceiling: '1.0',
+    },
+    field_ocr: { enabled: false, enabled_at: null, ceiling_usd: '1.0', spent_today: '0.0' },
+  });
+  expect(screen.getByText(/Only PDFs brought in after it is turned on are sent/)).toBeVisible();
+  expect(screen.getByTestId('field-ocr-status')).toHaveTextContent('Spent today: $0.0000.');
+  await fireEvent.click(screen.getByLabelText('Transcribe scanned PDF pages'));
+  const ceiling = screen.getByLabelText('Most the house spends on it per day (USD)');
+  await fireEvent.input(ceiling, { target: { value: '2.5' } });
+  await fireEvent.submit(ceiling.closest('form'));
+  const [, body] = router.patch.mock.calls.at(-1);
+  expect(body.get('setting[field_ocr_enabled]')).toBe('true');
+  expect(body.get('setting[field_ocr_daily_usd_ceiling]')).toBe('2.5');
+});

@@ -31,6 +31,13 @@ production:
     queue: default
     schedule: every 10 minutes
 
+  # Queues tweet stream runs that are due (FieldTweets::Sync). Does nothing
+  # while Setting#field_tweets_enabled is off.
+  field_tweets_sweep:
+    class: FieldTweets::SweepJob
+    queue: default
+    schedule: every 5 minutes
+
   field_summary_sweep:
     class: FieldItems::SummarySweepJob
     queue: default
@@ -40,6 +47,12 @@ production:
     class: FieldRecordings::OrphanSweepJob
     queue: default
     schedule: every hour at minute 23
+
+  # Retries unfinished Stripe events and imposes lapsed grace deadlines.
+  billing_sweep:
+    class: Billing::SweepJob
+    queue: default
+    schedule: every 5 minutes
 
   rhythms:
     class: RhythmSweepJob

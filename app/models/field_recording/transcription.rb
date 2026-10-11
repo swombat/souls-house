@@ -115,11 +115,12 @@ module FieldRecording::Transcription
   end
 
   def render_transcript_text
-    names = speakers.includes(:field_voice).to_h { |speaker| [ speaker.label, speaker.display_name ] }
+    list = speakers.includes(:field_voice).to_a
+    names = list.to_h { |speaker| [ speaker.label, speaker.display_name ] }
     if supplied?
       FieldRecording::SuppliedTranscript.render(transcript_turns || [], names)
     else
-      FieldRecording::Transcript.render(transcript_words || [], names)
+      FieldRecording::Transcript.render(transcript_words || [], names, list.to_h { |speaker| [ speaker.label, speaker.identity ] })
     end
   end
 

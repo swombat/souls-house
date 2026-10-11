@@ -24,6 +24,9 @@ class FieldRecording < ApplicationRecord
   MAX_BYTES = 2.gigabytes # Scribe's limit for a file fetched by URL
   MAX_BYTES_LABEL = "2 GB"
   MAX_NOTE_LENGTH = FieldFile::MAX_NOTE_LENGTH
+  # A meeting's notes (summary, action items), Markdown, kept with the
+  # recording rather than as a separate item. The same bound as a note's content.
+  MAX_NOTES_LENGTH = 100_000
   MAX_SPEAKERS = 32 # Scribe's num_speakers ceiling
   MAX_DISPATCHES = 3
 
@@ -51,6 +54,7 @@ class FieldRecording < ApplicationRecord
 
   validates :title, presence: true, length: { maximum: 200 }
   validates :note, length: { maximum: MAX_NOTE_LENGTH }
+  validates :notes, length: { maximum: MAX_NOTES_LENGTH }
   validates :status, inclusion: { in: STATUSES }
   validates :expected_speakers, numericality: { only_integer: true, in: 1..MAX_SPEAKERS }, allow_nil: true
   validates :transcript_source, inclusion: { in: TRANSCRIPT_SOURCES }
@@ -109,6 +113,37 @@ class FieldRecording < ApplicationRecord
     self.transcript_words = []
     self.transcript_text = render_transcript_text
     update!(status: "ready", ready_at: Time.current, expected_speakers: nil)
+  end
+
+  # A short fingerprint of the stored transcript. The page sends back the one
+  # it was shown, and a correction made against any other is refused. Keys are
+  # sorted first: jsonb hands them back in its own order, not the one written.
+  def transcript_revision
+    entries = (supplied? ? transcript_turns : transcript_words) || []
+    Digest::SHA256.hexdigest(entries.map { |entry| entry.to_h.sort.to_h }.to_json)[0, 16]
+  end
+
+  # One line corrected by hand (FieldRecording::LineCorrection). `line` is
+  # {first:, last:} for timed words or {index:} for a supplied turn. Raises
+  # LineCorrection::Stale if the transcript has changed since `revision` or the
+  # line no longer reads `was`.
+  def correct_line!(line, text:, was:, revision:)
+    with_lock do
+      raise FieldRecording::LineCorrection::Stale unless kept? && ready?
+      raise FieldRecording::LineCorrection::Stale unless revision.present? && revision == transcript_revision
+
+      if supplied?
+        self.transcript_turns = FieldRecording::LineCorrection.replace_turn(
+          transcript_turns || [], index: line[:index], text:, was:
+        )
+      else
+        self.transcript_words = FieldRecording::LineCorrection.replace_words(
+          transcript_words || [], first: line[:first], last: line[:last], text:, was:
+        )
+      end
+      self.transcript_text = render_transcript_text
+      save!
+    end
   end
 
   # Probe of a supplied recording: the duration only, for display. Its status
@@ -186,7 +221,7 @@ class FieldRecording < ApplicationRecord
       raise NotRetryable unless kept? && RETRYABLE_STATUSES.include?(status) && audio.attached?
 
       account.field_recordings.create!(
-        title:, note:, expected_speakers:, uploaded_by: by, retried_from: self, audio: audio.blob
+        title:, note:, notes:, expected_speakers:, uploaded_by: by, retried_from: self, audio: audio.blob
       )
     end
   end
@@ -216,6 +251,9 @@ class FieldRecording < ApplicationRecord
     self.source_path = source_path.to_s.strip.presence
     self.import_key = import_key.to_s.strip.presence
     self.language_code = language_code.to_s.strip.presence
+    # Blank notes are no notes; otherwise kept as written (Markdown can mean
+    # something by its leading spaces).
+    self.notes = nil if notes.blank?
   end
 
   def default_title_from_filename

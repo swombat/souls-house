@@ -73,6 +73,7 @@ module Agents
     end
 
     test "start! carries the service manifest the local sandbox would copy in" do
+      @agent.update!(uuid: SecureRandom.uuid_v7)
       with_env("SOULSHOUSE_DOMAIN" => "house.example") do
         payload = RemoteRuntime.start!(@agent, image: DIGEST_IMAGE).envelope["payload"]
         manifest = YAML.safe_load(payload.fetch("service_manifest"))
@@ -105,6 +106,7 @@ module Agents
     end
 
     test "start! needs an image ID and queues one start_resident for this placement" do
+      @agent.update!(container_name: "agent-research-assistant")
       with_env("SOULSHOUSE_DOMAIN" => "house.example") do
         [ "registry.example/agent:latest", "helixkit-agent-runtime:latest", "sha256:abc" ].each do |image|
           assert_raises(ArgumentError, image) { RemoteRuntime.start!(@agent, image:) }

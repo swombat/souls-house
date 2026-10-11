@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  groupSpeakers,
+  partsWithOwnEnrolment,
+  speakerKeys,
   activeWordIndex,
   allowanceLine,
   buildTurns,
@@ -10,6 +13,7 @@ import {
   preflightProblem,
   recordingStatusLine,
   speakerNames,
+  lineAddress,
   suppliedTurns,
   timedWords,
   turnSpeakerName,
@@ -149,8 +153,30 @@ describe('suppliedTurns', () => {
     expect(turnSpeakerName(turns[0], {})).toBe('Unattributed');
   });
 
+  it("keeps each turn's position in the stored list, skipping none", () => {
+    const turns = suppliedTurns([
+      { spk: 'A', t: '' },
+      { spk: 'B', t: 'Hello' },
+    ]);
+    expect(turns[0].index).toBe(1);
+    expect(lineAddress(turns[0])).toEqual({ index: 1 });
+  });
+
   it('copes with nothing', () => {
     expect(suppliedTurns(null)).toEqual([]);
+  });
+});
+
+describe('lineAddress', () => {
+  it('names a timed line by its first and last word', () => {
+    const turns = buildTurns([
+      w(0, 300, 'Hi', 'speaker_0'),
+      sp(300),
+      w(400, 700, 'Dad.', 'speaker_0'),
+      w(5000, 5300, 'Yes', 'speaker_1'),
+    ]);
+    expect(lineAddress(turns[0])).toEqual({ first: 0, last: 1 });
+    expect(lineAddress(turns[1])).toEqual({ first: 2, last: 2 });
   });
 });
 
@@ -159,5 +185,77 @@ describe('speakerNames', () => {
     const names = speakerNames([{ label: '__proto__', name: 'Odd label' }]);
     expect(turnSpeakerName({ spk: '__proto__' }, names)).toBe('Odd label');
     expect(turnSpeakerName({ spk: 'toString' }, names)).toBe('toString');
+  });
+});
+
+describe('one voice heard as two speakers', () => {
+  const speakers = [
+    {
+      id: 'a',
+      label: 'speaker_0',
+      position: 0,
+      voice_id: 'v1',
+      name: 'Ioan',
+      talk_ms: 1000,
+      clip_start_ms: 0,
+      clip_end_ms: 900,
+    },
+    { id: 'b', label: 'speaker_1', position: 1, voice_id: null, name: 'Speaker 2', talk_ms: 500 },
+    {
+      id: 'c',
+      label: 'speaker_2',
+      position: 2,
+      voice_id: 'v1',
+      name: 'Ioan',
+      talk_ms: 3000,
+      clip_start_ms: 5000,
+      clip_end_ms: 8000,
+    },
+    { id: 'd', label: 'speaker_3', position: 3, voice_id: null, name: 'Speaker 4', talk_ms: 200 },
+  ];
+
+  it('groups by the linked voice, never by name, in order of appearance', () => {
+    const groups = groupSpeakers(speakers);
+    expect(groups.map((group) => group.parts.map((part) => part.id))).toEqual([['a', 'c'], ['b'], ['d']]);
+    expect(groups[0].speaker.id).toBe('c');
+    expect(groups[0].speaker.talk_ms).toBe(4000);
+    const twins = groupSpeakers([
+      { id: 'x', label: 'x', position: 0, voice_id: null, name: 'Speaker 1' },
+      { id: 'y', label: 'y', position: 1, voice_id: null, name: 'Speaker 1' },
+    ]);
+    expect(twins).toHaveLength(2);
+  });
+
+  it('talk time is unknown when any part is unknown', () => {
+    const groups = groupSpeakers([
+      { id: 'a', label: 'A', position: 0, voice_id: 'v1', talk_ms: null },
+      { id: 'b', label: 'B', position: 1, voice_id: 'v1', talk_ms: null },
+    ]);
+    expect(groups[0].speaker.talk_ms).toBeNull();
+  });
+
+  it('joins consecutive turns of one voice, not of different people', () => {
+    const words = [
+      w(0, 300, 'Hello', 'speaker_0'),
+      sp(300),
+      w(400, 700, 'again.', 'speaker_2'),
+      w(800, 900, 'Hi.', 'speaker_1'),
+    ];
+    expect(buildTurns(words).length).toBe(3);
+    const turns = buildTurns(words, speakerKeys(speakers));
+    expect(turns.map((turn) => turn.text)).toEqual(['Hello again.', 'Hi.']);
+  });
+});
+
+describe('partsWithOwnEnrolment', () => {
+  it('keeps a pending sample or remembering on a part that is not the representative', () => {
+    const parts = [
+      { id: 'a', pending_enrolment: { id: 'e1' } },
+      { id: 'b', pending_enrolment: { id: 'e2' } },
+      { id: 'c', remembering: true },
+      { id: 'd' },
+    ];
+    expect(partsWithOwnEnrolment(parts, { id: 'b' }).map((part) => part.id)).toEqual(['a', 'c']);
+    expect(partsWithOwnEnrolment([{ id: 'a', pending_enrolment: { id: 'e1' } }], { id: 'a' })).toEqual([]);
   });
 });

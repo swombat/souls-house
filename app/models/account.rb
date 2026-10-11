@@ -61,6 +61,9 @@ class Account < ApplicationRecord
   has_many :metered_action_events, dependent: :destroy
   has_many :whiteboards, dependent: :destroy
   has_many :field_files, dependent: :destroy
+  has_many :field_tweets, dependent: :delete_all
+  has_one :field_tweet_source, dependent: :destroy
+  has_many :field_tweet_calls, dependent: :delete_all
   has_many :field_recordings, dependent: :destroy
   has_many :field_recording_reservations, dependent: :destroy
   has_many :field_voices, dependent: :destroy

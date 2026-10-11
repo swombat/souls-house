@@ -5,11 +5,12 @@
   import { Button } from '$lib/components/shadcn/button/index.js';
   import SearchExcerpt from '$lib/components/field/SearchExcerpt.svelte';
   import { formatWhen } from '$lib/field';
-  import { File, Microphone, Notepad } from 'phosphor-svelte';
+  import { tweetBadge } from '$lib/field-tweets';
+  import { File, Microphone, Notepad, XLogo } from 'phosphor-svelte';
 
   let { search, query = '', filterTags = [], currentKey = null, onSelect, onMore } = $props();
 
-  const kindLabel = { file: 'File', note: 'Note', recording: 'Recording' };
+  const kindLabel = { file: 'File', note: 'Note', recording: 'Recording', tweet: 'Tweet' };
 </script>
 
 {#if search.error}
@@ -32,6 +33,8 @@
             <File class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
           {:else if result.kind === 'recording'}
             <Microphone class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
+          {:else if result.kind === 'tweet'}
+            <XLogo class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
           {:else}
             <Notepad class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
           {/if}
@@ -41,6 +44,12 @@
               {kindLabel[result.kind]} · {formatWhen(result.date)}
               {#if result.tags.length}· {result.tags.join(', ')}{/if}
             </p>
+            {#if result.kind === 'tweet'}
+              <p class="text-xs text-muted-foreground">
+                @{result.author_handle}
+                {#if tweetBadge(result.kinds)}· {tweetBadge(result.kinds)}{/if}
+              </p>
+            {/if}
           </div>
         </div>
         {#each result.excerpts as excerpt, index (index)}

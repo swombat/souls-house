@@ -210,7 +210,10 @@ GEM
     marcel (1.2.1)
     matrix (0.4.3)
     mini_mime (1.1.5)
-    minitest (5.27.0)
+    minitest (6.0.6)
+      drb (~> 2.0)
+      prism (~> 1.5)
+    minitest-mock (5.27.0)
     msgpack (1.8.4)
     multipart-post (2.4.1)
     mutex_m (0.3.0)
@@ -248,6 +251,21 @@ GEM
     nokogiri (1.19.4-x86_64-linux-musl)
       racc (~> 1.4)
     ostruct (0.6.3)
+    padded_cell (0.2.0)
+      minitest (~> 6.0)
+      rb_sys (~> 0.9.130)
+    padded_cell (0.2.0-aarch64-linux-gnu)
+      minitest (~> 6.0)
+    padded_cell (0.2.0-aarch64-linux-musl)
+      minitest (~> 6.0)
+    padded_cell (0.2.0-arm64-darwin)
+      minitest (~> 6.0)
+    padded_cell (0.2.0-x86_64-darwin)
+      minitest (~> 6.0)
+    padded_cell (0.2.0-x86_64-linux-gnu)
+      minitest (~> 6.0)
+    padded_cell (0.2.0-x86_64-linux-musl)
+      minitest (~> 6.0)
     pagy (43.6.2)
       json
       uri
@@ -305,6 +323,9 @@ GEM
       zeitwerk (~> 2.6)
     rainbow (3.1.1)
     rake (13.4.2)
+    rake-compiler-dock (1.12.0)
+    rb_sys (0.9.130)
+      rake-compiler-dock (= 1.12.0)
     rbs (4.2.0)
       logger
       prism (>= 1.6.0)
@@ -389,6 +410,9 @@ GEM
       net-sftp (>= 2.1.2)
       net-ssh (>= 2.8.0)
       ostruct
+    stripe (20.0.0)
+      bigdecimal
+      logger
     thor (1.5.0)
     thruster (0.1.26)
     thruster (0.1.26-aarch64-linux)
@@ -475,7 +499,9 @@ DEPENDENCIES
   js-routes (~> 2.4)
   kamal (~> 2.12.0)
   letter_opener
-  minitest (~> 5.27)
+  minitest (~> 6.0)
+  minitest-mock
+  padded_cell (~> 0.2.0)
   pagy (~> 43.6.1)
   paper_trail (~> 17.0)
   pg (~> 1.1)
@@ -490,6 +516,7 @@ DEPENDENCIES
   solid_cable (~> 3.0, >= 3.0.12)
   solid_cache
   solid_queue (~> 1.7.0)
+  stripe (~> 20.0)
   thruster
   tzinfo-data
   vcr

@@ -1,11 +1,11 @@
-# One page of the Field list: files, notes and recordings merged newest first,
+# One page of the Field list: files, notes, recordings and tweets merged newest first,
 # narrowed by tab and tags, counted per tab. The page only loads the records it
 # shows, so a Field with hundreds of recordings costs the same as one with ten.
 class FieldListing
 
   PER_PAGE = 50
-  KINDS = %w[file note recording].freeze
-  TAB_KINDS = { "all" => KINDS, "files" => %w[file], "notes" => %w[note], "recordings" => %w[recording] }.freeze
+  KINDS = %w[file note recording tweet].freeze
+  TAB_KINDS = { "all" => KINDS, "files" => %w[file], "notes" => %w[note], "recordings" => %w[recording], "tweets" => %w[tweet] }.freeze
 
   attr_reader :page, :pages, :counts
 
@@ -42,7 +42,7 @@ class FieldListing
     return nil if id.blank?
 
     scope = { "file" => account.field_files.kept, "note" => account.whiteboards.active,
-              "recording" => account.field_recordings.kept }[kind]
+              "recording" => account.field_recordings.kept, "tweet" => account.field_tweets.kept }[kind]
     scope&.find_by_obfuscated_id(id)
   end
 
@@ -52,6 +52,7 @@ class FieldListing
     scope = case kind
     when "file" then @account.field_files.kept
     when "note" then @account.whiteboards.active
+    when "tweet" then @account.field_tweets.kept
     else @account.field_recordings.kept
     end
     with_all_tags(scope)
@@ -63,12 +64,14 @@ class FieldListing
     # last edited.
     when "note" then "COALESCE(whiteboards.dated_at, whiteboards.last_edited_at, whiteboards.updated_at)"
     when "recording" then "COALESCE(field_recordings.recorded_at, field_recordings.created_at)"
+    # A tweet sorts by when it was posted, not when it was fetched.
+    when "tweet" then "field_tweets.posted_at"
     else "COALESCE(field_files.dated_at, field_files.created_at)"
     end
   end
 
   def table(kind)
-    { "file" => "field_files", "note" => "whiteboards", "recording" => "field_recordings" }.fetch(kind)
+    { "file" => "field_files", "note" => "whiteboards", "recording" => "field_recordings", "tweet" => "field_tweets" }.fetch(kind)
   end
 
   def count_tabs
@@ -94,6 +97,7 @@ class FieldListing
     case kind
     when "file" then @account.field_files.where(id: ids).includes(:uploaded_by, file_attachment: :blob)
     when "note" then @account.whiteboards.where(id: ids).includes(:last_edited_by)
+    when "tweet" then @account.field_tweets.where(id: ids)
     else @account.field_recordings.where(id: ids).includes(:uploaded_by, audio_attachment: :blob, speakers: :field_voice)
     end
   end

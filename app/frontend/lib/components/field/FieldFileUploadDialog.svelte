@@ -1,21 +1,22 @@
 <script>
-  // The "Add a file to the Field" dialog: a file, an optional title, note and
-  // date, sent as one multipart POST.
+  // Add a file to the Field: pick it, title it, say why, date it, upload.
   import { router } from '@inertiajs/svelte';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Input } from '$lib/components/shadcn/input/index.js';
   import { Label } from '$lib/components/shadcn/label/index.js';
   import SummariesNotice from '$lib/components/field/SummariesNotice.svelte';
+  import OcrNotice from '$lib/components/field/OcrNotice.svelte';
   import { formatBytes } from '$lib/field';
 
   let {
     open = $bindable(false),
     accountId,
-    sharedLine,
+    maxBytes,
+    maxLabel,
+    sharedLine = '',
     summariesEnabled = false,
-    maxBytes = 100 * 1024 * 1024,
-    maxLabel = '100 MB',
+    ocrEnabled = false,
   } = $props();
 
   let uploadFile = $state(null);
@@ -68,7 +69,8 @@
       <Dialog.Title>Add a file to the Field</Dialog.Title>
       <Dialog.Description
         >{sharedLine}
-        {#if summariesEnabled}<SummariesNotice kind="file" />{/if}</Dialog.Description>
+        {#if summariesEnabled}<SummariesNotice kind="file" ocr={ocrEnabled} />{/if}
+        {#if ocrEnabled}<OcrNotice kind="file" />{/if}</Dialog.Description>
     </Dialog.Header>
     <form onsubmit={submitUpload} class="space-y-4" data-testid="field-file-form">
       <div class="space-y-1">

@@ -12,7 +12,7 @@ class Accounts::WatchedRepositoriesController < ApplicationController
       return
     end
 
-    repository = WatchedRepository.connect!(connection: connection, full_name: params[:full_name].to_s, user: Current.user)
+    repository = WatchedRepository.connect!(connection: connection, full_name: params[:full_name].to_s, by: Current.user)
     audit("repository_watch.connect", repository, full_name: repository.full_name, hook_status: repository.hook_status)
     redirect_back fallback_location: account_integrations_path(current_account), notice: connected_notice(repository)
   rescue WatchedRepository::ConnectError => error
