@@ -49,6 +49,14 @@ class FieldRecordingSpeaker < ApplicationRecord
   # Speakers grouped by identity, in order of first appearance.
   def self.grouped(speakers) = speakers.sort_by(&:position).group_by(&:identity).values
 
+  # Still waiting for a name: no kept voice, and no real name from a supplied
+  # transcript. A pending suggestion doesn't count until someone confirms it.
+  def unnamed?
+    return false if field_voice&.kept?
+
+    !(field_recording.supplied? && !label.match?(GENERIC_LABEL))
+  end
+
   # A human names this speaker. Every speaker decision (naming, un-naming,
   # confirming or dismissing a suggestion or a guess) takes the one lock order,
   # account → recording → voice, and reloads the speaker under it, so it is

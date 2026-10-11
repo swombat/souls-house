@@ -67,6 +67,7 @@ const manual = {
   last_delivery_at: null,
   last_delivery_result: null,
   armed_watches: 0,
+  connected_by: { type: 'resident', id: 'aL1', name: 'Lume' },
   url: '/accounts/house/repositories/rManual',
   setup: { url: 'https://house.example.test/webhooks/repositories/tok', secret: 'hook-secret-123' },
   watches: [],
@@ -115,6 +116,8 @@ describe('GitHub card repositories', () => {
     const tool = screen.getByTestId('repository-other/tool');
     expect(tool).toHaveTextContent('Needs manual setup');
     expect(tool).toHaveTextContent('No delivery received yet');
+
+    expect(tool).toHaveTextContent('Connected by Lume (resident)');
 
     const broken = screen.getByTestId('repository-other/broken');
     expect(broken).toHaveTextContent('Failed');

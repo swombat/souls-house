@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_11_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_11_183000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2154,8 +2154,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_160000) do
     t.datetime "removed_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "created_by_agent_id"
     t.index ["account_id", "provider", "full_name"], name: "index_watched_repositories_on_live_full_name", unique: true, where: "(removed_at IS NULL)"
     t.index ["account_id"], name: "index_watched_repositories_on_account_id"
+    t.index ["created_by_agent_id"], name: "index_watched_repositories_on_created_by_agent_id"
     t.index ["created_by_user_id"], name: "index_watched_repositories_on_created_by_user_id"
     t.index ["receiver_token"], name: "index_watched_repositories_on_receiver_token", unique: true
     t.index ["service_connection_id"], name: "index_watched_repositories_on_service_connection_id"
@@ -2403,6 +2405,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_160000) do
   add_foreign_key "vm_backups", "agents"
   add_foreign_key "vm_backups", "runner_commands"
   add_foreign_key "watched_repositories", "accounts", on_delete: :cascade
+  add_foreign_key "watched_repositories", "agents", column: "created_by_agent_id", on_delete: :nullify
   add_foreign_key "watched_repositories", "service_connections", on_delete: :cascade
   add_foreign_key "watched_repositories", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "whiteboards", "accounts"

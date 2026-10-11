@@ -121,4 +121,120 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ nil, nil ], props["speakers"].map { |speaker| speaker["talk_ms"] }
   end
 
+  test "a line of the transcript can be corrected" do
+    recording = ready_recording(account: @account, user: @user)
+
+    patch line_account_field_recording_path(@account, recording),
+      params: { line: { first: 1, last: 1, text: "Dan", was: "there", revision: recording.transcript_revision } }
+
+    assert_redirected_to account_field_recording_path(@account, recording)
+    recording.reload
+    assert_equal %w[hello Dan], recording.transcript_words.reject { |word| word["k"] == "s" }.map { |word| word["t"] }
+    assert_includes recording.transcript_text, "Dan"
+    assert_equal [ 2000, 2600 ], recording.transcript_words.last.values_at("s", "e")
+  end
+
+  test "a correction to a line that changed meanwhile is refused" do
+    recording = ready_recording(account: @account, user: @user)
+
+    patch line_account_field_recording_path(@account, recording),
+      params: { line: { first: 1, last: 1, text: "Dan", was: "where", revision: recording.transcript_revision } }
+
+    assert_redirected_to account_field_recording_path(@account, recording)
+    follow_redirect!
+    assert_match "changed", inertia_props.dig("props", "errors", "line")
+    assert_equal %w[hello there], recording.reload.transcript_words.reject { |word| word["k"] == "s" }.map { |word| word["t"] }
+  end
+
+  test "a supplied transcript's line can be corrected" do
+    recording = FieldRecording::Upload.claim!(
+      account: @account, user: @user, signed_id: pinned_blob(account: @account, user: @user).signed_id,
+      attributes: { title: "Archive" },
+      supplied_turns: FieldRecording::SuppliedTranscript.parse("Anna: Hi Dad.\nDaniel: Hello.\nAnna: Bye.")
+    )
+
+    patch line_account_field_recording_path(@account, recording),
+      params: { line: { index: 0, text: "Hi Dan.", was: "Hi Dad.", revision: recording.transcript_revision } }
+
+    recording.reload
+    assert_equal "Hi Dan.", recording.transcript_turns.first["t"]
+    assert_includes recording.transcript_text, "Hi Dan."
+  end
+
+  test "another account's recording can't be corrected" do
+    recording = ready_recording(account: accounts(:another_team), user: @user)
+
+    patch line_account_field_recording_path(@account, recording),
+      params: { line: { first: 1, last: 1, text: "Dan", was: "there", revision: recording.transcript_revision } }
+
+    assert_response :not_found
+    assert_equal %w[hello there], recording.reload.transcript_words.reject { |word| word["k"] == "s" }.map { |word| word["t"] }
+  end
+
+  test "a correction made against an older transcript is refused, even where the text still matches" do
+    recording = ready_recording(account: @account, user: @user)
+    words = recording.transcript_words
+    # Three lines: "A B" (speaker_0), "Yes" (speaker_1), "Yes" (speaker_2).
+    recording.update!(transcript_words: [
+      words[0].merge("t" => "A", "s" => 0, "e" => 100, "spk" => "speaker_0"),
+      { "s" => 100, "e" => 100, "t" => " ", "k" => "s", "spk" => "speaker_0" },
+      words[0].merge("t" => "B", "s" => 150, "e" => 250, "spk" => "speaker_0"),
+      words[0].merge("t" => "Yes", "s" => 3000, "e" => 3200, "spk" => "speaker_1"),
+      words[0].merge("t" => "Yes", "s" => 6000, "e" => 6200, "spk" => "speaker_2")
+    ])
+    seen = recording.transcript_revision
+
+    # Someone else removes "B": every later line moves down one word.
+    recording.correct_line!({ first: 0, last: 1 }, text: "A", was: "A B", revision: seen)
+
+    # The edit made earlier for speaker_1's "Yes" (positions 2..2) would now hit speaker_2's.
+    patch line_account_field_recording_path(@account, recording),
+      params: { line: { first: 2, last: 2, text: "No", was: "Yes", revision: seen } }
+
+    spoken = recording.reload.transcript_words.reject { |word| word["k"] == "s" }
+    assert_equal [ %w[A speaker_0], %w[Yes speaker_1], %w[Yes speaker_2] ], spoken.map { |w| w.values_at("t", "spk") }
+  end
+
+  test "the summary can be written again" do
+    recording = ready_recording(account: @account, user: @user)
+    recording.update_columns(summary_long: "Old.", summarized_at: 1.hour.ago)
+    with_house_summaries do
+      assert_enqueued_with(job: FieldItems::SummarizeJob) do
+        post resummarize_account_field_recording_path(@account, recording)
+      end
+    end
+    assert_response :redirect
+    assert_nil recording.reload.summarized_at
+  end
+
+  test "asking again while a summary is being written says so and queues nothing" do
+    recording = ready_recording(account: @account, user: @user)
+    recording.update_columns(summary_long: "Old.", summarized_at: nil, summary_claimed_at: 1.minute.ago)
+    with_house_summaries do
+      assert_no_enqueued_jobs(only: FieldItems::SummarizeJob) do
+        post resummarize_account_field_recording_path(@account, recording)
+      end
+    end
+    follow_redirect!
+    assert_equal "A summary is already being written.", inertia_props.dig("props", "errors", "summary")
+  end
+
+  test "another account's recording can't be resummarised" do
+    recording = ready_recording(account: accounts(:another_team), user: @user)
+    with_house_summaries { post resummarize_account_field_recording_path(@account, recording) }
+    assert_response :not_found
+  end
+
+  private
+
+  def with_house_summaries
+    previous = ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"]
+    ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"] = "test-key"
+    FieldSummaries.live = true
+    yield
+  ensure
+    ENV["HOUSE_INFERENCE_OPENROUTER_API_KEY"] = previous
+    FieldSummaries.live = false
+  end
+
 end

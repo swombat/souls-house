@@ -78,8 +78,9 @@ group :development do
 end
 
 group :test do
-  # Rails 8.1's test runner does not yet discover tests under Minitest 6.
-  gem "minitest", "~> 5.27"
+  gem "minitest", "~> 6.0"
+  # Minitest 6 moved Minitest::Mock and Object#stub into their own gem.
+  gem "minitest-mock"
 
   # Use system testing [https://guides.rubyonrails.org/testing.html#system-testing]
   gem "capybara"

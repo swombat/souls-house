@@ -111,6 +111,37 @@ class FieldRecording < ApplicationRecord
     update!(status: "ready", ready_at: Time.current, expected_speakers: nil)
   end
 
+  # A short fingerprint of the stored transcript. The page sends back the one
+  # it was shown, and a correction made against any other is refused. Keys are
+  # sorted first: jsonb hands them back in its own order, not the one written.
+  def transcript_revision
+    entries = (supplied? ? transcript_turns : transcript_words) || []
+    Digest::SHA256.hexdigest(entries.map { |entry| entry.to_h.sort.to_h }.to_json)[0, 16]
+  end
+
+  # One line corrected by hand (FieldRecording::LineCorrection). `line` is
+  # {first:, last:} for timed words or {index:} for a supplied turn. Raises
+  # LineCorrection::Stale if the transcript has changed since `revision` or the
+  # line no longer reads `was`.
+  def correct_line!(line, text:, was:, revision:)
+    with_lock do
+      raise FieldRecording::LineCorrection::Stale unless kept? && ready?
+      raise FieldRecording::LineCorrection::Stale unless revision.present? && revision == transcript_revision
+
+      if supplied?
+        self.transcript_turns = FieldRecording::LineCorrection.replace_turn(
+          transcript_turns || [], index: line[:index], text:, was:
+        )
+      else
+        self.transcript_words = FieldRecording::LineCorrection.replace_words(
+          transcript_words || [], first: line[:first], last: line[:last], text:, was:
+        )
+      end
+      self.transcript_text = render_transcript_text
+      save!
+    end
+  end
+
   # Probe of a supplied recording: the duration only, for display. Its status
   # is already final and nothing is reserved.
   def record_duration!(probed_ms)

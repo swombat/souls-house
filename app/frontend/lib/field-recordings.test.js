@@ -13,6 +13,7 @@ import {
   preflightProblem,
   recordingStatusLine,
   speakerNames,
+  lineAddress,
   suppliedTurns,
   timedWords,
   turnSpeakerName,
@@ -152,8 +153,30 @@ describe('suppliedTurns', () => {
     expect(turnSpeakerName(turns[0], {})).toBe('Unattributed');
   });
 
+  it("keeps each turn's position in the stored list, skipping none", () => {
+    const turns = suppliedTurns([
+      { spk: 'A', t: '' },
+      { spk: 'B', t: 'Hello' },
+    ]);
+    expect(turns[0].index).toBe(1);
+    expect(lineAddress(turns[0])).toEqual({ index: 1 });
+  });
+
   it('copes with nothing', () => {
     expect(suppliedTurns(null)).toEqual([]);
+  });
+});
+
+describe('lineAddress', () => {
+  it('names a timed line by its first and last word', () => {
+    const turns = buildTurns([
+      w(0, 300, 'Hi', 'speaker_0'),
+      sp(300),
+      w(400, 700, 'Dad.', 'speaker_0'),
+      w(5000, 5300, 'Yes', 'speaker_1'),
+    ]);
+    expect(lineAddress(turns[0])).toEqual({ first: 0, last: 1 });
+    expect(lineAddress(turns[1])).toEqual({ first: 2, last: 2 });
   });
 });
 

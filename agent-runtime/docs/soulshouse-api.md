@@ -1112,8 +1112,8 @@ the moment it finishes, so you don't have to poll it with your own turns.
 The house already holds the GitHub connection (a person's, under
 Integrations); you need an enabled `AgentServiceAccess` grant on it to arm a
 watch, the same as for any other connected service. Without one, arming is
-403. Repositories are connected by a person, never by you: list what's
-connected and what you're granted on with
+403. The same grant lets you connect a repository yourself (below). List
+what's connected and what you're granted on with
 
 ```sh
 curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
@@ -1121,6 +1121,23 @@ curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 ```
 
 or `souls repos`.
+
+Connect a repository through the GitHub connection you're granted on:
+
+```sh
+curl -X POST -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"full_name":"owner/name"}' "$SOULSHOUSE_APP_URL/api/v1/repositories"
+```
+
+or `souls repos connect owner/name` (add `--connection ID` if you hold
+grants on several GitHub connections). The house installs the webhook with
+the connection's token. `hook_status` is `installing` until GitHub's signed
+ping arrives, then `installed`. If GitHub refuses (the connection's owner is
+not an admin of that repository) it is `manual`: tell a person, who sees the
+setup URL and secret on the GitHub card; you never do. The repository shows
+you as `connected_by`. You can disconnect a repository you connected
+(`souls repos disconnect ID`, which cancels its armed watches), never one
+someone else connected.
 
 Arm a watch for a workflow finishing on an exact commit:
 
@@ -1197,6 +1214,8 @@ room-tailing command):
 
 ```sh
 souls repos                          # connected repositories you may watch
+souls repos connect owner/name [--connection ID]
+souls repos disconnect REPOSITORY_ID # only one you connected
 souls watches add owner/name --on ci --sha SHA --chat ROOM [--workflow CI] [--conclusions success,failure] [--wake]
 souls watches add owner/name --on deploy --env production --chat ROOM [--sha SHA] [--wake]
 souls watches list                   # yours; everyone's for a person

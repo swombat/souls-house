@@ -104,6 +104,31 @@
     audio.play().catch(() => {});
   }
 
+  // One line corrected by hand. Resolves {ok} only when the server took it;
+  // a refusal (the transcript changed meanwhile, an empty line) or a failed
+  // request resolves {ok: false} with why, and the editor keeps the text.
+  function saveLine(edit, text) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (result) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+      router.patch(
+        `${recording.show_url}/line`,
+        { line: { ...edit.address, text, was: edit.was, revision: edit.revision } },
+        {
+          preserveScroll: true,
+          preserveState: true,
+          onSuccess: () => settle({ ok: true }),
+          onError: (errors) => settle({ ok: false, error: errors?.line }),
+          onFinish: () => settle({ ok: false }),
+        }
+      );
+    });
+  }
+
   function retry() {
     router.post(`${recording.show_url}/retry`);
   }
@@ -218,7 +243,13 @@
     {#if turns.length}
       <Card.Root>
         <Card.Content class="p-6">
-          <TranscriptTurns {turns} {names} {activeIndex} onSeek={seek} />
+          <TranscriptTurns
+            {turns}
+            {names}
+            {activeIndex}
+            onSeek={seek}
+            onSave={saveLine}
+            revision={recording.transcript_revision} />
         </Card.Content>
       </Card.Root>
     {:else}

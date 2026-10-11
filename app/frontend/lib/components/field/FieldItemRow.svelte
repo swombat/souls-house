@@ -6,6 +6,7 @@
   import { formatWhen } from '$lib/field';
   import { recordingStatusLine } from '$lib/field-recordings';
   import { File, Microphone, Notepad } from 'phosphor-svelte';
+  import UnnamedSpeakersBadge from './UnnamedSpeakersBadge.svelte';
 
   let { item, selected = false, onSelect } = $props();
 
@@ -18,6 +19,7 @@
       item.summary_long || item.summary_short,
       kindLabel[item.kind],
       item.kind === 'recording' ? recordingStatusLine(item) : null,
+      item.unnamed_speakers ? `${item.unnamed_speakers} to name` : null,
       item.kind === 'note' ? item.editor_name : item.uploader_name,
       item.tags?.length ? item.tags.join(' · ') : null,
     ]
@@ -44,7 +46,9 @@
   <span class="flex-1 min-w-0">
     <span class="block truncate">{item.title}</span>
     <span class="block truncate text-xs font-normal text-muted-foreground sm:hidden">
-      {[item.summary_short, formatWhen(item.dated_at || item.recorded_at || item.created_at)].filter(Boolean).join(' · ')}
+      {[item.summary_short, formatWhen(item.dated_at || item.recorded_at || item.created_at)]
+        .filter(Boolean)
+        .join(' · ')}
     </span>
   </span>
   {#if pending}
@@ -53,6 +57,8 @@
       data-testid="field-recording-line">
       {broken ? 'Failed' : recordingStatusLine(item)}
     </span>
+  {:else if item.kind === 'recording'}
+    <UnnamedSpeakersBadge count={item.unnamed_speakers} />
   {/if}
   <span class="hidden shrink-0 text-xs text-muted-foreground tabular-nums sm:inline"
     >{formatWhen(item.dated_at || item.recorded_at || item.created_at)}</span>

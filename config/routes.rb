@@ -207,10 +207,14 @@ Rails.application.routes.draw do
     get "field", to: "field#index", as: :field
     resources :field_tags, path: "field/tags", only: [ :update, :destroy ]
     patch "field/item_tags", to: "field_item_tags#update", as: :field_item_tags
-    resources :field_files, path: "field/files", only: [ :create, :update, :destroy ]
+    resources :field_files, path: "field/files", only: [ :create, :update, :destroy ] do
+      post :resummarize, on: :member
+    end
     resources :field_recording_uploads, path: "field/recordings/uploads", only: [ :create ]
     resources :field_recordings, path: "field/recordings", only: [ :show, :create, :update, :destroy ] do
       post :retry, on: :member
+      post :resummarize, on: :member
+      patch :line, on: :member, action: :correct_line
       post :dismiss_you_hint, on: :collection
       resources :speakers, only: [ :update ], controller: "field_recording_speakers" do
         resources :enrolments, only: [ :create ], controller: "field_voice_enrolments"
