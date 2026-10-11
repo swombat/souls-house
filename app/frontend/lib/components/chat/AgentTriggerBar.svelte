@@ -1,10 +1,11 @@
 <script>
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { Spinner, UsersThree, Warning } from 'phosphor-svelte';
+  import { Spinner, UsersThree } from 'phosphor-svelte';
   import { accountChatAgentTriggerPath, accountChatModelSelectionPath, editAccountAgentPath } from '@/routes';
   import { agentIconFor } from '$lib/agent-icons';
   import AgentUsageName from '$lib/components/chat/AgentUsageName.svelte';
   import AgentModelControl from '$lib/components/chat/AgentModelControl.svelte';
+  import AgentModelProblems from '$lib/components/chat/AgentModelProblems.svelte';
   import { sortAgentsByAvailability, watchAgentsWeeklyRemaining } from '$lib/agent-subscription-usage';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { onDestroy } from 'svelte';
@@ -267,22 +268,10 @@
     {#if queuedNotice}
       <div role="status" class="mt-2 text-xs text-muted-foreground">{queuedNotice}</div>
     {/if}
-    {#each modelProblems as { agent, selection } (agent.id)}
-      <div
-        role="status"
-        class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-amber-500/60 bg-amber-50 px-2 py-1
-               text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-        <span class="min-w-0"
-          ><Warning size={12} weight="bold" class="inline-block align-[-2px] mr-1" />{agent.name}: {selection.problem}.</span>
-        <button
-          type="button"
-          class="underline underline-offset-2 hover:no-underline disabled:opacity-50"
-          disabled={savingModelFor === agent.id}
-          onclick={() => selectModel(agent, 'default')}>
-          Use resident default ({selection.default_label})
-        </button>
-      </div>
-    {/each}
+    <AgentModelProblems
+      problems={modelProblems}
+      savingFor={savingModelFor}
+      onusedefault={(agent) => selectModel(agent, 'default')} />
   </div>
 {/if}
 
