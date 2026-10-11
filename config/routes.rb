@@ -71,6 +71,8 @@ Rails.application.routes.draw do
   post "webhooks/repositories/:receiver_token", to: "repository_webhooks#receive", as: :repository_webhook
 
   post "webhooks/elevenlabs/stt", to: "eleven_labs_stt_webhooks#create", as: :eleven_labs_stt_webhook
+  # Stripe billing events (signed, no session)
+  post "webhooks/stripe", to: "stripe_webhooks#create", as: :stripe_webhook
 
   # Comms connector events over the private network (HMAC-signed with each
   # connection's callback secret, no session).
@@ -108,6 +110,10 @@ Rails.application.routes.draw do
     resource :agent_api_keys, only: [ :show, :update ], module: :accounts
     resources :guest_memberships, only: [ :create, :destroy ], module: :accounts
     resource :costs, only: :show, module: :accounts
+    resource :billing, only: :show, module: :accounts do
+      post :checkout
+      post :portal
+    end
     resources :notices, only: [ :index, :create, :destroy ], module: :accounts
     resource :transcription_glossary, path: "glossary", only: [ :show, :create, :update, :destroy ], module: :accounts
     resources :api_keys, path: "external_access", only: [ :index, :create, :destroy ]

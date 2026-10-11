@@ -41,6 +41,12 @@ production:
     queue: default
     schedule: every hour at minute 23
 
+  # Retries unfinished Stripe events and imposes lapsed grace deadlines.
+  billing_sweep:
+    class: Billing::SweepJob
+    queue: default
+    schedule: every 5 minutes
+
   rhythms:
     class: RhythmSweepJob
     queue: default

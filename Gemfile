@@ -115,3 +115,5 @@ gem "doorkeeper", "5.9.7"
 
 # X/Twitter API client
 gem "x"
+
+gem "stripe", "~> 20.0"

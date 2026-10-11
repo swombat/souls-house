@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_10_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_11_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -534,6 +534,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_210000) do
     t.index ["auditable_type", "auditable_id"], name: "index_audit_logs_on_auditable_type_and_auditable_id"
     t.index ["created_at"], name: "index_audit_logs_on_created_at"
     t.index ["user_id"], name: "index_audit_logs_on_user_id"
+  end
+
+  create_table "billing_customers", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "stripe_customer_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_billing_customers_on_account_id", unique: true
+    t.index ["stripe_customer_id"], name: "index_billing_customers_on_stripe_customer_id", unique: true
   end
 
   create_table "chat_agents", force: :cascade do |t|
@@ -1586,6 +1595,45 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_210000) do
     t.index ["watched_repository_id"], name: "index_repository_watches_on_watched_repository_id"
   end
 
+  create_table "resident_entitlements", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.bigint "account_id", null: false
+    t.string "source", null: false
+    t.string "tier"
+    t.bigint "current_subscription_id"
+    t.string "state", null: false
+    t.datetime "complimentary_granted_at"
+    t.datetime "grace_started_at"
+    t.datetime "grace_deadline"
+    t.jsonb "notices_sent", default: {}, null: false
+    t.datetime "held_at"
+    t.datetime "hold_released_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_resident_entitlements_on_account_id"
+    t.index ["agent_id"], name: "index_resident_entitlements_on_agent_id", unique: true
+    t.index ["current_subscription_id"], name: "index_resident_entitlements_on_current_subscription_id"
+    t.index ["grace_deadline"], name: "index_resident_entitlements_on_grace_deadline", where: "((state)::text = 'grace'::text)"
+    t.index ["state"], name: "index_resident_entitlements_on_state"
+  end
+
+  create_table "resident_subscriptions", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.bigint "account_id", null: false
+    t.string "stripe_subscription_id", null: false
+    t.string "tier", null: false
+    t.string "stripe_status", null: false
+    t.datetime "current_period_end"
+    t.boolean "cancel_at_period_end", default: false, null: false
+    t.datetime "last_synced_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_resident_subscriptions_on_account_id"
+    t.index ["agent_id"], name: "index_resident_subscriptions_on_agent_id"
+    t.index ["agent_id"], name: "index_resident_subscriptions_one_live_per_agent", unique: true, where: "((stripe_status)::text = ANY ((ARRAY['incomplete'::character varying, 'trialing'::character varying, 'active'::character varying, 'past_due'::character varying])::text[]))"
+    t.index ["stripe_subscription_id"], name: "index_resident_subscriptions_on_stripe_subscription_id", unique: true
+  end
+
   create_table "resident_turns", force: :cascade do |t|
     t.datetime "admitted_at"
     t.bigint "agent_id", null: false
@@ -1889,6 +1937,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_210000) do
     t.index ["public_token"], name: "index_stones_on_public_token", unique: true
   end
 
+  create_table "stripe_events", force: :cascade do |t|
+    t.string "stripe_event_id", null: false
+    t.string "event_type", null: false
+    t.jsonb "payload", default: {}, null: false
+    t.string "status", default: "received", null: false
+    t.integer "attempts", default: 0, null: false
+    t.text "last_error"
+    t.datetime "processed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["status", "updated_at"], name: "index_stripe_events_on_status_and_updated_at"
+    t.index ["stripe_event_id"], name: "index_stripe_events_on_stripe_event_id", unique: true
+  end
+
   create_table "telegram_messages", force: :cascade do |t|
     t.text "caption"
     t.datetime "created_at", null: false
@@ -2120,6 +2182,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_210000) do
   add_foreign_key "app_sessions", "users"
   add_foreign_key "audit_logs", "accounts"
   add_foreign_key "audit_logs", "users"
+  add_foreign_key "billing_customers", "accounts"
   add_foreign_key "chat_agents", "agents"
   add_foreign_key "chat_agents", "chats"
   add_foreign_key "chats", "accounts"
@@ -2237,6 +2300,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_10_210000) do
   add_foreign_key "repository_watches", "chats", on_delete: :cascade
   add_foreign_key "repository_watches", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "repository_watches", "watched_repositories", on_delete: :cascade
+  add_foreign_key "resident_entitlements", "accounts"
+  add_foreign_key "resident_entitlements", "agents"
+  add_foreign_key "resident_entitlements", "resident_subscriptions", column: "current_subscription_id"
+  add_foreign_key "resident_subscriptions", "accounts"
+  add_foreign_key "resident_subscriptions", "agents"
   add_foreign_key "resident_turns", "agent_runtime_interactions"
   add_foreign_key "resident_turns", "agents"
   add_foreign_key "rhythm_agents", "agents", on_delete: :cascade
