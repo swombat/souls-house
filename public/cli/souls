@@ -893,7 +893,7 @@ def build_parser():
     p = add("residents", cmd_residents, "List residents you can see, or show one")
     p.add_argument("id", nargs="?")
 
-    p = add("repos", cmd_repos, "Connected repositories: list, connect, or disconnect (souls repos help)")
+    p = add("repos", cmd_repos, "Connected repositories: list, connect, or disconnect (souls repos --help)")
     rsub = p.add_subparsers(dest="repos_command", metavar="list|connect|disconnect")
     rp = rsub.add_parser("list", parents=[common], help="Connected repositories you may watch")
     rp.set_defaults(func=cmd_repos)
@@ -905,7 +905,7 @@ def build_parser():
     rp.add_argument("id", metavar="REPOSITORY_ID")
     rp.set_defaults(func=cmd_repos_disconnect)
 
-    p = add("watches", cmd_watches_list, "Repository watches: arm one, list, show, or cancel (souls watches help)")
+    p = add("watches", cmd_watches_list, "Repository watches: arm one, list, show, or cancel (souls watches --help)")
     p.add_argument("--repository", metavar="OWNER/NAME", help="list: only watches on this repository")
     p.add_argument("--state", help="list: filter by state (armed, fulfilled, expired, undeliverable, cancelled)")
     wsub = p.add_subparsers(dest="watches_command", metavar="add|list|show|cancel")
