@@ -46,6 +46,7 @@ const recording = {
   audio_url: '/rails/active_storage/blobs/x/board-call.m4a',
   words,
   language_code: 'eng',
+  transcript_revision: 'rev1',
   ready_at: '2026-10-08T07:04:00Z',
 };
 
@@ -541,7 +542,13 @@ test('with a mouse, clicking a line edits it in place and Enter saves it', async
 
   await expect.poll(() => sent.length).toBe(1);
   expect(sent[0]).toEqual({
-    line: { first: 2, last: 7, text: 'Shall we start with the venue, Dan?', was: 'Shall we start with the venue?' },
+    line: {
+      first: 2,
+      last: 7,
+      text: 'Shall we start with the venue, Dan?',
+      was: 'Shall we start with the venue?',
+      revision: 'rev1',
+    },
   });
   await expect(editor).toHaveCount(0);
 });
@@ -557,6 +564,56 @@ test('Escape leaves a line as it was, and an unchanged line sends nothing', asyn
   await page.getByTestId('line-save').click();
   await expect(page.getByTestId('line-editor')).toHaveCount(0);
   expect(sent).toEqual([]);
+});
+
+test('while a save is in flight, the editor stays on that line: no switching, no cancel', async ({ mount, page }) => {
+  let release;
+  const held = new Promise((resolve) => (release = resolve));
+  await page.route('**/accounts/acct1/field/recordings/r1/line', async (route) => {
+    await held;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  await mountPlayer(mount, page);
+  const lines = page.getByTestId('transcript-line');
+  await lines.nth(1).click();
+  await page.getByTestId('line-editor').fill('Shall we start with the venue, Dan?');
+  await page.getByTestId('line-editor').press('Enter');
+  await expect(page.getByTestId('line-save')).toHaveText('Saving…');
+
+  await lines.first().click();
+  await page.getByTestId('line-editor').press('Escape');
+  await expect(page.getByTestId('line-editor')).toHaveValue('Shall we start with the venue, Dan?');
+
+  release();
+  await expect(page.getByTestId('line-editor')).toHaveCount(0);
+  await lines.first().click();
+  await expect(page.getByTestId('line-editor')).toHaveValue('Morning everyone.');
+});
+
+test('a refused save keeps the text and says why', async ({ mount, page }) => {
+  await page.route('**/accounts/acct1/field/recordings/r1/line', (route) =>
+    route.fulfill({
+      status: 422,
+      contentType: 'application/json',
+      body: JSON.stringify({ props: { errors: { line: 'The transcript changed while you were editing.' } } }),
+    })
+  );
+  await mountPlayer(mount, page);
+  await page.getByTestId('transcript-line').nth(1).click();
+  await page.getByTestId('line-editor').fill('Shall we start with the venue, Dan?');
+  await page.getByTestId('line-save').click();
+  await expect(page.getByTestId('line-error')).toHaveText('The transcript changed while you were editing.');
+  await expect(page.getByTestId('line-editor')).toHaveValue('Shall we start with the venue, Dan?');
+});
+
+test('a failed request keeps the text too', async ({ mount, page }) => {
+  await page.route('**/accounts/acct1/field/recordings/r1/line', (route) => route.fulfill({ status: 500, body: '' }));
+  await mountPlayer(mount, page);
+  await page.getByTestId('transcript-line').nth(1).click();
+  await page.getByTestId('line-editor').fill('Shall we start with the venue, Dan?');
+  await page.getByTestId('line-editor').press('Enter');
+  await expect(page.getByTestId('line-error')).toBeVisible();
+  await expect(page.getByTestId('line-editor')).toHaveValue('Shall we start with the venue, Dan?');
 });
 
 test.describe('on a phone', () => {

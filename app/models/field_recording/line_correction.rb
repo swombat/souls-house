@@ -1,7 +1,9 @@
 # Correcting one line of a transcript by hand: "she said Dan, not Dad". A
 # line is what the page shows as one turn. The person sends the line's new
-# text with the text it replaces, and the change is refused if the line no
-# longer reads that way (someone else corrected it first).
+# text with the text it replaces and the transcript's revision they saw
+# (FieldRecording#transcript_revision); the change is refused if anything in
+# the transcript has changed since, since a shift elsewhere can move a line's
+# word positions onto another line that reads the same.
 #
 # Timed words keep their timings wherever they survive the edit: the old and
 # new lines are aligned word by word, and only the words that changed are
@@ -13,6 +15,9 @@ module FieldRecording::LineCorrection
   class Invalid < StandardError; end
 
   MAX_CHARS = 10_000
+  # Past this many cells the word-by-word alignment isn't worth its table: the
+  # whole line is retimed over its span instead.
+  MAX_ALIGN_CELLS = 250_000
   # A bracketed event is one token, as Scribe gives it: "(soft laughter)".
   TOKEN = /\([^)]*\)|\[[^\]]*\]|\S+/
   EVENT = /\A(?:\(.*\)|\[.*\])\z/m
@@ -27,6 +32,8 @@ module FieldRecording::LineCorrection
     last = Integer(last, exception: false)
     timed = words.each_index.reject { |n| words[n]["k"] == "s" }
     raise Stale unless first && last && first >= 0 && first <= last && last < timed.size
+
+    raise Stale unless turn_ranges(words).include?([ first, last ])
 
     from = timed[first]
     to = timed[last]
@@ -55,6 +62,30 @@ module FieldRecording::LineCorrection
       end
     end
     gaps
+  end
+
+  # [first, last] timed-word positions of each displayed turn, grouped as
+  # FieldRecording::Transcript.turns and the page's buildTurns group them.
+  def turn_ranges(words)
+    ranges = []
+    spk = nil
+    finish = nil
+    position = -1
+    words.each do |word|
+      next if word["k"] == "s"
+
+      position += 1
+      start = word["s"].to_i
+      if ranges.any? && word["spk"] == spk && start - finish <= FieldRecording::Transcript::TURN_GAP_MS
+        ranges.last[1] = position
+        finish = [ finish, (word["e"] || start).to_i ].max
+      else
+        ranges << [ position, position ]
+        spk = word["spk"]
+        finish = (word["e"] || start).to_i
+      end
+    end
+    ranges
   end
 
   # Supplied transcripts have turns ({spk, s, t}), one line each.
@@ -87,6 +118,8 @@ module FieldRecording::LineCorrection
   # came form one run, retimed over the old run's span.
   def realign(old, tokens)
     spk = old.first["spk"]
+    return retime(tokens, old, before: nil, after: nil, spk:) if old.size * tokens.size > MAX_ALIGN_CELLS
+
     pairs = common(old.map { |word| word["t"] }, tokens)
     result = []
     old_at = 0

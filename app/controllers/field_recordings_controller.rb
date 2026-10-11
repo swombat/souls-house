@@ -16,6 +16,7 @@ class FieldRecordingsController < ApplicationController
         words: recording.ready? ? recording.transcript_words : [],
         turns: (recording.transcript_turns if recording.ready? && recording.supplied?),
         language_code: recording.language_code,
+        transcript_revision: (recording.transcript_revision if recording.ready?),
         ready_at: recording.ready_at&.iso8601
       ),
       speakers: recording.speakers.includes(:field_voice, :recognised_voice, :enrolments).map do |speaker|
@@ -75,18 +76,20 @@ class FieldRecordingsController < ApplicationController
   end
 
   # One line of the transcript corrected by hand ("Dan", not "Dad").
+  # Refusals come back as Inertia errors, so the page keeps the unsaved text.
   def correct_line
-    attributes = params.require(:line).permit(:first, :last, :index, :text, :was)
+    attributes = params.require(:line).permit(:first, :last, :index, :text, :was, :revision)
     @field_recording.correct_line!(
       attributes.slice(:first, :last, :index).to_h.symbolize_keys,
-      text: attributes[:text].to_s, was: attributes[:was].to_s
+      text: attributes[:text].to_s, was: attributes[:was].to_s, revision: attributes[:revision].to_s
     )
     redirect_to account_field_recording_path(current_account, @field_recording)
   rescue FieldRecording::LineCorrection::Stale
     redirect_to account_field_recording_path(current_account, @field_recording),
-      alert: "That line changed while you were editing it. Please try again."
+      inertia: { errors: { line: "The transcript changed while you were editing. Your text is still here: " \
+                                  "copy it, cancel, and open the line again." } }
   rescue FieldRecording::LineCorrection::Invalid => e
-    redirect_to account_field_recording_path(current_account, @field_recording), alert: e.message
+    redirect_to account_field_recording_path(current_account, @field_recording), inertia: { errors: { line: e.message } }
   end
 
   # "Is one of these you?" is shown once, until dismissed or answered.

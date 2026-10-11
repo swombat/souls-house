@@ -125,7 +125,7 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     recording = ready_recording(account: @account, user: @user)
 
     patch line_account_field_recording_path(@account, recording),
-      params: { line: { first: 1, last: 1, text: "Dan", was: "there" } }
+      params: { line: { first: 1, last: 1, text: "Dan", was: "there", revision: recording.transcript_revision } }
 
     assert_redirected_to account_field_recording_path(@account, recording)
     recording.reload
@@ -138,10 +138,11 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     recording = ready_recording(account: @account, user: @user)
 
     patch line_account_field_recording_path(@account, recording),
-      params: { line: { first: 1, last: 1, text: "Dan", was: "where" } }
+      params: { line: { first: 1, last: 1, text: "Dan", was: "where", revision: recording.transcript_revision } }
 
     assert_redirected_to account_field_recording_path(@account, recording)
-    assert_match "changed", flash[:alert]
+    follow_redirect!
+    assert_match "changed", inertia_props.dig("props", "errors", "line")
     assert_equal %w[hello there], recording.reload.transcript_words.reject { |word| word["k"] == "s" }.map { |word| word["t"] }
   end
 
@@ -153,7 +154,7 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     )
 
     patch line_account_field_recording_path(@account, recording),
-      params: { line: { index: 0, text: "Hi Dan.", was: "Hi Dad." } }
+      params: { line: { index: 0, text: "Hi Dan.", was: "Hi Dad.", revision: recording.transcript_revision } }
 
     recording.reload
     assert_equal "Hi Dan.", recording.transcript_turns.first["t"]
@@ -164,10 +165,34 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     recording = ready_recording(account: accounts(:another_team), user: @user)
 
     patch line_account_field_recording_path(@account, recording),
-      params: { line: { first: 1, last: 1, text: "Dan", was: "there" } }
+      params: { line: { first: 1, last: 1, text: "Dan", was: "there", revision: recording.transcript_revision } }
 
     assert_response :not_found
     assert_equal %w[hello there], recording.reload.transcript_words.reject { |word| word["k"] == "s" }.map { |word| word["t"] }
+  end
+
+  test "a correction made against an older transcript is refused, even where the text still matches" do
+    recording = ready_recording(account: @account, user: @user)
+    words = recording.transcript_words
+    # Three lines: "A B" (speaker_0), "Yes" (speaker_1), "Yes" (speaker_2).
+    recording.update!(transcript_words: [
+      words[0].merge("t" => "A", "s" => 0, "e" => 100, "spk" => "speaker_0"),
+      { "s" => 100, "e" => 100, "t" => " ", "k" => "s", "spk" => "speaker_0" },
+      words[0].merge("t" => "B", "s" => 150, "e" => 250, "spk" => "speaker_0"),
+      words[0].merge("t" => "Yes", "s" => 3000, "e" => 3200, "spk" => "speaker_1"),
+      words[0].merge("t" => "Yes", "s" => 6000, "e" => 6200, "spk" => "speaker_2")
+    ])
+    seen = recording.transcript_revision
+
+    # Someone else removes "B": every later line moves down one word.
+    recording.correct_line!({ first: 0, last: 1 }, text: "A", was: "A B", revision: seen)
+
+    # The edit made earlier for speaker_1's "Yes" (positions 2..2) would now hit speaker_2's.
+    patch line_account_field_recording_path(@account, recording),
+      params: { line: { first: 2, last: 2, text: "No", was: "Yes", revision: seen } }
+
+    spoken = recording.reload.transcript_words.reject { |word| word["k"] == "s" }
+    assert_equal [ %w[A speaker_0], %w[Yes speaker_1], %w[Yes speaker_2] ], spoken.map { |w| w.values_at("t", "spk") }
   end
 
 end

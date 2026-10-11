@@ -51,6 +51,23 @@ class FieldRecording::LineCorrectionTest < ActiveSupport::TestCase
     assert_raises(FieldRecording::LineCorrection::Stale) { correct("x", first: "nope") }
   end
 
+  test "the range must be exactly one displayed line" do
+    assert_raises(FieldRecording::LineCorrection::Stale) { correct("x", first: 2, last: 5, was: "want it again, Dad.") }
+    assert_raises(FieldRecording::LineCorrection::Stale) { correct("x", first: 0, last: 5, was: "Hi. I want it again, Dad.") }
+    assert_equal [ [ 0, 0 ], [ 1, 5 ] ], FieldRecording::LineCorrection.turn_ranges(words)
+  end
+
+  test "a long line skips the word-by-word alignment and is retimed whole" do
+    long = [ W.(0, 100_000, "word") ] + (1...600).flat_map { |n| [ SP.(n * 100), W.(n * 100, n * 100 + 50, "w#{n}") ] }
+    long[0]["e"] = 50
+    text = (0...600).map { |n| "x#{n}" }.join(" ")
+    result = FieldRecording::LineCorrection.replace_words(long, first: 0, last: 599, text:, was: long.map { |w| w["t"] }.join)
+
+    spoken = result.reject { |word| word["k"] == "s" }
+    assert_equal 600, spoken.size
+    assert_equal [ 0, 59_950 ], [ spoken.first["s"], spoken.last["e"] ]
+  end
+
   test "an empty line is refused" do
     assert_raises(FieldRecording::LineCorrection::Invalid) { correct("   ") }
   end

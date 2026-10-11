@@ -1,10 +1,14 @@
 <script>
   import { tick } from 'svelte';
-  import { formatClock, turnSpeakerName } from '$lib/field-recordings';
+  import { formatClock, lineAddress, turnSpeakerName } from '$lib/field-recordings';
   import { PencilSimple, SpeakerHigh } from 'phosphor-svelte';
 
-  // `onSave(turn, text)` returns a promise; without it lines are read-only.
-  let { turns = [], names = {}, activeIndex = -1, onSeek, onSave = null } = $props();
+  // `onSave(edit, text)` resolves to {ok, error}; without it lines are
+  // read-only. `edit` is what the line was when editing began: its address,
+  // its text and the transcript's revision, so a save made against a
+  // transcript that has since changed is refused rather than landing on
+  // whatever line now sits at those positions.
+  let { turns = [], names = {}, activeIndex = -1, revision = null, onSeek, onSave = null } = $props();
 
   // With a mouse, clicking a line edits it in place and a speaker button sits
   // beside it. On touch, tapping a line offers Edit and Listen, and pressing
@@ -19,13 +23,17 @@
   });
 
   const HOLD_MS = 500;
-  let editing = $state(null);
+  // {t, address, was, revision} for the line being edited, or null.
+  let edit = $state(null);
   let draft = $state('');
   let saving = $state(false);
+  let saveError = $state('');
   let menuFor = $state(null);
   let textarea = $state(null);
   let holdTimer = null;
   let held = false;
+
+  const editing = $derived(edit?.t ?? null);
 
   function canListen(turn) {
     return turn.start != null;
@@ -36,12 +44,18 @@
     onSeek(turn.start);
   }
 
+  // While a save is in flight the editor stays put: no switching, no cancel.
   async function startEdit(t) {
-    if (!onSave) return;
-    if (editing != null && editing !== t) await save();
+    if (!onSave || saving || editing === t) return;
+    if (edit && draft.trim() !== edit.was.trim()) {
+      await save();
+      if (edit) return; // that save failed; its text stays where it is
+    }
+    const turn = turns[t];
     menuFor = null;
-    editing = t;
-    draft = turns[t].text;
+    saveError = '';
+    edit = { t, address: lineAddress(turn), was: turn.text, revision };
+    draft = turn.text;
     await tick();
     if (textarea) {
       resize();
@@ -51,22 +65,30 @@
   }
 
   function cancel() {
-    editing = null;
+    if (saving) return;
+    edit = null;
     draft = '';
+    saveError = '';
   }
 
   async function save() {
-    if (editing == null || saving) return;
-    const turn = turns[editing];
+    if (!edit || saving) return;
+    const current = edit;
     const text = draft.trim();
-    if (!text || text === turn.text.trim()) return cancel();
+    if (!text || text === current.was.trim()) return cancel();
     saving = true;
+    saveError = '';
+    let result;
     try {
-      await onSave(turn, text);
-      cancel();
+      result = await onSave(current, text);
+    } catch {
+      result = { ok: false };
     } finally {
       saving = false;
     }
+    if (edit !== current) return;
+    if (result?.ok) cancel();
+    else saveError = result?.error || "That didn't save. Your text is still here.";
   }
 
   function resize() {
@@ -153,6 +175,9 @@
                 data-testid="line-editor"
                 class="block w-full resize-none overflow-hidden rounded-md border border-input bg-background px-2 py-1 -mx-2 leading-relaxed focus:outline-none focus:ring-2 focus:ring-ring"
               ></textarea>
+              {#if saveError}
+                <p class="mt-1 text-xs text-destructive" data-testid="line-error">{saveError}</p>
+              {/if}
               <div class="mt-1 flex items-center gap-3 text-xs">
                 <button
                   class="font-medium text-primary hover:underline disabled:opacity-50"
@@ -161,7 +186,8 @@
                   onclick={save}
                   data-testid="line-save">{saving ? 'Saving…' : 'Save'}</button>
                 <button
-                  class="text-muted-foreground hover:text-foreground"
+                  class="text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  disabled={saving}
                   onmousedown={(event) => event.preventDefault()}
                   onclick={cancel}>Cancel</button>
                 {#if finePointer}
