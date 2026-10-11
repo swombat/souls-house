@@ -74,10 +74,7 @@ module FieldItems
   end
 
   def viewer_pages(file)
-    file.pages.limit(VIEWER_PAGES).map do |page|
-      { number: page.page_number, status: page.native_status, source: (page.native_status == "text" ? "native" : nil),
-        reason: page.native_reason, text: page.native_text }
-    end
+    file.pages.limit(VIEWER_PAGES).map { |page| page.reader_json(text: true) }
   end
 
   # In the Field list a note leaves its content behind (`content: false`);

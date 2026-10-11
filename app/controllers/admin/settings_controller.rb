@@ -9,7 +9,8 @@ class Admin::SettingsController < ApplicationController
         logo_url: Setting.instance.logo.attached? ? url_for(Setting.instance.logo) : nil
       ),
       follow_through_residents: follow_through_residents,
-      vm_births: Agents::VmBirthPolicy.current.as_json
+      vm_births: Agents::VmBirthPolicy.current.as_json,
+      field_ocr: FieldOcr.status_json
     }
   end
 
@@ -46,6 +47,8 @@ class Admin::SettingsController < ApplicationController
       :follow_through_scope,
       :new_residents_on_vm,
       :vm_resident_limit,
+      :field_ocr_enabled,
+      :field_ocr_daily_usd_ceiling,
       :logo
     )
   end

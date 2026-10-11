@@ -448,6 +448,19 @@ first 500 pages (later pages are counted, not stored); five minutes for the
 whole read, every command's timeout capped to what is left; 256 kB of text
 per page (cut pages say so); the first 2 MB of joined text for search and
 summaries. Commands write stdout and stderr to size-capped files, not pipes.
+Scanned pages (FieldOcr, off until a site admin turns it on under Site
+Settings): a page with no text of its own, or under 200 characters and a
+picture, is rendered (longer side 1568 px) and sent to
+`anthropic/claude-haiku-5.5` through OpenRouter, pinned to Anthropic, for a
+transcription stored apart from the page's own text. Pages then carry
+`transcription: { status, model, reason, text }` and `source` `model` or
+`native+model`; `text_extraction` gains `pages_transcribed`,
+`pages_transcribed_blank`, `pages_transcription_failed`,
+`pages_transcription_skipped` and `transcription` (`pending`/`done`). Only
+files brought in after it was turned on are sent. Each call is reserved
+before it is made against a daily house ceiling (Site Settings, default
+$1.00), with at most 50 pages per file and 500 per account per day; failed
+calls keep their charge. There is no backfill for older files.
 `FieldFiles::ExtractPdfJob.backfill` reads existing PDFs. Reading is local,
 but each PDF with text is then summarised, which sends its text, title and
 note to Claude Haiku through OpenRouter under the summaries policy.

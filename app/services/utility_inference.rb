@@ -8,6 +8,8 @@ class UtilityInference
 
   MAX_INPUT_LENGTH = 32_000
   REQUEST_TIMEOUT = 20
+  # A page transcription writes up to a few thousand tokens.
+  VISION_TIMEOUT = 60
   TITLE_MODEL = "google/gemini-2.5-flash"
   MODERATION_MODEL = "omni-moderation-latest"
 
@@ -117,6 +119,34 @@ class UtilityInference
     raise InvalidResponse, "House utility request failed (#{error.class})"
   end
 
+  # One image and a short instruction, on the house's key, pinned to one
+  # provider with no fallback and data_collection "deny", as house_chat.
+  # Used for Field page transcription (FieldOcr). => { text:, usage:, id: };
+  # usage is OpenRouter's, for HouseInference::UsageCost. Raises
+  # InvalidResponse without echoing transport details.
+  def self.house_vision(model:, provider:, system:, text:, image_png:, max_tokens:, timeout: VISION_TIMEOUT)
+    validate_input!("#{system}#{text}")
+    image = "data:image/png;base64,#{Base64.strict_encode64(image_png)}"
+    response = client(key: HouseInference::Offering.key, openrouter: true, timeout: timeout).chat(
+      parameters: {
+        model: model, max_tokens: max_tokens, reasoning: { effort: "none" },
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: [ { type: "text", text: text }, { type: "image_url", image_url: { url: image } } ] }
+        ],
+        provider: { only: [ provider ], allow_fallbacks: false, data_collection: "deny" }
+      }
+    )
+    raise InvalidResponse, "Empty house vision response" unless response.is_a?(Hash)
+
+    content = response.dig("choices", 0, "message", "content")
+    raise InvalidResponse, "House vision response has no text" unless content.is_a?(String)
+
+    { text: content, usage: response["usage"], id: response["id"], finish_reason: response.dig("choices", 0, "finish_reason") }
+  rescue Faraday::Error => error
+    raise InvalidResponse, "House vision request failed (#{error.class})"
+  end
+
   def self.chat(key:, model:, user:, system: nil)
     validate_input!("#{system}#{user}")
     messages = []
@@ -133,13 +163,13 @@ class UtilityInference
     content
   end
 
-  def self.client(key:, openrouter: false)
+  def self.client(key:, openrouter: false, timeout: REQUEST_TIMEOUT)
     raise MissingCredentials, "Utility inference credentials unavailable" if key.blank? || key.start_with?("<")
 
     OpenAI::Client.new(
       access_token: key,
       uri_base: openrouter ? "https://openrouter.ai/api/v1" : "https://api.openai.com/v1",
-      request_timeout: REQUEST_TIMEOUT,
+      request_timeout: timeout,
       log_errors: false
     )
   end

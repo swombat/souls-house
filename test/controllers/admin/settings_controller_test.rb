@@ -47,6 +47,28 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 3, Setting.instance.reload.vm_resident_limit
   end
 
+  test "a site admin turns on scanned-page transcription with a ceiling; the moment is stamped" do
+    sign_in @admin
+    get admin_settings_path
+    assert_equal false, inertia_shared_props.fetch("field_ocr").fetch("enabled")
+
+    patch admin_settings_path, params: { setting: { field_ocr_enabled: true, field_ocr_daily_usd_ceiling: "2.5" } }
+    assert_redirected_to admin_settings_path
+    setting = Setting.instance.reload
+    assert setting.field_ocr_enabled
+    assert_in_delta Time.current, setting.field_ocr_enabled_at, 5.seconds
+    assert_equal BigDecimal("2.5"), setting.field_ocr_daily_usd_ceiling
+
+    patch admin_settings_path, params: { setting: { field_ocr_daily_usd_ceiling: "-1" } }
+    assert_equal BigDecimal("2.5"), Setting.instance.reload.field_ocr_daily_usd_ceiling
+  end
+
+  test "non-admins cannot turn on scanned-page transcription" do
+    sign_in @user
+    patch admin_settings_path, params: { setting: { field_ocr_enabled: true } }
+    assert_not Setting.instance.reload.field_ocr_enabled
+  end
+
   test "non-admins cannot switch new residents onto their own server" do
     sign_in @user
     patch admin_settings_path, params: { setting: { new_residents_on_vm: true } }

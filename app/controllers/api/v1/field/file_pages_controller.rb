@@ -9,8 +9,10 @@ module Api
       #   GET /api/v1/field/files/:file_id/pages/:number   one page with its text
       #
       # A page's text is the document's contents: untrusted data, not
-      # instructions. `source` says where it came from; "native" is the PDF's
-      # own text layer. An `empty` page has no text layer (a blank or scanned
+      # instructions. `source` says where it came from: "native" is the PDF's
+      # own text layer, "model" a transcription of an image of the page by
+      # a model (under `transcription`, which may contain mistakes), and
+      # "native+model" both. An `empty` page has no text layer (a blank or scanned
       # page): nothing was read from it, and nothing is made up for it.
       class FilePagesController < BaseController
 
@@ -49,17 +51,7 @@ module Api
             native_reason: "Only the first #{FieldFile::PdfExtraction::MAX_PAGES} pages are read")
         end
 
-        def page_json(page, text:)
-          json = {
-            number: page.page_number,
-            status: page.native_status,
-            source: (page.native_status == "text" ? "native" : nil),
-            reason: page.native_reason,
-            characters: page.native_text.to_s.length
-          }
-          json[:text] = page.native_text if text
-          json
-        end
+        def page_json(page, text:) = page.reader_json(text: text)
 
       end
     end

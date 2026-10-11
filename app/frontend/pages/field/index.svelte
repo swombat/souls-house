@@ -20,6 +20,7 @@
   import FieldSearchBar from '$lib/components/field/FieldSearchBar.svelte';
   import FieldSearchResults from '$lib/components/field/FieldSearchResults.svelte';
   import SummariesNotice from '$lib/components/field/SummariesNotice.svelte';
+  import OcrNotice from '$lib/components/field/OcrNotice.svelte';
   import FieldActions from '$lib/components/field/FieldActions.svelte';
   import FieldSharing from '$lib/components/field/FieldSharing.svelte';
   import FieldNoteDialog from '$lib/components/field/FieldNoteDialog.svelte';
@@ -37,6 +38,7 @@
     max_recording_label = '2 GB',
     suggestions_enabled = false,
     summaries_enabled = false,
+    ocr_enabled = false,
     tab = 'all',
     selected = null,
     max_file_bytes = 100 * 1024 * 1024,
@@ -332,7 +334,7 @@
         onToggleTag={toggleTag}
         onManage={() => (tagsOpen = true)} />
 
-      <FieldSharing {sharedLine} summariesEnabled={summaries_enabled} />
+      <FieldSharing {sharedLine} summariesEnabled={summaries_enabled} ocrEnabled={ocr_enabled} />
     </div>
 
     <!-- The tabs sort the list; a search has its own results. -->
@@ -438,7 +440,8 @@
       <Dialog.Title>Add a file to the Field</Dialog.Title>
       <Dialog.Description
         >{sharedLine}
-        {#if summaries_enabled}<SummariesNotice kind="file" />{/if}</Dialog.Description>
+        {#if summaries_enabled}<SummariesNotice kind="file" />{/if}
+        {#if ocr_enabled}<OcrNotice kind="file" />{/if}</Dialog.Description>
     </Dialog.Header>
     <form onsubmit={submitUpload} class="space-y-4">
       <div class="space-y-1">

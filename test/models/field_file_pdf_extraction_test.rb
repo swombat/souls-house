@@ -46,7 +46,7 @@ class FieldFilePdfExtractionTest < ActiveSupport::TestCase
     assert_nil file.pages.first.native_text
     assert_equal "", file.extracted_text
     assert_not_includes FieldFile.summary_readable, file
-    assert_equal({ "empty" => 1, "listed" => 1, "search_text_truncated" => false }, file.pdf_coverage)
+    assert_equal({ "empty" => 1, "listed" => 1, "covered" => 0, "search_text_truncated" => false }, file.pdf_coverage)
     assert_not file.pdf_extraction_json[:complete], "a page without a text layer is unknown, not read"
   end
 
@@ -263,7 +263,7 @@ class FieldFilePdfExtractionTest < ActiveSupport::TestCase
     prompt = FieldSummaries.user_prompt(file.reload)
 
     coverage, material = prompt.split("<material>", 2)
-    assert_includes coverage, "This is the text layer of a PDF of 4 pages."
+    assert_includes coverage, "This is the text of a PDF of 4 pages."
     assert_includes coverage, "Pages 3-4 no text of their own (blank or scanned) and were not read."
     assert_includes coverage, "don't guess"
     assert_includes material, "apricots"
@@ -307,7 +307,7 @@ class FieldFilePdfExtractionTest < ActiveSupport::TestCase
     assert_includes FieldFile.summary_readable, file
 
     prompt = FieldSummaries.user_prompt(file)
-    assert_includes prompt, "This is the text layer of a PDF of 10000 pages."
+    assert_includes prompt, "This is the text of a PDF of 10000 pages."
     assert_includes prompt, "Pages 2-500 no text of their own (blank or scanned) and were not read."
     assert_includes prompt, "Pages 501-10000 were not read (a limit was reached)."
     assert_includes prompt.split("<material>", 2).last, "Orchard ledger, page one."

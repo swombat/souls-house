@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_11_093000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_11_100700) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -786,6 +786,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_093000) do
     t.string "native_reason", limit: 500
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "model_status"
+    t.text "model_text"
+    t.string "model_reason", limit: 500
+    t.string "model_id"
+    t.boolean "has_images"
     t.index ["field_file_id", "page_number"], name: "index_field_file_pages_on_field_file_id_and_page_number", unique: true
   end
 
@@ -817,6 +822,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_093000) do
     t.index ["discarded_at"], name: "index_field_files_on_discarded_at"
     t.index ["search_vector"], name: "index_field_files_on_search_vector", using: :gin
     t.index ["uploaded_by_type", "uploaded_by_id"], name: "index_field_files_on_uploaded_by"
+  end
+
+  create_table "field_ocr_calls", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "field_file_id", null: false
+    t.integer "page_number", null: false
+    t.date "day", null: false
+    t.string "status", default: "reserved", null: false
+    t.decimal "charge_usd", precision: 14, scale: 8, null: false
+    t.string "model_id", null: false
+    t.string "upstream_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_field_ocr_calls_on_account_id"
+    t.index ["day"], name: "index_field_ocr_calls_on_day"
+    t.index ["field_file_id", "page_number"], name: "index_field_ocr_calls_on_field_file_id_and_page_number"
+    t.check_constraint "charge_usd >= 0::numeric", name: "field_ocr_calls_nonnegative_charge"
+    t.check_constraint "status::text = ANY (ARRAY['reserved'::character varying, 'settled'::character varying, 'failed'::character varying, 'uncertain'::character varying]::text[])", name: "field_ocr_calls_status"
   end
 
   create_table "field_recording_dispatches", force: :cascade do |t|
@@ -1922,6 +1945,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_093000) do
     t.boolean "safeguard_conversations_enabled", default: false, null: false
     t.boolean "new_residents_on_vm", default: false, null: false
     t.integer "vm_resident_limit", default: 0, null: false
+    t.boolean "field_ocr_enabled", default: false, null: false
+    t.datetime "field_ocr_enabled_at"
+    t.decimal "field_ocr_daily_usd_ceiling", precision: 10, scale: 4, default: "1.0", null: false
   end
 
   create_table "stone_revisions", force: :cascade do |t|
@@ -2222,6 +2248,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_093000) do
   add_foreign_key "device_streams", "users", column: "subject_user_id"
   add_foreign_key "field_file_pages", "field_files"
   add_foreign_key "field_files", "accounts"
+  add_foreign_key "field_ocr_calls", "accounts"
+  add_foreign_key "field_ocr_calls", "field_files"
   add_foreign_key "field_recording_dispatches", "accounts"
   add_foreign_key "field_recording_dispatches", "field_recordings"
   add_foreign_key "field_recording_identifications", "field_recordings"

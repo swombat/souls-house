@@ -145,6 +145,71 @@ test('a cut page, cut search text and a partial summary are labelled', async ({ 
   await page.screenshot({ path: 'tmp/field-pdf-text-cut.png', fullPage: true });
 });
 
+test('a transcribed page shows the model text apart, labelled, with failures said plainly', async ({ mount, page }) => {
+  await mount(FieldFileViewer, {
+    props: {
+      file: {
+        ...base,
+        text_extraction: {
+          ...extraction,
+          page_count: 3,
+          pages_with_text: 1,
+          pages_without_text: 2,
+          pages_transcribed: 2,
+          pages_transcription_failed: 1,
+          transcription: 'done',
+          text_source: 'native+model',
+        },
+        pages: [
+          {
+            number: 1,
+            status: 'text',
+            source: 'native+model',
+            text: 'Quarterly note',
+            transcription: {
+              status: 'text',
+              model: 'anthropic/claude-haiku-5.5',
+              text: 'Quarterly note\nFigs: 42 euros.',
+            },
+          },
+          {
+            number: 2,
+            status: 'empty',
+            source: 'model',
+            text: null,
+            transcription: { status: 'text', model: 'anthropic/claude-haiku-5.5', text: '<i>receipt</i>' },
+          },
+          {
+            number: 3,
+            status: 'empty',
+            source: null,
+            text: null,
+            transcription: { status: 'failed', reason: 'The transcription failed' },
+          },
+        ],
+      },
+      link: 'x',
+      onDelete: () => {},
+    },
+  });
+  await expect(page.getByTestId('field-file-pdf-status')).toContainText(
+    '2 pages transcribed by Claude Haiku from an image of the page; transcriptions may contain mistakes.'
+  );
+  await expect(page.getByTestId('field-file-pdf-status')).toContainText('1 page could not be transcribed.');
+  const transcriptions = page.getByTestId('field-file-pdf-transcription');
+  await expect(transcriptions).toHaveCount(3);
+  await expect(transcriptions.nth(0)).toContainText(
+    'Transcribed by Claude Haiku from an image of the page. May contain mistakes.'
+  );
+  await expect(transcriptions.nth(0)).toContainText('Figs: 42 euros.');
+  await expect(transcriptions.nth(1)).toContainText('<i>receipt</i>');
+  await expect(page.locator('i')).toHaveCount(0);
+  await expect(transcriptions.nth(2)).toContainText('Not transcribed: The transcription failed.');
+  await expect(transcriptions.nth(2)).not.toContainText('Transcribed by');
+  await expect(page.getByTestId('field-file-pdf-page').nth(1)).not.toContainText('Nothing read.');
+  await page.screenshot({ path: 'tmp/field-pdf-transcribed.png', fullPage: true });
+});
+
 test('files that are not PDFs show no text section', async ({ mount, page }) => {
   await mount(FieldFileViewer, {
     props: { file: { ...base, content_type: 'text/plain', text_extraction: null }, link: 'x', onDelete: () => {} },

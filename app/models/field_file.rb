@@ -25,6 +25,7 @@ class FieldFile < ApplicationRecord
   # extraction needs the bytes already uploaded.
   include FieldFile::TextExtraction
   include FieldFile::PdfExtraction
+  include FieldFile::PdfOcr
   include FieldSummarizable
 
   validates :title, presence: true, length: { maximum: 200 }

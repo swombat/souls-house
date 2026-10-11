@@ -35,6 +35,13 @@ module PdfText
   MAX_SINGLE_PAGE_OUTPUT = 4 * MAX_PAGE_BYTES
   BATCH_PAGES = 25
   STDERR_LIMIT = 500
+  # A page rendered for transcription (FieldOcr): its longer side is scaled
+  # to this many pixels whatever the page size, so the image is bounded.
+  RENDER_LONG_SIDE = 1568
+  RENDER_DPI = 150
+  RENDER_TIMEOUT = 30
+  MAX_RENDER_BYTES = 8.megabytes
+  MAX_IMAGE_LIST_BYTES = 1.megabyte
 
   module_function
 
@@ -74,6 +81,33 @@ module PdfText
     raise CommandFailed, "Expected #{count} pages, read #{parts.size}" unless parts.size == count
 
     parts.map { |part| clean(part) }
+  end
+
+  # The page numbers in first..last that hold at least one picture
+  # (pdfimages -list). => a Set. Raises CommandFailed.
+  def image_pages(path, first, last, timeout: INFO_TIMEOUT)
+    result = run([ "pdfimages", "-list", "-f", first.to_s, "-l", last.to_s, path.to_s ],
+      timeout: timeout, max_bytes: MAX_IMAGE_LIST_BYTES)
+    raise CommandFailed, "pdfimages #{result.failure}" unless result.success
+
+    result.stdout.scrub.lines.filter_map { |line| Integer(line[/\A\s*(\d+)\s/, 1], exception: false) }.to_set
+  end
+
+  # One page as a greyscale PNG, its longer side RENDER_LONG_SIDE pixels.
+  # => the PNG's bytes. Raises CommandFailed past the time or size cap.
+  def render_page(path, number, timeout: RENDER_TIMEOUT)
+    Dir.mktmpdir("pdfpage") do |dir|
+      base = File.join(dir, "page")
+      result = run(
+        [ "pdftoppm", "-q", "-png", "-gray", "-r", RENDER_DPI.to_s, "-scale-to", RENDER_LONG_SIDE.to_s,
+          "-f", number.to_s, "-l", number.to_s, "-singlefile", path.to_s, base ],
+        timeout: timeout, max_bytes: MAX_RENDER_BYTES, dir: dir
+      )
+      png = "#{base}.png"
+      raise CommandFailed, "pdftoppm #{result.failure}" unless result.success && File.exist?(png)
+
+      File.binread(png, MAX_RENDER_BYTES)
+    end
   end
 
   Result = Data.define(:stdout, :stderr, :success, :killed, :exitstatus) do
