@@ -47,10 +47,21 @@ module RoomSelection
   end
 
   # Where an in-place action on a conversation returns. Keeps All chats when
-  # that is the view, so editing a title or a tag doesn't jump rooms; a bare
-  # link from outside still opens the conversation's own room.
+  # the page the action came from was in All chats, so editing a title or a
+  # tag doesn't jump rooms. The originating view is read from this request
+  # (its room param or the page that sent it), never from the session, which
+  # another tab may have changed. A bare link still opens the chat's own room.
   def chat_view_path(chat)
-    selected_room == :all ? account_chat_path(current_account, chat, room: ALL) : account_chat_path(current_account, chat)
+    from_all_chats? ? account_chat_path(current_account, chat, room: ALL) : account_chat_path(current_account, chat)
+  end
+
+  def from_all_chats?
+    return true if params[:room] == ALL
+
+    query = URI.parse(request.referer.to_s).query
+    query.present? && Rack::Utils.parse_query(query)["room"] == ALL
+  rescue URI::InvalidURIError
+    false
   end
 
 end

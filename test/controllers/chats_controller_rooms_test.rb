@@ -107,7 +107,8 @@ class ChatsControllerRoomsTest < ActionDispatch::IntegrationTest
 
   test "an in-place action from All chats returns to All; the same action outside All stays in the room" do
     get account_chat_path(@account, @work_chat, room: "all"), headers: inertia_headers
-    patch account_chat_path(@account, @work_chat), params: { chat: { title: "Renamed" } }
+    patch account_chat_path(@account, @work_chat), params: { chat: { title: "Renamed" } },
+      headers: { "HTTP_REFERER" => account_chat_url(@account, @work_chat, room: "all") }
     assert_redirected_to account_chat_path(@account, @work_chat, room: "all")
     @inertia_props = nil
     get response.location, headers: inertia_headers
@@ -128,6 +129,22 @@ class ChatsControllerRoomsTest < ActionDispatch::IntegrationTest
     )
     assert_equal @work.to_param, inertia_shared_props["current_room"]
     assert_includes inertia_shared_props.fetch("chats").pluck("id"), @life_chat.to_param
+  end
+
+
+  test "an in-place action keeps the originating tab's All view even after another tab chose a room" do
+    tab_a = account_chat_url(@account, @work_chat, room: "all")
+    get tab_a, headers: inertia_headers
+    get account_chats_path(@account, room: "main"), headers: inertia_headers # tab B
+
+    patch account_chat_path(@account, @work_chat), params: { chat: { title: "Renamed in A" } },
+      headers: { "HTTP_REFERER" => tab_a }
+    assert_redirected_to account_chat_path(@account, @work_chat, room: "all")
+
+    # Without an All-chats origin, the same action returns to the plain conversation.
+    patch account_chat_path(@account, @work_chat), params: { chat: { title: "Renamed plainly" } },
+      headers: { "HTTP_REFERER" => account_chat_url(@account, @work_chat) }
+    assert_redirected_to account_chat_path(@account, @work_chat)
   end
 
 end
