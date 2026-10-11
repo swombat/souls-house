@@ -103,6 +103,83 @@ class FieldRecordingSpeakersControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, @recording.reload.transcript_text.lines.size
   end
 
+  # Runs `correction` once, just before the merged request takes its locks:
+  # another request that finished while this one was on its way.
+  def with_correction_before_locks(correction)
+    original = FieldVoiceprints::Locks.method(:with)
+    pending = correction
+    FieldVoiceprints::Locks.stub(:with, ->(**args, &block) {
+      if pending
+        run, pending = pending, nil
+        run.call
+      end
+      original.call(**args, &block)
+    }) { yield }
+  end
+
+  test "a merged rename keeps a part someone corrected while it was on its way" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    [ @first, @second ].each { |speaker| speaker.name_as!(ioan, by: @user) }
+    daniel = @account.field_voices.create!(name: "Daniel")
+    charlie = @account.field_voices.create!(name: "Charlie")
+
+    with_correction_before_locks(-> { FieldRecordingSpeaker.find(@second.id).name_as!(charlie, by: @user) }) do
+      name_speaker(@first, voice_id: daniel.to_param, with: [ @second.to_param ])
+    end
+
+    assert_equal daniel, @first.reload.field_voice
+    assert_equal charlie, @second.reload.field_voice, "the newer correction stands"
+  end
+
+  test "a merged unlink keeps a part someone corrected while it was on its way" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    [ @first, @second ].each { |speaker| speaker.name_as!(ioan, by: @user) }
+    charlie = @account.field_voices.create!(name: "Charlie")
+
+    with_correction_before_locks(-> { FieldRecordingSpeaker.find(@second.id).name_as!(charlie, by: @user) }) do
+      name_speaker(@first, unname: true, with: [ @second.to_param ])
+    end
+
+    assert_nil @first.reload.field_voice
+    assert_equal charlie, @second.reload.field_voice
+  end
+
+  test "a merged rename changes nothing when the card itself changed underneath it" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    [ @first, @second ].each { |speaker| speaker.name_as!(ioan, by: @user) }
+    daniel = @account.field_voices.create!(name: "Daniel")
+    charlie = @account.field_voices.create!(name: "Charlie")
+
+    with_correction_before_locks(-> { FieldRecordingSpeaker.find(@first.id).name_as!(charlie, by: @user) }) do
+      name_speaker(@first, voice_id: daniel.to_param, with: [ @second.to_param ])
+    end
+
+    assert_equal charlie, @first.reload.field_voice
+    assert_equal ioan, @second.reload.field_voice
+    assert_redirected_to account_field_recording_path(@account, @recording)
+  end
+
+  test "a merged rename is all or nothing" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    [ @first, @second ].each { |speaker| speaker.name_as!(ioan, by: @user) }
+    daniel = @account.field_voices.create!(name: "Daniel")
+    calls = 0
+    original = FieldRecordingSpeaker.instance_method(:name_as!)
+    FieldRecordingSpeaker.define_method(:name_as!) do |*args, **kw|
+      calls += 1
+      raise ActiveRecord::RecordInvalid, self if calls == 2
+
+      original.bind_call(self, *args, **kw)
+    end
+    begin
+      name_speaker(@first, voice_id: daniel.to_param, with: [ @second.to_param ])
+    ensure
+      FieldRecordingSpeaker.define_method(:name_as!, original)
+    end
+
+    assert_equal [ ioan, ioan ], [ @first.reload.field_voice, @second.reload.field_voice ]
+  end
+
   test "a discard that lands first stops a later un-name" do
     @first.name_as!(@account.field_voices.create!(name: "Priya"), by: @user)
     stale = FieldRecordingSpeaker.find(@first.id) # loaded before the discard

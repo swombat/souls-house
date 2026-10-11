@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   groupSpeakers,
+  partsWithOwnEnrolment,
   speakerKeys,
   activeWordIndex,
   allowanceLine,
@@ -220,5 +221,18 @@ describe('one voice heard as two speakers', () => {
     expect(buildTurns(words).length).toBe(3);
     const turns = buildTurns(words, speakerKeys(speakers));
     expect(turns.map((turn) => turn.text)).toEqual(['Hello again.', 'Hi.']);
+  });
+});
+
+describe('partsWithOwnEnrolment', () => {
+  it('keeps a pending sample or remembering on a part that is not the representative', () => {
+    const parts = [
+      { id: 'a', pending_enrolment: { id: 'e1' } },
+      { id: 'b', pending_enrolment: { id: 'e2' } },
+      { id: 'c', remembering: true },
+      { id: 'd' },
+    ];
+    expect(partsWithOwnEnrolment(parts, { id: 'b' }).map((part) => part.id)).toEqual(['a', 'c']);
+    expect(partsWithOwnEnrolment([{ id: 'a', pending_enrolment: { id: 'e1' } }], { id: 'a' })).toEqual([]);
   });
 });

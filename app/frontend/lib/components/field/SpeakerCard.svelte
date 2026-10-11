@@ -7,7 +7,7 @@
   import SuggestionChip from '$lib/components/field/SuggestionChip.svelte';
   import RecognitionChip from '$lib/components/field/RecognitionChip.svelte';
   import RememberVoice from '$lib/components/field/RememberVoice.svelte';
-  import { formatDuration } from '$lib/field-recordings';
+  import { formatDuration, partsWithOwnEnrolment } from '$lib/field-recordings';
 
   let {
     speaker,
@@ -31,6 +31,10 @@
   let showParts = $state(false);
   let unlinking = $state(null);
   const partHasClip = (part) => part.clip_start_ms != null && part.clip_end_ms != null;
+  // A sample preview or a remembering in progress belongs to the diarized
+  // speaker it was taken from, not to the card's representative: keep each
+  // one on view, with its own Use it / Not them.
+  const ownEnrolments = $derived(partsWithOwnEnrolment(parts, speaker));
 
   function unlink(part) {
     unlinking = part.id;
@@ -112,6 +116,12 @@
       {/if}
       {#if speaker.named}
         <RememberVoice {speaker} {accountId} {recordingId} {isMe} />
+        {#each ownEnrolments as part (part.id)}
+          <div class="space-y-1" data-testid="speaker-part-enrolment">
+            <p class="text-xs text-muted-foreground">From {part.default_name}</p>
+            <RememberVoice speaker={part} {accountId} {recordingId} {isMe} offer={false} />
+          </div>
+        {/each}
       {/if}
     {/if}
   </Card.Content>

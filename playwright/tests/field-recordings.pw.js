@@ -213,6 +213,50 @@ test('one voice heard as two speakers shows as one card, with its parts', async 
   await page.screenshot({ path: 'tmp/field-recording-merged-voice.png', fullPage: true });
 });
 
+test('a merged card keeps a voice sample waiting on a part that does not stand for it', async ({ mount, page }) => {
+  const part = (id, label, position, extra) => ({
+    id,
+    label,
+    position,
+    default_name: `Speaker ${position + 1}`,
+    name: 'Sam',
+    named: true,
+    voice_id: 'v1',
+    naming_source: 'human',
+    can_remember: true,
+    remembered: false,
+    remembering: false,
+    pending_enrolment: null,
+    ...extra,
+  });
+  await mount(RecordingPage, {
+    props: {
+      recording,
+      speakers: [
+        part('s1', 'speaker_0', 0, {
+          talk_ms: 60_000,
+          pending_enrolment: { id: 'e9', sample_ms: 12_000, sample_url: '/rails/active_storage/blobs/z/sample.wav' },
+        }),
+        part('s2', 'speaker_1', 1, { talk_ms: 600_000, clip_start_ms: 6400, clip_end_ms: 7000 }),
+      ],
+      voices: [{ id: 'v1', name: 'Sam' }],
+      members_without_voice: [],
+      my_voice_id: null,
+      recognition_enabled: true,
+      account,
+    },
+  });
+
+  const sam = page.getByTestId('speaker-card');
+  await expect(sam).toHaveCount(1);
+  const own = sam.getByTestId('speaker-part-enrolment');
+  await expect(own).toContainText('From Speaker 1');
+  await expect(own.getByTestId('voice-preview')).toContainText('12 s of clear speech');
+  await expect(own.getByRole('button', { name: 'Use it' })).toBeVisible();
+  await expect(own.getByRole('button', { name: 'Not them' })).toBeVisible();
+  await expect(sam.getByTestId('remember-voice')).toHaveCount(1);
+});
+
 const fieldProps = (recordings) => ({
   items: recordings,
   field_empty: recordings.length === 0,
