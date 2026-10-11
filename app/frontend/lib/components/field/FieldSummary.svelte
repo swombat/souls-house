@@ -6,7 +6,7 @@
   // (after a transcript has been corrected, say). With a mouse the refresh
   // button shows on hover; on touch, tapping the summary shows it. The old
   // summary stays until the new one arrives, by the page's own refresh.
-  let { text, pending = false, url = null, testid = 'field-summary', children } = $props();
+  let { text, pending = false, failed = false, url = null, testid = 'field-summary', children } = $props();
 
   let finePointer = $state(true);
   $effect(() => {
@@ -27,14 +27,19 @@
     if (!url || working) return;
     requesting = true;
     error = '';
+    let accepted = false;
     router.post(
       url,
       {},
       {
         preserveScroll: true,
         preserveState: true,
+        onSuccess: () => (accepted = true),
         onError: (errors) => (error = errors?.summary || "The summary couldn't be redone."),
-        onFinish: () => (requesting = false),
+        onFinish: () => {
+          requesting = false;
+          if (!accepted && !error) error = "That didn't go through. Try again.";
+        },
       }
     );
   }
@@ -51,11 +56,12 @@
       {text}
       {@render children?.()}
     </p>
-    {#if url && (finePointer || revealed || working)}
+    {#if url && (finePointer || revealed || working || failed)}
       <button
         type="button"
         class="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted disabled:cursor-default {finePointer &&
-        !working
+        !working &&
+        !failed
           ? 'opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100'
           : ''}"
         aria-label="Write the summary again"
@@ -71,5 +77,9 @@
     <p class="text-xs text-muted-foreground mt-1" data-testid="summary-pending">Writing a new summary…</p>
   {:else if error}
     <p class="text-xs text-destructive mt-1" data-testid="summary-error">{error}</p>
+  {:else if failed}
+    <p class="text-xs text-destructive mt-1" data-testid="summary-failed">
+      A new summary couldn't be written; this is the old one. Try again?
+    </p>
   {/if}
 </div>

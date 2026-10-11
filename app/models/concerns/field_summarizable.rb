@@ -73,7 +73,7 @@ module FieldSummarizable
   def request_resummary!(now: Time.current)
     requested = with_lock do
       next false unless summarizable?
-      next false if summary_claimed_at && summary_claimed_at > now - CLAIM_TTL
+      next false if summary_claim_fresh?(now:)
 
       update_columns(summarized_at: nil, summary_attempts: 0, summary_claimed_at: nil)
       true
@@ -85,11 +85,27 @@ module FieldSummarizable
     true
   end
 
-  # Waiting for a summary that is coming: queued, being written, or due a retry.
-  def summary_pending? = FieldSummaries.enabled? && summarizable? && !summarized? && summary_attempts < MAX_ATTEMPTS
+  # Waiting for a summary that is coming: queued, being written (the last
+  # attempt included: the count goes up when the call starts), or due a retry.
+  def summary_pending?(now: Time.current)
+    return false unless FieldSummaries.enabled? && summarizable? && !summarized?
 
+    summary_attempts < MAX_ATTEMPTS || summary_claim_fresh?(now:)
+  end
+
+  # Every attempt was used and none worked: nothing more is coming unless a
+  # person asks again. Only shown where there is an older summary to keep.
+  def summary_failed?(now: Time.current)
+    summarizable? && !summarized? && summary_attempts >= MAX_ATTEMPTS && !summary_claim_fresh?(now:)
+  end
+
+  def summary_claim_fresh?(now: Time.current) = summary_claimed_at.present? && summary_claimed_at > now - CLAIM_TTL
+
+  # A call failed. An open page is told, so a last failure ends its "writing"
+  # state rather than leaving it waiting for a summary that won't come.
   def release_summary_claim!
     update_columns(summary_claimed_at: nil)
+    broadcast_refresh
   end
 
 end

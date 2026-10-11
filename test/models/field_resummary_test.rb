@@ -4,6 +4,14 @@ require "support/field_recording_helpers"
 class FieldResummaryTest < ActiveJob::TestCase
 
   include FieldRecordingHelpers
+  include ActionCable::TestHelper
+
+  # Every house call fails.
+  class FailingInference
+
+    def house_chat(**) = raise(UtilityInference::Error, "down")
+
+  end
 
   setup do
     @account = accounts(:personal_account)
@@ -58,6 +66,30 @@ class FieldResummaryTest < ActiveJob::TestCase
     assert_no_enqueued_jobs(only: FieldItems::SummarizeJob) do
       assert_not @recording.request_resummary!
     end
+  end
+
+  test "the last attempt still reads as pending while its call is running" do
+    @recording.update_columns(summarized_at: nil, summary_attempts: FieldSummarizable::MAX_ATTEMPTS,
+                              summary_claimed_at: 1.minute.ago)
+    assert @recording.summary_pending?
+    assert_not @recording.summary_failed?
+  end
+
+  test "when every attempt fails, an open page is told and the old summary is offered again" do
+    @recording.request_resummary!
+    FieldSummarizable::MAX_ATTEMPTS.times do |n|
+      assert @recording.reload.summary_pending?, "pending before attempt #{n + 1}"
+      assert_broadcasts("Account:#{@account.obfuscated_id}", 1) do
+        FieldItems::SummarizeJob.perform_now(@recording, inference: FailingInference.new)
+      end
+    end
+
+    @recording.reload
+    assert_not @recording.summary_pending?
+    assert @recording.summary_failed?
+    assert_equal "A father and his daughter talk.", @recording.summary_long
+    assert @recording.request_resummary!, "asking again is allowed after a failure"
+    assert_not @recording.reload.summary_failed?
   end
 
 end

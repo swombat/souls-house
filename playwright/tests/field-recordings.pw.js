@@ -899,6 +899,24 @@ test('with no way to redo it, there is no button', async ({ mount, page }) => {
   await expect(page.getByTestId('summary-refresh')).toHaveCount(0);
 });
 
+test('after every attempt failed, the page says so and offers the button again', async ({ mount, page }) => {
+  await mount(RecordingViewer, { props: { recording: { ...summarised, summary_failed: true } } });
+  await expect(page.getByTestId('summary-failed')).toBeVisible();
+  await expect(page.getByTestId('summary-refresh')).toBeEnabled();
+  await expect(page.getByTestId('summary-refresh')).toHaveCSS('opacity', '1');
+});
+
+test('a request that fails without an answer says so rather than going quiet', async ({ mount, page }) => {
+  await page.route('**/accounts/acct1/field/recordings/r1/resummarize', (route) =>
+    route.fulfill({ status: 500, body: '' })
+  );
+  await mount(RecordingViewer, { props: { recording: summarised } });
+  await page.getByTestId('field-recording-summary').hover();
+  await page.getByTestId('summary-refresh').click();
+  await expect(page.getByTestId('summary-error')).toBeVisible();
+  await expect(page.getByTestId('summary-refresh')).toBeEnabled();
+});
+
 test.describe('summaries on a phone', () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 

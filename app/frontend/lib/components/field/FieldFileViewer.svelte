@@ -37,6 +37,7 @@
       <FieldSummary
         text={file.summary_long}
         pending={file.summary_pending}
+        failed={file.summary_failed}
         url={file.resummarize_url}
         testid="field-file-summary">
         {#if file.summary_partial}
