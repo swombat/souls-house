@@ -3,7 +3,7 @@
 class FieldRecordingsController < ApplicationController
 
   require_feature_enabled :agents
-  before_action :set_field_recording, only: %i[show update destroy retry]
+  before_action :set_field_recording, only: %i[show update destroy retry correct_transcript undo_transcript_correction]
 
   # The transcript page (spec §7). Words are sent whole: the page renders turns
   # from them, and clicking a word seeks the audio.
@@ -15,6 +15,7 @@ class FieldRecordingsController < ApplicationController
         audio_url: (rails_blob_path(recording.audio, disposition: :inline) if recording.audio.attached?),
         words: recording.ready? ? recording.transcript_words : [],
         turns: (recording.transcript_turns if recording.ready? && recording.supplied?),
+        **FieldItems.transcript_corrections_json(recording),
         language_code: recording.language_code,
         ready_at: recording.ready_at&.iso8601
       ),
@@ -72,6 +73,23 @@ class FieldRecordingsController < ApplicationController
     redirect_to item_path(recording), notice: "Trying again."
   rescue FieldRecording::NotRetryable
     redirect_to item_path(@field_recording), alert: "This recording can't be tried again."
+  end
+
+  # Correcting the transcript from its page (FieldRecording::TranscriptCorrection).
+  def correct_transcript
+    corrections = params.permit(corrections: %i[from to turn text]).fetch(:corrections, []).map(&:to_h)
+    @field_recording.correct_transcript!(revision: params[:revision], corrections:, by: Current.user)
+    redirect_to account_field_recording_path(current_account, @field_recording), notice: "Transcript corrected."
+  rescue FieldRecording::TranscriptCorrection::Stale, FieldRecording::TranscriptCorrection::Invalid => e
+    redirect_to account_field_recording_path(current_account, @field_recording), alert: e.message
+  end
+
+  def undo_transcript_correction
+    @field_recording.undo_transcript_correction!(revision: params[:revision], by: Current.user)
+    redirect_to account_field_recording_path(current_account, @field_recording), notice: "Correction undone."
+  rescue FieldRecording::TranscriptCorrection::Stale, FieldRecording::TranscriptCorrection::Invalid,
+    FieldRecording::TranscriptCorrection::NothingToUndo => e
+    redirect_to account_field_recording_path(current_account, @field_recording), alert: e.message
   end
 
   # "Is one of these you?" is shown once, until dismissed or answered.

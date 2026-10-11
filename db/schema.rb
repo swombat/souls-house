@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_11_100700) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_11_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -957,6 +957,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_100700) do
     t.datetime "summarized_at"
     t.datetime "summary_claimed_at"
     t.integer "summary_attempts", default: 0, null: false
+    t.integer "transcript_revision", default: 0, null: false
     t.index ["account_id", "created_at"], name: "index_field_recordings_on_account_id_and_created_at"
     t.index ["account_id", "import_key"], name: "index_field_recordings_on_account_id_and_import_key", unique: true, where: "(import_key IS NOT NULL)"
     t.index ["account_id"], name: "index_field_recordings_on_account_id"
@@ -1002,6 +1003,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_100700) do
     t.index ["account_id"], name: "index_field_tags_on_account_id"
     t.index ["created_by_type", "created_by_id"], name: "index_field_tags_on_created_by"
     t.index ["discarded_by_type", "discarded_by_id"], name: "index_field_tags_on_discarded_by"
+  end
+
+  create_table "field_transcript_corrections", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "field_recording_id", null: false
+    t.string "corrected_by_type"
+    t.bigint "corrected_by_id"
+    t.string "kind", null: false
+    t.integer "base_revision", null: false
+    t.integer "revision", null: false
+    t.jsonb "edits", default: [], null: false
+    t.bigint "undoes_id"
+    t.datetime "undone_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_field_transcript_corrections_on_account_id"
+    t.index ["corrected_by_type", "corrected_by_id"], name: "index_field_transcript_corrections_on_corrected_by"
+    t.index ["field_recording_id", "revision"], name: "index_field_transcript_corrections_on_recording_and_revision", unique: true
+    t.index ["field_recording_id"], name: "index_field_transcript_corrections_on_field_recording_id"
+    t.index ["undoes_id"], name: "index_field_transcript_corrections_on_undoes_id"
+    t.check_constraint "kind::text = ANY (ARRAY['correction'::character varying, 'undo'::character varying]::text[])", name: "field_transcript_corrections_kind"
   end
 
   create_table "field_voice_enrolments", force: :cascade do |t|
@@ -2264,6 +2286,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_100700) do
   add_foreign_key "field_taggings", "accounts"
   add_foreign_key "field_taggings", "field_tags"
   add_foreign_key "field_tags", "accounts"
+  add_foreign_key "field_transcript_corrections", "accounts"
+  add_foreign_key "field_transcript_corrections", "field_recordings"
+  add_foreign_key "field_transcript_corrections", "field_transcript_corrections", column: "undoes_id"
   add_foreign_key "field_voice_enrolments", "accounts"
   add_foreign_key "field_voice_enrolments", "field_recording_speakers"
   add_foreign_key "field_voice_enrolments", "field_voices"

@@ -150,4 +150,36 @@ class Api::V1::Field::HumanRecordingsTest < ActionDispatch::IntegrationTest
     assert_nil @recording.reload.recorded_at
   end
 
+  test "a person corrects a transcript's words, is refused when stale, and undoes the last correction" do
+    get api_v1_field_recording_path(@recording), headers: @headers
+    body = response.parsed_body["recording"]
+    assert_equal 0, body["transcript_revision"]
+    there = body["words"].index { |word| word["t"] == "there" }
+
+    patch transcript_api_v1_field_recording_path(@recording), headers: @headers, as: :json,
+      params: { revision: 0, corrections: [ { from: there, to: there, text: "everyone" } ] }
+    assert_response :success
+    body = response.parsed_body["recording"]
+    assert_equal [ 1, "[00:00] Speaker 1: hello\n[00:02] Speaker 2: everyone" ], body.values_at("transcript_revision", "transcript_text")
+    assert_equal [ "there → everyone" ], body["transcript_corrections"].first["changes"]
+    assert body["undoable_correction_id"]
+
+    patch transcript_api_v1_field_recording_path(@recording), headers: @headers, as: :json,
+      params: { revision: 0, corrections: [ { from: there, to: there, text: "all" } ] }
+    assert_response :conflict
+    assert_equal 1, response.parsed_body["transcript_revision"]
+
+    patch transcript_api_v1_field_recording_path(@recording), headers: @headers, as: :json,
+      params: { revision: 1, corrections: [ { from: 0, to: there, text: "x" } ] }
+    assert_response :unprocessable_entity, "a run can't cross speakers"
+
+    post undo_transcript_correction_api_v1_field_recording_path(@recording), headers: @headers, as: :json, params: { revision: 1 }
+    assert_response :success
+    assert_equal "[00:00] Speaker 1: hello\n[00:02] Speaker 2: there", response.parsed_body.dig("recording", "transcript_text")
+    assert_nil response.parsed_body.dig("recording", "undoable_correction_id")
+
+    post undo_transcript_correction_api_v1_field_recording_path(@recording), headers: @headers, as: :json, params: { revision: 2 }
+    assert_response :unprocessable_entity
+  end
+
 end

@@ -8,6 +8,31 @@ module TestSupport
 
     PASSWORD = "password123"
 
+    # A ready, Scribe-transcribed recording ("j'ai cinquante kilos" / "oui"),
+    # for correcting its transcript in the browser.
+    def field_transcript_fixture
+      account = Account.find(params.fetch(:account_id))
+      raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
+
+      audio = ActiveStorage::Blob.create_and_upload!(io: StringIO.new(File.binread(Rails.root.join("test/fixtures/files/test_audio.mp3"))),
+        filename: "sanda.mp3", content_type: "audio/mpeg")
+      recording = account.field_recordings.create!(title: "Sanda", uploaded_by: account.users.first!, audio:)
+      spoken = [ [ "speaker_0", 0, 500, "j'ai" ], [ "speaker_0", 600, 1200, "cinquante" ], [ "speaker_0", 1300, 1800, "kilos" ],
+                 [ "speaker_1", 3000, 3400, "oui" ] ]
+      words = spoken.each_with_index.flat_map do |(speaker, start, finish, text), index|
+        word = { "s" => start, "e" => finish, "t" => text, "k" => "w", "spk" => speaker }
+        index.zero? ? [ word ] : [ { "s" => start, "e" => start, "t" => " ", "k" => "s", "spk" => speaker }, word ]
+      end
+      FieldRecording::Transcript.speakers(words).each { |attributes| recording.speakers.create!(attributes) }
+      recording.speakers.reset
+      recording.transcript_words = words
+      recording.transcript_text = recording.render_transcript_text
+      recording.status = "ready"
+      recording.ready_at = Time.current
+      recording.save!
+      render json: { recording_param: recording.to_param }
+    end
+
     def stone_fixture
       account = Account.find(params.fetch(:account_id))
       raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")

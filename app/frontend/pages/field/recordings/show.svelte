@@ -16,7 +16,7 @@
     suppliedTurns,
     timedWords,
   } from '$lib/field-recordings';
-  import { ArrowClockwise, ArrowLeft, X } from 'phosphor-svelte';
+  import { ArrowClockwise, ArrowCounterClockwise, ArrowLeft, PencilSimple, X } from 'phosphor-svelte';
 
   let {
     recording,
@@ -99,6 +99,69 @@
 
   function retry() {
     router.post(`${recording.show_url}/retry`);
+  }
+
+  // Correcting the transcript. Scribe transcripts: click a word, shift-click
+  // to extend the run within its turn; the run's positions are into the
+  // stored words, spacing included. Supplied transcripts: click a turn.
+  let correcting = $state(false);
+  let selected = $state(null);
+  let draft = $state('');
+  let savingCorrection = $state(false);
+  const corrections = $derived(recording.transcript_corrections || []);
+
+  function toggleCorrecting() {
+    correcting = !correcting;
+    selected = null;
+  }
+
+  function pick(part, turnIndex, extend) {
+    if (supplied) {
+      selected = { turn: part.src };
+      draft = part.t;
+      return;
+    }
+    if (extend && selected && selected.turnIndex === turnIndex) {
+      selected = {
+        from: Math.min(selected.from, part.src),
+        to: Math.max(selected.to, part.src),
+        turnIndex,
+      };
+    } else {
+      selected = { from: part.src, to: part.src, turnIndex };
+    }
+    draft = (recording.words || [])
+      .slice(selected.from, selected.to + 1)
+      .map((word) => word.t)
+      .join('')
+      .trim();
+  }
+
+  function saveCorrection(event) {
+    event.preventDefault();
+    if (!selected) return;
+    const correction = supplied
+      ? { turn: selected.turn, text: draft }
+      : { from: selected.from, to: selected.to, text: draft };
+    savingCorrection = true;
+    router.patch(
+      `${recording.show_url}/transcript`,
+      { revision: recording.transcript_revision, corrections: [correction] },
+      {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => (selected = null),
+        onFinish: () => (savingCorrection = false),
+      }
+    );
+  }
+
+  function undoCorrection() {
+    router.post(
+      `${recording.show_url}/transcript/undo`,
+      { revision: recording.transcript_revision },
+      { preserveScroll: true, preserveState: true }
+    );
   }
 
   // The server answers 204, not an Inertia page, so this is a plain request.
@@ -206,11 +269,81 @@
     </section>
 
     {#if turns.length}
+      <div class="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant={correcting ? 'default' : 'outline'}
+          onclick={toggleCorrecting}
+          data-testid="correct-transcript-toggle">
+          <PencilSimple class="size-4" />
+          {correcting ? 'Done correcting' : 'Correct the transcript'}
+        </Button>
+        {#if correcting && !selected}
+          <p class="text-sm text-muted-foreground">
+            {supplied
+              ? 'Click the turn to correct.'
+              : 'Click the word to correct; shift-click another in the same turn to take the words between.'}
+          </p>
+        {/if}
+      </div>
+      {#if correcting && selected}
+        <form
+          onsubmit={saveCorrection}
+          class="sticky top-2 z-10 flex flex-wrap items-start gap-2 rounded-md border bg-background p-3 shadow-sm"
+          data-testid="transcript-correction-form">
+          <label for="transcript-correction" class="sr-only">Corrected words</label>
+          {#if supplied}
+            <textarea
+              id="transcript-correction"
+              bind:value={draft}
+              rows="4"
+              class="flex-1 min-w-64 rounded-md border border-input bg-background px-3 py-2 text-sm"></textarea>
+          {:else}
+            <input
+              id="transcript-correction"
+              bind:value={draft}
+              maxlength="500"
+              class="flex-1 min-w-64 rounded-md border border-input bg-background px-3 py-1.5 text-sm" />
+          {/if}
+          <Button type="submit" size="sm" disabled={savingCorrection}>Save correction</Button>
+          <Button type="button" size="sm" variant="ghost" onclick={() => (selected = null)}>Cancel</Button>
+          {#if !supplied}
+            <p class="basis-full text-xs text-muted-foreground">
+              Leave it empty to remove these words. A corrected run keeps the timing of the words it replaces.
+            </p>
+          {/if}
+        </form>
+      {/if}
       <Card.Root>
         <Card.Content class="p-6">
-          <TranscriptTurns {turns} {names} {activeIndex} onSeek={seek} />
+          <TranscriptTurns {turns} {names} {activeIndex} onSeek={seek} {correcting} {selected} onPick={pick} />
         </Card.Content>
       </Card.Root>
+      {#if corrections.length}
+        <section class="space-y-2" data-testid="transcript-corrections">
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="text-sm uppercase tracking-wide text-muted-foreground">Corrections</h2>
+            {#if recording.undoable_correction_id}
+              <Button size="sm" variant="ghost" onclick={undoCorrection} data-testid="undo-transcript-correction">
+                <ArrowCounterClockwise class="size-4" /> Undo the last correction
+              </Button>
+            {/if}
+          </div>
+          <ul class="text-sm space-y-1">
+            {#each corrections as correction (correction.id)}
+              <li class={correction.undone ? 'text-muted-foreground line-through' : ''}>
+                {correction.kind === 'undo' ? 'Undid a correction' : correction.changes.join('; ')}
+                {#if correction.change_count > correction.changes.length}
+                  (and {correction.change_count - correction.changes.length} more)
+                {/if}
+                <span class="text-muted-foreground">
+                  · {correction.by || 'someone'} · {formatWhen(correction.at)}
+                </span>
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
     {:else}
       <p class="text-muted-foreground">No words were heard in this recording.</p>
     {/if}

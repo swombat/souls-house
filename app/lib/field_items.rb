@@ -128,6 +128,16 @@ module FieldItems
     }
   end
 
+  # What a person needs to correct a transcript: the revision to send back,
+  # the latest corrections, and which one (if any) can be undone.
+  def transcript_corrections_json(recording)
+    {
+      transcript_revision: recording.transcript_revision,
+      transcript_corrections: recording.transcript_corrections.includes(:corrected_by).latest_first.limit(10).map(&:as_history_json),
+      undoable_correction_id: recording.undoable_correction&.to_param
+    }
+  end
+
   def speakers_of(recording)
     recording.speakers.loaded? ? recording.speakers.sort_by(&:position) : recording.speakers.includes(:field_voice)
   end

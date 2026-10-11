@@ -121,4 +121,29 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ nil, nil ], props["speakers"].map { |speaker| speaker["talk_ms"] }
   end
 
+  test "the transcript page corrects and undoes, and says so when the page was stale" do
+    recording = ready_recording(account: @account, user: @user, title: "Board call")
+    show = account_field_recording_path(@account, recording)
+    there = recording.transcript_words.index { |word| word["t"] == "there" }
+
+    patch transcript_account_field_recording_path(@account, recording),
+      params: { revision: 0, corrections: [ { from: there, to: there, text: "everyone" } ] }
+    assert_redirected_to show
+    assert_equal "[00:00] Speaker 1: hello\n[00:02] Speaker 2: everyone", recording.reload.transcript_text
+
+    patch transcript_account_field_recording_path(@account, recording),
+      params: { revision: 0, corrections: [ { from: there, to: there, text: "all" } ] }
+    assert_redirected_to show
+    assert_match(/changed since you loaded it/, flash[:alert])
+
+    get show
+    props = inertia_props["props"]
+    assert_equal 1, props.dig("recording", "transcript_revision")
+    assert_equal [ "there → everyone" ], props.dig("recording", "transcript_corrections", 0, "changes")
+
+    post undo_transcript_correction_account_field_recording_path(@account, recording), params: { revision: 1 }
+    assert_redirected_to show
+    assert_equal "[00:00] Speaker 1: hello\n[00:02] Speaker 2: there", recording.reload.transcript_text
+  end
+
 end

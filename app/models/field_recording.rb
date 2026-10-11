@@ -18,6 +18,7 @@ class FieldRecording < ApplicationRecord
   include FieldRecording::Transcription
   include FieldTaggable
   include FieldSummarizable
+  include FieldRecording::TranscriptCorrection
 
   class NotRetryable < StandardError; end
 

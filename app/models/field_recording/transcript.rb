@@ -40,6 +40,26 @@ module FieldRecording::Transcript
     end
   end
 
+  # The turn each entry belongs to, by the same rule as `turns` (nil for
+  # spacing before the first spoken entry), so a correction can be kept
+  # inside one turn.
+  def turn_indices(words)
+    index = -1
+    last = nil
+    words.map do |word|
+      if word["k"] == "s"
+        last ? index : nil
+      else
+        unless last && last[:spk] == word["spk"] && word["s"] - last[:e] <= TURN_GAP_MS
+          index += 1
+          last = { spk: word["spk"], e: word["e"] }
+        end
+        last[:e] = [ last[:e], word["e"] ].max
+        index
+      end
+    end
+  end
+
   # [{label:, position:, talk_ms:, clip_start_ms:, clip_end_ms:}] in order of
   # first appearance.
   def speakers(words)

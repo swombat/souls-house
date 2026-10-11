@@ -14,13 +14,17 @@ module FieldItems
       return unless FieldSummaries.enabled?
       return unless item.claim_summary!
 
+      # The claim reloaded the item under its lock: these are the words the
+      # summary is written from. A correction since then makes it stale.
+      revision = item.summary_revision
+
       summary = begin
         FieldSummaries.summarize(item, inference:)
       rescue UtilityInference::Error
         item.release_summary_claim!
         return
       end
-      item.store_summary!(**summary)
+      item.store_summary!(**summary, revision:)
     end
 
   end

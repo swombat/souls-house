@@ -8,20 +8,22 @@ export const UNATTRIBUTED = 'Unattributed';
 // text, the kind ('w' word, 's' spacing, 'a' audio event) and the speaker
 // label. A turn is consecutive words/events with the same speaker and gaps of
 // at most 1.5 s; spacing between two words of one turn joins them. Every
-// word/event gets `i`, its position among the timed words.
+// word/event gets `i`, its position among the timed words, and `src`, its
+// position in the stored words (spacing included), which is what a transcript
+// correction names.
 export function buildTurns(words = []) {
   const turns = [];
   let current = null;
   let spacing = null;
   let index = 0;
 
-  for (const word of words || []) {
+  for (const [src, word] of (words || []).entries()) {
     if (!word) continue;
     if (word.k === 's') {
       if (current) spacing = (spacing ?? '') + (word.t ?? '');
       continue;
     }
-    const part = { ...word, spk: word.spk || null, i: index++ };
+    const part = { ...word, spk: word.spk || null, i: index++, src };
     const end = part.e ?? part.s;
     if (current && current.spk === part.spk && part.s - current.end <= TURN_GAP_MS) {
       current.parts.push({ k: 's', t: spacing || ' ' });
@@ -42,14 +44,16 @@ export function buildTurns(words = []) {
 // without word highlighting and seeks only where a start was given.
 export function suppliedTurns(turns = []) {
   return (turns || [])
-    .filter((turn) => turn && turn.t)
-    .map((turn) => {
+    .map((turn, src) => ({ turn, src }))
+    .filter(({ turn }) => turn && turn.t)
+    .map(({ turn, src }) => {
       const start = Number.isFinite(turn.s) ? turn.s : null;
       return {
         spk: turn.spk || null,
         start,
         end: start,
-        parts: [{ k: 'w', t: turn.t, s: start, i: null, whole: true }],
+        src,
+        parts: [{ k: 'w', t: turn.t, s: start, i: null, whole: true, src }],
         text: turn.t,
       };
     });

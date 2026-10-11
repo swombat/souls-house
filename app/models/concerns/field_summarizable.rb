@@ -24,6 +24,11 @@ module FieldSummarizable
 
   def summarizable? = kept? && summary_source.present?
 
+  # Which version of the words a summary was written from. Words that can be
+  # corrected (recordings) override it, so a summary of older words is never
+  # stored over newer ones.
+  def summary_revision = 0
+
   # Read, but nothing in it but whitespace: nothing to summarise, ever.
   def summary_source_blank? = !summary_source.nil? && summary_source.blank?
   def summarized? = summarized_at.present?
@@ -53,9 +58,11 @@ module FieldSummarizable
   # Derived data, not an edit: update_columns keeps updated_at, then an open
   # Field page is told to refresh. Ignored if the item was discarded or
   # summarised meanwhile.
-  def store_summary!(short:, long:, now: Time.current)
+  # revision: the summary_revision the words were read at, if known.
+  def store_summary!(short:, long:, revision: nil, now: Time.current)
     stored = with_lock do
       next false unless kept? && !summarized?
+      next false if revision && revision != summary_revision
 
       update_columns(summary_short: short, summary_long: long, summarized_at: now, summary_claimed_at: nil)
       true

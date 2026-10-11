@@ -15,6 +15,7 @@ Rails.application.routes.draw do
         post :state, to: "/test_support/e2e#state"
         post :cleanup, to: "/test_support/e2e#cleanup"
         post :stone_fixture, to: "/test_support/e2e#stone_fixture"
+        post :field_transcript_fixture, to: "/test_support/e2e#field_transcript_fixture"
       end
     end
   end
@@ -211,6 +212,8 @@ Rails.application.routes.draw do
     resources :field_recording_uploads, path: "field/recordings/uploads", only: [ :create ]
     resources :field_recordings, path: "field/recordings", only: [ :show, :create, :update, :destroy ] do
       post :retry, on: :member
+      patch :transcript, on: :member, action: :correct_transcript
+      post "transcript/undo", on: :member, action: :undo_transcript_correction, as: :undo_transcript_correction
       post :dismiss_you_hint, on: :collection
       resources :speakers, only: [ :update ], controller: "field_recording_speakers" do
         resources :enrolments, only: [ :create ], controller: "field_voice_enrolments"
@@ -458,6 +461,8 @@ Rails.application.routes.draw do
           member do
             get :audio
             post :retry
+            patch :transcript, action: :correct_transcript
+            post "transcript/undo", action: :undo_transcript_correction, as: :undo_transcript_correction
           end
           post :dismiss_you_hint, on: :collection
           resources :speakers, only: :update

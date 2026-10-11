@@ -95,6 +95,71 @@ test('a member brings a file into the Field, writes a note, and deletes the file
   }
 });
 
+test("a member corrects a transcript's words and undoes the correction", async ({ page, request }, testInfo) => {
+  const runId = `field-correct-${Date.now()}`;
+  const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });
+  expect(response.ok()).toBe(true);
+  const setup = await response.json();
+  const shot = (name) => page.screenshot({ path: testInfo.outputPath(`${name}.png`), fullPage: true });
+
+  try {
+    const fixture = await request.post('/test/e2e/field_transcript_fixture', {
+      data: { account_id: setup.account_id },
+    });
+    expect(fixture.ok()).toBe(true);
+    const { recording_param: recordingParam } = await fixture.json();
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto('/login');
+    await page.getByLabel(/email/i).fill(setup.primary_user.email);
+    await page.getByLabel(/password/i).fill(setup.password);
+    await page.getByRole('button', { name: /log in/i }).click();
+    await expect(page).toHaveURL(/\/$/);
+
+    await page.goto(`/accounts/${setup.account_param}/field/recordings/${recordingParam}`);
+    const transcript = page.getByTestId('transcript');
+    await expect(transcript).toContainText("j'ai cinquante kilos");
+
+    await page.getByTestId('correct-transcript-toggle').click();
+    await transcript
+      .getByTestId('transcript-word')
+      .filter({ hasText: /^cinquante$/ })
+      .click();
+    const form = page.getByTestId('transcript-correction-form');
+    await expect(form.getByLabel('Corrected words')).toHaveValue('cinquante');
+    await shot('correct-1-picked');
+    await form.getByLabel('Corrected words').fill('soixante-dix');
+    await form.getByRole('button', { name: 'Save correction' }).click();
+
+    await expect(transcript).toContainText("j'ai soixante-dix kilos");
+    await expect(page.getByTestId('transcript-corrections')).toContainText('cinquante → soixante-dix');
+    await shot('correct-2-corrected');
+
+    // A run, picked with shift-click inside one turn.
+    await transcript
+      .getByTestId('transcript-word')
+      .filter({ hasText: /^j'ai$/ })
+      .click();
+    await transcript
+      .getByTestId('transcript-word')
+      .filter({ hasText: /^kilos$/ })
+      .click({ modifiers: ['Shift'] });
+    await expect(form.getByLabel('Corrected words')).toHaveValue("j'ai soixante-dix kilos");
+    await form.getByLabel('Corrected words').fill("j'avais soixante-dix kilos");
+    await form.getByRole('button', { name: 'Save correction' }).click();
+    await expect(transcript).toContainText("j'avais soixante-dix kilos");
+
+    await page.getByTestId('undo-transcript-correction').click();
+    await expect(transcript).toContainText("j'ai soixante-dix kilos");
+    await expect(page.getByTestId('undo-transcript-correction')).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByTestId('transcript')).toContainText("j'ai soixante-dix kilos");
+    await shot('correct-3-undone');
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
+  }
+});
+
 test('a full Field turns compact and pages through fifty at a time', async ({ page, request }, testInfo) => {
   const runId = `field-pages-${Date.now()}`;
   const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });

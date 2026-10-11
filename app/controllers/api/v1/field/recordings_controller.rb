@@ -21,14 +21,14 @@ module Api
 
         class BadParam < StandardError; end
 
-        HUMAN_ACTIONS = %i[audio create update destroy retry dismiss_you_hint].freeze
+        HUMAN_ACTIONS = %i[audio create update destroy retry dismiss_you_hint correct_transcript undo_transcript_correction].freeze
 
         before_action :require_human_actor!, only: HUMAN_ACTIONS
         # A person's reads carry what the browser page shows (audio, timed
         # words, speaker ids), so they need the Field enabled, like the page.
         # A resident's plain read is unchanged.
         require_api_feature_enabled :agents, unless: -> { current_api_agent && !action_name.to_sym.in?(HUMAN_ACTIONS) }
-        before_action :set_recording, only: %i[show audio update destroy retry]
+        before_action :set_recording, only: %i[show audio update destroy retry correct_transcript undo_transcript_correction]
 
         # tag=life (repeatable) keeps recordings carrying every one of those tags.
         def index
@@ -136,6 +136,37 @@ module Api
           render json: { recording: person_json(recording) }, status: :created
         rescue FieldRecording::NotRetryable
           render json: { error: "This recording can't be tried again." }, status: :unprocessable_entity
+        end
+
+        # Corrects the transcript's words (FieldRecording::TranscriptCorrection).
+        # revision: the transcript_revision read. Scribe transcripts:
+        # corrections: [{ from:, to:, text: }], positions into `words` as
+        # returned (spacing included), within one turn; empty text removes the
+        # run. Supplied: corrections: [{ turn:, text: }]. 409 when stale.
+        def correct_transcript
+          corrections = params[:corrections]
+          unless corrections.is_a?(Array) && corrections.all? { |item| item.respond_to?(:permit) }
+            return render json: { error: "corrections must be a list of objects" }, status: :unprocessable_entity
+          end
+
+          @recording.correct_transcript!(revision: params[:revision], by: current_api_user,
+            corrections: corrections.map { |item| item.permit(:from, :to, :turn, :text).to_h })
+          render json: { recording: person_json(@recording) }
+        rescue FieldRecording::TranscriptCorrection::Stale => e
+          render json: { error: e.message, transcript_revision: e.revision }, status: :conflict
+        rescue FieldRecording::TranscriptCorrection::Invalid => e
+          render json: { error: e.message }, status: :unprocessable_entity
+        end
+
+        # Undoes the latest correction batch, if the transcript is still at the
+        # revision it made.
+        def undo_transcript_correction
+          @recording.undo_transcript_correction!(revision: params[:revision], by: current_api_user)
+          render json: { recording: person_json(@recording) }
+        rescue FieldRecording::TranscriptCorrection::Stale => e
+          render json: { error: e.message, transcript_revision: e.revision }, status: :conflict
+        rescue FieldRecording::TranscriptCorrection::Invalid, FieldRecording::TranscriptCorrection::NothingToUndo => e
+          render json: { error: e.message }, status: :unprocessable_entity
         end
 
         # "Is one of these you?" is shown once, until dismissed or answered.
@@ -256,6 +287,7 @@ module Api
             transcript_text: (recording.transcript_text if recording.ready?),
             words: recording.ready? ? recording.transcript_words : [],
             turns: (recording.transcript_turns if recording.ready? && recording.supplied?),
+            **FieldItems.transcript_corrections_json(recording),
             speakers: recording.speakers.includes(:field_voice).map { |speaker| FieldItems.plain_speaker_json(speaker) },
             show_you_hint: show_you_hint?(recording)
           )

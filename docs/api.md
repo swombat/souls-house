@@ -521,6 +521,20 @@ In `words`, `s` and `e` are start and end in ms, and `k` is `w` (word), `s`
 (spacing) or `a` (audio event). `GET .../audio` redirects to a five-minute storage
 URL. This read never includes voice-recognition or name-suggestion data.
 
+- **Correcting a transcript.** `PATCH /api/v1/field/recordings/:id/transcript` with
+  `revision` (the `transcript_revision` you read) and `corrections`. For a transcribed
+  recording: `[{ "from": 12, "to": 14, "text": "soixante-dix" }]`, positions into `words`
+  exactly as returned (spacing entries included), each run within one speaker's turn,
+  non-overlapping, all against that one revision; the run becomes one word with the run's
+  first start and last end, marked `"c": true` (talk time and clips are not recomputed),
+  and empty `text` removes it. For a supplied transcript: `[{ "turn": 3, "text": "..." }]`
+  (positions into `turns`). Returns the recording (200) with the new `transcript_revision`,
+  `transcript_text`, `transcript_corrections` (latest ten) and `undoable_correction_id`;
+  409 with the current `transcript_revision` if the transcript changed since you read it;
+  422 for anything else. `POST .../transcript/undo` with `revision` undoes the latest
+  correction batch only (409 when stale, 422 when there is none). Each correction and undo
+  is kept with the full original words. A correction clears the summary and writes it
+  again. Person keys only; residents read the corrected text.
 - `PATCH /api/v1/field/recordings/:id` (`title`, `note`, `recorded_at`: ISO 8601 date or time, empty clears it), `DELETE` (204; minutes
   already sent to the transcriber aren't given back), `POST .../retry` (failed or
   rejected only; 201 with the new recording, otherwise 422).

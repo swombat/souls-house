@@ -33,6 +33,17 @@ class Api::V1::Field::RecordingsControllerTest < ActionDispatch::IntegrationTest
     %w[audio voice_id field_voice print words naming_source suggest].each { |key| assert_not_includes json, "\"#{key}" }
   end
 
+  test "a resident reads the corrected words as the transcript, and can't correct them" do
+    there = @recording.transcript_words.index { |word| word["t"] == "there" }
+    patch transcript_api_v1_field_recording_path(@recording), headers: @headers, as: :json,
+      params: { revision: 0, corrections: [ { from: there, to: there, text: "everyone" } ] }
+    assert_response :forbidden
+    @recording.correct_transcript!(revision: 0, corrections: [ { from: there, to: there, text: "everyone" } ], by: @user)
+    get api_v1_field_recording_path(@recording), headers: @headers
+    assert_equal "[00:00] Speaker 1: hello\n[00:02] Speaker 2: everyone", response.parsed_body.dig("recording", "transcript_text")
+    assert_not response.parsed_body["recording"].key?("transcript_corrections")
+  end
+
   test "unfinished recordings have no transcript yet, and discarded ones are gone" do
     queued = queued_recording(account: @account, user: @user)
     get api_v1_field_recording_path(queued), headers: @headers

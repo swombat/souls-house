@@ -26,6 +26,11 @@ describe('buildTurns', () => {
     expect(turns[0].parts.map((part) => part.i ?? null)).toEqual([0, null, 1]);
   });
 
+  it('gives every word its position in the stored words, spacing included, for corrections', () => {
+    const turns = buildTurns([sp(0), w(0, 300, 'Hi', 'speaker_0'), sp(300), w(400, 700, 'there', 'speaker_0')]);
+    expect(turns[0].parts.filter((part) => part.k !== 's').map((part) => part.src)).toEqual([1, 3]);
+  });
+
   it('starts a new turn when the speaker changes', () => {
     const turns = buildTurns([w(0, 300, 'Hi', 'speaker_0'), sp(300), w(400, 700, 'Hello', 'speaker_1')]);
     expect(turns.map((turn) => [turn.spk, turn.text])).toEqual([
@@ -145,7 +150,8 @@ describe('suppliedTurns', () => {
       ['Anna', 21000, 'How am I feeling?'],
       ['Daniel', null, 'Mm-hmm.'],
     ]);
-    expect(turns[1].parts).toEqual([{ k: 'w', t: 'How am I feeling?', s: 21000, i: null, whole: true }]);
+    expect(turns[1].parts).toEqual([{ k: 'w', t: 'How am I feeling?', s: 21000, i: null, whole: true, src: 1 }]);
+    expect(turns.map((turn) => turn.src)).toEqual([0, 1, 2]);
     expect(turnSpeakerName(turns[0], {})).toBe('Unattributed');
   });
 
