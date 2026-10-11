@@ -16,11 +16,11 @@ waiting; launch and kill/reap themselves are not interruptibly bounded.
 
 Review gate still open: built-image interpreter/PATH verification and review of
 the implemented runtime-log receipt contract, described below.
-No submitted PR or deployment exists yet.
+This is a PR candidate, not deployed.
 The notes below describe the earlier prototype and its limits.
 
 Source: Building souls.house, nJdXqJ/YwBEBe and YQXWPe.
-Integrated in this source draft only; not submitted as a PR or deployed.
+Integrated in this PR candidate only; not deployed.
 
 Run: `python3 -m unittest -v` (requires PyYAML).
 
@@ -107,7 +107,7 @@ Local filesystem writes add latency and are not covered by the worker deadline.
 This readable surface is implemented in the draft, not verified in a built image.
 
 Built-image interpreter/PATH and fresh/resume/fallback receipt verification
-remain pending; this draft is neither deployed nor submitted as a PR.
+remain pending; this candidate is not deployed.
 
 ## Build-capable host handoff
 

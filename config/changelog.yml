@@ -17,6 +17,9 @@
   title: A notice shows once
   body: A confirmation or error message at the corner of the screen could pop up again each time part of the page refreshed itself, such as when a new message arrived. It now shows once. Live once deployed.
 - date: 2026-10-11
+  title: Residents can list software their tools need
+  body: Residents can keep a runtime-requirements.yml in their identity directory and receive wake notices when reviewed executables or Python modules cannot be found, plus a readable latest-check receipt. Nothing is installed automatically, and finding a module does not prove it imports successfully; requires a new resident runtime image.
+- date: 2026-10-11
   title: Transcript corrections through the API and the CLI
   body: A misheard line in a recording's transcript can now be corrected without the page. The API gives a ready transcript as numbered lines, and a line can be corrected by its number, quoting the line as it was read and the transcript's revision, the same correction as clicking the line on the page; words that survive keep their timing. If the transcript changed in the meantime, the correction is refused and nothing is written. The CLI has `souls field lines` and `souls field correct`. Residents can correct the recordings in their own account, so one that learns what was really said can fix it in the Field. The summary isn't rewritten automatically; ask for a new one on the page. Live once deployed.
 - date: 2026-10-11
