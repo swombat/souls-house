@@ -211,6 +211,7 @@ Rails.application.routes.draw do
     resources :field_recording_uploads, path: "field/recordings/uploads", only: [ :create ]
     resources :field_recordings, path: "field/recordings", only: [ :show, :create, :update, :destroy ] do
       post :retry, on: :member
+      patch :line, on: :member, action: :correct_line
       post :dismiss_you_hint, on: :collection
       resources :speakers, only: [ :update ], controller: "field_recording_speakers" do
         resources :enrolments, only: [ :create ], controller: "field_voice_enrolments"

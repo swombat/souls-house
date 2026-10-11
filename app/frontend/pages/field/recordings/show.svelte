@@ -10,6 +10,7 @@
     activeWordIndex,
     buildTurns,
     formatDuration,
+    lineAddress,
     recordingStatusLine,
     recordingsTabPath,
     speakerNames,
@@ -95,6 +96,18 @@
     clip = { startMs: speaker.clip_start_ms, endMs: speaker.clip_end_ms };
     audio.currentTime = speaker.clip_start_ms / 1000;
     audio.play().catch(() => {});
+  }
+
+  // One line corrected by hand. The server refuses it if the line changed
+  // meanwhile, and says so in a flash.
+  function saveLine(turn, text) {
+    return new Promise((resolve) => {
+      router.patch(
+        `${recording.show_url}/line`,
+        { line: { ...lineAddress(turn), text, was: turn.text } },
+        { preserveScroll: true, preserveState: true, onFinish: resolve }
+      );
+    });
   }
 
   function retry() {
@@ -208,7 +221,7 @@
     {#if turns.length}
       <Card.Root>
         <Card.Content class="p-6">
-          <TranscriptTurns {turns} {names} {activeIndex} onSeek={seek} />
+          <TranscriptTurns {turns} {names} {activeIndex} onSeek={seek} onSave={saveLine} />
         </Card.Content>
       </Card.Root>
     {:else}

@@ -503,13 +503,95 @@ test('a seek by the listener ends the clip, so playback carries on past its end'
   expect((await state(audio)).paused).toBe(false);
 });
 
-test('clicking a turn while a clip plays ends the clip too', async ({ mount, page }) => {
+test('listening to a line while a clip plays ends the clip too', async ({ mount, page }) => {
   const { audio } = await mountPlayer(mount, page);
   await hearSpeaker2(page).click();
   await expect.poll(() => state(audio).then((s) => s.t)).toBeGreaterThan(3.2);
-  await page.getByTestId('transcript').getByText('venue?').click();
+  await page.getByRole('button', { name: 'Listen to this line' }).nth(1).click();
   await expect.poll(() => state(audio).then((s) => s.t), { timeout: 10_000 }).toBeGreaterThan(7);
   expect((await state(audio)).paused).toBe(false);
+});
+
+// Correcting a line by hand: with a mouse, clicking a line edits it in place
+// and a speaker button beside it plays it; on touch, tapping offers Edit and
+// Listen, and pressing and holding edits straight away.
+
+async function captureLinePatches(page) {
+  const sent = [];
+  await page.route('**/accounts/acct1/field/recordings/r1/line', async (route) => {
+    sent.push(route.request().postDataJSON());
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+  return sent;
+}
+
+test('with a mouse, clicking a line edits it in place and Enter saves it', async ({ mount, page }) => {
+  const sent = await captureLinePatches(page);
+  await mountPlayer(mount, page);
+  const line = page.getByTestId('transcript-line').nth(1);
+  await line.hover();
+  await expect(page.getByRole('button', { name: 'Listen to this line' }).nth(1)).toBeVisible();
+  await line.click();
+
+  const editor = page.getByTestId('line-editor');
+  await expect(editor).toHaveValue('Shall we start with the venue?');
+  await page.screenshot({ path: 'tmp/field-line-edit-desktop.png' });
+  await editor.fill('Shall we start with the venue, Dan?');
+  await editor.press('Enter');
+
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0]).toEqual({
+    line: { first: 2, last: 7, text: 'Shall we start with the venue, Dan?', was: 'Shall we start with the venue?' },
+  });
+  await expect(editor).toHaveCount(0);
+});
+
+test('Escape leaves a line as it was, and an unchanged line sends nothing', async ({ mount, page }) => {
+  const sent = await captureLinePatches(page);
+  await mountPlayer(mount, page);
+  await page.getByTestId('transcript-line').first().click();
+  await page.getByTestId('line-editor').fill('Mourning everyone.');
+  await page.getByTestId('line-editor').press('Escape');
+  await expect(page.getByTestId('line-editor')).toHaveCount(0);
+  await page.getByTestId('transcript-line').first().click();
+  await page.getByTestId('line-save').click();
+  await expect(page.getByTestId('line-editor')).toHaveCount(0);
+  expect(sent).toEqual([]);
+});
+
+test.describe('on a phone', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test('tapping a line offers Edit and Listen', async ({ mount, page }) => {
+    const sent = await captureLinePatches(page);
+    const { audio } = await mountPlayer(mount, page);
+    await page.getByTestId('transcript-line').nth(1).tap();
+
+    const menu = page.getByTestId('line-menu');
+    await expect(menu).toBeVisible();
+    await expect(page.getByTestId('line-editor')).toHaveCount(0);
+    await page.screenshot({ path: 'tmp/field-line-menu-mobile.png' });
+
+    await menu.getByRole('button', { name: 'Listen' }).tap();
+    await expect(menu).toHaveCount(0);
+    await expect.poll(() => state(audio).then((s) => s.t)).toBeGreaterThan(3);
+
+    await page.getByTestId('transcript-line').nth(1).tap();
+    await page.getByTestId('line-menu').getByRole('button', { name: 'Edit' }).tap();
+    await page.getByTestId('line-editor').fill('Shall we start with the venue, Dan?');
+    await page.getByTestId('line-save').tap();
+    await expect.poll(() => sent.length).toBe(1);
+  });
+
+  test('pressing and holding a line edits it straight away', async ({ mount, page }) => {
+    await mountPlayer(mount, page);
+    await page
+      .getByTestId('transcript-line')
+      .first()
+      .dispatchEvent('pointerdown', { pointerType: 'touch', isPrimary: true });
+    await expect(page.getByTestId('line-editor')).toHaveValue('Morning everyone.', { timeout: 2000 });
+    await expect(page.getByTestId('line-menu')).toHaveCount(0);
+  });
 });
 
 // Slice C: recognition and "remember this voice" (spec §9). Behind two gates.

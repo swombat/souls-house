@@ -111,6 +111,27 @@ class FieldRecording < ApplicationRecord
     update!(status: "ready", ready_at: Time.current, expected_speakers: nil)
   end
 
+  # One line corrected by hand (FieldRecording::LineCorrection). `line` is
+  # {first:, last:} for timed words or {index:} for a supplied turn. Raises
+  # LineCorrection::Stale if the line no longer reads `was`.
+  def correct_line!(line, text:, was:)
+    with_lock do
+      raise FieldRecording::LineCorrection::Stale unless kept? && ready?
+
+      if supplied?
+        self.transcript_turns = FieldRecording::LineCorrection.replace_turn(
+          transcript_turns || [], index: line[:index], text:, was:
+        )
+      else
+        self.transcript_words = FieldRecording::LineCorrection.replace_words(
+          transcript_words || [], first: line[:first], last: line[:last], text:, was:
+        )
+      end
+      self.transcript_text = render_transcript_text
+      save!
+    end
+  end
+
   # Probe of a supplied recording: the duration only, for display. Its status
   # is already final and nothing is reserved.
   def record_duration!(probed_ms)

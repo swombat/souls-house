@@ -121,4 +121,53 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ nil, nil ], props["speakers"].map { |speaker| speaker["talk_ms"] }
   end
 
+  test "a line of the transcript can be corrected" do
+    recording = ready_recording(account: @account, user: @user)
+
+    patch line_account_field_recording_path(@account, recording),
+      params: { line: { first: 1, last: 1, text: "Dan", was: "there" } }
+
+    assert_redirected_to account_field_recording_path(@account, recording)
+    recording.reload
+    assert_equal %w[hello Dan], recording.transcript_words.reject { |word| word["k"] == "s" }.map { |word| word["t"] }
+    assert_includes recording.transcript_text, "Dan"
+    assert_equal [ 2000, 2600 ], recording.transcript_words.last.values_at("s", "e")
+  end
+
+  test "a correction to a line that changed meanwhile is refused" do
+    recording = ready_recording(account: @account, user: @user)
+
+    patch line_account_field_recording_path(@account, recording),
+      params: { line: { first: 1, last: 1, text: "Dan", was: "where" } }
+
+    assert_redirected_to account_field_recording_path(@account, recording)
+    assert_match "changed", flash[:alert]
+    assert_equal %w[hello there], recording.reload.transcript_words.reject { |word| word["k"] == "s" }.map { |word| word["t"] }
+  end
+
+  test "a supplied transcript's line can be corrected" do
+    recording = FieldRecording::Upload.claim!(
+      account: @account, user: @user, signed_id: pinned_blob(account: @account, user: @user).signed_id,
+      attributes: { title: "Archive" },
+      supplied_turns: FieldRecording::SuppliedTranscript.parse("Anna: Hi Dad.\nDaniel: Hello.\nAnna: Bye.")
+    )
+
+    patch line_account_field_recording_path(@account, recording),
+      params: { line: { index: 0, text: "Hi Dan.", was: "Hi Dad." } }
+
+    recording.reload
+    assert_equal "Hi Dan.", recording.transcript_turns.first["t"]
+    assert_includes recording.transcript_text, "Hi Dan."
+  end
+
+  test "another account's recording can't be corrected" do
+    recording = ready_recording(account: accounts(:another_team), user: @user)
+
+    patch line_account_field_recording_path(@account, recording),
+      params: { line: { first: 1, last: 1, text: "Dan", was: "there" } }
+
+    assert_response :not_found
+    assert_equal %w[hello there], recording.reload.transcript_words.reject { |word| word["k"] == "s" }.map { |word| word["t"] }
+  end
+
 end

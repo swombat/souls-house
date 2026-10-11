@@ -3,7 +3,7 @@
 class FieldRecordingsController < ApplicationController
 
   require_feature_enabled :agents
-  before_action :set_field_recording, only: %i[show update destroy retry]
+  before_action :set_field_recording, only: %i[show update destroy retry correct_line]
 
   # The transcript page (spec §7). Words are sent whole: the page renders turns
   # from them, and clicking a word seeks the audio.
@@ -72,6 +72,21 @@ class FieldRecordingsController < ApplicationController
     redirect_to item_path(recording), notice: "Trying again."
   rescue FieldRecording::NotRetryable
     redirect_to item_path(@field_recording), alert: "This recording can't be tried again."
+  end
+
+  # One line of the transcript corrected by hand ("Dan", not "Dad").
+  def correct_line
+    attributes = params.require(:line).permit(:first, :last, :index, :text, :was)
+    @field_recording.correct_line!(
+      attributes.slice(:first, :last, :index).to_h.symbolize_keys,
+      text: attributes[:text].to_s, was: attributes[:was].to_s
+    )
+    redirect_to account_field_recording_path(current_account, @field_recording)
+  rescue FieldRecording::LineCorrection::Stale
+    redirect_to account_field_recording_path(current_account, @field_recording),
+      alert: "That line changed while you were editing it. Please try again."
+  rescue FieldRecording::LineCorrection::Invalid => e
+    redirect_to account_field_recording_path(current_account, @field_recording), alert: e.message
   end
 
   # "Is one of these you?" is shown once, until dismissed or answered.

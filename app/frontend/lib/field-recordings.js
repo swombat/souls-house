@@ -42,17 +42,27 @@ export function buildTurns(words = []) {
 // without word highlighting and seeks only where a start was given.
 export function suppliedTurns(turns = []) {
   return (turns || [])
-    .filter((turn) => turn && turn.t)
-    .map((turn) => {
+    .map((turn, index) => ({ turn, index }))
+    .filter(({ turn }) => turn && turn.t)
+    .map(({ turn, index }) => {
       const start = Number.isFinite(turn.s) ? turn.s : null;
       return {
         spk: turn.spk || null,
         start,
         end: start,
+        index,
         parts: [{ k: 'w', t: turn.t, s: start, i: null, whole: true }],
         text: turn.t,
       };
     });
+}
+
+// What the server needs to find a line again: its first and last timed word,
+// or, for a supplied transcript, the turn's position in the stored list.
+export function lineAddress(turn) {
+  if (turn.index != null) return { index: turn.index };
+  const timed = turn.parts.filter((part) => part.k !== 's');
+  return { first: timed[0].i, last: timed[timed.length - 1].i };
 }
 
 // The timed words across all turns, in order, for finding the one playing.
