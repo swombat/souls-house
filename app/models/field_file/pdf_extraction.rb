@@ -107,8 +107,9 @@ module FieldFile::PdfExtraction
       "skipped" => "were not read (a limit was reached)"
     }.each do |status, words|
       numbers = Array(by_status[status]).map(&:first)
-      numbers += ((listed + 1)..pdf_page_count.to_i).to_a if status == "skipped" && pdf_page_count.to_i > listed
-      parts << "#{Pages.describe(numbers)} #{words}." if numbers.any?
+      # Pages past the listed ones have no row: a range, never expanded.
+      tail = (listed + 1)..pdf_page_count.to_i if status == "skipped" && pdf_page_count.to_i > listed
+      parts << "#{Pages.describe(numbers, tail: tail)} #{words}." if numbers.any? || tail
     end
     truncated = pages.where(native_status: "text").where("native_reason IS NOT NULL").pluck(:page_number)
     parts << "#{Pages.describe(truncated)}: text cut short." if truncated.any?
@@ -119,15 +120,20 @@ module FieldFile::PdfExtraction
     parts.join(" ")
   end
 
-  # "Page 3", "Pages 3-4, 7".
+  # "Page 3", "Pages 3-4, 7", "Pages 499-500, 501-10000". numbers are at most
+  # MAX_PAGES row numbers; tail is a Range past them, described from its ends.
   module Pages
 
     module_function
 
-    def describe(numbers)
-      ranges = numbers.sort.slice_when { |a, b| b != a + 1 }.map { it.size == 1 ? it.first.to_s : "#{it.first}-#{it.last}" }
-      "#{numbers.size == 1 ? "Page" : "Pages"} #{ranges.join(", ")}"
+    def describe(numbers, tail: nil)
+      ranges = numbers.sort.slice_when { |a, b| b != a + 1 }.map { span(it.first, it.last) }
+      ranges << span(tail.first, tail.last) if tail
+      count = numbers.size + (tail ? tail.size : 0)
+      "#{count == 1 ? "Page" : "Pages"} #{ranges.join(", ")}"
     end
+
+    def span(first, last) = first == last ? first.to_s : "#{first}-#{last}"
 
   end
 

@@ -295,6 +295,37 @@ class FieldFilePdfExtractionTest < ActiveSupport::TestCase
     assert mixed.summary_partial?
   end
 
+  test "a huge PDF with readable text gets a summary prompt naming the unread tail as one range" do
+    file = pdf("text_only.pdf")
+    one_readable = lambda do |_path, first, last, **|
+      (first..last).map { |n| PdfText::Page.new(text: n == 1 ? "Orchard ledger, page one." : "", truncated: false) }
+    end
+    PdfText.stub(:info, { pages: 10_000, permissions_only: false }) do
+      PdfText.stub(:pages, one_readable) { file.extract_pdf! }
+    end
+    file.reload
+    assert_includes FieldFile.summary_readable, file
+
+    prompt = FieldSummaries.user_prompt(file)
+    assert_includes prompt, "This is the text layer of a PDF of 10000 pages."
+    assert_includes prompt, "Pages 2-500 no text of their own (blank or scanned) and were not read."
+    assert_includes prompt, "Pages 501-10000 were not read (a limit was reached)."
+    assert_includes prompt.split("<material>", 2).last, "Orchard ledger, page one."
+
+    # The tail is described from its ends, never expanded: a page count far
+    # too large to enumerate still describes at once.
+    file.update_columns(pdf_page_count: 2_000_000_000)
+    assert_includes file.pdf_summary_coverage, "Pages 501-2000000000 were not read (a limit was reached)."
+  end
+
+  test "page lists join row pages and the tail" do
+    describe = FieldFile::PdfExtraction::Pages.method(:describe)
+    assert_equal "Page 3", describe.([ 3 ])
+    assert_equal "Pages 3-4, 7", describe.([ 7, 3, 4 ])
+    assert_equal "Pages 499-500, 501-9000", describe.([ 499, 500 ], tail: 501..9000)
+    assert_equal "Page 501", describe.([], tail: 501..501)
+  end
+
   test "reading again replaces the pages rather than adding to them" do
     file = pdf("text_only.pdf")
     2.times { file.extract_pdf! }
