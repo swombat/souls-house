@@ -46,4 +46,11 @@ module RoomSelection
     room_key(selected_room)
   end
 
+  # Where an in-place action on a conversation returns. Keeps All chats when
+  # that is the view, so editing a title or a tag doesn't jump rooms; a bare
+  # link from outside still opens the conversation's own room.
+  def chat_view_path(chat)
+    selected_room == :all ? account_chat_path(current_account, chat, room: ALL) : account_chat_path(current_account, chat)
+  end
+
 end

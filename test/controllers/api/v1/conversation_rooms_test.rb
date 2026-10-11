@@ -25,8 +25,31 @@ module Api
         assert_equal({ "id" => @life.to_param, "name" => "Life" }, response.parsed_body.dig("conversation", "room"))
       end
 
-      test "a resident key at home with an explicit room public id lands the conversation there" do
+      test "a room named after another room's public id never shadows that id" do
+        decoy = @home.rooms.create!(name: @life.to_param)
+
+        post api_v1_conversations_url, params: { room_id: @life.to_param },
+          headers: { "Authorization" => "Bearer #{@agent_token}" }, as: :json
+        assert_response :created
+        assert_equal @life, Chat.find(response.parsed_body.dig("conversation", "id")).room
+
         post api_v1_conversations_url, params: { room: @life.to_param },
+          headers: { "Authorization" => "Bearer #{@agent_token}" }, as: :json
+        assert_response :created
+        assert_equal decoy, Chat.find(response.parsed_body.dig("conversation", "id")).room
+      end
+
+      test "room and room_id together are refused and create nothing" do
+        assert_no_difference -> { Chat.count } do
+          post api_v1_conversations_url, params: { room: "Life", room_id: @life.to_param },
+            headers: { "Authorization" => "Bearer #{@agent_token}" }, as: :json
+        end
+        assert_response :unprocessable_entity
+        assert_equal "invalid_room_selector", response.parsed_body["code"]
+      end
+
+      test "a resident key at home with an explicit room public id lands the conversation there" do
+        post api_v1_conversations_url, params: { room_id: @life.to_param },
           headers: { "Authorization" => "Bearer #{@agent_token}" }, as: :json
         assert_response :created
         assert_equal @life, Chat.find(response.parsed_body.dig("conversation", "id")).room
@@ -76,7 +99,7 @@ module Api
       end
 
       test "an account key can create directly into a named room by public id or name" do
-        post api_v1_conversations_url, params: { title: "For Life", room: @life.to_param, agent_ids: [ @agent.to_param ] },
+        post api_v1_conversations_url, params: { title: "For Life", room_id: @life.to_param, agent_ids: [ @agent.to_param ] },
           headers: { "Authorization" => "Bearer #{@account_token}" }
         assert_response :created
         assert_equal @life, Chat.find(response.parsed_body.dig("conversation", "id")).room
@@ -99,7 +122,7 @@ module Api
         assert_equal @life, chat.reload.room
         assert_equal({ "id" => @life.to_param, "name" => "Life" }, response.parsed_body.dig("conversation", "room"))
 
-        patch api_v1_conversation_url(chat), params: { room: nil }, as: :json,
+        patch api_v1_conversation_url(chat), params: { room_id: nil }, as: :json,
           headers: { "Authorization" => "Bearer #{@agent_token}" }
         assert_response :success
         assert_nil chat.reload.room
@@ -128,7 +151,7 @@ module Api
         chat = @home.chats.create!(model_id: "openrouter/auto", manual_responses: true, agents: [ @agent ])
         foreign = @nexus.rooms.create!(name: "Foreign")
 
-        patch api_v1_conversation_url(chat), params: { room: foreign.to_param }, as: :json,
+        patch api_v1_conversation_url(chat), params: { room_id: foreign.to_param }, as: :json,
           headers: { "Authorization" => "Bearer #{@agent_token}" }
         assert_response :not_found
         assert_nil chat.reload.room

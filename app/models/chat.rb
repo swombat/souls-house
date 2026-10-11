@@ -90,7 +90,8 @@ class Chat < ApplicationRecord
   after_initialize :configure_defaults
 
   after_create_commit -> { GenerateTitleJob.perform_later(self) }, unless: :title?
-  after_update_commit :refresh_reply_attention, if: :saved_change_to_discarded_at?
+  # A room move changes which room's "waiting on you" count a flag belongs to.
+  after_update_commit :refresh_reply_attention, if: -> { saved_change_to_discarded_at? || saved_change_to_room_id? }
 
   # nil is Main; :all is every room.
   scope :in_room, ->(room) { room == :all ? all : where(room_id: room&.id) }

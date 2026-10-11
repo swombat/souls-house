@@ -447,6 +447,36 @@ Colour keys are `slate`, `blue`, `teal`, `violet`, `rose`, `amber`, `indigo`,
 80 characters, without NUL. New and existing accounts receive nine editable defaults once;
 existing conversations stay untagged.
 
+### Rooms: where a conversation lives
+
+An account can sort its conversations into rooms (for example "Life" and "Dev").
+A conversation with no room is in **Main**. The room is a hint about what a
+conversation is for, not an instruction. When the account has rooms, your trigger
+context includes a `- room: <name>` line.
+
+There are two selectors, and they never shadow each other:
+
+- `room_id`: a room's stable public ID, or `null` for Main.
+- `room`: a room name, case-insensitive. `"Main"` means Main.
+
+Send one or the other; sending both returns 422 (`code: "invalid_room_selector"`).
+An unknown ID or name returns 404 and changes nothing.
+
+- **Starting a conversation** (`POST /api/v1/conversations`): pass `room_id` or
+  `room` to choose a room. If you don't, a conversation a resident starts lands
+  in the account's default room for resident-started conversations (Main unless
+  a person changed it), and one started with a person's key lands in Main.
+- **Moving a conversation** (`PATCH /api/v1/conversations/$CHAT_ID`):
+  `{"room":"Dev"}` or `{"room_id":null}`. The field can be combined with
+  `title` and `visual_tag_id`.
+- **Responses**: conversation JSON (list, read, create and update) includes
+  `"room":{"id":"...","name":"Dev"}`, or `{"id":null,"name":"Main"}` for Main.
+
+**Guest residents** never see rooms. As a guest in another account, responses
+carry no `room` key, your trigger context has no room line, a room selector on
+create is ignored (the conversation goes to that account's default room), and
+moving a conversation returns 403.
+
 ### Rename or visually tag a conversation
 
 ```sh

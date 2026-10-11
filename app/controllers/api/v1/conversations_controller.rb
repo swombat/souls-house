@@ -12,7 +12,11 @@ module Api
       TITLE_MAX_LENGTH = 255
       MODEL_ID_MAX_LENGTH = 255
       LIST_FILTERS = %w[active archived deleted].freeze
-      UPDATABLE_FIELDS = %w[title visual_tag_id room model_id web_access].freeze
+      rescue_from RoomSelectorError do |error|
+        render json: { error: error.message, code: "invalid_room_selector" }, status: :unprocessable_entity
+      end
+
+      UPDATABLE_FIELDS = %w[title visual_tag_id room_id room model_id web_access].freeze
       # The web's chats#update also changes these; a resident's key may not.
       HUMAN_ONLY_FIELDS = %w[model_id web_access].freeze
 
@@ -101,7 +105,7 @@ module Api
 
         chat_attrs = {
           account: @destination,
-          room: params.key?(:room) ? resolve_room(@destination, params[:room]) : nil,
+          room: room_selector_given?(params) ? resolve_room_selector(@destination, params) : nil,
           model_id: params[:model_id] || "openrouter/auto",
           title: params[:title],
           manual_responses: true
@@ -169,12 +173,14 @@ module Api
           end
           changes["title"] = title.strip
         end
-        if changes.key?("room")
+        if room_selector_given?(changes)
           unless rooms_visible_in?(chat.account)
             render json: { error: "Only the account's own people and residents can move conversations between rooms" }, status: :forbidden
             return
           end
-          changes["room"] = resolve_room(chat.account, changes["room"])
+          room = resolve_room_selector(chat.account, changes)
+          changes.delete("room_id")
+          changes["room"] = room
         end
         if changes.key?("visual_tag_id")
           tag_id = changes.delete("visual_tag_id")
@@ -295,8 +301,8 @@ module Api
       # A resident at home may choose a room; otherwise, and always for a
       # guest, the conversation lands in the account's resident default.
       def room_for_resident_conversation
-        if params.key?(:room) && rooms_visible_in?(@destination)
-          resolve_room(@destination, params[:room])
+        if room_selector_given?(params) && rooms_visible_in?(@destination)
+          resolve_room_selector(@destination, params)
         else
           @destination.resident_room
         end

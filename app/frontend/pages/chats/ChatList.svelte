@@ -11,7 +11,7 @@
 
   const updateSync = createDynamicSync();
   $effect(() => {
-    updateSync({ [`Account:${accountId}`]: ['chats', 'visual_tags', 'rooms'] });
+    updateSync({ [`Account:${accountId}`]: ['chats', 'visual_tags', 'rooms', 'current_room'] });
   });
 
   const hasRooms = $derived(($page.props.rooms || []).length > 0);

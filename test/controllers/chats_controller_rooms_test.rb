@@ -104,4 +104,30 @@ class ChatsControllerRoomsTest < ActionDispatch::IntegrationTest
     assert_equal [ @life.as_json, @work.as_json ], inertia_shared_props["rooms"]
   end
 
+
+  test "an in-place action from All chats returns to All; the same action outside All stays in the room" do
+    get account_chat_path(@account, @work_chat, room: "all"), headers: inertia_headers
+    patch account_chat_path(@account, @work_chat), params: { chat: { title: "Renamed" } }
+    assert_redirected_to account_chat_path(@account, @work_chat, room: "all")
+    @inertia_props = nil
+    get response.location, headers: inertia_headers
+    assert_equal "all", inertia_shared_props["current_room"]
+
+    get account_chat_path(@account, @life_chat), headers: inertia_headers
+    patch account_chat_path(@account, @life_chat), params: { chat: { title: "Renamed too" } }
+    assert_redirected_to account_chat_path(@account, @life_chat)
+  end
+
+  test "a partial sidebar reload carries the selection that matches its contents" do
+    get account_chat_path(@account, @life_chat), headers: inertia_headers
+    @life_chat.update!(room: @work) # moved by another client
+
+    @inertia_props = nil
+    get account_chat_path(@account, @life_chat), headers: inertia_headers.merge(
+      "X-Inertia-Partial-Component" => "chats/show", "X-Inertia-Partial-Data" => "chats,current_room"
+    )
+    assert_equal @work.to_param, inertia_shared_props["current_room"]
+    assert_includes inertia_shared_props.fetch("chats").pluck("id"), @life_chat.to_param
+  end
+
 end

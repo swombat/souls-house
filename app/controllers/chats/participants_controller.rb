@@ -5,7 +5,7 @@ class Chats::ParticipantsController < ApplicationController
   # POST /accounts/:account_id/chats/:chat_id/participant
   def create
     unless @chat.group_chat?
-      redirect_back_or_to account_chat_path(current_account, @chat),
+      redirect_back_or_to chat_view_path(@chat),
         alert: "Can only add residents to group chats"
       return
     end
@@ -13,7 +13,7 @@ class Chats::ParticipantsController < ApplicationController
     agent = current_account.conversation_agents.eligible_for_conversation.find(params[:agent_id])
 
     if @chat.agents.include?(agent)
-      redirect_back_or_to account_chat_path(current_account, @chat),
+      redirect_back_or_to chat_view_path(@chat),
         alert: "#{agent.name} is already in this conversation"
       return
     end
@@ -27,7 +27,7 @@ class Chats::ParticipantsController < ApplicationController
     end
 
     audit("add_agent_to_chat", @chat, agent_id: agent.id)
-    redirect_to account_chat_path(current_account, @chat)
+    redirect_to chat_view_path(@chat)
   end
 
 end

@@ -129,4 +129,26 @@ class RoomTest < ActiveSupport::TestCase
     end
   end
 
+
+  test "moving a flagged conversation, or removing its room, refreshes its viewers' attention" do
+    account = accounts(:personal_account)
+    user = users(:user_1)
+    room = account.rooms.create!(name: "Flagged")
+    chat = account.chats.create!(title: "Flagged", model_id: "openrouter/auto")
+    message = chat.messages.create!(role: "assistant", content: "Over to you?")
+    ReplyExpectation.record!(message: message, user: user, score: 1.0,
+      classifier_version: ReplyExpectation::DIRECT_MENTION_VERSION)
+
+    refreshed = []
+    ReplyExpectation.stub(:refresh_for, ->(uid) { refreshed << uid }) do
+      chat.update!(room: room)
+      assert_includes refreshed, user.id
+
+      refreshed.clear
+      room.destroy!
+      assert_includes refreshed, user.id
+    end
+    assert_nil chat.reload.room
+  end
+
 end

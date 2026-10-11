@@ -31,15 +31,20 @@ class Chats::MovesControllerTest < ActionDispatch::IntegrationTest
     assert_nil foreign_chat.reload.room
   end
 
-  test "a mix of own and foreign ids moves only the ones in this account" do
+  test "a selection that cannot be moved in full moves nothing and says so" do
     foreign_chat = accounts(:other).chats.create!(title: "Foreign", model_id: "openrouter/auto")
+    deleted_chat = @account.chats.create!(title: "Deleted", model_id: "openrouter/auto")
+    deleted_chat.discard!
 
-    post move_account_chats_path(@account),
-      params: { chat_ids: [ @chat_a.to_param, foreign_chat.to_param ], room_id: @life.to_param }
+    [ foreign_chat, deleted_chat ].each do |unmovable|
+      post move_account_chats_path(@account),
+        params: { chat_ids: [ @chat_a.to_param, unmovable.to_param ], room_id: @life.to_param }
 
-    assert_redirected_to account_chats_path(@account)
-    assert_equal @life, @chat_a.reload.room
-    assert_nil foreign_chat.reload.room
+      assert_redirected_to account_chats_path(@account)
+      follow_redirect!
+      assert_nil @chat_a.reload.room
+      assert_nil unmovable.reload.room
+    end
   end
 
   test "malformed chat_ids are refused without moving anything" do

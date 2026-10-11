@@ -68,7 +68,13 @@
   <div class="absolute right-2 top-2">
     <ReplyAttentionEye chatId={chat.id} {accountId} />
   </div>
-  {#if selectable}
+  {#if selectable && chat.discarded}
+    <div
+      class="absolute inset-0 z-10 cursor-not-allowed"
+      title="Deleted conversations can't be moved; restore it first"
+      aria-hidden="true">
+    </div>
+  {:else if selectable}
     <!-- While selecting for a move, the whole row toggles instead of opening. -->
     <label
       class="absolute inset-0 z-10 flex cursor-pointer items-start bg-background/10 p-3 {selected

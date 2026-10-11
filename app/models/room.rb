@@ -8,7 +8,9 @@ class Room < ApplicationRecord
   MAIN = "Main".freeze
 
   belongs_to :account
-  has_many :chats, dependent: :nullify
+  has_many :chats
+  # One by one, not dependent: :nullify, so each move refreshes reply attention.
+  before_destroy :move_chats_to_main
   broadcasts_to :account
 
   validates :name, presence: true, length: { maximum: 40 },
@@ -53,6 +55,10 @@ class Room < ApplicationRecord
   end
 
   private
+
+  def move_chats_to_main
+    account.chats.with_discarded.where(room_id: id).find_each { |chat| chat.room = nil; chat.save!(validate: false) }
+  end
 
   def name_is_not_main
     errors.add(:name, "#{MAIN} is the default room") if name.to_s.casecmp?(MAIN)

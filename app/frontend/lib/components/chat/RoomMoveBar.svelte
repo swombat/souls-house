@@ -21,6 +21,11 @@
   }
 </script>
 
+{#if $page.props.errors?.chat_ids || $page.props.errors?.room_id}
+  <p role="alert" class="border-t border-border px-3 pt-2 text-xs text-destructive">
+    {$page.props.errors.chat_ids || $page.props.errors.room_id}
+  </p>
+{/if}
 <div class="border-t border-border bg-muted/30 p-3 flex items-center gap-2" data-testid="room-move-bar">
   <span class="text-xs text-muted-foreground flex-1">{selectedIds.length} selected</span>
   <Select.Root type="single" onValueChange={move}>

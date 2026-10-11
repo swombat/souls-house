@@ -100,7 +100,7 @@ class ChatsController < ApplicationController
       flash[:draft_submission_id] = submission_id
     end
     audit("create_chat", @chat, **chat_create_params.to_h)
-    redirect_to account_chat_path(current_account, @chat)
+    redirect_to chat_view_path(@chat)
   rescue ActiveRecord::RecordNotFound
     redirect_to new_account_chat_path(current_account), alert: "Select valid residents from this account"
   end
@@ -109,9 +109,9 @@ class ChatsController < ApplicationController
     @chat = current_account.chats.find(params[:id])
 
     if @chat.update(chat_params)
-      redirect_to account_chat_path(current_account, @chat)
+      redirect_to chat_view_path(@chat)
     else
-      redirect_back_or_to account_chat_path(current_account, @chat), alert: @chat.errors.full_messages.to_sentence
+      redirect_back_or_to chat_view_path(@chat), alert: @chat.errors.full_messages.to_sentence
     end
   end
 
