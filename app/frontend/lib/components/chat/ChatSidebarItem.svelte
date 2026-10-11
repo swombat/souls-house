@@ -1,5 +1,5 @@
 <script>
-  import { Link } from '@inertiajs/svelte';
+  import { Link, page } from '@inertiajs/svelte';
   import { accountChatPath } from '@/routes';
   import { shortDate } from '$lib/chat-display';
   import ChatParticipantAvatars from '$lib/components/chat/ChatParticipantAvatars.svelte';
@@ -20,7 +20,7 @@
 
 <div class="relative">
   <Link
-    href={accountChatPath(accountId, chat.id)}
+    href={accountChatPath(accountId, chat.id) + ($page.props.current_room === 'all' ? '?room=all' : '')}
     class="block p-3 pr-10 hover:bg-muted/50 transition-colors border-b border-border
          {activeChatId === chat.id ? 'bg-primary/10 border-l-4 border-l-primary' : ''}
          {chat.archived ? 'opacity-50' : ''}

@@ -34,8 +34,9 @@ class ChatsController < ApplicationController
   end
 
   def show
-    # A direct link opens the conversation's own room, unless you are viewing All chats.
-    select_room!(@chat.room) unless selected_room == :all || selected_room == @chat.room
+    # A conversation opens in its own room. Only a click from the All chats
+    # list (which carries room=all) keeps All chats; a bare link never does.
+    select_room!(params[:room] == RoomSelection::ALL ? :all : @chat.room)
     props = {
       account: current_account.as_json,
       show_usage_in_chat: Setting.instance.show_usage_in_chat
