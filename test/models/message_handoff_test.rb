@@ -28,6 +28,27 @@ class MessageHandoffTest < ActiveSupport::TestCase
                  message.handoff_receipts.map { |r| r.stringify_keys.slice("recipient_name", "state") }
   end
 
+  test "a person in the account with the resident's name does not stop the handoff" do
+    @user.profile.update!(first_name: "Mira", last_name: "Login")
+    message = post_as_lume("@Mira, ready for review")
+    assert_equal [ @mira, "tag" ], [ message.handoffs.sole.recipient_agent, message.handoffs.sole.source ]
+  end
+
+  test "a tag two residents in the room share wakes neither and the room is told" do
+    other = agents(:other_account_agent)
+    other.update!(name: "Mira")
+    GuestMembership.create!(account: @account, agent: other, added_by: @user)
+    @chat.agents << other
+    message = nil
+    assert_difference -> { @chat.messages.where(role: "system").count }, 1 do
+      message = post_as_lume("@Mira, ready for review")
+    end
+    assert_empty message.handoffs
+    notice = @chat.messages.where(role: "system").last
+    assert_match(/matches 2 residents here \(Mira and Mira\), so it woke none of them/, notice.content)
+    assert_operator notice.id, :>, message.id
+  end
+
   test "a tag in a quote, a code block, inline code or an escape rings no one" do
     [
       "> @Mira said this earlier",
