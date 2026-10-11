@@ -234,8 +234,13 @@ module Api
         def resident_json(recording)
           summary_json(recording).merge(
             transcript_text: (recording.transcript_text if recording.ready?),
-            speakers: recording.speakers.includes(:field_voice).map do |speaker|
-              { label: speaker.default_name, name: speaker.display_name, talk_ms: speaker.known_talk_ms }
+            # One entry per person: diarized speakers a human linked to the
+            # same voice are one speaker here, with the labels they were
+            # heard as in diarized_as.
+            speakers: FieldRecordingSpeaker.grouped(recording.speakers.includes(:field_voice)).map do |group|
+              talk = group.map(&:known_talk_ms)
+              { label: group.first.default_name, name: group.first.display_name,
+                talk_ms: (talk.sum if talk.all?), diarized_as: group.map(&:default_name) }
             end
           )
         end

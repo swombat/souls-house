@@ -7,6 +7,10 @@
 #                          page is asked "same Priya?" unless link_existing
 #   unname: true           back to "Speaker N"
 #
+# with: [<speaker id>, ...] applies the naming (or unnaming) to other speakers
+# on this recording linked to the same voice as this one: the transcriber
+# heard one person as several speakers, and the page shows them as one.
+#
 # Naming never touches other recordings, and never builds anything biometric.
 class FieldRecordingSpeakersController < ApplicationController
 
@@ -16,10 +20,12 @@ class FieldRecordingSpeakersController < ApplicationController
   def update
     attributes = params.require(:speaker).permit(:me, :voice_id, :member_user_id, :name, :link_existing, :unname,
       :confirm_suggestion, :dismiss_suggestion, :suggestion_generation, :confirm_recognition, :dismiss_recognition,
-      recognition: %i[voice_id print_generation decision_generation])
+      recognition: %i[voice_id print_generation decision_generation], with: [])
+    companions = companions_for(attributes[:with])
 
     if truthy?(attributes[:unname])
       @speaker.unname!
+      companions.each(&:unname!)
     elsif truthy?(attributes[:dismiss_recognition])
       return out_of_date unless @speaker.dismiss_recognition!(shown: attributes[:recognition])
     elsif truthy?(attributes[:confirm_recognition])
@@ -35,6 +41,7 @@ class FieldRecordingSpeakersController < ApplicationController
       return if performed?
 
       @speaker.name_as!(voice, by: Current.user)
+      companions.each { |companion| companion.name_as!(voice, by: Current.user) }
     end
     redirect_to recording_path
   rescue ActiveRecord::RecordInvalid => e
@@ -47,6 +54,15 @@ class FieldRecordingSpeakersController < ApplicationController
     recording = current_account.field_recordings.kept.find(params[:field_recording_id])
     # Association finders decode with the owner's salt, so decode explicitly.
     @speaker = recording.speakers.find_by!(id: FieldRecordingSpeaker.decode_id(params[:id]))
+  end
+
+  # Only speakers on the same recording, linked to the same voice as this one
+  # when the request arrived: a stale page can't drag in anyone else.
+  def companions_for(ids)
+    ids = Array(ids).filter_map { |id| FieldRecordingSpeaker.decode_id(id.to_s) }
+    return [] if ids.empty? || @speaker.field_voice_id.nil?
+
+    @speaker.field_recording.speakers.where(id: ids, field_voice_id: @speaker.field_voice_id).where.not(id: @speaker.id).to_a
   end
 
   def recording_path

@@ -1448,7 +1448,10 @@ Recordings brought in as recordings (not as files) are transcribed, with
 speakers separated. List them with `GET /api/v1/field/recordings` and read one
 with `GET /api/v1/field/recordings/RECORDING_ID`. `transcript_text` is present
 once `status` is `ready`. Speakers carry the names people gave them, or
-"Speaker N" otherwise.
+"Speaker N" otherwise. The transcriber sometimes hears one person as two
+speakers; once a person links both to the same name they are one entry in
+`speakers` (`diarized_as` lists the labels it was heard as) and one speaker in
+`transcript_text`.
 
 ### Search the Field
 

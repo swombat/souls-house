@@ -10,8 +10,10 @@
     activeWordIndex,
     buildTurns,
     formatDuration,
+    groupSpeakers,
     recordingStatusLine,
     recordingsTabPath,
+    speakerKeys,
     speakerNames,
     suppliedTurns,
     timedWords,
@@ -40,7 +42,12 @@
   // Supplied transcripts (brought in with the audio) have turns, not timed
   // words: no word highlighting, talk time, clips or voice samples.
   const supplied = $derived(recording.transcript_source === 'supplied');
-  const turns = $derived(supplied ? suppliedTurns(recording.turns) : buildTurns(recording.words));
+  const turns = $derived(
+    supplied ? suppliedTurns(recording.turns) : buildTurns(recording.words, speakerKeys(speakers))
+  );
+  // One card per person: diarized speakers linked to one voice share a card.
+  const groups = $derived(groupSpeakers(speakers));
+  const speakerUrl = (speaker) => `/accounts/${account.id}/field/recordings/${recording.id}/speakers/${speaker.id}`;
   const wordList = $derived(supplied ? [] : timedWords(turns));
   const names = $derived(speakerNames(speakers));
   const totalTalkMs = $derived(speakers.reduce((sum, speaker) => sum + (speaker.talk_ms || 0), 0));
@@ -186,16 +193,19 @@
           >Voices this Field knows</Link>
       </div>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {#each speakers as speaker (speaker.id)}
+        {#each groups as group (group.key)}
           <SpeakerCard
-            {speaker}
+            speaker={group.speaker}
+            parts={group.parts}
+            {speakerUrl}
             {totalTalkMs}
             onPlayClip={playClip}
             onSeek={seek}
             recognitionEnabled={recognition_enabled && !supplied}
             accountId={account.id}
             recordingId={recording.id}
-            url={`/accounts/${account.id}/field/recordings/${recording.id}/speakers/${speaker.id}`}
+            url={speakerUrl(group.speaker)}
+            with={group.parts.filter((part) => part.id !== group.speaker.id).map((part) => part.id)}
             {voices}
             members={members_without_voice}
             myVoiceId={my_voice_id}

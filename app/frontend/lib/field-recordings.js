@@ -8,8 +8,10 @@ export const UNATTRIBUTED = 'Unattributed';
 // text, the kind ('w' word, 's' spacing, 'a' audio event) and the speaker
 // label. A turn is consecutive words/events with the same speaker and gaps of
 // at most 1.5 s; spacing between two words of one turn joins them. Every
-// word/event gets `i`, its position among the timed words.
-export function buildTurns(words = []) {
+// word/event gets `i`, its position among the timed words. With `keys`
+// (label → identity, from speakerKeys), two labels for one voice count as one
+// speaker, so their consecutive words join into one turn.
+export function buildTurns(words = [], keys = null) {
   const turns = [];
   let current = null;
   let spacing = null;
@@ -23,7 +25,7 @@ export function buildTurns(words = []) {
     }
     const part = { ...word, spk: word.spk || null, i: index++ };
     const end = part.e ?? part.s;
-    if (current && current.spk === part.spk && part.s - current.end <= TURN_GAP_MS) {
+    if (current && sameSpeaker(current.spk, part.spk, keys) && part.s - current.end <= TURN_GAP_MS) {
       current.parts.push({ k: 's', t: spacing || ' ' });
       current.parts.push(part);
       current.end = Math.max(current.end, end);
@@ -86,6 +88,48 @@ export function speakerNames(speakers = []) {
   const names = Object.create(null);
   for (const speaker of speakers || []) names[speaker.label] = speaker.name || speaker.default_name || speaker.label;
   return names;
+}
+
+function sameSpeaker(a, b, keys) {
+  if (a === b) return true;
+  if (!keys || !a || !b) return false;
+  return (keys[a] ?? a) === (keys[b] ?? b);
+}
+
+// Who a speaker is: the voice a person linked it to, or this diarized speaker
+// alone. Scribe sometimes hears one person as two speakers; once both are
+// linked to one voice they are one person. Never by name equality.
+export function speakerIdentity(speaker) {
+  return speaker.voice_id ? `voice:${speaker.voice_id}` : `speaker:${speaker.label}`;
+}
+
+export function speakerKeys(speakers = []) {
+  const keys = Object.create(null);
+  for (const speaker of speakers || []) keys[speaker.label] = speakerIdentity(speaker);
+  return keys;
+}
+
+// One entry per person, in order of first appearance: `parts` are the
+// diarized speakers, `speaker` stands for them all (the part with the longest
+// clean clip, carrying the summed talk time, or null when any is unknown).
+export function groupSpeakers(speakers = []) {
+  const groups = new Map();
+  const ordered = [...(speakers || [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  for (const speaker of ordered) {
+    const key = speakerIdentity(speaker);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(speaker);
+  }
+  return [...groups].map(([key, parts]) => {
+    const clipped = parts.filter((part) => part.clip_start_ms != null && part.clip_end_ms != null);
+    const representative = clipped.length
+      ? clipped.reduce((best, part) => ((part.talk_ms || 0) > (best.talk_ms || 0) ? part : best))
+      : parts[0];
+    const talk = parts.every((part) => part.talk_ms != null)
+      ? parts.reduce((sum, part) => sum + part.talk_ms, 0)
+      : null;
+    return { key, parts, speaker: { ...representative, talk_ms: talk } };
+  });
 }
 
 export function turnSpeakerName(turn, names) {

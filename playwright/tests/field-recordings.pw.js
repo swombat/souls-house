@@ -172,6 +172,47 @@ test('the "is one of these you?" hint shows when asked for', async ({ mount, pag
   await page.screenshot({ path: 'tmp/field-recording-hint.png', fullPage: true });
 });
 
+test('one voice heard as two speakers shows as one card, with its parts', async ({ mount, page }) => {
+  const twice = [
+    ...speakers.map(({ suggestion, ...speaker }) => speaker),
+    {
+      id: 's3',
+      label: 'speaker_2',
+      position: 2,
+      default_name: 'Speaker 3',
+      name: 'Sam',
+      named: true,
+      voice_id: 'v1',
+      naming_source: 'human',
+      talk_ms: 600_000,
+      clip_start_ms: 6400,
+      clip_end_ms: 7000,
+    },
+  ];
+  const component = await mount(RecordingPage, {
+    props: {
+      recording: { ...recording, words: [...words, { s: 7100, e: 7600, t: 'Agreed.', k: 'w', spk: 'speaker_2' }] },
+      speakers: twice,
+      voices: [{ id: 'v1', name: 'Sam' }],
+      members_without_voice: [],
+      my_voice_id: null,
+      account,
+    },
+  });
+
+  await expect(page.getByTestId('speaker-card')).toHaveCount(2);
+  const sam = page.getByTestId('speaker-card').first();
+  await expect(sam).toContainText('Sam');
+  await expect(sam).toContainText('30 m');
+  await sam.getByTestId('speaker-parts-toggle').click();
+  await expect(sam.getByTestId('speaker-parts')).toContainText('Speaker 1');
+  await expect(sam.getByTestId('speaker-parts')).toContainText('Speaker 3');
+  await expect(sam.getByTestId('speaker-part-unlink')).toHaveCount(2);
+  await expect(sam.getByTestId('speaker-part-unlink').first()).toHaveText('Not Sam');
+  await expect(component).toContainText('(laughter) Agreed.');
+  await page.screenshot({ path: 'tmp/field-recording-merged-voice.png', fullPage: true });
+});
+
 const fieldProps = (recordings) => ({
   items: recordings,
   field_empty: recordings.length === 0,

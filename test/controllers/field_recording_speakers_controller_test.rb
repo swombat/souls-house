@@ -72,6 +72,37 @@ class FieldRecordingSpeakersControllerTest < ActionDispatch::IntegrationTest
     assert_match "Speaker 1: hello", @recording.reload.transcript_text
   end
 
+  test "a card for one voice heard as two speakers names and un-names them together" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    [ @first, @second ].each { |speaker| speaker.name_as!(ioan, by: @user) }
+    daniel = @account.field_voices.create!(name: "Daniel")
+
+    name_speaker(@first, voice_id: daniel.to_param, with: [ @second.to_param ])
+    assert_equal [ daniel, daniel ], [ @first.reload.field_voice, @second.reload.field_voice ]
+
+    name_speaker(@first, unname: true, with: [ @second.to_param ])
+    assert_nil @first.reload.field_voice
+    assert_nil @second.reload.field_voice
+  end
+
+  test "with reaches only speakers linked to the same voice on this recording" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    @first.name_as!(ioan, by: @user)
+    other = ready_recording(account: @account, user: @user, title: "Other call").speakers.first
+    other.name_as!(ioan, by: @user)
+
+    name_speaker(@first, unname: true, with: [ @second.to_param, other.to_param ])
+    assert_nil @first.reload.field_voice
+    assert_equal ioan, other.reload.field_voice, "another recording is out of reach"
+    assert_nil @second.reload.field_voice_id
+  end
+
+  test "transcript text joins consecutive turns of one voice heard as two speakers" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    [ @first, @second ].each { |speaker| speaker.name_as!(ioan, by: @user) }
+    assert_equal 1, @recording.reload.transcript_text.lines.size
+  end
+
   test "a discard that lands first stops a later un-name" do
     @first.name_as!(@account.field_voices.create!(name: "Priya"), by: @user)
     stale = FieldRecordingSpeaker.find(@first.id) # loaded before the discard

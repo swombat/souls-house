@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  groupSpeakers,
+  speakerKeys,
   activeWordIndex,
   allowanceLine,
   buildTurns,
@@ -159,5 +161,64 @@ describe('speakerNames', () => {
     const names = speakerNames([{ label: '__proto__', name: 'Odd label' }]);
     expect(turnSpeakerName({ spk: '__proto__' }, names)).toBe('Odd label');
     expect(turnSpeakerName({ spk: 'toString' }, names)).toBe('toString');
+  });
+});
+
+describe('one voice heard as two speakers', () => {
+  const speakers = [
+    {
+      id: 'a',
+      label: 'speaker_0',
+      position: 0,
+      voice_id: 'v1',
+      name: 'Ioan',
+      talk_ms: 1000,
+      clip_start_ms: 0,
+      clip_end_ms: 900,
+    },
+    { id: 'b', label: 'speaker_1', position: 1, voice_id: null, name: 'Speaker 2', talk_ms: 500 },
+    {
+      id: 'c',
+      label: 'speaker_2',
+      position: 2,
+      voice_id: 'v1',
+      name: 'Ioan',
+      talk_ms: 3000,
+      clip_start_ms: 5000,
+      clip_end_ms: 8000,
+    },
+    { id: 'd', label: 'speaker_3', position: 3, voice_id: null, name: 'Speaker 4', talk_ms: 200 },
+  ];
+
+  it('groups by the linked voice, never by name, in order of appearance', () => {
+    const groups = groupSpeakers(speakers);
+    expect(groups.map((group) => group.parts.map((part) => part.id))).toEqual([['a', 'c'], ['b'], ['d']]);
+    expect(groups[0].speaker.id).toBe('c');
+    expect(groups[0].speaker.talk_ms).toBe(4000);
+    const twins = groupSpeakers([
+      { id: 'x', label: 'x', position: 0, voice_id: null, name: 'Speaker 1' },
+      { id: 'y', label: 'y', position: 1, voice_id: null, name: 'Speaker 1' },
+    ]);
+    expect(twins).toHaveLength(2);
+  });
+
+  it('talk time is unknown when any part is unknown', () => {
+    const groups = groupSpeakers([
+      { id: 'a', label: 'A', position: 0, voice_id: 'v1', talk_ms: null },
+      { id: 'b', label: 'B', position: 1, voice_id: 'v1', talk_ms: null },
+    ]);
+    expect(groups[0].speaker.talk_ms).toBeNull();
+  });
+
+  it('joins consecutive turns of one voice, not of different people', () => {
+    const words = [
+      w(0, 300, 'Hello', 'speaker_0'),
+      sp(300),
+      w(400, 700, 'again.', 'speaker_2'),
+      w(800, 900, 'Hi.', 'speaker_1'),
+    ];
+    expect(buildTurns(words).length).toBe(3);
+    const turns = buildTurns(words, speakerKeys(speakers));
+    expect(turns.map((turn) => turn.text)).toEqual(['Hello again.', 'Hi.']);
   });
 });

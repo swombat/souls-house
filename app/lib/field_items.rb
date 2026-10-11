@@ -118,7 +118,7 @@ module FieldItems
       transcript_source: recording.transcript_source,
       recorded_at: recording.recorded_at&.iso8601,
       source_path: recording.source_path,
-      speaker_names: recording.ready? ? speakers_of(recording).map(&:display_name) : [],
+      speaker_names: recording.ready? ? FieldRecordingSpeaker.grouped(speakers_of(recording)).map { |group| group.first.display_name } : [],
       # Deleting after this point doesn't give the minutes back (spec §5).
       dispatched: recording.dispatch_count.positive?,
       retryable: recording.kept? && FieldRecording::RETRYABLE_STATUSES.include?(recording.status) && recording.audio.attached?,
