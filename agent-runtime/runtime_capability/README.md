@@ -1,6 +1,6 @@
 # Capability manifest validation and discovery — wake-hook draft
 
-Hook added against master `eeace591` on 2026-10-10. Thirty-five local tests
+Hook added against master `eeace591` on 2026-10-10. Thirty-six local tests
 pass, including real shim-routing tests with synthetic Chaos
 responses (legacy fresh, persistent fresh, resume with/without delta, failed
 resume fallback). They assert one check per trigger and one notice per invocation;
@@ -95,7 +95,8 @@ of this boundary call, not working capability or descendant containment.
 The parent also atomically replaces
 `/run/helixkit/capability-discovery-latest.json` with `timestamp` (UTC) and
 `outcome` only. Residents can read this latest local observation without a
-network call; it contains no names, reasons or paths. The containing directory
+network call; it contains no names, reasons or paths. Startup creates the
+resident-owned directory even without an external-service manifest. The containing directory
 must already exist and be writable; failures are nonfatal. Mode is 0600.
 Only the latest completed write is kept, not wake history or an invocation ID.
 Concurrent checks are last-write-wins, not necessarily trigger order.
