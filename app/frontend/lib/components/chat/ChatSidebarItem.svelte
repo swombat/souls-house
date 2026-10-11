@@ -7,15 +7,7 @@
   import ReplyAttentionEye from './ReplyAttentionEye.svelte';
   import VisualTagPicker from './VisualTagPicker.svelte';
 
-  let {
-    chat,
-    accountId,
-    activeChatId = null,
-    visualTags = [],
-    selectable = false,
-    selected = false,
-    onToggle = () => {},
-  } = $props();
+  let { chat, accountId, activeChatId = null, visualTags = [] } = $props();
 </script>
 
 <div class="relative">
@@ -68,24 +60,4 @@
   <div class="absolute right-2 top-2">
     <ReplyAttentionEye chatId={chat.id} {accountId} />
   </div>
-  {#if selectable && chat.discarded}
-    <div
-      class="absolute inset-0 z-10 cursor-not-allowed"
-      title="Deleted conversations can't be moved; restore it first"
-      aria-hidden="true">
-    </div>
-  {:else if selectable}
-    <!-- While selecting for a move, the whole row toggles instead of opening. -->
-    <label
-      class="absolute inset-0 z-10 flex cursor-pointer items-start bg-background/10 p-3 {selected
-        ? 'bg-primary/10'
-        : ''}">
-      <input
-        type="checkbox"
-        checked={selected}
-        onchange={onToggle}
-        class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary"
-        aria-label="Select {chat.title_or_default || 'conversation'}" />
-    </label>
-  {/if}
 </div>

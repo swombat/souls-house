@@ -143,7 +143,6 @@ Rails.application.routes.draw do
       collection do
         get :search
         post :transcription, to: "chats/transcriptions#create"
-        post :move, to: "chats/moves#create"
       end
       scope module: :chats do
         resource :visual_tag, only: :update

@@ -1,18 +1,16 @@
 <script>
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { CheckSquare, Plus, Trash, X } from 'phosphor-svelte';
+  import { Plus, Trash, X } from 'phosphor-svelte';
   import RoomSwitcher from './RoomSwitcher.svelte';
 
   let {
     accountId,
     hasRooms = false,
-    selecting = false,
     canSeeDeleted = false,
     showDeleted = false,
     onCreate,
     onClose,
     onToggleDeleted,
-    onToggleSelecting = () => {},
   } = $props();
 </script>
 
@@ -24,17 +22,6 @@
       <h2 class="text-lg font-semibold">Chats</h2>
     {/if}
     <div class="flex items-center gap-2">
-      {#if hasRooms}
-        <Button
-          variant={selecting ? 'secondary' : 'ghost'}
-          size="sm"
-          onclick={onToggleSelecting}
-          class="h-8 w-8 p-0"
-          aria-pressed={selecting}
-          aria-label="Select conversations to move">
-          <CheckSquare size={16} />
-        </Button>
-      {/if}
       <Button variant="outline" size="sm" onclick={onCreate} class="h-8 w-8 p-0" aria-label="New chat">
         <Plus size={16} />
       </Button>
