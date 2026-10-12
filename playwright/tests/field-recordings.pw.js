@@ -237,7 +237,10 @@ test('a short speaker list has no filter box', async ({ mount, page }) => {
     props: {
       recording,
       speakers,
-      voices: [{ id: 'v1', name: 'Sam' }, { id: 'v2', name: 'Priya' }],
+      voices: [
+        { id: 'v1', name: 'Sam' },
+        { id: 'v2', name: 'Priya' },
+      ],
       members_without_voice: [],
       my_voice_id: 'v1',
       show_you_hint: false,
