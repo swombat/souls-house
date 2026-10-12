@@ -190,12 +190,21 @@ All of this lives in the connector's Postgres. No broker is needed.
   due_at, not_before, attempts). Workers claim due rows for connections
   they own, or connections they can claim. A worker restart loses no
   scheduled work.
-- **Three classes, fair between tenants.** `interactive` (reads, search,
-  send, login steps), `catch_up` (scheduled idle sync) and `bulk`
-  (onboarding backfill). Each worker reserves part of its capacity for
-  `interactive` (start at 25% of session slots and concurrent RPCs).
-  `catch_up` is served oldest-due-first. `bulk` is served round-robin across
-  accounts, one page at a time, so one big onboarding cannot starve others.
+- **Three classes.** `interactive` (reads, search, send, login steps),
+  `catch_up` (scheduled idle sync) and `bulk` (onboarding backfill).
+- **Fair admission between tenants.** Every class admits work per account,
+  round-robin across the accounts that have work waiting, never first come
+  first served across the pool. Interactive work also has a per-account
+  concurrency limit and a token bucket, so one busy tenant gets its share
+  and then waits, while other tenants' first requests go ahead of its
+  backlog.
+- **Guaranteed background progress.** Each worker reserves a share of its
+  capacity for each class (start: interactive 25%, catch-up 20%, bulk 10%;
+  the rest is shared). Under sustained interactive demand, catch-up and bulk
+  still progress at their reserved rate. A catch-up overdue by more than
+  twice its interval is promoted ahead of shared-capacity interactive work.
+  `catch_up` is otherwise oldest-due-first; `bulk` goes one page per account
+  per turn.
 - **Bounds.** Per worker: max live sessions, max concurrent catch-ups, max
   concurrent backfill pages. Per account: one operation in flight per class,
   and an onboarding budget for the whole account (start at 5,000 messages
@@ -287,11 +296,16 @@ what that progress covered.
   `sync.checkpoint` event queued after the events it covers, so Rails can
   never show a checkpoint ahead of the data.
 - **Bounded, with backpressure.** The outbox is capped per connection (start
-  at 10,000 undelivered events or 7 days). At the cap, the connector stops
-  pulling new differences for that connection. Telegram keeps the
-  difference, and if it later becomes too long, the per-chat history
-  fallback in §4 applies with the gap recorded. Lag and cap state show in
-  sync status.
+  at 10,000 undelivered events or 7 days). At the cap the connector stops
+  taking updates for that connection at all, live ones included: it
+  disconnects that connection's live client and schedules no catch-up until
+  the outbox drains below a low-water mark (start at half the cap). Because
+  update state is persisted only together with outbox rows, disconnecting
+  never moves progress past an undelivered event; the updates wait at
+  Telegram for the next difference. Reads keep working from the mirror.
+  The connection shows `backlogged` with the outbox age. If the difference
+  later comes back too long, the per-chat history fallback in §4 applies,
+  with the gap recorded.
 - **Recovery tests**: kill between outbox commit and delivery; kill between
   Rails commit and acknowledgement; a Rails outage longer than the cap;
   per-channel recovery after a `channelDifferenceTooLong`.
