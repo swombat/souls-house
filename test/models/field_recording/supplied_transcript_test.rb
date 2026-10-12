@@ -77,6 +77,39 @@ class FieldRecording::SuppliedTranscriptTest < ActiveSupport::TestCase
     assert_equal [ "Daniel Tenner", "Obie Fernandez" ], Parse.speakers(Parse.parse(text)).map { |speaker| speaker[:label] }
   end
 
+  # eYeeXY: notes above a rule, opening with a one-off label that isn't a key.
+  test "everything above a markdown rule is header, not speakers" do
+    text = <<~TEXT
+      CONTENT WARNING (Lume, 2026-09-05): the first ~4:25 of this file is NOT the Dad call.
+
+      Speaker attribution: manual by content (pipeline uncertain).
+
+      **ANOMALY — this file splices two unrelated conversations:**
+      - **0:00–4:25** is the tail of another call
+
+      Corrected: Scribe's "Canberrtinia" left as-is. Corrected: "wisdom.tanner.org" fixed.
+
+      ---
+
+      **Daniel**: Or, um, she hears she's just running around the school in Japan.
+      **Anna**: Mm-hmm
+      **Daniel**: Yes.
+    TEXT
+    turns = Parse.parse(text)
+    assert_equal [ nil, "Daniel", "Anna", "Daniel" ], turns.map { |turn| turn["spk"] }
+    assert_includes turns.first["t"], "CONTENT WARNING (Lume, 2026-09-05):"
+    assert_includes turns.first["t"], "Corrected: Scribe's"
+    assert_equal [ "Daniel", "Anna" ], Parse.speakers(turns).map { |speaker| speaker[:label] }
+  end
+
+  test "a rule does not make speech above it header" do
+    turns = Parse.parse("Anna: Hi.\nDaniel: Hello.\n\n---\n\nAnna: Again.")
+    assert_equal [ "Anna", "Daniel", "Anna" ], turns.map { |turn| turn["spk"] }
+
+    turns = Parse.parse("[00:01] Opener: once.\n\n---\n\nAnna: Hi.\nDaniel: Hello.\nAnna: Again.")
+    assert_equal "Opener", turns.first["spk"]
+  end
+
   test "unlabelled lines continue the turn before" do
     turns = Parse.parse("Anna: First line\nsecond line\nDaniel: Reply.\nAnna: Again.")
     assert_equal "First line\nsecond line", turns.first["t"]

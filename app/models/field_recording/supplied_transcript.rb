@@ -94,7 +94,7 @@ module FieldRecording::SuppliedTranscript
 
   def speaker_turns(lines, counts)
     paragraphs = lines.chunk { |line| line.strip.empty? ? :_separator : true }.map(&:last)
-    header = []
+    header = rule_header!(paragraphs, counts)
     header.concat(paragraphs.shift) while paragraphs.any? && paragraphs.size > 1 && header_paragraph?(paragraphs.first, counts)
 
     turns = []
@@ -114,6 +114,35 @@ module FieldRecording::SuppliedTranscript
     end
 
     header.any? ? [ { "spk" => nil, "s" => nil, "t" => header.map(&:strip).join("\n") }, *turns ] : turns
+  end
+
+  RULE = /\A\s*(?:-{3,}|\*{3,}|={3,})\s*\z/
+
+  # Notes above a markdown rule ("---", "***", "===" alone on a line) are
+  # header, whatever their first line looks like: "CONTENT WARNING (Lume,
+  # 2026-09-05): ..." is a note, not a speaker. Only when nothing above the
+  # rule is speech: no time, and no label that recurs in the transcript.
+  # Takes the header lines, through the rule, off the front of paragraphs.
+  def rule_header!(paragraphs, counts)
+    lines = paragraphs.flatten
+    rule_at = lines.index { |line| RULE.match?(line) }
+    return [] unless rule_at && rule_at.positive? && rule_at < lines.size - 1
+
+    above = lines[0...rule_at]
+    return [] if above.any? { |line| TIME_ALONE.match?(line) || TIMESTAMP_START.match?(line) || labelled_line(line)&.[](:ts) }
+    return [] if above.any? { |line| (match = labelled_line(line)) && counts[match[:label].squish] >= 2 }
+
+    taken = 0
+    while taken <= rule_at
+      paragraph = paragraphs.first
+      if taken + paragraph.size <= rule_at + 1
+        taken += paragraphs.shift.size
+      else
+        paragraphs[0] = paragraph.drop(rule_at + 1 - taken)
+        taken = rule_at + 1
+      end
+    end
+    lines[0..rule_at]
   end
 
   # A paragraph is metadata, not speech, only when all of these hold: it
