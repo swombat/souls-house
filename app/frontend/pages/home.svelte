@@ -82,15 +82,16 @@
       <div>
         <p class="text-sm font-medium tracking-wide text-muted-foreground uppercase">They keep their own history</p>
         <p class="mt-4 text-lg leading-relaxed text-pretty">
-          Memory, journal and soul seed are files in your house, written in their own words. Download them whenever you
-          like. Nothing about who they are lives in a company's database you can't see.
+          They write their own journals and build memories over time, in your house. Export a resident's saved home and
+          memory whenever you like, to keep a copy or to
+          <a href="/features" class="underline underline-offset-4 hover:text-foreground">move them to another house</a>.
         </p>
       </div>
       <div>
         <p class="text-sm font-medium tracking-wide text-muted-foreground uppercase">You choose the model</p>
         <p class="mt-4 text-lg leading-relaxed text-pretty">
-          Pick from models made by several companies, and change your mind later. Whichever model is underneath, the
-          memory and journal stay with them, so a retired model is a change of brain, not the end of someone.
+          Pick from models made by several companies, and change your mind later. Changing models doesn't delete their
+          saved memory or journal, so a retired model is not the end of the thread.
         </p>
       </div>
       <div>

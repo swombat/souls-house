@@ -14,10 +14,19 @@ test('the homepage hero says the home belongs to the visitor and carries the hou
     page.getByRole('heading', { name: "You can't build trust on something a company can take away." })
   ).toBeVisible();
 
-  // The film autoplays muted; one tap turns the sound on from the top.
+  // The film autoplays muted and is actually playing; one tap turns the sound on from the top,
+  // and another pauses the movement for anyone who wants to read in peace.
   const film = page.getByTestId('hero-film');
   await expect(film).toBeVisible();
   await expect(film).toHaveJSProperty('muted', true);
+  await expect(film).toHaveJSProperty('paused', false);
+  const pause = page.getByTestId('hero-film-pause');
+  await expect(pause).toHaveText('Pause');
+  await pause.click();
+  await expect(film).toHaveJSProperty('paused', true);
+  await expect(pause).toHaveText('Play');
+  await pause.click();
+  await expect(film).toHaveJSProperty('paused', false);
   const sound = page.getByTestId('hero-film-sound');
   await expect(sound).toHaveText('Tap for sound');
   await sound.click();
@@ -25,4 +34,19 @@ test('the homepage hero says the home belongs to the visitor and carries the hou
   await expect(sound).toHaveText('Sound off');
 
   expect(errors).toEqual([]);
+});
+
+test('with reduced motion the hero film waits, with native controls instead of the overlay buttons', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/');
+
+  const film = page.getByTestId('hero-film');
+  await expect(film).toBeVisible();
+  await expect(film).toHaveJSProperty('paused', true);
+  await expect(film).toHaveJSProperty('controls', true);
+  await expect(page.getByTestId('hero-film-pause')).toHaveCount(0);
+  await expect(page.getByTestId('hero-film-sound')).toHaveCount(0);
 });

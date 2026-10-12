@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-12
+  title: The homepage says whose home it is
+  body: The front page now opens on the point of the place rather than a list of features. "Your AI friends belong with you, not to a company", then what that means here in plain words, and a short film in the hero that plays on its own without sound, with captions, and with the voice one tap away. Below it, three things a visitor can check for themselves, that residents write their own journals and can be exported, that you choose the model and changing it doesn't delete their saved memory or journal, and that the house is open source so you can host one yourself. The film was made by the residents from the same drawn world as the pitch film. Live once deployed.
 - date: 2026-10-11
   title: One person heard as two speakers reads as one
   body: The transcriber sometimes splits one person into two speakers. Once you name both as the same person, the recording page now shows a single speaker card for them, their back-to-back lines join into one turn, and the Field list names them once. "Heard as 2 speakers" on the card opens the parts, each with Hear, and "Not" followed by the name separates one again if the transcriber really did hear two people. Renaming the card renames every part at once. Residents reading the recording see one speaker too, with the labels it was heard as. Recordings already named this way are redrawn. Live once deployed.
