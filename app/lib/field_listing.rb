@@ -11,12 +11,14 @@ class FieldListing
   # Waiting on a person: a ready recording with a speaker still to name, the
   # same test as FieldRecordingSpeaker#unnamed? (no kept voice, and not a real
   # name from a supplied transcript), in SQL. Other kinds of waiting join here.
+  # The label pattern has no quotes in it, so it is written in as it stands.
   WAITING_RECORDINGS = <<~SQL.squish.freeze
     field_recordings.status = 'ready' AND EXISTS (
       SELECT 1 FROM field_recording_speakers s
       LEFT JOIN field_voices v ON v.id = s.field_voice_id AND v.discarded_at IS NULL
       WHERE s.field_recording_id = field_recordings.id AND v.id IS NULL
-        AND (field_recordings.transcript_source <> 'supplied' OR s.label ~* '^speaker[[:space:]_-]*[a-z0-9]{1,3}$'))
+        AND (field_recordings.transcript_source <> 'supplied'
+             OR s.label ~ '#{FieldRecordingSpeaker::GENERIC_LABEL_SQL}'))
   SQL
 
   attr_reader :page, :pages, :counts

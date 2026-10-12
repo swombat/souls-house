@@ -27,7 +27,12 @@ class FieldRecordingSpeaker < ApplicationRecord
   # A supplied transcript names its speakers in its own words, which a person
   # wrote, so a real name there is shown as it was written. Generic labels
   # ("Speaker A", "speaker_0") read as "Speaker N", like the transcriber's.
-  GENERIC_LABEL = /\Aspeaker[\s_-]*[a-z0-9]{1,3}\z/i
+  # ASCII letters only, spelled out rather than /i: Ruby's /i folds Unicode
+  # (the Kelvin sign as K, long s as s) and PostgreSQL's ~* under a C locale
+  # doesn't, and FieldListing's "Needs you" tab repeats this test in SQL as
+  # GENERIC_LABEL_SQL. The two must agree.
+  GENERIC_LABEL = /\A[Ss][Pp][Ee][Aa][Kk][Ee][Rr][\s_-]*[A-Za-z0-9]{1,3}\z/
+  GENERIC_LABEL_SQL = "^[Ss][Pp][Ee][Aa][Kk][Ee][Rr][[:space:]_-]*[A-Za-z0-9]{1,3}$"
 
   def default_name
     return label if field_recording.supplied? && !label.match?(GENERIC_LABEL)

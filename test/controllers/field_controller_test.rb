@@ -229,6 +229,26 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
       "a deleted voice leaves its speakers waiting again"
   end
 
+  test "a supplied transcript waits only for its generic speaker labels, as its badge says" do
+    @account.whiteboards.update_all(deleted_at: Time.current)
+    supplied = ->(title, text) {
+      FieldRecording::Upload.claim!(
+        account: @account, user: @user, signed_id: pinned_blob(account: @account, user: @user).signed_id,
+        attributes: { title: }, supplied_turns: FieldRecording::SuppliedTranscript.parse(text)
+      )
+    }
+    supplied.("Named", "Anna: Hi.\nDaniel: Hello.\nAnna: Bye.")
+    supplied.("Generic", "Speaker A: Hi.\nDaniel: Hello.\nSpeaker A: Bye.")
+    supplied.("Long s", "\u017Fpeaker A: Hi.\nDaniel: Hello.\n\u017Fpeaker A: Bye.")
+
+    get account_field_path(@account, tab: "all")
+    badges = inertia_props["items"].to_h { |i| [ i["title"], i["unnamed_speakers"] ] }
+    get account_field_path(@account, tab: "waiting")
+    waiting = inertia_props["items"].map { |i| i["title"] }
+    assert_equal [ "Generic" ], waiting
+    assert_equal waiting.sort, badges.select { |_, n| n.to_i.positive? }.keys.sort, "the tab and the badges agree"
+  end
+
   test "an open note carries its content" do
     note = @account.whiteboards.create!(name: "Week notes", content: "# Week")
     get account_field_path(@account, item: "note-#{note.to_param}")

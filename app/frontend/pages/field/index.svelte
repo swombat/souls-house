@@ -348,7 +348,6 @@
             {search}
             {query}
             filterTags={filter_tags}
-            emptyText={tab === 'waiting' ? 'Nothing is waiting for you.' : null}
             currentKey={current?.key}
             onSelect={selectItem}
             onMore={nextResults} />
@@ -357,6 +356,7 @@
             {items}
             {pagination}
             filterTags={filter_tags}
+            emptyText={tab === 'waiting' ? 'Nothing is waiting for you.' : null}
             currentKey={current?.key}
             onSelect={selectItem}
             onPage={goToPage} />
