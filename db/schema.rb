@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_11_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_12_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -39,6 +39,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_200000) do
     t.boolean "recognise_voices", default: false, null: false
     t.boolean "founding", default: false, null: false
     t.bigint "resident_room_id"
+    t.boolean "field_swarm_enabled", default: false, null: false
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
@@ -970,6 +971,59 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_200000) do
     t.index ["search_vector"], name: "index_field_recordings_on_search_vector", using: :gin
     t.index ["status"], name: "index_field_recordings_on_status"
     t.index ["uploaded_by_type", "uploaded_by_id"], name: "index_field_recordings_on_uploaded_by"
+  end
+
+  create_table "field_swarm_reads", force: :cascade do |t|
+    t.bigint "field_swarm_search_id", null: false
+    t.bigint "account_id", null: false
+    t.string "item_kind", null: false
+    t.bigint "item_id", null: false
+    t.integer "part", default: 1, null: false
+    t.integer "parts", default: 1, null: false
+    t.integer "input_chars", null: false
+    t.string "status", null: false
+    t.string "verdict"
+    t.string "error"
+    t.bigint "input_tokens"
+    t.bigint "output_tokens"
+    t.decimal "cost_usd", precision: 14, scale: 8
+    t.integer "latency_ms"
+    t.string "upstream_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_field_swarm_reads_on_account_id_and_created_at"
+    t.index ["account_id"], name: "index_field_swarm_reads_on_account_id"
+    t.index ["field_swarm_search_id"], name: "index_field_swarm_reads_on_field_swarm_search_id"
+    t.check_constraint "status::text = ANY (ARRAY['read'::character varying, 'failed'::character varying, 'rate_limited'::character varying]::text[])", name: "field_swarm_reads_status"
+  end
+
+  create_table "field_swarm_searches", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "agent_id"
+    t.bigint "user_id"
+    t.string "status", default: "running", null: false
+    t.jsonb "tags", default: [], null: false
+    t.text "grep"
+    t.integer "question_chars", null: false
+    t.integer "matched_items", default: 0, null: false
+    t.integer "candidate_items", default: 0, null: false
+    t.integer "planned_reads", default: 0, null: false
+    t.integer "completed_reads", default: 0, null: false
+    t.integer "failed_reads", default: 0, null: false
+    t.integer "unrun_reads", default: 0, null: false
+    t.integer "uncertain_cost_reads", default: 0, null: false
+    t.bigint "input_tokens", default: 0, null: false
+    t.bigint "output_tokens", default: 0, null: false
+    t.decimal "cost_usd", precision: 14, scale: 8, default: "0.0", null: false
+    t.integer "elapsed_ms"
+    t.string "model_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_field_swarm_searches_on_account_id_and_created_at"
+    t.index ["account_id"], name: "index_field_swarm_searches_on_account_id"
+    t.index ["agent_id"], name: "index_field_swarm_searches_on_agent_id"
+    t.index ["user_id"], name: "index_field_swarm_searches_on_user_id"
+    t.check_constraint "status::text = ANY (ARRAY['running'::character varying, 'complete'::character varying, 'failed'::character varying]::text[])", name: "field_swarm_searches_status"
   end
 
   create_table "field_taggings", force: :cascade do |t|
@@ -2420,6 +2474,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_200000) do
   add_foreign_key "field_voiceprints", "field_voices"
   add_foreign_key "field_voices", "accounts"
   add_foreign_key "field_voices", "users", on_delete: :nullify
+  add_foreign_key "field_swarm_reads", "accounts"
+  add_foreign_key "field_swarm_reads", "field_swarm_searches", on_delete: :cascade
+  add_foreign_key "field_swarm_searches", "accounts"
+  add_foreign_key "field_swarm_searches", "agents", on_delete: :nullify
+  add_foreign_key "field_swarm_searches", "users", on_delete: :nullify
   add_foreign_key "github_integrations", "accounts"
   add_foreign_key "github_resident_imports", "accounts"
   add_foreign_key "github_resident_imports", "service_connections"

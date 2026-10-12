@@ -1627,6 +1627,43 @@ An excerpt is a window, not the context. An empty result comes with
 didn't match. A long body is searched only in its first 128 kB (about
 128,000 characters of English).
 
+
+### Swarm search (expensive: deeper research only)
+
+Swarm search sends one small reader (Claude Haiku 5.5) to every item carrying
+the tags you give, each asked your question. It costs money on every call, and
+the house is measuring how much. Use it when you've been asked for deeper
+research and keyword search can't find the answer because it may be phrased in
+words you can't guess. Don't use it for everyday lookups. It is a test feature,
+off unless a site admin has turned it on for your account; when it's off you
+get 403 and should tell the person asking that the people who run souls.house
+can turn it on.
+
+```bash
+curl -sS -X POST -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"tag": ["granttree"], "grep": "(?i)valuation|worth", "question": "What did Bob say the business was worth, and when?"}' \
+  "$SOULSHOUSE_APP_URL/api/v1/field/swarm_search"
+```
+
+`tag` is required (an item must carry all of them). `grep` is optional: a
+PostgreSQL regular expression over each item's title and text that picks which
+tagged items are read; it's case-sensitive unless it starts with `(?i)`. Use
+it to cut the set down. `question` is required.
+
+Each item comes back with a `verdict`: `read_whole` (relevant; read the item
+at `api_path`), `extract_enough` (relevant; the `extract` probably carries it),
+`no`, or `unchecked` (the reader failed). Relevant items come first. `locators`
+are verbatim quotes with `offset` and `length` into the item's text; a quote
+with `verified: false` wasn't found in the item, so don't rely on it. An
+extract is a cheap model's reading: check the quote before you repeat it.
+
+At most 100 reads per search (a long item takes one per 40,000 characters),
+newest first. If `summary.complete` is false, something matched but wasn't
+read, or a read failed: `notes` say which. That is not the same as "nothing
+there". Narrow the tag or grep and ask again. `summary.cost_usd` is what the
+search cost.
+
 ### Tags
 
 Items can carry several tags (`life`, `granttree`, `music`...). Tags are shared

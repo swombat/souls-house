@@ -4,7 +4,7 @@ class Admin::AccountsController < ApplicationController
   skip_before_action :set_current_account
 
   before_action :require_site_admin
-  before_action :set_account, only: %i[disable enable convert shared_ai_credentials founding refresh_storage]
+  before_action :set_account, only: %i[disable enable convert shared_ai_credentials founding field_swarm refresh_storage]
 
   def index
     @accounts = Account.includes(:owner, memberships: :user)
@@ -74,6 +74,16 @@ class Admin::AccountsController < ApplicationController
     redirect_to admin_accounts_path(account_id: @account), notice: "Storage measurement queued. Refresh the overview shortly."
   end
 
+  # Field swarm search (FieldSwarm): a test feature, off for every account
+  # until turned on here.
+  def field_swarm
+    enabled = ActiveModel::Type::Boolean.new.cast(params.require(:account).require(:field_swarm_enabled))
+    @account.update!(field_swarm_enabled: enabled)
+    audit(:admin_update_field_swarm, @account, account_id: @account.id, field_swarm_enabled: enabled)
+    redirect_back_or_to admin_accounts_path(account_id: @account),
+      notice: enabled ? "Field swarm search turned on" : "Field swarm search turned off"
+  end
+
   private
 
   def accounts_json
@@ -89,9 +99,24 @@ class Admin::AccountsController < ApplicationController
       methods: [ :users_count, :members_count, :active, :disabled ]
     ).merge(
       "use_system_ai_credentials" => account.use_system_ai_credentials?,
+      "field_swarm_enabled" => account.field_swarm_enabled?,
+      "field_swarm" => field_swarm_costs(account),
       "usage" => Admin::AccountUsageReport.new(account).call,
       "memberships" => account.memberships.map { |membership| membership_json(membership) }
     )
+  end
+
+  # What swarm search has cost, for this account and the whole house, so the
+  # test can be judged on its spend.
+  def field_swarm_costs(account)
+    since = 30.days.ago
+    {
+      account_30_days: FieldSwarmSearch.totals(FieldSwarmSearch.where(account: account, created_at: since..)),
+      account_all_time: FieldSwarmSearch.totals(FieldSwarmSearch.where(account: account)),
+      house_30_days: FieldSwarmSearch.totals(FieldSwarmSearch.where(created_at: since..)),
+      house_all_time: FieldSwarmSearch.totals,
+      enabled_accounts: Account.where(field_swarm_enabled: true).count
+    }
   end
 
   def membership_json(membership)

@@ -11,6 +11,10 @@ The implemented operations are:
   the account's resolved OpenRouter key; absent/placeholder keys return no title.
 - `classify(model:, prompt:)`: house classifier calls using the system OpenRouter
   key. [Telegram safeguards](safeguards.md) are one caller.
+- `house_read(model:, provider:, system:, user:, max_tokens:, timeout:)`: one
+  [Field swarm search](field-swarm-search.md) reader on the house key, pinned to
+  one provider; returns the text with OpenRouter's usage, and raises `RateLimited`
+  on HTTP 429 so the swarm can report it.
 - `moderate(content)`: OpenAI moderation using the system key, validating numeric
   category scores in the response.
 

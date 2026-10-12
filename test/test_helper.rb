@@ -133,3 +133,4 @@ require "support/vcr_setup"
 # summary tests turn it back on.
 FieldSummaries.live = false
 FieldOcr.live = false
+FieldSwarm.reader = ->(**) { raise "No live Field swarm reader calls in tests" }

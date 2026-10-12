@@ -46,6 +46,25 @@
     router.patch(`/admin/accounts/${account.id}/founding`, { account: { founding: enabled } });
   }
 
+  function setFieldSwarm(enabled) {
+    router.patch(`/admin/accounts/${account.id}/field_swarm`, { account: { field_swarm_enabled: enabled } });
+  }
+
+  function dollars(value) {
+    return value == null ? '—' : `$${Number(value).toFixed(4)}`;
+  }
+
+  const swarmRows = $derived(
+    account.field_swarm
+      ? [
+          ['This account, 30 days', account.field_swarm.account_30_days],
+          ['This account, all time', account.field_swarm.account_all_time],
+          ['All accounts, 30 days', account.field_swarm.house_30_days],
+          ['All accounts, all time', account.field_swarm.house_all_time],
+        ]
+      : []
+  );
+
   function setSharedAiCredentials(enabled) {
     router.patch(`/admin/accounts/${account.id}/shared_ai_credentials`, {
       account: { use_system_ai_credentials: enabled },
@@ -186,6 +205,60 @@
           aria-label="Founding or family account"
           checked={account.founding}
           onCheckedChange={setFounding} />
+      </div>
+    </CardContent>
+  </Card>
+
+  <Card class="mb-8">
+    <CardHeader>
+      <CardTitle>Field swarm search</CardTitle>
+      <CardDescription>
+        A test feature: residents ask one question of every item carrying a tag, one Claude Haiku reader per item, paid
+        by the house. Off for every account until turned on here.
+      </CardDescription>
+    </CardHeader>
+    <CardContent>
+      <div class="flex items-center justify-between gap-6 rounded-md border p-4">
+        <div class="space-y-1">
+          <Label for={`field-swarm-${account.id}`}>Allow field swarm search</Label>
+          <p class="text-sm text-muted-foreground">
+            On for {account.field_swarm?.enabled_accounts ?? 0} account(s). Every search and reader call is recorded with
+            its reported cost.
+          </p>
+        </div>
+        <Switch
+          id={`field-swarm-${account.id}`}
+          aria-label="Allow field swarm search"
+          checked={account.field_swarm_enabled}
+          onCheckedChange={setFieldSwarm} />
+      </div>
+      <div class="mt-3 overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="text-left text-muted-foreground">
+            <tr>
+              <th class="py-1 pr-4 font-normal"></th>
+              <th class="py-1 pr-4 font-normal">Searches</th>
+              <th class="py-1 pr-4 font-normal">Reads</th>
+              <th class="py-1 pr-4 font-normal">Cost</th>
+              <th class="py-1 pr-4 font-normal">Per search</th>
+              <th class="py-1 pr-4 font-normal">Per read</th>
+              <th class="py-1 font-normal">Cost unknown</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each swarmRows as [label, row] (label)}
+              <tr class="border-t">
+                <td class="py-1 pr-4">{label}</td>
+                <td class="py-1 pr-4">{row.searches}</td>
+                <td class="py-1 pr-4">{row.reads}</td>
+                <td class="py-1 pr-4">{dollars(row.cost_usd)}</td>
+                <td class="py-1 pr-4">{dollars(row.cost_per_search_usd)}</td>
+                <td class="py-1 pr-4">{dollars(row.cost_per_read_usd)}</td>
+                <td class="py-1">{row.uncertain_cost_reads}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
       </div>
     </CardContent>
   </Card>

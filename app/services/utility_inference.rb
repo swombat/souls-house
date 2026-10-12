@@ -5,8 +5,12 @@ class UtilityInference
   class MissingCredentials < Error; end
   class InvalidResponse < Error; end
   class InputTooLong < Error; end
+  class RateLimited < InvalidResponse; end
 
   MAX_INPUT_LENGTH = 32_000
+  # Field swarm readers take one part of an item (FieldSwarm::PART_CHARS)
+  # plus the question and the wrapper.
+  MAX_READ_INPUT_LENGTH = 64_000
   REQUEST_TIMEOUT = 20
   # A page transcription writes up to a few thousand tokens.
   VISION_TIMEOUT = 60
@@ -145,6 +149,34 @@ class UtilityInference
     { text: content, usage: response["usage"], id: response["id"], finish_reason: response.dig("choices", 0, "finish_reason") }
   rescue Faraday::Error => error
     raise InvalidResponse, "House vision request failed (#{error.class})"
+  end
+
+  # One Field swarm reader (FieldSwarm): a system prompt and one part of an
+  # item, on the house's key, pinned to one provider with no fallback and
+  # data_collection "deny", as house_chat. => { text:, usage:, id:,
+  # finish_reason: }; usage is OpenRouter's, for HouseInference::UsageCost.
+  # Raises RateLimited on HTTP 429 so the swarm can report it apart from
+  # other failures; never echoes transport details.
+  def self.house_read(model:, provider:, system:, user:, max_tokens:, timeout: REQUEST_TIMEOUT)
+    raise InputTooLong, "Utility input exceeds limit" if "#{system}#{user}".length > MAX_READ_INPUT_LENGTH
+
+    response = client(key: HouseInference::Offering.key, openrouter: true, timeout: timeout).chat(
+      parameters: {
+        model: model, max_tokens: max_tokens, reasoning: { effort: "none" },
+        messages: [ { role: "system", content: system }, { role: "user", content: user } ],
+        provider: { only: [ provider ], allow_fallbacks: false, data_collection: "deny" }
+      }
+    )
+    raise InvalidResponse, "Empty house read response" unless response.is_a?(Hash)
+
+    content = response.dig("choices", 0, "message", "content")
+    raise InvalidResponse, "House read response has no text" unless content.is_a?(String)
+
+    { text: content, usage: response["usage"], id: response["id"], finish_reason: response.dig("choices", 0, "finish_reason") }
+  rescue Faraday::TooManyRequestsError
+    raise RateLimited, "House read was rate limited"
+  rescue Faraday::Error => error
+    raise InvalidResponse, "House read request failed (#{error.class})"
   end
 
   def self.chat(key:, model:, user:, system: nil)

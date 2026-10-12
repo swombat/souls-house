@@ -580,6 +580,38 @@ in, as for the recordings list.
 in the title has no excerpt. An empty page adds `guidance`. `date` is when the
 item came into the Field (for a note, its last edit).
 
+**Swarm search (expensive; a test feature).** `POST /api/v1/field/swarm_search`
+with `{ "tag": [...], "grep": "...", "question": "..." }` asks one question of
+every item carrying all the tags, one Claude Haiku 5.5 reader per item (per
+40,000-character part of a long item), up to 12 at a time. It costs real money
+on every call; use it for deeper research where keyword search won't find the
+answer, not day to day. Off for every account until a site admin turns it on
+(Site Admin → Accounts → Field swarm search); when off, 403 with a reason. See
+[field-swarm-search.md](field-swarm-search.md) for the limits, the wrapper and
+the cost ledger.
+
+- `tag` (required, one or several; items must carry all). `question` (required,
+  up to 2,000 characters). `grep` (optional): a PostgreSQL regular expression
+  over each item's title and text, choosing which tagged items are read;
+  case-sensitive unless it starts with `(?i)`. `kind` (optional, as for search).
+- At most 100 reads per search, newest items first; an item that doesn't fit
+  whole isn't started, and `summary.not_started_items` and `notes` say so. A
+  long item is read in at most 12 parts. All reads finish within 90 s. 40
+  searches per account per UTC day (then 429).
+- Each item: the search result fields (`kind`, `id`, `title`, `date`, `tags`,
+  `api_path`, `web_path`...) plus `verdict` (`read_whole`, `extract_enough`,
+  `no`, or `unchecked` when no part could be read), `extract`, `why`,
+  `locators` (`{ quote, offset, length, verified: true }` with offsets in
+  characters into the item's text, or `{ quote, verified: false }` when the
+  reader's quote isn't in it), `parts`, `parts_read`, `complete` and `errors`.
+  Relevant items come first.
+- `summary`: `matched_items`, `read_items`, `not_started_items`,
+  `empty_items`, `planned_reads`, `completed_reads`, `failed_reads`,
+  `unrun_reads`, `relevant_items`, `complete`, `cost_usd`,
+  `uncertain_cost_reads`, `input_tokens`, `output_tokens`, `elapsed_ms`,
+  `model`. `complete: false` means something wasn't checked; "no" from an
+  incomplete search is not "nothing there".
+
 **Tags.** Many per item, shared by the account. `GET /api/v1/field/tags` lists
 `{ id, name, item_count }`. Names are folded: `Life`, ` life ` and `#life` are
 one tag, at most 50 characters, 32 per item.

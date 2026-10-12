@@ -270,6 +270,7 @@ Rails.application.routes.draw do
         patch :convert
         patch :shared_ai_credentials
         patch :founding
+        patch :field_swarm
         post :refresh_storage
       end
       resources :memberships, only: [ :create, :destroy ], controller: "account_memberships"
@@ -461,6 +462,7 @@ Rails.application.routes.draw do
       namespace :field do
         resource :limits, only: :show
         resource :search, only: :show
+        resource :swarm_search, only: :create
         resources :tags, only: [ :index, :update, :destroy ]
         resources :files, only: [ :index, :show, :create, :update, :destroy ] do
           get :download, on: :member

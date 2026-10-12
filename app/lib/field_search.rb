@@ -162,7 +162,13 @@ class FieldSearch
 
   # Items carrying every one of the tags.
   def tag_condition(source)
-    sanitize(<<~SQL.squish, source[:model], account.id, @tags, @tags.size)
+    self.class.tag_condition(source, account_id: account.id, tags: @tags)
+  end
+
+  # SQL: rows of source's table that carry every one of the tags. Shared with
+  # FieldSwarm.
+  def self.tag_condition(source, account_id:, tags:)
+    ActiveRecord::Base.sanitize_sql_array([ <<~SQL.squish, source[:model], account_id, tags, tags.size ])
       #{source[:table]}.id IN (
         SELECT field_taggings.taggable_id FROM field_taggings
         JOIN field_tags ON field_tags.id = field_taggings.field_tag_id

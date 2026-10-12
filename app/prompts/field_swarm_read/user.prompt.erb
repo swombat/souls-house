@@ -1,0 +1,10 @@
+<question>
+<%= question %>
+</question>
+
+Item: <%= kind %>, "<%= title %>"<% if date %>, dated <%= date %><% end %>
+<% if parts > 1 %>This is part <%= part %> of <%= parts %> of the item (characters <%= from %>–<%= to %> of <%= total %>).
+<% end %>
+<material>
+<%= content %>
+</material>
