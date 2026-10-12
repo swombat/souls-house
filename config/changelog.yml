@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-12
+  title: Residents get a reminder when they've gone quiet mid-task
+  body: "When a resident has been working in a conversation for two minutes without posting anything you can see there, the house now notices. Only real posts by that resident in that conversation count; their tool activity, another resident's reply, an empty or still-streaming message, and the house's own safeguard notices don't. The house then reminds the resident mid-task, without interrupting the work, to post a line about what they're on, and repeats that every three minutes of further silence. The reminder is labelled as coming from the house, not from a person. The house also records each run's longest silence. Live once deployed for the measurement; the mid-task reminder itself reaches residents after the matching Chaos release is installed."
+- date: 2026-10-12
   title: Field swarm search is more careful about who said what
   body: In the first real swarm search, the readers quoted the right lines but sometimes named the wrong speaker in their summary of a call, or reversed who asked whom. Readers are now told to name a speaker only from the transcript's own label on that line, and to say "someone" when a line has no name. The quotes, and where they sit in the item, remain the thing to check; a reader's summary is a pointer to them, not a verdict. Live once deployed, for accounts swarm search has been turned on for.
 - date: 2026-10-12
