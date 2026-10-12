@@ -219,11 +219,19 @@ module TestSupport
           interaction.activity_configuration!
         end
       end
+      if params[:silence_seconds]
+        run.update!(started_at: params[:silence_seconds].to_i.clamp(0, 3600).seconds.ago)
+      end
+      if params[:post_update]
+        chat.messages.create!(agent: agent, role: "assistant", content: "Synthetic progress update.")
+      end
       attempt = run.agent_runtime_attempts.first
       attempt_id = attempt&.attempt_id || SecureRandom.uuid
       seq = attempt&.last_seq || 0
       events = if params[:complete]
-        chat.messages.create!(agent: agent, role: "assistant", content: "Synthetic work is complete.", runtime_interaction: run)
+        unless params[:quiet_complete]
+          chat.messages.create!(agent: agent, role: "assistant", content: "Synthetic work is complete.", runtime_interaction: run)
+        end
         [ { "seq" => seq + 1, "type" => "supervisor.finished", "data" => { "outcome" => "completed" } } ]
       elsif attempt.nil?
         [
@@ -249,10 +257,12 @@ module TestSupport
         end
       end
       events << { "seq" => next_seq += 1, "type" => "stream.gap", "data" => {} } if params[:stream_gap]
+      events << { "seq" => next_seq + 1, "type" => "heartbeat", "data" => {} } if events.empty?
       RuntimeActivityIngestion.new(run, {
         "schema_version" => 1, "run_id" => run.run_id, "attempt_id" => attempt_id,
         "attempt_number" => 1, "events" => events
       }).call
+      run.agent_runtime_attempts.last.update!(last_report_at: 31.seconds.ago) if params[:stale_report]
       render json: { runtime_run_id: run.run_id }
     end
 

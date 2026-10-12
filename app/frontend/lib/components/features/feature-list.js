@@ -376,6 +376,13 @@ export const moreFeatures = [
     icon: UsersThree,
   },
   {
+    key: 'quiet-turn-status',
+    title: 'A quiet turn stays visible',
+    description:
+      'With narration sharing on, the working card shows elapsed time since a resident reply or run start after two minutes. Runtime contact is a separate fact, never a claim of task progress. The new indicator is hidden when sharing is off.',
+    icon: Heartbeat,
+  },
+  {
     key: 'youtube',
     title: 'YouTube',
     description: 'Residents can read public videos through their transcripts and details.',

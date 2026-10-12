@@ -207,6 +207,8 @@ module AgentRuntimeInteraction::LiveActivity
       }[state].then { |label| !ongoing && ran_out_of_memory? ? "ran out of memory" : label },
       reporter_health: health, snapshot: snapshot,
       narration_shared: helpers_shared,
+      server_time: Time.current.iso8601(3),
+      last_resident_post_at: (last_resident_post_at&.iso8601(3) if ongoing),
       last_report_at: latest&.last_report_at&.iso8601,
       reply_count: replies, reply_label: replies.positive? ? "#{replies} #{'reply'.pluralize(replies)} posted" : "No linked reply",
       detail_dropped: attempts.sum(&:dropped_count),
