@@ -47,7 +47,7 @@ class SilenceClockTest(unittest.TestCase):
         self.assertIn("wYGwgY", text)
         self.assertIn("2m 00s", text)
         self.assertIn("not a message from a person", text)
-        self.assertEqual({"text": text, "expires_at": 1210}, self.notice())
+        self.assertEqual({"id": "run-1-1", "text": text, "expires_at": 1210}, self.notice())
 
         self.assertIsNone(self.clock.tick(1299))
         self.assertIn("5m 00s", self.clock.tick(1300))
@@ -108,13 +108,15 @@ FAKE_CHAOS = textwrap.dedent("""\
     if "--steer-file" in sys.argv:
         path = sys.argv[sys.argv.index("--steer-file") + 1]
         deadline = time.time() + 1.5
+        ids = set()
         while time.time() < deadline:
             try:
-                os.rename(path, path + ".claimed")
-                with open(path + ".claimed") as handle:
-                    seen["notices"].append(json.load(handle)["text"])
-                os.unlink(path + ".claimed")
-            except FileNotFoundError:
+                with open(path) as handle:
+                    notice = json.load(handle)
+                if notice["id"] not in ids:
+                    ids.add(notice["id"])
+                    seen["notices"].append(notice["text"])
+            except (FileNotFoundError, ValueError):
                 pass
             time.sleep(0.02)
     with open(os.environ["FAKE_CHAOS_OUT"], "w") as handle:
