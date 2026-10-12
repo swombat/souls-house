@@ -439,8 +439,8 @@ pacing and audit. That depends on #264 being reviewed and merged.
   (key id, command id, issued-at), and keeps `login_generation` and the
   callback secret version per connection (§5).
 - Ingest answers with the highest committed event sequence, and accepts
-  `sync.checkpoint` events (§5a). Connection status gains `queued`, `busy`
-  and `unavailable`, each with a reason (§2.1, §4.1).
+  `sync.checkpoint` events (§5a). Connection status gains `queued`, `busy`,
+  `backlogged` and `unavailable`, each with a reason (§2.1, §4.1).
 
 ## 10. Slices
 
