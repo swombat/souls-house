@@ -110,6 +110,14 @@ class FieldRecording::SuppliedTranscriptTest < ActiveSupport::TestCase
     assert_equal "Opener", turns.first["spk"]
   end
 
+  # The tradeoff, pinned (Mira, #334): above a rule, an untimed once-only
+  # opener is read as header. With no rule after it, it stays a speaker.
+  test "an untimed one-line opener above a rule becomes header" do
+    turns = Parse.parse("Alice: Opening.\n\n---\n\nBob: Hi.\nCarol: Hello.\nBob: Again.")
+    assert_equal [ nil, "Bob", "Carol", "Bob" ], turns.map { |turn| turn["spk"] }
+    assert_includes turns.first["t"], "Alice: Opening."
+  end
+
   test "unlabelled lines continue the turn before" do
     turns = Parse.parse("Anna: First line\nsecond line\nDaniel: Reply.\nAnna: Again.")
     assert_equal "First line\nsecond line", turns.first["t"]
