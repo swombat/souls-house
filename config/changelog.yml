@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-12
+  title: Field swarm search is more careful about who said what
+  body: In the first real swarm search, the readers quoted the right lines but sometimes named the wrong speaker in their summary of a call, or reversed who asked whom. Readers are now told to name a speaker only from the transcript's own label on that line, and to say "someone" when a line has no name. The quotes, and where they sit in the item, remain the thing to check; a reader's summary is a pointer to them, not a verdict. Live once deployed, for accounts swarm search has been turned on for.
+- date: 2026-10-12
   title: Ignore a speaker that is only noise
   body: Sometimes the transcriber hears a cough, the room or a mishearing as one more speaker. Its card on the recording page now has Just noise, which stops it asking for a name, so the recording leaves the Needs you tab and loses its "to name" count once everyone else is named. Its lines stay in the transcript. Undo on the card puts it back, and naming it later works as before. Live once deployed.
 - date: 2026-10-12
