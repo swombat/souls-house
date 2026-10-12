@@ -11,6 +11,7 @@
     Funnel,
     Bug,
     ShareNetwork,
+    TelegramLogo,
     GoogleLogo,
     Heartbeat,
     ArrowLeft,
@@ -97,6 +98,8 @@
                   <Bug size={22} weight="bold" />
                 {:else if service.key === 'tailscale'}
                   <ShareNetwork size={22} weight="bold" />
+                {:else if service.key === 'telegram'}
+                  <TelegramLogo size={22} weight="fill" />
                 {:else}
                   <Heartbeat size={22} weight="fill" />
                 {/if}
