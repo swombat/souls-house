@@ -46,7 +46,13 @@ switch.
    against a 0.15 s timeout). Threads still running a second after the
    deadline are stopped; their parts are `timed_out`. Each reader gets the question and one part inside the
    fixed wrapper and must answer JSON: `verdict` (`no`, `extract_enough`,
-   `read_whole`), `extract`, `why`, and up to five verbatim `quotes`. An answer
+   `read_whole`), `extract`, `why`, and up to five verbatim `quotes`. The
+   wrapper tells readers to name a speaker only from the transcript's own
+   label on that line (`[11:46] Bob: ...`), never from what is said or who is
+   talked about: the first live search (12 October) got the direction of a
+   request backwards and put Daniel's line in Bob's mouth, while its quotes
+   were exact. Quotes and locators are the evidence; the extract's prose is a
+   pointer. An answer
    that isn't that JSON counts as a failed read, and so does a relevant
    verdict without an extract and at least one quote, or with fields of the
    wrong type.
