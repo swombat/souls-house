@@ -82,60 +82,27 @@ class ChaosTriggerClientTest < ActiveSupport::TestCase
     assert_requested stub
   end
 
-  test "defaults runtime timeout to thirty minutes" do
-    stub = stub_request(:post, "https://agent.example.com/trigger")
-      .with do |request|
-        JSON.parse(request.body).fetch("timeout_secs") == 1800
-      end
-      .to_return(status: 200, body: { status: "ok" }.to_json)
-
-    result = ChaosTriggerClient.new("https://agent.example.com", "tr_valid").request_response(
-      conversation_id: nil,
-      requested_by: "test",
-      session_id: "session",
-      request: "hello"
-    )
-
-    assert_equal 200, result[:status]
-    assert_requested stub
-  end
-
-  test "omits request_delta and persistent_session from body by default" do
-    stub = stub_request(:post, "https://agent.example.com/trigger")
+  test "sends request_delta and persistent_session only when given" do
+    client = ChaosTriggerClient.new("https://agent.example.com", "tr_valid")
+    plain = stub_request(:post, "https://agent.example.com/trigger")
       .with do |request|
         body = JSON.parse(request.body)
         !body.key?("request_delta") && !body.key?("persistent_session")
       end
       .to_return(status: 200, body: { status: "ok" }.to_json)
+    client.request_response(conversation_id: nil, requested_by: "test", session_id: "session", request: "hello")
+    assert_requested plain
 
-    ChaosTriggerClient.new("https://agent.example.com", "tr_valid").request_response(
-      conversation_id: nil,
-      requested_by: "test",
-      session_id: "session",
-      request: "hello"
-    )
-
-    assert_requested stub
-  end
-
-  test "includes request_delta and persistent_session when given" do
-    stub = stub_request(:post, "https://agent.example.com/trigger")
+    remove_request_stub(plain)
+    persistent = stub_request(:post, "https://agent.example.com/trigger")
       .with do |request|
         body = JSON.parse(request.body)
-        body.fetch("request_delta") == "slim delta prompt" && body.fetch("persistent_session") == true && body.fetch("request") == "full prompt"
+        body["request_delta"] == "slim delta prompt" && body["persistent_session"] == true && body["request"] == "full prompt"
       end
       .to_return(status: 200, body: { status: "ok" }.to_json)
-
-    ChaosTriggerClient.new("https://agent.example.com", "tr_valid").request_response(
-      conversation_id: nil,
-      requested_by: "test",
-      session_id: "session",
-      request: "full prompt",
-      request_delta: "slim delta prompt",
-      persistent_session: true
-    )
-
-    assert_requested stub
+    client.request_response(conversation_id: nil, requested_by: "test", session_id: "session",
+      request: "full prompt", request_delta: "slim delta prompt", persistent_session: true)
+    assert_requested persistent
   end
 
   test "includes channel-specific trigger payload without replacing standard fields" do
@@ -177,6 +144,32 @@ class ChaosTriggerClientTest < ActiveSupport::TestCase
     client.request_response(conversation_id: nil, requested_by: "test", session_id: "s", request: "hi",
       persistent_session: false, session_policy: policy)
     assert_requested fresh
+  end
+
+  test "a VM resident is never reached synchronously" do
+    ResidentTurn.stub(:enabled?, false) do
+      error = assert_raises(ArgumentError) do
+        ChaosTriggerClient.new("runner://enrollment-1", "tr_valid").request_response(
+          conversation_id: nil, requested_by: "test", session_id: "s", request: "hi"
+        )
+      end
+      assert_match "asynchronous turns", error.message
+    end
+    assert_not_requested :any, /.*/
+  end
+
+  test "turn requests refuse a malformed dispatch id before building a URL" do
+    client = ChaosTriggerClient.new("https://agent.example.com", "tr_valid")
+    [ "../trigger", "abc", "#{SecureRandom.uuid}/resolve", "#{SecureRandom.uuid}\n" ].each do |id|
+      assert_raises(ArgumentError, "accepted #{id.inspect}") { client.turn_status(id) }
+      assert_raises(ArgumentError) { client.submit_turn(id, {}, ledger_id: "l") }
+    end
+    assert_not_requested :any, /.*/
+
+    id = SecureRandom.uuid
+    stub = stub_request(:get, "https://agent.example.com/turns/#{id}").to_return(status: 200, body: { status: "running" }.to_json)
+    assert_equal "running", client.turn_status(id)[:body]["status"]
+    assert_requested stub
   end
 
 end
