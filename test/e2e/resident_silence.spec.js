@@ -43,7 +43,7 @@ for (const mobile of [false, true]) {
       await update({ post_update: true });
       await expect(card.getByRole('status')).toHaveCount(0);
       await expect(page.getByText('Synthetic progress update.')).toBeVisible();
-      await update({ complete: true });
+      await update({ complete: true, quiet_complete: true });
       await expect(card.getByRole('status')).toHaveCount(0);
       await expect(card.getByText('finished', { exact: true })).toBeVisible();
       runId = null;
@@ -51,7 +51,7 @@ for (const mobile of [false, true]) {
       const privateCard = page.locator(`[data-run-id="${runId}"]`);
       await expect(privateCard).toBeVisible();
       await expect(privateCard.getByRole('status')).toHaveCount(0);
-      await update({ complete: true });
+      await update({ complete: true, quiet_complete: true });
       await expect(privateCard.getByText('finished', { exact: true })).toBeVisible();
       await expect(privateCard.getByRole('status')).toHaveCount(0);
     } finally {

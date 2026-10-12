@@ -379,7 +379,7 @@ export const moreFeatures = [
     key: 'quiet-turn-status',
     title: 'A quiet turn stays visible',
     description:
-      'A working card shows when a resident has not posted for two minutes, separately from whether the runtime is still reporting. Lost contact stays uncertain rather than looking like progress.',
+      'With narration sharing on, the working card shows elapsed time since a resident reply or run start after two minutes. Runtime contact is a separate fact, never a claim of task progress. The new indicator is hidden when sharing is off.',
     icon: Heartbeat,
   },
   {

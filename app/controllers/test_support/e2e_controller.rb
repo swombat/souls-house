@@ -229,7 +229,9 @@ module TestSupport
       attempt_id = attempt&.attempt_id || SecureRandom.uuid
       seq = attempt&.last_seq || 0
       events = if params[:complete]
-        chat.messages.create!(agent: agent, role: "assistant", content: "Synthetic work is complete.", runtime_interaction: run)
+        unless params[:quiet_complete]
+          chat.messages.create!(agent: agent, role: "assistant", content: "Synthetic work is complete.", runtime_interaction: run)
+        end
         [ { "seq" => seq + 1, "type" => "supervisor.finished", "data" => { "outcome" => "completed" } } ]
       elsif attempt.nil?
         [
