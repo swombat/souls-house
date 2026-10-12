@@ -190,6 +190,18 @@ class AgentRuntimeInteraction < ApplicationRecord
     )
   end
 
+  # When this run's resident last posted something visible in this run's
+  # conversation. The runtime's silence clock reads it from the activity ack:
+  # what the people in the room have actually seen, not tool activity or stdout.
+  # Another resident's reply, a discarded message and a progress row don't count.
+  def last_resident_post_at
+    return unless chat_id
+
+    Message.where(chat_id:, agent_id:, role: "assistant", discarded_at: nil, progress_message: false)
+      .where(created_at: created_at..)
+      .maximum(:created_at)
+  end
+
   def ran_out_of_memory?
     container_oom_kills.to_i.positive? && finished_at.present? && ended_badly?
   end
