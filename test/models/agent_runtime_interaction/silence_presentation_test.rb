@@ -46,4 +46,41 @@ class AgentRuntimeInteraction::SilencePresentationTest < ActiveSupport::TestCase
     end
   end
 
+  test "blank assistant placeholders are not a visible resident update" do
+    travel 1.minute do
+      @chat.messages.create!(agent: @agent, role: "assistant", content: "")
+      assert_nil @run.last_resident_post_at
+    end
+  end
+
+  test "an unfinished assistant row is not a confirmed resident post" do
+    travel 1.minute do
+      @chat.messages.create!(agent: @agent, role: "assistant", content: "Still streaming.", streaming: true)
+      assert_nil @run.last_resident_post_at
+    end
+  end
+
+  test "a genuine attachment-only resident post counts" do
+    travel 1.minute do
+      post = @chat.messages.create!(agent: @agent, role: "assistant", content: "")
+      post.files.attach(io: StringIO.new("A checked finding."), filename: "finding.txt", content_type: "text/plain")
+      assert_equal post.created_at, @run.last_resident_post_at
+    end
+  end
+
+  test "a house safeguard label does not answer the resident silence clock" do
+    travel 1.minute do
+      detection = SafeguardDetection.create!(
+        agent: @agent, channel: "conversation", response_text: "A scripted response.",
+        prefilter_reason: "test", classifier_verdict: "detected",
+        classifier_reason: "test", detector_version: "test"
+      )
+      @chat.messages.create!(
+        agent: @agent, role: "assistant", content: detection.response_text,
+        safeguard_detection: detection
+      )
+      assert_nil @run.last_resident_post_at
+    end
+  end
+
 end
