@@ -31,6 +31,14 @@ const withCommands = {
   ],
 };
 
+test('a queued runtime that has never reported is waiting, not interrupted', () => {
+  render(AgentRuntimeActivityCard, {
+    interaction: { ...base, status: 'queued', reporter_health: 'connecting', last_report_at: null },
+  });
+  expect(screen.queryByText(/Live updates interrupted/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+});
+
 test('one compact silence line ages without polling, resets on replies, and disappears at completion', async () => {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance', 'Date'] });
   vi.setSystemTime(new Date('2030-01-01T00:00:00Z')); // Deliberately unlike the server clock.

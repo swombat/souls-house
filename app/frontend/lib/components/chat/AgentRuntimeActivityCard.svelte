@@ -35,7 +35,8 @@
   const healthStale = $derived(
     isActive &&
       (interaction.run_id
-        ? runtimeContactUncertain(interaction, now)
+        ? interaction.reporter_health === 'stale' ||
+          (interaction.last_report_at && runtimeContactUncertain(interaction, now))
         : interaction.reporter_health === 'stale' ||
           (interaction.last_report_at && now - new Date(interaction.last_report_at).getTime() > 30000))
   );
