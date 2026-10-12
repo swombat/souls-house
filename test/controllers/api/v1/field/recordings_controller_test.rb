@@ -73,6 +73,7 @@ class Api::V1::Field::RecordingsControllerTest < ActionDispatch::IntegrationTest
       params: { speaker: first, was: "there", revision: response.parsed_body["revision"] }, as: :json
     assert_response :success
     assert_equal 1, response.parsed_body["lines"].size, "one speaker's words are one line"
+    assert_equal response.parsed_body["lines"].first, response.parsed_body["line"], "the line the moved words are in now"
     assert_equal [ "speaker_0" ], @recording.reload.speakers.map(&:label)
 
     patch line_api_v1_field_recording_path(@recording, line: 1), headers: @headers,

@@ -548,8 +548,11 @@ URL. This read never includes voice-recognition or name-suggestion data.
   another speaker: `speaker` is a speaker id of this recording, or `"new"` for one
   the transcriber didn't separate (made unnamed). Only the speaker label moves;
   talk time and clips are measured again, and a speaker left with no lines is
-  removed unless it holds a voice sample. Same 409s; an unknown speaker or a
-  recording at its speaker limit is 422.
+  removed unless it holds a voice sample being sent. Voice samples being prepared
+  or waiting for those speakers are refused, and their suggestions and guesses
+  cleared. The response's `line` is the line the moved words are in now, which
+  can have a different number once it joins a neighbour. Same 409s; an unknown
+  speaker or a recording at its speaker limit is 422.
 - `PATCH /api/v1/field/recordings/:recording_id/speakers/:id` takes one of
   `me: true`, `voice_id`, `member_user_id`, `name`, `unname: true`,
   `ignore: true` (noise, not a person: it stops counting as waiting for a

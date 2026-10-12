@@ -184,12 +184,19 @@ class FieldRecording < ApplicationRecord
   end
 
   # reassign_line! by line number, for the API. `to` as for reassign_line!.
+  # Returns the number of the line the moved words are now in: lines on
+  # either side may have joined it, so the old number can name another line.
   def reassign_line_number!(number, to:, was:, revision:)
     number = Integer(number, exception: false)
     line = transcript_lines.find { |entry| entry[:line] == number } if number
     raise FieldRecording::LineCorrection::Stale unless line
 
     reassign_line!(line[:locator], to:, was:, revision:)
+    locator = line[:locator]
+    reload.transcript_lines.find do |entry|
+      found = entry[:locator]
+      locator.key?(:index) ? found[:index] == locator[:index] : found[:first].to_i <= locator[:first] && locator[:first] <= found[:last].to_i
+    end&.dig(:line)
   end
 
   # One line given to another speaker (FieldRecording::LineSpeaker). `to` is
@@ -213,6 +220,7 @@ class FieldRecording < ApplicationRecord
       raise FieldRecording::LineCorrection::Stale unless to == :new || target
 
       label = target&.label || FieldRecording::LineSpeaker.new_label(list.map(&:label))
+      before = supplied? ? transcript_turns || [] : transcript_words || []
       if supplied?
         self.transcript_turns = FieldRecording::LineSpeaker.reassign_turn(
           transcript_turns || [], index: line[:index], was:, label:
@@ -229,6 +237,9 @@ class FieldRecording < ApplicationRecord
 
         speakers.create!(label:, position: (list.map(&:position).max || -1) + 1)
       end
+      after = supplied? ? transcript_turns : transcript_words
+      moved_from = before.zip(after).filter_map { |was_entry, now| was_entry["spk"] if was_entry["spk"] != now["spk"] }
+      invalidate_speaker_evidence!((moved_from + [ label ]).uniq) if moved_from.any?
       remeasure_speakers!
       self.transcript_text = render_transcript_text
       save!
@@ -336,6 +347,22 @@ class FieldRecording < ApplicationRecord
   def byte_size = audio.attached? ? audio.byte_size : nil
 
   private
+
+  # Who said what changed for these speakers, so whatever was decided or
+  # prepared from their old audio and lines no longer stands: a voice sample
+  # being prepared or waiting for "use it" holds audio that may now be someone
+  # else's. Bumping the decision generation makes every snapshot taken before
+  # (Enrolments.start!, dispatch!, write_back!; suggestion and recognition
+  # jobs) refuse; previews are thrown away now, a dispatched sample is refused
+  # when its print comes back. Suggestions and guesses drawn from the old
+  # lines go too. A print already stored for the voice is not touched.
+  def invalidate_speaker_evidence!(labels)
+    speakers.where(label: labels).find_each do |speaker|
+      speaker.enrolments.where(status: "previewing").find_each(&:destroy!)
+      speaker.update!(decision_generation: speaker.decision_generation + 1,
+        **FieldRecordingSpeaker::SUGGESTION_FIELDS, **FieldRecordingSpeaker::RECOGNITION_FIELDS)
+    end
+  end
 
   # After a line moved: talk time and clips from the words as they now are,
   # and speakers with nothing left to say removed (not those holding a voice

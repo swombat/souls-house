@@ -185,9 +185,9 @@ module Api
           end
           return render json: { error: "No such speaker in this recording." }, status: :unprocessable_entity unless to
 
-          @recording.reassign_line_number!(params[:line], to:, was: fields["was"], revision: fields["revision"])
+          number = @recording.reassign_line_number!(params[:line], to:, was: fields["was"], revision: fields["revision"])
           json = lines_json(@recording.reload)
-          render json: json.merge(line: json[:lines].find { |entry| entry[:line] == params[:line].to_i })
+          render json: json.merge(line: json[:lines].find { |entry| entry[:line] == number })
         rescue FieldRecording::LineCorrection::Stale
           @recording.reload
           render json: { error: "The transcript has changed, or that line no longer reads as `was`. Read the lines again and retry.",

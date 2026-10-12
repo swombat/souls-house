@@ -782,6 +782,15 @@ test('Escape or a click elsewhere closes the speaker menu and sends nothing', as
   expect(sent).toEqual([]);
 });
 
+test("opening another line's speaker menu closes the first", async ({ mount, page }) => {
+  await mountPlayer(mount, page);
+  // The open menu lies over the lines below it, so go to the line above.
+  await page.getByTestId('line-speaker').nth(1).click();
+  await page.getByTestId('line-speaker').first().click();
+  await expect(page.getByTestId('line-speaker-menu')).toHaveCount(1);
+  await expect(page.getByTestId('line-speaker-menu').getByRole('menuitem').first()).toHaveText('Speaker 2');
+});
+
 test('a refused move says why', async ({ mount, page }) => {
   await captureSpeakerPatches(page, {
     status: 422,

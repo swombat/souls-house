@@ -8,6 +8,7 @@
   let { name, muted = false, choices = [], finePointer = true, disabled = false, onPick } = $props();
 
   let open = $state(false);
+  let root = $state(null);
   let moving = $state(false);
   let error = $state('');
 
@@ -33,7 +34,8 @@
   }
 
   function windowClick(event) {
-    if (open && !event.target.closest?.('[data-speaker-menu]')) open = false;
+    // Its own menu only: opening another line's closes this one.
+    if (open && !root?.contains(event.target)) open = false;
   }
 
   function keydown(event) {
@@ -43,7 +45,7 @@
 
 <svelte:window onclick={windowClick} onkeydown={keydown} />
 
-<div class="relative inline-block" data-speaker-menu>
+<div class="relative inline-block" data-speaker-menu bind:this={root}>
   <button
     type="button"
     class="group/speaker inline-flex items-center gap-1 rounded -mx-1 px-1 text-sm font-semibold hover:bg-muted disabled:opacity-50 {muted
