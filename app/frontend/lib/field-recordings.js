@@ -243,3 +243,19 @@ export function parseNameMatch(value) {
     return null;
   }
 }
+
+// The speaker picker gets a filter box once it lists more than this many
+// people (Daniel, 2026-10-12: past ten, scrolling for a name is too hard).
+export const SPEAKER_FILTER_THRESHOLD = 10;
+
+// Case- and accent-insensitive substring match on a person's name.
+export function speakerQueryMatches(name, query) {
+  const fold = (value) =>
+    String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  const needle = fold(query);
+  return !needle || fold(name).includes(needle);
+}

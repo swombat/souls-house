@@ -204,6 +204,52 @@ test('the "is one of these you?" hint shows when asked for', async ({ mount, pag
   await page.screenshot({ path: 'tmp/field-recording-hint.png', fullPage: true });
 });
 
+test('with more than ten people to choose from, the speaker picker can be filtered', async ({ mount, page }) => {
+  const names = ['Priya', 'Tomás', 'Ines', 'Jo', 'Kwame', 'Lena', 'Marta', 'Noor', 'Oskar', 'Pau', 'Rosa'];
+  await mount(RecordingPage, {
+    props: {
+      recording,
+      speakers,
+      voices: [{ id: 'v1', name: 'Sam' }, ...names.map((name, i) => ({ id: `p${i}`, name }))],
+      members_without_voice: [],
+      my_voice_id: 'v1',
+      show_you_hint: false,
+      account,
+    },
+  });
+
+  await page.getByTestId('speaker-chip').filter({ hasText: "Who's this?" }).click();
+  const filter = page.getByTestId('speaker-filter');
+  const choices = page.getByTestId('speaker-choices');
+  await expect(choices).toContainText('Rosa');
+  await filter.fill('tomas');
+  await expect(choices).toContainText('Tomás');
+  await expect(choices).not.toContainText('Rosa');
+  await expect(page.getByTestId('speaker-choice-me')).toHaveCount(0);
+  await page.screenshot({ path: 'tmp/field-speaker-filter.png' });
+  await filter.fill('Zed');
+  await expect(page.getByTestId('speaker-filter-empty')).toBeVisible();
+  await expect(page.getByText('Add someone new')).toBeVisible();
+});
+
+test('a short speaker list has no filter box', async ({ mount, page }) => {
+  await mount(RecordingPage, {
+    props: {
+      recording,
+      speakers,
+      voices: [{ id: 'v1', name: 'Sam' }, { id: 'v2', name: 'Priya' }],
+      members_without_voice: [],
+      my_voice_id: 'v1',
+      show_you_hint: false,
+      account,
+    },
+  });
+
+  await page.getByTestId('speaker-chip').filter({ hasText: "Who's this?" }).click();
+  await expect(page.getByTestId('speaker-choices')).toContainText('Priya');
+  await expect(page.getByTestId('speaker-filter')).toHaveCount(0);
+});
+
 test('one voice heard as two speakers shows as one card, with its parts', async ({ mount, page }) => {
   const twice = [
     ...speakers.map(({ suggestion, ...speaker }) => speaker),
