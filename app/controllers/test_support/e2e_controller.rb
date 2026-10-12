@@ -158,6 +158,8 @@ module TestSupport
           credential_metadata: { "repository" => "member/project" })
       end
 
+      telegram_fixtures(account, primary_user) if params[:telegram]
+
       github_imports = github_import_fixtures(account, primary_user, run_id) if params[:github_resident_onboarding]
 
       render json: {
@@ -390,6 +392,35 @@ module TestSupport
 
     private
 
+    # Three Telegram connections owned by the primary user, with no connector
+    # behind them: one showing a QR code, one asking for the two-step
+    # password, and one signed in with a few chats.
+    def telegram_fixtures(account, user)
+      adapter = Services::Definition.fetch("telegram").adapter
+      create = lambda do |label, **attributes|
+        result = adapter.connection_attributes(credentials: {}, user: user)
+        account.service_connections.create!(
+          connected_by_user: user, provider: "telegram", management_scope: "personal", label: label,
+          credential_kind: result[:credential_kind], credential_fingerprint: result[:credential_fingerprint],
+          credential_metadata: result[:credential_metadata], credential_payload_hash: result[:credential_payload],
+          login_generation: 1, **attributes
+        )
+      end
+      now = Time.current
+      create.call("Telegram sign-in", status: "pairing",
+        pairing_qr: "tg://login?token=e2e-#{SecureRandom.hex(16)}",
+        pairing_qr_issued_at: now, pairing_qr_expires_at: now + 5.minutes)
+      create.call("Telegram password", status: "pairing",
+        connector_state: { "login" => { "step" => "password", "hint" => "the usual one" } })
+      connected = create.call("Telegram account", status: "connected",
+        external_subject_id: "e2e-telegram-#{SecureRandom.hex(6)}", external_identity: "Ada Example (@ada_example)",
+        connector_state: { "availability" => { "state" => "backlogged", "reason" => "6,000 events waiting" } })
+      [ [ "user:1", "direct", true ], [ "chat:2", "group", true ], [ "channel:3", "broadcast", false ] ].each do |chat_id, kind, synced|
+        connected.comms_chats.create!(provider_chat_id: chat_id, kind: kind, name: "E2E #{kind}",
+          sync_state: synced ? { "synced" => true } : { "synced" => false, "reason" => "broadcast_channel" })
+      end
+    end
+
     def github_import_fixtures(account, user, run_id)
       connection = account.service_connections.create!(
         provider: "github", connected_by_user: user, status: "connected",
@@ -507,6 +538,9 @@ module TestSupport
       AuditLog.where(account: accounts).or(AuditLog.where(user: users)).destroy_all
       Session.where(user: users).destroy_all
       GithubResidentImport.where(account: accounts).destroy_all
+      connections = ServiceConnection.where(account_id: accounts.select(:id))
+      CommsMessage.where(service_connection: connections).delete_all
+      CommsChat.where(service_connection: connections).delete_all
       accounts.find_each(&:destroy!)
       users.find_each(&:destroy!)
     end

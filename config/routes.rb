@@ -128,6 +128,11 @@ Rails.application.routes.draw do
     resources :service_authorizations, only: :create
     resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts do
       resource :pairing, only: :show, controller: "service_connection_pairings"
+      resource :login, only: [], controller: "service_connection_logins" do
+        post :password
+        post :restart
+        post :cancel
+      end
     end
     # Repository watches on the Integrations page's GitHub card.
     resources :watched_repositories, path: "repositories", only: [ :create, :destroy ], module: :accounts
@@ -451,6 +456,7 @@ Rails.application.routes.draw do
         namespace :comms do
           resources :chats, only: :index
           resources :messages, only: :index
+          resource :search, only: :show
         end
       end
       resources :repositories, only: %i[index create destroy]

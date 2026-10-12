@@ -9,6 +9,7 @@ export function serviceDescription(service) {
   if (service.key === 'honeybadger')
     return 'Read production errors, their backtraces and request context, with your personal auth token.';
   if (service.key === 'tailscale') return 'SSH to your own machines over a private tailnet, one node per resident.';
+  if (service.key === 'telegram') return 'Your own Telegram account: residents can read and search the chats it syncs.';
   return 'Direct external-service access for selected residents.';
 }
 
@@ -19,5 +20,6 @@ export function serviceIconClass(serviceKey) {
   if (serviceKey === 'pipedrive') return 'bg-emerald-700 text-white';
   if (serviceKey === 'honeybadger') return 'bg-amber-600 text-white';
   if (serviceKey === 'tailscale') return 'bg-slate-700 text-white';
+  if (serviceKey === 'telegram') return 'bg-sky-500 text-white';
   return 'bg-red-500 text-white';
 }

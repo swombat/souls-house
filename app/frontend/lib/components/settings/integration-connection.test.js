@@ -69,8 +69,22 @@ describe('Tailscale sign-in on the account screen', () => {
       can_manage: true,
       can_provision: true,
       residents: [
-        { id: 'mira', name: 'Mira', enabled: true, access_update_url: '/access/mira', tailnet_url: '/t/mira', integrations_url: '/r/mira' },
-        { id: 'lume', name: 'Lume', enabled: true, access_update_url: '/access/lume', tailnet_url: '/t/lume', integrations_url: '/r/lume' },
+        {
+          id: 'mira',
+          name: 'Mira',
+          enabled: true,
+          access_update_url: '/access/mira',
+          tailnet_url: '/t/mira',
+          integrations_url: '/r/mira',
+        },
+        {
+          id: 'lume',
+          name: 'Lume',
+          enabled: true,
+          access_update_url: '/access/lume',
+          tailnet_url: '/t/lume',
+          integrations_url: '/r/lume',
+        },
         { id: 'off', name: 'Off', enabled: false, access_update_url: '/access/off', tailnet_url: null },
       ],
     });
@@ -85,5 +99,38 @@ describe('Tailscale sign-in on the account screen', () => {
   it('adds nothing to other providers', () => {
     mount({ can_manage: true, can_provision: true });
     expect(screen.queryByTestId('tailnet-sign-ins')).not.toBeInTheDocument();
+  });
+});
+
+describe('a signed-in Telegram connection', () => {
+  const telegram = {
+    provider: 'telegram',
+    label: 'Telegram',
+    management_scope: 'personal',
+    identity: 'Ada Example (@ada_example)',
+    can_manage: true,
+    can_provision: true,
+    comms: {
+      availability: { state: 'unavailable', reason: 'connector restarting' },
+      search_all_dialogs: true,
+      chats: 5,
+      synced_chats: 3,
+    },
+  };
+
+  it('shows who it is signed in as, the synced chats and the availability', () => {
+    mount({ ...telegram, can_delegate: true });
+    const status = screen.getByTestId('telegram-status');
+    expect(status).toHaveTextContent('Ada Example (@ada_example)');
+    expect(status).toHaveTextContent('3 of 5 chats synced');
+    expect(status).toHaveTextContent('safely restart');
+    expect(status).toHaveTextContent('Reason: connector restarting');
+    expect(screen.getByLabelText(/Let residents search beyond the synced chats/)).toBeChecked();
+  });
+
+  it('keeps the search setting to the owner', () => {
+    mount({ ...telegram, can_delegate: false, comms: { ...telegram.comms, availability: { state: 'ok' } } });
+    expect(screen.queryByLabelText(/Let residents search beyond the synced chats/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });
