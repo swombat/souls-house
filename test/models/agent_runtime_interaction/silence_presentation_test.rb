@@ -2,6 +2,8 @@ require "test_helper"
 
 class AgentRuntimeInteraction::SilencePresentationTest < ActiveSupport::TestCase
 
+  include ActiveRecord::Assertions::QueryAssertions
+
   setup do
     @agent = agents(:research_assistant)
     @chat = @agent.account.chats.create!(title: "Quiet runtime", manual_responses: true, agents: [ @agent ])
@@ -43,6 +45,13 @@ class AgentRuntimeInteraction::SilencePresentationTest < ActiveSupport::TestCase
       @run.finish_execution!("completed")
       assert_not @run.as_chat_activity_json[:active]
       assert_equal "completed", @run.as_chat_activity_json[:status]
+    end
+  end
+
+  test "finished cards do not query the latest post for a label they never show" do
+    @run.finish_execution!("completed")
+    assert_queries_match(/MAX\("messages"\."created_at"\)/, count: 0) do
+      assert_nil @run.live_activity_json[:last_resident_post_at]
     end
   end
 

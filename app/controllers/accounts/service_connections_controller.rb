@@ -58,6 +58,14 @@ class Accounts::ServiceConnectionsController < ApplicationController
     if attributes.key?(:freely_provisionable) && !@connection.owner?(Current.user)
       attributes.delete(:freely_provisionable)
     end
+    # Searching a Telegram account beyond its synced dialogs is the owner's
+    # choice alone (proposal 2026-10-11 §7).
+    search_all = attributes.delete(:search_all_dialogs)
+    if !search_all.nil? && @connection.provider == "telegram" && @connection.owner?(Current.user)
+      attributes[:credential_metadata] = @connection.credential_metadata.to_h.merge(
+        "search_all_dialogs" => ActiveModel::Type::Boolean.new.cast(search_all) == true
+      )
+    end
     @connection.update!(attributes)
     audit(:update_service_connection, @connection,
           provider: @connection.provider,
@@ -87,7 +95,7 @@ class Accounts::ServiceConnectionsController < ApplicationController
   end
 
   def connection_params
-    params.require(:service_connection).permit(:label, :enabled_for_new_agents, :freely_provisionable)
+    params.require(:service_connection).permit(:label, :enabled_for_new_agents, :freely_provisionable, :search_all_dialogs)
   end
 
   # Each credentials provider declares its own fields; nothing else passes.
