@@ -52,7 +52,8 @@ export const availabilityMessages = {
   queued: 'Waiting for a place on the Telegram connector. Syncing starts when one is free.',
   busy: 'The Telegram connector is busy. New messages may arrive late.',
   backlogged: 'New messages are paused until the house catches up with the ones it has.',
-  unavailable: 'Syncing is stopped for this account until the house can safely restart it. Chats already synced can still be read.',
+  unavailable:
+    'Syncing is stopped for this account until the house can safely restart it. Chats already synced can still be read.',
 };
 
 export function availabilityMessage(availability) {
