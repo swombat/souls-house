@@ -13,7 +13,8 @@
 #    ignore case). Newest first.
 # 2. Each item's text (the same text Field search reads: notes, transcript
 #    once ready, a file's extracted text, a note's summary and content, a
-#    tweet) is cut into parts of PART_CHARS, and each part goes to its own
+#    tweet) is cut into parts of PART_CHARS that overlap by PART_OVERLAP (so
+#    a passage on a seam is whole in one part), and each part goes to its own
 #    reader with the question inside a fixed wrapper
 #    (app/prompts/field_swarm_read). At most MAX_READS parts per search; an
 #    item that doesn't fit whole is not started, and the response says how
@@ -22,7 +23,17 @@
 # 3. Readers run CONCURRENCY at a time, all within DEADLINE. Each answers
 #    "no", "extract_enough" or "read_whole", with an extract and verbatim
 #    quotes. Every quote is looked up in the item's text: found ones come back
-#    with their character offset, missing ones are marked unverified.
+#    with their character offset in the item's text (TEXT_FIELDS, joined by a
+#    blank line) and in the field it falls in; missing ones are marked
+#    unverified.
+#
+# Expense caps hold under concurrency: a search is admitted, and its row
+# written, under a lock on the account row, so two callers can't both take
+# the last search of the day; the read cap is applied to the text actually
+# loaded, not to lengths measured a query earlier. Every reader call is bound
+# by a wall-clock deadline (not only socket timeouts), and threads still
+# running at the deadline are stopped. A call that may have been billed but
+# whose cost didn't come back is counted as uncertain, never as free.
 #
 # A part that wasn't read (the call failed, was rate limited, or time ran
 # out) is reported as such: "nothing found" and "not checked" are different
@@ -39,6 +50,7 @@ class FieldSwarm
 
   # ~10k tokens a part: small enough that a reader attends to all of it.
   PART_CHARS = 40_000
+  PART_OVERLAP = 400
   MAX_PARTS_PER_ITEM = 12
   MAX_READS = 100
   # Calls in flight at once. Chosen against the house's Anthropic input-token
@@ -50,6 +62,8 @@ class FieldSwarm
   DEADLINE = 90
   READ_TIMEOUT = 45
   MIN_READ_TIME = 5
+  # Seconds given to a thread to finish recording after it is told to stop.
+  STOP_GRACE = 1
   MAX_QUESTION_LENGTH = 2_000
   MAX_GREP_LENGTH = 500
   MAX_SEARCHES_PER_ACCOUNT_PER_DAY = 40
@@ -78,8 +92,61 @@ class FieldSwarm
   # The reader: anything answering like UtilityInference.house_read. Tests
   # replace it (test_helper refuses live calls).
   mattr_accessor :reader, default: ->(**args) { UtilityInference.house_read(**args) }
+  # The time limits, as accessors so tests can shrink them.
+  mattr_accessor :deadline, default: DEADLINE
+  mattr_accessor :read_timeout, default: READ_TIMEOUT
+  mattr_accessor :min_read_time, default: MIN_READ_TIME
+
+  # The fields an item's text is made of, in order, joined by a blank line
+  # with missing (nil) fields left out: the same text as
+  # FieldSearch::SOURCES[kind][:body]. A recording's transcript counts only
+  # once it is ready.
+  TEXT_FIELDS = {
+    "recording" => %w[note notes transcript_text],
+    "file" => %w[note extracted_text],
+    "tweet" => %w[text],
+    "note" => %w[summary content]
+  }.freeze
+  SEPARATOR = "\n\n"
+
+  class ReadTimedOut < StandardError; end
 
   Part = Data.define(:kind, :id, :part, :parts, :from, :text)
+  # An item's text and where each field sits in it.
+  Text = Data.define(:text, :fields) do
+    def length = text.length
+
+    # => [field name, offset within that field] for an offset into text.
+    def field_at(offset)
+      fields.reverse_each do |name, from, length|
+        return [ name, offset - from ] if offset >= from && offset <= from + length
+      end
+      nil
+    end
+  end
+
+  # How many parts a text of `length` characters is read in.
+  def self.part_count(length)
+    return 1 if length <= PART_CHARS
+
+    1 + ((length - PART_CHARS).to_f / (PART_CHARS - PART_OVERLAP)).ceil
+  end
+
+  # The item's text as the swarm reads it, built from the record's fields.
+  def self.text_for(kind, record)
+    fields = []
+    text = +""
+    TEXT_FIELDS.fetch(kind).each do |name|
+      value = record.public_send(name)
+      value = nil if kind == "recording" && name == "transcript_text" && record.status != "ready"
+      next if value.nil?
+
+      text << SEPARATOR unless fields.empty?
+      fields << [ name, text.length, value.length ]
+      text << value
+    end
+    Text.new(text: text, fields: fields)
+  end
 
   def initialize(account:, question:, tags:, grep: nil, kinds: nil, agent: nil, user: nil)
     @account = account
@@ -96,23 +163,32 @@ class FieldSwarm
 
   def call
     raise Disabled, "Field swarm search is not enabled for this account" unless @account.field_swarm_enabled?
-    if FieldSwarmSearch.where(account: @account, created_at: Time.current.utc.all_day).count >= MAX_SEARCHES_PER_ACCOUNT_PER_DAY
-      raise LimitReached, "This account has used its #{MAX_SEARCHES_PER_ACCOUNT_PER_DAY} swarm searches for today (UTC)"
-    end
 
     started = monotonic
-    matched = candidates
-    planned, not_started = plan(matched)
-    texts = load_texts(planned)
-    parts = planned.flat_map { |row| split(row, texts[[ row[:kind], row[:id] ]].to_s) }
-
-    search = FieldSwarmSearch.create!(
-      account: @account, agent: @agent, user: @user, tags: @tags, grep: @grep, question_chars: @question.length,
-      matched_items: matched.size, candidate_items: planned.size, planned_reads: parts.size, model_id: MODEL
-    )
+    search = admit!
     begin
+      matched = candidates
+      planned, not_started = plan(matched)
+      records = load_records(planned.map { |row| [ row[:kind], row[:id] ] })
+      texts = planned.each_with_object({}) do |row, memo|
+        record = records[[ row[:kind], row[:id] ]]
+        memo[[ row[:kind], row[:id] ]] = record ? self.class.text_for(row[:kind], record) : Text.new(text: "", fields: [])
+      end
+      # The cap is applied again to the text as loaded: a body can have grown
+      # since its length was measured.
+      planned, overflow = plan(planned.map { |row| row.merge(chars: texts[[ row[:kind], row[:id] ]].length) })
+      not_started = overflow + not_started
+      parts = planned.flat_map { |row| split(row, texts[[ row[:kind], row[:id] ]].text) }
+      raise "read cap exceeded" if parts.size > MAX_READS # plan guarantees this; never send past it
+
+      search.update!(matched_items: matched.size, candidate_items: planned.size, planned_reads: parts.size)
       outcomes = run(parts, planned, started)
       record!(search, parts, outcomes, started)
+    rescue Invalid
+      # Refused before any reader was sent (a grep that took too long): it
+      # doesn't use up one of the day's searches.
+      search.destroy!
+      raise
     rescue StandardError
       search.update_columns(status: "failed", elapsed_ms: ((monotonic - started) * 1000).round)
       raise
@@ -135,18 +211,28 @@ class FieldSwarm
     [ match.begin(0), match[0].length ] if match
   end
 
-  # The reader's answer, or nil when it isn't the JSON asked for.
+  # The reader's answer, or nil when it isn't the JSON asked for: a known
+  # verdict, string fields, a list of string quotes, and for a relevant
+  # verdict an extract and at least one quote.
   def self.parse(text)
     json = text.to_s[/\{.*\}/m]
     answer = json && JSON.parse(json)
     return unless answer.is_a?(Hash) && VERDICTS.include?(answer["verdict"])
+    return unless %w[extract why].all? { |key| answer[key].nil? || answer[key].is_a?(String) }
 
-    quotes = Array(answer["quotes"]).select { |quote| quote.is_a?(String) && quote.strip.present? }
+    quotes = answer["quotes"]
+    return unless quotes.nil? || (quotes.is_a?(Array) && quotes.all?(String))
+
+    verdict = answer["verdict"]
+    extract = answer["extract"].to_s.strip
+    quotes = Array(quotes).map(&:strip).reject(&:empty?)
+    return if verdict != "no" && (extract.empty? || quotes.empty?)
+
     {
-      verdict: answer["verdict"],
-      extract: answer["extract"].is_a?(String) ? answer["extract"].strip[0, MAX_EXTRACT_CHARS] : "",
-      why: answer["why"].is_a?(String) ? answer["why"].strip[0, MAX_EXTRACT_CHARS] : "",
-      quotes: answer["verdict"] == "no" ? [] : quotes.first(MAX_QUOTES).map { |quote| quote.strip[0, MAX_QUOTE_CHARS] }
+      verdict: verdict,
+      extract: extract[0, MAX_EXTRACT_CHARS],
+      why: answer["why"].to_s.strip[0, MAX_EXTRACT_CHARS],
+      quotes: verdict == "no" ? [] : quotes.first(MAX_QUOTES).map { |quote| quote[0, MAX_QUOTE_CHARS] }
     }
   rescue JSON::ParserError
     nil
@@ -174,6 +260,21 @@ class FieldSwarm
   def connection = ActiveRecord::Base.connection
   def sanitize(*args) = ActiveRecord::Base.sanitize_sql_array(args)
   def monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+  # Counts today's searches and writes this one's row under a lock on the
+  # account row, so concurrent callers are admitted one at a time and the
+  # daily cap can't be overshot. The lock is released before anything is read
+  # or sent.
+  def admit!
+    @account.with_lock do
+      if FieldSwarmSearch.where(account: @account, created_at: Time.current.utc.all_day).count >= MAX_SEARCHES_PER_ACCOUNT_PER_DAY
+        raise LimitReached, "This account has used its #{MAX_SEARCHES_PER_ACCOUNT_PER_DAY} swarm searches for today (UTC)"
+      end
+
+      FieldSwarmSearch.create!(account: @account, agent: @agent, user: @user, tags: @tags, grep: @grep,
+        question_chars: @question.length, model_id: MODEL)
+    end
+  end
 
   # => [{ kind:, id:, date:, chars: }], newest first.
   def candidates
@@ -208,7 +309,7 @@ class FieldSwarm
     rows.each do |row|
       next if row[:chars].zero?
 
-      parts = [ (row[:chars].to_f / PART_CHARS).ceil, MAX_PARTS_PER_ITEM ].min
+      parts = [ self.class.part_count(row[:chars]), MAX_PARTS_PER_ITEM ].min
       if parts <= budget && not_started.empty?
         planned << row
         budget -= parts
@@ -219,20 +320,11 @@ class FieldSwarm
     [ planned, not_started ]
   end
 
-  def load_texts(rows)
-    rows.group_by { |row| row[:kind] }.each_with_object({}) do |(kind, list), memo|
-      source = FieldSearch::SOURCES.fetch(kind)
-      sql = sanitize("SELECT #{source[:table]}.id, #{source[:body]} FROM #{source[:table]} WHERE #{source[:table]}.id IN (?)",
-        list.map { |row| row[:id] })
-      connection.select_rows(sql).each { |(id, body)| memo[[ kind, id ]] = body.to_s }
-    end
-  end
-
   def split(row, text)
-    count = [ (text.length.to_f / PART_CHARS).ceil, 1 ].max
+    count = self.class.part_count(text.length)
     read = [ count, MAX_PARTS_PER_ITEM ].min
     (0...read).map do |index|
-      from = index * PART_CHARS
+      from = index * (PART_CHARS - PART_OVERLAP)
       Part.new(kind: row[:kind], id: row[:id], part: index + 1, parts: count, from: from, text: text[from, PART_CHARS])
     end
   end
@@ -252,41 +344,68 @@ class FieldSwarm
     end
 
     outcomes = Array.new(parts.size)
+    sent_at = Array.new(parts.size)
     queue = Queue.new
     parts.each_index { |index| queue << index }
     workers = Array.new([ CONCURRENCY, parts.size ].min) do
       Thread.new do
         while (index = (queue.pop(true) rescue nil))
+          sent_at[index] = monotonic
           outcomes[index] = read(prompts[index], started)
         end
       end
     end
-    workers.each(&:join)
+    # Each read bounds itself; this is the backstop. Nothing outlives the
+    # deadline: a thread still running is stopped, and its part is counted as
+    # timed out (possibly billed) or not run.
+    stop_at = started + deadline + STOP_GRACE
+    workers.each { |worker| worker.join([ stop_at - monotonic, 0 ].max) }
+    workers.each { |worker| worker.kill if worker.alive? }
+    workers.each { |worker| worker.join(STOP_GRACE) }
+    outcomes.each_index do |index|
+      next if outcomes[index]
+
+      outcomes[index] = if sent_at[index]
+        { status: "timed_out", error: "time ran out", sent: true, latency_ms: ((monotonic - sent_at[index]) * 1000).round }
+      else
+        { status: "unrun", error: "time ran out" }
+      end
+    end
     outcomes
   end
 
+  # One reader call, bound by the time left before the deadline (a wall-clock
+  # limit, not only the client's socket timeouts, which a slow trickle of
+  # bytes never trips). `sent:` is whether the call may have been billed.
   def read(prompt, started)
-    remaining = DEADLINE - (monotonic - started)
-    return { status: "unrun", error: "time ran out" } if remaining < MIN_READ_TIME
+    remaining = deadline - (monotonic - started)
+    return { status: "unrun", error: "time ran out" } if remaining < min_read_time
 
+    limit = [ read_timeout, remaining ].min
     began = monotonic
-    answer = reader.call(model: MODEL, provider: PROVIDER, system: SYSTEM, user: prompt,
-      max_tokens: MAX_TOKENS, timeout: [ READ_TIMEOUT, remaining ].min.ceil)
+    answer = Timeout.timeout(limit, ReadTimedOut) do
+      reader.call(model: MODEL, provider: PROVIDER, system: SYSTEM, user: prompt,
+        max_tokens: MAX_TOKENS, timeout: limit.ceil)
+    end
     latency = ((monotonic - began) * 1000).round
-    parsed = self.class.parse(answer[:text])
-    base = { usage: answer[:usage], upstream_id: answer[:id], latency_ms: latency }
-    if parsed
+    base = { usage: answer[:usage], upstream_id: answer[:id], latency_ms: latency, sent: true }
+    if (parsed = self.class.parse(answer[:text]))
       base.merge(status: "read", answer: parsed)
     else
       base.merge(status: "failed", error: "the reader's answer wasn't the JSON asked for")
     end
+  rescue ReadTimedOut
+    { status: "timed_out", error: "time ran out", sent: true, latency_ms: ((monotonic - began) * 1000).round }
   rescue UtilityInference::RateLimited
-    { status: "rate_limited", error: "rate limited", latency_ms: ((monotonic - began) * 1000).round }
+    # A 429 is refused before any work, so it isn't billed.
+    { status: "rate_limited", error: "rate limited", sent: false, latency_ms: ((monotonic - began) * 1000).round }
+  rescue UtilityInference::MissingCredentials, UtilityInference::InputTooLong => e
+    { status: "failed", error: e.message, sent: false, latency_ms: 0 }
   rescue UtilityInference::Error => e
-    { status: "failed", error: e.message, latency_ms: began && ((monotonic - began) * 1000).round }
+    { status: "failed", error: e.message, sent: true, latency_ms: began && ((monotonic - began) * 1000).round }
   rescue StandardError => e
     # A reader must never take the whole search down with it.
-    { status: "failed", error: "reader error (#{e.class})", latency_ms: began && ((monotonic - began) * 1000).round }
+    { status: "failed", error: "reader error (#{e.class})", sent: true, latency_ms: began && ((monotonic - began) * 1000).round }
   end
 
   def load_records(keys)
@@ -307,12 +426,15 @@ class FieldSwarm
       tokens = outcome[:usage].is_a?(Hash) ? outcome[:usage] : {}
       cost, = HouseInference::UsageCost.call(outcome[:usage])
       outcome[:cost] = cost
+      # Sent, and no cost came back: it may have been billed. Never free.
+      uncertain = outcome[:sent] == true && cost.nil?
       {
         field_swarm_search_id: search.id, account_id: @account.id, item_kind: part.kind, item_id: part.id,
         part: part.part, parts: part.parts, input_chars: part.text.length, status: outcome[:status],
         verdict: outcome.dig(:answer, :verdict), error: outcome[:error]&.truncate(200),
         input_tokens: tokens["prompt_tokens"], output_tokens: tokens["completion_tokens"], cost_usd: cost,
-        latency_ms: outcome[:latency_ms], upstream_id: outcome[:upstream_id], created_at: now, updated_at: now
+        latency_ms: outcome[:latency_ms], upstream_id: outcome[:upstream_id], cost_uncertain: uncertain,
+        created_at: now, updated_at: now
       }
     end
     FieldSwarmRead.insert_all!(rows) if rows.any?
@@ -320,10 +442,9 @@ class FieldSwarm
     search.update!(
       status: "complete",
       completed_reads: outcomes.count { |outcome| outcome[:status] == "read" },
-      failed_reads: outcomes.count { |outcome| %w[failed rate_limited].include?(outcome[:status]) },
+      failed_reads: outcomes.count { |outcome| %w[failed rate_limited timed_out].include?(outcome[:status]) },
       unrun_reads: outcomes.count { |outcome| outcome[:status] == "unrun" },
-      # The model answered but its cost can't be known from what came back.
-      uncertain_cost_reads: rows.count { |row| row[:upstream_id].present? && row[:cost_usd].nil? },
+      uncertain_cost_reads: rows.count { |row| row[:cost_uncertain] },
       input_tokens: rows.sum { |row| row[:input_tokens].to_i },
       output_tokens: rows.sum { |row| row[:output_tokens].to_i },
       cost_usd: rows.sum { |row| row[:cost_usd] || 0 },
@@ -341,7 +462,7 @@ class FieldSwarm
       record = records[key]
       next unless record
 
-      item_json(row, record, tags, texts[key].to_s, by_item[key] || [])
+      item_json(row, record, tags, texts[key], by_item[key] || [])
     end
     items.sort_by!.with_index { |item, index| [ RANK.fetch(item[:verdict]), index ] }
 
@@ -383,7 +504,7 @@ class FieldSwarm
       verdict: verdict,
       extract: relevant.map { |part, outcome| [ (multi ? "Part #{part.part}: " : nil), outcome[:answer][:extract] ].join }.reject(&:blank?).join("\n\n").presence,
       why: relevant.map { |_, outcome| outcome[:answer][:why] }.reject(&:blank?).join(" ").presence,
-      locators: relevant.flat_map { |part, outcome| locators(text, part, outcome[:answer][:quotes]) },
+      locators: relevant.flat_map { |part, outcome| locators(text, part, outcome[:answer][:quotes]) }.uniq,
       text_chars: text.length,
       parts: reads.first&.first&.parts || 1,
       parts_planned: reads.size,
@@ -394,15 +515,19 @@ class FieldSwarm
   end
 
   # Quotes looked up first in the part the reader saw, then anywhere in the
-  # item. Offsets are into the item's whole text.
+  # item. `offset` is into the item's whole text (TEXT_FIELDS joined by a
+  # blank line); `field` and `field_offset` say where that is in the record's
+  # own field (`content`, `transcript_text`...), for slicing that field.
   def locators(text, part, quotes)
     quotes.map do |quote|
       found = self.class.locate(part.text, quote)
       offset = found && part.from + found[0]
-      found ||= self.class.locate(text, quote)
+      found ||= self.class.locate(text.text, quote)
       offset ||= found&.first
       if found
-        { quote: text[offset, found[1]], offset: offset, length: found[1], verified: true }
+        field, field_offset = text.field_at(offset)
+        { quote: text.text[offset, found[1]], offset: offset, length: found[1], field: field, field_offset: field_offset,
+          verified: true }
       else
         { quote: quote, verified: false }
       end

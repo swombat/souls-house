@@ -601,9 +601,13 @@ the cost ledger.
 - Each item: the search result fields (`kind`, `id`, `title`, `date`, `tags`,
   `api_path`, `web_path`...) plus `verdict` (`read_whole`, `extract_enough`,
   `no`, or `unchecked` when no part could be read), `extract`, `why`,
-  `locators` (`{ quote, offset, length, verified: true }` with offsets in
-  characters into the item's text, or `{ quote, verified: false }` when the
-  reader's quote isn't in it), `parts`, `parts_read`, `complete` and `errors`.
+  `locators` (`{ quote, offset, length, field, field_offset, verified: true }`,
+  or `{ quote, verified: false }` when the reader's quote isn't in it).
+  `field` is the record's field the quote starts in and `field_offset` its
+  zero-based character offset there, so `field[field_offset, length]` is the
+  quote; `offset` is into the item's whole text, its fields in a fixed order
+  joined by `\n\n` (see [field-swarm-search.md](field-swarm-search.md)).
+  Also `parts`, `parts_read`, `complete` and `errors`.
   Relevant items come first.
 - `summary`: `matched_items`, `read_items`, `not_started_items`,
   `empty_items`, `planned_reads`, `completed_reads`, `failed_reads`,

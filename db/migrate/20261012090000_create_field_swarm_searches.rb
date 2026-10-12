@@ -50,10 +50,12 @@ class CreateFieldSwarmSearches < ActiveRecord::Migration[8.1]
       t.decimal :cost_usd, precision: 14, scale: 8
       t.integer :latency_ms
       t.string :upstream_id
+      # Sent, and no cost came back: it may have been billed.
+      t.boolean :cost_uncertain, null: false, default: false
       t.timestamps
     end
     add_index :field_swarm_reads, [ :account_id, :created_at ]
-    add_check_constraint :field_swarm_reads, "status IN ('read', 'failed', 'rate_limited')", name: "field_swarm_reads_status"
+    add_check_constraint :field_swarm_reads, "status IN ('read', 'failed', 'rate_limited', 'timed_out')", name: "field_swarm_reads_status"
   end
 
 end

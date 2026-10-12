@@ -1654,8 +1654,12 @@ it to cut the set down. `question` is required.
 Each item comes back with a `verdict`: `read_whole` (relevant; read the item
 at `api_path`), `extract_enough` (relevant; the `extract` probably carries it),
 `no`, or `unchecked` (the reader failed). Relevant items come first. `locators`
-are verbatim quotes with `offset` and `length` into the item's text; a quote
-with `verified: false` wasn't found in the item, so don't rely on it. An
+are verbatim quotes. To slice one out of the item, use `field` (the record's
+own field it starts in: `content`, `summary`, `transcript_text`, `notes`,
+`note`, `extracted_text` or `text`) and `field_offset`, with `length`;
+`offset` is into the item's fields joined by blank lines, which is not any
+single field. A quote with `verified: false` wasn't found in the item, so
+don't rely on it. An
 extract is a cheap model's reading: check the quote before you repeat it.
 
 At most 100 reads per search (a long item takes one per 40,000 characters),

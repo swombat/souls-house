@@ -155,8 +155,12 @@ class UtilityInference
   # item, on the house's key, pinned to one provider with no fallback and
   # data_collection "deny", as house_chat. => { text:, usage:, id:,
   # finish_reason: }; usage is OpenRouter's, for HouseInference::UsageCost.
-  # Raises RateLimited on HTTP 429 so the swarm can report it apart from
-  # other failures; never echoes transport details.
+  # `text` is nil when the response carried no text: the call may still have
+  # been billed, so its usage and id come back for the ledger rather than
+  # being raised away. Raises RateLimited on HTTP 429 so the swarm can report
+  # it apart from other failures; never echoes transport details. The
+  # timeout is the client's socket timeout only; the caller bounds the call's
+  # total time (FieldSwarm#read).
   def self.house_read(model:, provider:, system:, user:, max_tokens:, timeout: REQUEST_TIMEOUT)
     raise InputTooLong, "Utility input exceeds limit" if "#{system}#{user}".length > MAX_READ_INPUT_LENGTH
 
@@ -170,9 +174,7 @@ class UtilityInference
     raise InvalidResponse, "Empty house read response" unless response.is_a?(Hash)
 
     content = response.dig("choices", 0, "message", "content")
-    raise InvalidResponse, "House read response has no text" unless content.is_a?(String)
-
-    { text: content, usage: response["usage"], id: response["id"], finish_reason: response.dig("choices", 0, "finish_reason") }
+    { text: (content if content.is_a?(String)), usage: response["usage"], id: response["id"], finish_reason: response.dig("choices", 0, "finish_reason") }
   rescue Faraday::TooManyRequestsError
     raise RateLimited, "House read was rate limited"
   rescue Faraday::Error => error

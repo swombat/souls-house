@@ -180,4 +180,20 @@ class UtilityInferenceTest < ActiveSupport::TestCase
     end
   end
 
+  test "a house read with no text keeps its usage and id, so the ledger can see the bill" do
+    usage = { "prompt_tokens" => 900, "completion_tokens" => 0, "cost" => 0.0001 }
+    client = Object.new
+    client.define_singleton_method(:chat) do |parameters:|
+      { "id" => "gen-1", "usage" => usage, "choices" => [ { "message" => { "content" => nil }, "finish_reason" => "length" } ] }
+    end
+    answer = HouseInference::Offering.stub :key, "house-key" do
+      OpenAI::Client.stub :new, client do
+        UtilityInference.house_read(model: "m", provider: "anthropic", system: "S", user: "U", max_tokens: 10)
+      end
+    end
+    assert_nil answer[:text]
+    assert_equal usage, answer[:usage]
+    assert_equal "gen-1", answer[:id]
+  end
+
 end

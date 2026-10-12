@@ -30,20 +30,36 @@ switch.
    The grep query runs with a 5 s statement timeout; an invalid or too-slow
    expression is a 422.
 2. **Plan.** Newest first. Each item's text is cut into parts of 40,000
-   characters (about 10k tokens). Whole items are taken while their parts fit
-   in 100 reads; the first item that doesn't fit stops the plan, so what is
-   read is always "the newest N", and the response counts what wasn't. One
+   characters (about 10k tokens) that overlap by 400, so a passage on a seam
+   is whole in one part. Whole items are taken while their parts fit in 100
+   reads; the first item that doesn't fit stops the plan, so what is read is
+   always "the newest N", and the response counts what wasn't. The plan is
+   made from lengths measured in the candidate query and then made again from
+   the text as loaded, so a body that grew in between can't push a search
+   past 100 reads. One
    item is read in at most 12 parts; a longer item says it was cut. Items with
    no text are counted as `empty_items` and not read.
 3. **Read.** 12 readers in flight, all inside 90 s (the web proxy closes a
-   request at 120 s). Each reader gets the question and one part inside the
+   request at 120 s). The 90 s is wall-clock: each call is wrapped in a
+   timeout for the time left, because the client's own timeout is per socket
+   read and a slow trickle of bytes never trips it (Mira reproduced 1.24 s
+   against a 0.15 s timeout). Threads still running a second after the
+   deadline are stopped; their parts are `timed_out`. Each reader gets the question and one part inside the
    fixed wrapper and must answer JSON: `verdict` (`no`, `extract_enough`,
    `read_whole`), `extract`, `why`, and up to five verbatim `quotes`. An answer
-   that isn't that JSON counts as a failed read.
+   that isn't that JSON counts as a failed read, and so does a relevant
+   verdict without an extract and at least one quote, or with fields of the
+   wrong type.
 4. **Locate.** Every quote is searched for in the part the reader saw, then
    anywhere in the item, exactly or with whitespace runs treated as equal.
-   Found: `{ quote, offset, length, verified: true }`, with the offset into the
-   item's whole text. Not found: `{ quote, verified: false }`. A paraphrase is a
+   Found: `{ quote, offset, length, field, field_offset, verified: true }`.
+   `offset` is zero-based, in characters, into the item's whole text: its
+   fields in this order, joined by a blank line (`\n\n`), with a missing
+   field left out (an empty one is kept): recording `note`, `notes`,
+   `transcript_text` (once ready); file `note`, `extracted_text`; tweet
+   `text`; note `summary`, `content`. `field` names the field the quote starts
+   in and `field_offset` is where, so `content[field_offset, length]` is the
+   quote. Not found: `{ quote, verified: false }`. A paraphrase is a
    second lossy summary; the quote is what the resident can check.
 5. **Answer.** Items ordered `read_whole`, `extract_enough`, `unchecked`,
    `no`, newest first within each. The summary keeps "nothing found" apart
@@ -83,19 +99,26 @@ parts costs about $0.10–0.15.
 - `field_swarm_searches`: one row per search. Account, the resident or person
   who asked, tags, grep, question length (not the question), items matched and
   read, reads planned/completed/failed/unrun, input and output tokens, cost,
-  elapsed time, model, status. The row is written before the readers start
-  (`running`), finished after (`complete`), or marked `failed` if the search
-  itself fails; a process killed mid-search leaves `running` and loses its
-  reads.
+  elapsed time, model, status. The row is written when the search is
+  admitted (`running`), finished after (`complete`), or marked `failed` if the
+  search itself fails; a process killed mid-search leaves `running` and loses
+  its reads. Admission counts the day's rows and writes the new one under a
+  lock on the account row (released before anything is read), so concurrent
+  callers can't overshoot the daily cap. A search refused before any reader
+  is sent (a grep that timed out) is removed and doesn't count.
 - `field_swarm_reads`: one row per reader call. Item, part, input characters,
-  status (`read`, `failed`, `rate_limited`), verdict, tokens, cost, latency,
-  OpenRouter's generation id. Parts never sent (out of time) have no row and
+  status (`read`, `failed`, `rate_limited`, `timed_out`), verdict, tokens,
+  cost, latency, OpenRouter's generation id, and `cost_uncertain`. Parts never sent (out of time) have no row and
   are counted as `unrun_reads` on the search.
 
 Cost is OpenRouter's reported `usage` read through
 HouseInference::UsageCost (with BYOK, its fee plus the upstream inference
-cost). A call that answered but whose cost can't be known counts in
-`uncertain_cost_reads`, so totals that undercount say so.
+cost). The usage is kept even when the answer is unusable (no text, or not
+the JSON asked for). Any call that was sent and came back without a usable
+cost is `cost_uncertain` and counts in the search's `uncertain_cost_reads`:
+that includes timeouts, transport errors after sending, and answers with no
+usage or id. A 429, missing credentials or a too-long input weren't billed
+and aren't counted. Totals that may undercount say so.
 
 Site Admin → Accounts → (account) → Field swarm search shows searches, reads,
 total cost, cost per search and per read, and reads of unknown cost, for the

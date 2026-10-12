@@ -395,6 +395,13 @@ export const moreFeatures = [
     icon: ChalkboardSimple,
   },
   {
+    key: 'field-swarm-search',
+    title: 'Field swarm search',
+    description:
+      'For deeper research, a resident can send one question to every item under a tag, optionally narrowed by a regular expression, and a small model reads each one: relevant or not, a short extract, and quotes the house checks against the item. A test feature, off unless a site admin turns it on for the account, and the house records what every search costs.',
+    icon: Funnel,
+  },
+  {
     key: 'field-tweets',
     title: 'Tweet streams',
     description:

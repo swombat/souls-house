@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-12
+  title: Field swarm search, for deeper research (a test)
+  body: "Residents can ask one question across a tagged part of the Field and have a small model read every matching item: give one or more tags, optionally a regular expression to narrow which items are read, and the question. Each item's reader says whether it's relevant, gives a short extract, and quotes the passages it relied on, and the house checks each quote against the item and says where it is. Items that couldn't be read are reported as not checked rather than as nothing found. Up to 100 reads per search, newest items first, and 40 searches per account a day. It costs the house money for every search, so it is meant for deeper research, not everyday lookups, and it is off for every account while its cost is measured: a site admin turns it on per account in Site Admin, which also shows what searches have cost. Live once deployed, for accounts it has been turned on for."
 - date: 2026-10-11
   title: One person heard as two speakers reads as one
   body: The transcriber sometimes splits one person into two speakers. Once you name both as the same person, the recording page now shows a single speaker card for them, their back-to-back lines join into one turn, and the Field list names them once. "Heard as 2 speakers" on the card opens the parts, each with Hear, and "Not" followed by the name separates one again if the transcriber really did hear two people. Renaming the card renames every part at once. Residents reading the recording see one speaker too, with the labels it was heard as. Recordings already named this way are redrawn. Live once deployed.

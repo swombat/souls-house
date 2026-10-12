@@ -989,12 +989,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_090000) do
     t.decimal "cost_usd", precision: 14, scale: 8
     t.integer "latency_ms"
     t.string "upstream_id"
+    t.boolean "cost_uncertain", default: false, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "created_at"], name: "index_field_swarm_reads_on_account_id_and_created_at"
     t.index ["account_id"], name: "index_field_swarm_reads_on_account_id"
     t.index ["field_swarm_search_id"], name: "index_field_swarm_reads_on_field_swarm_search_id"
-    t.check_constraint "status::text = ANY (ARRAY['read'::character varying, 'failed'::character varying, 'rate_limited'::character varying]::text[])", name: "field_swarm_reads_status"
+    t.check_constraint "status::text = ANY (ARRAY['read'::character varying, 'failed'::character varying, 'rate_limited'::character varying, 'timed_out'::character varying]::text[])", name: "field_swarm_reads_status"
   end
 
   create_table "field_swarm_searches", force: :cascade do |t|
