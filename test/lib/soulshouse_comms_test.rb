@@ -46,6 +46,36 @@ class SoulshouseCommsTest < ActiveSupport::TestCase
     manifest&.unlink
   end
 
+  test "search calls a Telegram connection's search endpoint with the query, chat, limit and scope" do
+    stdout = stderr = status = nil
+    request = capture_request('{"scope":"synced","results":[{"provider_message_id":"9","body":"lunch?"}]}') do |base|
+      with_manifest(base, provider: "telegram") do |manifest|
+        stdout, stderr, status = Open3.capture3(
+          { "SOULSHOUSE_BEARER_TOKEN" => "hx_test", "SOULSHOUSE_SERVICES_FILE" => manifest },
+          "python3", SCRIPT.to_s, "search", "--query", "lunch friday", "--chat", "user:1", "--limit", "5", "--scope", "synced"
+        )
+      end
+    end
+
+    assert status.success?, stderr
+    assert_equal "lunch?", JSON.parse(stdout).dig("results", 0, "body")
+    path, query = request[:request_line].split[1].split("?", 2)
+    assert_equal "/api/v1/service_connections/svc_123/comms/search", path
+    assert_equal({ "query" => [ "lunch friday" ], "chat" => [ "user:1" ], "limit" => [ "5" ], "scope" => [ "synced" ] }, CGI.parse(query))
+  end
+
+  test "search on a WhatsApp connection says it has none" do
+    _stdout, stderr, status = with_manifest("http://127.0.0.1:9") do |manifest|
+      Open3.capture3(
+        { "SOULSHOUSE_BEARER_TOKEN" => "hx_test", "SOULSHOUSE_SERVICES_FILE" => manifest },
+        "python3", SCRIPT.to_s, "search", "--query", "x"
+      )
+    end
+
+    assert_not status.success?
+    assert_includes stderr, "no search"
+  end
+
   test "there is no send command" do
     _stdout, stderr, status = Open3.capture3(
       { "SOULSHOUSE_BEARER_TOKEN" => "hx_test" }, "python3", SCRIPT.to_s, "send", "--chat", "x", "hello"
@@ -56,14 +86,15 @@ class SoulshouseCommsTest < ActiveSupport::TestCase
 
   private
 
-  def with_manifest(base)
+  def with_manifest(base, provider: "whatsapp")
+    credentials = {
+      "chats_endpoint" => "#{base}/api/v1/service_connections/svc_123/comms/chats",
+      "messages_endpoint" => "#{base}/api/v1/service_connections/svc_123/comms/messages"
+    }
+    credentials["search_endpoint"] = "#{base}/api/v1/service_connections/svc_123/comms/search" if provider == "telegram"
     manifest = Tempfile.new([ "services", ".yml" ])
     manifest.write({ "services" => [ {
-      "connection_id" => "svc_123", "provider" => "whatsapp",
-      "credentials" => {
-        "chats_endpoint" => "#{base}/api/v1/service_connections/svc_123/comms/chats",
-        "messages_endpoint" => "#{base}/api/v1/service_connections/svc_123/comms/messages"
-      }
+      "connection_id" => "svc_123", "provider" => provider, "credentials" => credentials
     } ] }.to_yaml)
     manifest.close
     yield manifest.path

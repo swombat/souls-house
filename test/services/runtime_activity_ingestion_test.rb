@@ -439,6 +439,25 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
     assert_equal "unknown", helper_snapshot["subagents"].first["status"]
   end
 
+  test "ack carries the resident's last visible post in this run's conversation" do
+    other = agents(:code_reviewer)
+    @chat.agents << other unless @chat.agents.include?(other)
+    @run.update_columns(created_at: 10.minutes.ago)
+    @chat.messages.create!(role: "assistant", agent: @agent, content: "before the run", created_at: 20.minutes.ago)
+
+    ack = ingest(1, "attempt.started", { "narration_capability" => "unknown" })
+    assert_nil ack[:last_resident_post_at], "a post from before the run is not this run's update"
+
+    seen = @chat.messages.create!(role: "assistant", agent: @agent, content: "Starting on it.", created_at: 3.minutes.ago)
+    @chat.messages.create!(role: "assistant", agent: other, content: "another resident", created_at: 1.minute.ago)
+    @chat.messages.create!(role: "assistant", agent: @agent, content: "withdrawn", created_at: 1.minute.ago, discarded_at: Time.current)
+    @chat.messages.create!(role: "assistant", agent: @agent, content: "working", created_at: 1.minute.ago, progress_message: true)
+
+    ack = ingest(2, "heartbeat", { "operations" => [], "detail_dropped" => 0 })
+    assert_equal seen.created_at.iso8601(3), ack[:last_resident_post_at]
+    assert_in_delta Time.current, Time.iso8601(ack[:server_time]), 5
+  end
+
   private
 
   def start_helpers

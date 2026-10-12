@@ -31,6 +31,14 @@ class FieldSwarmTest < ActiveSupport::TestCase
     FieldSwarm.new(account: @account, question: "What was the business worth?", tags: [ "research" ], agent: @agent, **options)
   end
 
+  # The first live search quoted exactly but named the wrong speakers in its
+  # extracts; the wrapper now ties names to the transcript's line labels.
+  test "the reader wrapper names speakers only from the transcript's labels" do
+    assert_includes FieldSwarm::SYSTEM, "name a speaker only when the"
+    assert_includes FieldSwarm::SYSTEM, "[11:46] Bob: ..."
+    assert_includes FieldSwarm::SYSTEM, "who asked, and who was asked"
+  end
+
   test "each verdict comes back, relevant items first, with a locator on the known passage" do
     result = with_reader(@reader) { swarm.call }
     verdicts = result[:items].map { |item| [ item[:title], item[:verdict] ] }

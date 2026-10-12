@@ -1,7 +1,16 @@
 <script>
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
-  import { DropboxLogo, GithubLogo, Funnel, Bug, ShareNetwork, GoogleLogo, Heartbeat } from 'phosphor-svelte';
+  import {
+    DropboxLogo,
+    GithubLogo,
+    Funnel,
+    Bug,
+    ShareNetwork,
+    GoogleLogo,
+    Heartbeat,
+    TelegramLogo,
+  } from 'phosphor-svelte';
   import { serviceIconClass } from '$lib/service-presentation';
   import { submitNativePost } from '$lib/integration-forms';
   import TailscaleKeyNote from './tailscale-key-note.svelte';
@@ -97,6 +106,8 @@
         <Bug size={26} weight="bold" />
       {:else if focusedService.key === 'tailscale'}
         <ShareNetwork size={26} weight="bold" />
+      {:else if focusedService.key === 'telegram'}
+        <TelegramLogo size={26} weight="fill" />
       {:else}
         <Heartbeat size={26} weight="fill" />
       {/if}

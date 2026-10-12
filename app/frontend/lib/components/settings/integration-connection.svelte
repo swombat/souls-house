@@ -1,11 +1,22 @@
 <script>
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
-  import { DropboxLogo, GithubLogo, Funnel, Bug, ShareNetwork, GoogleLogo, Heartbeat } from 'phosphor-svelte';
+  import {
+    DropboxLogo,
+    GithubLogo,
+    Funnel,
+    Bug,
+    ShareNetwork,
+    GoogleLogo,
+    Heartbeat,
+    TelegramLogo,
+  } from 'phosphor-svelte';
   import { serviceIconClass } from '$lib/service-presentation';
   import ConnectionGoogleAuthority from './connection-google-authority.svelte';
   import ConnectionRepositories from './connection-repositories.svelte';
   import ConnectionResidentAccess from './connection-resident-access.svelte';
+  import ConnectionTelegramLogin from './connection-telegram-login.svelte';
+  import ConnectionTelegramStatus from './connection-telegram-status.svelte';
   let { connection, services, account } = $props();
   function updateConnection(connection, attributes) {
     router.patch(`/accounts/${account.id}/service_connections/${connection.id}`, {
@@ -48,6 +59,8 @@
             <Bug size={26} weight="bold" />
           {:else if connection.provider === 'tailscale'}
             <ShareNetwork size={26} weight="bold" />
+          {:else if connection.provider === 'telegram'}
+            <TelegramLogo size={26} weight="fill" />
           {:else}
             <Heartbeat size={26} weight="fill" />
           {/if}
@@ -69,6 +82,8 @@
           </p>
           {#if connection.status === 'reauthorizing'}
             <p class="text-sm text-amber-700">Reauthorization required before residents can use this connection.</p>
+          {:else if connection.status === 'pairing' && connection.provider === 'telegram'}
+            <p class="text-sm text-amber-700">Waiting for sign-in. Residents can use this once it is signed in.</p>
           {:else if connection.status === 'pairing'}
             <p class="text-sm text-amber-700">Waiting for pairing. Residents can use this once it is linked.</p>
           {/if}
@@ -89,6 +104,14 @@
     </header>
 
     <ConnectionGoogleAuthority {connection} {services} {account} />
+
+    {#if connection.provider === 'telegram'}
+      {#if connection.status === 'pairing' || connection.status === 'reauthorizing'}
+        <ConnectionTelegramLogin {connection} {account} />
+      {:else if connection.status === 'connected'}
+        <ConnectionTelegramStatus {connection} {account} />
+      {/if}
+    {/if}
 
     <ConnectionResidentAccess {connection} />
     {#if connection.provider === 'github' && connection.repositories}
