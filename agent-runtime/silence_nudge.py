@@ -5,11 +5,14 @@ from a resident: every activity ack carries `last_resident_post_at`, the
 latest visible post by this run's resident in this run's conversation. This
 clock measures silence from that (or from the run's start, before any post)
 and, when the resident has been quiet too long, writes a steer notice that
-`chaos exec --steer-file` delivers into the running turn without cancelling
-it. Under clamp the notice rides on the next tool result.
+`chaos exec --steer-file` mirrors into the session and delivers into the
+running turn without cancelling it. Under clamp the notice rides on the next
+tool result.
 
-One pending notice per run: a newer notice replaces the old one, a visible
-post or the end of the run removes it, and every notice expires on its own.
+One notice per run, in one file: a newer notice (new id) replaces the old one,
+a visible post or the end of the run deletes the file to withdraw it, and every
+notice expires on its own. Chaos checks expiry again at the moment of delivery
+and delivers each id once.
 """
 import datetime
 import json
@@ -130,9 +133,10 @@ class SilenceClock:
                     and now - self.last_notice_at < self.repeat:
                 return None
             text = notice_text(silence, self.conversation_id)
-            self._write({"text": text, "expires_at": now + self.ttl})
-            self.last_notice_at = now
             self.notices += 1
+            self._write({"id": f"{self.path.stem}-{self.notices}", "text": text,
+                         "expires_at": now + self.ttl})
+            self.last_notice_at = now
             return text
 
     def finish(self, now):
