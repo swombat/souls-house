@@ -59,7 +59,9 @@ switch.
    `transcript_text` (once ready); file `note`, `extracted_text`; tweet
    `text`; note `summary`, `content`. `field` names the field the quote starts
    in and `field_offset` is where, so `content[field_offset, length]` is the
-   quote. Not found: `{ quote, verified: false }`. A paraphrase is a
+   quote. A quote that crosses from one field into the next (through the
+   blank line) has no `field` or `field_offset`; use `offset` into the
+   composite text. Not found: `{ quote, verified: false }`. A paraphrase is a
    second lossy summary; the quote is what the resident can check.
 5. **Answer.** Items ordered `read_whole`, `extract_enough`, `unchecked`,
    `no`, newest first within each. The summary keeps "nothing found" apart

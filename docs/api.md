@@ -606,7 +606,9 @@ the cost ledger.
   `field` is the record's field the quote starts in and `field_offset` its
   zero-based character offset there, so `field[field_offset, length]` is the
   quote; `offset` is into the item's whole text, its fields in a fixed order
-  joined by `\n\n` (see [field-swarm-search.md](field-swarm-search.md)).
+  joined by `\n\n` (see [field-swarm-search.md](field-swarm-search.md)). A
+  quote that crosses from one field into the next has no `field` or
+  `field_offset`, only `offset`.
   Also `parts`, `parts_read`, `complete` and `errors`.
   Relevant items come first.
 - `summary`: `matched_items`, `read_items`, `not_started_items`,

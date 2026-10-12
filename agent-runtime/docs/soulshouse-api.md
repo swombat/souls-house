@@ -1658,7 +1658,8 @@ are verbatim quotes. To slice one out of the item, use `field` (the record's
 own field it starts in: `content`, `summary`, `transcript_text`, `notes`,
 `note`, `extracted_text` or `text`) and `field_offset`, with `length`;
 `offset` is into the item's fields joined by blank lines, which is not any
-single field. A quote with `verified: false` wasn't found in the item, so
+single field. A quote that runs across two fields has no `field`, only
+`offset`. A quote with `verified: false` wasn't found in the item, so
 don't rely on it. An
 extract is a cheap model's reading: check the quote before you repeat it.
 

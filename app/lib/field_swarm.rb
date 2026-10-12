@@ -116,10 +116,12 @@ class FieldSwarm
   Text = Data.define(:text, :fields) do
     def length = text.length
 
-    # => [field name, offset within that field] for an offset into text.
-    def field_at(offset)
-      fields.reverse_each do |name, from, length|
-        return [ name, offset - from ] if offset >= from && offset <= from + length
+    # => [field name, offset within that field] when the span at `offset`
+    # of `length` characters lies wholly inside one field; nil when it
+    # crosses a separator (then only the composite offset applies).
+    def field_at(offset, length = 0)
+      fields.each do |name, from, size|
+        return [ name, offset - from ] if offset >= from && offset + length <= from + size
       end
       nil
     end
@@ -517,7 +519,9 @@ class FieldSwarm
   # Quotes looked up first in the part the reader saw, then anywhere in the
   # item. `offset` is into the item's whole text (TEXT_FIELDS joined by a
   # blank line); `field` and `field_offset` say where that is in the record's
-  # own field (`content`, `transcript_text`...), for slicing that field.
+  # own field (`content`, `transcript_text`...), for slicing that field. A
+  # quote that crosses from one field into the next has no field
+  # coordinates, only the composite offset.
   def locators(text, part, quotes)
     quotes.map do |quote|
       found = self.class.locate(part.text, quote)
@@ -525,9 +529,9 @@ class FieldSwarm
       found ||= self.class.locate(text.text, quote)
       offset ||= found&.first
       if found
-        field, field_offset = text.field_at(offset)
+        field, field_offset = text.field_at(offset, found[1])
         { quote: text.text[offset, found[1]], offset: offset, length: found[1], field: field, field_offset: field_offset,
-          verified: true }
+          verified: true }.compact
       else
         { quote: quote, verified: false }
       end

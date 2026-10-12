@@ -287,6 +287,19 @@ class FieldSwarmTest < ActiveSupport::TestCase
     assert_equal "actual content", note.reload.content[locator[:field_offset], locator[:length]]
   end
 
+  test "a quote that crosses from one field into the next keeps only the composite offset" do
+    note = tagged_note(@account, "Across", "actual content", tag: "across")
+    note.update_columns(summary: "summary")
+    reader = ->(**) { answer("extract_enough", extract: "it", quotes: [ "summary actual" ]) }
+    result = with_reader(reader) { FieldSwarm.new(account: @account, question: "q", tags: [ "across" ]).call }
+    locator = result[:items].sole[:locators].sole
+    assert locator[:verified]
+    assert_equal 0, locator[:offset]
+    assert_equal "summary\n\nactual", locator[:quote]
+    assert_not locator.key?(:field)
+    assert_not locator.key?(:field_offset)
+  end
+
   test "the text the readers get is the text Field search reads" do
     note = tagged_note(@account, "Composed", "body text")
     note.update_columns(summary: "a summary")
