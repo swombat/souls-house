@@ -193,12 +193,19 @@ class AgentRuntimeInteraction < ApplicationRecord
   # When this run's resident last posted something visible in this run's
   # conversation. The runtime's silence clock reads it from the activity ack:
   # what the people in the room have actually seen, not tool activity or stdout.
-  # Another resident's reply, a discarded message and a progress row don't count.
+  # Another resident's reply, a discarded or still-streaming row, a progress row,
+  # an empty placeholder and unreclaimed safeguard-labelled house speech don't
+  # count. A genuine attachment-only post and reclaimed speech do. This is the
+  # one definition: the activity ack and the activity card both read it.
   def last_resident_post_at
     return unless chat_id
 
-    Message.where(chat_id:, agent_id:, role: "assistant", discarded_at: nil, progress_message: false)
+    posts = Message.kept.where(chat_id:, agent_id:, role: "assistant", progress_message: false, streaming: false)
+      .without_safeguard_label
       .where(created_at: created_at..)
+    with_attachments = ActiveStorage::Attachment.where(record_type: "Message", name: "attachments").select(:record_id)
+    posts.where("messages.content ~ '[^[:space:]]'")
+      .or(posts.where(id: with_attachments))
       .maximum(:created_at)
   end
 
