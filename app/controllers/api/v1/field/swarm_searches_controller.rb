@@ -17,7 +17,7 @@ module Api
         require_api_feature_enabled :agents, unless: -> { current_api_agent }
 
         DISABLED = "Field swarm search isn't enabled for this account. It is a test feature a site admin " \
-          "turns on per account (Site Admin → Accounts); ask the people who run souls.house."
+          "turns on per account (Site Admin → Accounts); ask the people who run this house."
 
         def create
           response.headers["Cache-Control"] = "no-store"
