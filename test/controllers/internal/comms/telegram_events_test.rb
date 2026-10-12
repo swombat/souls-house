@@ -148,6 +148,19 @@ module Internal
         assert_nil pairing.pairing_qr
       end
 
+      test "once connected, a status change from another attempt cannot change identity or log out" do
+        @connection.update!(external_subject_id: "current", external_identity: "Current")
+        post_telegram_event @connection, { type: "status.changed", status: "connected", identity: { user_id: "other" } }
+        assert_response :conflict
+        post_telegram_event @connection, { type: "status.changed", status: "logged_out", generation: 0 }
+        assert_response :conflict
+        assert_equal [ "connected", "current" ], [ @connection.reload.status, @connection.external_subject_id ]
+
+        post_telegram_event @connection, { type: "status.changed", status: "logged_out", generation: 1 }
+        assert_response :no_content
+        assert_equal "reauthorizing", @connection.reload.status
+      end
+
       test "deletions the connector could not place are counted, not guessed" do
         post_telegram_event @connection, { type: "message.delete", deletions: [], unresolved: 3 }
         post_telegram_event @connection, { type: "message.delete", deletions: [], unresolved: 2 }

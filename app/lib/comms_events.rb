@@ -124,9 +124,11 @@ module CommsEvents
     when "status.changed"
       change = STATUS_CHANGES[event["status"]] || raise(Refused.new(:unknown_status, :unprocessable_entity))
       require_status!(connection, change.fetch(:from))
-      # Finishing (or losing) a Telegram sign-in must name the attempt it
-      # belongs to; WhatsApp's pairing has no generations.
-      if event.key?("generation") || (connection.provider == "telegram" && connection.status == "pairing")
+      # Every Telegram status change (finishing a sign-in, a refresh of the
+      # identity once connected, a Telegram-side logout) must name the
+      # attempt it belongs to, so nothing from an older attempt can change
+      # who this connection is. WhatsApp's pairing has no generations.
+      if event.key?("generation") || connection.provider == "telegram"
         require_generation!(connection, event)
       end
       consume_nonce!(connection, nonce, now)
