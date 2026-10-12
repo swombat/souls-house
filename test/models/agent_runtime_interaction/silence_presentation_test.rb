@@ -63,7 +63,7 @@ class AgentRuntimeInteraction::SilencePresentationTest < ActiveSupport::TestCase
   test "a genuine attachment-only resident post counts" do
     travel 1.minute do
       post = @chat.messages.create!(agent: @agent, role: "assistant", content: "")
-      post.files.attach(io: StringIO.new("A checked finding."), filename: "finding.txt", content_type: "text/plain")
+      post.attachments.attach(io: StringIO.new("A checked finding."), filename: "finding.txt", content_type: "text/plain")
       assert_equal post.created_at, @run.last_resident_post_at
     end
   end
