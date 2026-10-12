@@ -2,13 +2,25 @@
   import { tick } from 'svelte';
   import { formatClock, lineAddress, turnSpeakerName } from '$lib/field-recordings';
   import { PencilSimple, SpeakerHigh } from 'phosphor-svelte';
+  import LineSpeakerMenu from './LineSpeakerMenu.svelte';
 
   // `onSave(edit, text)` resolves to {ok, error}; without it lines are
   // read-only. `edit` is what the line was when editing began: its address,
   // its text and the transcript's revision, so a save made against a
   // transcript that has since changed is refused rather than landing on
   // whatever line now sits at those positions.
-  let { turns = [], names = {}, activeIndex = -1, revision = null, onSeek, onSave = null } = $props();
+  // `onReassign(edit, speakerId | 'new')` gives a line to someone else, as
+  // onSave does; `choices` are {id, name, labels}, one per person.
+  let {
+    turns = [],
+    names = {},
+    activeIndex = -1,
+    revision = null,
+    onSeek,
+    onSave = null,
+    onReassign = null,
+    choices = [],
+  } = $props();
 
   // With a mouse, clicking a line edits it in place and a speaker button sits
   // beside it. On touch, tapping a line offers Edit and Listen, and pressing
@@ -160,7 +172,16 @@
         <span></span>
       {/if}
       <div class="group relative" data-line={t}>
-        <p class="text-sm font-semibold {turn.spk ? '' : 'text-muted-foreground'}">{turnSpeakerName(turn, names)}</p>
+        {#if onReassign && editing !== t}
+          <LineSpeakerMenu
+            name={turnSpeakerName(turn, names)}
+            muted={!turn.spk}
+            choices={choices.filter((choice) => !choice.labels.includes(turn.spk))}
+            {finePointer}
+            onPick={(id) => onReassign({ address: lineAddress(turn), was: turn.text, revision }, id)} />
+        {:else}
+          <p class="text-sm font-semibold {turn.spk ? '' : 'text-muted-foreground'}">{turnSpeakerName(turn, names)}</p>
+        {/if}
         {#if editing === t}
           <div class="flex items-start gap-2">
             <div class="flex-1 min-w-0">

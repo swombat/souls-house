@@ -1574,6 +1574,14 @@ then `souls field correct RECORDING_ID LINE 'corrected text' --revision REV`.
 The correction is visible to everyone who reads the recording, and the summary
 is not rewritten.
 
+A line can also be heard as the wrong person. Each line from `/lines` carries a
+`speaker_id`; to give a line to someone else, send the same `PATCH` with
+`{"speaker": "SPEAKER_ID", "was": "...", "revision": "..."}` in place of
+`text`, using an id from the recording's `speakers`, or `"speaker": "new"` for
+someone the transcriber didn't separate (it reads as "Speaker N" until a
+person names it). Only the speaker moves; the words stay. The same care
+applies: only when you know who said it.
+
 ### Tweets
 
 If the account follows a public X handle, its posts come into the Field as

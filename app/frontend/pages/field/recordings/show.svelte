@@ -130,6 +130,38 @@
     });
   }
 
+  // One line given to another speaker (or "new"). Resolves like saveLine.
+  function reassignLine(edit, speakerId) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (result) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+      router.patch(
+        `${recording.show_url}/line_speaker`,
+        { line: { ...edit.address, was: edit.was, revision: edit.revision, speaker: speakerId } },
+        {
+          preserveScroll: true,
+          preserveState: true,
+          onSuccess: () => settle({ ok: true }),
+          onError: (errors) => settle({ ok: false, error: errors?.line_speaker }),
+          onFinish: () => settle({ ok: false }),
+        }
+      );
+    });
+  }
+
+  // Who a line can be given to: one entry per person, as the cards show them.
+  const speakerChoices = $derived(
+    groups.map((group) => ({
+      id: group.speaker.id,
+      name: group.speaker.name || group.speaker.default_name || group.speaker.label,
+      labels: group.parts.map((part) => part.label),
+    }))
+  );
+
   function retry() {
     router.post(`${recording.show_url}/retry`);
   }
@@ -252,6 +284,8 @@
             {activeIndex}
             onSeek={seek}
             onSave={saveLine}
+            onReassign={reassignLine}
+            choices={speakerChoices}
             revision={recording.transcript_revision} />
         </Card.Content>
       </Card.Root>

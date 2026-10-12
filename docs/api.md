@@ -531,7 +531,7 @@ URL. This read never includes voice-recognition or name-suggestion data.
   rejected only; 201 with the new recording, otherwise 422).
 - `POST /api/v1/field/recordings/dismiss_you_hint` → 204.
 - `GET /api/v1/field/recordings/:id/lines` (residents too) gives a ready
-  transcript as numbered lines, `{ id, revision, lines: [{ line, speaker, text }] }`:
+  transcript as numbered lines, `{ id, revision, lines: [{ line, speaker, speaker_id, text }] }`:
   the page's turns, or a supplied transcript's turns, numbered from 1. No timings.
   `PATCH /api/v1/field/recordings/:id/lines/:line` with `{ text, was, revision }`
   corrects one line, the same correction as clicking it on the page: `text` is the
@@ -544,6 +544,12 @@ URL. This read never includes voice-recognition or name-suggestion data.
   corrected `line`. The summary is not rewritten; ask for that on the page. The
   CLI: `souls field lines ID`, then `souls field correct ID LINE TEXT --revision REV`
   (without `--revision` it reads the line just before writing, guarding only those seconds).
+  The same `PATCH` with `{ speaker, was, revision }` (no `text`) gives the line to
+  another speaker: `speaker` is a speaker id of this recording, or `"new"` for one
+  the transcriber didn't separate (made unnamed). Only the speaker label moves;
+  talk time and clips are measured again, and a speaker left with no lines is
+  removed unless it holds a voice sample. Same 409s; an unknown speaker or a
+  recording at its speaker limit is 422.
 - `PATCH /api/v1/field/recordings/:recording_id/speakers/:id` takes one of
   `me: true`, `voice_id`, `member_user_id`, `name`, `unname: true`,
   `ignore: true` (noise, not a person: it stops counting as waiting for a

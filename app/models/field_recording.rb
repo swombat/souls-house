@@ -153,10 +153,12 @@ class FieldRecording < ApplicationRecord
   def transcript_lines
     return [] unless ready?
 
-    names = speakers.includes(:field_voice).to_h { |speaker| [ speaker.label, speaker.display_name ] }
+    list = speakers.includes(:field_voice).to_a
+    names = list.to_h { |speaker| [ speaker.label, speaker.display_name ] }
+    ids = list.to_h { |speaker| [ speaker.label, speaker.to_param ] }
     if supplied?
       (transcript_turns || []).each_with_index.map do |turn, index|
-        { line: index + 1, speaker: names[turn["spk"]] || turn["spk"], text: FieldRecording::LineCorrection.normalise(turn["t"]),
+        { line: index + 1, speaker: names[turn["spk"]] || turn["spk"], speaker_id: ids[turn["spk"]], text: FieldRecording::LineCorrection.normalise(turn["t"]),
           locator: { index: } }
       end
     else
@@ -165,7 +167,7 @@ class FieldRecording < ApplicationRecord
       FieldRecording::LineCorrection.turn_ranges(words).each_with_index.map do |(first, last), n|
         spk = words[timed[first]]["spk"]
         text = words[timed[first]..timed[last]].map { |word| word["t"] }.join
-        { line: n + 1, speaker: names[spk] || spk, text: FieldRecording::LineCorrection.normalise(text),
+        { line: n + 1, speaker: names[spk] || spk, speaker_id: ids[spk], text: FieldRecording::LineCorrection.normalise(text),
           locator: { first:, last: } }
       end
     end
@@ -179,6 +181,59 @@ class FieldRecording < ApplicationRecord
     raise FieldRecording::LineCorrection::Stale unless line
 
     correct_line!(line[:locator], text:, was:, revision:)
+  end
+
+  # reassign_line! by line number, for the API. `to` as for reassign_line!.
+  def reassign_line_number!(number, to:, was:, revision:)
+    number = Integer(number, exception: false)
+    line = transcript_lines.find { |entry| entry[:line] == number } if number
+    raise FieldRecording::LineCorrection::Stale unless line
+
+    reassign_line!(line[:locator], to:, was:, revision:)
+  end
+
+  # One line given to another speaker (FieldRecording::LineSpeaker). `to` is
+  # a speaker of this recording, or :new for someone the transcriber didn't
+  # separate; :new makes an unnamed speaker, which the page then asks a name
+  # for. Speakers' talk time and clips are measured again. A speaker left
+  # with no lines goes, unless it holds a voice sample (an enrolment), which
+  # is never thrown away here. Positions of the others don't change, so
+  # nobody's "Speaker N" is renumbered under them.
+  #
+  # Takes the naming lock order, account → recording, so it is serialized with
+  # every speaker decision. Raises LineCorrection::Stale as correct_line!
+  # does, and when `to` has gone meanwhile; returns the line's speaker.
+  def reassign_line!(line, to:, was:, revision:)
+    FieldVoiceprints::Locks.with(account:, recording: self) do
+      raise FieldRecording::LineCorrection::Stale unless kept? && ready?
+      raise FieldRecording::LineCorrection::Stale unless revision.present? && revision == transcript_revision
+
+      list = speakers.to_a
+      target = to == :new ? nil : list.find { |speaker| speaker.id == to&.id }
+      raise FieldRecording::LineCorrection::Stale unless to == :new || target
+
+      label = target&.label || FieldRecording::LineSpeaker.new_label(list.map(&:label))
+      if supplied?
+        self.transcript_turns = FieldRecording::LineSpeaker.reassign_turn(
+          transcript_turns || [], index: line[:index], was:, label:
+        )
+      else
+        self.transcript_words = FieldRecording::LineSpeaker.reassign_words(
+          transcript_words || [], first: line[:first], last: line[:last], was:, label:
+        )
+      end
+
+      target ||= begin
+        cap = supplied? ? FieldRecording::SuppliedTranscript::MAX_SPEAKERS : MAX_SPEAKERS
+        raise FieldRecording::LineCorrection::Invalid, "This recording already has #{cap} speakers." if list.size >= cap
+
+        speakers.create!(label:, position: (list.map(&:position).max || -1) + 1)
+      end
+      remeasure_speakers!
+      self.transcript_text = render_transcript_text
+      save!
+      target
+    end
   end
 
   # Probe of a supplied recording: the duration only, for display. Its status
@@ -281,6 +336,30 @@ class FieldRecording < ApplicationRecord
   def byte_size = audio.attached? ? audio.byte_size : nil
 
   private
+
+  # After a line moved: talk time and clips from the words as they now are,
+  # and speakers with nothing left to say removed (not those holding a voice
+  # sample). A supplied transcript has no timings, only labels to count.
+  def remeasure_speakers!
+    speakers.reset
+    present = if supplied?
+      (transcript_turns || []).filter_map { |turn| turn["spk"] }.to_set
+    else
+      measured = FieldRecording::Transcript.speakers(transcript_words || []).index_by { |entry| entry[:label] }
+      (transcript_words || []).filter_map { |word| word["spk"] if word["k"] != "s" }.to_set
+    end
+
+    speakers.includes(:enrolments).each do |speaker|
+      if !present.include?(speaker.label) && speaker.enrolments.empty?
+        speaker.destroy!
+      elsif measured
+        entry = measured[speaker.label]
+        speaker.update!(talk_ms: entry&.dig(:talk_ms) || 0, clip_start_ms: entry&.dig(:clip_start_ms),
+          clip_end_ms: entry&.dig(:clip_end_ms))
+      end
+    end
+    speakers.reset
+  end
 
   def normalise_provenance
     self.source_path = source_path.to_s.strip.presence
