@@ -40,6 +40,9 @@ class CommsMessage < ApplicationRecord
     }
     json[:edited_at] = edited_at.utc.iso8601 if edited_at
     json[:deleted] = true if deleted?
+    # An edit or deletion that arrived before the original: sent_at and the
+    # sender are not known yet.
+    json[:provisional] = true if placeholder?
     json
   end
 

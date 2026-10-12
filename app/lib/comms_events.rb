@@ -17,10 +17,17 @@ module CommsEvents
   MAX_BATCH = 200
   NONCE_RETENTION = (CommsSignature::MAX_SKEW * 2 + 60).seconds
   MAX_QR_LIFETIME = 5.minutes
-  MESSAGE_FIELDS = %w[provider_message_id chat sender_id sender_name sent_at body media_kind caption].freeze
+  MESSAGE_FIELDS = %w[provider_message_id chat sender_id sender_name sent_at body media_kind caption edited_at].freeze
   EDIT_FIELDS = %w[provider_message_id chat body caption edited_at].freeze
   CHAT_FIELDS = %w[provider_chat_id name kind last_activity_at sync_state].freeze
   LOGIN_FAILURES = %w[expired password_invalid flood_wait failed].freeze
+  LOGIN_EVENTS = %w[pairing.qr login.qr login.password_required login.failed status.changed].freeze
+  # Refusals that mean "this authenticated lifecycle event is out of date"
+  # (an older login attempt, a replaced or expired QR, a login that already
+  # finished), not "this event is wrong". Sequenced, they are acknowledged
+  # as no-ops so the ordered outbox behind them keeps moving; nothing about
+  # them is applied.
+  OBSOLETE = %i[stale_generation stale_qr expired_qr connection_not_accepting].freeze
 
   # Connector status → ServiceConnection status. A phone-side logout needs the
   # owner to pair again, which the house already calls reauthorizing.
@@ -54,7 +61,9 @@ module CommsEvents
 
   module_function
 
-  # Returns the highest committed event sequence when the event carried one.
+  # Returns nil for an unsequenced event. For a sequenced one, returns
+  # { committed_seq:, skipped: } where skipped names why an obsolete
+  # lifecycle event was acknowledged without being applied.
   def receive!(connection, event, nonce:, now: Time.current)
     raise Refused.new(:bad_event, :unprocessable_entity) unless event.is_a?(Hash)
 
@@ -64,97 +73,116 @@ module CommsEvents
       # committed is acknowledged again without being reapplied, and one
       # past a gap is refused so the connector resends from the gap.
       if seq
-        return connection.comms_event_seq if seq <= connection.comms_event_seq
+        return { committed_seq: connection.comms_event_seq } if seq <= connection.comms_event_seq
         raise SequenceGap.new(connection.comms_event_seq) if seq > connection.comms_event_seq + 1
       end
 
-      case event["type"]
-      when "chat.upsert"
-        require_status!(connection, %w[connected])
-        chats = batch!(event["chats"])
+      begin
+        apply!(connection, event, nonce:, now:)
+      rescue Refused => e
+        raise unless seq && LOGIN_EVENTS.include?(event["type"]) && OBSOLETE.include?(e.code)
+
         consume_nonce!(connection, nonce, now)
-        chats.each { |chat| upsert_chat!(connection, chat) }
-      when "message.upsert"
-        require_status!(connection, %w[connected])
-        messages = batch!(event["messages"])
-        consume_nonce!(connection, nonce, now)
-        messages.each { |message| upsert_message!(connection, message) }
-      when "message.edit"
-        require_status!(connection, %w[connected])
-        edits = batch!(event["messages"])
-        consume_nonce!(connection, nonce, now)
-        edits.each { |edit| apply_edit!(connection, edit) }
-      when "message.delete"
-        require_status!(connection, %w[connected])
-        deletions = batch!(event["deletions"])
-        unresolved = event["unresolved"].to_i
-        raise Refused.new(:bad_batch, :unprocessable_entity) if unresolved.negative?
-        consume_nonce!(connection, nonce, now)
-        deletions.each { |deletion| apply_deletion!(connection, deletion, now) }
-        record_unresolved_deletions!(connection, unresolved) if unresolved.positive?
-      when "sync.checkpoint"
-        require_status!(connection, %w[connected])
-        chats = batch!(event["chats"])
-        consume_nonce!(connection, nonce, now)
-        chats.each { |checkpoint| apply_checkpoint!(connection, checkpoint) }
-      when "status.changed"
-        change = STATUS_CHANGES[event["status"]] || raise(Refused.new(:unknown_status, :unprocessable_entity))
-        require_status!(connection, change.fetch(:from))
-        require_generation!(connection, event) if event.key?("generation")
-        consume_nonce!(connection, nonce, now)
-        attributes = { status: change.fetch(:to), pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil }
-        attributes[:connector_state] = connection.connector_state.to_h.except("login")
-        attributes.merge!(identity_attributes(event["identity"])) if change.fetch(:to) == "connected" && event["identity"].is_a?(Hash)
-        connection.update!(attributes)
-      when "pairing.qr", "login.qr"
-        require_status!(connection, %w[pairing])
-        require_generation!(connection, event) if event["type"] == "login.qr" || event.key?("generation")
-        code, expires_at, issued_at = event["code"].to_s, time(event["expires_at"]), time(event["issued_at"])
-        raise Refused.new(:bad_qr, :unprocessable_entity) if code.blank? || expires_at.nil? || issued_at.nil?
-        raise Refused.new(:bad_qr, :unprocessable_entity) unless expires_at > now && expires_at <= now + MAX_QR_LIFETIME
-        # A fresh nonce does not make events ordered: an older code arriving
-        # after its replacement must not overwrite it.
-        if connection.pairing_qr_issued_at && issued_at <= connection.pairing_qr_issued_at
-          raise Refused.new(:stale_qr, :conflict)
-        end
-        consume_nonce!(connection, nonce, now)
-        connection.update!(pairing_qr: code, pairing_qr_expires_at: expires_at, pairing_qr_issued_at: issued_at)
-      when "login.password_required"
-        require_status!(connection, %w[pairing])
-        require_generation!(connection, event)
-        consume_nonce!(connection, nonce, now)
-        login = { "step" => "password", "hint" => event["hint"].to_s.first(200).presence }.compact
-        connection.update!(
-          connector_state: connection.connector_state.to_h.merge("login" => login),
-          pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil
-        )
-      when "login.failed"
-        require_status!(connection, %w[pairing])
-        require_generation!(connection, event)
-        code = event["code"].to_s
-        raise Refused.new(:unknown_failure, :unprocessable_entity) unless LOGIN_FAILURES.include?(code)
-        consume_nonce!(connection, nonce, now)
-        login = connection.login_state.slice("step", "hint")
-        login.delete("step") unless code == "password_invalid"
-        login["error"] = code
-        login["retry_after"] = event["retry_after"].to_i if code == "flood_wait" && event["retry_after"].to_i.positive?
-        login["at"] = now.utc.iso8601
-        attributes = { connector_state: connection.connector_state.to_h.merge("login" => login) }
-        attributes.merge!(pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil) unless code == "password_invalid"
-        connection.update!(attributes)
-      when "connector.availability"
-        state = event["state"].to_s
-        raise Refused.new(:unknown_availability, :unprocessable_entity) unless ServiceConnection::CONNECTOR_AVAILABILITY.include?(state)
-        consume_nonce!(connection, nonce, now)
-        availability = { "state" => state, "reason" => event["reason"].to_s.first(200).presence,
-                         "since" => time(event["since"])&.utc&.iso8601, "retry_after" => event["retry_after"]&.to_i }.compact
-        connection.update!(connector_state: connection.connector_state.to_h.merge("availability" => availability))
-      else
-        raise Refused.new(:unknown_event, :unprocessable_entity)
+        record_sequence!(connection, seq)
+        return { committed_seq: seq, skipped: e.code.to_s }
       end
       record_sequence!(connection, seq) if seq
     end
-    seq ? connection.comms_event_seq : nil
+    seq ? { committed_seq: connection.comms_event_seq } : nil
+  end
+
+  def apply!(connection, event, nonce:, now:)
+    case event["type"]
+    when "chat.upsert"
+      require_status!(connection, %w[connected])
+      chats = batch!(event["chats"])
+      consume_nonce!(connection, nonce, now)
+      chats.each { |chat| upsert_chat!(connection, chat) }
+    when "message.upsert"
+      require_status!(connection, %w[connected])
+      messages = batch!(event["messages"])
+      consume_nonce!(connection, nonce, now)
+      messages.each { |message| upsert_message!(connection, message) }
+    when "message.edit"
+      require_status!(connection, %w[connected])
+      edits = batch!(event["messages"])
+      consume_nonce!(connection, nonce, now)
+      edits.each { |edit| apply_edit!(connection, edit) }
+    when "message.delete"
+      require_status!(connection, %w[connected])
+      deletions = batch!(event["deletions"])
+      unresolved = event["unresolved"].to_i
+      raise Refused.new(:bad_batch, :unprocessable_entity) if unresolved.negative?
+      consume_nonce!(connection, nonce, now)
+      deletions.each { |deletion| apply_deletion!(connection, deletion, now) }
+      record_unresolved_deletions!(connection, unresolved) if unresolved.positive?
+    when "sync.checkpoint"
+      require_status!(connection, %w[connected])
+      chats = batch!(event["chats"])
+      consume_nonce!(connection, nonce, now)
+      chats.each { |checkpoint| apply_checkpoint!(connection, checkpoint) }
+    when "status.changed"
+      change = STATUS_CHANGES[event["status"]] || raise(Refused.new(:unknown_status, :unprocessable_entity))
+      require_status!(connection, change.fetch(:from))
+      # Finishing (or losing) a Telegram sign-in must name the attempt it
+      # belongs to; WhatsApp's pairing has no generations.
+      if event.key?("generation") || (connection.provider == "telegram" && connection.status == "pairing")
+        require_generation!(connection, event)
+      end
+      consume_nonce!(connection, nonce, now)
+      attributes = { status: change.fetch(:to), pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil }
+      attributes[:connector_state] = connection.connector_state.to_h.except("login")
+      attributes.merge!(identity_attributes(event["identity"])) if change.fetch(:to) == "connected" && event["identity"].is_a?(Hash)
+      connection.update!(attributes)
+    when "pairing.qr", "login.qr"
+      require_status!(connection, %w[pairing])
+      if event["type"] == "login.qr" || event.key?("generation") || connection.provider == "telegram"
+        require_generation!(connection, event)
+      end
+      code, expires_at, issued_at = event["code"].to_s, time(event["expires_at"]), time(event["issued_at"])
+      raise Refused.new(:bad_qr, :unprocessable_entity) if code.blank? || expires_at.nil? || issued_at.nil?
+      raise Refused.new(:expired_qr, :unprocessable_entity) unless expires_at > now
+      raise Refused.new(:bad_qr, :unprocessable_entity) unless expires_at <= now + MAX_QR_LIFETIME
+      # A fresh nonce does not make events ordered: an older code arriving
+      # after its replacement must not overwrite it.
+      if connection.pairing_qr_issued_at && issued_at <= connection.pairing_qr_issued_at
+        raise Refused.new(:stale_qr, :conflict)
+      end
+      consume_nonce!(connection, nonce, now)
+      connection.update!(pairing_qr: code, pairing_qr_expires_at: expires_at, pairing_qr_issued_at: issued_at)
+    when "login.password_required"
+      require_status!(connection, %w[pairing])
+      require_generation!(connection, event)
+      consume_nonce!(connection, nonce, now)
+      login = { "step" => "password", "hint" => event["hint"].to_s.first(200).presence }.compact
+      connection.update!(
+        connector_state: connection.connector_state.to_h.merge("login" => login),
+        pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil
+      )
+    when "login.failed"
+      require_status!(connection, %w[pairing])
+      require_generation!(connection, event)
+      code = event["code"].to_s
+      raise Refused.new(:unknown_failure, :unprocessable_entity) unless LOGIN_FAILURES.include?(code)
+      consume_nonce!(connection, nonce, now)
+      login = connection.login_state.slice("step", "hint")
+      login.delete("step") unless code == "password_invalid"
+      login["error"] = code
+      login["retry_after"] = event["retry_after"].to_i if code == "flood_wait" && event["retry_after"].to_i.positive?
+      login["at"] = now.utc.iso8601
+      attributes = { connector_state: connection.connector_state.to_h.merge("login" => login) }
+      attributes.merge!(pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil) unless code == "password_invalid"
+      connection.update!(attributes)
+    when "connector.availability"
+      state = event["state"].to_s
+      raise Refused.new(:unknown_availability, :unprocessable_entity) unless ServiceConnection::CONNECTOR_AVAILABILITY.include?(state)
+      consume_nonce!(connection, nonce, now)
+      availability = { "state" => state, "reason" => event["reason"].to_s.first(200).presence,
+                       "since" => time(event["since"])&.utc&.iso8601, "retry_after" => event["retry_after"]&.to_i }.compact
+      connection.update!(connector_state: connection.connector_state.to_h.merge("availability" => availability))
+    else
+      raise Refused.new(:unknown_event, :unprocessable_entity)
+    end
   end
 
   def sequence(event)
@@ -244,12 +272,18 @@ module CommsEvents
     attributes = attributes.slice(*MESSAGE_FIELDS)
     sent_at = time(attributes["sent_at"]) || raise(Refused.new(:bad_message, :unprocessable_entity))
     chat = connection.comms_chats.find_or_create_by!(provider_chat_id: attributes["chat"].to_s)
-    # Messages are immutable once stored: the first delivery wins, and any
-    # later delivery of the same provider id in the same chat (a retry, a
-    # reordered retry, a backfill) is ignored. Edits arrive as message.edit;
-    # a tombstone stays a tombstone.
+    # The first delivery of a message wins its content; a later delivery of
+    # the same id in the same chat (a retry, a backfill page) changes it only
+    # if it carries a newer edit than the one stored. A tombstone stays a
+    # tombstone. A placeholder (an edit or deletion that came first) gets its
+    # sender and time from the original, and keeps its newer content.
     message = chat.comms_messages.find_or_initialize_by(provider_message_id: attributes["provider_message_id"].to_s)
-    return message if message.persisted?
+    edited_at = time(attributes["edited_at"])
+    if message.persisted?
+      fill_placeholder!(message, attributes, sent_at) if message.placeholder?
+      apply_content!(message, attributes, edited_at) unless message.deleted?
+      return message
+    end
 
     message.assign_attributes(
       service_connection: connection,
@@ -258,7 +292,9 @@ module CommsEvents
       sent_at: sent_at,
       body: attributes["body"],
       media_kind: attributes["media_kind"],
-      caption: attributes["caption"]
+      caption: attributes["caption"],
+      edited_at: edited_at,
+      edit_version: edited_at && version_of(edited_at)
     )
     message.save!
     chat.update!(last_activity_at: sent_at) if chat.last_activity_at.nil? || sent_at > chat.last_activity_at
@@ -267,18 +303,43 @@ module CommsEvents
 
   # An edit replaces the content of a message we hold, unless it is deleted
   # or a newer edit is already applied. An edit for a message we don't hold
-  # is dropped: its backfill will carry the current text.
+  # yet leaves a placeholder with the edited content, so the original's
+  # later (older) delivery cannot put the superseded text back.
   def apply_edit!(connection, attributes)
     attributes = attributes.slice(*EDIT_FIELDS)
     edited_at = time(attributes["edited_at"]) || raise(Refused.new(:bad_edit, :unprocessable_entity))
-    chat = connection.comms_chats.find_by(provider_chat_id: attributes["chat"].to_s)
-    message = chat&.comms_messages&.find_by(provider_message_id: attributes["provider_message_id"].to_s)
-    return if message.nil? || message.deleted?
+    chat = connection.comms_chats.find_or_create_by!(provider_chat_id: attributes["chat"].to_s)
+    message = chat.comms_messages.find_or_initialize_by(provider_message_id: attributes["provider_message_id"].to_s)
+    if message.new_record?
+      message.update!(service_connection: connection, sent_at: edited_at, placeholder: true,
+                      body: attributes["body"], caption: attributes["caption"],
+                      edited_at:, edit_version: version_of(edited_at))
+      return
+    end
+    return if message.deleted?
 
-    version = (edited_at.to_r * 1_000_000).to_i
+    apply_content!(message, attributes, edited_at)
+  end
+
+  def apply_content!(message, attributes, edited_at)
+    return unless edited_at
+
+    version = version_of(edited_at)
     return if message.edit_version && message.edit_version >= version
 
     message.update!(body: attributes["body"], caption: attributes["caption"], edited_at:, edit_version: version)
+  end
+
+  def fill_placeholder!(message, attributes, sent_at)
+    message.update!(
+      placeholder: false, sent_at: sent_at,
+      sender_id: attributes["sender_id"], sender_name: attributes["sender_name"],
+      media_kind: attributes["media_kind"]
+    )
+  end
+
+  def version_of(time)
+    (time.to_r * 1_000_000).to_i
   end
 
   # Deletions name their chat (the connector resolves Telegram's peerless
@@ -296,7 +357,7 @@ module CommsEvents
       if message.persisted?
         message.tombstone!(at: deleted_at)
       else
-        message.update!(service_connection: connection, sent_at: deleted_at, deleted_at:)
+        message.update!(service_connection: connection, sent_at: deleted_at, deleted_at:, placeholder: true)
       end
     end
   end

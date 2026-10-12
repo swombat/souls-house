@@ -29,7 +29,7 @@ class Accounts::ServiceConnectionLoginsControllerTest < ActionDispatch::Integrat
     sign_in @owner
     with_telegram_connector(replies: { "submit_password" => { outcome: "accepted" } }) do |requests, options|
       assert_no_enqueued_jobs do
-        post password_account_service_connection_login_path(@account, @connection.public_id), params: { password: PASSWORD }, as: :json
+        post password_account_service_connection_login_path(@account, @connection.public_id), params: { password: PASSWORD, generation: 4 }, as: :json
       end
 
       assert_response :ok
@@ -56,12 +56,12 @@ class Accounts::ServiceConnectionLoginsControllerTest < ActionDispatch::Integrat
   test "a wrong password is reported, and the connector's error never echoes the password" do
     sign_in @owner
     with_telegram_connector(replies: { "submit_password" => { outcome: "password_invalid" } }) do
-      post password_account_service_connection_login_path(@account, @connection.public_id), params: { password: PASSWORD }, as: :json
+      post password_account_service_connection_login_path(@account, @connection.public_id), params: { password: PASSWORD, generation: 4 }, as: :json
     end
     assert_equal({ "outcome" => "password_invalid" }, response.parsed_body)
 
     with_telegram_connector(replies: { "submit_password" => [ 500, { error: PASSWORD } ] }) do
-      post password_account_service_connection_login_path(@account, @connection.public_id), params: { password: PASSWORD }, as: :json
+      post password_account_service_connection_login_path(@account, @connection.public_id), params: { password: PASSWORD, generation: 4 }, as: :json
     end
     assert_response :bad_gateway
     assert_not_includes response.body, PASSWORD
@@ -71,7 +71,7 @@ class Accounts::ServiceConnectionLoginsControllerTest < ActionDispatch::Integrat
     [ @account_admin, @member ].each do |user|
       sign_in user
       with_telegram_connector do |requests|
-        post password_account_service_connection_login_path(@account, @connection.public_id), params: { password: PASSWORD }, as: :json
+        post password_account_service_connection_login_path(@account, @connection.public_id), params: { password: PASSWORD, generation: 4 }, as: :json
         assert_response :not_found
         post restart_account_service_connection_login_path(@account, @connection.public_id), as: :json
         assert_response :not_found
@@ -80,11 +80,35 @@ class Accounts::ServiceConnectionLoginsControllerTest < ActionDispatch::Integrat
     end
   end
 
+  test "a password for an attempt that has moved on is refused and not sent" do
+    sign_in @owner
+    with_telegram_connector do |requests|
+      post password_account_service_connection_login_path(@account, @connection.public_id), params: { password: PASSWORD, generation: 3 }, as: :json
+      assert_response :conflict
+      post password_account_service_connection_login_path(@account, @connection.public_id), params: { password: PASSWORD }, as: :json
+      assert_response :unprocessable_entity
+      assert_empty requests
+    end
+  end
+
+  test "restart and cancel are refused for a connected connection" do
+    @connection.update!(status: "connected", connector_state: {})
+    sign_in @owner
+    with_telegram_connector do |requests|
+      post restart_account_service_connection_login_path(@account, @connection.public_id), as: :json
+      assert_response :conflict
+      post cancel_account_service_connection_login_path(@account, @connection.public_id), as: :json
+      assert_response :conflict
+      assert_empty requests
+      assert_equal 4, @connection.reload.login_generation
+    end
+  end
+
   test "a password is refused when none is being asked for" do
     @connection.update!(connector_state: {})
     sign_in @owner
     with_telegram_connector do |requests|
-      post password_account_service_connection_login_path(@account, @connection.public_id), params: { password: PASSWORD }, as: :json
+      post password_account_service_connection_login_path(@account, @connection.public_id), params: { password: PASSWORD, generation: 4 }, as: :json
       assert_response :conflict
       assert_empty requests
     end
@@ -125,6 +149,7 @@ class Accounts::ServiceConnectionLoginsControllerTest < ActionDispatch::Integrat
     sign_in @owner
     get account_service_connection_pairing_path(@account, @connection.public_id)
     assert_equal({ "step" => "password", "hint" => "dog" }, response.parsed_body["login"])
+    assert_equal 4, response.parsed_body["generation"]
   end
 
 end

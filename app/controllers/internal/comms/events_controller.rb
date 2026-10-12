@@ -33,12 +33,14 @@ module Internal
           expected_connection_id: connection.public_id,
           method: request.request_method, path: request.path, body: raw_body, headers: request.headers
         )
-        committed_seq = CommsEvents.receive!(connection, event, nonce:)
+        result = CommsEvents.receive!(connection, event, nonce:)
         # An event that carried a sequence number is acknowledged with the
         # highest sequence Rails has committed for this connection; the
-        # connector marks its outbox delivered only up to that (§5a).
-        if committed_seq
-          render json: { committed_seq: }
+        # connector marks its outbox delivered only up to that (§5a). An
+        # obsolete lifecycle event is acknowledged with the reason it was
+        # skipped.
+        if result
+          render json: result.compact
         else
           head :no_content
         end

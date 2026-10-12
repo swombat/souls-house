@@ -9,7 +9,11 @@ class Accounts::ServiceConnectionLoginsController < ApplicationController
 
   before_action :set_connection
 
-  # POST .../login/password  { password }
+  # POST .../login/password  { password, generation }
+  #
+  # generation is the attempt the owner's page is showing (from the pairing
+  # endpoint); a password for an attempt that has since been restarted,
+  # cancelled or finished is refused rather than joined to a newer one.
   def password
     unless @connection.status == "pairing" && @connection.login_state["step"] == "password"
       return render json: { error: "No password is being asked for" }, status: :conflict
@@ -18,8 +22,13 @@ class Accounts::ServiceConnectionLoginsController < ApplicationController
     password = params[:password].to_s
     return render json: { error: "Enter the password" }, status: :unprocessable_entity if password.empty?
 
-    result = @connection.definition.adapter.submit_password(@connection, password)
+    generation = Integer(params[:generation].to_s, exception: false)
+    return render json: { error: "Reload the page and try again" }, status: :unprocessable_entity if generation.nil?
+
+    result = @connection.definition.adapter.submit_password(@connection, password, generation:)
     render json: password_outcome(result)
+  rescue Services::TelegramAdapter::StaleAttempt => e
+    render json: { error: e.message }, status: :conflict
   rescue Services::AdapterError => e
     render json: { error: e.message }, status: :bad_gateway
   end
@@ -27,24 +36,23 @@ class Accounts::ServiceConnectionLoginsController < ApplicationController
   # POST .../login/restart: a new QR after an expiry, failure or cancel, or
   # to sign in again after Telegram logged the session out.
   def restart
-    unless @connection.status.in?(%w[pairing reauthorizing])
-      return render json: { error: "This connection is not waiting to sign in" }, status: :conflict
-    end
-
-    @connection.update!(status: "pairing") if @connection.status == "reauthorizing"
     @connection.definition.adapter.start_pairing(@connection)
     audit(:restart_service_login, @connection, provider: @connection.provider)
     render json: state_json
+  rescue Services::TelegramAdapter::StaleAttempt => e
+    render json: { error: e.message }, status: :conflict
   rescue Services::AdapterError => e
     render json: { error: e.message }, status: :bad_gateway
   end
 
-  # POST .../login/cancel
+  # POST .../login/cancel. The connection is marked cancelled (a new
+  # generation) before the connector is told, and nothing is written after,
+  # so a restart that happens meanwhile is never overwritten.
   def cancel
-    return render json: { error: "No sign-in to cancel" }, status: :conflict unless @connection.status == "pairing"
+    if @connection.definition.adapter.cancel_login(@connection) == :not_pairing
+      return render json: { error: "No sign-in to cancel" }, status: :conflict
+    end
 
-    @connection.definition.adapter.cancel_login(@connection)
-    @connection.update!(connector_state: @connection.connector_state.to_h.merge("login" => { "error" => "cancelled" }))
     render json: state_json
   end
 
@@ -66,7 +74,8 @@ class Accounts::ServiceConnectionLoginsController < ApplicationController
   end
 
   def state_json
-    { status: @connection.status, login: @connection.login_state }
+    @connection.reload
+    { status: @connection.status, login: @connection.login_state, generation: @connection.login_generation }
   end
 
 end

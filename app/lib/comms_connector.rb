@@ -21,9 +21,10 @@ module CommsConnector
   # Telegram commands (proposal 2026-10-11 §5). Unlike WhatsApp's, some of
   # these carry secrets (the callback secret, a two-step password), so:
   #
-  # - the connector must be reached over https, with mutual TLS when the
-  #   client certificate is configured (COMMS_CONNECTOR_CLIENT_CERT/_KEY,
-  #   COMMS_CONNECTOR_CA_FILE); plain http is refused;
+  # - the connector must be reached over https with mutual TLS: Rails's
+  #   client certificate and key (COMMS_CONNECTOR_CLIENT_CERT/_KEY) and the
+  #   house CA that signed the connector's (COMMS_CONNECTOR_CA_FILE). Plain
+  #   http, or any of the three missing, sends nothing;
   # - each command is signed with the connector-wide COMMS_COMMAND_KEY (its
   #   id in COMMS_COMMAND_KEY_ID), over the connection, operation, a unique
   #   command id, the issue time and the body, so the connector can reject
@@ -42,6 +43,7 @@ module CommsConnector
 
     uri = URI.join(base_url, "/connections/#{connection.public_id}/#{operation}")
     raise Error, "the comms connector must be reached over https" unless uri.scheme == "https"
+    tls = tls_options
 
     issued_at = Time.current.to_i
     command_id = SecureRandom.hex(16)
@@ -53,7 +55,7 @@ module CommsConnector
     ).each { |name, value| request[name] = value }
     request.body = body
 
-    response = Net::HTTP.start(uri.hostname, uri.port, **tls_options, open_timeout: 5, read_timeout: 30) do |http|
+    response = Net::HTTP.start(uri.hostname, uri.port, **tls, open_timeout: 5, read_timeout: 30) do |http|
       http.request(request)
     end
     raise Error, "comms connector #{operation} failed (#{response.code})" unless response.is_a?(Net::HTTPSuccess)
@@ -66,14 +68,23 @@ module CommsConnector
     raise Error, e.message
   end
 
+  TLS_SETTINGS = %w[COMMS_CONNECTOR_CLIENT_CERT COMMS_CONNECTOR_CLIENT_KEY COMMS_CONNECTOR_CA_FILE].freeze
+
+  # Mutual TLS, failing closed: every setting present and readable, or no
+  # command is sent.
   def tls_options
-    options = { use_ssl: true, verify_mode: OpenSSL::SSL::VERIFY_PEER }
-    options[:ca_file] = ENV["COMMS_CONNECTOR_CA_FILE"] if ENV["COMMS_CONNECTOR_CA_FILE"].present?
-    if ENV["COMMS_CONNECTOR_CLIENT_CERT"].present? && ENV["COMMS_CONNECTOR_CLIENT_KEY"].present?
-      options[:cert] = OpenSSL::X509::Certificate.new(File.read(ENV["COMMS_CONNECTOR_CLIENT_CERT"]))
-      options[:key] = OpenSSL::PKey.read(File.read(ENV["COMMS_CONNECTOR_CLIENT_KEY"]))
-    end
-    options
+    missing = TLS_SETTINGS.select { |name| ENV[name].blank? }
+    raise Error, "mutual TLS to the comms connector is not configured (#{missing.join(", ")})" if missing.any?
+
+    {
+      use_ssl: true,
+      verify_mode: OpenSSL::SSL::VERIFY_PEER,
+      ca_file: ENV["COMMS_CONNECTOR_CA_FILE"],
+      cert: OpenSSL::X509::Certificate.new(File.read(ENV["COMMS_CONNECTOR_CLIENT_CERT"])),
+      key: OpenSSL::PKey.read(File.read(ENV["COMMS_CONNECTOR_CLIENT_KEY"]))
+    }
+  rescue SystemCallError, OpenSSL::OpenSSLError => e
+    raise Error, "mutual TLS to the comms connector is misconfigured (#{e.class})"
   end
 
   def base_url

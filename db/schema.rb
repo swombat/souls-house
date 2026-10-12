@@ -674,6 +674,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_140000) do
     t.datetime "edited_at"
     t.bigint "edit_version"
     t.datetime "deleted_at"
+    t.boolean "placeholder", default: false, null: false
     t.index ["comms_chat_id", "provider_message_id"], name: "index_comms_messages_on_comms_chat_id_and_provider_message_id", unique: true
     t.index ["comms_chat_id", "sent_at", "id"], name: "index_comms_messages_on_comms_chat_id_and_sent_at_and_id"
     t.index ["service_connection_id"], name: "index_comms_messages_on_service_connection_id"

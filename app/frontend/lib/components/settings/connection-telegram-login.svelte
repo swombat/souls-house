@@ -94,7 +94,12 @@
     const result = await postLoginJson(`${base}/login/${path}`);
     busy = false;
     if (result.ok) {
-      pairing = { status: result.body.status, qr: null, login: result.body.login || {} };
+      pairing = {
+        status: result.body.status,
+        qr: null,
+        login: result.body.login || {},
+        generation: result.body.generation,
+      };
     } else {
       notice = { tone: 'error', text: result.body.error || 'Something went wrong. Try again.' };
     }
@@ -108,7 +113,8 @@
     input.value = '';
     busy = true;
     notice = null;
-    const result = await postLoginJson(`${base}/login/password`, { password });
+    // The attempt this page is showing: a password never joins a newer one.
+    const result = await postLoginJson(`${base}/login/password`, { password, generation: pairing?.generation });
     busy = false;
     input.value = '';
     notice = passwordOutcomeMessage(result.ok ? result.body : { error: result.body.error });

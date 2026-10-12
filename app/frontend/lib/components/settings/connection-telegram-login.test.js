@@ -54,7 +54,7 @@ describe('Telegram sign-in', () => {
     globalThis.fetch = vi.fn((url) =>
       url.endsWith('/login/password')
         ? reply(200, { outcome: 'not_configured' })
-        : reply(200, { status: 'pairing', qr: null, login: { step: 'password', hint: 'tea' } })
+        : reply(200, { status: 'pairing', qr: null, generation: 7, login: { step: 'password', hint: 'tea' } })
     );
     mount();
     const input = await screen.findByLabelText('Telegram password');
@@ -69,7 +69,7 @@ describe('Telegram sign-in', () => {
     expect(url).toBe('/accounts/house/service_connections/svc_tg/login/password');
     expect(options.method).toBe('POST');
     expect(options.headers['X-CSRF-Token']).toBe('tok');
-    expect(JSON.parse(options.body)).toEqual({ password: 'secret words' });
+    expect(JSON.parse(options.body)).toEqual({ password: 'secret words', generation: 7 });
   });
 
   it('explains a failure in plain words and offers a restart', async () => {

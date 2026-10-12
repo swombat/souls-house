@@ -68,6 +68,86 @@ module Internal
         assert_nil message.body
       end
 
+      test "a placeholder from an early edit gets its sender and time from the original, and keeps the edit" do
+        post_telegram_event @connection, edit("user:1", "9", "current", "2026-10-12T10:05:00Z")
+        message = @connection.comms_messages.sole
+        assert message.placeholder?
+        assert_equal true, message.as_comms_json[:provisional]
+
+        post_telegram_event @connection, messages("user:1" => "9")
+        message.reload
+        assert_not message.placeholder?
+        assert_equal "current", message.body
+        assert_equal "Ann", message.sender_name
+        assert_equal Time.iso8601("2026-10-12T10:00:00Z"), message.sent_at
+      end
+
+      test "a later delivery carrying a newer edit updates the content; an older one does not" do
+        post_telegram_event @connection, messages("user:1" => "7")
+        newer = messages({ "user:1" => "7" }, body: "edited")
+        newer[:messages].first[:edited_at] = "2026-10-12T10:10:00Z"
+        post_telegram_event @connection, newer
+        assert_equal "edited", @connection.comms_messages.sole.body
+
+        older = messages({ "user:1" => "7" }, body: "older edit")
+        older[:messages].first[:edited_at] = "2026-10-12T10:02:00Z"
+        post_telegram_event @connection, older
+        assert_equal "edited", @connection.comms_messages.sole.body
+      end
+
+      test "an early deletion's tombstone gets the original's time but never its content" do
+        post_telegram_event @connection, deletion("user:1", %w[8])
+        post_telegram_event @connection, messages("user:1" => "8")
+        message = @connection.comms_messages.sole
+        assert message.deleted?
+        assert_nil message.body
+        assert_equal Time.iso8601("2026-10-12T10:00:00Z"), message.sent_at
+      end
+
+      test "sequenced obsolete lifecycle events are acknowledged as skipped and the outbox moves on" do
+        pairing = telegram_connection(account: @account, user: @user, status: "pairing", generation: 2)
+        expired = qr(generation: 2).merge(seq: 1, expires_at: 1.second.ago.utc.iso8601)
+        post_telegram_event pairing, expired
+        assert_response :ok
+        assert_equal({ "committed_seq" => 1, "skipped" => "expired_qr" }, response.parsed_body)
+        assert_nil pairing.reload.pairing_qr
+
+        post_telegram_event pairing, { type: "login.failed", generation: 1, code: "expired", seq: 2 }
+        assert_equal "stale_generation", response.parsed_body["skipped"]
+        assert_equal({}, pairing.reload.login_state)
+
+        post_telegram_event pairing, { type: "status.changed", status: "connected", generation: 2, seq: 3, identity: { user_id: "9" } }
+        assert_equal({ "committed_seq" => 3 }, response.parsed_body)
+        post_telegram_event pairing, messages("user:1" => "1").merge(seq: 4)
+        post_telegram_event pairing, { type: "sync.checkpoint", seq: 5, chats: [ { provider_chat_id: "user:1", synced_through: "2026-10-12T10:00:00Z" } ] }
+        assert_equal 5, response.parsed_body["committed_seq"]
+        assert_equal "connected", pairing.reload.status
+
+        post_telegram_event pairing, qr(generation: 2).merge(seq: 6)
+        assert_equal "connection_not_accepting", response.parsed_body["skipped"]
+      end
+
+      test "unsequenced, an obsolete event is still refused, and a malformed sequenced one is never skipped" do
+        pairing = telegram_connection(account: @account, user: @user, status: "pairing", generation: 2)
+        post_telegram_event pairing, qr(generation: 1)
+        assert_response :conflict
+
+        post_telegram_event pairing, { type: "login.failed", generation: 2, code: "weird", seq: 1 }
+        assert_response :unprocessable_entity
+        assert_equal 0, pairing.reload.comms_event_seq
+      end
+
+      test "a Telegram sign-in cannot finish without naming its attempt, by either event shape" do
+        pairing = telegram_connection(account: @account, user: @user, status: "pairing", generation: 2)
+        post_telegram_event pairing, { type: "status.changed", status: "connected", identity: { user_id: "x" } }
+        assert_response :conflict
+        post_telegram_event pairing, { type: "pairing.qr", code: "tg://login?token=x", issued_at: Time.current.utc.iso8601,
+                                       expires_at: 30.seconds.from_now.utc.iso8601 }
+        assert_response :conflict
+        assert_equal "pairing", pairing.reload.status
+        assert_nil pairing.pairing_qr
+      end
+
       test "deletions the connector could not place are counted, not guessed" do
         post_telegram_event @connection, { type: "message.delete", deletions: [], unresolved: 3 }
         post_telegram_event @connection, { type: "message.delete", deletions: [], unresolved: 2 }

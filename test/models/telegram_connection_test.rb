@@ -83,6 +83,28 @@ class TelegramConnectionTest < ActiveSupport::TestCase
     end
   end
 
+  test "commands present Rails's client certificate and verify the connector against the house CA" do
+    with_telegram_connector do |_requests, options|
+      CommsConnector.telegram_command(@connection, "logout")
+      tls = options.sole
+      assert tls[:use_ssl]
+      assert_equal OpenSSL::SSL::VERIFY_PEER, tls[:verify_mode]
+      assert_equal "/CN=rails", tls[:cert].subject.to_s
+      assert_kind_of OpenSSL::PKey::RSA, tls[:key]
+      assert_equal TelegramCommsHelpers.tls_files["COMMS_CONNECTOR_CA_FILE"], tls[:ca_file]
+    end
+  end
+
+  test "with any mutual-TLS setting missing, no command is sent" do
+    TelegramCommsHelpers::TLS_ENV.each do |absent|
+      with_telegram_connector(tls: TelegramCommsHelpers::TLS_ENV - [ absent ]) do |requests|
+        error = assert_raises(CommsConnector::Error) { CommsConnector.telegram_command(@connection, "logout") }
+        assert_includes error.message, absent
+        assert_empty requests
+      end
+    end
+  end
+
   test "without a connector URL a command records its intent and sends nothing" do
     with_telegram_connector(url: nil) do |requests|
       assert_equal :not_configured, CommsConnector.telegram_command(@connection, "logout")

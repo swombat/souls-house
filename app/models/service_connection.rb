@@ -168,17 +168,43 @@ class ServiceConnection < ApplicationRecord
     end
   end
 
-  # A new login attempt (start, restart or cancel). The connector refuses
-  # commands and Rails refuses events for any other generation.
-  def advance_login_generation!
+  # Login attempts (Telegram). Each transition happens under the row lock,
+  # checks eligibility there, and returns the generation it acted on; the
+  # connector command goes out afterwards, outside the lock, and nothing is
+  # written back once it returns. The connector refuses commands and Rails
+  # refuses events for any other generation.
+
+  # Start (or restart) sign-in: a new generation. nil when this connection
+  # is not waiting to sign in.
+  def begin_login_attempt!
     with_lock do
+      return nil unless status.in?(%w[pairing reauthorizing])
+
       update!(
+        status: "pairing",
         login_generation: login_generation + 1,
         connector_state: connector_state.to_h.except("login"),
         pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil
       )
+      login_generation
     end
-    login_generation
+  end
+
+  # Cancel sign-in: the current generation is invalidated by moving past it,
+  # and the page says cancelled. Returns the invalidated generation, which is
+  # the one the connector must stop; nil when no sign-in is in progress.
+  def cancel_login_attempt!
+    with_lock do
+      return nil unless status == "pairing"
+
+      invalidated = login_generation
+      update!(
+        login_generation: invalidated + 1,
+        connector_state: connector_state.to_h.merge("login" => { "error" => "cancelled" }),
+        pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil
+      )
+      invalidated
+    end
   end
 
   # The login step for the owner's page: whether a two-step password is

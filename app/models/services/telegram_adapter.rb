@@ -13,6 +13,9 @@ module Services
   class TelegramAdapter
 
     class Error < Services::AdapterError; end
+    # The sign-in moved on (restarted, cancelled or finished) since the page
+    # was drawn.
+    class StaleAttempt < Error; end
 
     attr_reader :definition
 
@@ -37,9 +40,12 @@ module Services
       }
     end
 
-    # Connect, and Restart after an expiry or failure: a new generation.
+    # Connect, and Restart after an expiry, failure or Telegram-side logout:
+    # a new generation, taken under the row lock.
     def start_pairing(connection)
-      generation = connection.advance_login_generation!
+      generation = connection.begin_login_attempt!
+      raise StaleAttempt, "This connection is not waiting to sign in" if generation.nil?
+
       CommsConnector.telegram_command(connection, "start_login", generation:,
                                                                  callback_secret: connection.credential_payload_hash["callback_secret"],
                                                                  callback_secret_version: connection.credential_payload_hash["callback_secret_version"].to_i)
@@ -48,9 +54,12 @@ module Services
       raise Error, "Could not reach the Telegram connector. Try again, or disconnect this connection."
     end
 
+    # Returns :not_pairing when there was nothing to cancel. The local state
+    # is already "cancelled" before the connector is told.
     def cancel_login(connection)
-      generation = connection.login_generation
-      connection.advance_login_generation!
+      generation = connection.cancel_login_attempt!
+      return :not_pairing if generation.nil?
+
       CommsConnector.telegram_command(connection, "cancel_login", generation:)
     rescue CommsConnector::Error, SystemCallError, Timeout::Error, IOError, OpenSSL::SSL::SSLError => e
       Rails.logger.warn("Comms cancel_login failed for service connection #{connection.id}: #{e.class}")
@@ -59,9 +68,19 @@ module Services
 
     # The two-step password goes straight through, inside the owner's
     # request: never stored, never queued, never logged. The connector does
-    # SRP and drops it. Returns the connector's outcome hash.
-    def submit_password(connection, password)
-      CommsConnector.telegram_command(connection, "submit_password", generation: connection.login_generation, password:)
+    # SRP and drops it. It belongs to the attempt the owner's page showed:
+    # if that attempt has moved on, nothing is sent. Returns the connector's
+    # outcome hash.
+    def submit_password(connection, password, generation:)
+      connection.reload
+      unless connection.status == "pairing" && connection.login_state["step"] == "password" &&
+             generation == connection.login_generation
+        raise StaleAttempt, "This sign-in has moved on. Use the current page."
+      end
+
+      CommsConnector.telegram_command(connection, "submit_password", generation:, password:)
+    rescue StaleAttempt
+      raise
     rescue CommsConnector::Error, SystemCallError, Timeout::Error, IOError, OpenSSL::SSL::SSLError => e
       Rails.logger.warn("Comms submit_password failed for service connection #{connection.id}: #{e.class}")
       raise Error, "Could not reach the Telegram connector. Try again."
