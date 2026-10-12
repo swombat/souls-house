@@ -12,14 +12,26 @@ export function runtimeContactUncertain(interaction, now) {
 }
 
 export function runtimeSilenceLabel(interaction, now) {
-  if (!interaction.run_id || !interaction.active || interaction.status !== 'running' || now == null) return null;
+  if (
+    interaction.narration_shared === false ||
+    !interaction.run_id ||
+    !interaction.active ||
+    interaction.status !== 'running' ||
+    now == null
+  )
+    return null;
   const started = Date.parse(interaction.started_at);
   if (!Number.isFinite(started)) return null;
   const lastPost = Date.parse(interaction.last_resident_post_at);
   const elapsed = now - Math.max(started, Number.isFinite(lastPost) ? lastPost : started);
   if (elapsed < 120000) return null;
   const contact = runtimeContactUncertain(interaction, now) ? 'runtime contact uncertain' : 'runtime active';
-  return `No update from ${interaction.agent_name} for ${Math.floor(elapsed / 60000)} min · ${contact}`;
+  const minutes = Math.floor(elapsed / 60000);
+  const elapsedLabel =
+    Number.isFinite(lastPost) && lastPost >= started
+      ? `Last resident update: ${minutes} min ago`
+      : `${minutes} min since run start · no resident post yet`;
+  return `${elapsedLabel} · ${contact}`;
 }
 
 export function mergeRuntimeActivity(initial = [], updates = []) {

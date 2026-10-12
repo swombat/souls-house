@@ -33,7 +33,7 @@ for (const mobile of [false, true]) {
       };
       await update({ silence_seconds: 125 });
       const card = page.getByTestId('runtime-activity-card');
-      await expect(card.getByText(/No update from .+ for 2 min/)).toBeVisible();
+      await expect(card.getByText(/2 min since run start · no resident post yet/)).toBeVisible();
       await expect(card.getByText(/runtime active/)).toBeVisible();
       await expect(card.locator('details')).not.toHaveAttribute('open', '');
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -41,11 +41,19 @@ for (const mobile of [false, true]) {
       await update({ stale_report: true });
       await expect(card.getByText(/runtime contact uncertain/)).toBeVisible();
       await update({ post_update: true });
-      await expect(card.getByText(/No update from/)).toHaveCount(0);
+      await expect(card.getByRole('status')).toHaveCount(0);
       await expect(page.getByText('Synthetic progress update.')).toBeVisible();
       await update({ complete: true });
-      await expect(card.getByText(/No update from/)).toHaveCount(0);
+      await expect(card.getByRole('status')).toHaveCount(0);
       await expect(card.getByText('finished', { exact: true })).toBeVisible();
+      runId = null;
+      await update({ silence_seconds: 125, hide_helpers: true });
+      const privateCard = page.locator(`[data-run-id="${runId}"]`);
+      await expect(privateCard).toBeVisible();
+      await expect(privateCard.getByRole('status')).toHaveCount(0);
+      await update({ complete: true });
+      await expect(privateCard.getByText('finished', { exact: true })).toBeVisible();
+      await expect(privateCard.getByRole('status')).toHaveCount(0);
     } finally {
       await request.post('/test/e2e/cleanup', { data: { run_id: setup.run_id } });
     }

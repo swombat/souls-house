@@ -45,7 +45,7 @@ test('one compact silence line ages without polling, resets on replies, and disa
   try {
     const interaction = {
       ...base,
-      narration_shared: false,
+      narration_shared: true,
       started_at: '2026-10-12T10:00:00Z',
       server_time: '2026-10-12T10:01:59Z',
       last_resident_post_at: null,
@@ -58,7 +58,9 @@ test('one compact silence line ages without polling, resets on replies, and disa
     await tick();
     expect(screen.getAllByRole('status')).toHaveLength(1);
     expect(screen.getByRole('status')).toBeVisible();
-    expect(screen.getByRole('status')).toHaveTextContent('No update from Resident for 2 min · runtime active');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '2 min since run start · no resident post yet · runtime active'
+    );
     expect(container.querySelector('details').open).toBe(false);
     await vi.advanceTimersByTimeAsync(30000);
     await tick();
@@ -68,7 +70,7 @@ test('one compact silence line ages without polling, resets on replies, and disa
     expect(screen.getByRole('status')).toHaveTextContent('runtime contact uncertain');
     await vi.advanceTimersByTimeAsync(60000);
     await tick();
-    expect(screen.getByRole('status')).toHaveTextContent('No update from Resident for 3 min');
+    expect(screen.getByRole('status')).toHaveTextContent('3 min since run start');
     const replied = {
       ...interaction,
       server_time: '2026-10-12T10:03:30Z',
@@ -79,7 +81,7 @@ test('one compact silence line ages without polling, resets on replies, and disa
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     await vi.advanceTimersByTimeAsync(120000);
     await tick();
-    expect(screen.getByRole('status')).toHaveTextContent('No update from Resident for 2 min');
+    expect(screen.getByRole('status')).toHaveTextContent('Last resident update: 2 min ago');
     await rerender({ interaction: { ...replied, active: false, status: 'completed' } });
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     unmount();
@@ -112,6 +114,20 @@ test('legacy invocations retain duration and contact behavior without a silence 
   } finally {
     vi.useRealTimers();
   }
+});
+
+test('turning narration sharing off removes the elapsed-time indicator, including after quiet completion', async () => {
+  const interaction = {
+    ...base,
+    narration_shared: true,
+    started_at: '2026-09-06T09:55:00Z',
+  };
+  const { rerender } = render(AgentRuntimeActivityCard, { interaction });
+  expect(screen.getByRole('status')).toHaveTextContent('5 min since run start');
+  await rerender({ interaction: { ...interaction, narration_shared: false } });
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  await rerender({ interaction: { ...interaction, narration_shared: false, active: false, status: 'completed' } });
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
 
 test('narration stays visible while live commands and command history are expandable', async () => {

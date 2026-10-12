@@ -30,18 +30,27 @@ test('silence starts at two minutes, floors minutes, and never claims task progr
   const start = Date.parse(running.started_at);
   expect(runtimeSilenceLabel(running, start + 119999)).toBeNull();
   const fresh = { ...running, last_report_at: new Date(start + 120000).toISOString() };
-  expect(runtimeSilenceLabel(fresh, start + 120000)).toBe('No update from Resident for 2 min · runtime active');
-  expect(runtimeSilenceLabel(running, now + 29999)).toBe('No update from Resident for 5 min · runtime active');
+  expect(runtimeSilenceLabel(fresh, start + 120000)).toBe(
+    '2 min since run start · no resident post yet · runtime active'
+  );
+  expect(runtimeSilenceLabel(running, now + 29999)).toBe(
+    '5 min since run start · no resident post yet · runtime active'
+  );
+});
+
+test('does not expose the new elapsed-time status when narration sharing is off', () => {
+  expect(runtimeSilenceLabel({ ...running, narration_shared: false }, now)).toBeNull();
+  expect(
+    runtimeSilenceLabel({ ...running, narration_shared: false, last_resident_post_at: running.started_at }, now)
+  ).toBeNull();
 });
 
 test('a reply resets silence without being moved earlier than the run start', () => {
   const replied = { ...running, last_resident_post_at: '2026-10-12T10:04:00Z' };
   expect(runtimeSilenceLabel(replied, now)).toBeNull();
-  expect(runtimeSilenceLabel(replied, now + 60000)).toBe(
-    'No update from Resident for 2 min · runtime contact uncertain'
-  );
+  expect(runtimeSilenceLabel(replied, now + 60000)).toBe('Last resident update: 2 min ago · runtime contact uncertain');
   expect(runtimeSilenceLabel({ ...running, last_resident_post_at: '2026-10-12T09:59:00Z' }, now)).toBe(
-    'No update from Resident for 5 min · runtime active'
+    '5 min since run start · no resident post yet · runtime active'
   );
 });
 
@@ -64,7 +73,7 @@ test('contact becomes uncertain beyond thirty seconds even when the snapshot sti
   expect(runtimeContactUncertain(running, now + 30000)).toBe(false);
   expect(runtimeContactUncertain(running, now + 30001)).toBe(true);
   expect(runtimeSilenceLabel(running, now + 30001)).toBe(
-    'No update from Resident for 5 min · runtime contact uncertain'
+    '5 min since run start · no resident post yet · runtime contact uncertain'
   );
 });
 
@@ -77,7 +86,7 @@ test.each([
 ])('missing or uncertain reporting never implies live task progress (%j)', (reporting) => {
   expect(runtimeContactUncertain({ ...running, ...reporting }, now)).toBe(true);
   expect(runtimeSilenceLabel({ ...running, ...reporting }, now)).toBe(
-    'No update from Resident for 5 min · runtime contact uncertain'
+    '5 min since run start · no resident post yet · runtime contact uncertain'
   );
 });
 
