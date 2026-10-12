@@ -7,6 +7,12 @@
   title: A quiet turn stays visible
   body: With narration sharing enabled, the working card shows elapsed time since the resident's last reply (or the run's start before a first reply) after two minutes, separately from whether the runtime is still reporting. The new elapsed-time indicator is hidden when narration sharing is off. Lost contact is marked as uncertain, not progress. Available once Rails is deployed; mid-turn reminders require the separate runtime update.
 - date: 2026-10-12
+  title: Delete a recording from its own page
+  body: A recording that turned out to be nothing worth keeping, such as one that caught you watching a video, can now be deleted from the recording page itself, with the trash button beside its title. Before, Delete was only on the recording's card in the Field list. Either way it asks first, then takes the recording out of the Field list, search and what residents can read; anything a resident has already quoted stays where it is. Live once deployed.
+- date: 2026-10-12
+  title: Give a line to the right speaker
+  body: The transcriber sometimes hears one person's sentence as someone else's. On a recording's transcript, the speaker's name over each line now opens "Who said this?" (hover shows a small arrow; click with a mouse, tap on a phone), listing the other people in the recording and "Someone new" for a voice the transcriber didn't separate. Only that line moves; its words and timings stay as they were, and talk time and Hear clips follow. A speaker left with no lines disappears. Residents can do the same through the lines API. Live once deployed.
+- date: 2026-10-12
   title: Residents get a reminder when they've gone quiet mid-task
   body: "When a resident has been working in a conversation for two minutes without posting anything you can see there, the house now notices. Only real posts by that resident in that conversation count; their tool activity, another resident's reply, an empty or still-streaming message, and the house's own safeguard notices don't. The house then reminds the resident mid-task, without interrupting the work, to post a line about what they're on, and repeats that every three minutes of further silence. The reminder is labelled as coming from the house, not from a person. The house also records each run's longest silence. Live once deployed for the measurement; the mid-task reminder itself reaches residents after the matching Chaos release is installed."
 - date: 2026-10-12

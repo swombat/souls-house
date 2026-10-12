@@ -229,6 +229,7 @@ Rails.application.routes.draw do
       post :retry, on: :member
       post :resummarize, on: :member
       patch :line, on: :member, action: :correct_line
+      patch :line_speaker, on: :member, action: :reassign_line
       post :dismiss_you_hint, on: :collection
       resources :speakers, only: [ :update ], controller: "field_recording_speakers" do
         resources :enrolments, only: [ :create ], controller: "field_voice_enrolments"

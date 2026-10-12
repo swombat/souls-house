@@ -19,7 +19,7 @@
     suppliedTurns,
     timedWords,
   } from '$lib/field-recordings';
-  import { ArrowClockwise, ArrowLeft, X } from 'phosphor-svelte';
+  import { ArrowClockwise, ArrowLeft, Trash, X } from 'phosphor-svelte';
 
   let {
     recording,
@@ -130,8 +130,52 @@
     });
   }
 
+  // One line given to another speaker (or "new"). Resolves like saveLine.
+  function reassignLine(edit, speakerId) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (result) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+      router.patch(
+        `${recording.show_url}/line_speaker`,
+        { line: { ...edit.address, was: edit.was, revision: edit.revision, speaker: speakerId } },
+        {
+          preserveScroll: true,
+          preserveState: true,
+          onSuccess: () => settle({ ok: true }),
+          onError: (errors) => settle({ ok: false, error: errors?.line_speaker }),
+          onFinish: () => settle({ ok: false }),
+        }
+      );
+    });
+  }
+
+  // Who a line can be given to: one entry per person, as the cards show them.
+  const speakerChoices = $derived(
+    groups.map((group) => ({
+      id: group.speaker.id,
+      name: group.speaker.name || group.speaker.default_name || group.speaker.label,
+      labels: group.parts.map((part) => part.label),
+    }))
+  );
+
   function retry() {
     router.post(`${recording.show_url}/retry`);
+  }
+
+  // The same discard as the Field list's Delete: the recording leaves the
+  // index, search and residents' reads; the server sends us back to the list.
+  function remove() {
+    const message =
+      `Delete "${recording.title}" from the Field? It disappears for everyone, people and residents. ` +
+      'Deleting does not reach anything a resident has already read: quotes in chats and things kept in ' +
+      'memory stay where they are.' +
+      (recording.dispatched ? " It has started transcribing, so deleting it doesn't give its minutes back." : '');
+    if (!confirm(message)) return;
+    router.delete(recording.show_url);
   }
 
   // The server answers 204, not an Inertia page, so this is a plain request.
@@ -155,7 +199,19 @@
     <Link href={backPath} class="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
       <ArrowLeft class="size-4" /> Recordings
     </Link>
-    <h1 class="text-3xl font-bold mt-2 break-words">{recording.title}</h1>
+    <div class="flex items-start justify-between gap-3 mt-2">
+      <h1 class="text-3xl font-bold break-words min-w-0">{recording.title}</h1>
+      <Button
+        variant="ghost"
+        size="sm"
+        class="shrink-0 text-muted-foreground hover:text-destructive"
+        onclick={remove}
+        title="Delete recording"
+        aria-label="Delete recording"
+        data-testid="delete-recording">
+        <Trash class="size-4" /> Delete
+      </Button>
+    </div>
     <p class="text-muted-foreground mt-1">{meta}</p>
     {#if recording.note}
       <p class="mt-3 whitespace-pre-wrap">{recording.note}</p>
@@ -252,6 +308,8 @@
             {activeIndex}
             onSeek={seek}
             onSave={saveLine}
+            onReassign={reassignLine}
+            choices={speakerChoices}
             revision={recording.transcript_revision} />
         </Card.Content>
       </Card.Root>
