@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_12_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_12_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -653,6 +653,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_090000) do
     t.datetime "last_activity_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "sync_state", default: {}, null: false
     t.index ["service_connection_id", "last_activity_at"], name: "idx_on_service_connection_id_last_activity_at_96e688631f"
     t.index ["service_connection_id", "provider_chat_id"], name: "idx_on_service_connection_id_provider_chat_id_15d91caed6", unique: true
     t.index ["service_connection_id"], name: "index_comms_chats_on_service_connection_id"
@@ -670,8 +671,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_090000) do
     t.text "caption"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "edited_at"
+    t.bigint "edit_version"
+    t.datetime "deleted_at"
+    t.index ["comms_chat_id", "provider_message_id"], name: "index_comms_messages_on_comms_chat_id_and_provider_message_id", unique: true
     t.index ["comms_chat_id", "sent_at", "id"], name: "index_comms_messages_on_comms_chat_id_and_sent_at_and_id"
-    t.index ["service_connection_id", "provider_message_id"], name: "idx_on_service_connection_id_provider_message_id_12b2c5454b", unique: true
+    t.index ["service_connection_id"], name: "index_comms_messages_on_service_connection_id"
   end
 
   create_table "comms_request_nonces", force: :cascade do |t|
@@ -2088,6 +2093,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_090000) do
     t.text "pairing_qr"
     t.datetime "pairing_qr_expires_at"
     t.datetime "pairing_qr_issued_at"
+    t.integer "login_generation", default: 0, null: false
+    t.jsonb "connector_state", default: {}, null: false
+    t.bigint "comms_event_seq", default: 0, null: false
     t.index ["account_id", "provider", "credential_fingerprint"], name: "index_service_connections_on_account_provider_credential", unique: true, where: "(credential_fingerprint IS NOT NULL)"
     t.index ["account_id", "provider", "external_subject_id"], name: "index_service_connections_on_account_provider_subject", unique: true, where: "((external_subject_id IS NOT NULL) AND (credential_fingerprint IS NULL))"
     t.index ["account_id"], name: "index_service_connections_on_account_id"

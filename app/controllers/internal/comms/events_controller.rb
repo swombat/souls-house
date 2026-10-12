@@ -18,6 +18,11 @@ module Internal
         refuse(error.code, error.status)
       end
 
+      rescue_from CommsEvents::SequenceGap do |error|
+        Rails.logger.warn("[comms] refused sequence_gap connection=#{connection_param.first(40)}")
+        render json: { error: "sequence_gap", committed_seq: error.committed_seq }, status: :conflict
+      end
+
       rescue_from ActiveRecord::RecordInvalid do
         refuse(:invalid_record, :unprocessable_entity)
       end
@@ -28,8 +33,15 @@ module Internal
           expected_connection_id: connection.public_id,
           method: request.request_method, path: request.path, body: raw_body, headers: request.headers
         )
-        CommsEvents.receive!(connection, event, nonce:)
-        head :no_content
+        committed_seq = CommsEvents.receive!(connection, event, nonce:)
+        # An event that carried a sequence number is acknowledged with the
+        # highest sequence Rails has committed for this connection; the
+        # connector marks its outbox delivered only up to that (§5a).
+        if committed_seq
+          render json: { committed_seq: }
+        else
+          head :no_content
+        end
       end
 
       private

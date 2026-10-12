@@ -13,7 +13,9 @@ class Accounts::ServiceConnectionPairingsController < ApplicationController
     end
 
     response.headers["Cache-Control"] = "no-store"
-    render json: { status: connection.status, qr: connection.current_pairing_qr }
+    json = { status: connection.status, qr: connection.current_pairing_qr }
+    json[:login] = connection.login_state if connection.provider == "telegram"
+    render json: json
   end
 
 end

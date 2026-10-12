@@ -2,6 +2,10 @@ class ServiceConnection < ApplicationRecord
 
   MANAGEMENT_SCOPES = %w[personal account_managed].freeze
   STATUSES = %w[pairing connected reauthorizing suspended revoked error].freeze
+  # What the comms connector's pool says about a connection (proposal
+  # 2026-10-11 §2.1, §4.1, §5a), shown beside the status so a stale
+  # synced_through never passes for live data.
+  CONNECTOR_AVAILABILITY = %w[ok queued busy backlogged unavailable].freeze
 
   belongs_to :account
   belongs_to :connected_by_user, class_name: "User"
@@ -151,13 +155,45 @@ class ServiceConnection < ApplicationRecord
       # The payload holds the connector's callback secret. Residents get the
       # read endpoints only, never the payload.
       routes = Rails.application.routes.url_helpers
-      {
+      endpoints = {
         "chats_endpoint" => "#{Agents::Config.internal_url}#{routes.api_v1_service_connection_comms_chats_path(public_id)}",
         "messages_endpoint" => "#{Agents::Config.internal_url}#{routes.api_v1_service_connection_comms_messages_path(public_id)}"
       }
+      if provider == "telegram"
+        endpoints["search_endpoint"] = "#{Agents::Config.internal_url}#{routes.api_v1_service_connection_comms_search_path(public_id)}"
+      end
+      endpoints
     else
       credential_payload_hash
     end
+  end
+
+  # A new login attempt (start, restart or cancel). The connector refuses
+  # commands and Rails refuses events for any other generation.
+  def advance_login_generation!
+    with_lock do
+      update!(
+        login_generation: login_generation + 1,
+        connector_state: connector_state.to_h.except("login"),
+        pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil
+      )
+    end
+    login_generation
+  end
+
+  # The login step for the owner's page: whether a two-step password is
+  # wanted (with Telegram's hint, which is not secret) and the last failure.
+  def login_state
+    connector_state.to_h["login"].to_h
+  end
+
+  def connector_availability
+    connector_state.to_h["availability"].to_h.presence || { "state" => "ok" }
+  end
+
+  # Searching beyond the synced dialogs is off until the owner allows it.
+  def search_all_dialogs?
+    credential_metadata.to_h["search_all_dialogs"] == true
   end
 
   def replace_credential_payload_without_reconciliation!(payload)
@@ -229,6 +265,7 @@ class ServiceConnection < ApplicationRecord
       authority_warnings: authority_warnings,
       authority_summary: credential_metadata.to_h["authority_summary"],
       connection_metadata: runtime_metadata,
+      comms: (comms_summary if credential_strategy == "connector"),
       enabled_for_new_agents: enabled_for_new_agents?,
       freely_provisionable: freely_provisionable?,
       connected_by_user_id: connected_by_user_id,
@@ -239,6 +276,15 @@ class ServiceConnection < ApplicationRecord
   end
 
   private
+
+  def comms_summary
+    {
+      availability: connector_availability,
+      search_all_dialogs: search_all_dialogs?,
+      chats: comms_chats.count,
+      synced_chats: comms_chats.where("(sync_state->>'synced')::boolean IS NOT FALSE").count
+    }
+  end
 
   def runtime_metadata
     credential_metadata.to_h.except(

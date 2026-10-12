@@ -18,6 +18,64 @@ module CommsConnector
   def start_pairing(connection) = deliver(connection, "start_pairing")
   def unpair(connection) = deliver(connection, "unpair")
 
+  # Telegram commands (proposal 2026-10-11 §5). Unlike WhatsApp's, some of
+  # these carry secrets (the callback secret, a two-step password), so:
+  #
+  # - the connector must be reached over https, with mutual TLS when the
+  #   client certificate is configured (COMMS_CONNECTOR_CLIENT_CERT/_KEY,
+  #   COMMS_CONNECTOR_CA_FILE); plain http is refused;
+  # - each command is signed with the connector-wide COMMS_COMMAND_KEY (its
+  #   id in COMMS_COMMAND_KEY_ID), over the connection, operation, a unique
+  #   command id, the issue time and the body, so the connector can reject
+  #   stale or replayed commands and commands for another connection.
+  #
+  # Returns the connector's JSON reply as a Hash, or :not_configured.
+  TELEGRAM_COMMANDS = %w[start_login submit_password cancel_login logout search].freeze
+
+  def telegram_command(connection, operation, **fields)
+    raise ArgumentError, "unknown telegram command #{operation}" unless TELEGRAM_COMMANDS.include?(operation)
+
+    unless base_url
+      Rails.logger.info("[comms] connector not configured; #{operation} intended for #{connection.public_id}")
+      return :not_configured
+    end
+
+    uri = URI.join(base_url, "/connections/#{connection.public_id}/#{operation}")
+    raise Error, "the comms connector must be reached over https" unless uri.scheme == "https"
+
+    issued_at = Time.current.to_i
+    command_id = SecureRandom.hex(16)
+    body = JSON.generate(fields.merge(connection: connection.public_id, operation:, command_id:, issued_at:))
+    request = Net::HTTP::Post.new(uri)
+    request["Content-Type"] = "application/json"
+    CommsCommandSignature.headers_for(
+      connection_id: connection.public_id, operation:, command_id:, issued_at:, body:
+    ).each { |name, value| request[name] = value }
+    request.body = body
+
+    response = Net::HTTP.start(uri.hostname, uri.port, **tls_options, open_timeout: 5, read_timeout: 30) do |http|
+      http.request(request)
+    end
+    raise Error, "comms connector #{operation} failed (#{response.code})" unless response.is_a?(Net::HTTPSuccess)
+
+    parsed = response.body.present? ? JSON.parse(response.body) : {}
+    parsed.is_a?(Hash) ? parsed : {}
+  rescue JSON::ParserError
+    raise Error, "comms connector #{operation} returned invalid JSON"
+  rescue CommsCommandSignature::MissingKey => e
+    raise Error, e.message
+  end
+
+  def tls_options
+    options = { use_ssl: true, verify_mode: OpenSSL::SSL::VERIFY_PEER }
+    options[:ca_file] = ENV["COMMS_CONNECTOR_CA_FILE"] if ENV["COMMS_CONNECTOR_CA_FILE"].present?
+    if ENV["COMMS_CONNECTOR_CLIENT_CERT"].present? && ENV["COMMS_CONNECTOR_CLIENT_KEY"].present?
+      options[:cert] = OpenSSL::X509::Certificate.new(File.read(ENV["COMMS_CONNECTOR_CLIENT_CERT"]))
+      options[:key] = OpenSSL::PKey.read(File.read(ENV["COMMS_CONNECTOR_CLIENT_KEY"]))
+    end
+    options
+  end
+
   def base_url
     ENV["COMMS_CONNECTOR_URL"].presence
   end
