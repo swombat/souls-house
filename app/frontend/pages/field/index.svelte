@@ -28,7 +28,7 @@
   let {
     items = [],
     current_item = null,
-    counts = { all: 0, files: 0, notes: 0, recordings: 0, tweets: 0 },
+    counts = { all: 0, files: 0, notes: 0, recordings: 0, tweets: 0, waiting: 0 },
     field_empty = false,
     pagination = { page: 1, pages: 1, per_page: 50, total: 0 },
     recording_allowance = null,
@@ -56,7 +56,11 @@
     { key: 'notes', label: 'Notes' },
     { key: 'recordings', label: 'Recordings' },
     { key: 'tweets', label: 'Tweets' },
+    // Items waiting on a person (for now: speakers to name). Shown while
+    // there is something waiting, or while it's the open tab.
+    { key: 'waiting', label: 'Needs you', title: 'Items waiting for you, such as speakers to name' },
   ];
+  const visibleTabs = $derived(tabs.filter((t) => t.key !== 'waiting' || counts.waiting > 0 || tab === 'waiting'));
 
   // The server sends one page of the list (tab and tags already applied),
   // the counts for each tab, and the open item wherever it sits.
@@ -310,8 +314,9 @@
     <!-- The tabs sort the list; a search has its own results. -->
     {#if !search}
       <div class="mb-4 gap-1 overflow-x-auto {current ? 'hidden lg:flex' : 'flex'}" role="tablist">
-        {#each tabs as t (t.key)}
+        {#each visibleTabs as t (t.key)}
           <Button
+            title={t.title}
             variant={tab === t.key ? 'secondary' : 'ghost'}
             size="sm"
             role="tab"
@@ -351,6 +356,7 @@
             {items}
             {pagination}
             filterTags={filter_tags}
+            emptyText={tab === 'waiting' ? 'Nothing is waiting for you.' : null}
             currentKey={current?.key}
             onSelect={selectItem}
             onPage={goToPage} />

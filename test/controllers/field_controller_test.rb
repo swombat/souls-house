@@ -143,7 +143,7 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
     assert_equal 50, props["items"].size
     assert_equal "File 0", props["items"].first["title"]
     assert_equal({ "page" => 1, "pages" => 2, "per_page" => 50, "total" => 54 }, props["pagination"])
-    assert_equal({ "all" => 54, "files" => 53, "notes" => 1, "recordings" => 0, "tweets" => 0 }, props["counts"])
+    assert_equal({ "all" => 54, "files" => 53, "notes" => 1, "recordings" => 0, "tweets" => 0, "waiting" => 0 }, props["counts"])
     assert_nil props["items"].find { |i| i["kind"] == "note" }
 
     get account_field_path(@account, page: "2")
@@ -196,6 +196,76 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ "Tagged" ], props["items"].map { |i| i["title"] }
     assert_equal 1, props["counts"]["all"]
     assert_not props["field_empty"]
+  end
+
+  test "the waiting tab lists recordings with a speaker still to name, and drops them once named" do
+    @account.whiteboards.update_all(deleted_at: Time.current)
+    @account.field_files.create!(file: upload, title: "A file", uploaded_by: @user)
+    named = ready_recording(account: @account, user: @user, title: "All named")
+    waiting = ready_recording(account: @account, user: @user, title: "Two to name")
+    queued_recording(account: @account, user: @user, title: "Still transcribing")
+    voice = @account.field_voices.create!(name: "Ana")
+    named.speakers.each { |speaker| speaker.name_as!(voice, by: @user) }
+
+    get account_field_path(@account, tab: "waiting")
+    props = inertia_props
+    assert_equal "waiting", props["tab"]
+    assert_equal [ "Two to name" ], props["items"].map { |i| i["title"] }
+    assert_equal 1, props["counts"]["waiting"]
+    assert_equal 3, props["counts"]["recordings"], "the other tabs count as before"
+
+    waiting.speakers.first.name_as!(voice, by: @user)
+    get account_field_path(@account, tab: "waiting")
+    assert_equal [ "Two to name" ], inertia_props["items"].map { |i| i["title"] }, "one speaker left still waits"
+
+    waiting.speakers.last.name_as!(voice, by: @user)
+    get account_field_path(@account, tab: "waiting")
+    assert_empty inertia_props["items"]
+    assert_equal 0, inertia_props["counts"]["waiting"]
+
+    voice.update_columns(discarded_at: Time.current)
+    get account_field_path(@account, tab: "waiting")
+    assert_equal [ "All named", "Two to name" ].sort, inertia_props["items"].map { |i| i["title"] }.sort,
+      "a deleted voice leaves its speakers waiting again"
+  end
+
+  test "a speaker set aside as noise doesn't keep a recording waiting" do
+    @account.whiteboards.update_all(deleted_at: Time.current)
+    recording = ready_recording(account: @account, user: @user, title: "One real, one noise")
+    real, noise = recording.speakers.to_a
+    real.name_as!(@account.field_voices.create!(name: "Ana"), by: @user)
+
+    get account_field_path(@account, tab: "waiting")
+    assert_equal [ "One real, one noise" ], inertia_props["items"].map { |i| i["title"] }
+
+    noise.ignore!(by: @user)
+    get account_field_path(@account, tab: "waiting")
+    assert_empty inertia_props["items"]
+    assert_equal 0, inertia_props["counts"]["waiting"]
+
+    noise.unignore!
+    get account_field_path(@account, tab: "waiting")
+    assert_equal 1, inertia_props["counts"]["waiting"], "undo puts it back"
+  end
+
+  test "a supplied transcript waits only for its generic speaker labels, as its badge says" do
+    @account.whiteboards.update_all(deleted_at: Time.current)
+    supplied = ->(title, text) {
+      FieldRecording::Upload.claim!(
+        account: @account, user: @user, signed_id: pinned_blob(account: @account, user: @user).signed_id,
+        attributes: { title: }, supplied_turns: FieldRecording::SuppliedTranscript.parse(text)
+      )
+    }
+    supplied.("Named", "Anna: Hi.\nDaniel: Hello.\nAnna: Bye.")
+    supplied.("Generic", "Speaker A: Hi.\nDaniel: Hello.\nSpeaker A: Bye.")
+    supplied.("Long s", "\u017Fpeaker A: Hi.\nDaniel: Hello.\n\u017Fpeaker A: Bye.")
+
+    get account_field_path(@account, tab: "all")
+    badges = inertia_props["items"].to_h { |i| [ i["title"], i["unnamed_speakers"] ] }
+    get account_field_path(@account, tab: "waiting")
+    waiting = inertia_props["items"].map { |i| i["title"] }
+    assert_equal [ "Generic" ], waiting
+    assert_equal waiting.sort, badges.select { |_, n| n.to_i.positive? }.keys.sort, "the tab and the badges agree"
   end
 
   test "an open note carries its content" do

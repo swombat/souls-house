@@ -6,6 +6,8 @@
 #   name: "Priya"          a new voice; if a voice of that name exists, the
 #                          page is asked "same Priya?" unless link_existing
 #   unname: true           back to "Speaker N"
+#   ignore: true           noise, not a person: stops asking for a name
+#   unignore: true         asks again
 #
 # with: [<speaker id>, ...] applies the naming (or unnaming) to other speakers
 # on this recording linked to the same voice as this one: the transcriber
@@ -19,11 +21,16 @@ class FieldRecordingSpeakersController < ApplicationController
 
   def update
     attributes = params.require(:speaker).permit(:me, :voice_id, :member_user_id, :name, :link_existing, :unname,
+      :ignore, :unignore,
       :confirm_suggestion, :dismiss_suggestion, :suggestion_generation, :confirm_recognition, :dismiss_recognition,
       recognition: %i[voice_id print_generation decision_generation], with: [])
     companion_ids = decode_ids(attributes[:with])
 
-    if truthy?(attributes[:unname])
+    if truthy?(attributes[:ignore])
+      return out_of_date(NAMED_MEANWHILE) unless @speaker.ignore!(by: Current.user)
+    elsif truthy?(attributes[:unignore])
+      @speaker.unignore!
+    elsif truthy?(attributes[:unname])
       with_companions(companion_ids) do |companions|
         @speaker.unname!
         companions.each(&:unname!)
@@ -63,6 +70,7 @@ class FieldRecordingSpeakersController < ApplicationController
   end
 
   STALE_GROUP = "This person changed since the page loaded. Please look again."
+  NAMED_MEANWHILE = "This speaker was named since the page loaded. Please look again."
 
   def decode_ids(ids) = Array(ids).filter_map { |id| FieldRecordingSpeaker.decode_id(id.to_s) }
 

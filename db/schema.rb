@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_12_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_12_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -928,6 +928,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_140000) do
     t.integer "recognition_confidence"
     t.bigint "recognition_print_generation"
     t.integer "recognition_decision_generation"
+    t.datetime "ignored_at"
+    t.string "ignored_by_type"
+    t.bigint "ignored_by_id"
     t.index ["field_recording_id", "label"], name: "index_field_recording_speakers_on_field_recording_id_and_label", unique: true
     t.index ["field_recording_id"], name: "index_field_recording_speakers_on_field_recording_id"
     t.index ["field_voice_id"], name: "index_field_recording_speakers_on_field_voice_id"

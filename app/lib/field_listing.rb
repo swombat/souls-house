@@ -5,7 +5,23 @@ class FieldListing
 
   PER_PAGE = 50
   KINDS = %w[file note recording tweet].freeze
-  TAB_KINDS = { "all" => KINDS, "files" => %w[file], "notes" => %w[note], "recordings" => %w[recording], "tweets" => %w[tweet] }.freeze
+  TAB_KINDS = { "all" => KINDS, "files" => %w[file], "notes" => %w[note], "recordings" => %w[recording], "tweets" => %w[tweet],
+                "waiting" => %w[recording] }.freeze
+
+  # Waiting on a person: a ready recording with a speaker still to name, the
+  # same test as FieldRecordingSpeaker#unnamed? (no kept voice, and not a real
+  # name from a supplied transcript, and not set aside as noise), in SQL.
+  # Other kinds of waiting join here.
+  # The label pattern has no quotes in it, so it is written in as it stands.
+  WAITING_RECORDINGS = <<~SQL.squish.freeze
+    field_recordings.status = 'ready' AND EXISTS (
+      SELECT 1 FROM field_recording_speakers s
+      LEFT JOIN field_voices v ON v.id = s.field_voice_id AND v.discarded_at IS NULL
+      WHERE s.field_recording_id = field_recordings.id AND v.id IS NULL
+        AND s.ignored_at IS NULL
+        AND (field_recordings.transcript_source <> 'supplied'
+             OR s.label ~ '#{FieldRecordingSpeaker::GENERIC_LABEL_SQL}'))
+  SQL
 
   attr_reader :page, :pages, :counts
 
@@ -48,13 +64,14 @@ class FieldListing
 
   private
 
-  def scope_for(kind)
+  def scope_for(kind, waiting: @tab == "waiting")
     scope = case kind
     when "file" then @account.field_files.kept
     when "note" then @account.whiteboards.active
     when "tweet" then @account.field_tweets.kept
     else @account.field_recordings.kept
     end
+    scope = scope.where(WAITING_RECORDINGS) if waiting
     with_all_tags(scope)
   end
 
@@ -75,8 +92,9 @@ class FieldListing
   end
 
   def count_tabs
-    per_kind = KINDS.to_h { |kind| [ kind, scope_for(kind).count ] }
-    TAB_KINDS.transform_values { |kinds| kinds.sum { |kind| per_kind[kind] } }
+    per_kind = KINDS.to_h { |kind| [ kind, scope_for(kind, waiting: false).count ] }
+    TAB_KINDS.except("waiting").transform_values { |kinds| kinds.sum { |kind| per_kind[kind] } }
+      .merge("waiting" => scope_for("recording", waiting: true).count)
   end
 
   # [[kind, id], ...] for this page only: one UNION over light columns.

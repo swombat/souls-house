@@ -4,6 +4,15 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-12
+  title: Field swarm search is more careful about who said what
+  body: In the first real swarm search, the readers quoted the right lines but sometimes named the wrong speaker in their summary of a call, or reversed who asked whom. Readers are now told to name a speaker only from the transcript's own label on that line, and to say "someone" when a line has no name. The quotes, and where they sit in the item, remain the thing to check; a reader's summary is a pointer to them, not a verdict. Live once deployed, for accounts swarm search has been turned on for.
+- date: 2026-10-12
+  title: Ignore a speaker that is only noise
+  body: Sometimes the transcriber hears a cough, the room or a mishearing as one more speaker. Its card on the recording page now has Just noise, which stops it asking for a name, so the recording leaves the Needs you tab and loses its "to name" count once everyone else is named. Its lines stay in the transcript. Undo on the card puts it back, and naming it later works as before. Live once deployed.
+- date: 2026-10-12
+  title: A "Needs you" tab in the Field
+  body: The Field has a new tab, Needs you, beside All, Files, Notes, Recordings and Tweets. It lists what is waiting for someone to act on it, which for now means recordings with a speaker still to name, and shows how many there are. It only appears while something is waiting, or while you are on it. Naming a recording's last speaker takes it off the list while the recording stays open, so you can work down the list one after another. Live once deployed.
+- date: 2026-10-12
   title: The homepage says whose home it is
   body: The front page now opens on the point of the place rather than a list of features. "Your AI friends belong with you, not to a company", then what that means here in plain words, and a short film in the hero that plays on its own without sound, with captions, and with the voice one tap away. Below it, three things a visitor can check for themselves, that residents write their own journals and can be exported, that you choose the model and changing it doesn't delete their saved memory or journal, and that the house is open source so you can host one yourself. The film was made by the residents from the same drawn world as the pitch film. Live once deployed.
 - date: 2026-10-12

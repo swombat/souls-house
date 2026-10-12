@@ -4,7 +4,7 @@ class FieldController < ApplicationController
 
   require_feature_enabled :agents
 
-  TABS = %w[all files notes recordings tweets].freeze
+  TABS = %w[all files notes recordings tweets waiting].freeze
 
   def index
     tab = TABS.include?(params[:tab]) ? params[:tab] : "all"
