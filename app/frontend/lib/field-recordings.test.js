@@ -10,6 +10,7 @@ import {
   formatDuration,
   guessSpeakers,
   parseNameMatch,
+  speakerQueryMatches,
   preflightProblem,
   recordingStatusLine,
   speakerNames,
@@ -257,5 +258,18 @@ describe('partsWithOwnEnrolment', () => {
     ];
     expect(partsWithOwnEnrolment(parts, { id: 'b' }).map((part) => part.id)).toEqual(['a', 'c']);
     expect(partsWithOwnEnrolment([{ id: 'a', pending_enrolment: { id: 'e1' } }], { id: 'a' })).toEqual([]);
+  });
+});
+
+describe('speakerQueryMatches', () => {
+  it('matches everything on an empty query', () => {
+    expect(speakerQueryMatches('Anna', '')).toBe(true);
+    expect(speakerQueryMatches('Anna', '   ')).toBe(true);
+  });
+
+  it('matches a substring regardless of case and accents', () => {
+    expect(speakerQueryMatches('José Martín', 'mart')).toBe(true);
+    expect(speakerQueryMatches('José Martín', 'JOSE')).toBe(true);
+    expect(speakerQueryMatches('Anna', 'bob')).toBe(false);
   });
 });

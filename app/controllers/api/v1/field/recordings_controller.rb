@@ -147,6 +147,8 @@ module Api
         def correct_line
           return render_no_transcript unless @recording.ready?
 
+          return reassign_line if params.key?(:speaker) && !params.key?(:text)
+
           fields = %w[text was revision].index_with { |key| params[key] }
           fields.each do |key, value|
             unless value.is_a?(String) && value.present?
@@ -157,6 +159,35 @@ module Api
                                                          revision: fields["revision"])
           json = lines_json(@recording.reload)
           render json: json.merge(line: json[:lines].find { |entry| entry[:line] == params[:line].to_i })
+        rescue FieldRecording::LineCorrection::Stale
+          @recording.reload
+          render json: { error: "The transcript has changed, or that line no longer reads as `was`. Read the lines again and retry.",
+                         revision: (@recording.transcript_revision if @recording.ready?) },
+                 status: :conflict
+        rescue FieldRecording::LineCorrection::Invalid => e
+          render json: { error: e.message }, status: :unprocessable_entity
+        end
+
+        # The same PATCH with speaker (a speaker id from the recording, or
+        # "new") instead of text: the line was heard as the wrong person.
+        # Only the speaker moves; the line's words stay as they are.
+        def reassign_line
+          fields = %w[speaker was revision].index_with { |key| params[key] }
+          fields.each do |key, value|
+            unless value.is_a?(String) && value.present?
+              return render json: { error: "#{key} is required, as a string" }, status: :unprocessable_entity
+            end
+          end
+          to = if fields["speaker"] == "new"
+            :new
+          else
+            @recording.speakers.find_by(id: FieldRecordingSpeaker.decode_id(fields["speaker"]))
+          end
+          return render json: { error: "No such speaker in this recording." }, status: :unprocessable_entity unless to
+
+          number = @recording.reassign_line_number!(params[:line], to:, was: fields["was"], revision: fields["revision"])
+          json = lines_json(@recording.reload)
+          render json: json.merge(line: json[:lines].find { |entry| entry[:line] == number })
         rescue FieldRecording::LineCorrection::Stale
           @recording.reload
           render json: { error: "The transcript has changed, or that line no longer reads as `was`. Read the lines again and retry.",

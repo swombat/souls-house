@@ -204,6 +204,55 @@ test('the "is one of these you?" hint shows when asked for', async ({ mount, pag
   await page.screenshot({ path: 'tmp/field-recording-hint.png', fullPage: true });
 });
 
+test('with more than ten people to choose from, the speaker picker can be filtered', async ({ mount, page }) => {
+  const names = ['Priya', 'Tomás', 'Ines', 'Jo', 'Kwame', 'Lena', 'Marta', 'Noor', 'Oskar', 'Pau', 'Rosa'];
+  await mount(RecordingPage, {
+    props: {
+      recording,
+      speakers,
+      voices: [{ id: 'v1', name: 'Sam' }, ...names.map((name, i) => ({ id: `p${i}`, name }))],
+      members_without_voice: [],
+      my_voice_id: 'v1',
+      show_you_hint: false,
+      account,
+    },
+  });
+
+  await page.getByTestId('speaker-chip').filter({ hasText: "Who's this?" }).click();
+  const filter = page.getByTestId('speaker-filter');
+  const choices = page.getByTestId('speaker-choices');
+  await expect(choices).toContainText('Rosa');
+  await filter.fill('tomas');
+  await expect(choices).toContainText('Tomás');
+  await expect(choices).not.toContainText('Rosa');
+  await expect(page.getByTestId('speaker-choice-me')).toHaveCount(0);
+  await page.screenshot({ path: 'tmp/field-speaker-filter.png' });
+  await filter.fill('Zed');
+  await expect(page.getByTestId('speaker-filter-empty')).toBeVisible();
+  await expect(page.getByText('Add someone new')).toBeVisible();
+});
+
+test('a short speaker list has no filter box', async ({ mount, page }) => {
+  await mount(RecordingPage, {
+    props: {
+      recording,
+      speakers,
+      voices: [
+        { id: 'v1', name: 'Sam' },
+        { id: 'v2', name: 'Priya' },
+      ],
+      members_without_voice: [],
+      my_voice_id: 'v1',
+      show_you_hint: false,
+      account,
+    },
+  });
+
+  await page.getByTestId('speaker-chip').filter({ hasText: "Who's this?" }).click();
+  await expect(page.getByTestId('speaker-choices')).toContainText('Priya');
+  await expect(page.getByTestId('speaker-filter')).toHaveCount(0);
+});
+
 test('one voice heard as two speakers shows as one card, with its parts', async ({ mount, page }) => {
   const twice = [
     ...speakers.map(({ suggestion, ...speaker }) => speaker),
@@ -732,6 +781,77 @@ test('a failed request keeps the text too', async ({ mount, page }) => {
   await expect(page.getByTestId('line-editor')).toHaveValue('Shall we start with the venue, Dan?');
 });
 
+// Giving a line to the right person: the speaker's name over a line opens
+// "Who said this?" with the other people in the recording and "Someone new".
+
+async function captureSpeakerPatches(page, reply = null) {
+  const sent = [];
+  await page.route('**/accounts/acct1/field/recordings/r1/line_speaker', async (route) => {
+    sent.push(route.request().postDataJSON());
+    await route.fulfill(reply || { status: 200, contentType: 'application/json', body: '{}' });
+  });
+  return sent;
+}
+
+test("with a mouse, a line's speaker shows a caret on hover and gives the line to someone else", async ({
+  mount,
+  page,
+}) => {
+  const sent = await captureSpeakerPatches(page);
+  await mountPlayer(mount, page);
+  const speaker = page.getByTestId('line-speaker').nth(1);
+  await expect(speaker).toHaveText('Speaker 2');
+  await speaker.hover();
+  await speaker.click();
+
+  const menu = page.getByTestId('line-speaker-menu');
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem')).toHaveText(['Sam', 'Someone new']);
+  await expect(page.getByTestId('line-editor')).toHaveCount(0);
+  await page.screenshot({ path: 'tmp/field-line-speaker-desktop.png' });
+
+  await menu.getByRole('menuitem', { name: 'Sam' }).click();
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0]).toEqual({
+    line: { first: 2, last: 7, was: 'Shall we start with the venue?', revision: 'rev1', speaker: 's1' },
+  });
+  await expect(menu).toHaveCount(0);
+});
+
+test('Escape or a click elsewhere closes the speaker menu and sends nothing', async ({ mount, page }) => {
+  const sent = await captureSpeakerPatches(page);
+  await mountPlayer(mount, page);
+  await page.getByTestId('line-speaker').first().click();
+  await expect(page.getByTestId('line-speaker-menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('line-speaker-menu')).toHaveCount(0);
+  await page.getByTestId('line-speaker').first().click();
+  await page.getByRole('heading', { name: recording.title }).click();
+  await expect(page.getByTestId('line-speaker-menu')).toHaveCount(0);
+  expect(sent).toEqual([]);
+});
+
+test("opening another line's speaker menu closes the first", async ({ mount, page }) => {
+  await mountPlayer(mount, page);
+  // The open menu lies over the lines below it, so go to the line above.
+  await page.getByTestId('line-speaker').nth(1).click();
+  await page.getByTestId('line-speaker').first().click();
+  await expect(page.getByTestId('line-speaker-menu')).toHaveCount(1);
+  await expect(page.getByTestId('line-speaker-menu').getByRole('menuitem').first()).toHaveText('Speaker 2');
+});
+
+test('a refused move says why', async ({ mount, page }) => {
+  await captureSpeakerPatches(page, {
+    status: 422,
+    contentType: 'application/json',
+    body: JSON.stringify({ props: { errors: { line_speaker: 'The transcript changed since the page loaded.' } } }),
+  });
+  await mountPlayer(mount, page);
+  await page.getByTestId('line-speaker').first().click();
+  await page.getByTestId('line-speaker-new').click();
+  await expect(page.getByTestId('line-speaker-error')).toBeVisible();
+});
+
 test.describe('on a phone', () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 
@@ -754,6 +874,22 @@ test.describe('on a phone', () => {
     await page.getByTestId('line-editor').fill('Shall we start with the venue, Dan?');
     await page.getByTestId('line-save').tap();
     await expect.poll(() => sent.length).toBe(1);
+  });
+
+  test("tapping a line's speaker offers the others and someone new", async ({ mount, page }) => {
+    const sent = await captureSpeakerPatches(page);
+    await mountPlayer(mount, page);
+    await page.getByTestId('line-speaker').first().tap();
+
+    const menu = page.getByTestId('line-speaker-menu');
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem')).toHaveText(['Speaker 2', 'Someone new']);
+    await expect(page.getByTestId('line-menu')).toHaveCount(0);
+    await page.screenshot({ path: 'tmp/field-line-speaker-mobile.png' });
+
+    await page.getByTestId('line-speaker-new').tap();
+    await expect.poll(() => sent.length).toBe(1);
+    expect(sent[0].line).toMatchObject({ first: 0, last: 1, was: 'Morning everyone.', speaker: 'new' });
   });
 
   test('pressing and holding a line edits it straight away', async ({ mount, page }) => {

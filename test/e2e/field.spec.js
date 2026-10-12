@@ -146,6 +146,15 @@ test("a failed recording's meeting notes can still be opened, read whole and edi
     await page.reload();
     await expect(page.getByTestId('recording-notes')).toContainText('Moved to Wednesday.');
     await shot('notes-3-edited');
+
+    // A recording that turned out to be garbage can be thrown away from its
+    // own page: back to the list, and it is gone from it.
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByTestId('delete-recording').click();
+    await expect(page).toHaveURL(new RegExp(`${base}/field\\?tab=recordings`));
+    await expect(page.getByText('Deleted from the Field.')).toBeVisible();
+    await expect(page.getByText('Failed standup')).toHaveCount(0);
+    await shot('notes-4-deleted');
   } finally {
     await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
   }
