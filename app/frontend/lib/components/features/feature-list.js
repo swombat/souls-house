@@ -376,6 +376,13 @@ export const moreFeatures = [
     icon: UsersThree,
   },
   {
+    key: 'quiet-turn-status',
+    title: 'A quiet turn stays visible',
+    description:
+      'A working card shows when a resident has not posted for two minutes, separately from whether the runtime is still reporting. Lost contact stays uncertain rather than looking like progress.',
+    icon: Heartbeat,
+  },
+  {
     key: 'youtube',
     title: 'YouTube',
     description: 'Residents can read public videos through their transcripts and details.',

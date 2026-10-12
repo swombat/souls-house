@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import AgentRuntimeActivityCard from './AgentRuntimeActivityCard.svelte';
 
 const base = {
@@ -9,6 +10,9 @@ const base = {
   status: 'running',
   status_label: 'is working',
   created_at: '2026-09-06T10:00:00Z',
+  server_time: '2026-09-06T10:00:00Z',
+  reporter_health: 'live',
+  last_report_at: '2026-09-06T10:00:00Z',
   events: [],
 };
 
@@ -26,6 +30,81 @@ const withCommands = {
     { id: '3', type: 'warning', data: {} },
   ],
 };
+
+test('one compact silence line ages without polling, resets on replies, and disappears at completion', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance', 'Date'] });
+  vi.setSystemTime(new Date('2030-01-01T00:00:00Z')); // Deliberately unlike the server clock.
+  try {
+    const interaction = {
+      ...base,
+      narration_shared: false,
+      started_at: '2026-10-12T10:00:00Z',
+      server_time: '2026-10-12T10:01:59Z',
+      last_resident_post_at: null,
+      reporter_health: 'live',
+      last_report_at: '2026-10-12T10:01:59Z',
+    };
+    const { container, rerender, unmount } = render(AgentRuntimeActivityCard, { interaction });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    await vi.advanceTimersByTimeAsync(1000);
+    await tick();
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status')).toBeVisible();
+    expect(screen.getByRole('status')).toHaveTextContent('No update from Resident for 2 min · runtime active');
+    expect(container.querySelector('details').open).toBe(false);
+    await vi.advanceTimersByTimeAsync(30000);
+    await tick();
+    expect(screen.getByRole('status')).toHaveTextContent('runtime contact uncertain');
+    expect(screen.queryByText(/Live updates interrupted/)).not.toBeInTheDocument();
+    await rerender({ interaction: { ...interaction, revision: 2 } });
+    expect(screen.getByRole('status')).toHaveTextContent('runtime contact uncertain');
+    await vi.advanceTimersByTimeAsync(60000);
+    await tick();
+    expect(screen.getByRole('status')).toHaveTextContent('No update from Resident for 3 min');
+    const replied = {
+      ...interaction,
+      server_time: '2026-10-12T10:03:30Z',
+      last_resident_post_at: '2026-10-12T10:03:30Z',
+      last_report_at: '2026-10-12T10:03:30Z',
+    };
+    await rerender({ interaction: replied });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    await vi.advanceTimersByTimeAsync(120000);
+    await tick();
+    expect(screen.getByRole('status')).toHaveTextContent('No update from Resident for 2 min');
+    await rerender({ interaction: { ...replied, active: false, status: 'completed' } });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('legacy invocations retain duration and contact behavior without a silence indicator', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-12T10:03:00Z'));
+  try {
+    const interaction = {
+      ...base,
+      run_id: null,
+      server_time: undefined,
+      started_at: '2026-10-12T10:00:00Z',
+      reporter_health: 'connecting',
+      last_report_at: null,
+    };
+    const { rerender, unmount } = render(AgentRuntimeActivityCard, { interaction });
+    expect(screen.getByText(/180s/)).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Live updates interrupted/)).not.toBeInTheDocument();
+    await rerender({ interaction: { ...interaction, last_report_at: '2026-10-12T10:02:00Z' } });
+    expect(screen.getByText(/Live updates interrupted/)).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    unmount();
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 test('narration stays visible while live commands and command history are expandable', async () => {
   const { rerender } = render(AgentRuntimeActivityCard, { interaction: withCommands });

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-12
+  title: A quiet turn stays visible
+  body: After two minutes without a resident reply, the working card shows how long it has been quiet, separately from whether the runtime is still reporting. Lost contact is marked as uncertain, not progress. Available once Rails is deployed; mid-turn reminders require the separate runtime update.
+- date: 2026-10-12
   title: Ignore a speaker that is only noise
   body: Sometimes the transcriber hears a cough, the room or a mishearing as one more speaker. Its card on the recording page now has Just noise, which stops it asking for a name, so the recording leaves the Needs you tab and loses its "to name" count once everyone else is named. Its lines stay in the transcript. Undo on the card puts it back, and naming it later works as before. Live once deployed.
 - date: 2026-10-12

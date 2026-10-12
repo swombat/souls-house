@@ -1,13 +1,19 @@
 <script>
   import { onMount } from 'svelte';
   import { formatTime } from '$lib/utils';
+  import { runtimeContactUncertain, runtimeServerTime, runtimeSilenceLabel } from '$lib/runtime-activity';
   import SubagentActivity from './SubagentActivity.svelte';
 
   let { interaction } = $props();
   let expanded = $state(false);
   let hadNarration = $state(false);
   let wasActive = $state(Boolean(interaction.active));
-  let now = $state(Date.now());
+  const mountedAt = performance.now();
+  let tick = $state(mountedAt);
+  let legacyNow = $state(Date.now());
+  let clock = $state({ serverTime: interaction.server_time, receivedAt: mountedAt });
+  const serverTime = $derived(interaction.server_time);
+  const now = $derived(interaction.run_id ? runtimeServerTime(clock.serverTime, clock.receivedAt, tick) : legacyNow);
   const isActive = $derived(Boolean(interaction.active));
   const backgroundClass = $derived(
     interaction.agent_colour
@@ -22,15 +28,25 @@
       (interaction.events || []).some((event) => event.type === 'commentary.completed' && event.data?.text)
   );
   const duration = $derived(
-    isActive && interaction.started_at
+    isActive && interaction.started_at && now != null
       ? Math.max(0, now - new Date(interaction.started_at).getTime())
       : interaction.duration_ms
   );
   const healthStale = $derived(
     isActive &&
-      (interaction.reporter_health === 'stale' ||
-        (interaction.last_report_at && now - new Date(interaction.last_report_at).getTime() > 30000))
+      (interaction.run_id
+        ? runtimeContactUncertain(interaction, now)
+        : interaction.reporter_health === 'stale' ||
+          (interaction.last_report_at && now - new Date(interaction.last_report_at).getTime() > 30000))
   );
+  const silenceLabel = $derived(runtimeSilenceLabel(interaction, now));
+
+  $effect(() => {
+    // Only a new server timestamp resets the anchor, not a local rerender.
+    const receivedAt = performance.now();
+    clock = { serverTime, receivedAt };
+    tick = receivedAt;
+  });
 
   $effect(() => {
     if (wasActive && !isActive) expanded = false;
@@ -40,7 +56,10 @@
   });
 
   onMount(() => {
-    const timer = setInterval(() => (now = Date.now()), 1000);
+    const timer = setInterval(() => {
+      tick = performance.now();
+      if (!interaction.run_id) legacyNow = Date.now();
+    }, 1000);
     return () => clearInterval(timer);
   });
 
@@ -70,7 +89,7 @@
       {#if !isActive && interaction.reply_label}
         <span class="text-xs text-muted-foreground"> · {interaction.reply_label}</span>
       {/if}
-      {#if healthStale}
+      {#if healthStale && !silenceLabel}
         <span class="text-xs text-amber-700 dark:text-amber-400"> · Live updates interrupted</span>
       {/if}
       {#if interaction.narration_shared !== false}
@@ -81,6 +100,9 @@
           active={isActive}
           stale={healthStale}
           compact />
+      {/if}
+      {#if silenceLabel}
+        <span class="block mt-1 text-xs text-muted-foreground" role="status">{silenceLabel}</span>
       {/if}
     </summary>
     <div class="border-t px-4 py-3 space-y-3 text-sm">
