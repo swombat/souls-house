@@ -10,6 +10,7 @@ class FieldRecordingSpeaker < ApplicationRecord
   belongs_to :field_recording
   belongs_to :field_voice, optional: true
   belongs_to :named_by, polymorphic: true, optional: true
+  belongs_to :ignored_by, polymorphic: true, optional: true
   belongs_to :suggested_voice, class_name: "FieldVoice", optional: true
   belongs_to :recognised_voice, class_name: "FieldVoice", optional: true
   has_many :enrolments, class_name: "FieldVoiceEnrolment", dependent: :destroy
@@ -18,6 +19,7 @@ class FieldRecordingSpeaker < ApplicationRecord
                         suggestion_quote_ms: nil, suggestion_source: nil, suggested_at: nil,
                         suggestion_generation: nil }.freeze
   RECOGNITION_FIELDS = { recognised_voice: nil, recognition_confidence: nil, recognition_print_generation: nil }.freeze
+  NOT_IGNORED = { ignored_at: nil, ignored_by: nil }.freeze
 
   validates :label, presence: true
   validates :naming_source, inclusion: { in: NAMING_SOURCES }, allow_nil: true
@@ -55,12 +57,19 @@ class FieldRecordingSpeaker < ApplicationRecord
   def self.grouped(speakers) = speakers.sort_by(&:position).group_by(&:identity).values
 
   # Still waiting for a name: no kept voice, and no real name from a supplied
-  # transcript. A pending suggestion doesn't count until someone confirms it.
+  # transcript, and not set aside as noise. A pending suggestion doesn't count
+  # until someone confirms it.
   def unnamed?
     return false if field_voice&.kept?
+    return false if ignored?
 
     !(field_recording.supplied? && !label.match?(GENERIC_LABEL))
   end
+
+  # A person said this "speaker" is noise (a cough, the room, a mishearing),
+  # not someone to name. Only an unnamed speaker can be set aside; naming it
+  # later, or un-naming, takes the mark off.
+  def ignored? = ignored_at.present? && !field_voice&.kept?
 
   # A human names this speaker. Every speaker decision (naming, un-naming,
   # confirming or dismissing a suggestion or a guess) takes the one lock order,
@@ -76,7 +85,7 @@ class FieldRecordingSpeaker < ApplicationRecord
 
       reload
       update!(field_voice: voices.first, naming_source: source, named_by: by, named_at: Time.current,
-        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **RECOGNITION_FIELDS)
+        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **RECOGNITION_FIELDS, **NOT_IGNORED)
       recording.update!(transcript_text: recording.render_transcript_text)
     end
   end
@@ -88,7 +97,7 @@ class FieldRecordingSpeaker < ApplicationRecord
     end
   end
 
-  def suggestion? = suggested_name.present? && !field_voice&.kept?
+  def suggestion? = suggested_name.present? && !field_voice&.kept? && !ignored?
 
   # The chip the person saw is still the live suggestion: same generation, no
   # decision since, still unnamed. Checked under the recording lock.
@@ -107,7 +116,7 @@ class FieldRecordingSpeaker < ApplicationRecord
     end
   end
 
-  def recognition? = recognised_voice_id.present? && !field_voice&.kept? && recognised_voice&.kept?
+  def recognition? = recognised_voice_id.present? && !field_voice&.kept? && !ignored? && recognised_voice&.kept?
 
   # The guess a chip showed: which voice, from which print, against which
   # decision generation. Confirm and dismiss must send it back unchanged.
@@ -169,8 +178,36 @@ class FieldRecordingSpeaker < ApplicationRecord
 
       reload
       update!(field_voice: nil, naming_source: nil, named_by: nil, named_at: nil,
-        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS)
+        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **NOT_IGNORED)
       recording.update!(transcript_text: recording.render_transcript_text)
+    end
+  end
+
+  # Set aside as noise. Bumping the decision generation keeps the suggestion
+  # and recognition jobs off it, as any person's decision does; a guess or
+  # suggestion already shown is cleared. A named speaker is refused: un-name
+  # it first. Returns false (changing nothing) when it was named meanwhile.
+  def ignore!(by:)
+    with_decision_locks do |recording|
+      raise ActiveRecord::RecordNotFound unless recording.kept? && recording.ready?
+
+      reload
+      next false if field_voice&.kept?
+      next true if ignored?
+
+      update!(ignored_at: Time.current, ignored_by: by, decision_generation: decision_generation + 1,
+        **SUGGESTION_FIELDS, **RECOGNITION_FIELDS)
+      true
+    end
+  end
+
+  def unignore!
+    with_decision_locks do |recording|
+      raise ActiveRecord::RecordNotFound unless recording.kept? && recording.ready?
+
+      reload
+      update!(decision_generation: decision_generation + 1, **NOT_IGNORED) if ignored_at.present?
+      true
     end
   end
 

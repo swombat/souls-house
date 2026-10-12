@@ -229,6 +229,25 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
       "a deleted voice leaves its speakers waiting again"
   end
 
+  test "a speaker set aside as noise doesn't keep a recording waiting" do
+    @account.whiteboards.update_all(deleted_at: Time.current)
+    recording = ready_recording(account: @account, user: @user, title: "One real, one noise")
+    real, noise = recording.speakers.to_a
+    real.name_as!(@account.field_voices.create!(name: "Ana"), by: @user)
+
+    get account_field_path(@account, tab: "waiting")
+    assert_equal [ "One real, one noise" ], inertia_props["items"].map { |i| i["title"] }
+
+    noise.ignore!(by: @user)
+    get account_field_path(@account, tab: "waiting")
+    assert_empty inertia_props["items"]
+    assert_equal 0, inertia_props["counts"]["waiting"]
+
+    noise.unignore!
+    get account_field_path(@account, tab: "waiting")
+    assert_equal 1, inertia_props["counts"]["waiting"], "undo puts it back"
+  end
+
   test "a supplied transcript waits only for its generic speaker labels, as its badge says" do
     @account.whiteboards.update_all(deleted_at: Time.current)
     supplied = ->(title, text) {

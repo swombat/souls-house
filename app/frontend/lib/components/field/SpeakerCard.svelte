@@ -44,13 +44,26 @@
       { preserveScroll: true, preserveState: true, onFinish: () => (unlinking = null) }
     );
   }
+
+  // Noise rather than a person: stop asking for a name (and undo that).
+  let settingAside = $state(false);
+  function setIgnored(ignored) {
+    settingAside = true;
+    router.patch(
+      chip.url,
+      { speaker: ignored ? { ignore: true } : { unignore: true } },
+      { preserveScroll: true, preserveState: true, onFinish: () => (settingAside = false) }
+    );
+  }
 </script>
 
-<Card.Root data-testid="speaker-card">
+<Card.Root data-testid="speaker-card" data-ignored={speaker.ignored ? 'true' : null} class={speaker.ignored ? 'opacity-60' : ''}>
   <Card.Content class="p-3 space-y-2">
     <div>
       <p class="font-semibold truncate">{speaker.name || speaker.default_name}</p>
-      {#if speaker.talk_ms != null}
+      {#if speaker.ignored}
+        <p class="text-xs text-muted-foreground">Ignored as noise</p>
+      {:else if speaker.talk_ms != null}
         <p class="text-xs text-muted-foreground">
           {formatDuration(speaker.talk_ms || 0)}{share != null ? ` · ${share}% of talk` : ''}
         </p>
@@ -66,7 +79,30 @@
           <Play class="size-4" weight="fill" /> Hear
         </Button>
       {/if}
-      <SpeakerChip {speaker} {...chip} />
+      {#if speaker.ignored}
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={settingAside}
+          onclick={() => setIgnored(false)}
+          data-testid="speaker-unignore">
+          Undo
+        </Button>
+      {:else}
+        <SpeakerChip {speaker} {...chip} />
+        {#if !speaker.named && !merged}
+          <Button
+            size="sm"
+            variant="ghost"
+            class="text-muted-foreground"
+            disabled={settingAside}
+            onclick={() => setIgnored(true)}
+            title="Noise, not a person: stop asking for a name"
+            data-testid="speaker-ignore">
+            Just noise
+          </Button>
+        {/if}
+      {/if}
     </div>
     {#if merged}
       <button

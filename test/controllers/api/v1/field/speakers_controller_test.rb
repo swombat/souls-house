@@ -57,6 +57,22 @@ class Api::V1::Field::SpeakersControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Speaker 1", response.parsed_body.dig("speaker", "name")
   end
 
+  test "ignore and unignore; a named speaker can't be ignored" do
+    name_speaker({ ignore: true })
+    assert_response :success
+    assert response.parsed_body.dig("speaker", "ignored")
+    assert_not @speaker.reload.unnamed?
+
+    name_speaker({ unignore: true })
+    assert_response :success
+    assert_not response.parsed_body.dig("speaker", "ignored")
+
+    name_speaker({ me: true })
+    name_speaker({ ignore: true })
+    assert_response :conflict
+    assert_nil @speaker.reload.ignored_at
+  end
+
   test "a member of the account who has no voice yet" do
     team = accounts(:team_account)
     member = team.memberships.where.not(user: @user).where.not(confirmed_at: nil).first.user

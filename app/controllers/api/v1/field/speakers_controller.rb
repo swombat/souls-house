@@ -10,6 +10,8 @@ module Api
       #   name: "Priya"          a new voice; if a voice of that name exists,
       #                          409 asks "same Priya?" unless link_existing
       #   unname: true           back to "Speaker N"
+      #   ignore: true           noise, not a person: stops asking for a name
+      #   unignore: true         asks again
       #
       # Confirming or dismissing a suggestion or a voice recognition isn't
       # here: those answer biometric and inferred data the API doesn't show.
@@ -22,9 +24,15 @@ module Api
 
         def update
           speaker = find_speaker
-          attributes = params.permit(:me, :voice_id, :member_user_id, :name, :link_existing, :unname)
+          attributes = params.permit(:me, :voice_id, :member_user_id, :name, :link_existing, :unname, :ignore, :unignore)
 
-          if truthy?(attributes[:unname])
+          if truthy?(attributes[:ignore])
+            unless speaker.ignore!(by: current_api_user)
+              return render json: { error: "This speaker is named. Unname it first." }, status: :conflict
+            end
+          elsif truthy?(attributes[:unignore])
+            speaker.unignore!
+          elsif truthy?(attributes[:unname])
             speaker.unname!
           else
             choice = FieldVoice::Choice.resolve(
