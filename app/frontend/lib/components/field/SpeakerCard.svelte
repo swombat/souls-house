@@ -2,7 +2,8 @@
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { Play } from 'phosphor-svelte';
+  import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
+  import { Play, CaretDown } from 'phosphor-svelte';
   import SpeakerChip from '$lib/components/field/SpeakerChip.svelte';
   import SuggestionChip from '$lib/components/field/SuggestionChip.svelte';
   import RecognitionChip from '$lib/components/field/RecognitionChip.svelte';
@@ -45,27 +46,35 @@
     );
   }
 
-  // Noise rather than a person: stop asking for a name (and undo that).
+  // Dismiss: stop asking for a name, either as noise (not a person) or as
+  // someone who stays anonymous (a person whose identity doesn't matter
+  // here). Undo asks again.
   let settingAside = $state(false);
-  function setIgnored(ignored) {
+  const anonymous = $derived(speaker.ignored && speaker.ignored_as === 'anonymous');
+  function setIgnored(ignoredAs) {
     settingAside = true;
     router.patch(
       chip.url,
-      { speaker: ignored ? { ignore: true } : { unignore: true } },
+      { speaker: ignoredAs ? { ignore: true, ignore_as: ignoredAs } : { unignore: true } },
       { preserveScroll: true, preserveState: true, onFinish: () => (settingAside = false) }
     );
   }
 </script>
 
-<Card.Root data-testid="speaker-card" data-ignored={speaker.ignored ? 'true' : null} class={speaker.ignored ? 'opacity-60' : ''}>
+<Card.Root
+  data-testid="speaker-card"
+  data-ignored={speaker.ignored ? (speaker.ignored_as || 'noise') : null}
+  class={speaker.ignored && !anonymous ? 'opacity-60' : ''}>
   <Card.Content class="p-3 space-y-2">
     <div>
       <p class="font-semibold truncate">{speaker.name || speaker.default_name}</p>
-      {#if speaker.ignored}
-        <p class="text-xs text-muted-foreground">Ignored as noise</p>
-      {:else if speaker.talk_ms != null}
+      {#if speaker.ignored && !anonymous}
+        <p class="text-xs text-muted-foreground">Dismissed as noise</p>
+      {:else if speaker.talk_ms != null || anonymous}
         <p class="text-xs text-muted-foreground">
-          {formatDuration(speaker.talk_ms || 0)}{share != null ? ` · ${share}% of talk` : ''}
+          {#if anonymous}Staying anonymous{speaker.talk_ms != null ? ' · ' : ''}{/if}{#if speaker.talk_ms != null}{formatDuration(
+              speaker.talk_ms || 0
+            )}{share != null ? ` · ${share}% of talk` : ''}{/if}
         </p>
       {/if}
     </div>
@@ -84,23 +93,35 @@
           size="sm"
           variant="ghost"
           disabled={settingAside}
-          onclick={() => setIgnored(false)}
+          onclick={() => setIgnored(null)}
           data-testid="speaker-unignore">
           Undo
         </Button>
       {:else}
         <SpeakerChip {speaker} {...chip} />
         {#if !speaker.named && !merged}
-          <Button
-            size="sm"
-            variant="ghost"
-            class="text-muted-foreground"
-            disabled={settingAside}
-            onclick={() => setIgnored(true)}
-            title="Noise, not a person: stop asking for a name"
-            data-testid="speaker-ignore">
-            Just noise
-          </Button>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger
+              disabled={settingAside}
+              data-testid="speaker-dismiss"
+              class="inline-flex items-center gap-1 h-8 px-3 rounded-md text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              Dismiss <CaretDown class="size-3" />
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content align="start" class="w-64">
+              <DropdownMenu.Item onclick={() => setIgnored('noise')} data-testid="speaker-ignore">
+                <div>
+                  <p class="text-sm">Dismiss as noise</p>
+                  <p class="text-xs text-muted-foreground">Not a person: a cough, the room, a mishearing</p>
+                </div>
+              </DropdownMenu.Item>
+              <DropdownMenu.Item onclick={() => setIgnored('anonymous')} data-testid="speaker-anonymous">
+                <div>
+                  <p class="text-sm">Stay anonymous</p>
+                  <p class="text-xs text-muted-foreground">A real person, but who they are doesn't matter here</p>
+                </div>
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
         {/if}
       {/if}
     </div>

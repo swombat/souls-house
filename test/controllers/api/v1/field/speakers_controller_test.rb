@@ -73,6 +73,20 @@ class Api::V1::Field::SpeakersControllerTest < ActionDispatch::IntegrationTest
     assert_nil @speaker.reload.ignored_at
   end
 
+  test "ignore as anonymous; an unknown reason is refused" do
+    name_speaker({ ignore: true, ignore_as: "anonymous" })
+    assert_response :success
+    assert response.parsed_body.dig("speaker", "ignored")
+    assert_equal "anonymous", response.parsed_body.dig("speaker", "ignored_as")
+
+    name_speaker({ ignore: true, ignore_as: "boring" })
+    assert_response :unprocessable_entity
+    assert_equal "anonymous", @speaker.reload.ignored_as
+
+    name_speaker({ unignore: true })
+    assert_nil response.parsed_body.dig("speaker", "ignored_as")
+  end
+
   test "a member of the account who has no voice yet" do
     team = accounts(:team_account)
     member = team.memberships.where.not(user: @user).where.not(confirmed_at: nil).first.user

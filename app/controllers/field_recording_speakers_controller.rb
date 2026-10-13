@@ -7,6 +7,7 @@
 #                          page is asked "same Priya?" unless link_existing
 #   unname: true           back to "Speaker N"
 #   ignore: true           noise, not a person: stops asking for a name
+#     ignore_as: "anonymous"   with ignore: a person who stays unnamed, not noise
 #   unignore: true         asks again
 #
 # with: [<speaker id>, ...] applies the naming (or unnaming) to other speakers
@@ -21,13 +22,15 @@ class FieldRecordingSpeakersController < ApplicationController
 
   def update
     attributes = params.require(:speaker).permit(:me, :voice_id, :member_user_id, :name, :link_existing, :unname,
-      :ignore, :unignore,
+      :ignore, :ignore_as, :unignore,
       :confirm_suggestion, :dismiss_suggestion, :suggestion_generation, :confirm_recognition, :dismiss_recognition,
       recognition: %i[voice_id print_generation decision_generation], with: [])
     companion_ids = decode_ids(attributes[:with])
 
     if truthy?(attributes[:ignore])
-      return out_of_date(NAMED_MEANWHILE) unless @speaker.ignore!(by: Current.user)
+      reason = ignore_reason(attributes)
+      return out_of_date("Choose noise or anonymous.") unless reason
+      return out_of_date(NAMED_MEANWHILE) unless @speaker.ignore!(by: Current.user, as: reason)
     elsif truthy?(attributes[:unignore])
       @speaker.unignore!
     elsif truthy?(attributes[:unname])
@@ -139,6 +142,12 @@ class FieldRecordingSpeakersController < ApplicationController
 
   def match_json(voice)
     { voice_id: voice.to_param, name: voice.name, last_named_in: voice.last_named_in&.title }.to_json
+  end
+
+  # "noise" unless the request says otherwise; nil for a reason we don't know.
+  def ignore_reason(attributes)
+    reason = attributes[:ignore_as].presence || "noise"
+    reason if FieldRecordingSpeaker::IGNORED_AS.include?(reason)
   end
 
   def truthy?(value) = ActiveModel::Type::Boolean.new.cast(value) == true

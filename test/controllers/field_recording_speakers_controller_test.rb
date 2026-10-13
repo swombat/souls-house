@@ -286,6 +286,34 @@ class FieldRecordingSpeakersControllerTest < ActionDispatch::IntegrationTest
     assert_equal 2, FieldItems.recording_json(@recording.reload)[:unnamed_speakers]
   end
 
+  test "stay anonymous sets a person aside without calling them noise, and the reason can change" do
+    name_speaker(@first, ignore: true, ignore_as: "anonymous")
+
+    assert_redirected_to account_field_recording_path(@account, @recording)
+    @first.reload
+    assert @first.ignored?
+    assert @first.anonymous?
+    assert_not @first.unnamed?
+    assert_equal "Speaker 1", @first.display_name
+    json = FieldItems.recording_json(@recording.reload)
+    assert_equal 1, json[:unnamed_speakers]
+
+    generation = @first.decision_generation
+    name_speaker(@first, ignore: true, ignore_as: "noise")
+    @first.reload
+    assert @first.ignored?
+    assert_not @first.anonymous?
+    assert_equal "noise", @first.ignored_as
+    assert_equal generation, @first.decision_generation, "changing only the reason is not a new decision"
+
+    name_speaker(@first, ignore: true, ignore_as: "whatever")
+    assert_equal "noise", @first.reload.ignored_as
+
+    name_speaker(@first, unignore: true)
+    assert_not @first.reload.ignored?
+    assert_not @first.anonymous?
+  end
+
   test "naming an ignored speaker takes the mark off; a named speaker can't be ignored" do
     @first.ignore!(by: @user)
     name_speaker(@first, name: "Priya")

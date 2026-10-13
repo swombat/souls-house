@@ -6,6 +6,10 @@ class FieldRecordingSpeaker < ApplicationRecord
   include ObfuscatesId
 
   NAMING_SOURCES = %w[human confirmed_suggestion confirmed_recognition].freeze
+  # Why a person stopped asking for a name: noise (not a person at all) or
+  # anonymous (a person whose identity doesn't matter here). Either way the
+  # speaker stops waiting; only the reason differs.
+  IGNORED_AS = %w[noise anonymous].freeze
 
   belongs_to :field_recording
   belongs_to :field_voice, optional: true
@@ -23,6 +27,7 @@ class FieldRecordingSpeaker < ApplicationRecord
 
   validates :label, presence: true
   validates :naming_source, inclusion: { in: NAMING_SOURCES }, allow_nil: true
+  validates :ignored_as, inclusion: { in: IGNORED_AS }
 
   scope :in_order, -> { order(:position) }
 
@@ -67,9 +72,12 @@ class FieldRecordingSpeaker < ApplicationRecord
   end
 
   # A person said this "speaker" is noise (a cough, the room, a mishearing),
-  # not someone to name. Only an unnamed speaker can be set aside; naming it
+  # or a person who can stay anonymous: either way, not someone to name. Only an unnamed speaker can be set aside; naming it
   # later, or un-naming, takes the mark off.
   def ignored? = ignored_at.present? && !field_voice&.kept?
+
+  # Set aside as a person who stays anonymous, rather than as noise.
+  def anonymous? = ignored? && ignored_as == "anonymous"
 
   # A human names this speaker. Every speaker decision (naming, un-naming,
   # confirming or dismissing a suggestion or a guess) takes the one lock order,
@@ -193,15 +201,24 @@ class FieldRecordingSpeaker < ApplicationRecord
   # and recognition jobs off it, as any person's decision does; a guess or
   # suggestion already shown is cleared. A named speaker is refused: un-name
   # it first. Returns false (changing nothing) when it was named meanwhile.
-  def ignore!(by:)
+  # as: "noise" (not a person) or "anonymous" (a person who stays unnamed);
+  # setting aside again with the other reason changes only the reason.
+  def ignore!(by:, as: "noise")
+    raise ArgumentError, "unknown reason #{as.inspect}" unless IGNORED_AS.include?(as)
+
     with_decision_locks do |recording|
       raise ActiveRecord::RecordNotFound unless recording.kept? && recording.ready?
 
       reload
       next false if field_voice&.kept?
-      next true if ignored?
+      next true if ignored? && ignored_as == as
 
-      update!(ignored_at: Time.current, ignored_by: by, decision_generation: decision_generation + 1,
+      if ignored?
+        update!(ignored_as: as, ignored_by: by)
+        next true
+      end
+
+      update!(ignored_at: Time.current, ignored_by: by, ignored_as: as, decision_generation: decision_generation + 1,
         **SUGGESTION_FIELDS, **RECOGNITION_FIELDS)
       true
     end

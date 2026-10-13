@@ -570,7 +570,9 @@ URL. This read never includes voice-recognition or name-suggestion data.
 - `PATCH /api/v1/field/recordings/:recording_id/speakers/:id` takes one of
   `me: true`, `voice_id`, `member_user_id`, `name`, `unname: true`,
   `ignore: true` (noise, not a person: it stops counting as waiting for a
-  name; 409 if the speaker is named) or `unignore: true`. A `name`
+  name; 409 if the speaker is named; add `ignore_as: "anonymous"` for a real
+  person who stays unnamed, and the speaker's `ignored_as` says which) or
+  `unignore: true`. A `name`
   matching an existing voice returns 409
   `{ "error": ..., "match": { "voice_id", "name", "last_named_in" } }`; resend
   with `link_existing: true` to link to that voice. Returns `{ "speaker": {...} }`.
