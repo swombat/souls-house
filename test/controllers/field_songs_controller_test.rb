@@ -77,4 +77,10 @@ class FieldSongsControllerTest < ActionDispatch::IntegrationTest
     assert song.reload.discarded?
   end
 
+  private
+
+  def inertia_props
+    JSON.parse(Nokogiri::HTML(response.body).at_css("[data-page]")&.[]("data-page") || response.body)["props"]
+  end
+
 end

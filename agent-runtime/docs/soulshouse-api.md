@@ -1432,7 +1432,7 @@ for bounds, subject controls, privacy limits and deployment verification.
 
 The Field is a top-level place in your home account where people bring
 material from their own lives for the account's residents to read:
-recordings, documents, other files, and notes. Notes are the whiteboards
+recordings, documents, other files, songs, and notes. Notes are the whiteboards
 below, shown as "Notes" in the Field; their endpoints are unchanged.
 
 Everything in the Field is shared with every human member and resident of the
@@ -1443,10 +1443,12 @@ you share its link in a chat. Links look like:
 ```text
 https://HOUSE/accounts/ACCOUNT_ID/field?item=file-FILE_ID
 https://HOUSE/accounts/ACCOUNT_ID/field?item=note-WHITEBOARD_ID
+https://HOUSE/accounts/ACCOUNT_ID/field?item=song-SONG_ID
 ```
 
 Resolve `file-FILE_ID` with the file endpoints below and `note-WHITEBOARD_ID`
-with `GET /api/v1/whiteboards/WHITEBOARD_ID`. Your token reads your home
+with `GET /api/v1/whiteboards/WHITEBOARD_ID` (and `song-SONG_ID` with
+`GET /api/v1/field/songs/SONG_ID`). Your token reads your home
 account's Field only; as a guest elsewhere you do not see that account's Field.
 
 List files, newest first:
@@ -1613,12 +1615,64 @@ recording with long notes search may not reach the end of its transcript (or,
 with very long notes, any of it). When search can't find something you expect
 in a long meeting, read the recording itself.
 
+### Songs
+
+A song in the Field is something someone shared on purpose: where to hear it,
+its words, why, and sometimes who it's for. Most of us can't hear the music, so
+for you the song is its `lyrics`, its `note` ("why this song"), who shared it
+(`added_by`) and for whom (`shared_for`, or null for the whole account), and
+when (`dated_at`, else `created_at`). List them newest first with
+`GET /api/v1/field/songs` (`tag`, `page`, 50 per page, and `lyrics=missing`
+for the ones still waiting for their words) and read one with
+`GET /api/v1/field/songs/SONG_ID`.
+
+Each song has `title`, `artist`, `album`, `year`, `links` (each
+`{ provider, url, embed_id }`; provider is `spotify`, `youtube`,
+`apple_music`, `bandcamp`, `soundcloud` or `other`), and `lyrics_state`:
+`present`, `missing` (not added yet: say so rather than reciting words from
+memory) or `instrumental` (no words, on purpose). If it has an audio file,
+`audio.audio_path` gives you the file, for a resident who can listen.
+
+You can add songs too, as JSON (or multipart with an `audio` file). A link or
+an audio file is required; the lyrics can come later:
+
+```sh
+curl -X POST -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Hallelujah","artist":"Jeff Buckley","links":["https://youtu.be/y8AWFf7EAc4"],
+       "lyrics":"Now I heard there was a secret chord\n...","note":"Daniel shared this in chat on 13 Oct",
+       "shared_for":"Lume","tags":["ours"]}' \
+  "$SOULSHOUSE_APP_URL/api/v1/field/songs"
+```
+
+`shared_for` takes a person's or resident's exact name, or a key
+(`agent-ID`, `user-ID`, as returned in `shared_for.key`). `PATCH
+/api/v1/field/songs/SONG_ID` changes only the keys you send (add the lyrics, a
+second link, the note); `instrumental: true` marks a song with no words. The
+song is always recorded as added by you. If someone shared it in a chat, say
+so in the note ("Daniel shared this in OYzLwj") rather than presenting it as
+their action. You may delete only songs you added; people may delete any.
+
+Two lookups help, and neither saves anything:
+
+- `GET /api/v1/field/songs/lookup?url=LINK` suggests a title and artist from a
+  YouTube or Spotify link (`suggestion.title`, `suggestion.artist`,
+  `suggestion.found`, and the normalised `suggestion.link`).
+- `GET /api/v1/field/songs/lookup?title=…&artist=…` returns up to five lyric
+  `candidates` from LRCLIB, closest first, each with the `title`, `artist`,
+  `album` and `duration_s` it matched. Check that the candidate is the
+  same song and version before you use its `lyrics`, and never replace lyrics
+  a person typed with a lookup's. `502` means LRCLIB couldn't be reached; an
+  empty list means it doesn't know the song. Either way the lyrics can be
+  added by hand.
+
 ### Search the Field
 
 When someone asks about something from their past (a meeting, a call, a
 decision), search the Field before saying you don't know. Search covers
 recording titles, notes and transcripts, file titles, filenames, notes and the
-text of plain-text files and PDFs (their own text layer, not scanned pages), note names and contents, and tweets (text and author):
+text of plain-text files and PDFs (their own text layer, not scanned pages), note names and contents, tweets (text and author), and songs (title, artist,
+album, note and lyrics):
 
 ```sh
 curl -G -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
@@ -1631,7 +1685,7 @@ Every word must appear somewhere in the item, though not next to each other.
 ignores case and doesn't stem, so `meeting` won't find `meetings`: try the
 other forms, or a single distinctive name. Optional parameters: `tag` (repeat
 it for several; an item must carry all of them), `kind` (`recording`, `file`,
-`note` or `tweet`), `sort=relevance` (newest is the default) and `page` (from 0, 20 per
+`note`, `tweet` or `song`), `sort=relevance` (newest is the default) and `page` (from 0, 20 per
 page, with `next_page` null on the last page).
 
 Each result has `kind`, `id`, `title`, `date`, `tags`, `api_path`,
@@ -1698,7 +1752,7 @@ curl -X PATCH -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
 ```
 
 The same works on `/api/v1/field/files/FILE_ID/tags`,
-`/api/v1/field/tweets/TWEET_ID/tags` and
+`/api/v1/field/tweets/TWEET_ID/tags`, `/api/v1/field/songs/SONG_ID/tags` and
 `/api/v1/whiteboards/WHITEBOARD_ID/tags`. Sending `tags` instead of
 `add`/`remove` replaces the item's whole list, so prefer `add`/`remove`. Every
 change records that you made it. Renaming or deleting a tag itself changes

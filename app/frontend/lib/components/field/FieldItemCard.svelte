@@ -4,12 +4,13 @@
   import { formatWhen } from '$lib/field';
   import { formatDuration, recordingStatusLine } from '$lib/field-recordings';
   import { tweetBadge } from '$lib/field-tweets';
-  import { File, Microphone, Notepad, XLogo } from 'phosphor-svelte';
+  import { File, Microphone, MusicNotes, Notepad, XLogo } from 'phosphor-svelte';
+  import { LYRICS_LABELS } from '$lib/field-songs';
   import UnnamedSpeakersBadge from './UnnamedSpeakersBadge.svelte';
 
   let { item, selected = false, onSelect } = $props();
 
-  const kindLabel = { file: 'File', note: 'Note', recording: 'Recording', tweet: 'Tweet' };
+  const kindLabel = { file: 'File', note: 'Note', recording: 'Recording', tweet: 'Tweet', song: 'Song' };
 </script>
 
 <button onclick={() => onSelect(item.key)} class="w-full text-left" data-testid="field-item">
@@ -22,6 +23,8 @@
           <Microphone class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
         {:else if item.kind === 'tweet'}
           <XLogo class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
+        {:else if item.kind === 'song'}
+          <MusicNotes class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
         {:else}
           <Notepad class="size-5 text-muted-foreground shrink-0 mt-0.5" weight="duotone" />
         {/if}
@@ -30,6 +33,11 @@
             <h3 class="font-semibold truncate flex-1 min-w-0">{item.title}</h3>
             {#if item.kind === 'recording' && item.status === 'ready'}
               <UnnamedSpeakersBadge count={item.unnamed_speakers} size="md" />
+            {/if}
+            {#if item.kind === 'song' && item.lyrics_state === 'missing'}
+              <span
+                class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                data-testid="field-song-no-lyrics">{LYRICS_LABELS.missing}</span>
             {/if}
           </div>
           {#if item.summary_short}
@@ -58,6 +66,11 @@
             <p class="text-sm text-muted-foreground line-clamp-2 mt-1">{item.note}</p>
           {:else if item.kind === 'note' && item.summary}
             <p class="text-sm text-muted-foreground line-clamp-2 mt-1">{item.summary}</p>
+          {:else if item.kind === 'song'}
+            <p class="text-sm text-muted-foreground truncate">
+              {[item.artist, item.shared_for_name ? `for ${item.shared_for_name}` : null].filter(Boolean).join(' · ')}
+            </p>
+            {#if item.note}<p class="text-sm text-muted-foreground line-clamp-2 mt-1">{item.note}</p>{/if}
           {:else if item.kind === 'tweet'}
             <p class="text-sm text-muted-foreground truncate" data-testid="field-tweet-author">
               {item.author_name}

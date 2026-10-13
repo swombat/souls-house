@@ -159,7 +159,7 @@ class FieldControllerTest < ActionDispatch::IntegrationTest
     assert_equal 50, props["items"].size
     assert_equal "File 0", props["items"].first["title"]
     assert_equal({ "page" => 1, "pages" => 2, "per_page" => 50, "total" => 54 }, props["pagination"])
-    assert_equal({ "all" => 54, "files" => 53, "notes" => 1, "recordings" => 0, "tweets" => 0, "waiting" => 0 }, props["counts"])
+    assert_equal({ "all" => 54, "files" => 53, "notes" => 1, "recordings" => 0, "tweets" => 0, "songs" => 0, "waiting" => 0 }, props["counts"])
     assert_nil props["items"].find { |i| i["kind"] == "note" }
 
     get account_field_path(@account, page: "2")

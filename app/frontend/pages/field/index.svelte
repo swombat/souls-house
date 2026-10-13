@@ -12,6 +12,8 @@
   import RecordingAllowance from '$lib/components/field/RecordingAllowance.svelte';
   import RecordingViewer from '$lib/components/field/RecordingViewer.svelte';
   import FieldTweetViewer from '$lib/components/field/FieldTweetViewer.svelte';
+  import FieldSongViewer from '$lib/components/field/FieldSongViewer.svelte';
+  import FieldSongDialog from '$lib/components/field/FieldSongDialog.svelte';
   import FieldTweetStreamPanel from '$lib/components/field/FieldTweetStreamPanel.svelte';
   import FieldTagEditor from '$lib/components/field/FieldTagEditor.svelte';
   import FieldTagManager from '$lib/components/field/FieldTagManager.svelte';
@@ -28,7 +30,7 @@
   let {
     items = [],
     current_item = null,
-    counts = { all: 0, files: 0, notes: 0, recordings: 0, tweets: 0, waiting: 0 },
+    counts = { all: 0, files: 0, notes: 0, recordings: 0, tweets: 0, songs: 0, waiting: 0 },
     field_empty = false,
     pagination = { page: 1, pages: 1, per_page: 50, total: 0 },
     recording_allowance = null,
@@ -42,6 +44,9 @@
     selected = null,
     max_file_bytes = 100 * 1024 * 1024,
     max_file_label = '100 MB',
+    song_recipients = [],
+    max_song_audio_bytes = 50 * 1024 * 1024,
+    max_song_audio_label = '50 MB',
     account_name = '',
     account,
     tags = [],
@@ -56,9 +61,14 @@
     { key: 'notes', label: 'Notes' },
     { key: 'recordings', label: 'Recordings' },
     { key: 'tweets', label: 'Tweets' },
-    // Items waiting on a person (for now: speakers to name). Shown while
-    // there is something waiting, or while it's the open tab.
-    { key: 'waiting', label: 'Needs you', title: 'Items waiting for you, such as speakers to name' },
+    { key: 'songs', label: 'Songs' },
+    // Items waiting on a person: speakers to name, songs without their
+    // lyrics. Shown while there is something waiting, or while it's the open tab.
+    {
+      key: 'waiting',
+      label: 'Needs you',
+      title: 'Items waiting for you: speakers to name, songs without their lyrics',
+    },
   ];
   const visibleTabs = $derived(tabs.filter((t) => t.key !== 'waiting' || counts.waiting > 0 || tab === 'waiting'));
 
@@ -81,6 +91,7 @@
       [`Account:${account.id}:whiteboards`]: [...LIST_PROPS, 'search'],
       [`Account:${account.id}:field_recordings`]: [...LIST_PROPS, 'recording_allowance', 'search'],
       [`Account:${account.id}:field_tweets`]: [...LIST_PROPS, 'search'],
+      [`Account:${account.id}:field_songs`]: [...LIST_PROPS, 'search'],
     };
     if (current?.kind === 'note') subs[`Whiteboard:${current.id}`] = [...LIST_PROPS, 'search'];
     updateSync(subs);
@@ -186,6 +197,29 @@
 
   let uploadOpen = $state(false);
   let noteOpen = $state(false);
+  let songOpen = $state(false);
+  let songEditing = $state(null);
+  let songFocusLyrics = $state(false);
+
+  function addSong() {
+    songEditing = null;
+    songFocusLyrics = false;
+    songOpen = true;
+  }
+
+  function editSong({ lyrics = false } = {}) {
+    songEditing = current;
+    songFocusLyrics = lyrics;
+    songOpen = true;
+  }
+
+  function deleteSong() {
+    const message =
+      `Delete "${current.title}" from the Field? It disappears for everyone, people and residents. Deleting does ` +
+      'not reach anything a resident has already read.';
+    if (!confirm(message)) return;
+    router.delete(`/accounts/${account.id}/field/songs/${current.id}`);
+  }
 
   // Note editing, unchanged from the whiteboards page
   let editing = $state(false);
@@ -288,7 +322,8 @@
     <FieldActions
       onFile={() => (uploadOpen = true)}
       onNote={() => (noteOpen = true)}
-      onRecording={() => (recordingOpen = true)} />
+      onRecording={() => (recordingOpen = true)}
+      onSong={addSong} />
   </div>
 
   {#if fieldEmpty}
@@ -388,6 +423,10 @@
           {/key}
         {:else if current?.kind === 'tweet'}
           <FieldTweetViewer tweet={current} onDelete={deleteTweet} />
+        {:else if current?.kind === 'song'}
+          {#key current.key}
+            <FieldSongViewer song={current} onEdit={editSong} onDelete={deleteSong} />
+          {/key}
         {:else if current?.kind === 'note'}
           <div class="mb-2 flex flex-wrap justify-end gap-1">
             <Button size="sm" variant="ghost" onclick={() => (historyOpen = true)} data-testid="note-history-open">
@@ -438,6 +477,16 @@
   {sharedLine} />
 
 <FieldNoteDialog bind:open={noteOpen} accountId={account.id} {sharedLine} />
+
+<FieldSongDialog
+  bind:open={songOpen}
+  accountId={account.id}
+  song={songEditing}
+  focusLyrics={songFocusLyrics}
+  recipients={song_recipients}
+  maxBytes={max_song_audio_bytes}
+  maxLabel={max_song_audio_label}
+  {sharedLine} />
 
 <FieldTagManager bind:open={tagsOpen} accountId={account.id} {tags} onChanged={tagChanged} />
 

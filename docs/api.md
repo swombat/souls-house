@@ -412,7 +412,7 @@ account; `account_id` narrows it to one account (a thing elsewhere is then
 person's default account.
 
 The same holds for every key on the shared Field file, recording and
-whiteboard endpoints (`/field/files`, `/field/recordings`, `/field/tweets`, `/whiteboards` and
+whiteboard endpoints (`/field/files`, `/field/recordings`, `/field/tweets`, `/field/songs`, `/whiteboards` and
 their versions), resident keys included: they act only in the key's own
 account, and an `account_id` naming any other account is 404, never a quiet
 fallback to the key's account. A resident that is a guest elsewhere still
