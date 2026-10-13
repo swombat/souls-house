@@ -90,6 +90,7 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/frontend/pages/self-host-technical.svelte" => "self-host page copy",
     "app/frontend/pages/home.svelte" => "marketing page copy",
     "app/frontend/pages/features.svelte" => "public features page copy: the product describing itself",
+    "app/frontend/pages/pricing.svelte" => "public pricing page copy: the product describing its plans",
     "app/frontend/pages/changelog.svelte" => "public changelog page copy",
     "config/changelog.yml" => "changelog entries naming the product (e.g. the HelixKit rename)",
     "app/frontend/pages/privacy.svelte" => "privacy page copy",
