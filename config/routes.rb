@@ -222,6 +222,9 @@ Rails.application.routes.draw do
       post :resummarize, on: :member
     end
     resources :field_tweets, path: "field/tweets", only: [ :destroy ]
+    resources :field_songs, path: "field/songs", only: [ :create, :update, :destroy ] do
+      get :lookup, on: :collection
+    end
     resource :field_tweet_source, path: "field/tweet_stream", only: [ :create, :update, :destroy ] do
       post :pause
       post :resume
@@ -484,6 +487,11 @@ Rails.application.routes.draw do
           resource :tags, only: :update, controller: "item_tags"
         end
         get :tweet_stream, to: "tweets#stream"
+        resources :songs, only: [ :index, :show, :create, :update, :destroy ] do
+          get :audio, on: :member
+          get :lookup, on: :collection
+          resource :tags, only: :update, controller: "item_tags"
+        end
         resources :recording_uploads, path: "recordings/uploads", only: :create
         resources :recordings, only: [ :index, :show, :create, :update, :destroy ] do
           member do

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_13_170000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_13_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -991,6 +991,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_170000) do
     t.index ["uploaded_by_type", "uploaded_by_id"], name: "index_field_recordings_on_uploaded_by"
   end
 
+  create_table "field_songs", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "added_by_type"
+    t.bigint "added_by_id"
+    t.string "shared_for_type"
+    t.bigint "shared_for_id"
+    t.string "title", limit: 200, null: false
+    t.string "artist", limit: 200
+    t.string "album", limit: 200
+    t.integer "year"
+    t.jsonb "links", default: [], null: false
+    t.text "lyrics"
+    t.boolean "instrumental", default: false, null: false
+    t.text "note"
+    t.integer "duration_ms"
+    t.datetime "dated_at"
+    t.datetime "discarded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.virtual "search_vector", type: :tsvector, as: "((setweight(to_tsvector('simple'::regconfig, (((COALESCE(title, ''::character varying))::text || ' '::text) || (COALESCE(artist, ''::character varying))::text)), 'A'::\"char\") || setweight(to_tsvector('simple'::regconfig, (((COALESCE(album, ''::character varying))::text || ' '::text) || \"left\"(COALESCE(note, ''::text), 4000))), 'B'::\"char\")) || setweight(to_tsvector('simple'::regconfig, \"left\"(COALESCE(lyrics, ''::text), 40000)), 'C'::\"char\"))", stored: true
+    t.index ["account_id", "created_at"], name: "index_field_songs_on_account_id_and_created_at"
+    t.index ["added_by_type", "added_by_id"], name: "index_field_songs_on_added_by"
+    t.index ["discarded_at"], name: "index_field_songs_on_discarded_at"
+    t.index ["search_vector"], name: "index_field_songs_on_search_vector", using: :gin
+    t.index ["shared_for_type", "shared_for_id"], name: "index_field_songs_on_shared_for"
+    t.check_constraint "NOT (instrumental AND lyrics ~ '[^[:space:]]'::text)", name: "field_songs_instrumental_without_lyrics"
+    t.check_constraint "year IS NULL OR year >= 1000 AND year <= 3000", name: "field_songs_year"
+  end
+
   create_table "field_swarm_reads", force: :cascade do |t|
     t.bigint "field_swarm_search_id", null: false
     t.bigint "account_id", null: false
@@ -1063,7 +1092,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_170000) do
     t.index ["field_tag_id"], name: "index_field_taggings_on_field_tag_id"
     t.index ["taggable_type", "taggable_id"], name: "index_field_taggings_on_taggable"
     t.index ["tagged_by_type", "tagged_by_id"], name: "index_field_taggings_on_tagged_by"
-    t.check_constraint "taggable_type::text = ANY (ARRAY['FieldFile'::character varying, 'FieldRecording'::character varying, 'Whiteboard'::character varying, 'FieldTweet'::character varying]::text[])", name: "field_taggings_taggable_type"
+    t.check_constraint "taggable_type::text = ANY (ARRAY['FieldFile'::character varying, 'FieldRecording'::character varying, 'Whiteboard'::character varying, 'FieldTweet'::character varying, 'FieldSong'::character varying]::text[])", name: "field_taggings_taggable_type"
   end
 
   create_table "field_tags", force: :cascade do |t|
@@ -2480,6 +2509,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_170000) do
   add_foreign_key "field_recording_speakers", "field_voices", column: "suggested_voice_id", on_delete: :nullify
   add_foreign_key "field_recordings", "accounts"
   add_foreign_key "field_recordings", "field_recordings", column: "retried_from_id", on_delete: :nullify
+  add_foreign_key "field_songs", "accounts"
   add_foreign_key "field_taggings", "accounts"
   add_foreign_key "field_taggings", "field_tags"
   add_foreign_key "field_tags", "accounts"

@@ -19,7 +19,8 @@ module HidesDiscardedBlobs
   DISCARDABLE_OWNERS = {
     "Message" => -> { Message },
     "FieldFile" => -> { FieldFile },
-    "FieldRecording" => -> { FieldRecording }
+    "FieldRecording" => -> { FieldRecording },
+    "FieldSong" => -> { FieldSong }
   }.freeze
 
   private

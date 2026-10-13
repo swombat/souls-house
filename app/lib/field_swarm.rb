@@ -82,6 +82,7 @@ class FieldSwarm
     "recording" => "field_recordings.title",
     "file" => "concat_ws(' ', field_files.title, field_files.indexed_filename)",
     "tweet" => "field_tweets.author_handle",
+    "song" => "concat_ws(' ', field_songs.title, field_songs.artist)",
     "note" => "whiteboards.name"
   }.freeze
 
@@ -105,6 +106,7 @@ class FieldSwarm
     "recording" => %w[note notes transcript_text],
     "file" => %w[note extracted_text],
     "tweet" => %w[text],
+    "song" => %w[note lyrics],
     "note" => %w[summary content]
   }.freeze
   SEPARATOR = "\n\n"

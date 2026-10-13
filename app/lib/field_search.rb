@@ -1,4 +1,4 @@
-# Search across one account's Field: recordings, files, notes and tweets.
+# Search across one account's Field: recordings, files, notes, tweets and songs.
 #
 # Matching is Postgres full text with the `simple` configuration over each
 # item's search_vector (title, note, body; see the migration): every word
@@ -18,7 +18,7 @@ class FieldSearch
   PAGE_SIZE = 20
   MAX_QUERY_LENGTH = 200
   MAX_TAGS = 10
-  KINDS = %w[recording file note tweet].freeze
+  KINDS = %w[recording file note tweet song].freeze
   SORTS = %w[newest relevance].freeze
   BODY_LIMIT = 128_000 # the migration's body cap (bytes there; excerpts read this many characters)
 
@@ -58,6 +58,14 @@ class FieldSearch
       date: "field_tweets.posted_at",
       kept: "field_tweets.discarded_at IS NULL",
       body: "field_tweets.text"
+    },
+    "song" => {
+      model: "FieldSong", table: "field_songs",
+      date: "COALESCE(field_songs.dated_at, field_songs.created_at)",
+      kept: "field_songs.discarded_at IS NULL",
+      # The note first: an excerpt from why it was shared reads before one
+      # from the words.
+      body: "concat_ws(E'\\n\\n', field_songs.note, field_songs.lyrics)"
     },
     "note" => {
       model: "Whiteboard", table: "whiteboards",

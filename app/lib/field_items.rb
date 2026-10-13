@@ -31,6 +31,13 @@ module FieldItems
         web_path: routes.account_field_path(record.account, tab: "tweets", item: "tweet-#{record.to_param}"),
         api_path: routes.api_v1_field_tweet_path(record)
       )
+    when "song"
+      base.merge(
+        artist: record.artist, lyrics_state: record.lyrics_state, added_by: record.added_by_name,
+        shared_for: record.shared_for_name,
+        web_path: routes.account_field_path(record.account, tab: "songs", item: "song-#{record.to_param}"),
+        api_path: routes.api_v1_field_song_path(record)
+      )
     when "file"
       base.merge(
         filename: record.filename, uploaded_by: record.uploader_name,
@@ -66,6 +73,40 @@ module FieldItems
       fetched_at: tweet.fetched_at.iso8601,
       dated_at: tweet.posted_at.iso8601,
       created_at: tweet.created_at.iso8601,
+      tags: tags
+    }
+  end
+
+  # A song for the page. The list (`content: false`) leaves the lyrics and
+  # the note behind; the open song carries everything.
+  def song_json(song, tags = [], content: true)
+    url_helpers = Rails.application.routes.url_helpers
+    {
+      key: "song-#{song.to_param}",
+      kind: "song",
+      id: song.to_param,
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      year: song.year,
+      links: song.links.map { |link| link.merge("label" => FieldSong::Links.label(link["provider"])) },
+      lyrics: (song.lyrics if content),
+      lyrics_state: song.lyrics_state,
+      instrumental: song.instrumental,
+      note: (content ? song.note : song.note.to_s.truncate(200).presence),
+      added_by_name: song.added_by_name,
+      added_by_kind: song.added_by_kind,
+      uploader_name: song.added_by_name,
+      shared_for_name: song.shared_for_name,
+      shared_for_kind: song.shared_for_kind,
+      shared_for_key: FieldSong.person_key(song.shared_for),
+      duration_ms: song.duration_ms,
+      audio: (if song.audio.attached?
+                { filename: song.audio_filename, content_type: song.audio_content_type, byte_size: song.audio_byte_size,
+                  url: url_helpers.rails_blob_path(song.audio, disposition: :inline, only_path: true) }
+              end),
+      dated_at: song.dated_at&.iso8601,
+      created_at: song.created_at.iso8601,
       tags: tags
     }
   end

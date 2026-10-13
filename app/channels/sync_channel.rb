@@ -34,6 +34,10 @@ class SyncChannel < ApplicationCable::Channel
       model: FieldTweet,
       collections: []
     },
+    "FieldSong" => {
+      model: FieldSong,
+      collections: []
+    },
     "Setting" => {
       allow_all: true
     }

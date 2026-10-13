@@ -1,17 +1,17 @@
-# One page of the Field list: files, notes, recordings and tweets merged newest first,
+# One page of the Field list: files, notes, recordings, tweets and songs merged newest first,
 # narrowed by tab and tags, counted per tab. The page only loads the records it
 # shows, so a Field with hundreds of recordings costs the same as one with ten.
 class FieldListing
 
   PER_PAGE = 50
-  KINDS = %w[file note recording tweet].freeze
+  KINDS = %w[file note recording tweet song].freeze
   TAB_KINDS = { "all" => KINDS, "files" => %w[file], "notes" => %w[note], "recordings" => %w[recording], "tweets" => %w[tweet],
-                "waiting" => %w[recording] }.freeze
+                "songs" => %w[song], "waiting" => %w[recording song] }.freeze
 
   # Waiting on a person: a ready recording with a speaker still to name, the
   # same test as FieldRecordingSpeaker#unnamed? (no kept voice, and not a real
   # name from a supplied transcript, and not set aside as noise), in SQL.
-  # Other kinds of waiting join here.
+  # A song waits for its words (FieldSong::WAITING_SQL).
   # The label pattern has no quotes in it, so it is written in as it stands.
   WAITING_RECORDINGS = <<~SQL.squish.freeze
     field_recordings.status = 'ready' AND EXISTS (
@@ -58,7 +58,8 @@ class FieldListing
     return nil if id.blank?
 
     scope = { "file" => account.field_files.kept, "note" => account.whiteboards.active,
-              "recording" => account.field_recordings.kept, "tweet" => account.field_tweets.kept }[kind]
+              "recording" => account.field_recordings.kept, "tweet" => account.field_tweets.kept,
+              "song" => account.field_songs.kept }[kind]
     scope&.find_by_obfuscated_id(id)
   end
 
@@ -69,9 +70,10 @@ class FieldListing
     when "file" then @account.field_files.kept
     when "note" then @account.whiteboards.active
     when "tweet" then @account.field_tweets.kept
+    when "song" then @account.field_songs.kept
     else @account.field_recordings.kept
     end
-    scope = scope.where(WAITING_RECORDINGS) if waiting
+    scope = scope.where(kind == "song" ? FieldSong::WAITING_SQL : WAITING_RECORDINGS) if waiting
     with_all_tags(scope)
   end
 
@@ -83,18 +85,20 @@ class FieldListing
     when "recording" then "COALESCE(field_recordings.recorded_at, field_recordings.created_at)"
     # A tweet sorts by when it was posted, not when it was fetched.
     when "tweet" then "field_tweets.posted_at"
+    when "song" then "COALESCE(field_songs.dated_at, field_songs.created_at)"
     else "COALESCE(field_files.dated_at, field_files.created_at)"
     end
   end
 
   def table(kind)
-    { "file" => "field_files", "note" => "whiteboards", "recording" => "field_recordings", "tweet" => "field_tweets" }.fetch(kind)
+    { "file" => "field_files", "note" => "whiteboards", "recording" => "field_recordings", "tweet" => "field_tweets",
+      "song" => "field_songs" }.fetch(kind)
   end
 
   def count_tabs
     per_kind = KINDS.to_h { |kind| [ kind, scope_for(kind, waiting: false).count ] }
     TAB_KINDS.except("waiting").transform_values { |kinds| kinds.sum { |kind| per_kind[kind] } }
-      .merge("waiting" => scope_for("recording", waiting: true).count)
+      .merge("waiting" => TAB_KINDS["waiting"].sum { |kind| scope_for(kind, waiting: true).count })
   end
 
   # [[kind, id], ...] for this page only: one UNION over light columns.
@@ -116,6 +120,7 @@ class FieldListing
     when "file" then @account.field_files.where(id: ids).includes(:uploaded_by, file_attachment: :blob)
     when "note" then @account.whiteboards.where(id: ids).includes(:last_edited_by)
     when "tweet" then @account.field_tweets.where(id: ids)
+    when "song" then @account.field_songs.where(id: ids).includes(:added_by, :shared_for, audio_attachment: :blob)
     else @account.field_recordings.where(id: ids).includes(:uploaded_by, audio_attachment: :blob, speakers: :field_voice)
     end
   end

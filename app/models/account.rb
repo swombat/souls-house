@@ -6,7 +6,7 @@ class Account < ApplicationRecord
 
   # Broadcasting configuration
   broadcasts_to :all # Admin collection
-  skip_broadcasts_on_destroy :memberships, :agents, :chats, :whiteboards, :field_files
+  skip_broadcasts_on_destroy :memberships, :agents, :chats, :whiteboards, :field_files, :field_songs
 
   # Enums
   enum :account_type, { personal: 0, team: 1 }
@@ -65,6 +65,7 @@ class Account < ApplicationRecord
   has_many :whiteboards, dependent: :destroy
   has_many :field_files, dependent: :destroy
   has_many :field_tweets, dependent: :delete_all
+  has_many :field_songs, dependent: :destroy
   has_one :field_tweet_source, dependent: :destroy
   has_many :field_tweet_calls, dependent: :delete_all
   has_many :field_swarm_searches, dependent: :delete_all
