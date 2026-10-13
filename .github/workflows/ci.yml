@@ -156,6 +156,17 @@ jobs:
         run: |
           python3 -m pip install 'cryptography==46.0.3'
           python3 -m unittest discover -s test/host_runner -p '*_test.py'
+      - uses: actions/setup-python@v6
+        if: ${{ !cancelled() }}
+        with:
+          python-version: '3.13'
+      - name: Telegram connector (unit, replay, two-process lease)
+        if: ${{ !cancelled() }}
+        working-directory: services/telegram-connector
+        # requirements.txt pins the whole tree; --no-deps as in the Docker build.
+        run: |
+          python3 -m pip install --no-deps -r requirements.txt
+          python3 -m unittest discover -s tests
 
   result:
     name: CI result
