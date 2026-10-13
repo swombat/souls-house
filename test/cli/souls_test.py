@@ -771,7 +771,8 @@ class IntegrationsTest(CliTestCase):
         code, _, err = self.run_cli("integrations", "connect", "porkbun", "--field", "password=x", "--field", "api_key=a",
                                     "--field", "secret_key=b")
         self.assertEqual(code, souls.EXIT_USAGE)
-        self.assertIn("no field password", err)
+        self.assertIn("its fields are: api_key, secret_key", err)
+        self.assertNotIn("password", err)
         code, _, err = self.run_cli("integrations", "connect", "dropbox", "--json", "{}")
         self.assertEqual(code, souls.EXIT_USAGE)
         self.assertIn("can: porkbun, pipedrive", err)
@@ -787,6 +788,18 @@ class IntegrationsTest(CliTestCase):
         self.assertEqual((body["management_scope"], body["label"]), ("account_managed", "DNS"))
         self.assertEqual(json.loads(self.last()["body"]), {"enabled": True})
         self.assertEqual(json.loads(out)["granted"], [{"resident_id": "r1", "enabled": True}])
+
+    def test_rejected_credential_input_never_echoes_what_was_typed(self):
+        secret = "sk1_SYNTHETIC_SECRET_9f3a"
+        for argv, stdin in (
+            (("integrations", "connect", "porkbun", "--field", secret), ""),
+            (("integrations", "connect", "porkbun", "--json", "-"), '{"%s": "x", "api_key": "a", "secret_key": "b"}' % secret),
+            (("integrations", "connect", "porkbun", "--json", "-"), '{"api_key": "a", "secret_key": "b", "oops": "%s"}' % secret),
+        ):
+            code, out, err = self.run_cli(*argv, stdin=stdin)
+            self.assertEqual(code, souls.EXIT_USAGE)
+            self.assertNotIn(secret, out + err)
+        self.assertEqual(self.posted(), [])
 
     def test_grant_and_revoke_patch_the_resident_access(self):
         self.house.route("PATCH", "/api/v1/residents/r1/service_accesses/svc_9",

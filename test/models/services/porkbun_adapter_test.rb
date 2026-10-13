@@ -44,6 +44,20 @@ class Services::PorkbunAdapterTest < ActiveSupport::TestCase
     assert_match "only the dns scope", summary
   end
 
+  test "unreported scopes are neither confirmed full access nor confirmed safe" do
+    stub_porkbun("/ping", { status: "SUCCESS", account: "acme" })
+    stub_porkbun("/domain/listAll", { status: "SUCCESS", domains: [ { domain: "acme.test" } ] })
+
+    result = @adapter.connection_attributes(credentials: { "api_key" => "pk1_k", "secret_key" => "sk1_s" }, user: users(:user_1))
+    summary = result.dig(:credential_metadata, "authority_summary")
+
+    assert_equal [], result.dig(:credential_metadata, "key_scopes")
+    assert_match "didn't say what this key may do", summary
+    assert_match "may be able to buy domains", summary
+    assert_no_match(/Full access/, summary)
+    assert_no_match(/cannot buy/, summary)
+  end
+
   test "names Porkbun's refusal and stops before listing domains" do
     stub_porkbun("/ping", { status: "ERROR", message: "Invalid API key. (002)" }, status: 400)
     list = stub_porkbun("/domain/listAll", { status: "SUCCESS", domains: [] })

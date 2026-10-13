@@ -12,6 +12,7 @@ module Services
 
     API_BASE = "https://api.cloudflare.com/client/v4".freeze
     LABEL_ZONES = 3
+    ZONE_PAGES = 20
 
     class Error < Services::AdapterError; end
     class Rejected < Error; end
@@ -27,14 +28,14 @@ module Services
       raise Error, "Cloudflare API token is required" if token.blank?
 
       verified = verify(token)
-      zones = list_zones(token, required: verified.nil?)
+      zones, zones_complete = list_zones(token, required: verified.nil?)
       accounts = zones.filter_map { |zone| zone.dig("account", "name").presence }.uniq.sort
       names = zones.filter_map { |zone| zone["name"].presence }.sort
 
       {
         external_subject_id: verified&.dig("id").presence,
         external_identity: accounts.join(", ").presence,
-        label: label_for(accounts, names),
+        label: label_for(accounts, names, zones_complete),
         credential_kind: "token",
         credential_fingerprint: credential_fingerprint(token),
         credential_payload: {
@@ -45,6 +46,7 @@ module Services
           "token_kind" => verified ? "user" : "account",
           "token_expires_on" => verified&.dig("expires_on").presence,
           "zones" => names,
+          "zones_complete" => zones_complete,
           "zone_ids" => zones.to_h { |zone| [ zone["name"], zone["id"] ] }.compact,
           "accounts" => accounts,
           "api_base" => API_BASE,
@@ -74,25 +76,40 @@ module Services
       nil
     end
 
+    # Every zone the token can see, up to ZONE_PAGES pages of 50; the second
+    # value says whether that was all of them.
     def list_zones(token, required:)
-      body = get_json("/zones?per_page=50", token)
-      zones = Array(body["result"])
+      zones = []
+      page = 1
+      total_pages = 1
+      loop do
+        body = get_json("/zones?per_page=50&page=#{page}", token)
+        zones.concat(Array(body["result"]))
+        total_pages = body.dig("result_info", "total_pages").to_i
+        break if page >= total_pages || page >= ZONE_PAGES
+
+        page += 1
+      end
       raise Error, "This Cloudflare token can't see any zones. Give it Zone → Zone → Read on the zones residents should manage" if required && zones.empty?
 
-      zones
+      [ zones, page >= total_pages ]
     rescue Rejected
       raise Error, "Cloudflare rejected this API token" if required
 
-      []
+      [ [], true ]
     end
 
-    def label_for(accounts, names)
+    def label_for(accounts, names, complete)
       name = accounts.size == 1 ? "Cloudflare (#{accounts.first})" : "Cloudflare"
       return "#{name}: no zones visible" if names.empty?
 
       shown = names.first(LABEL_ZONES).join(", ")
       more = names.size - LABEL_ZONES
-      "#{name}: #{shown}#{more.positive? ? " and #{more} more" : ''}"
+      tail = if !complete then " and more than #{[ more, 0 ].max} others"
+      elsif more.positive? then " and #{more} more"
+      else ""
+      end
+      "#{name}: #{shown}#{tail}"
     end
 
     def zone_phrase(names)

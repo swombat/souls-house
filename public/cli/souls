@@ -823,10 +823,11 @@ def cmd_integrations_providers(client, args):
 
 def parse_field_args(pairs):
     values = {}
-    for pair in pairs or []:
+    for position, pair in enumerate(pairs or [], start=1):
         key, sep, value = pair.partition("=")
         if not sep or not key:
-            raise CliError(f"--field takes KEY=VALUE, got {pair!r}", EXIT_USAGE)
+            # Never echo the argument: a secret pasted without KEY= would land in stderr.
+            raise CliError(f"--field #{position} isn't KEY=VALUE (not shown, in case it holds a secret)", EXIT_USAGE)
         values[key.strip()] = value
     return values
 
@@ -860,7 +861,10 @@ def cmd_integrations_connect(client, args):
     allowed = {field["key"] for field in fields}
     unknown = sorted(set(values) - allowed)
     if unknown:
-        raise CliError(f"{args.provider} has no field {', '.join(unknown)} (fields: {', '.join(sorted(allowed)) or 'none'})", EXIT_USAGE)
+        # Name only the provider's own fields: an unknown key may be a secret
+        # typed in the wrong place.
+        raise CliError(f"{len(unknown)} field name(s) aren't {args.provider}'s (not shown, in case they hold a secret); "
+                       f"its fields are: {', '.join(sorted(allowed)) or 'none'}", EXIT_USAGE)
 
     missing = [field for field in fields if not values.get(field["key"])]
     if missing and not args.json_input and sys.stdin.isatty():

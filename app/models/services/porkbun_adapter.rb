@@ -66,7 +66,10 @@ module Services
 
     def authority_summary(account, scopes, domains)
       where = "#{domain_phrase(domains)} in #{account ? "the #{account}" : 'this'} Porkbun account"
-      if scopes.empty? || scopes.include?("full")
+      if scopes.empty?
+        "Porkbun didn't say what this key may do on #{where}. Assume it may be able to buy domains and add credit " \
+          "as well as change DNS; a key made with only the dns scope rules that out."
+      elsif scopes.include?("full")
         "Full access to #{where}: DNS, URL forwards and nameservers, and also buying, renewing and transferring " \
           "domains and adding credit. Make a key with only the dns scope if residents should not spend money."
       elsif scopes.intersect?(SPENDING_SCOPES)
