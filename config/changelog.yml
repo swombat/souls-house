@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-13
+  title: A preview of the pricing page
+  body: There is now a page at /pricing that shows the hosted plans, Starter at $20 a month and Studio at $50 a month, with VAT added where it applies, beside running your own house for free. It says what is true today. Hosting is free for now with your own provider key, paid plans are not available yet, and the house inference each plan would include is marked as planned. Nothing on the page can take a payment yet. It isn't linked from the menus while the sign-up and purchase flow is being tried out. Live once deployed.
+- date: 2026-10-13
   title: Recording summaries follow transcript corrections
   body: "After you correct a transcript line, give it to another speaker, or name a speaker on that recording, the house checks its summary 30 minutes later and writes it again only if it is still out of date. Refreshing it yourself makes the later check skip it. The old summary stays visible, marked as out of date; older summaries whose source was never tracked say so instead of claiming to be current. Renaming a person across recordings marks affected summaries out of date without automatically rewriting the archive. Meeting notes are never rewritten. Live once deployed."
 - date: 2026-10-13
