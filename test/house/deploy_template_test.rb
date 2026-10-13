@@ -163,6 +163,52 @@ class DeployTemplateTest < ActiveSupport::TestCase
     end
   end
 
+  test "the Telegram connector is absent unless HOUSE_COMMS_TELEGRAM_IMAGE is set" do
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST)) do
+      config = YAML.safe_load(render_deploy_yml)
+      assert_not config.fetch("accessories").key?("comms-telegram")
+      assert_not config.fetch("env").fetch("clear").key?("COMMS_CONNECTOR_URL")
+    end
+  end
+
+  test "turning the Telegram connector on wires Rails and its own accessory together" do
+    comms = { "HOUSE_COMMS_TELEGRAM_IMAGE" => "registry.example/telegram", "HOUSE_COMMS_TELEGRAM_DIGEST" => DUMMY_DIGEST,
+              "HOUSE_COMMS_TLS_DIR" => "/srv/comms-tls" }
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(comms)) do
+      config = YAML.safe_load(render_deploy_yml)
+      assert_not config.fetch("accessories").key?("comms-whatsapp")
+      accessory = config.fetch("accessories").fetch("comms-telegram")
+      assert_equal "registry.example/telegram@#{DUMMY_DIGEST}", accessory.fetch("image")
+      assert_includes accessory.fetch("volumes"), "comms_telegram:/data"
+      assert_includes accessory.fetch("volumes"), "/srv/comms-tls:/tls:ro"
+      assert_equal "core=0", accessory.fetch("options").fetch("ulimit")
+      assert_equal true, accessory.fetch("options").fetch("read-only")
+      assert_equal %w[COMMS_STORE_KEY COMMS_COMMAND_KEY TELEGRAM_API_ID TELEGRAM_API_HASH], accessory.fetch("env").fetch("secret")
+      assert_equal "rails", accessory.dig("env", "clear", "COMMS_TLS_CLIENT_NAME")
+      assert_equal "/tls/telegram.pem", accessory.dig("env", "clear", "COMMS_TLS_CERT")
+
+      runtime = config.fetch("env")
+      assert_equal "https://souls-house-comms-telegram:8443", runtime.dig("clear", "COMMS_CONNECTOR_URL")
+      assert_not runtime.fetch("clear").key?("COMMS_WHATSAPP_CONNECTOR_URL")
+      supplied = runtime.fetch("clear").keys + runtime.fetch("secret")
+      assert_empty CommsConnector::TELEGRAM_ENV - supplied, "everything the catalog requires before it offers Telegram"
+      %w[web jobs].each do |role|
+        assert_includes config.dig("servers", role, "options", "volume"), "/srv/comms-tls:/rails/comms-tls:ro"
+      end
+    end
+    both = comms.merge("HOUSE_COMMS_WHATSAPP_IMAGE" => "registry.example/comms", "HOUSE_COMMS_WHATSAPP_DIGEST" => DUMMY_DIGEST)
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(both)) do
+      config = YAML.safe_load(render_deploy_yml)
+      assert config.fetch("accessories").key?("comms-whatsapp")
+      assert config.fetch("accessories").key?("comms-telegram")
+      assert_equal 1, config.dig("servers", "web", "options", "volume").count("/srv/comms-tls:/rails/comms-tls:ro")
+      assert_equal 1, config.fetch("env").fetch("secret").count("COMMS_COMMAND_KEY")
+    end
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(comms).merge("HOUSE_COMMS_TELEGRAM_DIGEST" => "latest")) do
+      assert_raises(RuntimeError) { render_deploy_yml }
+    end
+  end
+
   private
 
   def render_deploy_yml

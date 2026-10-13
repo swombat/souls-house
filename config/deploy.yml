@@ -78,6 +78,25 @@
     unless comms_whatsapp_digest.match?(/\Asha256:[0-9a-f]{64}\z/)
       raise "Set HOUSE_COMMS_WHATSAPP_DIGEST to the reviewed connector image digest (sha256:...)."
     end
+  end
+
+  # Telegram connector (services/telegram-connector, docs/proposals/2026-10-11-
+  # telegram-personal-connections.md, slice S2a). Off until
+  # HOUSE_COMMS_TELEGRAM_IMAGE is set, like WhatsApp's. Turning it on needs
+  # HOUSE_COMMS_TELEGRAM_DIGEST, HOUSE_COMMS_TLS_DIR (also holding
+  # telegram.pem/.key, the certificate for souls-house-comms-telegram), and
+  # COMMS_STORE_KEY, COMMS_COMMAND_KEY, TELEGRAM_API_ID and TELEGRAM_API_HASH
+  # in .kamal/secrets; see services/telegram-connector/README.md "Deploying".
+  comms_telegram_image = house_optional.call("HOUSE_COMMS_TELEGRAM_IMAGE")
+  if comms_telegram_image
+    comms_telegram_digest = ENV["HOUSE_COMMS_TELEGRAM_DIGEST"].to_s.strip
+    unless comms_telegram_digest.match?(/\Asha256:[0-9a-f]{64}\z/)
+      raise "Set HOUSE_COMMS_TELEGRAM_DIGEST to the reviewed connector image digest (sha256:...)."
+    end
+  end
+
+  comms_any = comms_whatsapp_image || comms_telegram_image
+  if comms_any
     comms_tls_dir = house.call("HOUSE_COMMS_TLS_DIR")
     web_volumes << "#{comms_tls_dir}:/rails/comms-tls:ro"
   end
@@ -123,6 +142,12 @@ env:
     # (CommsConnector). Setting these is what makes WhatsApp appear on the
     # integrations page (the catalog's requires_env).
     COMMS_WHATSAPP_CONNECTOR_URL: https://souls-house-comms-whatsapp:8443
+<% end %>
+<% if comms_telegram_image %>
+    # Rails → Telegram connector commands, the same way (CommsConnector).
+    COMMS_CONNECTOR_URL: https://souls-house-comms-telegram:8443
+<% end %>
+<% if comms_any %>
     COMMS_CONNECTOR_CLIENT_CERT: /rails/comms-tls/rails.pem
     COMMS_CONNECTOR_CLIENT_KEY: /rails/comms-tls/rails.key
     COMMS_CONNECTOR_CA_FILE: /rails/comms-tls/ca.pem
@@ -131,8 +156,8 @@ env:
     - RAILS_MASTER_KEY # Rails master key (provide in .kamal/secrets)
     - DATABASE_URL # Database connection string (provided per env in secrets)
     - MNEMODYNE_EMBEDDING_TOKEN # Same private token on web/jobs and embedding accessory.
-<% if comms_whatsapp_image %>
-    - COMMS_COMMAND_KEY # Signs Rails → connector commands; same value on the connector.
+<% if comms_any %>
+    - COMMS_COMMAND_KEY # Signs Rails → connector commands; same value on the connectors.
 <% end %>
 
 servers:
@@ -230,6 +255,45 @@ accessories:
       memory: 512m
       cpus: 1
     # No public port. Kamal's private network supplies souls-house-comms-whatsapp.
+<% end %>
+<% if comms_telegram_image %>
+  comms-telegram:
+    # Built from services/telegram-connector (Dockerfile there), reviewed,
+    # pushed, pinned by digest. Boot it with `bin/kamal accessory boot
+    # comms-telegram`; it survives web deploys. One process holds every
+    # Telegram session. An accessory is one named container, never rolled:
+    # `bin/kamal accessory reboot comms-telegram` stops and removes the old
+    # one before the new one starts, and the process also takes a flock on
+    # /data/.lease before it opens the store or any Telegram client, so a
+    # straggler or a second container on the volume waits, unavailable,
+    # until the holder has exited.
+    image: <%= comms_telegram_image %>@<%= comms_telegram_digest %>
+    host: <%= house_host %>
+    env:
+      clear:
+        COMMS_RAILS_URL: http://souls-house-web:3000 # Signed events, over Docker DNS like agent callbacks.
+        COMMS_LISTEN: ":8443"
+        COMMS_DATA_DIR: /data
+        COMMS_TLS_CERT: /tls/telegram.pem
+        COMMS_TLS_KEY: /tls/telegram.key
+        COMMS_TLS_CLIENT_CA: /tls/ca.pem
+        COMMS_TLS_CLIENT_NAME: rails # Only Rails's client certificate is accepted.
+      secret:
+        - COMMS_STORE_KEY # Seals sessions, secrets and the outbox; HKDF per connection (its own salt).
+        - COMMS_COMMAND_KEY
+        - TELEGRAM_API_ID # The Telegram application the house signs users in through.
+        - TELEGRAM_API_HASH
+    volumes:
+      - comms_telegram:/data # The sessions and the outbox. Losing it costs a new sign-in, not history.
+      - <%= comms_tls_dir %>:/tls:ro
+    options:
+      ulimit: core=0 # No core may hold a session key, a password or messages.
+      read-only: true
+      tmpfs: /tmp
+      memory: 512m
+      cpus: 1
+      stop-timeout: 30 # SIGTERM first: the process stops its clients and releases the lease.
+    # No public port. Kamal's private network supplies souls-house-comms-telegram.
 <% end %>
   postgres:
     image: postgres:16.2 # Use the correct version for your app

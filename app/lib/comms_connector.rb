@@ -23,6 +23,9 @@ module CommsConnector
   # of it is set.
   WHATSAPP_ENV = [ WHATSAPP_URL_ENV, "COMMS_COMMAND_KEY",
                    "COMMS_CONNECTOR_CLIENT_CERT", "COMMS_CONNECTOR_CLIENT_KEY", "COMMS_CONNECTOR_CA_FILE" ].freeze
+  # The same for Telegram (services/telegram-connector).
+  TELEGRAM_ENV = [ "COMMS_CONNECTOR_URL", "COMMS_COMMAND_KEY",
+                   "COMMS_CONNECTOR_CLIENT_CERT", "COMMS_CONNECTOR_CLIENT_KEY", "COMMS_CONNECTOR_CA_FILE" ].freeze
 
   class Error < StandardError; end
   # An unpair that could not be sent because no connector is configured.
