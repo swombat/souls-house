@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-13
+  title: Porkbun and Cloudflare for DNS
+  body: Two new integrations let the residents you choose look after your domains. Porkbun takes your API key and secret key; Cloudflare takes an API token. Both are checked with the provider when you connect, and the connection names the domains or zones it can reach. A resident with one can add and change DNS records and set up redirects, and with Porkbun change nameservers too. The connect screen says what each key can do, including that a full-access Porkbun key can also buy domains, and suggests the narrower scope. These connections, and any other that takes a pasted key, can now also be added from the command line with `souls integrations connect porkbun`, which asks for the keys without echoing them, and granted to a resident with `souls integrations grant`. Live once deployed.
 - date: 2026-10-12
   title: Find a person in a long speaker list
   body: When you name a speaker on a recording and the list of people to choose from has more than ten names, it now opens with a "Find a person…" box at the top. Typing narrows the list as you go, ignoring capitals and accents, so "tomas" finds Tomás, and the list scrolls within the menu instead of running off the screen. If no one matches, it says so. Adding someone who isn't in the list yet now has its own section at the bottom, "Add someone new". Shorter lists look as they did. Live once deployed.

@@ -1,17 +1,9 @@
 <script>
+  import { serviceIconClass } from '$lib/service-presentation';
+  import ServiceIcon from '$lib/components/service-icon.svelte';
   import TelegramSettings from '$lib/components/agents/telegram-settings.svelte';
   import TailnetAccess from '$lib/components/agents/tailnet-access.svelte';
-  import {
-    CheckCircle,
-    TelegramLogo,
-    DropboxLogo,
-    GoogleLogo,
-    GithubLogo,
-    Funnel,
-    Bug,
-    ShareNetwork,
-    Heartbeat,
-  } from 'phosphor-svelte';
+  import { CheckCircle, TelegramLogo } from 'phosphor-svelte';
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
 
@@ -92,34 +84,8 @@
           <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div class="flex items-center gap-4">
               <div
-                class={connection.provider === 'dropbox'
-                  ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white'
-                  : connection.provider === 'google_workspace'
-                    ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white'
-                    : connection.provider === 'github'
-                      ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white'
-                      : connection.provider === 'pipedrive'
-                        ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-emerald-700 text-white'
-                        : connection.provider === 'honeybadger'
-                          ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-600 text-white'
-                          : connection.provider === 'tailscale'
-                            ? 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-slate-700 text-white'
-                            : 'flex size-11 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white'}>
-                {#if connection.provider === 'dropbox'}
-                  <DropboxLogo size={24} weight="fill" />
-                {:else if connection.provider === 'google_workspace'}
-                  <GoogleLogo size={24} weight="bold" />
-                {:else if connection.provider === 'github'}
-                  <GithubLogo size={24} weight="fill" />
-                {:else if connection.provider === 'pipedrive'}
-                  <Funnel size={24} weight="bold" />
-                {:else if connection.provider === 'honeybadger'}
-                  <Bug size={24} weight="bold" />
-                {:else if connection.provider === 'tailscale'}
-                  <ShareNetwork size={24} weight="bold" />
-                {:else}
-                  <Heartbeat size={24} weight="fill" />
-                {/if}
+                class={`flex size-11 shrink-0 items-center justify-center rounded-xl ${serviceIconClass(connection.provider)}`}>
+                <ServiceIcon provider={connection.provider} size={24} />
               </div>
               <div>
                 <div class="flex flex-wrap items-center gap-2">

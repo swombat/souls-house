@@ -1,4 +1,5 @@
 require "test_helper"
+require "webmock/minitest"
 
 module Api
   module V1
@@ -213,6 +214,76 @@ module Api
         assert_response :not_found
       end
 
+      test "lists the providers that connect from pasted credentials, not OAuth or pairing ones" do
+        get providers_api_v1_account_service_connections_path, headers: @home_headers
+        assert_response :success
+        keys = response.parsed_body["providers"].map { |provider| provider["key"] }
+        assert_includes keys, "porkbun"
+        assert_includes keys, "cloudflare"
+        assert_not_includes keys, "dropbox"
+        assert_not_includes keys, "google_workspace"
+        porkbun = response.parsed_body["providers"].find { |provider| provider["key"] == "porkbun" }
+        assert_equal %w[api_key secret_key], porkbun["credential_fields"].map { |field| field["key"] }
+      end
+
+      test "connects a credentials service with the adapter's validation, audits it, and keeps the keys out of the log" do
+        ping = stub_porkbun("/ping", { status: "SUCCESS", account: "acme", scopes: [ "dns" ], credentialsValid: true })
+        stub_porkbun("/domain/listAll", { status: "SUCCESS", domains: [ { domain: "acme.test" } ] })
+
+        log = capture_request_log do
+          post api_v1_account_service_connections_path,
+            params: { provider: "porkbun", label: "DNS", credentials: { api_key: "pk1_visible", secret_key: "sk1_secret", extra: "dropped" } },
+            headers: @home_headers, as: :json
+        end
+
+        assert_response :created
+        assert_requested ping
+        assert_requested :post, "https://api.porkbun.com/api/json/v3/ping", body: { apikey: "pk1_visible", secretapikey: "sk1_secret" }.to_json
+        connection = @home.service_connections.find_by!(provider: "porkbun")
+        assert_equal [ "personal", "DNS", @daniel ], [ connection.management_scope, connection.label, connection.connected_by_user ]
+        assert_equal({ "api_key" => "pk1_visible", "secret_key" => "sk1_secret" }, connection.credential_payload_hash)
+        assert_equal [ "acme.test" ], connection.credential_metadata["domains"]
+        assert_equal connection.public_id, response.parsed_body.dig("service_connection", "id")
+        assert_not_includes response.body, "sk1_secret"
+        assert AuditLog.exists?(action: "connect_service", auditable: connection)
+        assert_includes log, "Parameters:", "the capture must see the request log"
+        assert_not_includes log, "sk1_secret"
+        assert_not_includes log, "pk1_visible"
+
+        post api_v1_account_service_connections_path,
+          params: { provider: "porkbun", credentials: { api_key: "pk1_visible", secret_key: "sk1_secret" } }, headers: @home_headers, as: :json
+        assert_response :unprocessable_entity
+        assert_match "already connected", response.parsed_body["error"]
+      end
+
+      test "refuses OAuth services, unknown providers, provider rejections, account ownership by a member, and residents" do
+        post api_v1_account_service_connections_path, params: { provider: "dropbox", credentials: {} }, headers: @home_headers, as: :json
+        assert_response :unprocessable_entity
+        assert_match "connects on the web", response.parsed_body["error"]
+
+        post api_v1_account_service_connections_path, params: { provider: "nope", credentials: {} }, headers: @home_headers, as: :json
+        assert_response :not_found
+
+        post api_v1_account_service_connections_path, params: { provider: "porkbun" }, headers: @home_headers, as: :json
+        assert_response :unprocessable_entity
+
+        stub_porkbun("/ping", { status: "ERROR", message: "Invalid API key. (002)" }, status: 400)
+        post api_v1_account_service_connections_path,
+          params: { provider: "porkbun", credentials: { api_key: "pk1_a", secret_key: "sk1_b" } }, headers: @home_headers, as: :json
+        assert_response :unprocessable_entity
+        assert_equal "Porkbun rejected this key pair (Invalid API key. (002))", response.parsed_body["error"]
+
+        post api_v1_account_service_connections_path,
+          params: { provider: "porkbun", management_scope: "account_managed", credentials: { api_key: "pk1_a", secret_key: "sk1_b" } },
+          headers: @nexus_member_headers, as: :json
+        assert_response :forbidden
+
+        post api_v1_account_service_connections_path,
+          params: { provider: "porkbun", credentials: { api_key: "pk1_a", secret_key: "sk1_b" } }, headers: @resident_headers, as: :json
+        assert_response :forbidden
+        assert_not ServiceConnection.exists?(provider: "porkbun")
+      end
+
       # Model provider keys
 
       test "the read says only which providers are set" do
@@ -329,6 +400,11 @@ module Api
         io.string
       ensure
         Rails.logger.stop_broadcasting_to(logger)
+      end
+
+      def stub_porkbun(path, body, status: 200)
+        stub_request(:post, "https://api.porkbun.com/api/json/v3#{path}")
+          .to_return(status: status, body: body.to_json, headers: { "Content-Type" => "application/json" })
       end
 
       def create_connection(account:, user:)

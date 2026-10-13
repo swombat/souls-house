@@ -357,7 +357,9 @@ Rails.application.routes.draw do
           resources :visual_tags, only: %i[create update destroy]
           resources :api_keys, only: %i[index destroy]
           resources :guest_memberships, only: %i[index create destroy]
-          resources :service_connections, only: %i[index update destroy]
+          resources :service_connections, only: %i[index create update destroy] do
+            get :providers, on: :collection
+          end
           resource :ai_provider_keys, only: %i[show update]
         end
       end

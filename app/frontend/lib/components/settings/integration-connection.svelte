@@ -1,16 +1,7 @@
 <script>
+  import ServiceIcon from '$lib/components/service-icon.svelte';
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
-  import {
-    DropboxLogo,
-    GithubLogo,
-    Funnel,
-    Bug,
-    ShareNetwork,
-    GoogleLogo,
-    Heartbeat,
-    TelegramLogo,
-  } from 'phosphor-svelte';
   import { serviceIconClass } from '$lib/service-presentation';
   import ConnectionGoogleAuthority from './connection-google-authority.svelte';
   import ConnectionRepositories from './connection-repositories.svelte';
@@ -32,9 +23,13 @@
           ? `Disconnect ${connection.label}? This removes the token from residents. To revoke it, regenerate your API token in Pipedrive.`
           : connection.provider === 'honeybadger'
             ? `Disconnect ${connection.label}? This removes the token from residents. To revoke it, reset your personal auth token in Honeybadger.`
-            : connection.provider === 'tailscale'
-              ? `Disconnect ${connection.label}? Residents leave the tailnet when they are next rebuilt, which can wait for an active turn. To cut access now, remove their nodes in the Tailscale admin console; revoke the auth key there too.`
-              : `Disconnect ${connection.label}?`;
+            : connection.provider === 'porkbun'
+              ? `Disconnect ${connection.label}? This removes the keys from residents. To revoke them, delete the key under Account → API Access in Porkbun.`
+              : connection.provider === 'cloudflare'
+                ? `Disconnect ${connection.label}? This removes the token from residents. To revoke it, roll or delete the token under My Profile → API Tokens in Cloudflare.`
+                : connection.provider === 'tailscale'
+                  ? `Disconnect ${connection.label}? Residents leave the tailnet when they are next rebuilt, which can wait for an active turn. To cut access now, remove their nodes in the Tailscale admin console; revoke the auth key there too.`
+                  : `Disconnect ${connection.label}?`;
     if (confirm(warning)) {
       router.delete(`/accounts/${account.id}/service_connections/${connection.id}`);
     }
@@ -47,23 +42,7 @@
       <div class="flex min-w-0 items-center gap-4">
         <div
           class={`flex size-12 shrink-0 items-center justify-center rounded-xl ${serviceIconClass(connection.provider)}`}>
-          {#if connection.provider === 'dropbox'}
-            <DropboxLogo size={26} weight="fill" />
-          {:else if connection.provider === 'google_workspace'}
-            <GoogleLogo size={26} weight="bold" />
-          {:else if connection.provider === 'github'}
-            <GithubLogo size={26} weight="fill" />
-          {:else if connection.provider === 'pipedrive'}
-            <Funnel size={26} weight="bold" />
-          {:else if connection.provider === 'honeybadger'}
-            <Bug size={26} weight="bold" />
-          {:else if connection.provider === 'tailscale'}
-            <ShareNetwork size={26} weight="bold" />
-          {:else if connection.provider === 'telegram'}
-            <TelegramLogo size={26} weight="fill" />
-          {:else}
-            <Heartbeat size={26} weight="fill" />
-          {/if}
+          <ServiceIcon provider={connection.provider} size={26} />
         </div>
         <div class="min-w-0">
           <h3 class="truncate text-lg font-semibold">

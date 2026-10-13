@@ -29,6 +29,11 @@ Rails.application.config.filter_parameters += [ /\A(?:print|voiceprints?)\z/ ]
 # sending it would otherwise have its keys logged before the refusal.
 Rails.application.config.filter_parameters += [ /\Aset\z/ ]
 
+# Pasted service credentials (POST service_connections, web and API) travel as
+# credentials[<field>]. Field names like api_key and secret_key are already
+# masked; this masks every field, whatever a provider calls it.
+Rails.application.config.filter_parameters += [ /\Acredentials\z/ ]
+
 # Comms connector events carry Daniel's WhatsApp messages, contacts and the
 # pairing QR. `messages` and `code` are already filtered above; `chats`
 # covers chat names, and the exact field names cover any other nesting.

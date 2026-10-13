@@ -277,6 +277,38 @@ class ServiceConnection < ApplicationRecord
     find(value.to_s.delete_prefix("svc_"))
   end
 
+  # A connection from pasted credentials (the web's connect form and
+  # POST /api/v1/account/service_connections). The adapter validates them
+  # with the provider first; the caller has already checked the person may
+  # own a connection at this management scope. Raises Services::AdapterError
+  # for anything the provider or the house refuses.
+  def self.connect_with_credentials!(account:, user:, definition:, management_scope:, credentials:)
+    raise Services::AdapterError, "#{definition.name} connects through its own sign-in, not pasted credentials" unless definition.connection_method.in?(%w[credentials pairing])
+    raise Services::AdapterError, "#{definition.name} is not available on this house" unless definition.available?
+    raise Services::AdapterError, "#{definition.name} can't be connected as #{management_scope}" unless definition.supports_management_scope?(management_scope)
+
+    result = definition.adapter.connection_attributes(credentials: credentials.to_h, user: user)
+    existing = account.service_connections.find_by(provider: definition.key, credential_fingerprint: result.fetch(:credential_fingerprint))
+    raise Services::AdapterError, "That credential is already connected as #{existing.display_label}" if existing
+
+    connection = account.service_connections.new(
+      connected_by_user: user,
+      provider: definition.key,
+      external_subject_id: result.fetch(:external_subject_id),
+      external_identity: result[:external_identity],
+      label: result[:label],
+      management_scope: management_scope,
+      credential_kind: result.fetch(:credential_kind),
+      credential_fingerprint: result.fetch(:credential_fingerprint),
+      credential_metadata: result.fetch(:credential_metadata),
+      status: result.fetch(:status, "connected")
+    )
+    connection.credential_payload_hash = result.fetch(:credential_payload)
+    connection.save!
+    definition.adapter.start_pairing(connection) if definition.connection_method == "pairing"
+    connection
+  end
+
   def as_connection_json(current_user:)
     {
       id: public_id,
