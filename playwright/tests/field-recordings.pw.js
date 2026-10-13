@@ -158,7 +158,7 @@ test('a transcript brought with its audio shows turns, times only where given, a
   await page.screenshot({ path: 'tmp/field-recording-supplied.png', fullPage: true });
 });
 
-test('an unnamed speaker can be set aside as noise, and an ignored one undone', async ({ mount, page }) => {
+test('an unnamed speaker can be dismissed as noise or kept anonymous, switched, and undone', async ({ mount, page }) => {
   const sent = [];
   await page.route('**/accounts/acct1/field/recordings/r1/speakers/*', async (route) => {
     sent.push({ url: route.request().url(), method: route.request().method(), body: route.request().postDataJSON() });
@@ -168,24 +168,48 @@ test('an unnamed speaker can be set aside as noise, and an ignored one undone', 
   let component = await mount(RecordingPage, { props: { ...props, speakers } });
 
   const cards = page.getByTestId('speaker-card');
-  await expect(cards.nth(0).getByTestId('speaker-ignore')).toHaveCount(0);
-  await cards.nth(1).getByTestId('speaker-ignore').click();
+  await expect(cards.nth(0).getByTestId('speaker-dismiss')).toHaveCount(0);
+  await cards.nth(1).getByTestId('speaker-dismiss').click();
+  await page.getByTestId('speaker-ignore').click();
   await expect.poll(() => sent.length).toBe(1);
   expect(sent[0].method).toBe('PATCH');
   expect(sent[0].url).toContain('/speakers/s2');
-  expect(sent[0].body).toEqual({ speaker: { ignore: true } });
+  expect(sent[0].body).toEqual({ speaker: { ignore: true, ignore_as: 'noise' } });
+
+  await cards.nth(1).getByTestId('speaker-dismiss').click();
+  await page.getByTestId('speaker-anonymous').click();
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent[1].body).toEqual({ speaker: { ignore: true, ignore_as: 'anonymous' } });
   await component.unmount();
 
-  const ignored = { ...speakers[1], ignored: true, suggestion: null };
-  component = await mount(RecordingPage, { props: { ...props, speakers: [speakers[0], ignored] } });
-  const card = page.locator('[data-testid="speaker-card"][data-ignored="true"]');
-  await expect(card).toContainText('Ignored as noise');
-  await expect(card.getByTestId('speaker-ignore')).toHaveCount(0);
+  const noise = { ...speakers[1], ignored: true, ignored_as: 'noise', suggestion: null };
+  component = await mount(RecordingPage, { props: { ...props, speakers: [speakers[0], noise] } });
+  let card = page.locator('[data-testid="speaker-card"][data-ignored="noise"]');
+  await expect(card).toContainText('Dismissed as noise');
+  await expect(card.getByTestId('speaker-dismiss')).toHaveCount(0);
   await expect(card.getByTestId('speaker-chip')).toHaveCount(0);
   await page.screenshot({ path: 'tmp/field-recording-ignored.png', fullPage: true });
+  await card.getByTestId('speaker-switch-dismissal').click();
+  await expect.poll(() => sent.length).toBe(3);
+  expect(sent[2].body).toEqual({ speaker: { ignore: true, ignore_as: 'anonymous' } });
   await card.getByTestId('speaker-unignore').click();
-  await expect.poll(() => sent.length).toBe(2);
-  expect(sent[1].body).toEqual({ speaker: { unignore: true } });
+  await expect.poll(() => sent.length).toBe(4);
+  expect(sent[3].body).toEqual({ speaker: { unignore: true } });
+  await component.unmount();
+
+  const anonymous = { ...speakers[1], ignored: true, ignored_as: 'anonymous', suggestion: null };
+  component = await mount(RecordingPage, { props: { ...props, speakers: [speakers[0], anonymous] } });
+  card = page.locator('[data-testid="speaker-card"][data-ignored="anonymous"]');
+  await expect(card).toContainText('Staying anonymous');
+  await expect(card).not.toContainText('Dismissed as noise');
+  await expect(card.getByTestId('speaker-chip')).toHaveCount(0);
+  await page.screenshot({ path: 'tmp/field-recording-anonymous.png', fullPage: true });
+  await card.getByTestId('speaker-switch-dismissal').click();
+  await expect.poll(() => sent.length).toBe(5);
+  expect(sent[4].body).toEqual({ speaker: { ignore: true, ignore_as: 'noise' } });
+  await card.getByTestId('speaker-unignore').click();
+  await expect.poll(() => sent.length).toBe(6);
+  expect(sent[5].body).toEqual({ speaker: { unignore: true } });
 });
 
 test('the "is one of these you?" hint shows when asked for', async ({ mount, page }) => {

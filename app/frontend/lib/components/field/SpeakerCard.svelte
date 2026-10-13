@@ -97,6 +97,15 @@
           data-testid="speaker-unignore">
           Undo
         </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          class="text-muted-foreground"
+          disabled={settingAside}
+          onclick={() => setIgnored(anonymous ? 'noise' : 'anonymous')}
+          data-testid="speaker-switch-dismissal">
+          {anonymous ? 'Noise instead' : 'Stay anonymous instead'}
+        </Button>
       {:else}
         <SpeakerChip {speaker} {...chip} />
         {#if !speaker.named && !merged}
