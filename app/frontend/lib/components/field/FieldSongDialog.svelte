@@ -44,6 +44,13 @@
   let linkMessage = $state('');
   let linkLooking = $state(false);
   let lastLookedUp = '';
+  // Bumped on every reset and every new link lookup: an answer that comes
+  // back for an older link, or an earlier opening of the dialog, is dropped.
+  let lookupGeneration = 0;
+  // What the file's name suggests. Shown greyed in the empty boxes and never
+  // sent: left blank, the server reads the file's own tags first and falls
+  // back to its name only when they say nothing.
+  let guess = $state({ title: '', artist: '' });
 
   const editing = $derived(!!song);
   const hasAudio = $derived(!!audioFile || !!song?.audio);
@@ -71,6 +78,9 @@
     date = song?.dated_at ? song.dated_at.slice(0, 10) : '';
     error = '';
     linkMessage = '';
+    linkLooking = false;
+    lookupGeneration += 1;
+    guess = { title: '', artist: '' };
     lastLookedUp = links[0] || '';
   }
 
@@ -80,17 +90,20 @@
     const url = (links[0] || '').trim();
     if (!url || url === lastLookedUp) return;
     lastLookedUp = url;
+    const generation = ++lookupGeneration;
+    const current = () => generation === lookupGeneration && open && (links[0] || '').trim() === url;
     linkLooking = true;
     linkMessage = '';
     try {
       const { suggestion } = await songLookup(accountId, { url });
+      if (!current()) return;
       if (suggestion.title && !title.trim()) title = suggestion.title;
       if (suggestion.artist && !artist.trim()) artist = suggestion.artist;
       linkMessage = suggestion.message || '';
     } catch (e) {
-      linkMessage = `${e.message} You can type the title in.`;
+      if (current()) linkMessage = `${e.message} You can type the title in.`;
     } finally {
-      linkLooking = false;
+      if (generation === lookupGeneration) linkLooking = false;
     }
   }
 
@@ -98,11 +111,7 @@
     const file = event.currentTarget.files?.[0] || null;
     audioFile = file;
     error = file && file.size > maxBytes ? `${file.name} is ${formatBytes(file.size)}. The limit is ${maxLabel}.` : '';
-    if (file && !title.trim()) {
-      const guess = guessFromFilename(file.name);
-      title = guess.title;
-      if (guess.artist && !artist.trim()) artist = guess.artist;
-    }
+    guess = file ? guessFromFilename(file.name) : { title: '', artist: '' };
   }
 
   function submit(event) {
@@ -181,7 +190,8 @@
           </Label>
           <Input id="field-song-audio" type="file" accept="audio/*" onchange={chooseAudio} />
           <p class="text-xs text-muted-foreground">
-            Title, artist and album are read from the file's own tags where you leave them blank.
+            Leave the title, artist and album blank and they're read from the file's own tags, or failing that its name
+            (shown greyed above).
           </p>
         </div>
         {#if !hearable}
@@ -192,11 +202,22 @@
       <div class="grid gap-3 sm:grid-cols-2">
         <div class="space-y-1">
           <Label for="field-song-title">Title</Label>
-          <Input id="field-song-title" bind:value={title} maxlength={200} required={!audioFile} />
+          <Input
+            id="field-song-title"
+            bind:value={title}
+            maxlength={200}
+            required={!audioFile}
+            placeholder={guess.title}
+            data-testid="field-song-title" />
         </div>
         <div class="space-y-1">
           <Label for="field-song-artist">Artist</Label>
-          <Input id="field-song-artist" bind:value={artist} maxlength={200} />
+          <Input
+            id="field-song-artist"
+            bind:value={artist}
+            maxlength={200}
+            placeholder={guess.artist}
+            data-testid="field-song-artist" />
         </div>
         <div class="space-y-1">
           <Label for="field-song-album">Album <span class="text-muted-foreground">(optional)</span></Label>
@@ -213,8 +234,8 @@
           {accountId}
           bind:lyrics
           bind:instrumental
-          {title}
-          {artist}
+          title={title.trim() || guess.title}
+          artist={artist.trim() || guess.artist}
           durationMs={song?.duration_ms}
           focus={open && focusLyrics} />
       {/key}

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
 // Songs in the Field, end to end. The lookups (YouTube oEmbed, LRCLIB) are
@@ -140,6 +141,90 @@ test('a member shares songs: from a link with checked lyrics, an instrumental, a
     await page.getByRole('tab', { name: /Songs/ }).click();
     await expect(page.getByTestId('field-item')).toHaveCount(3);
     await shot('4-songs');
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
+  }
+});
+
+// Mira's review of #346: a file's name is a guess the tags outrank, and a
+// link lookup that answers late never fills a newer link's song.
+test('file-name guesses stay guesses, and late link lookups are dropped', async ({ page, request }) => {
+  const runId = `songs-guess-${Date.now()}`;
+  const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });
+  expect(response.ok()).toBe(true);
+  const setup = await response.json();
+
+  let releaseSlow;
+  const slowGate = new Promise((resolve) => (releaseSlow = resolve));
+  await page.route(/\/field\/songs\/lookup\?/, async (route) => {
+    const link = new URL(route.request().url()).searchParams.get('url') || '';
+    if (/slow/.test(link)) {
+      await slowGate;
+      return route.fulfill({
+        json: {
+          suggestion: {
+            link: { provider: 'youtube', url: link, embed_id: null },
+            title: 'Wrong Song',
+            artist: 'Wrong Artist',
+            found: true,
+            message: 'from the old link',
+          },
+        },
+      });
+    }
+    return route.fulfill({
+      json: {
+        suggestion: {
+          link: { provider: 'spotify', url: link, embed_id: null },
+          title: 'Right Song',
+          found: true,
+          message: 'Spotify gives the title only; add the artist.',
+        },
+      },
+    });
+  });
+  const slowAnswered = () => page.waitForResponse((r) => /slow/.test(decodeURIComponent(r.url())));
+
+  try {
+    await page.goto('/login');
+    await page.getByLabel(/email/i).fill(setup.primary_user.email);
+    await page.getByLabel(/password/i).fill(setup.password);
+    await page.getByRole('button', { name: /log in/i }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await page.goto(`/accounts/${setup.account_param}/field`);
+
+    // 1. Link A is slow; it's replaced by link B, which answers first. A's
+    //    late answer fills nothing.
+    await page.getByTestId('field-add-song').click();
+    const link = page.getByTestId('field-song-link').first();
+    await link.fill('https://youtu.be/slowAAAAAAA');
+    await page.getByLabel('Title', { exact: true }).click();
+    await link.fill('https://open.spotify.com/track/5NGtFXVpXSvwunEIGeviY3');
+    await page.getByLabel('Title', { exact: true }).click();
+    await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Right Song');
+    const late = slowAnswered();
+    releaseSlow();
+    await late;
+    await page.waitForTimeout(300);
+    await expect(page.getByLabel('Artist', { exact: true })).toHaveValue('');
+    await expect(page.getByTestId('field-song-link-message')).toContainText('add the artist');
+    await expect(page.getByTestId('field-song-link-message')).not.toContainText('old link');
+    await page.getByRole('button', { name: 'Cancel' }).click();
+
+    // 2. A tagged file called download.mp3: the name shows as a greyed guess,
+    //    isn't sent, and the saved song takes its title from the tags.
+    await page.getByTestId('field-add-song').click();
+    await page.locator('#field-song-audio').setInputFiles({
+      name: 'download.mp3',
+      mimeType: 'audio/mpeg',
+      buffer: readFileSync(new URL('../fixtures/files/field_song.mp3', import.meta.url)),
+    });
+    await expect(page.getByLabel('Title', { exact: true })).toHaveValue('');
+    await expect(page.getByLabel('Title', { exact: true })).toHaveAttribute('placeholder', 'download');
+    await page.getByTestId('field-song-instrumental').check();
+    await page.getByTestId('field-song-save').click();
+    const viewer = page.getByTestId('field-song-viewer');
+    await expect(viewer.getByRole('heading', { name: 'Hallelujah' })).toBeVisible();
   } finally {
     await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
   }

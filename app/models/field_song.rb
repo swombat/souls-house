@@ -172,8 +172,13 @@ class FieldSong < ApplicationRecord
     self.artist = info[:artist] if artist.blank? && info[:artist].present?
     self.album = info[:album] if album.blank? && info[:album].present?
     self.year = info[:year] if year.nil? && info[:year]
+    # Last, the file's name: only where neither the person nor the tags
+    # said anything. "Jeff Buckley - Hallelujah.mp3" gives both.
     if title.blank?
-      self.title = File.basename(audio.filename.to_s, ".*").tr("_", " ").squish.truncate(200).presence
+      name = File.basename(audio.filename.to_s, ".*").tr("_", " ").sub(/\A\d{1,3}[\s.-]+/, "").squish
+      guessed_artist, guessed_title = FieldSongLookup.split_title(name)
+      self.title = guessed_title.to_s.truncate(200).presence || name.truncate(200).presence
+      self.artist = guessed_artist.truncate(200) if artist.blank? && guessed_artist
     end
   end
 

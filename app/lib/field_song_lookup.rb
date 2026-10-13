@@ -140,8 +140,9 @@ class FieldSongLookup
       http.start do |connection|
         connection.request(request) do |response|
           status = response.code.to_i
-          next unless response.is_a?(Net::HTTPSuccess)
-
+          # Every answer is read through the cap, errors and redirects too:
+          # a body left unread here gets buffered whole by Net::HTTP after
+          # the block returns, outside any limit.
           response.read_body do |chunk|
             body << chunk
             raise Failed, "#{uri.host} answered with more than we read" if body.bytesize > @max_bytes

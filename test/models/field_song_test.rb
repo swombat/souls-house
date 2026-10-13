@@ -106,6 +106,24 @@ class FieldSongTest < ActiveSupport::TestCase
     assert_in_delta 1000, record.duration_ms, 100
   end
 
+  test "a tagged file's tags beat its file name: download.mp3 is still Hallelujah" do
+    record = @account.field_songs.new(title: "", artist: "", added_by: @user)
+    record.audio.attach(io: file_fixture("field_song.mp3").open, filename: "download.mp3", content_type: "audio/mpeg")
+    record.save!
+
+    assert_equal [ "Hallelujah", "Grace" ], [ record.title, record.album ]
+    assert_not_equal "download", record.title
+  end
+
+  test "only a file with no tags is named from its file name, artist and title split at the dash" do
+    record = @account.field_songs.new(title: "", artist: "", added_by: @user)
+    record.audio.attach(io: file_fixture("field_song_untagged.mp3").open,
+                        filename: "03 - Jeff_Buckley - Lover, You Should've Come Over.mp3", content_type: "audio/mpeg")
+    record.save!
+
+    assert_equal [ "Lover, You Should've Come Over", "Jeff Buckley" ], [ record.title, record.artist ]
+  end
+
   test "a file that isn't audio is refused" do
     record = song(links: [ "https://youtu.be/y8AWFf7EAc4" ])
     record.audio.attach(Rack::Test::UploadedFile.new(file_fixture("test.txt"), "text/plain"))

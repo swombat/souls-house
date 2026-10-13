@@ -90,6 +90,19 @@ class FieldSongLookupTest < ActiveSupport::TestCase
     assert_raises(FieldSongLookup::Failed) { small.lyrics(title: "Hallelujah") }
   end
 
+  test "error and redirect answers are read through the same cap, not buffered whole" do
+    small = FieldSongLookup.new(max_bytes: 100)
+    [ 404, 503, 302 ].each do |status|
+      stub_request(:get, LRCLIB).to_return(status: status, body: "x" * 5_000, headers: { "Location" => "http://10.0.0.1/" })
+      error = assert_raises(FieldSongLookup::Failed) { small.lyrics(title: "Hallelujah") }
+      assert_match(/more than we read/, error.message, "a #{status} body wasn't capped")
+    end
+
+    stub_request(:get, %r{\Ahttps://www\.youtube\.com/oembed}).to_return(status: 404, body: "x" * 5_000)
+    error = assert_raises(FieldSongLookup::Failed) { small.from_link("https://www.youtube.com/watch?v=aaaaaaaaaaa") }
+    assert_match(/more than we read/, error.message)
+  end
+
   test "YouTube titles lose the uploader's decorations" do
     assert_equal [ "Radiohead", "No Surprises" ], FieldSongLookup.split_title("Radiohead – No Surprises [Official Music Video] (HD)")
     assert_equal [ nil, "Clair de Lune" ], FieldSongLookup.split_title("Clair de Lune (Audio)")
