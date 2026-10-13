@@ -84,9 +84,9 @@
     </div>
 
     {#if song.note}
-      <blockquote class="border-l-2 pl-4 italic whitespace-pre-wrap break-words" data-testid="field-song-note">
+      <p class="border-l-2 pl-4 font-sans italic whitespace-pre-line break-words" data-testid="field-song-note">
         {song.note}
-      </blockquote>
+      </p>
     {/if}
 
     {#if song.lyrics_state === 'present'}
