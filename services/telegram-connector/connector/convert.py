@@ -52,8 +52,10 @@ def display_name(entity):
     return getattr(entity, "title", None)
 
 
-def chat_scope(entity, self_id):
-    """Returns (kind, synced, reason)."""
+def chat_scope(entity, self_id, participants=None):
+    """Returns (kind, synced, reason). `participants` overrides the entity's
+    own participants_count, which Telegram often leaves out (the connector
+    asks for the full channel when it needs to know)."""
     if isinstance(entity, types.User):
         if entity.id == self_id:
             return "saved", True, None
@@ -65,15 +67,15 @@ def chat_scope(entity, self_id):
     if isinstance(entity, (types.Channel, types.ChannelForbidden)):
         if not getattr(entity, "megagroup", False):
             return "channel", False, "broadcast_channel"
-        count = getattr(entity, "participants_count", None)
+        count = participants if participants is not None else getattr(entity, "participants_count", None)
         if count is None or count > SMALL_GROUP:
             return "supergroup", False, "large_group"
         return "supergroup", True, None
     return None, False, None
 
 
-def chat_event(entity, self_id, last_activity=None, history_from=None):
-    kind, synced, reason = chat_scope(entity, self_id)
+def chat_event(entity, self_id, last_activity=None, history_from=None, participants=None):
+    kind, synced, reason = chat_scope(entity, self_id, participants)
     sync_state = {"synced": synced}
     if reason:
         sync_state["reason"] = reason
