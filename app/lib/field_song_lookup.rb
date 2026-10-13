@@ -15,7 +15,8 @@ class FieldSongLookup
   TIMEOUT = 6
   MAX_BYTES = 768.kilobytes
   MAX_CANDIDATES = 5
-  USER_AGENT = "souls.house Field songs (https://souls.house)"
+  # Says which house is asking, from config/house.env (never a hardcoded name).
+  USER_AGENT = [ "Field songs lookup", ENV["HOUSE_DOMAIN"].presence&.then { |d| "(https://#{d})" } ].compact.join(" ")
   YOUTUBE_OEMBED = "https://www.youtube.com/oembed"
   SPOTIFY_OEMBED = "https://open.spotify.com/oembed"
   LRCLIB_SEARCH = "https://lrclib.net/api/search"
