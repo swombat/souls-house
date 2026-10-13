@@ -107,6 +107,12 @@ class Ingest:
         self.new_chats[key] = ({"provider_chat_id": key, "kind": kind, "sync_state": {"synced": True}}, True, kind, None)
         return True
 
+    @property
+    def new_synced_chats(self):
+        """Synced chats this batch lists for the first time (or newly in
+        scope): each may have history for the backfill worker."""
+        return [key for key, (_item, synced, _kind, _participants) in self.new_chats.items() if synced]
+
     # -- content ----------------------------------------------------------------
 
     def message(self, message):

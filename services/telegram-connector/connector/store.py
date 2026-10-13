@@ -9,6 +9,15 @@ backup of it) gives nobody a Telegram login.
 Update state (pts/qts/date and per-channel pts) is only ever written in the
 same transaction as the outbox rows derived from it (proposal §5a): if the
 process dies before that commit, Telegram replays the same updates.
+
+Event sequence and restores: every number this store has ever issued is
+below the next_seq it held when this process opened it (`seq_baseline`), and
+nothing is delivered before the sequence has been checked with Rails once
+per process (rails.learn_sequence). If Rails has committed a number at or
+above that baseline, the volume is older than Rails (restored from a backup,
+or a fresh store for a connection Rails already knows); its undelivered rows
+are renumbered past Rails' sequence (`reconcile_sequence`) instead of being
+acknowledged as already applied.
 """
 
 import json
@@ -32,6 +41,8 @@ CREATE TABLE IF NOT EXISTS connections (
   pts INTEGER, qts INTEGER, date INTEGER,
   self_id INTEGER,
   next_seq INTEGER NOT NULL DEFAULT 1,
+  -- Unused since sequences are checked with Rails at every start; kept so
+  -- the schema does not change under an existing volume.
   seq_known INTEGER NOT NULL DEFAULT 0,
   updated_at REAL
 );
@@ -111,6 +122,11 @@ class Store:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.executescript(SCHEMA)
+        # next_seq of each connection as this process found it, before it
+        # issued anything (see the module docstring), and the connections
+        # whose sequence has been checked with Rails in this process.
+        self._seq_baseline = {row["ref"]: row["next_seq"] for row in self.connections()}
+        self._seq_checked = set()
 
     # -- transactions -------------------------------------------------------
 
@@ -165,6 +181,8 @@ class Store:
         with self.transaction():
             for table in ("connections", "channels", "peer_messages", "outbox", "chats", "carryover"):
                 self.db.execute(f"DELETE FROM {table} WHERE ref = ?", (ref,))
+        self._seq_baseline.pop(ref, None)
+        self._seq_checked.discard(ref)
 
     def wipe_sync_state(self, ref):
         """Forgets everything about the account a session belonged to: update
@@ -205,13 +223,13 @@ class Store:
     def restart_backfill(self, ref, chats=None):
         """After a gap Telegram will not replay (a difference too long), the
         history of the affected chats is fetched again (bounded as before)."""
+        reset = ("UPDATE chats SET backfill_offset = NULL, backfill_count = 0, backfill_done = 0, "
+                 "history_from = NULL WHERE ref = ? AND synced = 1")
         if chats is None:
-            self.db.execute("UPDATE chats SET backfill_offset = NULL, backfill_count = 0, backfill_done = 0 "
-                            "WHERE ref = ? AND synced = 1", (ref,))
+            self.db.execute(reset, (ref,))
         else:
             for chat in chats:
-                self.db.execute("UPDATE chats SET backfill_offset = NULL, backfill_count = 0, backfill_done = 0 "
-                                "WHERE ref = ? AND chat = ? AND synced = 1", (ref, chat))
+                self.db.execute(reset + " AND chat = ?", (ref, chat))
 
     # -- update state (only inside a transaction with the outbox rows) -------
 
@@ -239,6 +257,7 @@ class Store:
 
     def enqueue(self, ref, event):
         """Appends one event with the connection's next sequence number."""
+        self.seq_baseline(ref)
         row = self.connection(ref)
         seq = row["next_seq"]
         event = dict(event, seq=seq)
@@ -276,19 +295,59 @@ class Store:
         self.db.execute("DELETE FROM carryover WHERE ref = ?", (ref,))
         return len(rows)
 
+    # -- sequence check with Rails (once per process) ----------------------------
+
+    def seq_baseline(self, ref):
+        """next_seq when this process first saw the connection: every number
+        this store issued before is below it."""
+        if ref not in self._seq_baseline:
+            row = self.connection(ref)
+            if row is None:
+                return None
+            self._seq_baseline[ref] = row["next_seq"]
+        return self._seq_baseline[ref]
+
+    def sequence_checked(self, ref):
+        return ref in self._seq_checked
+
+    def forget_sequence_check(self, ref):
+        self._seq_checked.discard(ref)
+
+    def reconcile_sequence(self, ref, committed):
+        """Rails says it has committed up to `committed`. Below the baseline
+        that is ordinary (rows it committed are acknowledged on delivery).
+        At or above it, Rails holds numbers this store never issued since it
+        was last written: the volume is behind Rails. Every undelivered row
+        is renumbered from committed + 1, in order, so it is applied rather
+        than acknowledged unseen. Returns True when it renumbered."""
+        baseline = self.seq_baseline(ref)
+        if baseline is None:
+            return False
+        renumbered = committed >= baseline
+        if renumbered:
+            self.renumber(ref, committed)
+        self._seq_checked.add(ref)
+        return renumbered
+
     def renumber(self, ref, committed):
-        """A store that started its sequence at 1 learns Rails has committed up
-        to `committed` for this connection (a fresh store for a connection
-        Rails already knows): every row moves past it."""
+        """Every undelivered row moves past `committed`, keeping its order
+        and leaving no holes; delivered rows (kept for diagnosis) go, since
+        their numbers no longer mean anything to Rails."""
         with self.transaction():
-            rows = self.db.execute("SELECT seq, body FROM outbox WHERE ref = ? ORDER BY seq DESC", (ref,)).fetchall()
+            self.db.execute("DELETE FROM outbox WHERE ref = ? AND delivered = 1", (ref,))
+            rows = self.db.execute("SELECT seq, body FROM outbox WHERE ref = ? ORDER BY seq", (ref,)).fetchall()
+            # Out of the way first (negative numbers), so no new number can
+            # collide with an old one.
+            self.db.execute("UPDATE outbox SET seq = -seq WHERE ref = ?", (ref,))
+            seq = committed
             for row in rows:
+                seq += 1
                 event = self._open(ref, row["body"])
-                event["seq"] = row["seq"] + committed
+                event["seq"] = seq
                 self.db.execute("UPDATE outbox SET seq = ?, body = ? WHERE ref = ? AND seq = ?",
-                                (row["seq"] + committed, self._seal(ref, event), ref, row["seq"]))
-            self.db.execute("UPDATE connections SET next_seq = next_seq + ?, seq_known = 1 WHERE ref = ?",
-                            (committed, ref))
+                                (seq, self._seal(ref, event), ref, -row["seq"]))
+            self.db.execute("UPDATE connections SET next_seq = ? WHERE ref = ?", (seq + 1, ref))
+            self._seq_baseline[ref] = seq + 1
 
     def pending(self, ref, limit=50):
         """Undelivered rows, oldest first, as {"seq", "body"} with the body

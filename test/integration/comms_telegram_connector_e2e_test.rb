@@ -168,6 +168,54 @@ class CommsTelegramConnectorE2eTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # The connector's volume is restored from an older copy while Rails keeps
+  # its database: the store's event sequence is behind what Rails committed.
+  # At start the connector checks the sequence with Rails, finds Rails ahead
+  # of everything the store ever issued, and renumbers its undelivered events
+  # past it, so new messages are applied, not acknowledged unseen. No sign-in
+  # or other step is needed.
+  test "a connector restored from an older copy of its volume loses no new messages" do
+    sign_in @owner
+    post account_service_connections_path(@account), params: { provider: "telegram", management_scope: "personal" }
+    connection = @account.service_connections.where(provider: "telegram").order(:id).last
+    wait_until("the connector to ask for the password") { connection.reload.login_state["step"] == "password" }
+    post password_account_service_connection_login_path(@account, connection.public_id),
+         params: { password: PASSWORD, generation: connection.login_generation }
+    wait_until("connected") { connection.reload.status == "connected" }
+    alice = nil
+    wait_until("history and the first live message") do
+      alice = connection.comms_chats.find_by(provider_chat_id: "user:2001")
+      alice && live_bodies(alice).size >= 1
+    end
+
+    # The backup.
+    stop_connector
+    backup = File.join(@dir, "backup")
+    FileUtils.cp_r(@data, backup)
+    seq_at_backup = connection.reload.comms_event_seq
+
+    # The connector runs on past the backup.
+    @connector = spawn_connector
+    wait_for_connector
+    live_at_backup = live_bodies(alice).size
+    wait_until("more live messages after the backup", timeout: 40) { live_bodies(alice).size >= live_at_backup + 3 }
+    stop_connector
+    seq_before_restore = connection.reload.comms_event_seq
+    assert_operator seq_before_restore, :>, seq_at_backup
+    assert_operator live_bodies(alice).size, :<, LIVE, "some live messages are still to come after the restore"
+
+    # The restore: the volume goes back to the backup; Rails keeps its data.
+    FileUtils.rm_rf(@data)
+    FileUtils.cp_r(backup, @data)
+    @connector = spawn_connector
+    wait_for_connector
+    wait_until("every live message, after the restore", timeout: 60) { live_bodies(alice).size == LIVE }
+    assert_equal (0...LIVE).map { |n| "live #{n}#{CANARY}" }, live_bodies(alice).sort_by { |body| body[/\d+/].to_i }
+    assert_operator connection.reload.comms_event_seq, :>, seq_before_restore
+    assert_equal "connected", connection.status
+    assert_includes File.read(@connector_log), "store is behind Rails"
+  end
+
   private
 
   # Bodies are encrypted (non-deterministically), so they are filtered here,

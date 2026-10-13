@@ -166,7 +166,7 @@ jobs:
         # requirements.txt pins the whole tree; --no-deps as in the Docker build.
         run: |
           python3 -m pip install --no-deps -r requirements.txt
-          python3 -m unittest discover -s tests
+          python3 -m unittest discover -s tests -t . -p '*test*.py'
 
   result:
     name: CI result

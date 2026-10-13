@@ -72,11 +72,15 @@ async def post_event(store, ref, post, event):
 
 
 async def learn_sequence(store, ref, post):
-    """A store whose sequence started at 1 asks Rails where it is, so a row
-    can never be numbered at or below what Rails already committed (which
-    Rails would acknowledge without applying). Returns True once known."""
+    """Once per process, before anything is delivered, asks Rails how far it
+    has committed (a probe Rails answers with sequence_gap and its sequence,
+    applying nothing). A store that is behind Rails, because it is fresh or
+    was restored from an older copy of the volume, would otherwise number new
+    rows at or below what Rails committed, and Rails would acknowledge them
+    without applying them; store.reconcile_sequence renumbers them past it.
+    Returns True once checked."""
     row = store.connection(ref)
-    if row is None or row["seq_known"]:
+    if row is None or store.sequence_checked(ref):
         return True
     secret = store.callback_secret(ref)
     if not secret:
@@ -90,7 +94,9 @@ async def learn_sequence(store, ref, post):
         return False
     committed = reply.get("committed_seq") if isinstance(reply, dict) else None
     if status == 409 and isinstance(committed, int):
-        store.renumber(ref, committed)
+        if store.reconcile_sequence(ref, committed) and row["next_seq"] > 1:
+            log.warning("store is behind Rails (restored from an older copy?); "
+                        "undelivered events renumbered past Rails' sequence")
         return True
     if status == 410:
         return False
@@ -135,6 +141,13 @@ class Deliverer:
                     return Outcome.REVOKED, delivered
                 committed = reply.get("committed_seq") if isinstance(reply, dict) else None
                 if status in (200, 409) and isinstance(committed, int):
+                    if committed >= store.connection(ref)["next_seq"]:
+                        # Rails has committed numbers this store never
+                        # issued: nothing it acknowledges here was applied.
+                        # Check the sequence again before sending anything.
+                        log.warning("Rails is ahead of every event this store issued; checking the sequence again")
+                        store.forget_sequence_check(ref)
+                        return Outcome.FAILED, delivered
                     self.refusals.pop(row["seq"], None)
                     store.mark_delivered(ref, committed)
                     if committed < row["seq"]:

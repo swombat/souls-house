@@ -76,12 +76,27 @@ unsynced ones with `synced: false` and a reason), `message.upsert`,
 `message.edit`, `message.delete` (non-channel deletes resolved through the
 durable peer map, the rest counted as `unresolved`), `sync.checkpoint`.
 Batches are at most 200 items and about 512 KiB. Rails acknowledges the
-highest sequence it committed; only then are rows marked delivered. A store
-whose sequence starts at 1 first asks Rails where it is (a deliberate
-`sequence_gap`) and renumbers. A 410 `connection_revoked` (the owner's
+highest sequence it committed; only then are rows marked delivered. A 410 `connection_revoked` (the owner's
 disconnect never reached the connector) deletes the connection, logging it
 out at Telegram first. An event refused 422/413 five times in a row is
 replaced in place by a no-op, so the sequence keeps no hole.
+
+**A fresh or restored volume.** Every process, before it delivers anything,
+asks Rails how far it has committed (a deliberate `sequence_gap` probe that
+applies nothing). Every number the store ever issued is below the `next_seq`
+it held when the process opened it. If Rails has committed a number at or
+above that, the store is behind Rails: a fresh store for a connection Rails
+knows, or a volume restored from an older copy. Its undelivered events are
+then renumbered, in order, past Rails' sequence (logged as "store is behind
+Rails"), so they are applied rather than acknowledged unseen; the restored
+update state replays from Telegram what the copy had not seen (or, past
+Telegram's limit, refetches the synced chats' history). No step is needed
+after a restore beyond starting the connector, and signing in again is not
+part of the recovery. A reply from Rails ahead of every number issued, at any
+time, is never taken as delivery: the sequence is checked again first.
+Tested end to end: `test/integration/comms_telegram_connector_e2e_test.rb`
+restores the real process's volume from a backup while Rails keeps its data,
+and every live message still arrives.
 
 When a new attempt starts while the previous session's chats and messages are
 undelivered, they would be refused (the connection is pairing) and block the
@@ -134,14 +149,21 @@ older than 7 days, sync and backfill stop fetching. Nothing is
 acknowledged and no state moves; the updates wait at Telegram. Rails is told
 `connector.availability: backlogged` out of band. Below `outbox_low` (5,000)
 fetching resumes from the stored state and Rails is told `ok`. A restart
-while saturated loses nothing (tested).
+while saturated loses nothing (tested). A `sync.checkpoint` claims only the
+start of a pass whose account and channel differences all ran to the end; a
+pass cut short by saturation claims nothing.
 
 **Backfill never starves login, logout or live sync.** Backfill is its own
 task: one bounded page (100) of one chat at a time, round robin, with a pause
 between pages, and it never holds the account's command lock. A FloodWait
 in backfill pauses backfill for the whole account (account-level), not live
 sync, search, login or logout (tested). Scope: the last 30 days, at most 500
-messages per synced chat, reported as `history_from`.
+messages per synced chat, reported as `history_from`: the 30-day cutoff when
+the window ended the backfill, the oldest message fetched when the 500 cap
+did (never more than what was fetched). A chat first seen by live sync wakes
+the backfill worker for its history. When a gap Telegram will not replay
+resets history cursors, a history page already in flight is dropped rather
+than committed over the reset.
 
 **At rest.** The session, the callback secret and every outbox/carryover body
 are AES-GCM sealed under HKDF-SHA256(`COMMS_STORE_KEY`, salt

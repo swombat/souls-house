@@ -5,7 +5,7 @@ PYTHON ?= python3
 .PHONY: test e2e
 
 test:
-	$(PYTHON) -m unittest discover -s tests -t .
+	$(PYTHON) -m unittest discover -s tests -t . -p '*test*.py'
 
 # Rails ↔ the real connector process, with the fake Telegram (run from the
 # repository root's test environment; see README.md).

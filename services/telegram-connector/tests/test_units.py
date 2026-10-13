@@ -122,7 +122,6 @@ class StoreTest(unittest.TestCase):
         store.renumber("svc_1", 40)
         self.assertEqual([41, 42, 43], [json.loads(r["body"])["seq"] for r in store.pending("svc_1")])
         self.assertEqual(44, store.connection("svc_1")["next_seq"])
-        self.assertEqual(1, store.connection("svc_1")["seq_known"])
 
 
 class DeliveryTest(unittest.IsolatedAsyncioTestCase):

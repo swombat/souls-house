@@ -110,6 +110,9 @@ class Account:
         self.dirty_channels = set()
         self.backlogged = False
         self.flood_until = 0.0
+        # Bumped whenever a gap resets history cursors: a history page that
+        # was in flight across a reset is dropped, not committed over it.
+        self.backfill_resets = 0
         self.closed = False
 
     # -- helpers ----------------------------------------------------------------
@@ -506,6 +509,10 @@ class Account:
         delay = 1.0
         first = True
         last_dialogs = last_channels = last_checkpoint = loop.time()
+        # The start of the last pass whose account difference and channel
+        # differences all ran to the end: the only coverage a checkpoint may
+        # claim. A pass cut short by saturation establishes nothing.
+        established = published = None
         while True:
             try:
                 await self.wait_capacity()
@@ -513,16 +520,20 @@ class Account:
                     await self._refresh_dialogs(force=first)
                     first, last_dialogs = False, loop.time()
                 started = time.time()
-                await self.account_difference()
+                complete = await self.account_difference()
                 if loop.time() - last_channels >= settings.channel_poll_interval:
                     self.dirty_channels.update(self.store.channel_pts(self.ref))
                     last_channels = loop.time()
                 while self.dirty_channels:
                     await self.wait_capacity()
-                    await self.channel_difference(self.dirty_channels.pop())
+                    complete = await self.channel_difference(self.dirty_channels.pop()) and complete
+                if complete:
+                    established = started
                 if loop.time() - last_checkpoint >= settings.checkpoint_interval:
-                    self._checkpoint(started)
-                    last_checkpoint = loop.time()
+                    fresh = established if established is not None and established != published else None
+                    self._checkpoint(fresh)
+                    if fresh is not None:
+                        published, last_checkpoint = fresh, loop.time()
                 delay = 1.0
             except asyncio.CancelledError:
                 raise
@@ -548,6 +559,17 @@ class Account:
 
     def _ingest(self):
         return Ingest(self.store, self.ref, self._row()["self_id"], self.me)
+
+    def _ingested(self, ingest):
+        """After a live commit: delivery has rows, and a synced chat seen for
+        the first time has history waiting for the backfill worker."""
+        self.delivery_wake.set()
+        if ingest.new_synced_chats:
+            self.backfill_wake.set()
+
+    def _history_reset(self):
+        self.backfill_resets += 1
+        self.backfill_wake.set()
 
     async def _refresh_dialogs(self, force):
         dialogs = await self.client.dialogs()
@@ -582,10 +604,12 @@ class Account:
 
     async def account_difference(self):
         """getDifference from the stored state until Telegram has nothing
-        more, one committed batch per answer."""
+        more, one committed batch per answer. Returns True when it reached
+        the end, False when saturation stopped it with Telegram holding more
+        (the stored state is then behind Telegram's)."""
         while True:
             if self._over_cap():
-                return
+                return False
             row = self._row()
             diff = await self.client.get_difference(row["pts"], row["date"], row["qts"])
             ingest = self._ingest()
@@ -593,7 +617,7 @@ class Account:
                 date = int(diff.date.timestamp())
                 if date != row["date"]:
                     ingest.commit(lambda store: store.update_connection(self.ref, date=date), label="live")
-                return
+                return True
             if isinstance(diff, types.updates.DifferenceTooLong):
                 # Telegram will not replay the gap: take its pts and fetch the
                 # synced chats' recent history again (§5a fallback).
@@ -602,8 +626,8 @@ class Account:
                     store.restart_backfill(self.ref, [c["chat"] for c in store.chats(self.ref, synced=True)
                                                       if not c["chat"].startswith("channel:")])
                 ingest.commit(too_long, label="live")
+                self._history_reset()
                 log.warning("difference too long; history refetched: account=%s", self.id)
-                self.backfill_wake.set()
                 continue
             state = diff.state if isinstance(diff, types.updates.Difference) else diff.intermediate_state
             ingest.difference(diff)
@@ -612,29 +636,31 @@ class Account:
                 store.update_connection(self.ref, pts=state.pts, qts=state.qts, date=int(state.date.timestamp()))
             ingest.commit(progress, label="live")
             self.dirty_channels.update(ingest.dirty_channels)
-            self.delivery_wake.set()
+            self._ingested(ingest)
             if isinstance(diff, types.updates.Difference):
-                return
+                return True
 
     async def channel_difference(self, channel_id):
+        """Like account_difference, for one channel. Returns False when
+        saturation stopped it (the channel stays dirty)."""
         pts = self.store.channel_pts(self.ref).get(channel_id)
         if pts is None:
-            return
+            return True
         while True:
             if self._over_cap():
                 self.dirty_channels.add(channel_id)
-                return
+                return False
             try:
                 diff = await self.client.get_channel_difference(channel_id, pts)
             except (errors.ChannelPrivateError, errors.ChannelInvalidError):
                 with self.store.transaction():
                     self.store.db.execute("DELETE FROM channels WHERE ref = ? AND channel_id = ?", (self.ref, channel_id))
-                return
+                return True
             ingest = self._ingest()
             if isinstance(diff, types.updates.ChannelDifferenceEmpty):
                 if diff.pts != pts:
                     ingest.commit(lambda store, p=diff.pts: store.set_channel_pts(self.ref, channel_id, p), label="channel")
-                return
+                return True
             if isinstance(diff, types.updates.ChannelDifferenceTooLong):
                 ingest.add_entities(diff.users, diff.chats)
                 for message in diff.messages:
@@ -645,20 +671,23 @@ class Account:
                     store.set_channel_pts(self.ref, channel_id, p)
                     store.restart_backfill(self.ref, [f"channel:{channel_id}"])
                 ingest.commit(too_long, label="channel")
-                self.backfill_wake.set()
-                self.delivery_wake.set()
-                return
+                self._history_reset()
+                self._ingested(ingest)
+                return True
             ingest.difference(diff)
             ingest.commit(lambda store, p=diff.pts: store.set_channel_pts(self.ref, channel_id, p), label="channel")
-            self.delivery_wake.set()
+            self._ingested(ingest)
             pts = diff.pts
             if diff.final:
-                return
+                return True
 
     def _checkpoint(self, through):
         """Every synced, backfilled chat is in the outbox up to `through` (the
-        start of the difference that just finished), and this event is queued
-        after those rows, so Rails never shows a checkpoint ahead of its data."""
+        start of a pass whose differences all ran to the end; None when no
+        new one has), and this event is queued after those rows, so Rails
+        never shows a checkpoint ahead of its data."""
+        if through is None:
+            return
         chats = [{"provider_chat_id": c["chat"], "synced_through": now_iso(
                     datetime.datetime.fromtimestamp(through, datetime.timezone.utc))}
                  for c in self.store.chats(self.ref, synced=True) if c["backfill_done"]]
@@ -707,35 +736,59 @@ class Account:
 
     async def backfill_page(self, chat_key):
         """One page of one chat's history, newest first, committed with the
-        chat's backfill cursor."""
+        chat's backfill cursor. A page whose request was in flight while a
+        gap reset the cursors is dropped: the next page starts from the
+        reset (newest) end, so the gap's messages are fetched."""
         settings = self.settings
         chat = self.store.chat(self.ref, chat_key)
         if chat is None or chat["backfill_done"] or not chat["synced"]:
             return
+        resets = self.backfill_resets
         messages, users, chats = await self.client.history(chat_key, chat["backfill_offset"], settings.backfill_page)
+        if resets != self.backfill_resets:
+            log.info("history page dropped after a gap reset: account=%s", self.id)
+            return
+        chat = self.store.chat(self.ref, chat_key)
+        if chat is None or chat["backfill_done"] or not chat["synced"]:
+            return
         cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=settings.backfill_days)
         room = settings.backfill_max - chat["backfill_count"]
         keep = []
+        reached_cutoff = capped = False
         for message in messages:
             date = message.date if message.date.tzinfo else message.date.replace(tzinfo=datetime.timezone.utc)
-            if date < cutoff or len(keep) >= room:
+            if date < cutoff:
+                reached_cutoff = True
+                break
+            if len(keep) >= room:
+                capped = True
                 break
             keep.append(message)
-        done = (len(messages) < settings.backfill_page or len(keep) < len(messages)
-                or chat["backfill_count"] + len(keep) >= settings.backfill_max)
+        if not reached_cutoff and chat["backfill_count"] + len(keep) >= settings.backfill_max:
+            capped = True
+        done = len(messages) < settings.backfill_page or reached_cutoff or capped
         offset = min((m.id for m in messages), default=chat["backfill_offset"])
         ingest = self._ingest()
         ingest.add_entities(users, chats)
         for message in keep:
             ingest.message(message)
-        history_from = None
+        # The oldest message kept so far, carried across pages in the chat's
+        # history_from column (published to Rails only when done).
+        oldest = convert.iso(keep[-1].date) if keep else chat["history_from"]
+        history_from = oldest
         after = []
         if done:
             # history_from: how far back this chat's synced history reaches.
-            if keep and len(keep) == len(messages) and len(messages) < settings.backfill_page:
-                history_from = convert.iso(keep[-1].date)  # the chat's whole history
-            else:
+            # The window when the cutoff ended it, or when the chat's whole
+            # history was shorter (nothing before its oldest message); only
+            # as far as the oldest message kept when the count cap ended it
+            # (never more than what was fetched).
+            if reached_cutoff:
                 history_from = convert.iso(cutoff)
+            elif capped:
+                history_from = oldest or now_iso()
+            else:
+                history_from = oldest or convert.iso(cutoff)  # the chat's whole history
             after.append({"type": "chat.upsert", "chats": [
                 {"provider_chat_id": chat_key, "sync_state": {"synced": True, "history_from": history_from}}]})
         count = chat["backfill_count"] + len(keep)
