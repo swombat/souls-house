@@ -379,7 +379,7 @@ class Account:
         with self.store.transaction():
             self.store.set_session(self.ref, self.client.session_string())
             self.store.update_connection(
-                self.ref, status="connected", self_id=user.id, identity=json.dumps(identity),
+                self.ref, status="connected", self_id=user.id,
                 pts=state.pts, qts=state.qts, date=int(state.date.timestamp()))
             self.store.enqueue(self.ref, {"type": "status.changed", "status": "connected",
                                           "generation": generation, "identity": identity})

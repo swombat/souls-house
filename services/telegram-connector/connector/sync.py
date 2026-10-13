@@ -210,9 +210,12 @@ class Ingest:
                 store.upsert_chat(ref, key, synced, kind, participants)
             for message_id, chat in self.peers.items():
                 store.remember_peer(ref, message_id, chat)
-            store.checkpoint(f"{label}:after_outbox")
+            if events:
+                store.checkpoint(f"{label}:after_outbox")
             if progress:
                 progress(store)
-            store.checkpoint(f"{label}:after_progress")
-        store.checkpoint(f"{label}:after_commit")
+            if events:
+                store.checkpoint(f"{label}:after_progress")
+        if events:
+            store.checkpoint(f"{label}:after_commit")
         return len(events)

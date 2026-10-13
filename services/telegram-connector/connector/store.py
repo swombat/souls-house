@@ -1,7 +1,8 @@
 """The connector's own store: SQLite on the connector's volume.
 
 S2a runs one connector process, so a single SQLite file is the whole store.
-Secret columns (the Telegram session, the callback secret) are AES-GCM under
+Secret and content columns (the Telegram session, the callback secret, every
+outbox and carryover body) are AES-GCM under
 a key derived per connection from COMMS_STORE_KEY, so the file alone (or a
 backup of it) gives nobody a Telegram login.
 
@@ -43,7 +44,7 @@ CREATE TABLE IF NOT EXISTS chats (
   PRIMARY KEY (ref, chat)
 );
 CREATE TABLE IF NOT EXISTS carryover (
-  ref TEXT NOT NULL, ord INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL
+  ref TEXT NOT NULL, ord INTEGER PRIMARY KEY AUTOINCREMENT, body BLOB NOT NULL
 );
 CREATE TABLE IF NOT EXISTS channels (
   ref TEXT NOT NULL, channel_id INTEGER NOT NULL, pts INTEGER NOT NULL,
@@ -54,7 +55,7 @@ CREATE TABLE IF NOT EXISTS peer_messages (
   PRIMARY KEY (ref, message_id)
 );
 CREATE TABLE IF NOT EXISTS outbox (
-  ref TEXT NOT NULL, seq INTEGER NOT NULL, body TEXT NOT NULL,
+  ref TEXT NOT NULL, seq INTEGER NOT NULL, body BLOB NOT NULL,
   delivered INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL,
   PRIMARY KEY (ref, seq)
 );
@@ -242,7 +243,7 @@ class Store:
         seq = row["next_seq"]
         event = dict(event, seq=seq)
         self.db.execute("INSERT INTO outbox (ref, seq, body, created_at) VALUES (?, ?, ?, ?)",
-                        (ref, seq, encode(event), time.time()))
+                        (ref, seq, self._seal(ref, event), time.time()))
         self.db.execute("UPDATE connections SET next_seq = ? WHERE ref = ?", (seq + 1, ref))
         return seq
 
@@ -250,7 +251,7 @@ class Store:
         """Rewrites one undelivered row in place, keeping its sequence number
         (Rails needs the sequence without holes)."""
         self.db.execute("UPDATE outbox SET body = ? WHERE ref = ? AND seq = ? AND delivered = 0",
-                        (encode(dict(event, seq=seq)), ref, seq))
+                        (self._seal(ref, dict(event, seq=seq)), ref, seq))
 
     def set_aside_pending(self, ref, keep):
         """A new login attempt: Rails will refuse the old session's chats and
@@ -261,17 +262,17 @@ class Store:
         with self.transaction():
             for row in self.db.execute("SELECT seq, body FROM outbox WHERE ref = ? AND delivered = 0 ORDER BY seq",
                                        (ref,)).fetchall():
-                event = json.loads(row["body"])
+                event = self._open(ref, row["body"])
                 if keep(event):
                     event.pop("seq", None)
-                    self.db.execute("INSERT INTO carryover (ref, body) VALUES (?, ?)", (ref, encode(event)))
+                    self.db.execute("INSERT INTO carryover (ref, body) VALUES (?, ?)", (ref, self._seal(ref, event)))
                 self.replace_pending(ref, row["seq"], NOOP_EVENT)
 
     def take_carryover(self, ref):
         """Moves the carryover back into the outbox (call inside a transaction)."""
         rows = self.db.execute("SELECT ord, body FROM carryover WHERE ref = ? ORDER BY ord", (ref,)).fetchall()
         for row in rows:
-            self.enqueue(ref, json.loads(row["body"]))
+            self.enqueue(ref, self._open(ref, row["body"]))
         self.db.execute("DELETE FROM carryover WHERE ref = ?", (ref,))
         return len(rows)
 
@@ -282,17 +283,28 @@ class Store:
         with self.transaction():
             rows = self.db.execute("SELECT seq, body FROM outbox WHERE ref = ? ORDER BY seq DESC", (ref,)).fetchall()
             for row in rows:
-                event = json.loads(row["body"])
+                event = self._open(ref, row["body"])
                 event["seq"] = row["seq"] + committed
                 self.db.execute("UPDATE outbox SET seq = ?, body = ? WHERE ref = ? AND seq = ?",
-                                (row["seq"] + committed, encode(event), ref, row["seq"]))
+                                (row["seq"] + committed, self._seal(ref, event), ref, row["seq"]))
             self.db.execute("UPDATE connections SET next_seq = next_seq + ?, seq_known = 1 WHERE ref = ?",
                             (committed, ref))
 
     def pending(self, ref, limit=50):
-        return self.db.execute(
+        """Undelivered rows, oldest first, as {"seq", "body"} with the body
+        opened (the JSON text that is posted)."""
+        rows = self.db.execute(
             "SELECT seq, body FROM outbox WHERE ref = ? AND delivered = 0 ORDER BY seq LIMIT ?", (ref, limit)
         ).fetchall()
+        return [{"seq": row["seq"], "body": self.crypto.open(ref, row["body"])} for row in rows]
+
+    def _seal(self, ref, event):
+        # Outbox and carryover rows hold message text, names and captions:
+        # sealed like the session, so the volume holds no content in clear.
+        return self.crypto.seal(ref, encode(event))
+
+    def _open(self, ref, sealed):
+        return json.loads(self.crypto.open(ref, sealed))
 
     def pending_count(self, ref):
         return self.db.execute("SELECT COUNT(*) FROM outbox WHERE ref = ? AND delivered = 0", (ref,)).fetchone()[0]
