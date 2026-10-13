@@ -54,6 +54,13 @@ production:
     queue: default
     schedule: every 5 minutes
 
+  # Retries WhatsApp disconnects the comms connector has not confirmed
+  # (ServiceConnection#unpair_pending?).
+  comms_unpair_retry:
+    class: CommsUnpairJob
+    queue: default
+    schedule: every 5 minutes
+
   rhythms:
     class: RhythmSweepJob
     queue: default

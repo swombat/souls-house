@@ -127,7 +127,9 @@ Rails.application.routes.draw do
     resource :resident_room, only: :update, module: :accounts
     resources :service_authorizations, only: :create
     resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts do
-      resource :pairing, only: :show, controller: "service_connection_pairings"
+      resource :pairing, only: :show, controller: "service_connection_pairings" do
+        post :restart
+      end
       resource :login, only: [], controller: "service_connection_logins" do
         post :password
         post :restart
@@ -357,7 +359,9 @@ Rails.application.routes.draw do
           resources :visual_tags, only: %i[create update destroy]
           resources :api_keys, only: %i[index destroy]
           resources :guest_memberships, only: %i[index create destroy]
-          resources :service_connections, only: %i[index update destroy]
+          resources :service_connections, only: %i[index create update destroy] do
+            get :providers, on: :collection
+          end
           resource :ai_provider_keys, only: %i[show update]
         end
       end

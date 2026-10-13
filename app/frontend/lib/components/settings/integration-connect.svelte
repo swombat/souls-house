@@ -1,16 +1,7 @@
 <script>
+  import ServiceIcon from '$lib/components/service-icon.svelte';
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
-  import {
-    DropboxLogo,
-    GithubLogo,
-    Funnel,
-    Bug,
-    ShareNetwork,
-    GoogleLogo,
-    Heartbeat,
-    TelegramLogo,
-  } from 'phosphor-svelte';
   import { serviceIconClass } from '$lib/service-presentation';
   import { submitNativePost } from '$lib/integration-forms';
   import TailscaleKeyNote from './tailscale-key-note.svelte';
@@ -94,23 +85,7 @@
 <div class="space-y-5 rounded-xl border bg-card p-6 shadow-sm">
   <div class="flex items-center gap-4">
     <div class={`flex size-12 items-center justify-center rounded-xl ${serviceIconClass(focusedService.key)}`}>
-      {#if focusedService.key === 'dropbox'}
-        <DropboxLogo size={26} weight="fill" />
-      {:else if focusedService.key === 'google_workspace'}
-        <GoogleLogo size={26} weight="bold" />
-      {:else if focusedService.key === 'github'}
-        <GithubLogo size={26} weight="fill" />
-      {:else if focusedService.key === 'pipedrive'}
-        <Funnel size={26} weight="bold" />
-      {:else if focusedService.key === 'honeybadger'}
-        <Bug size={26} weight="bold" />
-      {:else if focusedService.key === 'tailscale'}
-        <ShareNetwork size={26} weight="bold" />
-      {:else if focusedService.key === 'telegram'}
-        <TelegramLogo size={26} weight="fill" />
-      {:else}
-        <Heartbeat size={26} weight="fill" />
-      {/if}
+      <ServiceIcon provider={focusedService.key} size={26} />
     </div>
     <h2 class="text-xl font-semibold">{focusedService.name}</h2>
   </div>
@@ -177,6 +152,23 @@
           and act as you in Honeybadger. The token carries all of your permissions, so a resident could resolve or
           delete errors too; they are told to read unless asked. Find it under User settings → Authentication. It is not
           a project's API key.
+        </div>
+      {/if}
+      {#if focusedService.key === 'porkbun'}
+        <div class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+          Residents with this connection can change DNS records, URL forwards and nameservers on your Porkbun domains,
+          which can take a site or its email offline if done wrong. Create the key under Account → API Access and give
+          it the <span class="font-medium">dns</span> scope (add <span class="font-medium">domains</span> for nameservers).
+          A full-access key can also buy and renew domains and add credit; residents are told not to, but only the scopes
+          actually stop it. If a domain refuses, switch on API Access for it in Porkbun.
+        </div>
+      {/if}
+      {#if focusedService.key === 'cloudflare'}
+        <div class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+          Residents with this connection can do whatever the token allows on your Cloudflare zones. Create it under My
+          Profile → API Tokens → Create Token, starting from the "Edit zone DNS" template, limited to the zones
+          residents should manage; add the Single Redirect permission if they should manage redirects. Don't use the
+          Global API Key.
         </div>
       {/if}
       {#if focusedService.key === 'tailscale'}

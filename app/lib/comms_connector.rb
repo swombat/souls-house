@@ -1,25 +1,65 @@
 require "net/http"
 
-# Rails → comms connector commands, signed with the connection's callback
-# secret exactly as the connector signs its events (CommsSignature). There are
-# two commands and no send: start pairing, and unpair.
+# Rails → comms connector commands. There is no send.
 #
-# COMMS_CONNECTOR_URL names the private-network connector. While it is unset
-# (development, tests, and every deploy before the accessory exists) a
-# command is not sent; the intent is logged and :not_configured returned.
+# Every command, for every provider, goes over mutual TLS and is signed with
+# the connector-wide COMMS_COMMAND_KEY (CommsCommandSignature), because some
+# carry secrets: start_pairing / start_login hand the connector the
+# connection's callback secret (proposal 2026-10-11 §5, which settles the
+# WhatsApp proposal's open "secret bootstrap"). The connector cannot verify a
+# command with a secret it does not hold yet, so the per-connection secret is
+# only ever used for connector → Rails events (CommsSignature).
+#
+# WhatsApp and Telegram are separate connectors (Go/whatsmeow and
+# Python/Telethon), so each has its own URL: COMMS_WHATSAPP_CONNECTOR_URL and
+# COMMS_CONNECTOR_URL. While a provider's URL is unset (development, tests,
+# and every deploy before its accessory exists) a command is not sent; the
+# intent is logged and :not_configured returned.
 module CommsConnector
 
   COMMANDS = %w[start_pairing unpair].freeze
+  WHATSAPP_URL_ENV = "COMMS_WHATSAPP_CONNECTOR_URL".freeze
+  # Everything a WhatsApp command needs; the catalog hides WhatsApp until all
+  # of it is set.
+  WHATSAPP_ENV = [ WHATSAPP_URL_ENV, "COMMS_COMMAND_KEY",
+                   "COMMS_CONNECTOR_CLIENT_CERT", "COMMS_CONNECTOR_CLIENT_KEY", "COMMS_CONNECTOR_CA_FILE" ].freeze
 
   class Error < StandardError; end
+  # An unpair that could not be sent because no connector is configured.
+  # Not a confirmation: the accessory outlives Rails deploys and its
+  # configuration, so it may still hold the device.
+  class NotConfigured < Error; end
 
   module_function
 
-  def start_pairing(connection) = deliver(connection, "start_pairing")
-  def unpair(connection) = deliver(connection, "unpair")
+  # WhatsApp. start_pairing hands over the callback secret with its version;
+  # the connector never installs a version lower than the one it holds.
+  def start_pairing(connection)
+    payload = connection.credential_payload_hash
+    secret = payload["callback_secret"]
+    raise Error, "#{connection.public_id} has no callback secret" if secret.blank?
 
-  # Telegram commands (proposal 2026-10-11 §5). Unlike WhatsApp's, some of
-  # these carry secrets (the callback secret, a two-step password), so:
+    command(connection, "start_pairing", url: ENV[WHATSAPP_URL_ENV].presence,
+                                         callback_secret: secret,
+                                         callback_secret_version: [ payload["callback_secret_version"].to_i, 1 ].max)
+  end
+
+  def unpair(connection)
+    command(connection, "unpair", url: ENV[WHATSAPP_URL_ENV].presence)
+  end
+
+  # Unpair, raising NotConfigured instead of returning :not_configured, for
+  # callers that must only treat a real reply as confirmation.
+  def unpair!(connection)
+    result = unpair(connection)
+    raise NotConfigured, "no WhatsApp connector is configured" if result == :not_configured
+
+    result
+  end
+
+  # Telegram commands (proposal 2026-10-11 §5). Like WhatsApp's, some of
+  # these carry secrets (the callback secret, a two-step password), so for
+  # both providers:
   #
   # - the connector must be reached over https with mutual TLS: Rails's
   #   client certificate and key (COMMS_CONNECTOR_CLIENT_CERT/_KEY) and the
@@ -36,12 +76,16 @@ module CommsConnector
   def telegram_command(connection, operation, **fields)
     raise ArgumentError, "unknown telegram command #{operation}" unless TELEGRAM_COMMANDS.include?(operation)
 
-    unless base_url
+    command(connection, operation, url: base_url, **fields)
+  end
+
+  def command(connection, operation, url:, **fields)
+    unless url
       Rails.logger.info("[comms] connector not configured; #{operation} intended for #{connection.public_id}")
       return :not_configured
     end
 
-    uri = URI.join(base_url, "/connections/#{connection.public_id}/#{operation}")
+    uri = URI.join(url, "/connections/#{connection.public_id}/#{operation}")
     raise Error, "the comms connector must be reached over https" unless uri.scheme == "https"
     tls = tls_options
 
@@ -89,34 +133,6 @@ module CommsConnector
 
   def base_url
     ENV["COMMS_CONNECTOR_URL"].presence
-  end
-
-  def deliver(connection, command)
-    raise ArgumentError, "unknown comms command #{command}" unless COMMANDS.include?(command)
-
-    unless base_url
-      Rails.logger.info("[comms] connector not configured; #{command} intended for #{connection.public_id}")
-      return :not_configured
-    end
-
-    secret = connection.credential_payload_hash["callback_secret"]
-    raise Error, "#{connection.public_id} has no callback secret" if secret.blank?
-
-    uri = URI.join(base_url, "/connections/#{connection.public_id}/#{command}")
-    body = JSON.generate(command: command)
-    request = Net::HTTP::Post.new(uri)
-    request["Content-Type"] = "application/json"
-    CommsSignature.headers_for(
-      secret:, connection_id: connection.public_id, method: "POST", path: uri.path, body:
-    ).each { |name, value| request[name] = value }
-    request.body = body
-
-    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https", open_timeout: 5, read_timeout: 15) do |http|
-      http.request(request)
-    end
-    raise Error, "comms connector #{command} failed (#{response.code})" unless response.is_a?(Net::HTTPSuccess)
-
-    :sent
   end
 
 end

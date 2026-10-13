@@ -124,6 +124,45 @@ class DeployTemplateTest < ActiveSupport::TestCase
     assert_not_includes secrets, "$(cat "
   end
 
+  # The WhatsApp connector is off until an installation turns it on: master
+  # auto-deploys, and a deploy.yml that demanded its secrets would fail every
+  # deploy before the accessory exists.
+  test "the WhatsApp connector is absent unless HOUSE_COMMS_WHATSAPP_IMAGE is set" do
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST)) do
+      config = YAML.safe_load(render_deploy_yml)
+      assert_not config.fetch("accessories").key?("comms-whatsapp")
+      assert_not config.fetch("env").fetch("clear").key?("COMMS_WHATSAPP_CONNECTOR_URL")
+      assert_not_includes config.fetch("env").fetch("secret"), "COMMS_COMMAND_KEY"
+    end
+  end
+
+  test "turning the WhatsApp connector on wires Rails and the accessory together" do
+    comms = { "HOUSE_COMMS_WHATSAPP_IMAGE" => "registry.example/comms", "HOUSE_COMMS_WHATSAPP_DIGEST" => DUMMY_DIGEST,
+              "HOUSE_COMMS_TLS_DIR" => "/srv/comms-tls" }
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(comms)) do
+      config = YAML.safe_load(render_deploy_yml)
+      accessory = config.fetch("accessories").fetch("comms-whatsapp")
+      assert_equal "registry.example/comms@#{DUMMY_DIGEST}", accessory.fetch("image")
+      assert_includes accessory.fetch("volumes"), "comms:/data"
+      assert_equal "core=0", accessory.fetch("options").fetch("ulimit")
+      assert_equal %w[COMMS_STORE_KEY COMMS_COMMAND_KEY], accessory.fetch("env").fetch("secret")
+      assert_equal "rails", accessory.dig("env", "clear", "COMMS_TLS_CLIENT_NAME")
+
+      runtime = config.fetch("env")
+      assert_equal "https://souls-house-comms-whatsapp:8443", runtime.dig("clear", "COMMS_WHATSAPP_CONNECTOR_URL")
+      assert_includes runtime.fetch("secret"), "COMMS_COMMAND_KEY"
+      # Everything the catalog requires before it offers WhatsApp is supplied.
+      supplied = runtime.fetch("clear").keys + runtime.fetch("secret")
+      assert_empty CommsConnector::WHATSAPP_ENV - supplied
+      %w[web jobs].each do |role|
+        assert_includes config.dig("servers", role, "options", "volume"), "/srv/comms-tls:/rails/comms-tls:ro"
+      end
+    end
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(comms).merge("HOUSE_COMMS_WHATSAPP_DIGEST" => "latest")) do
+      assert_raises(RuntimeError) { render_deploy_yml }
+    end
+  end
+
   private
 
   def render_deploy_yml

@@ -28,6 +28,13 @@ module Internal
       end
 
       def create
+        # A disconnected connection has no secret to verify with. It answers
+        # 410 so a connector that never received the unpair (the owner's
+        # disconnect failed to reach it) stops collecting and deletes the
+        # connection's store. The answer says only that the connection is
+        # revoked, and only to the private network.
+        return refuse(:connection_revoked, :gone) if connection.status == "revoked"
+
         nonce = CommsSignature.verify!(
           secret: connection.credential_payload_hash["callback_secret"],
           expected_connection_id: connection.public_id,

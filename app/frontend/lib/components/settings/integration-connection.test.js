@@ -134,3 +134,20 @@ describe('a signed-in Telegram connection', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });
+
+describe('a WhatsApp disconnect the connector has not confirmed', () => {
+  const whatsapp = { provider: 'whatsapp', label: 'WhatsApp', management_scope: 'personal', can_manage: true };
+
+  it('says the linked device may still be there, and how to remove it now', () => {
+    mount({ ...whatsapp, status: 'revoked', comms: { chats: 3, unpair_pending: { attempts: 2 } } });
+    expect(screen.getByTestId('unpair-pending')).toHaveTextContent(
+      'the WhatsApp connector has not yet confirmed removing the linked device'
+    );
+    expect(screen.getByTestId('unpair-pending')).toHaveTextContent('Settings, Linked devices');
+  });
+
+  it('says nothing once the connector confirmed', () => {
+    mount({ ...whatsapp, status: 'revoked', comms: { chats: 3 } });
+    expect(screen.queryByTestId('unpair-pending')).not.toBeInTheDocument();
+  });
+});

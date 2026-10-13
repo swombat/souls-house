@@ -809,6 +809,102 @@ def cmd_watches_cancel(client, args):
     emit(client.delete(f"watches/{args.id}"))
 
 
+
+# ---------------------------------------------------------------- integrations
+
+
+def cmd_integrations(client, args):
+    emit(client.get("account/service_connections"))
+
+
+def cmd_integrations_providers(client, args):
+    emit(client.get("account/service_connections/providers"))
+
+
+def parse_field_args(pairs):
+    values = {}
+    for position, pair in enumerate(pairs or [], start=1):
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            # Never echo the argument: a secret pasted without KEY= would land in stderr.
+            raise CliError(f"--field #{position} isn't KEY=VALUE (not shown, in case it holds a secret)", EXIT_USAGE)
+        values[key.strip()] = value
+    return values
+
+
+def cmd_integrations_connect(client, args):
+    """souls integrations connect PROVIDER -> POST /api/v1/account/service_connections.
+
+    Values come from --json - (an object on stdin), then --field KEY=VALUE, then
+    a prompt for anything still missing (secrets without echo). Putting a secret
+    in --field leaves it in shell history and the process list, so prefer the
+    prompt or stdin. --grant RESIDENT_ID gives residents access afterwards."""
+    providers = client.get("account/service_connections/providers").get("providers", [])
+    provider = next((item for item in providers if item.get("key") == args.provider), None)
+    if provider is None:
+        known = ", ".join(item.get("key", "?") for item in providers) or "none"
+        raise CliError(f"{args.provider} can't be connected from the command line here (can: {known})", EXIT_USAGE)
+
+    values = {}
+    if args.json_input:
+        raw = sys.stdin.read() if args.json_input == "-" else args.json_input
+        try:
+            loaded = json.loads(raw)
+        except ValueError as err:
+            raise CliError(f"--json is not valid JSON: {err}", EXIT_USAGE)
+        if not isinstance(loaded, dict):
+            raise CliError("--json must be an object of field values", EXIT_USAGE)
+        values.update({str(k): str(v) for k, v in loaded.items()})
+    values.update(parse_field_args(args.field))
+
+    fields = provider.get("credential_fields", [])
+    allowed = {field["key"] for field in fields}
+    unknown = sorted(set(values) - allowed)
+    if unknown:
+        # Name only the provider's own fields: an unknown key may be a secret
+        # typed in the wrong place.
+        raise CliError(f"{len(unknown)} field name(s) aren't {args.provider}'s (not shown, in case they hold a secret); "
+                       f"its fields are: {', '.join(sorted(allowed)) or 'none'}", EXIT_USAGE)
+
+    missing = [field for field in fields if not values.get(field["key"])]
+    if missing and not args.json_input and sys.stdin.isatty():
+        import getpass
+        for field in missing:
+            if field.get("help"):
+                print(f"{field.get('label', field['key'])}: {field['help']}", file=sys.stderr)
+            prompt = f"{field.get('label', field['key'])}: "
+            values[field["key"]] = (getpass.getpass(prompt) if field.get("type") == "password" else input(prompt)).strip()
+        missing = [field for field in fields if not values.get(field["key"])]
+    if missing:
+        raise CliError("missing " + ", ".join(field["key"] for field in missing) +
+                       ": pass --json - with an object on stdin, or run in a terminal to be prompted", EXIT_USAGE)
+
+    body = {"provider": args.provider, "management_scope": args.scope, "credentials": values}
+    if args.label:
+        body["label"] = args.label
+    result = client.post("account/service_connections", json_body=body)
+    connection = result.get("service_connection", {})
+    grants = []
+    for resident in args.grant or []:
+        grants.append(client.patch(f"residents/{resident}/service_accesses/{connection.get('id')}",
+                                   json_body={"enabled": True}).get("service_connection"))
+    if grants:
+        result["granted"] = [{"resident_id": resident, "enabled": bool(grant and grant.get("enabled"))}
+                             for resident, grant in zip(args.grant, grants)]
+    emit(result)
+
+
+def cmd_integrations_grant(client, args):
+    """souls integrations grant CONNECTION_ID --resident ID [--revoke]
+    -> PATCH /api/v1/residents/:id/service_accesses/:connection_id."""
+    emit(client.patch(f"residents/{args.resident}/service_accesses/{args.id}",
+                      json_body={"enabled": not args.revoke}))
+
+
+def cmd_integrations_disconnect(client, args):
+    emit(client.delete(f"account/service_connections/{args.id}"))
+
+
 # ---------------------------------------------------------------- parser
 
 COMMAND_GROUPS = [
@@ -817,6 +913,7 @@ COMMAND_GROUPS = [
                "rename", "archive", "unarchive", "discard", "restore", "fork", "search"]),
     ("Attention", ["attention", "dismiss", "invitations"]),
     ("Repository watches", ["repos", "watches"]),
+    ("Integrations", ["integrations"]),
     ("Field", ["field"]),
     ("Other", ["residents", "glossary", "download", "api"]),
 ]
@@ -987,6 +1084,42 @@ def build_parser():
     wp = wsub.add_parser("cancel", parents=[common], help="Cancel an armed watch (the creator, or an account member)")
     wp.add_argument("id")
     wp.set_defaults(func=cmd_watches_cancel)
+
+    p = add("integrations", cmd_integrations,
+            "Service connections: list, providers, connect, grant, disconnect (souls help integrations)",
+            epilog="Connect anything that takes a pasted key (Porkbun, Cloudflare, Pipedrive, GitHub, Honeybadger, ...);\n"
+                   "OAuth and QR-paired services still connect on the web. Examples:\n"
+                   "  souls integrations providers\n"
+                   "  souls integrations connect porkbun                 # prompts for the keys, no echo\n"
+                   "  souls integrations connect cloudflare --grant RESIDENT_ID\n"
+                   "  pass porkbun.json | souls integrations connect porkbun --json -\n"
+                   "  souls integrations grant svc_12 --resident RESIDENT_ID   (--revoke to withdraw)\n"
+                   "  souls integrations disconnect svc_12",
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+    isub = p.add_subparsers(dest="integrations_command", metavar="list|providers|connect|grant|disconnect")
+    ip = isub.add_parser("list", parents=[common], help="Connections you can manage in this account")
+    ip.set_defaults(func=cmd_integrations)
+    ip = isub.add_parser("providers", parents=[common], help="Services you can connect here, and the fields each asks for")
+    ip.set_defaults(func=cmd_integrations_providers)
+    ip = isub.add_parser("connect", parents=[common], help="Connect a service from its API key or token")
+    ip.add_argument("provider", help="e.g. porkbun, cloudflare, pipedrive")
+    ip.add_argument("--field", action="append", metavar="KEY=VALUE",
+                    help="a field value (repeatable); secrets here land in shell history, so prefer the prompt or --json -")
+    ip.add_argument("--json", dest="json_input", metavar="JSON",
+                    help="field values as a JSON object, or - to read it from stdin")
+    ip.add_argument("--scope", default="personal", choices=["personal", "account_managed"],
+                    help="who owns it: you (default) or the account (admins)")
+    ip.add_argument("--label", help="a name for the connection")
+    ip.add_argument("--grant", action="append", metavar="RESIDENT_ID", help="give this resident access too (repeatable)")
+    ip.set_defaults(func=cmd_integrations_connect)
+    ip = isub.add_parser("grant", parents=[common], help="Give a resident access to a connection, or withdraw it")
+    ip.add_argument("id", metavar="CONNECTION_ID")
+    ip.add_argument("--resident", required=True, metavar="RESIDENT_ID")
+    ip.add_argument("--revoke", action="store_true", help="withdraw access instead")
+    ip.set_defaults(func=cmd_integrations_grant)
+    ip = isub.add_parser("disconnect", parents=[common], help="Disconnect a service (removes its credential from residents)")
+    ip.add_argument("id", metavar="CONNECTION_ID")
+    ip.set_defaults(func=cmd_integrations_disconnect)
 
     p = add("field", None,
             "The Field: upload a file, write a note, change a date, or correct a transcript line (souls help field)",

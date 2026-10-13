@@ -12,6 +12,12 @@
 # - the pool's availability for the connection;
 # - an optional event sequence number: Rails records the highest one it has
 #   committed and returns it, which is the connector's acknowledgement (§5a).
+#
+# WhatsApp binds every event to its pairing attempt instead of a login
+# generation: the connector stamps "attempt" (the callback secret version its
+# start_pairing carried) and anything from another attempt is refused,
+# checked here under the row lock, so nothing can slip in between a restart
+# and its start_pairing.
 module CommsEvents
 
   MAX_BATCH = 200
@@ -24,10 +30,12 @@ module CommsEvents
   LOGIN_EVENTS = %w[pairing.qr login.qr login.password_required login.failed status.changed].freeze
   # Refusals that mean "this authenticated lifecycle event is out of date"
   # (an older login attempt, a replaced or expired QR, a login that already
-  # finished), not "this event is wrong". Sequenced, they are acknowledged
-  # as no-ops so the ordered outbox behind them keeps moving; nothing about
-  # them is applied.
-  OBSOLETE = %i[stale_generation stale_qr expired_qr connection_not_accepting].freeze
+  # finished, an earlier pairing attempt), not "this event is wrong".
+  # Sequenced, they are acknowledged as no-ops so the ordered outbox behind
+  # them keeps moving; nothing about them is applied. (An earlier attempt's
+  # chats and messages are refused, not acknowledged: the connector carries
+  # them over to the next attempt.)
+  OBSOLETE = %i[stale_generation stale_qr expired_qr connection_not_accepting stale_attempt].freeze
 
   # Connector status → ServiceConnection status. A phone-side logout needs the
   # owner to pair again, which the house already calls reauthorizing.
@@ -92,6 +100,7 @@ module CommsEvents
   end
 
   def apply!(connection, event, nonce:, now:)
+    require_attempt!(connection, event) if connection.provider == "whatsapp"
     case event["type"]
     when "chat.upsert"
       require_status!(connection, %w[connected])
@@ -206,6 +215,10 @@ module CommsEvents
 
   def require_generation!(connection, event)
     raise Refused.new(:stale_generation, :conflict) unless event["generation"] == connection.login_generation
+  end
+
+  def require_attempt!(connection, event)
+    raise Refused.new(:stale_attempt, :conflict) unless event["attempt"] == connection.pairing_attempt
   end
 
   def batch!(items)

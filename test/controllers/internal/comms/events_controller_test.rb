@@ -101,12 +101,12 @@ module Internal
       end
 
       test "a reused nonce is refused and writes nothing" do
-        first = JSON.generate(message_event("m1"))
+        first = JSON.generate(message_event("m1").merge(attempt: 1))
         nonce = SecureRandom.hex(16)
         post events_path(@connection), params: first, headers: signed_headers(@connection, first, nonce: nonce)
         assert_response :no_content
 
-        second = JSON.generate(message_event("m2"))
+        second = JSON.generate(message_event("m2").merge(attempt: 1))
         assert_nothing_written do
           post events_path(@connection), params: second, headers: signed_headers(@connection, second, nonce: nonce)
         end
@@ -116,16 +116,18 @@ module Internal
 
       test "the same nonce is still usable on another connection" do
         nonce = SecureRandom.hex(16)
-        body = JSON.generate(message_event("m1"))
+        body = JSON.generate(message_event("m1").merge(attempt: 1))
         post events_path(@connection), params: body, headers: signed_headers(@connection, body, nonce: nonce)
         post events_path(@other), params: body, headers: signed_headers(@other, body, nonce: nonce)
         assert_response :no_content
       end
 
-      test "events for a disconnected connection are refused" do
+      # Mira's review, finding 2: the connector learns of a disconnect it
+      # never received from this answer, and deletes the connection's store.
+      test "events for a disconnected connection are refused as revoked" do
         secret = secret_for(@connection)
         @connection.disconnect!
-        body = JSON.generate(message_event("m1"))
+        body = JSON.generate(message_event("m1").merge(attempt: 1))
         headers = CommsSignature.headers_for(
           secret: secret, connection_id: @connection.public_id, method: "POST", path: events_path(@connection), body: body
         ).merge("Content-Type" => "application/json")
@@ -133,8 +135,50 @@ module Internal
         assert_nothing_written do
           post events_path(@connection), params: body, headers: headers
         end
-        assert_response :unauthorized
+        assert_response :gone
+        assert_equal "connection_revoked", response.parsed_body["error"]
         assert_equal "revoked", @connection.reload.status
+      end
+
+      # Mira's review, finding 1, at the endpoint: every WhatsApp event names
+      # its pairing attempt, and only the current one is accepted.
+      test "an event from another pairing attempt, or naming none, is refused and writes nothing" do
+        @connection.update!(status: "pairing")
+        @connection.restart_pairing!
+        @connection.update!(status: "connected")
+        assert_equal 2, @connection.reload.credential_payload_hash["callback_secret_version"]
+
+        [ { attempt: 1 }, { attempt: nil }, {} ].each do |stamp|
+          assert_nothing_written do
+            post_event @connection, message_event("m1").merge(stamp), stamp: false
+          end
+          assert_response :conflict
+          assert_equal "stale_attempt", response.parsed_body["error"]
+        end
+        post_event @connection, message_event("m1")
+        assert_response :no_content
+      end
+
+      # An old attempt's sequenced lifecycle event is obsolete, not wrong: it
+      # is acknowledged without being applied, so its outbox moves on. Its
+      # chats and messages are refused (409) and stay queued; the connector
+      # carries them over to the next attempt.
+      test "an old attempt's sequenced status is acknowledged as skipped and changes nothing" do
+        @connection.update!(status: "pairing")
+        @connection.restart_pairing!
+
+        post_event @connection, { seq: 1, attempt: 1, type: "status.changed", status: "connected" }, stamp: false
+        assert_response :ok
+        assert_equal({ "committed_seq" => 1, "skipped" => "stale_attempt" }, response.parsed_body)
+        assert_equal "pairing", @connection.reload.status
+
+        post_event @connection, { seq: 2, type: "status.changed", status: "connected" }
+        assert_response :ok
+        assert_equal "connected", @connection.reload.status
+
+        post_event @connection, message_event("m1").merge(seq: 3, attempt: 1), stamp: false
+        assert_response :conflict
+        assert_equal 2, @connection.reload.comms_event_seq
       end
 
       test "events for a connection that is not accepting them are refused and consume no nonce" do
@@ -313,7 +357,10 @@ module Internal
         ).merge("Content-Type" => "application/json")
       end
 
-      def post_event(connection, event)
+      # Stamps the connection's current pairing attempt, as the connector
+      # does, unless stamp: false.
+      def post_event(connection, event, stamp: true)
+        event = { attempt: connection.reload.credential_payload_hash["callback_secret_version"] }.merge(event) if stamp
         body = JSON.generate(event)
         post events_path(connection), params: body, headers: signed_headers(connection, body)
       end

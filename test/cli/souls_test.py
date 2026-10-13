@@ -717,6 +717,105 @@ class GlossaryTest(CliTestCase):
         self.assertIn("exactly one TERM", err)
 
 
+class IntegrationsTest(CliTestCase):
+    """souls integrations list|providers|connect|grant|disconnect."""
+
+    PROVIDERS = {"providers": [
+        {"key": "porkbun", "name": "Porkbun", "management_scopes": ["personal", "account_managed"],
+         "credential_fields": [{"key": "api_key", "label": "API key", "type": "password"},
+                               {"key": "secret_key", "label": "Secret API key", "type": "password"}]},
+        {"key": "pipedrive", "name": "Pipedrive CRM", "management_scopes": ["personal"],
+         "credential_fields": [{"key": "company_domain", "label": "Company domain", "type": "text"},
+                               {"key": "api_token", "label": "Personal API token", "type": "password"}]},
+    ]}
+
+    def setUp(self):
+        super().setUp()
+        self.house.route("GET", "/api/v1/account/service_connections/providers", body=self.PROVIDERS)
+        self.house.route("POST", "/api/v1/account/service_connections", status=201,
+                         body={"service_connection": {"id": "svc_9", "provider": "porkbun", "label": "Porkbun (acme)"}})
+
+    def posted(self):
+        return [json.loads(r["body"]) for r in self.house.requests
+                if (r["method"], r["path"]) == ("POST", "/api/v1/account/service_connections")]
+
+    def test_bare_and_list_read_the_account_connections(self):
+        self.house.route("GET", "/api/v1/account/service_connections", body={"service_connections": []})
+        for argv in (("integrations",), ("integrations", "list")):
+            code, _, _ = self.run_cli(*argv)
+            self.assertEqual(code, 0)
+            self.assertEqual((self.last()["method"], self.last()["path"]), ("GET", "/api/v1/account/service_connections"))
+
+    def test_connect_reads_secrets_as_json_on_stdin(self):
+        code, out, _ = self.run_cli("integrations", "connect", "porkbun", "--json", "-",
+                                    stdin='{"api_key": "pk1_a", "secret_key": "sk1_b"}')
+        self.assertEqual(code, 0)
+        self.assertEqual(self.posted(), [{"provider": "porkbun", "management_scope": "personal",
+                                          "credentials": {"api_key": "pk1_a", "secret_key": "sk1_b"}}])
+        self.assertEqual(json.loads(out)["service_connection"]["id"], "svc_9")
+
+    def test_connect_prompts_for_missing_secrets_without_echo_in_a_terminal(self):
+        with mock.patch("getpass.getpass", side_effect=["sk1_hidden"]) as hidden:
+            code, _, _ = self.run_cli("integrations", "connect", "porkbun", "--field", "api_key=pk1_a", tty=True)
+        self.assertEqual(code, 0)
+        hidden.assert_called_once()
+        self.assertEqual(self.posted()[0]["credentials"], {"api_key": "pk1_a", "secret_key": "sk1_hidden"})
+
+    def test_connect_without_a_terminal_names_what_is_missing_and_sends_nothing(self):
+        code, _, err = self.run_cli("integrations", "connect", "porkbun", "--field", "api_key=pk1_a")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertIn("missing secret_key", err)
+        self.assertEqual(self.posted(), [])
+
+    def test_connect_refuses_unknown_fields_and_unknown_providers_before_posting(self):
+        code, _, err = self.run_cli("integrations", "connect", "porkbun", "--field", "password=x", "--field", "api_key=a",
+                                    "--field", "secret_key=b")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertIn("its fields are: api_key, secret_key", err)
+        self.assertNotIn("password", err)
+        code, _, err = self.run_cli("integrations", "connect", "dropbox", "--json", "{}")
+        self.assertEqual(code, souls.EXIT_USAGE)
+        self.assertIn("can: porkbun, pipedrive", err)
+        self.assertEqual(self.posted(), [])
+
+    def test_connect_passes_scope_label_and_grants_each_resident(self):
+        self.house.route("PATCH", "/api/v1/residents/r1/service_accesses/svc_9",
+                         body={"service_connection": {"id": "svc_9", "enabled": True}})
+        code, out, _ = self.run_cli("integrations", "connect", "porkbun", "--scope", "account_managed", "--label", "DNS",
+                                    "--grant", "r1", "--json", '{"api_key": "a", "secret_key": "b"}')
+        self.assertEqual(code, 0)
+        body = self.posted()[0]
+        self.assertEqual((body["management_scope"], body["label"]), ("account_managed", "DNS"))
+        self.assertEqual(json.loads(self.last()["body"]), {"enabled": True})
+        self.assertEqual(json.loads(out)["granted"], [{"resident_id": "r1", "enabled": True}])
+
+    def test_rejected_credential_input_never_echoes_what_was_typed(self):
+        secret = "sk1_SYNTHETIC_SECRET_9f3a"
+        for argv, stdin in (
+            (("integrations", "connect", "porkbun", "--field", secret), ""),
+            (("integrations", "connect", "porkbun", "--json", "-"), '{"%s": "x", "api_key": "a", "secret_key": "b"}' % secret),
+            (("integrations", "connect", "porkbun", "--json", "-"), '{"api_key": "a", "secret_key": "b", "oops": "%s"}' % secret),
+        ):
+            code, out, err = self.run_cli(*argv, stdin=stdin)
+            self.assertEqual(code, souls.EXIT_USAGE)
+            self.assertNotIn(secret, out + err)
+        self.assertEqual(self.posted(), [])
+
+    def test_grant_and_revoke_patch_the_resident_access(self):
+        self.house.route("PATCH", "/api/v1/residents/r1/service_accesses/svc_9",
+                         body={"service_connection": {"id": "svc_9"}})
+        self.run_cli("integrations", "grant", "svc_9", "--resident", "r1")
+        self.assertEqual(json.loads(self.last()["body"]), {"enabled": True})
+        self.run_cli("integrations", "grant", "svc_9", "--resident", "r1", "--revoke")
+        self.assertEqual(json.loads(self.last()["body"]), {"enabled": False})
+
+    def test_disconnect_deletes_the_connection(self):
+        self.house.route("DELETE", "/api/v1/account/service_connections/svc_9", body={"disconnected": {"id": "svc_9"}})
+        code, _, _ = self.run_cli("integrations", "disconnect", "svc_9")
+        self.assertEqual(code, 0)
+        self.assertEqual((self.last()["method"], self.last()["path"]), ("DELETE", "/api/v1/account/service_connections/svc_9"))
+
+
 class RepositoryWatchesTest(CliTestCase):
     """souls repos / souls watches add|list|show|cancel (repository watches)."""
 

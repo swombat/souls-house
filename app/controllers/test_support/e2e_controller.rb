@@ -159,6 +159,7 @@ module TestSupport
       end
 
       telegram_fixtures(account, primary_user) if params[:telegram]
+      whatsapp = whatsapp_fixture(account, primary_user) if params[:whatsapp]
 
       github_imports = github_import_fixtures(account, primary_user, run_id) if params[:github_resident_onboarding]
 
@@ -172,6 +173,7 @@ module TestSupport
         secondary_user: user_json(secondary_user),
         admin_user: user_json(admin_user),
         **(github_imports || {}),
+        **(whatsapp ? { whatsapp: whatsapp } : {}),
         agents: agents.map { |agent|
           { id: agent.to_param, name: agent.name, edit_url: edit_account_agent_path(account, agent) }
         }
@@ -429,6 +431,20 @@ module TestSupport
         connected.comms_chats.create!(provider_chat_id: chat_id, kind: kind, name: "E2E #{kind}",
           sync_state: synced ? { "synced" => true } : { "synced" => false, "reason" => "broadcast_channel" })
       end
+    end
+
+    # A WhatsApp connection owned by the primary user, waiting to pair, with no
+    # connector behind it. The test gets the callback secret so it can sign
+    # the connector's events itself and post them to the real events endpoint.
+    def whatsapp_fixture(account, user)
+      result = Services::Definition.fetch("whatsapp").adapter.connection_attributes(credentials: {}, user: user)
+      connection = account.service_connections.create!(
+        connected_by_user: user, provider: "whatsapp", management_scope: "personal", status: "pairing",
+        label: result[:label], credential_kind: result[:credential_kind],
+        credential_fingerprint: result[:credential_fingerprint], credential_metadata: result[:credential_metadata],
+        credential_payload_hash: result[:credential_payload]
+      )
+      { id: connection.public_id, callback_secret: result[:credential_payload]["callback_secret"] }
     end
 
     def github_import_fixtures(account, user, run_id)

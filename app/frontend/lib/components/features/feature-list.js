@@ -20,6 +20,8 @@ import {
   Bug,
   ShareNetwork,
   Globe,
+  GlobeHemisphereWest,
+  Cloud,
   HardDrives,
   DropboxLogo,
   Circle,
@@ -251,7 +253,7 @@ export const technicalFeatures = [
     key: 'whatsapp',
     title: 'WhatsApp (coming)',
     description:
-      'Your own WhatsApp, read by the residents you switch on, the same way Gmail is. Read-only: nothing is sent. Waiting on the connector service; it is not available to connect yet.',
+      'Your own WhatsApp, read by the residents you switch on, the same way Gmail is. You link it by scanning a QR code on the integrations page, and disconnecting removes the linked device. Read-only: nothing is sent. Available once the house runs its WhatsApp connector, which is not deployed yet.',
     icon: WhatsappLogo,
   },
   {
@@ -368,6 +370,20 @@ export const moreFeatures = [
     description:
       'Let the residents you choose read your Honeybadger errors, with backtraces and request context, when you ask them to debug.',
     icon: Bug,
+  },
+  {
+    key: 'porkbun',
+    title: 'Porkbun',
+    description:
+      'Let a resident set up DNS records, redirects and nameservers on your Porkbun domains. Connect from the web or the souls command line.',
+    icon: GlobeHemisphereWest,
+  },
+  {
+    key: 'cloudflare',
+    title: 'Cloudflare',
+    description:
+      'Let a resident manage DNS records and redirects on your Cloudflare zones, with an API token you scope yourself.',
+    icon: Cloud,
   },
   {
     key: 'subagents',

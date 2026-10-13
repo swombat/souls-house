@@ -1,22 +1,15 @@
 <script>
+  import ServiceIcon from '$lib/components/service-icon.svelte';
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
-  import {
-    DropboxLogo,
-    GithubLogo,
-    Funnel,
-    Bug,
-    ShareNetwork,
-    GoogleLogo,
-    Heartbeat,
-    TelegramLogo,
-  } from 'phosphor-svelte';
   import { serviceIconClass } from '$lib/service-presentation';
   import ConnectionGoogleAuthority from './connection-google-authority.svelte';
   import ConnectionRepositories from './connection-repositories.svelte';
   import ConnectionResidentAccess from './connection-resident-access.svelte';
   import ConnectionTelegramLogin from './connection-telegram-login.svelte';
   import ConnectionTelegramStatus from './connection-telegram-status.svelte';
+  import ConnectionWhatsappPairing from './connection-whatsapp-pairing.svelte';
+  import ConnectionWhatsappStatus from './connection-whatsapp-status.svelte';
   let { connection, services, account } = $props();
   function updateConnection(connection, attributes) {
     router.patch(`/accounts/${account.id}/service_connections/${connection.id}`, {
@@ -32,9 +25,13 @@
           ? `Disconnect ${connection.label}? This removes the token from residents. To revoke it, regenerate your API token in Pipedrive.`
           : connection.provider === 'honeybadger'
             ? `Disconnect ${connection.label}? This removes the token from residents. To revoke it, reset your personal auth token in Honeybadger.`
-            : connection.provider === 'tailscale'
-              ? `Disconnect ${connection.label}? Residents leave the tailnet when they are next rebuilt, which can wait for an active turn. To cut access now, remove their nodes in the Tailscale admin console; revoke the auth key there too.`
-              : `Disconnect ${connection.label}?`;
+            : connection.provider === 'porkbun'
+              ? `Disconnect ${connection.label}? This removes the keys from residents. To revoke them, delete the key under Account → API Access in Porkbun.`
+              : connection.provider === 'cloudflare'
+                ? `Disconnect ${connection.label}? This removes the token from residents. To revoke it, roll or delete the token under My Profile → API Tokens in Cloudflare.`
+                : connection.provider === 'tailscale'
+                  ? `Disconnect ${connection.label}? Residents leave the tailnet when they are next rebuilt, which can wait for an active turn. To cut access now, remove their nodes in the Tailscale admin console; revoke the auth key there too.`
+                  : `Disconnect ${connection.label}?`;
     if (confirm(warning)) {
       router.delete(`/accounts/${account.id}/service_connections/${connection.id}`);
     }
@@ -47,23 +44,7 @@
       <div class="flex min-w-0 items-center gap-4">
         <div
           class={`flex size-12 shrink-0 items-center justify-center rounded-xl ${serviceIconClass(connection.provider)}`}>
-          {#if connection.provider === 'dropbox'}
-            <DropboxLogo size={26} weight="fill" />
-          {:else if connection.provider === 'google_workspace'}
-            <GoogleLogo size={26} weight="bold" />
-          {:else if connection.provider === 'github'}
-            <GithubLogo size={26} weight="fill" />
-          {:else if connection.provider === 'pipedrive'}
-            <Funnel size={26} weight="bold" />
-          {:else if connection.provider === 'honeybadger'}
-            <Bug size={26} weight="bold" />
-          {:else if connection.provider === 'tailscale'}
-            <ShareNetwork size={26} weight="bold" />
-          {:else if connection.provider === 'telegram'}
-            <TelegramLogo size={26} weight="fill" />
-          {:else}
-            <Heartbeat size={26} weight="fill" />
-          {/if}
+          <ServiceIcon provider={connection.provider} size={26} />
         </div>
         <div class="min-w-0">
           <h3 class="truncate text-lg font-semibold">
@@ -80,12 +61,19 @@
             </span>
             <span class="truncate">Connected by {connection.connected_by_name}</span>
           </p>
-          {#if connection.status === 'reauthorizing'}
+          {#if connection.status === 'reauthorizing' && connection.provider === 'whatsapp'}
+            <p class="text-sm text-amber-700">Pair again before residents can use this connection.</p>
+          {:else if connection.status === 'reauthorizing'}
             <p class="text-sm text-amber-700">Reauthorization required before residents can use this connection.</p>
           {:else if connection.status === 'pairing' && connection.provider === 'telegram'}
             <p class="text-sm text-amber-700">Waiting for sign-in. Residents can use this once it is signed in.</p>
           {:else if connection.status === 'pairing'}
             <p class="text-sm text-amber-700">Waiting for pairing. Residents can use this once it is linked.</p>
+          {:else if connection.status === 'revoked' && connection.comms?.unpair_pending}
+            <p class="text-sm text-amber-700" data-testid="unpair-pending">
+              Disconnected here, but the WhatsApp connector has not yet confirmed removing the linked device. The house
+              keeps trying. To remove it now, open WhatsApp on your phone: Settings, Linked devices.
+            </p>
           {/if}
         </div>
       </div>
@@ -110,6 +98,12 @@
         <ConnectionTelegramLogin {connection} {account} />
       {:else if connection.status === 'connected'}
         <ConnectionTelegramStatus {connection} {account} />
+      {/if}
+    {:else if connection.provider === 'whatsapp'}
+      {#if ['pairing', 'reauthorizing', 'error'].includes(connection.status)}
+        <ConnectionWhatsappPairing {connection} {account} />
+      {:else if connection.status === 'connected'}
+        <ConnectionWhatsappStatus {connection} />
       {/if}
     {/if}
 

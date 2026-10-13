@@ -9,33 +9,13 @@ class Accounts::ServiceConnectionsController < ApplicationController
 
     management_scope = params.require(:management_scope)
     authorize_management_scope!(definition, management_scope)
-    result = definition.adapter.connection_attributes(
-      credentials: credential_params(definition).to_h,
-      user: Current.user
-    )
-    existing = current_account.service_connections.find_by(
-      provider: definition.key,
-      credential_fingerprint: result.fetch(:credential_fingerprint)
-    )
-    if existing
-      raise Services::AdapterError, "That credential is already connected as #{existing.display_label}"
-    end
-
-    connection = current_account.service_connections.new(
-      connected_by_user: Current.user,
-      provider: definition.key,
-      external_subject_id: result.fetch(:external_subject_id),
-      external_identity: result[:external_identity],
-      label: result[:label],
+    connection = ServiceConnection.connect_with_credentials!(
+      account: current_account,
+      user: Current.user,
+      definition: definition,
       management_scope: management_scope,
-      credential_kind: result.fetch(:credential_kind),
-      credential_fingerprint: result.fetch(:credential_fingerprint),
-      credential_metadata: result.fetch(:credential_metadata),
-      status: result.fetch(:status, "connected")
+      credentials: credential_params(definition)
     )
-    connection.credential_payload_hash = result.fetch(:credential_payload)
-    connection.save!
-    definition.adapter.start_pairing(connection) if definition.connection_method == "pairing"
 
     audit(:connect_service, connection,
           provider: connection.provider,

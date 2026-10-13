@@ -1,9 +1,12 @@
 require "test_helper"
+require "support/whatsapp_comms_helpers"
 
 # WhatsApp is an ordinary ServiceConnection with ordinary AgentServiceAccess
 # grants. These cover the parts that differ: the connector credential
 # strategy, the callback secret, and disconnect sending unpair.
 class ServiceConnectionCommsTest < ActiveSupport::TestCase
+
+  include WhatsappCommsHelpers
 
   setup do
     @user = users(:user_1)
@@ -51,31 +54,73 @@ class ServiceConnectionCommsTest < ActiveSupport::TestCase
     assert_not_includes manifest.to_yaml, "callback_secret"
   end
 
-  test "disconnecting sends unpair, signed with the connection's secret, then erases it" do
-    requests = []
-    with_connector_url("http://comms.internal:8080") do
-      Net::HTTP.stub(:start, ->(_host, _port, **_options, &block) { block.call(fake_http(requests)) }) do
-        @connection.disconnect!
-      end
-    end
+  # The connector cannot hold a connection's callback secret before it is
+  # handed over, so commands are signed with the connector-wide command key
+  # (the Telegram path, proposal 2026-10-11 §5) and travel over mutual TLS.
+  test "disconnecting sends unpair, signed with the command key over mutual TLS, then erases the secret" do
+    with_whatsapp_connector do |requests, options|
+      @connection.disconnect!
 
-    request = requests.sole
-    assert_equal "/connections/#{@connection.public_id}/unpair", request.path
-    nonce = CommsSignature.verify!(
-      secret: @secret, expected_connection_id: @connection.public_id, method: "POST",
-      path: request.path, body: request.body, headers: request
-    )
-    assert_match CommsSignature::NONCE_FORMAT, nonce
+      request = requests.sole
+      assert_equal "/connections/#{@connection.public_id}/unpair", request.path
+      body = JSON.parse(request.body)
+      assert_equal [ @connection.public_id, "unpair" ], body.values_at("connection", "operation")
+      assert_not_includes request.body, @secret
+      expected = CommsCommandSignature.sign(
+        secret: "test-command-key", key_id: "k1", connection_id: @connection.public_id, operation: "unpair",
+        command_id: body["command_id"], issued_at: body["issued_at"], body: request.body
+      )
+      assert_equal expected, request["X-Comms-Command-Signature"]
+      assert_equal OpenSSL::SSL::VERIFY_PEER, options.sole[:verify_mode]
+      assert_equal "/CN=rails", options.sole[:cert].subject.to_s
+    end
     assert_equal "revoked", @connection.reload.status
     assert_nil @connection.credential_payload
   end
 
+  test "start_pairing hands the connector the callback secret and its version, signed with the command key" do
+    with_whatsapp_connector do |requests, _options|
+      CommsConnector.start_pairing(@connection)
+
+      request = requests.sole
+      assert_equal "/connections/#{@connection.public_id}/start_pairing", request.path
+      body = JSON.parse(request.body)
+      assert_equal [ "start_pairing", @secret, 1 ], body.values_at("operation", "callback_secret", "callback_secret_version")
+      expected = CommsCommandSignature.sign(
+        secret: "test-command-key", key_id: "k1", connection_id: @connection.public_id, operation: "start_pairing",
+        command_id: body["command_id"], issued_at: body["issued_at"], body: request.body
+      )
+      assert_equal expected, request["X-Comms-Command-Signature"]
+    end
+  end
+
+  test "WhatsApp commands go to the WhatsApp connector, never over plain http or without the key" do
+    with_whatsapp_connector(url: "http://souls-house-comms-whatsapp:8080") do |requests, _options|
+      assert_raises(CommsConnector::Error) { CommsConnector.start_pairing(@connection) }
+      assert_empty requests
+    end
+    with_whatsapp_connector(key: nil) do |requests, _options|
+      assert_raises(CommsConnector::Error) { CommsConnector.unpair(@connection) }
+      assert_empty requests
+    end
+    with_whatsapp_connector(tls: []) do |requests, _options|
+      assert_raises(CommsConnector::Error) { CommsConnector.start_pairing(@connection) }
+      assert_empty requests
+    end
+  end
+
+  test "a refused command is an error, and the adapter turns it into one the owner can read" do
+    with_whatsapp_connector(status: 401) do |_requests, _options|
+      assert_raises(CommsConnector::Error) { CommsConnector.start_pairing(@connection) }
+      assert_raises(Services::WhatsappAdapter::Error) { @connection.definition.adapter.start_pairing(@connection) }
+    end
+  end
+
   test "without a connector URL, a command records its intent and sends nothing" do
-    with_connector_url(nil) do
-      Net::HTTP.stub(:start, ->(*) { flunk "no request expected" }) do
-        assert_equal :not_configured, CommsConnector.unpair(@connection)
-        assert_equal :not_configured, CommsConnector.start_pairing(@connection)
-      end
+    with_whatsapp_connector(url: nil) do |requests, _options|
+      assert_equal :not_configured, CommsConnector.unpair(@connection)
+      assert_equal :not_configured, CommsConnector.start_pairing(@connection)
+      assert_empty requests
     end
   end
 
@@ -102,23 +147,6 @@ class ServiceConnectionCommsTest < ActiveSupport::TestCase
       key: "probe", name: "Probe", management_scopes: %w[personal], credential_strategy: "static",
       api_origins: [], documentation: [], adapter_class: "Services::WhatsappAdapter"
     }.merge(overrides)
-  end
-
-  def with_connector_url(value)
-    previous = ENV["COMMS_CONNECTOR_URL"]
-    ENV["COMMS_CONNECTOR_URL"] = value
-    yield
-  ensure
-    ENV["COMMS_CONNECTOR_URL"] = previous
-  end
-
-  def fake_http(requests)
-    Object.new.tap do |http|
-      http.define_singleton_method(:request) do |request|
-        requests << request
-        Net::HTTPOK.new("1.1", "200", "OK").tap { |response| response.instance_variable_set(:@read, true) }
-      end
-    end
   end
 
 end

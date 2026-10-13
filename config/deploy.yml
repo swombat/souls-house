@@ -64,6 +64,23 @@
 
   web_volumes = [ "/var/run/docker.sock:/var/run/docker.sock" ]
   web_volumes << "souls_house_storage:/rails/storage" if house_storage == "local"
+
+  # WhatsApp connector (services/comms-connector, docs/proposals/2026-10-09-
+  # whatsapp-connections.md §2). Off until HOUSE_COMMS_WHATSAPP_IMAGE is set:
+  # with it unset nothing here changes, so master's auto-deploy is unaffected.
+  # Turning it on needs HOUSE_COMMS_WHATSAPP_DIGEST, HOUSE_COMMS_TLS_DIR (a
+  # host directory holding ca.pem, rails.pem/.key and connector.pem/.key) and
+  # COMMS_STORE_KEY and COMMS_COMMAND_KEY in .kamal/secrets; see
+  # services/comms-connector/README.md "Deploying".
+  comms_whatsapp_image = house_optional.call("HOUSE_COMMS_WHATSAPP_IMAGE")
+  if comms_whatsapp_image
+    comms_whatsapp_digest = ENV["HOUSE_COMMS_WHATSAPP_DIGEST"].to_s.strip
+    unless comms_whatsapp_digest.match?(/\Asha256:[0-9a-f]{64}\z/)
+      raise "Set HOUSE_COMMS_WHATSAPP_DIGEST to the reviewed connector image digest (sha256:...)."
+    end
+    comms_tls_dir = house.call("HOUSE_COMMS_TLS_DIR")
+    web_volumes << "#{comms_tls_dir}:/rails/comms-tls:ro"
+  end
 %>
 service: souls-house
 image: <%= house_image %>
@@ -101,10 +118,22 @@ env:
 <% end %>
     MNEMODYNE_EMBEDDING_URL: http://souls-house-embeddings:8080/v1/embeddings
     MNEMODYNE_EMBEDDING_PROFILE: bge-small-en-v1.5-q-52398278842e-fastembed-0.7.4-v1
+<% if comms_whatsapp_image %>
+    # Rails → WhatsApp connector commands: mutual TLS over the private network
+    # (CommsConnector). Setting these is what makes WhatsApp appear on the
+    # integrations page (the catalog's requires_env).
+    COMMS_WHATSAPP_CONNECTOR_URL: https://souls-house-comms-whatsapp:8443
+    COMMS_CONNECTOR_CLIENT_CERT: /rails/comms-tls/rails.pem
+    COMMS_CONNECTOR_CLIENT_KEY: /rails/comms-tls/rails.key
+    COMMS_CONNECTOR_CA_FILE: /rails/comms-tls/ca.pem
+<% end %>
   secret:
     - RAILS_MASTER_KEY # Rails master key (provide in .kamal/secrets)
     - DATABASE_URL # Database connection string (provided per env in secrets)
     - MNEMODYNE_EMBEDDING_TOKEN # Same private token on web/jobs and embedding accessory.
+<% if comms_whatsapp_image %>
+    - COMMS_COMMAND_KEY # Signs Rails → connector commands; same value on the connector.
+<% end %>
 
 servers:
   web:
@@ -170,6 +199,38 @@ accessories:
       read-only: true
       tmpfs: /tmp
     # No public port. Kamal's private network supplies souls-house-embeddings.
+<% if comms_whatsapp_image %>
+  comms-whatsapp:
+    # Built from services/comms-connector (Dockerfile there), reviewed, pushed,
+    # pinned by digest. Boot it with `bin/kamal accessory boot comms-whatsapp`;
+    # it survives web deploys. One process, one worker per connection, each
+    # holding a flock on /data/<connection>/lease.
+    image: <%= comms_whatsapp_image %>@<%= comms_whatsapp_digest %>
+    host: <%= house_host %>
+    env:
+      clear:
+        COMMS_RAILS_URL: http://souls-house-web:3000 # Signed events, over Docker DNS like agent callbacks.
+        COMMS_LISTEN: ":8443"
+        COMMS_DATA_DIR: /data
+        COMMS_TLS_CERT: /tls/connector.pem
+        COMMS_TLS_KEY: /tls/connector.key
+        COMMS_TLS_CLIENT_CA: /tls/ca.pem
+        COMMS_TLS_CLIENT_NAME: rails # Only Rails's client certificate is accepted.
+        GOTRACEBACK: none
+      secret:
+        - COMMS_STORE_KEY # base64 of 32 bytes; each connection's SQLCipher key is HKDF(it, connection).
+        - COMMS_COMMAND_KEY
+    volumes:
+      - comms:/data # The linked devices' session stores. Losing it costs a re-pair, not history.
+      - <%= comms_tls_dir %>:/tls:ro
+    options:
+      ulimit: core=0 # This host pipes cores to apport; no core may hold keys or messages.
+      read-only: true
+      tmpfs: /tmp
+      memory: 512m
+      cpus: 1
+    # No public port. Kamal's private network supplies souls-house-comms-whatsapp.
+<% end %>
   postgres:
     image: postgres:16.2 # Use the correct version for your app
     host: <%= house_host %>

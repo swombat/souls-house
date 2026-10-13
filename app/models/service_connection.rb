@@ -249,9 +249,60 @@ class ServiceConnection < ApplicationRecord
   end
 
   # Disconnected connections are destroyed unless they hold records the house
-  # keeps: reviewed GitHub import provenance, or comms history.
+  # keeps: reviewed GitHub import provenance, or comms history. A comms
+  # connection whose unpair the connector has not confirmed is also kept,
+  # revoked, until it does (retry_unpair!).
   def retained_after_disconnect?
-    github_resident_imports.exists? || comms_chats.exists?
+    github_resident_imports.exists? || comms_chats.exists? || unpair_pending?
+  end
+
+  # WhatsApp. Disconnecting revokes the connection here at once, but only
+  # the connector can stop its linked device collecting. When the unpair
+  # command fails, that is recorded and shown, and CommsUnpairJob retries
+  # until the connector confirms. (The connector also unpairs itself when
+  # Rails answers one of its events with 410 connection_revoked.)
+  def unpair_pending?
+    connector_state.to_h["unpair"].present?
+  end
+
+  def unpair_status
+    connector_state.to_h["unpair"].presence
+  end
+
+  def record_unpair_failure!(error, now: Time.current)
+    state = connector_state.to_h
+    previous = state["unpair"].to_h
+    unpair = { "since" => previous["since"] || now.utc.iso8601, "attempts" => previous["attempts"].to_i + 1,
+               "last_attempt_at" => now.utc.iso8601, "last_error" => error.class.name }
+    update_columns(connector_state: state.merge("unpair" => unpair), updated_at: now)
+  end
+
+  # One more unpair for a pending disconnect. On the connector's
+  # confirmation the mark goes and, unless it holds history, so does the
+  # connection. Returns whether the connector confirmed.
+  def retry_unpair!
+    return true unless unpair_pending?
+
+    begin
+      CommsConnector.unpair!(self)
+    rescue StandardError => e
+      Rails.logger.warn("Comms unpair retry failed for service connection #{id}: #{e.class}")
+      record_unpair_failure!(e)
+      return false
+    end
+    update_columns(connector_state: connector_state.to_h.except("unpair"), updated_at: Time.current)
+    destroy! unless retained_after_disconnect?
+    true
+  end
+
+  # Clears the expired code this instance loaded, and only that one: the
+  # write is conditional on the row still holding it, so a code rotated in
+  # since (a newer issued_at and expiry) is kept. Then reloads.
+  def clear_expired_pairing_qr!(now: Time.current)
+    ServiceConnection.where(id:, pairing_qr_issued_at:, pairing_qr_expires_at:)
+                     .where(pairing_qr_expires_at: ..now)
+                     .update_all(pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil, updated_at: now)
+    reload
   end
 
   # The QR the owner scans to pair. Never served once expired.
@@ -259,7 +310,40 @@ class ServiceConnection < ApplicationRecord
     return unless status == "pairing" && pairing_qr.present?
     return unless pairing_qr_expires_at.present? && pairing_qr_expires_at > now
 
-    { code: pairing_qr, expires_at: pairing_qr_expires_at.utc.iso8601 }
+    { code: pairing_qr, issued_at: pairing_qr_issued_at&.utc&.iso8601(3), expires_at: pairing_qr_expires_at.utc.iso8601 }
+  end
+
+  # WhatsApp: pair (again) from the start, after the codes ran out, an error,
+  # or WhatsApp logging the linked device out. Under the row lock: back to
+  # "pairing" with no code, and a new pairing attempt (the callback secret
+  # version goes up; the secret stays). The caller then sends start_pairing
+  # with it, and the connector's fresh session pushes new codes. Every
+  # connector event names its attempt and CommsEvents refuses any other, so
+  # whatever the old attempt still had in flight (a "connected" for the
+  # device the connector is deleting) cannot change the connection. false
+  # when this connection cannot pair (connected, revoked, suspended).
+  def restart_pairing!
+    with_lock do
+      return false unless status.in?(%w[pairing reauthorizing error])
+
+      payload = credential_payload_hash
+      return false if payload["callback_secret"].blank?
+
+      update!(
+        status: "pairing",
+        credential_payload_hash: payload.merge("callback_secret_version" => pairing_attempt + 1),
+        connector_state: connector_state.to_h.except("login"),
+        pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil
+      )
+      true
+    end
+  end
+
+  # The WhatsApp pairing attempt: the callback secret version, which
+  # start_pairing hands the connector and the connector stamps on every
+  # event as "attempt".
+  def pairing_attempt
+    [ credential_payload_hash["callback_secret_version"].to_i, 1 ].max
   end
 
   def begin_reauthorization!
@@ -275,6 +359,38 @@ class ServiceConnection < ApplicationRecord
 
   def self.find_by_public_id!(value)
     find(value.to_s.delete_prefix("svc_"))
+  end
+
+  # A connection from pasted credentials (the web's connect form and
+  # POST /api/v1/account/service_connections). The adapter validates them
+  # with the provider first; the caller has already checked the person may
+  # own a connection at this management scope. Raises Services::AdapterError
+  # for anything the provider or the house refuses.
+  def self.connect_with_credentials!(account:, user:, definition:, management_scope:, credentials:)
+    raise Services::AdapterError, "#{definition.name} connects through its own sign-in, not pasted credentials" unless definition.connection_method.in?(%w[credentials pairing])
+    raise Services::AdapterError, "#{definition.name} is not available on this house" unless definition.available?
+    raise Services::AdapterError, "#{definition.name} can't be connected as #{management_scope}" unless definition.supports_management_scope?(management_scope)
+
+    result = definition.adapter.connection_attributes(credentials: credentials.to_h, user: user)
+    existing = account.service_connections.find_by(provider: definition.key, credential_fingerprint: result.fetch(:credential_fingerprint))
+    raise Services::AdapterError, "That credential is already connected as #{existing.display_label}" if existing
+
+    connection = account.service_connections.new(
+      connected_by_user: user,
+      provider: definition.key,
+      external_subject_id: result.fetch(:external_subject_id),
+      external_identity: result[:external_identity],
+      label: result[:label],
+      management_scope: management_scope,
+      credential_kind: result.fetch(:credential_kind),
+      credential_fingerprint: result.fetch(:credential_fingerprint),
+      credential_metadata: result.fetch(:credential_metadata),
+      status: result.fetch(:status, "connected")
+    )
+    connection.credential_payload_hash = result.fetch(:credential_payload)
+    connection.save!
+    definition.adapter.start_pairing(connection) if definition.connection_method == "pairing"
+    connection
   end
 
   def as_connection_json(current_user:)
@@ -308,8 +424,9 @@ class ServiceConnection < ApplicationRecord
       availability: connector_availability,
       search_all_dialogs: search_all_dialogs?,
       chats: comms_chats.count,
-      synced_chats: comms_chats.where("(sync_state->>'synced')::boolean IS NOT FALSE").count
-    }
+      synced_chats: comms_chats.where("(sync_state->>'synced')::boolean IS NOT FALSE").count,
+      unpair_pending: unpair_status&.slice("since", "attempts", "last_attempt_at")
+    }.compact
   end
 
   def runtime_metadata
