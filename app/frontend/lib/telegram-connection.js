@@ -72,7 +72,8 @@ export function codeSentText(login) {
   }
 }
 
-export function phoneOutcomeMessage(result) {
+// resend: the code step was already showing (a code was sent earlier).
+export function phoneOutcomeMessage(result, { resend = false } = {}) {
   switch (result?.outcome) {
     case 'code_sent':
       return null;
@@ -88,10 +89,18 @@ export function phoneOutcomeMessage(result) {
     case 'phone_banned':
       return { tone: 'error', text: 'Telegram says this number is banned.' };
     case 'unsupported':
+      if (resend) {
+        return {
+          tone: 'error',
+          text: 'Telegram cannot send another code this way. Use the code already sent, or restart sign-in.',
+        };
+      }
       return {
         tone: 'error',
         text: 'Telegram cannot send a code here for this account. Scan the QR code with Telegram on another device instead.',
       };
+    case 'expired':
+      return { tone: 'error', text: 'This sign-in expired. Restart sign-in to try again.' };
     case 'flood_wait':
       return { tone: 'error', text: waitWords(result.retry_after) };
     case 'not_configured':

@@ -293,6 +293,14 @@ module Internal
         post_telegram_event pairing, { type: "login.code_sent", generation: 2, delivery: "app" }
         assert_response :conflict
         assert_equal "password", pairing.reload.login_state["step"]
+
+        # An attempt that has ended stays ended: a code_sent behind its
+        # expiry does not revive it.
+        post_telegram_event pairing, { type: "login.failed", generation: 2, code: "expired" }
+        assert_response :no_content
+        post_telegram_event pairing, { type: "login.code_sent", generation: 2, delivery: "app" }
+        assert_response :conflict
+        assert_equal({ "error" => "expired" }, pairing.reload.login_state.slice("error", "step"))
       end
 
       test "the pool's availability is recorded for the connection" do

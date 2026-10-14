@@ -36,6 +36,10 @@ describe('Telegram connection wording', () => {
     expect(phoneOutcomeMessage({ outcome: 'code_sent' })).toBeNull();
     expect(phoneOutcomeMessage({ outcome: 'phone_invalid' }).text).toMatch(/international format/);
     expect(phoneOutcomeMessage({ outcome: 'unsupported' }).text).toMatch(/QR code/);
+    // A resend Telegram cannot deliver: no QR is showing, the earlier code stands.
+    expect(phoneOutcomeMessage({ outcome: 'unsupported' }, { resend: true }).text).toMatch(/code already sent/);
+    expect(phoneOutcomeMessage({ outcome: 'unsupported' }, { resend: true }).text).not.toMatch(/QR/);
+    expect(phoneOutcomeMessage({ outcome: 'expired' }).text).toMatch(/^This sign-in expired\. Restart/);
     expect(phoneOutcomeMessage({ outcome: 'flood_wait', retry_after: 5 }).text).toBe(
       'Telegram asked us to wait 5 seconds.'
     );

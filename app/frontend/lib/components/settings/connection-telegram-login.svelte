@@ -3,13 +3,11 @@
   import { untrack } from 'svelte';
   import QRCode from 'qrcode';
   import { Button } from '$lib/components/shadcn/button';
+  import TelegramPhoneSignIn from './connection-telegram-phone.svelte';
   import {
-    codeOutcomeMessage,
-    codeSentText,
     formatCountdown,
     loginErrorMessage,
     passwordOutcomeMessage,
-    phoneOutcomeMessage,
     postLoginJson,
     secondsUntil,
   } from '$lib/telegram-connection';
@@ -25,11 +23,7 @@
   let busy = $state(false);
   let notice = $state(null);
   let phoneOpen = $state(false);
-  let changingNumber = $state(false);
   let smallScreen = $state(false);
-  // The number, only in this page's memory, to send the code again. Never
-  // in page props, history or storage.
-  let lastPhone = null;
 
   const base = $derived(`/accounts/${account.id}/service_connections/${connection.id}`);
   const waiting = $derived(connection.status === 'pairing' || connection.status === 'reauthorizing');
@@ -41,11 +35,9 @@
   const errorText = $derived(loginErrorMessage(login));
   const signingIn = $derived(status === 'pairing' && !login.error);
   const askingPassword = $derived(status === 'pairing' && login.step === 'password');
-  const askingCode = $derived(status === 'pairing' && login.step === 'code' && !changingNumber);
   const leadWithPhone = $derived(phoneFirst ?? smallScreen);
-  const showPhoneForm = $derived(
-    signingIn && !askingPassword && !askingCode && (phoneOpen || leadWithPhone || changingNumber)
-  );
+  // The phone path: chosen, leading on a small screen, or under way.
+  const showPhone = $derived(signingIn && !askingPassword && (login.step === 'code' || phoneOpen || leadWithPhone));
 
   $effect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
@@ -122,8 +114,6 @@
     busy = false;
     if (result.ok) {
       phoneOpen = false;
-      changingNumber = false;
-      lastPhone = null;
       pairing = {
         status: result.body.status,
         qr: null,
@@ -133,60 +123,6 @@
     } else {
       notice = { tone: 'error', text: result.body.error || 'Something went wrong. Try again.' };
     }
-  }
-
-  async function sendPhone(phone) {
-    busy = true;
-    notice = null;
-    // The attempt this page is showing: a number never joins a newer one.
-    const result = await postLoginJson(`${base}/login/phone`, { phone, generation: pairing?.generation });
-    busy = false;
-    const body = result.ok ? result.body : { error: result.body.error };
-    if (body.outcome === 'code_sent') {
-      lastPhone = phone;
-      changingNumber = false;
-      pairing = { ...pairing, qr: null, login: body.login || { step: 'code' } };
-    } else if (body.outcome === 'password_required') {
-      pairing = { ...pairing, qr: null, login: { step: 'password' } };
-    }
-    notice = phoneOutcomeMessage(body);
-    return body.outcome;
-  }
-
-  async function submitPhone(event) {
-    event.preventDefault();
-    const input = event.currentTarget.elements.namedItem('phone');
-    const outcome = await sendPhone(input.value.trim());
-    if (outcome === 'code_sent') input.value = '';
-  }
-
-  async function sendAgain() {
-    if (lastPhone) {
-      await sendPhone(lastPhone);
-    } else {
-      notice = null;
-      changingNumber = true;
-    }
-  }
-
-  async function submitCode(event) {
-    event.preventDefault();
-    const input = event.currentTarget.elements.namedItem('code');
-    const code = input.value.trim();
-    input.value = '';
-    busy = true;
-    notice = null;
-    const result = await postLoginJson(`${base}/login/code`, { code, generation: pairing?.generation });
-    busy = false;
-    input.value = '';
-    const body = result.ok ? result.body : { error: result.body.error };
-    if (body.outcome === 'password_required') {
-      lastPhone = null;
-      pairing = { ...pairing, login: { step: 'password' } };
-    } else if (body.outcome === 'accepted') {
-      lastPhone = null;
-    }
-    notice = codeOutcomeMessage(body);
   }
 
   async function submitPassword(event) {
@@ -231,69 +167,18 @@
         {/if}
         <Button type="submit" size="sm" disabled={busy}>Sign in</Button>
       </form>
-    {:else if askingCode}
-      <form class="max-w-sm space-y-3" onsubmit={submitCode} data-testid="telegram-code-form">
-        <p class="text-sm" data-testid="telegram-code-sent">{codeSentText(login)}</p>
-        <label class="block space-y-1 text-sm">
-          <span class="font-medium">Login code</span>
-          <input
-            name="code"
-            type="text"
-            inputmode="numeric"
-            autocomplete="one-time-code"
-            maxlength="64"
-            required
-            disabled={busy}
-            class="block w-full rounded-md border bg-background px-3 py-2 text-sm tracking-widest" />
-        </label>
-        <div class="flex flex-wrap gap-2">
-          <Button type="submit" size="sm" disabled={busy}>Sign in</Button>
-          <Button type="button" variant="outline" size="sm" disabled={busy} onclick={sendAgain}>Send a new code</Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            onclick={() => {
-              notice = null;
-              changingNumber = true;
-            }}>
-            Use a different number
-          </Button>
-        </div>
-      </form>
-    {:else if showPhoneForm}
-      <form class="max-w-sm space-y-3" onsubmit={submitPhone} data-testid="telegram-phone-form">
-        <p class="text-sm">
-          Sign in with the phone number of your Telegram account. Telegram sends a code to the Telegram app.
-        </p>
-        <label class="block space-y-1 text-sm">
-          <span class="font-medium">Phone number</span>
-          <input
-            name="phone"
-            type="tel"
-            inputmode="tel"
-            autocomplete="tel"
-            placeholder="+44 7700 900123"
-            maxlength="40"
-            required
-            disabled={busy}
-            aria-describedby="telegram-phone-format"
-            class="block w-full rounded-md border bg-background px-3 py-2 text-sm" />
-        </label>
-        <p id="telegram-phone-format" class="text-sm text-muted-foreground">
-          International format: + and the country code, then the number.
-        </p>
-        <div class="flex flex-wrap gap-2">
-          <Button type="submit" size="sm" disabled={busy}>Send the code</Button>
-          {#if phoneOpen && !leadWithPhone && !changingNumber}
-            <Button type="button" variant="ghost" size="sm" disabled={busy} onclick={() => (phoneOpen = false)}>
-              Show the QR code
-            </Button>
-          {/if}
-        </div>
-      </form>
-      {#if leadWithPhone && !changingNumber && qrCode && qrImage}
+    {:else if showPhone}
+      {#key pairing.generation}
+        <TelegramPhoneSignIn
+          {base}
+          generation={pairing.generation}
+          {login}
+          bind:busy
+          onlogin={(next) => (pairing = { ...pairing, qr: null, login: next })}
+          onnotice={(next) => (notice = next)}
+          onshowqr={phoneOpen && !leadWithPhone && login.step !== 'code' ? () => (phoneOpen = false) : null} />
+      {/key}
+      {#if leadWithPhone && login.step !== 'code' && qrCode && qrImage}
         <details class="text-sm" data-testid="telegram-qr-elsewhere">
           <summary class="cursor-pointer text-muted-foreground">Signing in from a computer? Show the QR code</summary>
           <div class="mt-3 w-fit rounded-lg bg-white p-2">

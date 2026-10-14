@@ -215,11 +215,13 @@ class ServiceConnection < ApplicationRecord
 
   # A phone sign-in's code step, recorded as the connector's request_code
   # reply comes back (its login.code_sent event, applied in order, says the
-  # same): only for the attempt that asked, never over a password step.
-  # Clears the QR the owner chose not to use.
+  # same): only for the attempt that asked, never over a password step, and
+  # never over an ended attempt (a reply that crossed the attempt's expiry
+  # must not revive it). Clears the QR the owner chose not to use.
   def record_login_code_step!(generation, step)
     with_lock do
-      return false unless status == "pairing" && login_generation == generation && login_state["step"] != "password"
+      return false unless status == "pairing" && login_generation == generation &&
+                          login_state["step"] != "password" && login_state["error"].blank?
 
       update!(
         connector_state: connector_state.to_h.merge("login" => step),

@@ -173,7 +173,10 @@ module CommsEvents
       require_status!(connection, %w[pairing])
       require_generation!(connection, event)
       login = code_step(event) || raise(Refused.new(:bad_code_step, :unprocessable_entity))
-      raise Refused.new(:connection_not_accepting, :conflict) if connection.login_state["step"] == "password"
+      # Never over the password step, nor over an attempt that has ended.
+      if connection.login_state["step"] == "password" || connection.login_state["error"].present?
+        raise Refused.new(:connection_not_accepting, :conflict)
+      end
       consume_nonce!(connection, nonce, now)
       connection.update!(
         connector_state: connection.connector_state.to_h.merge("login" => login),

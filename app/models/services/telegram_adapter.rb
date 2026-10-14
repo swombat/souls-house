@@ -93,7 +93,9 @@ module Services
     # the password: never stored, queued or logged. Only for the attempt the
     # owner's page showed, while it is signing in and no password is wanted.
     # On code_sent the code step is recorded at once (the connector's
-    # login.code_sent event says the same). Returns the connector's outcome.
+    # login.code_sent event says the same); if the attempt ended meanwhile
+    # (it expired while Telegram answered), the late answer is refused, not
+    # passed on. Returns the connector's outcome.
     def request_code(connection, phone, generation:)
       connection.reload
       unless connection.status == "pairing" && connection.login_state["step"] != "password" &&
@@ -102,8 +104,9 @@ module Services
       end
 
       result = CommsConnector.telegram_command(connection, "request_code", generation:, phone:)
-      if result.is_a?(Hash) && result["outcome"] == "code_sent" && (step = CommsEvents.code_step(result))
-        connection.record_login_code_step!(generation, step)
+      if result.is_a?(Hash) && result["outcome"] == "code_sent" && (step = CommsEvents.code_step(result)) &&
+         !connection.record_login_code_step!(generation, step)
+        raise StaleAttempt, "This sign-in has moved on. Use the current page."
       end
       result
     rescue StaleAttempt

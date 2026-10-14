@@ -201,6 +201,22 @@ class Accounts::ServiceConnectionLoginsControllerTest < ActionDispatch::Integrat
     assert_no_secret_kept log, CODE
   end
 
+  test "a code_sent that crossed the attempt's expiry is refused, and the expiry stands" do
+    @connection.update!(connector_state: {})
+    sign_in @owner
+    # The connector's login.failed (expired) lands while Telegram is answering.
+    late = lambda do |connection, _operation, **|
+      ServiceConnection.find(connection.id).update!(connector_state: { "login" => { "error" => "expired" } })
+      { "outcome" => "code_sent", "delivery" => "app" }
+    end
+    CommsConnector.stub(:telegram_command, late) do
+      post phone_account_service_connection_login_path(@account, @connection.public_id), params: { phone: PHONE, generation: 4 }, as: :json
+    end
+    assert_response :conflict
+    assert_match(/moved on/, response.parsed_body["error"])
+    assert_equal({ "error" => "expired" }, @connection.reload.login_state)
+  end
+
   test "outcomes are passed through only from the known list, and a connector error never echoes the number" do
     @connection.update!(connector_state: {})
     sign_in @owner
@@ -208,6 +224,10 @@ class Accounts::ServiceConnectionLoginsControllerTest < ActionDispatch::Integrat
       post phone_account_service_connection_login_path(@account, @connection.public_id), params: { phone: PHONE, generation: 4 }, as: :json
     end
     assert_equal({ "outcome" => "flood_wait", "retry_after" => 30, "generation" => 4 }, response.parsed_body)
+    with_telegram_connector(replies: { "request_code" => { outcome: "expired" } }) do
+      post phone_account_service_connection_login_path(@account, @connection.public_id), params: { phone: PHONE, generation: 4 }, as: :json
+    end
+    assert_equal({ "outcome" => "expired", "generation" => 4 }, response.parsed_body)
     with_telegram_connector(replies: { "request_code" => { outcome: "something new", detail: PHONE } }) do
       post phone_account_service_connection_login_path(@account, @connection.public_id), params: { phone: PHONE, generation: 4 }, as: :json
     end

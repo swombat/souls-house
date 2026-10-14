@@ -15,7 +15,7 @@ class Accounts::ServiceConnectionLoginsController < ApplicationController
   before_action :set_connection
 
   CODE_OUTCOMES = %w[accepted password_required code_invalid code_expired phone_unregistered flood_wait].freeze
-  PHONE_OUTCOMES = %w[code_sent accepted password_required phone_invalid phone_banned unsupported flood_wait].freeze
+  PHONE_OUTCOMES = %w[code_sent accepted password_required phone_invalid phone_banned unsupported expired flood_wait].freeze
 
   # GET .../login: the focused sign-in page Connect Telegram opens (the same
   # sign-in is also on the Integrations page's card).

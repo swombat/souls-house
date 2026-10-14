@@ -66,8 +66,14 @@ accepted too.
   `call`, `fragment`, `email`, `other`), and when Telegram gives them
   `length`, `next_delivery` and `timeout`; the same, without the number, is
   queued as `login.code_sent`. Or `phone_invalid`, `phone_banned`,
-  `unsupported` (Telegram wants a login email set up first: use the QR),
-  `flood_wait` (+`retry_after`) or `failed`.
+  `unsupported` (Telegram wants a login email set up first), `flood_wait`
+  (+`retry_after`) or `failed`. If the first request sends no code, the QR
+  comes back: a fresh token on the same client (Telethon's `QRLogin.wait`
+  removes its handler when cancelled), within the attempt's original window,
+  so the QR the owner is offered instead is live. A resend that fails leaves
+  the code already sent in place. The phone path has one deadline, used by
+  both its timer and `request_code`: a request that ends after it ends the
+  attempt (`login.failed expired`) and replies `expired`, never `code_sent`.
 - `submit_code {generation, code}`: only for the current generation after a
   code was sent (409 `not_waiting_for_code` otherwise). `auth.signIn`, then
   the code is dropped. Replies `accepted`, `password_required` (a two-step
@@ -77,6 +83,11 @@ accepted too.
   `failed`. The phone number and the code get the password's discipline:
   never stored, queued or logged, the body buffer zeroed, taken out of the
   command fields at once.
+- Finishing a sign-in Telegram has accepted (by QR, code or password) reads
+  the account's update state first. If that fails, the attempt ends cleanly
+  (`login.failed failed`, the session logged out at Telegram, best effort)
+  and the command replies `failed`, rather than leaving it half signed in
+  with no deadline.
 - `submit_password {generation, password}`: only for the current generation
   while a password is wanted. SRP (`auth.checkPassword` via Telethon's
   `sign_in(password=…)`), then the password is dropped: it is never stored,
