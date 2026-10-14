@@ -1,6 +1,15 @@
 name: Deploy both
 on:
   workflow_dispatch:
+    inputs:
+      accept_migrations:
+        description: "Reviewed upstream migration changes to allow (path@blob,... exactly as a refused run printed)"
+        required: false
+        default: ""
+      acknowledge_failed_job:
+        description: "Clear the latch of this exact failed host job first (32-character id from its summary)"
+        required: false
+        default: ""
 permissions:
   contents: read
 jobs:
@@ -9,3 +18,5 @@ jobs:
     secrets: inherit
     with:
       operation: both
+      acknowledge_failed_job: ${{ inputs.acknowledge_failed_job }}
+      accept_migrations: ${{ inputs.accept_migrations }}
