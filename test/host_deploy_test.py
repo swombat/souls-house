@@ -208,6 +208,19 @@ class ReleaseTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "migrations changed"):
                 worker.verify_migrations(before, after)
 
+    def test_retired_migration_may_disappear_only_as_the_pinned_blob(self):
+        path, sha = "srv/daemon/migrations/001_init.sql", "1cbbda87889964c60aba09a7a6a21a7a067bc89f"
+        self.assertEqual(sha, worker.RETIRED_MIGRATIONS[path])
+        runtime = {"var/proc/db/migrate/sqlite/0001.sql": "a"}
+        before = self.tree(**{path: sha}, **runtime)
+        worker.verify_migrations(before, self.tree(**runtime))
+        # A different blob at that path, an edit of it, or any other deletion still refuses.
+        for b, a in [(self.tree(**{path: "other"}, **runtime), self.tree(**runtime)),
+                     (before, self.tree(**{path: "edited"}, **runtime)),
+                     (before, self.tree(**{path: sha}))]:
+            with self.assertRaisesRegex(RuntimeError, "migrations changed"):
+                worker.verify_migrations(b, a)
+
     def test_incomplete_or_unmarked_tree_fails_closed(self):
         good = self.tree()
         for bad in [{"truncated": True, "tree": []}, {"tree": []}]:

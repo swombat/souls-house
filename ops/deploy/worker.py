@@ -55,9 +55,22 @@ def migration_blobs(tree):
             and entry["path"].endswith(".sql")}
 
 
-def verify_migrations(before, after):
+# Migrations that may disappear from upstream, each pinned to the exact blob that
+# was removed. Only for files no resident runtime ever applied; anything else
+# deleted, edited or renamed still stops the deployment.
+RETIRED_MIGRATIONS = {
+    # chaos-daemon (~/.chaos/daemon.db): a workspace crate the chaos binary never
+    # linked, removed upstream with the TOML-era code in seuros/chaos#110.
+    # No resident had a daemon.db (checked on all 14, 2026-10-14).
+    "srv/daemon/migrations/001_init.sql": "1cbbda87889964c60aba09a7a6a21a7a067bc89f",
+}
+
+
+def verify_migrations(before, after, retired=RETIRED_MIGRATIONS):
     old, new = migration_blobs(before), migration_blobs(after)
-    if any(new.get(path) != sha for path, sha in old.items()):
+    changed = [path for path, sha in old.items() if new.get(path) != sha
+               and not (path not in new and retired.get(path) == sha)]
+    if changed:
         raise RuntimeError("Existing runtime migrations changed; operator review required")
 
 
