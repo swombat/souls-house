@@ -34,7 +34,7 @@ It is not a one-click installer. Your agent configures your own copy of this rep
 
 **A machine.** An x86-64 Linux box that can run Docker: a spare laptop (the guide suggests [Omarchy](https://omarchy.org/)), a dedicated server, or a VPS that allows rootful Docker and persistent volumes. ARM and Apple Silicon are not supported yet.
 
-- **4 GB of RAM** is enough for a small personal house. 8 GB is comfortable for a few residents. The house services (Rails, jobs, PostgreSQL, the embedding service) took about 1.9 GB together when we measured production, and quiet residents used 30–130 MB each. Residents that run browsers or builds need more; measure them.
+- **Start with 4 GB of RAM** for one lightly active resident, and 8 GB for a few. These are planning budgets, not tested minimums. The house services (Rails, jobs, PostgreSQL, the embedding service) took about 1.9 GB together when we measured production, and residents used 30–130 MB each between turns. Residents that run browsers or builds need more; measure them.
 - **No GPU.** The models are remote, and memory embeddings run on the CPU.
 - An SSD with room for the runtime image, residents' files and backups.
 
@@ -46,7 +46,7 @@ It is not a one-click installer. Your agent configures your own copy of this rep
 - at least one model provider for your residents: an API key, or a subscription login made from inside the resident's runtime
 - optionally an S3-compatible bucket for uploads. Local disk works too, and then backing it up is yours to arrange.
 
-**What the agent sets up for you:** `bin/house init` writes the one file that names your installation (`config/house.env`) and fresh production credentials that only you hold. `bin/house doctor` checks DNS, SSH, Docker and the host's RAM and disk before anything is deployed. `bin/kamal setup` then brings up the web app, background jobs, PostgreSQL and the embedding service. Each resident runs in its own Docker container on the [Chaos](https://github.com/seuros/chaos) agent harness, alongside the app on the same host.
+**What the agent sets up for you:** `bin/house init` writes the one file that names your installation (`config/house.env`) and guides you through creating your own production credentials, which only you hold. `bin/house doctor` checks DNS, SSH, Docker and the host's RAM and disk before anything is deployed. `bin/kamal setup` then brings up the web app, background jobs, PostgreSQL and the embedding service. Each resident runs in its own Docker container on the [Chaos](https://github.com/seuros/chaos) agent harness, alongside the app on the same host.
 
 **Two things to know before you start.** The app manages resident containers through the host's Docker socket, which amounts to root on that host, so give the house a machine of its own. And backups are part of hosting: the guide covers the database, uploads and residents' volumes, and asks your agent to test a restore before you trust it.
 
@@ -65,7 +65,7 @@ bin/rails db:prepare
 bin/dev                              # http://localhost:3100
 ```
 
-[`docs/dev-credentials.md`](docs/dev-credentials.md) covers local login and credentials. For a second checkout beside the first, use [instance setup](docs/multi-instance-development.md), and never reset an existing development database ([database safety](docs/database-safety.md)).
+On a fresh database, create your account through signup. [`docs/dev-credentials.md`](docs/dev-credentials.md) is the login on existing team databases, and won't exist in yours. For a second checkout beside the first, use [instance setup](docs/multi-instance-development.md), and never reset an existing development database ([database safety](docs/database-safety.md)).
 
 Before a pull request, read [`CONTRIBUTING.md`](CONTRIBUTING.md) (every visible change adds a changelog entry) and [`AGENTS.md`](AGENTS.md), which lists the checks to run. Those files are written for human and AI contributors alike, so pointing your own agent at them works. [The documentation index](docs/overview.md) covers the architecture, the API, resident runtime, testing, and the real-time sync between Rails and Svelte.
 
@@ -77,4 +77,4 @@ souls.house grew out of HelixKit, a Svelte-on-Rails app kit. Some database names
 
 ## License
 
-MIT.
+[MIT](LICENSE). Use it, change it, run it, sell it.
