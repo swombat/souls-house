@@ -64,6 +64,16 @@ def active(operation):
         check=False).returncode == 0
 
 
+def exited(operation):
+    """Positively established exit: "not active" also covers activating,
+    deactivating and query errors, none of which may release a latch."""
+    result = subprocess.run(
+        ["/usr/bin/systemctl", "show", "--property=ActiveState", "--value",
+         f"house-deploy-{operation}.service"],
+        check=False, capture_output=True, text=True)
+    return result.returncode == 0 and result.stdout.strip() in ("inactive", "failed")
+
+
 def status(job_id):
     data = json.loads((ROOT / "runs" / job_id / "status.json").read_text())
     if data["state"] not in TERMINAL and not active(data["operation"]):
@@ -79,7 +89,7 @@ def acknowledge(job_id):
     if not current.exists() or json.loads(current.read_text())["id"] != job_id:
         raise RuntimeError("Not the latched deployment")
     result = status(job_id)
-    if result["state"] not in ("failed", "interrupted") or active(result["operation"]):
+    if result["state"] not in ("failed", "interrupted") or not exited(result["operation"]):
         raise RuntimeError("Only an exited failed or interrupted deployment can be acknowledged")
     directory = ROOT / "runs" / job_id
     data = json.loads((directory / "status.json").read_text())

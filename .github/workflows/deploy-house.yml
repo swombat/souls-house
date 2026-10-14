@@ -93,7 +93,10 @@ jobs:
               "house-deploy-trigger@$DEPLOY_HOST" "$1"
           }
           if [[ -n "$ACKNOWLEDGE_JOB" ]]; then
-            printf 'Acknowledged: %s\n' "$(remote "acknowledge $ACKNOWLEDGE_JOB")"
+            # Assigned on its own line so a host refusal stops the run (set -e);
+            # inside printf's arguments the failure would be swallowed.
+            acknowledged="$(remote "acknowledge $ACKNOWLEDGE_JOB")"
+            printf 'Acknowledged: %s\n' "$acknowledged"
           fi
           receipt="$(remote "$request")"
           printf '%s\n' "$receipt"

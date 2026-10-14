@@ -78,6 +78,45 @@ class WorkflowAuthorityTest(unittest.TestCase):
         self.assertNotIn("acknowledge", automatic)
         self.assertNotIn("accept_migrations", automatic)
 
+    def run_transport(self, ssh_script, **env):
+        """Execute the checked-in transport script with a fake ssh on PATH."""
+        transport = (OPS.parents[1] / ".github/workflows/deploy-house.yml").read_text()
+        block = transport.split("        run: |\n", 1)[1].split("\n      # Marker steps", 1)[0]
+        script = "\n".join(line[10:] for line in block.splitlines())
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Path(directory) / "ssh"
+            fake.write_text("#!/bin/bash\n" + ssh_script)
+            fake.chmod(0o755)
+            summary = Path(directory) / "summary"
+            base = dict(PATH=f"{directory}:{os.environ['PATH']}", DEPLOY_KEY="k",
+                        DEPLOY_KNOWN_HOSTS="h", DEPLOY_HOST="host.example", DEPLOY_PORT="22",
+                        GITHUB_STEP_SUMMARY=str(summary), GITHUB_OUTPUT=str(Path(directory) / "out"),
+                        OPERATION="chaos", EXPECTED_REVISION="", ACCEPT_MIGRATIONS="",
+                        ACKNOWLEDGE_JOB="")
+            base.update(env)
+            result = subprocess.run(["bash", "-c", script], env=base, capture_output=True, text=True)
+            calls = (Path(directory) / "calls").read_text() if (Path(directory) / "calls").exists() else ""
+            return result, calls
+
+    def test_refused_acknowledgement_stops_before_any_request(self):
+        result, calls = self.run_transport(
+            'echo "${@: -1}" >> "$(dirname "$0")/calls"\n'
+            'case "${@: -1}" in acknowledge*) echo "Deployment request unavailable" >&2; exit 1;; esac\n'
+            'echo \'{"id":"' + "b" * 32 + '","state":"success"}\'\n',
+            ACKNOWLEDGE_JOB="a" * 32)
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual(["acknowledge " + "a" * 32], calls.splitlines())
+
+    def test_accepted_acknowledgement_then_requests_with_acceptance(self):
+        entry = "srv/daemon/migrations/001_init.sql@" + "1" * 40
+        result, calls = self.run_transport(
+            'echo "${@: -1}" >> "$(dirname "$0")/calls"\n'
+            'echo \'{"id":"' + "b" * 32 + '","state":"success"}\'\n',
+            ACKNOWLEDGE_JOB="a" * 32, ACCEPT_MIGRATIONS=entry)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(["acknowledge " + "a" * 32, "chaos accept " + entry, "status " + "b" * 32],
+                         calls.splitlines())
+
     def test_superseded_is_a_failed_github_job_not_a_green_nothing(self):
         # #313: host superseded with GitHub success looks like a deploy.
         transport = (OPS.parents[1] / ".github/workflows/deploy-house.yml").read_text()
@@ -229,7 +268,8 @@ class GateTest(unittest.TestCase):
 
     def test_acknowledge_releases_only_the_named_exited_failure(self):
         job_id = self.job("failed")
-        with patch.object(gate, "active", return_value=False):
+        with patch.object(gate, "active", return_value=False), \
+             patch.object(gate, "exited", return_value=True):
             with self.assertRaises(RuntimeError):
                 gate.acknowledge("b" * 32)
             self.assertTrue(gate.acknowledge(job_id)["acknowledged"])
@@ -242,10 +282,29 @@ class GateTest(unittest.TestCase):
         for state, running in [("running", True), ("success", False), ("failed", True)]:
             shutil.rmtree(self.root / "runs" / ("a" * 32), ignore_errors=True)
             job_id = self.job(state)
-            with patch.object(gate, "active", return_value=running):
+            with patch.object(gate, "active", return_value=running), \
+                 patch.object(gate, "exited", return_value=not running):
                 with self.assertRaises(RuntimeError, msg=state):
                     gate.acknowledge(job_id)
             self.assertTrue((self.root / "current.json").exists())
+
+    def test_only_a_positively_exited_unit_counts_as_exited(self):
+        def unit(stdout, returncode=0):
+            return subprocess.CompletedProcess([], returncode, stdout=stdout, stderr="")
+        for result, expected in [(unit("inactive\n"), True), (unit("failed\n"), True),
+                                 (unit("deactivating\n"), False), (unit("activating\n"), False),
+                                 (unit("active\n"), False), (unit("reloading\n"), False),
+                                 (unit(""), False), (unit("inactive\n", 1), False)]:
+            with patch.object(gate.subprocess, "run", return_value=result):
+                self.assertEqual(expected, gate.exited("chaos"), result)
+
+    def test_failed_job_still_deactivating_is_not_acknowledged(self):
+        job_id = self.job("failed")
+        deactivating = subprocess.CompletedProcess([], 3, stdout="deactivating\n", stderr="")
+        with patch.object(gate.subprocess, "run", return_value=deactivating):
+            with self.assertRaises(RuntimeError):
+                gate.acknowledge(job_id)
+        self.assertTrue((self.root / "current.json").exists())
 
     def test_forced_command_admits_accept_and_acknowledge_shapes(self):
         import re
