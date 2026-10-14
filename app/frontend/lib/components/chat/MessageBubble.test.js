@@ -194,3 +194,29 @@ test('system messages render as a platform notice, not as anyone’s bubble', ()
   expect(container.querySelector('[data-testid="message-group"]')).toBeNull();
   expect(container.querySelector('.justify-end')).toBeNull();
 });
+
+test('a platform notice can carry a link to an in-app page, and only an in-app one', () => {
+  const base = { id: 'fail', role: 'system', author_name: 'The house', created_at: '2026-10-14T05:40:00Z' };
+  const { getByTestId, unmount } = render(MessageBubble, {
+    message: {
+      ...base,
+      content: "Lume couldn't respond here: the run ended in an error (3rd failed run in a row since 06:19 CEST).",
+      notice_link: { label: 'Why?', path: '/accounts/abc/agents/xyz/edit?tab=interactions' },
+    },
+  });
+  const link = getByTestId('system-notice').querySelector('a');
+  expect(link).toHaveTextContent('Why?');
+  expect(link).toHaveAttribute('href', '/accounts/abc/agents/xyz/edit?tab=interactions');
+  unmount();
+
+  const other = render(MessageBubble, {
+    message: { ...base, content: 'x', notice_link: { label: 'Why?', path: 'https://evil.example/' } },
+  });
+  expect(other.getByTestId('system-notice').querySelector('a')).toBeNull();
+  other.unmount();
+
+  const relative = render(MessageBubble, {
+    message: { ...base, content: 'x', notice_link: { label: 'Why?', path: '//evil.example/' } },
+  });
+  expect(relative.getByTestId('system-notice').querySelector('a')).toBeNull();
+});

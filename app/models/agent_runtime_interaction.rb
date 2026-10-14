@@ -2,6 +2,7 @@ class AgentRuntimeInteraction < ApplicationRecord
 
   include LiveActivity
   include ResponseChain
+  include FailureReport
 
   SUPPORTED_TELEMETRY_SCHEMA_VERSION = 1
   LOCAL_USAGE_SCOPES = %w[invocation trigger].freeze

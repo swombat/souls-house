@@ -225,7 +225,7 @@ class Message < ApplicationRecord
                   :audio_source, :audio_url,
                   :voice_available, :voice_audio_url,
                   :reasoning_skip_reason, :reasoning_skip_reason_label, :rhythm_provenance, :safeguard,
-                  :runtime_model_label, :handoff_receipts, :handoff_receipts_version do |hash, options|
+                  :runtime_model_label, :handoff_receipts, :handoff_receipts_version, :notice_link do |hash, options|
     if options&.dig(:include_ruby_llm_telemetry) && (telemetry = ruby_llm_telemetry)
       hash["ruby_llm_telemetry"] = telemetry
     end

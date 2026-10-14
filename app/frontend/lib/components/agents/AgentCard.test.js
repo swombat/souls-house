@@ -93,3 +93,27 @@ test('shows an empty graph as zero nodes and connections', () => {
   render(AgentCard, { agent: { ...agent, mnemodyne_node_count: 0, mnemodyne_edge_count: 0 }, accountId: 'test' });
   expect(screen.getByLabelText('Mnemodyne nodes / connections').parentElement).toHaveTextContent('0 / 0');
 });
+
+test('says nothing about failures when the last runs did not fail', () => {
+  render(AgentCard, { agent, accountId: 'test' });
+  expect(screen.queryByTestId('failed-runs')).not.toBeInTheDocument();
+});
+
+test('shows a failure streak, and calls the runtime not starting only when the streak says so', () => {
+  const since = new Date();
+  since.setHours(6, 20, 0, 0);
+  const { unmount } = render(AgentCard, {
+    agent: { ...agent, failed_runs: { count: 3, since: since.toISOString(), runtime_unavailable: false } },
+    accountId: 'test',
+  });
+  const box = screen.getByTestId('failed-runs');
+  expect(box).toHaveTextContent(/Last 3 runs failed \(since 0?6:20/);
+  expect(box).not.toHaveTextContent("runtime isn't starting");
+  unmount();
+
+  render(AgentCard, {
+    agent: { ...agent, failed_runs: { count: 2, since: since.toISOString(), runtime_unavailable: true } },
+    accountId: 'test',
+  });
+  expect(screen.getByTestId('failed-runs')).toHaveTextContent("Test resident's runtime isn't starting");
+});
