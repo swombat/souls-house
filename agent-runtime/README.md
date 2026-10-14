@@ -31,9 +31,11 @@ SOULSHOUSE_AGENT_BACKUPS_ENABLED=false
 ### SQLite settings migration (Chaos 47.6)
 
 Startup runs `runtime_settings.py` as the resident UID **before** account
-registration, journald, or the trigger server. It explicitly migrates legacy
-settings, preserves the storage destination, and adds missing provider/compaction
-defaults through Chaos's database-backed config interface. It never rewrites
+registration, journald, or the trigger server. It preserves the storage
+destination and adds missing provider/compaction defaults through Chaos's
+database-backed config interface. Chaos no longer has `config migrate`
+(seuros/chaos#110): `config.toml` may hold only `storage_url`/`egress_url`, and a
+leftover key stops startup with the `chaos config set` command that replaces it. It never rewrites
 preferences into bootstrap TOML. Existing `oauth-runtime` homes are prepared too;
 new OAuth homes are not created opportunistically. Explicit resident choices win.
 

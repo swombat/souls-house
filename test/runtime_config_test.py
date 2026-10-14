@@ -43,7 +43,8 @@ class RuntimeConfigTest(unittest.TestCase):
                 return json.dumps({'agent_compaction_control': 'disabled', 'hook_approval_policy': 'on-request',
                                    'model_providers': {'gemini': {'name': 'resident custom'}}}) if args == ('get',) else ''
             s.prepare(home, run)
-            self.assertEqual(calls[:2], [('migrate', '--dry-run'), ('migrate',)])
+            self.assertNotIn(('migrate',), calls)
+            self.assertNotIn(('migrate', '--dry-run'), calls)
             edits = [a for a in calls if a[0] == 'set']
             self.assertEqual([a[1] for a in edits], ['model_providers.openrouter'])
             self.assertEqual(calls[-1], ('doctor',))
@@ -108,17 +109,12 @@ class RealRuntimeConfigTest(unittest.TestCase):
         self.assertEqual(self.read(), first)
         self.assertEqual(set(tomllib.loads((self.home/'config.toml').read_text())), {'storage_url'})
 
-    def test_legacy_choices_custom_provider_and_second_boot(self):
-        for choice in ['disabled','bounded']:
-            with self.subTest(choice=choice):
-                home = self.home/choice;home.mkdir()
-                (home/'config.toml').write_text(f'agent_compaction_control="{choice}"\n[model_providers.gemini]\nname="Custom"\nbase_url="https://example.test/v1"\nwire_api="chat_completions"\n')
-                s.prepare(home)
-                first = json.loads(s.command(home,'get'))
-                self.assertEqual(first['agent_compaction_control'],choice)
-                self.assertEqual(first['model_providers']['gemini']['name'],'Custom')
-                s.prepare(home)
-                self.assertEqual(json.loads(s.command(home,'get')),first)
+    def test_legacy_settings_in_bootstrap_fail_visibly_and_are_not_rewritten(self):
+        p=self.home/'config.toml'
+        legacy='agent_compaction_control="bounded"\n'
+        p.write_text(legacy)
+        with self.assertRaises(RuntimeError):s.prepare(self.home)
+        self.assertEqual(p.read_text(),legacy)
 
     def test_invalid_config_is_not_overwritten(self):
         p=self.home/'config.toml';p.write_text('[broken\n')

@@ -36,11 +36,17 @@ def command(home, *args):
 def prepare(home, run=command):
     home = Path(home).resolve()
     home.mkdir(parents=True, exist_ok=True, mode=0o700)
-    # Explicit migration is retryable; never recreate legacy TOML after cleanup.
-    run(home, "migrate", "--dry-run")
-    run(home, "migrate")
+    # Chaos removed TOML settings and `config migrate` (seuros/chaos#110).
+    # config.toml is now a strict bootstrap file (storage_url, egress_url);
+    # every home was migrated and stripped on earlier boots, and a leftover
+    # key now fails startup visibly rather than being rewritten here.
     bootstrap = home / "config.toml"
-    settings = tomllib.loads(bootstrap.read_text()) if bootstrap.exists() else {}
+    try:
+        settings = tomllib.loads(bootstrap.read_text()) if bootstrap.exists() else {}
+    except tomllib.TOMLDecodeError:
+        # Never overwrite or echo a damaged bootstrap file; stop visibly.
+        raise RuntimeError("Chaos bootstrap config.toml is not valid TOML; "
+                           "settings are not ready; inspect privately before retrying") from None
     if not settings.get("storage_url"):
         destination = ("env:CHAOS_STORAGE_URL" if os.environ.get("CHAOS_STORAGE_URL") else
                        (home / "chaos.sqlite").as_uri().replace("file:", "sqlite:", 1))
