@@ -3,10 +3,16 @@ require "test_helper"
 class SiteDashboardTest < ActiveSupport::TestCase
 
   setup do
+    # Daily series are keyed on now.to_date; several tests read .last.
+    # Helper default at: 1.hour.ago between 00:00 and 01:00 UTC lands in
+    # yesterday's bucket, so today's .last is empty. Pin midday UTC.
+    travel_to Time.current.utc.change(hour: 12, min: 0, sec: 0)
     @public_agent = agents(:research_assistant)
     @founding_agent = agents(:other_account_agent)
     @founding_agent.account.update!(founding: true)
   end
+
+  teardown { travel_back }
 
   def interaction(agent, kind: "conversation", status: "ok", at: 1.hour.ago, **attributes)
     AgentRuntimeInteraction.create!(
