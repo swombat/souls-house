@@ -6,10 +6,12 @@ module Services
   # credential_payload holds only the per-connection callback secret (and its
   # version) the connector signs events with.
   #
-  # Login is QR, then the account's two-step password if it has one. Each
-  # attempt has a login generation: starting or cancelling moves it on, and a
-  # command or event for an older generation is refused on both sides, so a
-  # delayed or replayed start never reopens a cancelled login.
+  # Login is QR, or the phone number and the code Telegram sends (for a
+  # phone, which cannot scan its own screen), then the account's two-step
+  # password if it has one. Each attempt has a login generation: starting or
+  # cancelling moves it on, and a command or event for an older generation is
+  # refused on both sides, so a delayed or replayed start never reopens a
+  # cancelled login.
   class TelegramAdapter
 
     class Error < Services::AdapterError; end
@@ -83,6 +85,48 @@ module Services
       raise
     rescue CommsConnector::Error, SystemCallError, Timeout::Error, IOError, OpenSSL::SSL::SSLError => e
       Rails.logger.warn("Comms submit_password failed for service connection #{connection.id}: #{e.class}")
+      raise Error, "Could not reach the Telegram connector. Try again."
+    end
+
+    # The phone path: Telegram sends a code to the account's app (or by
+    # SMS). The number goes straight through inside the owner's request, like
+    # the password: never stored, queued or logged. Only for the attempt the
+    # owner's page showed, while it is signing in and no password is wanted.
+    # On code_sent the code step is recorded at once (the connector's
+    # login.code_sent event says the same). Returns the connector's outcome.
+    def request_code(connection, phone, generation:)
+      connection.reload
+      unless connection.status == "pairing" && connection.login_state["step"] != "password" &&
+             connection.login_state["error"].blank? && generation == connection.login_generation
+        raise StaleAttempt, "This sign-in has moved on. Use the current page."
+      end
+
+      result = CommsConnector.telegram_command(connection, "request_code", generation:, phone:)
+      if result.is_a?(Hash) && result["outcome"] == "code_sent" && (step = CommsEvents.code_step(result))
+        connection.record_login_code_step!(generation, step)
+      end
+      result
+    rescue StaleAttempt
+      raise
+    rescue CommsConnector::Error, SystemCallError, Timeout::Error, IOError, OpenSSL::SSL::SSLError => e
+      Rails.logger.warn("Comms request_code failed for service connection #{connection.id}: #{e.class}")
+      raise Error, "Could not reach the Telegram connector. Try again."
+    end
+
+    # The code Telegram sent, for the attempt that asked for it: forwarded
+    # and kept nowhere. Returns the connector's outcome.
+    def submit_code(connection, code, generation:)
+      connection.reload
+      unless connection.status == "pairing" && connection.login_state["step"] == "code" &&
+             generation == connection.login_generation
+        raise StaleAttempt, "This sign-in has moved on. Use the current page."
+      end
+
+      CommsConnector.telegram_command(connection, "submit_code", generation:, code:)
+    rescue StaleAttempt
+      raise
+    rescue CommsConnector::Error, SystemCallError, Timeout::Error, IOError, OpenSSL::SSL::SSLError => e
+      Rails.logger.warn("Comms submit_code failed for service connection #{connection.id}: #{e.class}")
       raise Error, "Could not reach the Telegram connector. Try again."
     end
 

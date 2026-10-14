@@ -27,7 +27,10 @@ module CommsEvents
   EDIT_FIELDS = %w[provider_message_id chat body caption edited_at].freeze
   CHAT_FIELDS = %w[provider_chat_id name kind last_activity_at sync_state].freeze
   LOGIN_FAILURES = %w[expired password_invalid flood_wait failed].freeze
-  LOGIN_EVENTS = %w[pairing.qr login.qr login.password_required login.failed status.changed].freeze
+  LOGIN_EVENTS = %w[pairing.qr login.qr login.code_sent login.password_required login.failed status.changed].freeze
+  # Where Telegram sent a phone sign-in's code (services/telegram-connector,
+  # account.CODE_DELIVERIES).
+  CODE_DELIVERIES = %w[app sms call fragment email other].freeze
   # Refusals that mean "this authenticated lifecycle event is out of date"
   # (an older login attempt, a replaced or expired QR, a login that already
   # finished, an earlier pairing attempt), not "this event is wrong".
@@ -154,6 +157,9 @@ module CommsEvents
       raise Refused.new(:bad_qr, :unprocessable_entity) if code.blank? || expires_at.nil? || issued_at.nil?
       raise Refused.new(:expired_qr, :unprocessable_entity) unless expires_at > now
       raise Refused.new(:bad_qr, :unprocessable_entity) unless expires_at <= now + MAX_QR_LIFETIME
+      # The owner chose the phone number for this attempt: a QR still in
+      # flight from before is out of date.
+      raise Refused.new(:stale_qr, :conflict) if connection.login_state["step"] == "code"
       # A fresh nonce does not make events ordered: an older code arriving
       # after its replacement must not overwrite it.
       if connection.pairing_qr_issued_at && issued_at <= connection.pairing_qr_issued_at
@@ -161,6 +167,18 @@ module CommsEvents
       end
       consume_nonce!(connection, nonce, now)
       connection.update!(pairing_qr: code, pairing_qr_expires_at: expires_at, pairing_qr_issued_at: issued_at)
+    when "login.code_sent"
+      # The phone-number sign-in: Telegram sent a code. Never the number
+      # itself; only where the code went.
+      require_status!(connection, %w[pairing])
+      require_generation!(connection, event)
+      login = code_step(event) || raise(Refused.new(:bad_code_step, :unprocessable_entity))
+      raise Refused.new(:connection_not_accepting, :conflict) if connection.login_state["step"] == "password"
+      consume_nonce!(connection, nonce, now)
+      connection.update!(
+        connector_state: connection.connector_state.to_h.merge("login" => login),
+        pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil
+      )
     when "login.password_required"
       require_status!(connection, %w[pairing])
       require_generation!(connection, event)
@@ -203,6 +221,23 @@ module CommsEvents
     raise Refused.new(:bad_seq, :unprocessable_entity) unless value.is_a?(Integer) && value.positive?
 
     value
+  end
+
+  # The "code" login step from a connector's login.code_sent event or its
+  # request_code reply: where the code went, and Telegram's length, next
+  # delivery and resend timeout when given. nil if it names no known delivery.
+  def code_step(data)
+    delivery = data["delivery"].to_s
+    return unless CODE_DELIVERIES.include?(delivery)
+
+    step = { "step" => "code", "delivery" => delivery }
+    length = data["length"]
+    step["length"] = length if length.is_a?(Integer) && length.between?(1, 64)
+    next_delivery = data["next_delivery"].to_s
+    step["next_delivery"] = next_delivery if CODE_DELIVERIES.include?(next_delivery)
+    timeout = data["timeout"]
+    step["timeout"] = timeout if timeout.is_a?(Integer) && timeout.between?(1, 3600)
+    step
   end
 
   def record_sequence!(connection, seq)

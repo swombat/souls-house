@@ -15,7 +15,8 @@ from connector.fake import World
 from connector.manager import Manager
 from connector.store import Crypto, Store
 
-LOGIN_EVENTS = {"pairing.qr", "login.qr", "login.password_required", "login.failed", "status.changed"}
+LOGIN_EVENTS = {"pairing.qr", "login.qr", "login.code_sent", "login.password_required", "login.failed",
+                "status.changed"}
 STORE_KEY = "k" * 40
 
 
@@ -140,7 +141,14 @@ class FakeRails:
         elif kind == "login.qr":
             need("pairing")
             generation()
+            if c["login"].get("step") == "code":
+                raise Refused("stale_qr", 409)
             c["qr"] = event["code"]
+        elif kind == "login.code_sent":
+            need("pairing")
+            generation()
+            c["login"] = {"step": "code", "delivery": event["delivery"]}
+            c["qr"] = None
         elif kind == "login.password_required":
             need("pairing")
             generation()

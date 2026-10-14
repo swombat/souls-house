@@ -96,6 +96,14 @@
     {#if connection.provider === 'telegram'}
       {#if connection.status === 'pairing' || connection.status === 'reauthorizing'}
         <ConnectionTelegramLogin {connection} {account} />
+        {#if connection.can_delegate}
+          <a
+            class="text-sm text-muted-foreground underline"
+            href={`/accounts/${account.id}/service_connections/${connection.id}/login`}
+            data-testid="telegram-sign-in-page-link">
+            Open the sign-in on its own page
+          </a>
+        {/if}
       {:else if connection.status === 'connected'}
         <ConnectionTelegramStatus {connection} {account} />
       {/if}

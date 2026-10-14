@@ -130,7 +130,9 @@ Rails.application.routes.draw do
       resource :pairing, only: :show, controller: "service_connection_pairings" do
         post :restart
       end
-      resource :login, only: [], controller: "service_connection_logins" do
+      resource :login, only: :show, controller: "service_connection_logins" do
+        post :phone
+        post :code
         post :password
         post :restart
         post :cancel

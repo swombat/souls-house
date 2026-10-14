@@ -261,6 +261,40 @@ module Internal
         assert_equal({}, pairing.login_state)
       end
 
+      test "a phone sign-in's code step clears the QR, records only where the code went, and a late QR cannot return" do
+        pairing = telegram_connection(account: @account, user: @user, status: "pairing", generation: 2)
+        post_telegram_event pairing, qr(generation: 2)
+        assert pairing.reload.current_pairing_qr
+
+        post_telegram_event pairing, { type: "login.code_sent", generation: 1, delivery: "app" }
+        assert_response :conflict
+        assert_equal "stale_generation", response.parsed_body["error"]
+        post_telegram_event pairing, { type: "login.code_sent", generation: 2, delivery: "carrier pigeon" }
+        assert_response :unprocessable_entity
+
+        post_telegram_event pairing, { type: "login.code_sent", generation: 2, delivery: "app", length: 5,
+                                       next_delivery: "sms", timeout: 60, phone: "+447700900123" }
+        assert_response :no_content
+        pairing.reload
+        assert_nil pairing.pairing_qr
+        assert_equal({ "step" => "code", "delivery" => "app", "length" => 5, "next_delivery" => "sms", "timeout" => 60 },
+                     pairing.login_state)
+        assert_not_includes pairing.attributes.to_json, "7700900123"
+
+        # A QR code still in flight from before the owner chose the number.
+        post_telegram_event pairing, qr(generation: 2).merge(issued_at: 1.second.from_now.utc.iso8601)
+        assert_response :conflict
+        assert_equal "stale_qr", response.parsed_body["error"]
+        assert_nil pairing.reload.pairing_qr
+
+        # The code is right but the account has a password: the next step.
+        post_telegram_event pairing, { type: "login.password_required", generation: 2, hint: "tea" }
+        assert_equal({ "step" => "password", "hint" => "tea" }, pairing.reload.login_state)
+        post_telegram_event pairing, { type: "login.code_sent", generation: 2, delivery: "app" }
+        assert_response :conflict
+        assert_equal "password", pairing.reload.login_state["step"]
+      end
+
       test "the pool's availability is recorded for the connection" do
         post_telegram_event @connection, { type: "connector.availability", state: "backlogged", reason: "outbox_full", since: "2026-10-12T10:00:00Z" }
         assert_response :no_content

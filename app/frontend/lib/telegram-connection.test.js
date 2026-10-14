@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { availabilityMessage, formatCountdown, loginErrorMessage, passwordOutcomeMessage } from './telegram-connection';
+import {
+  availabilityMessage,
+  codeOutcomeMessage,
+  codeSentText,
+  formatCountdown,
+  loginErrorMessage,
+  passwordOutcomeMessage,
+  phoneOutcomeMessage,
+} from './telegram-connection';
 
 describe('Telegram connection wording', () => {
   it('names each login failure plainly', () => {
@@ -16,6 +24,27 @@ describe('Telegram connection wording', () => {
       'Telegram asked us to wait 12 seconds.'
     );
     expect(passwordOutcomeMessage({ error: 'Enter the password' }).text).toBe('Enter the password');
+  });
+
+  it('says where Telegram sent the code', () => {
+    expect(codeSentText({ delivery: 'app' })).toMatch(/^Telegram sent a code to your Telegram app/);
+    expect(codeSentText({ delivery: 'sms' })).toBe('Telegram sent a code by SMS.');
+    expect(codeSentText({ delivery: 'nonsense' })).toBe('Telegram sent a code.');
+  });
+
+  it('maps phone and code outcomes plainly', () => {
+    expect(phoneOutcomeMessage({ outcome: 'code_sent' })).toBeNull();
+    expect(phoneOutcomeMessage({ outcome: 'phone_invalid' }).text).toMatch(/international format/);
+    expect(phoneOutcomeMessage({ outcome: 'unsupported' }).text).toMatch(/QR code/);
+    expect(phoneOutcomeMessage({ outcome: 'flood_wait', retry_after: 5 }).text).toBe(
+      'Telegram asked us to wait 5 seconds.'
+    );
+    expect(phoneOutcomeMessage({ error: 'This sign-in has moved on.' }).text).toBe('This sign-in has moved on.');
+    expect(codeOutcomeMessage({ outcome: 'accepted' }).tone).toBe('ok');
+    expect(codeOutcomeMessage({ outcome: 'code_invalid' }).tone).toBe('error');
+    expect(codeOutcomeMessage({ outcome: 'code_expired' }).text).toBe('That code expired. Send a new one.');
+    expect(codeOutcomeMessage({ outcome: 'phone_unregistered' }).text).toMatch(/no Telegram account/);
+    expect(codeOutcomeMessage({ outcome: 'not_configured' }).text).toMatch(/not set up/);
   });
 
   it('says nothing when the connector is fine', () => {

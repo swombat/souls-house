@@ -1,6 +1,7 @@
 // Wording and requests for a Telegram connection's sign-in and status on the
-// integrations page. The two-step password goes through postLoginJson only:
-// a plain fetch, never the Inertia router, so it never reaches page props or
+// integrations page and the focused sign-in page. The two-step password, the
+// phone number and the code Telegram sends go through postLoginJson only: a
+// plain fetch, never the Inertia router, so they never reach page props or
 // browser history.
 
 function waitWords(seconds) {
@@ -41,6 +42,83 @@ export function passwordOutcomeMessage(result) {
         tone: 'error',
         text: 'The Telegram connector is not set up on this house, so the password was not sent.',
       };
+    case 'failed':
+      return { tone: 'error', text: 'Sign-in failed. Restart sign-in to try again.' };
+    default:
+      return { tone: 'error', text: result?.error || 'Something went wrong. Try again.' };
+  }
+}
+
+const notConfigured = {
+  tone: 'error',
+  text: 'The Telegram connector is not set up on this house, so nothing was sent.',
+};
+
+// Where Telegram says it sent the code (the connector's `delivery`).
+export function codeSentText(login) {
+  switch (login?.delivery) {
+    case 'app':
+      return 'Telegram sent a code to your Telegram app. Look for a message from “Telegram” in the app.';
+    case 'sms':
+      return 'Telegram sent a code by SMS.';
+    case 'call':
+      return 'Telegram is calling your phone with the code.';
+    case 'fragment':
+      return 'Telegram sent the code through Fragment.';
+    case 'email':
+      return 'Telegram sent a code to your login email.';
+    default:
+      return 'Telegram sent a code.';
+  }
+}
+
+export function phoneOutcomeMessage(result) {
+  switch (result?.outcome) {
+    case 'code_sent':
+      return null;
+    case 'accepted':
+      return { tone: 'ok', text: 'Signed in. Finishing sign-in.' };
+    case 'password_required':
+      return { tone: 'ok', text: 'This account also has a two-step password.' };
+    case 'phone_invalid':
+      return {
+        tone: 'error',
+        text: 'Telegram did not accept that number. Enter it in international format: + and the country code, then the number.',
+      };
+    case 'phone_banned':
+      return { tone: 'error', text: 'Telegram says this number is banned.' };
+    case 'unsupported':
+      return {
+        tone: 'error',
+        text: 'Telegram cannot send a code here for this account. Scan the QR code with Telegram on another device instead.',
+      };
+    case 'flood_wait':
+      return { tone: 'error', text: waitWords(result.retry_after) };
+    case 'not_configured':
+      return notConfigured;
+    case 'failed':
+      return { tone: 'error', text: 'Could not send a code. Try again, or restart sign-in.' };
+    default:
+      return { tone: 'error', text: result?.error || 'Something went wrong. Try again.' };
+  }
+}
+
+export function codeOutcomeMessage(result) {
+  switch (result?.outcome) {
+    case 'accepted':
+      return { tone: 'ok', text: 'Code accepted. Finishing sign-in.' };
+    case 'password_required':
+      return { tone: 'ok', text: 'Code accepted. This account also has a two-step password.' };
+    case 'code_invalid':
+      return { tone: 'error', text: 'That code was not right. Check it and try again.' };
+    case 'code_expired':
+      return { tone: 'error', text: 'That code expired. Send a new one.' };
+    case 'phone_unregistered':
+      return { tone: 'error', text: 'There is no Telegram account for that number. Check it and try again.' };
+    case 'flood_wait':
+      return { tone: 'error', text: waitWords(result.retry_after) };
+    case 'not_configured':
+      return notConfigured;
     case 'failed':
       return { tone: 'error', text: 'Sign-in failed. Restart sign-in to try again.' };
     default:

@@ -213,6 +213,21 @@ class ServiceConnection < ApplicationRecord
     connector_state.to_h["login"].to_h
   end
 
+  # A phone sign-in's code step, recorded as the connector's request_code
+  # reply comes back (its login.code_sent event, applied in order, says the
+  # same): only for the attempt that asked, never over a password step.
+  # Clears the QR the owner chose not to use.
+  def record_login_code_step!(generation, step)
+    with_lock do
+      return false unless status == "pairing" && login_generation == generation && login_state["step"] != "password"
+
+      update!(
+        connector_state: connector_state.to_h.merge("login" => step),
+        pairing_qr: nil, pairing_qr_expires_at: nil, pairing_qr_issued_at: nil
+      )
+    end
+  end
+
   def connector_availability
     connector_state.to_h["availability"].to_h.presence || { "state" => "ok" }
   end

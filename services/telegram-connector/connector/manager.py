@@ -6,7 +6,7 @@ from .account import Account, Refused
 
 log = logging.getLogger("telegram.manager")
 
-OPERATIONS = ("start_login", "submit_password", "cancel_login", "logout", "search")
+OPERATIONS = ("start_login", "request_code", "submit_code", "submit_password", "cancel_login", "logout", "search")
 
 
 class Manager:
@@ -58,6 +58,30 @@ class Manager:
                     reply = await account.submit_password(fields.get("generation"), password)
                 finally:
                     password = None  # noqa: F841
+            elif operation == "request_code":
+                # The phone number, like the code and the password, is taken
+                # out of the fields at once and never stored, queued or logged.
+                account = self.account(ref)
+                phone = fields.pop("phone", None)
+                if account is None:
+                    raise Refused("not_logging_in")
+                if not isinstance(phone, str) or not phone:
+                    raise Refused("bad_phone", 422)
+                try:
+                    reply = await account.request_code(fields.get("generation"), phone)
+                finally:
+                    phone = None  # noqa: F841
+            elif operation == "submit_code":
+                account = self.account(ref)
+                code = fields.pop("code", None)
+                if account is None:
+                    raise Refused("not_waiting_for_code")
+                if not isinstance(code, str) or not code.strip() or len(code) > 64:
+                    raise Refused("bad_code", 422)
+                try:
+                    reply = await account.submit_code(fields.get("generation"), code.strip())
+                finally:
+                    code = None  # noqa: F841
             elif operation == "logout":
                 account = self.account(ref)
                 if account is None:

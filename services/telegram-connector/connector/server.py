@@ -88,7 +88,7 @@ def make_app(manager, store, keys, client_name=None, clock=time.time):
             log.warning("command refused: op=%s reason=%s", operation, refused.code)
             return reply(refused.status, {"error": refused.code})
         finally:
-            raw[:] = b"\0" * len(raw)  # the body may hold a password or a secret
+            raw[:] = b"\0" * len(raw)  # the body may hold a password, a phone number, a login code or a secret
         status, body = await manager.command(ref, operation, fields)
         fields.clear()
         return reply(status, body)

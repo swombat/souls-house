@@ -22,6 +22,12 @@ class Accounts::ServiceConnectionsController < ApplicationController
           management_scope: connection.management_scope,
           external_identity: connection.external_identity,
           authority_summary: connection.credential_metadata["authority_summary"])
+    # Telegram's sign-in has its own focused page (it is also on the
+    # Integrations card).
+    if connection.provider == "telegram" && connection.status == "pairing"
+      return redirect_to account_service_connection_login_path(current_account, connection.public_id)
+    end
+
     redirect_to account_integrations_path(current_account),
                 notice: connection.status == "pairing" ? "Scan the pairing code to link #{definition.name}" : "#{definition.name} connected"
   rescue Services::Definition::UnknownProvider, Services::AdapterError, KeyError, ArgumentError, ActiveRecord::RecordInvalid => e

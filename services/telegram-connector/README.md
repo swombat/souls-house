@@ -28,7 +28,7 @@ connector/fake.py      a fake Telegram for the tests and the Rails end-to-end te
 ## Protocol
 
 **Rails → connector** (`app/lib/comms_connector.rb`, `Services::TelegramAdapter`):
-`POST /connections/<svc_id>/{start_login,submit_password,cancel_login,logout,search}`
+`POST /connections/<svc_id>/{start_login,request_code,submit_code,submit_password,cancel_login,logout,search}`
 over mutual TLS (Rails's client certificate, the connector's server
 certificate, one house CA; with `COMMS_TLS_CLIENT_NAME` the client
 certificate must name `rails`), signed with `COMMS_COMMAND_KEY`:
@@ -51,6 +51,32 @@ accepted too.
   retried only until it expires) and is renewed as it expires, for at most
   ten minutes, then `login.failed expired`. A two-step account gets
   `login.password_required` (with Telegram's hint).
+- `request_code {generation, phone}`: the phone-number path, for signing in
+  on the phone itself (Telegram will not approve a `tg://login` token opened
+  on the device that would approve it). Only for the current generation
+  while it is logging in (409 `not_logging_in` otherwise). The number must
+  be international (`+` or `00`, then the country code); anything else is
+  `phone_invalid` without asking Telegram. The first request ends the
+  attempt's QR loop (no more `login.qr`) and starts the phone path's own
+  ten-minute window, then `auth.sendCode` through Telethon's
+  `send_code_request` on the same client. A second request for the same
+  number resends (Telethon's `auth.resendCode`); another number starts over.
+  The number and Telegram's `phone_code_hash` are held in memory for
+  `submit_code` only. Replies `code_sent` with `delivery` (`app`, `sms`,
+  `call`, `fragment`, `email`, `other`), and when Telegram gives them
+  `length`, `next_delivery` and `timeout`; the same, without the number, is
+  queued as `login.code_sent`. Or `phone_invalid`, `phone_banned`,
+  `unsupported` (Telegram wants a login email set up first: use the QR),
+  `flood_wait` (+`retry_after`) or `failed`.
+- `submit_code {generation, code}`: only for the current generation after a
+  code was sent (409 `not_waiting_for_code` otherwise). `auth.signIn`, then
+  the code is dropped. Replies `accepted`, `password_required` (a two-step
+  account: `login.password_required` follows and `submit_password` finishes
+  it), `code_invalid`, `code_expired` (ask for a new one), `phone_unregistered`
+  (no Telegram account for the number), `flood_wait` (+`retry_after`) or
+  `failed`. The phone number and the code get the password's discipline:
+  never stored, queued or logged, the body buffer zeroed, taken out of the
+  command fields at once.
 - `submit_password {generation, password}`: only for the current generation
   while a password is wanted. SRP (`auth.checkPassword` via Telethon's
   `sign_in(password=…)`), then the password is dropped: it is never stored,
@@ -71,7 +97,7 @@ accepted too.
 signed with the connection's callback secret (`CommsSignature`). Through the
 ordered outbox, with sequence numbers: `status.changed` (`connected` with the
 identity, `logged_out`; always with the current generation),
-`login.password_required`, `login.failed`, `chat.upsert` (every dialog;
+`login.code_sent`, `login.password_required`, `login.failed`, `chat.upsert` (every dialog;
 unsynced ones with `synced: false` and a reason), `message.upsert`,
 `message.edit`, `message.delete` (non-channel deletes resolved through the
 durable peer map, the rest counted as `unresolved`), `sync.checkpoint`.
@@ -169,6 +195,7 @@ than committed over the reset.
 are AES-GCM sealed under HKDF-SHA256(`COMMS_STORE_KEY`, salt
 `souls-house-telegram-store-v1`, info = connection). The volume holds no
 message text, name or password in clear (tested with canaries).
+Nor the phone number or login code of a phone sign-in.
 
 ## Test
 
@@ -207,7 +234,7 @@ COMMS_TELEGRAM_CONNECTOR_PYTHON=$PWD/services/telegram-connector/.venv/bin/pytho
 
 The process refuses to start, logging a fixed reason and no value, if any is
 missing or malformed. Logs are JSON lines of fixed words and a keyed log id,
-never a connection id, a name, a message, a code or a password; Telethon's
+never a connection id, a name, a message, a code, a phone number or a password; Telethon's
 own logger is held at ERROR.
 
 ## Deploying

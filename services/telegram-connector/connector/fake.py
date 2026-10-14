@@ -1,7 +1,8 @@
 """A fake Telegram for tests and the Rails end-to-end test.
 
 Not a mock of Telethon's client: a small model of the parts of Telegram the
-connector uses (QR login with an optional two-step password, the common
+connector uses (QR login, or a phone number and the code Telegram sends to
+the account's app, with an optional two-step password; the common
 update box with pts, per-channel pts, getDifference / getChannelDifference
 slices, dialogs, history, search, logout), answering with real Telethon TL
 objects so the connector's conversion runs on the real types.
@@ -29,6 +30,8 @@ SELF_ID = 1000
 ALICE, BOT, BOB = 2001, 2002, 2003
 FAMILY = 3001                     # basic group
 TEAM, NEWS, BIG = 4001, 4002, 4003  # small megagroup, broadcast, large megagroup
+PHONE = "447700900123"            # the account's number, as Telegram's digits
+LOGIN_CODE = "24680"
 
 
 def now():
@@ -119,9 +122,38 @@ class FakeTelegram:
 
     async def begin_qr(self):
         self.world.check("begin_qr")
-        if self.world.auto_scan is not None:
+        if self.world.auto_scan:
             asyncio.get_running_loop().call_later(self.world.auto_scan, self.world.scanned.set)
         return FakeQR(self.world, self)
+
+    async def send_code(self, phone):
+        """auth.sendCode: any well-formed number gets a code (Telegram only
+        says there is no account at signIn). The code goes to the app."""
+        world = self.world
+        world.check("send_code")
+        world.phones_seen.append(phone)
+        world.codes_sent += 1
+        code_hash = secrets.token_hex(8)
+        world.code_hashes[code_hash] = phone
+        return {"hash": code_hash, "delivery": world.code_delivery, "length": len(world.login_code),
+                "next_delivery": "sms", "timeout": 60}
+
+    async def sign_in_code(self, phone, code, phone_code_hash):
+        world = self.world
+        world.check("sign_in_code")
+        world.codes_seen.append(code)
+        if world.code_hashes.get(phone_code_hash) != phone or world.code_expired:
+            world.code_hashes.pop(phone_code_hash, None)
+            raise errors.PhoneCodeExpiredError(None)
+        if code != world.login_code:
+            raise errors.PhoneCodeInvalidError(None)
+        if phone != world.phone:
+            raise errors.PhoneNumberUnoccupiedError(None)
+        world.code_hashes.pop(phone_code_hash, None)
+        if world.password is not None:
+            raise errors.SessionPasswordNeededError(None)
+        world.add_session(self.session)
+        return world.users[SELF_ID]
 
     async def password_hint(self):
         return self.world.password_hint
@@ -186,7 +218,7 @@ class FakeTelegram:
 
 class World:
     def __init__(self, directory="", marker=None, history_days=40, history_per_day=1, live=0, live_interval=1.0,
-                 password=None, auto_scan=None, qr_ttl=30, slice_size=50):
+                 password=None, auto_scan=None, qr_ttl=30, slice_size=50, phone=PHONE, login_code=LOGIN_CODE):
         env = os.environ
         if directory:
             os.makedirs(directory, exist_ok=True)
@@ -194,13 +226,24 @@ class World:
             live = int(env.get("TELEGRAM_FAKE_LIVE", live))
             live_interval = float(env.get("TELEGRAM_FAKE_LIVE_INTERVAL", live_interval))
             password = env.get("TELEGRAM_FAKE_PASSWORD", password)
+            # 0 turns the automatic QR scan off (the phone-code path's e2e).
             auto_scan = float(env.get("TELEGRAM_FAKE_AUTO_SCAN", 0.5))
+            phone = env.get("TELEGRAM_FAKE_PHONE", phone)
+            login_code = env.get("TELEGRAM_FAKE_CODE", login_code)
         self.directory = directory
         self.marker = marker or ""
         self.password = password
         self.password_hint = "the usual" if password else None
         self.auto_scan = auto_scan
         self.qr_ttl = qr_ttl
+        self.phone = phone
+        self.login_code = login_code
+        self.code_delivery = "app"
+        self.code_expired = False
+        self.code_hashes = {}
+        self.codes_sent = 0
+        self.phones_seen = []
+        self.codes_seen = []
         self.slice_size = slice_size
         self.scanned = asyncio.Event() if _loop_ok() else None
         self.qr_waiting = asyncio.Event() if _loop_ok() else None

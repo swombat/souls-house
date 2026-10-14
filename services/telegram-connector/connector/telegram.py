@@ -60,6 +60,28 @@ def peer_from_key(key):
     raise ValueError("bad chat key")
 
 
+def code_delivery(code_type):
+    """auth.SentCodeType → the word the page shows (account.CODE_DELIVERIES),
+    or None for a type a third-party app cannot complete (setting up a
+    login email first)."""
+    sent = types.auth
+    if isinstance(code_type, sent.SentCodeTypeApp):
+        return "app"
+    if isinstance(code_type, (sent.SentCodeTypeSms, sent.SentCodeTypeSmsWord, sent.SentCodeTypeSmsPhrase,
+                              sent.SentCodeTypeFirebaseSms, types.auth.CodeTypeSms)):
+        return "sms"
+    if isinstance(code_type, (sent.SentCodeTypeCall, sent.SentCodeTypeFlashCall, sent.SentCodeTypeMissedCall,
+                              types.auth.CodeTypeCall, types.auth.CodeTypeFlashCall, types.auth.CodeTypeMissedCall)):
+        return "call"
+    if isinstance(code_type, (sent.SentCodeTypeFragmentSms, types.auth.CodeTypeFragmentSms)):
+        return "fragment"
+    if isinstance(code_type, sent.SentCodeTypeEmailCode):
+        return "email"
+    if isinstance(code_type, sent.SentCodeTypeSetUpEmailRequired):
+        return None
+    return "other"
+
+
 class HouseSession(StringSession):
     """The auth key and DC, as a string the store seals. No update state:
     the connector's store owns that (see the module docstring)."""
@@ -127,6 +149,28 @@ class RealTelegram:
 
     async def begin_qr(self):
         return await self.client.qr_login()
+
+    async def send_code(self, phone):
+        """auth.sendCode (auth.resendCode when this client already sent a
+        code to the number: Telethon keeps phone → phone_code_hash in memory
+        and resends, client/auth.py send_code_request, 1.41.2). Returns
+        {"hash", "delivery", "length", "next_delivery", "timeout"}; the hash
+        stays in the caller's memory."""
+        sent = await self.client.send_code_request(phone)
+        if not isinstance(sent, types.auth.SentCode):
+            return {"hash": None, "delivery": None}
+        result = {"hash": sent.phone_code_hash, "delivery": code_delivery(sent.type),
+                  "length": getattr(sent.type, "length", None), "timeout": sent.timeout}
+        if sent.next_type is not None:
+            result["next_delivery"] = code_delivery(sent.next_type)
+        return result
+
+    async def sign_in_code(self, phone, code, phone_code_hash):
+        """auth.signIn. Raises SessionPasswordNeededError for a two-step
+        account (then sign_in_password), PhoneCodeInvalid/Expired, or
+        PhoneNumberUnoccupied (Telethon's translation of
+        auth.authorizationSignUpRequired: no account for the number)."""
+        return await self.client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
 
     async def password_hint(self):
         password = await self.client(functions.account.GetPasswordRequest())

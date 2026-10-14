@@ -46,3 +46,9 @@ Rails.application.config.filter_parameters += [
 # external_subject_id and external_identity. The connector end-to-end test's
 # log check found both in the request parameters and the SQL binds.
 Rails.application.config.filter_parameters += [ /\A(?:identity|external_identity|external_subject_id)\z/ ]
+
+# A Telegram phone sign-in posts the account's phone number (`phone`) and
+# the code Telegram sent (`code`, already masked above) to
+# Accounts::ServiceConnectionLoginsController, which forwards both to the
+# connector and keeps neither.
+Rails.application.config.filter_parameters += [ /\Aphone\z/ ]

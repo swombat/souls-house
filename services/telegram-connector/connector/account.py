@@ -5,7 +5,10 @@ Tasks per account, all in the one asyncio loop:
 
 - login    QR (auth.exportLoginToken through Telethon's qr_login), renewed as
            each code expires, then the two-step password if the account has
-           one. Bound to a login generation (proposal §5).
+           one. Or, instead of the QR, the phone number and the code Telegram
+           sends to the account's app (auth.sendCode / auth.signIn), the way
+           Telegram Desktop signs in on a phone: asking for a code ends the
+           QR loop for that attempt. Bound to a login generation (proposal §5).
 - sync     the account's own updates.getDifference loop, and getChannelDifference
            for synced supergroups, from the state in the store. Pushes only wake
            it. Events and the state they cover commit together (sync.Ingest).
@@ -23,7 +26,7 @@ Telegram; when delivery brings the outbox under OUTBOX_LOW they resume from the
 stored state. Rails is told "backlogged" (and "ok" after) out of band.
 
 Logs carry fixed words and a keyed log id, never a connection ref, a name, a
-message, a code or a password.
+message, a code, a phone number or a password.
 """
 
 import asyncio
@@ -32,6 +35,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import time
 
 from telethon import errors
@@ -44,6 +48,29 @@ from .telegram import is_logged_out
 log = logging.getLogger("telegram.account")
 
 DATA_EVENTS = {"chat.upsert", "message.upsert", "message.edit", "message.delete", "sync.checkpoint"}
+
+# What Telegram's auth.sentCode says about where the code went, for the page
+# ("Telegram sent a code to your Telegram app"). The connector's seam
+# (telegram.py) reports one of these words.
+CODE_DELIVERIES = ("app", "sms", "call", "fragment", "email", "other")
+PHONE_SEPARATORS = re.compile(r"[\s().\-]")
+
+
+def normalize_phone(phone):
+    """An international number (+ or 00, then 7–15 digits) as the digits
+    Telegram takes, or None. Never logged."""
+    if not isinstance(phone, str) or len(phone) > 40:
+        return None
+    phone = PHONE_SEPARATORS.sub("", phone)
+    if phone.startswith("+"):
+        phone = phone[1:]
+    elif phone.startswith("00"):
+        phone = phone[2:]
+    else:
+        return None
+    if not phone.isdigit() or not 7 <= len(phone) <= 15 or phone.startswith("0"):
+        return None
+    return phone
 
 
 class Settings:
@@ -107,6 +134,13 @@ class Account:
         self.backfill_wake = asyncio.Event()
         self.password_done = asyncio.Event()
         self.awaiting_password = None
+        # The phone-number path of the current attempt: {"generation",
+        # "phone", "hash"} in memory only (never stored, queued or logged).
+        self.phone_login = None
+        self.code_done = asyncio.Event()
+        # Where the attempt is: connecting | qr | code | password | finishing.
+        self.login_phase = None
+        self.login_ready = asyncio.Event()
         self.dirty_channels = set()
         self.backlogged = False
         self.flood_until = 0.0
@@ -147,6 +181,7 @@ class Account:
 
     async def _drop_client(self):
         client, self.client = self.client, None
+        self.phone_login = None
         if client is not None:
             try:
                 await asyncio.wait_for(client.disconnect(), 10)
@@ -183,6 +218,10 @@ class Account:
                 self.store.update_connection(self.ref, generation=generation, status="logging_in")
             self.awaiting_password = None
             self.password_done = asyncio.Event()
+            self.phone_login = None
+            self.code_done = asyncio.Event()
+            self.login_phase = "connecting"
+            self.login_ready = asyncio.Event()
             self._spawn("login", self._login(generation))
             self.ensure_delivery()
             self.delivery_wake.set()
@@ -202,8 +241,124 @@ class Account:
                 self.store.wipe_sync_state(self.ref)
                 self.store.update_connection(self.ref, generation=generation, status="cancelled")
             self.awaiting_password = None
+            self.phone_login = None
+            self.login_phase = None
             log.info("login cancelled: account=%s", self.id)
             return {"status": "cancelled"}
+
+    async def request_code(self, generation, phone):
+        """Sign in with the phone number instead of the QR: Telegram sends a
+        code to the account's app (or by SMS). Only for the current attempt
+        while it is logging in; the QR loop for that attempt stops (no more
+        login.qr). The number and Telegram's phone_code_hash stay in memory
+        for submit_code; neither is stored, queued or logged. Asking again
+        resends (Telethon's send_code_request uses auth.resendCode for a
+        number it already sent to) or, for another number, starts over.
+        Returns {"outcome": code_sent|phone_invalid|phone_banned|unsupported|
+        password_required|accepted|flood_wait|failed}."""
+        async with self.lock:
+            row = self._row()
+            if (row is None or generation != row["generation"] or row["status"] != "logging_in"
+                    or self.awaiting_password is not None):
+                raise Refused("not_logging_in")
+            if self.login_phase == "connecting":
+                try:
+                    await asyncio.wait_for(self.login_ready.wait(), 15)
+                except asyncio.TimeoutError:
+                    pass
+            if self.login_phase not in ("qr", "code") or self.client is None:
+                raise Refused("not_logging_in")
+            digits = normalize_phone(phone)
+            phone = None  # noqa: F841 (drop the reference at once)
+            if digits is None:
+                return {"outcome": "phone_invalid"}
+            if self.login_phase == "qr":
+                # The QR path ends for this attempt; the phone path gets its
+                # own window.
+                await self._cancel("login", *[name for name in self.tasks if name.startswith("qr-")])
+                self.login_phase = "code"
+                self.phone_login = {"generation": generation, "phone": None, "hash": None}
+                self.code_done = asyncio.Event()
+                self._spawn("login", self._code_window(generation))
+                if await self._authorized_meanwhile():
+                    # The QR was scanned just as the code was asked for.
+                    user = await self.client.me()
+                    self._code_finished()
+                    await self._finish_login(user, generation)
+                    return {"outcome": "accepted"}
+            try:
+                sent = await self.client.send_code(digits)
+            except errors.SessionPasswordNeededError:
+                # A QR scan raced the request and reached the password step.
+                self._code_finished()
+                self._begin_password_step(generation)
+                return {"outcome": "password_required"}
+            except errors.PhoneNumberInvalidError:
+                return {"outcome": "phone_invalid"}
+            except errors.PhoneNumberBannedError:
+                return {"outcome": "phone_banned"}
+            except errors.FloodWaitError as error:
+                return {"outcome": "flood_wait", "retry_after": error.seconds}
+            except errors.PhoneNumberFloodError:
+                return {"outcome": "flood_wait"}
+            except Exception as error:
+                log.warning("code request failed: account=%s error=%s", self.id, type(error).__name__)
+                return {"outcome": "failed"}
+            delivery = sent.get("delivery")
+            if delivery not in CODE_DELIVERIES or not sent.get("hash"):
+                # Telegram wants something a third-party app cannot do here
+                # (set up a login email, pay): the QR still works.
+                self.phone_login.update(phone=None, hash=None)
+                return {"outcome": "unsupported"}
+            self.phone_login.update(phone=digits, hash=sent["hash"])
+            digits = None
+            state = {"delivery": delivery}
+            for key in ("length", "next_delivery", "timeout"):
+                value = sent.get(key)
+                if value is not None:
+                    state[key] = value
+            self._enqueue({"type": "login.code_sent", "generation": generation, **state})
+            log.info("login code sent: account=%s delivery=%s", self.id, delivery)
+            return {"outcome": "code_sent", **state}
+
+    async def submit_code(self, generation, code):
+        """The code Telegram sent, for the attempt that asked for it. Used
+        for auth.signIn and dropped: never stored, queued or logged. A
+        two-step account goes on to the password step. Returns {"outcome":
+        accepted|password_required|code_invalid|code_expired|
+        phone_unregistered|flood_wait|failed}."""
+        async with self.lock:
+            row = self._row()
+            pending = self.phone_login
+            if (row is None or generation != row["generation"] or pending is None
+                    or pending["generation"] != generation or self.client is None
+                    or self.awaiting_password is not None):
+                raise Refused("not_waiting_for_code")
+            if pending["hash"] is None:
+                return {"outcome": "code_expired"}
+            try:
+                user = await self.client.sign_in_code(pending["phone"], code, pending["hash"])
+            except errors.SessionPasswordNeededError:
+                self._code_finished()
+                self._begin_password_step(generation)
+                return {"outcome": "password_required"}
+            except (errors.PhoneCodeInvalidError, errors.PhoneCodeEmptyError):
+                return {"outcome": "code_invalid"}
+            except errors.PhoneCodeExpiredError:
+                pending["hash"] = None
+                return {"outcome": "code_expired"}
+            except errors.PhoneNumberUnoccupiedError:
+                return {"outcome": "phone_unregistered"}
+            except errors.FloodWaitError as error:
+                return {"outcome": "flood_wait", "retry_after": error.seconds}
+            except Exception as error:
+                log.warning("code check failed: account=%s error=%s", self.id, type(error).__name__)
+                return {"outcome": "failed"}
+            finally:
+                code = None  # noqa: F841 (drop the reference at once)
+            self._code_finished()
+            await self._finish_login(user, generation)
+            return {"outcome": "accepted"}
 
     async def submit_password(self, generation, password):
         """The password is used for SRP and dropped: never stored, queued or
@@ -312,6 +467,8 @@ class Account:
             self.client = self.factory(None)
             await self.client.connect()
             qr = await self.client.begin_qr()
+            self.login_phase = "qr"
+            self.login_ready.set()
             deadline = loop.time() + settings.login_window
             while True:
                 self._post_qr(generation, qr)
@@ -319,6 +476,7 @@ class Account:
                 remaining = (expires - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
                 try:
                     user = await qr.wait(timeout=max(1.0, min(remaining, settings.qr_max_lifetime)))
+                    self.login_phase = "finishing"
                     break
                 except asyncio.TimeoutError:
                     if loop.time() >= deadline:
@@ -326,6 +484,7 @@ class Account:
                         return
                     await qr.recreate()
         except errors.SessionPasswordNeededError:
+            self.login_phase = "password"
             await self._password_step(generation)
             return
         except errors.FloodWaitError as error:
@@ -341,6 +500,31 @@ class Account:
             if self._row()["generation"] != generation:
                 return
             await self._finish_login(user, generation)
+
+    async def _authorized_meanwhile(self):
+        try:
+            return await asyncio.wait_for(self.client.is_authorized(), 10)
+        except Exception:
+            return False
+
+    async def _code_window(self, generation):
+        """The phone path's own deadline (the QR loop's went with it)."""
+        try:
+            await asyncio.wait_for(self.code_done.wait(), self.settings.login_window)
+        except asyncio.TimeoutError:
+            async with self.lock:
+                row = self._row()
+                if self.phone_login is not None and row is not None and row["generation"] == generation:
+                    await self._login_failed(generation, "expired")
+
+    def _code_finished(self):
+        self.phone_login = None
+        self.code_done.set()
+
+    def _begin_password_step(self, generation):
+        self.login_phase = "password"
+        self.awaiting_password = generation
+        self._spawn("login", self._password_step(generation))
 
     async def _password_step(self, generation):
         try:
@@ -364,6 +548,8 @@ class Account:
         event = {"type": "login.failed", "generation": generation, "code": code}
         if retry_after:
             event["retry_after"] = int(retry_after)
+        self.login_phase = None
+        self.login_ready.set()
         await self._drop_client()
         with self.store.transaction():
             self.store.enqueue(self.ref, event)
@@ -373,6 +559,7 @@ class Account:
         log.info("login failed: account=%s code=%s", self.id, code)
 
     async def _finish_login(self, user, generation):
+        self.login_phase = "finishing"
         state = await self.client.get_state()
         self.me = user
         identity = {"user_id": str(user.id), "display_name": convert.display_name(user)}

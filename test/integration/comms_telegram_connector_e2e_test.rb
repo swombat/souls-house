@@ -28,6 +28,11 @@ class CommsTelegramConnectorE2eTest < ActionDispatch::IntegrationTest
 
   CANARY = "CANARY-TG-e2e-#{SecureRandom.hex(4)}".freeze
   PASSWORD = "PASSWORD-CANARY-#{SecureRandom.hex(4)}".freeze
+  # The phone sign-in's number and code: long and distinctive, so a chance
+  # match in a sealed blob cannot hide a leak.
+  PHONE = "+44 7700 913 572"
+  PHONE_DIGITS = "447700913572"
+  CODE = "97531086420"
   LIVE = 12
   SERVICE_DIR = Rails.root.join("services/telegram-connector").to_s
   RAILS_ENV_NAMES = %w[COMMS_CONNECTOR_URL COMMS_COMMAND_KEY COMMS_CONNECTOR_CLIENT_CERT
@@ -151,6 +156,73 @@ class CommsTelegramConnectorE2eTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # On a phone the QR cannot be scanned, so Daniel signs in the way
+  # Telegram Desktop does on one phone: the number, the code Telegram sends
+  # to the app, then the two-step password. Rails → connector over the same
+  # signed mutual TLS; the number and the code reach no log, no row and no
+  # file on the connector's volume.
+  test "Daniel signs in on his phone with the number and the code Telegram sends" do
+    stop_connector
+    @connector = spawn_connector("TELEGRAM_FAKE_AUTO_SCAN" => "0", "TELEGRAM_FAKE_PHONE" => PHONE_DIGITS,
+                                 "TELEGRAM_FAKE_CODE" => CODE)
+    wait_for_connector
+    rails_log_start = File.size?(Rails.root.join("log/test.log")).to_i
+    sign_in @owner
+
+    post account_service_connections_path(@account), params: { provider: "telegram", management_scope: "personal" }
+    connection = @account.service_connections.where(provider: "telegram").order(:id).last
+    assert connection, "the connection was not created (start_login failed?)"
+    assert_redirected_to account_service_connection_login_path(@account, connection.public_id)
+    follow_redirect!
+    assert_response :ok
+
+    wait_until("a QR code") { connection.reload.current_pairing_qr }
+    post phone_account_service_connection_login_path(@account, connection.public_id),
+         params: { phone: PHONE, generation: connection.login_generation }, as: :json
+    assert_response :ok
+    assert_equal "code_sent", response.parsed_body["outcome"]
+    assert_equal "app", response.parsed_body.dig("login", "delivery")
+    wait_until("the code step, from the connector's own event too") do
+      connection.reload.login_state["step"] == "code" && connection.comms_event_seq >= 1
+    end
+    assert_nil connection.pairing_qr, "the QR is gone once the number was chosen"
+
+    post code_account_service_connection_login_path(@account, connection.public_id),
+         params: { code: "1#{CODE}", generation: connection.login_generation }, as: :json
+    assert_equal "code_invalid", response.parsed_body["outcome"]
+    post code_account_service_connection_login_path(@account, connection.public_id),
+         params: { code: CODE, generation: connection.login_generation }, as: :json
+    assert_equal "password_required", response.parsed_body["outcome"]
+
+    wait_until("the connector to ask for the password") { connection.reload.login_state["step"] == "password" }
+    post password_account_service_connection_login_path(@account, connection.public_id),
+         params: { password: PASSWORD, generation: connection.login_generation }
+    assert_equal "accepted", response.parsed_body["outcome"]
+    wait_until("connected") { connection.reload.status == "connected" }
+    assert_equal "1000", connection.external_subject_id
+    wait_until("history") do
+      alice = connection.comms_chats.find_by(provider_chat_id: "user:2001")
+      alice && bodies(alice).any? { |body| body.start_with?("old ") }
+    end
+
+    get account_service_connection_login_path(@account, connection.public_id)
+    assert_response :ok
+    assert_includes response.body, "connected"
+
+    stop_connector
+    connector_log = File.read(@connector_log)
+    assert_includes connector_log, "command done: op=submit_code"
+    secrets = [ PHONE_DIGITS, "7700 913 572", CODE, PASSWORD ]
+    secrets.each { |secret| assert_not_includes connector_log, secret }
+    rails_log = File.binread(Rails.root.join("log/test.log"), nil, rails_log_start).to_s
+    secrets.each { |secret| assert_not_includes rails_log, secret }
+    assert_not_includes connection.reload.attributes.to_json, PHONE_DIGITS
+    Dir.glob(File.join(@data, "*")).each do |path|
+      content = File.binread(path)
+      secrets.each { |secret| assert_not_includes content, secret, path }
+    end
+  end
+
   test "the connector refuses a command not signed with the command key, and Rails without the house certificate" do
     connection = telegram_connection
     ENV["COMMS_COMMAND_KEY"] = SecureRandom.hex(32)
@@ -237,7 +309,7 @@ class CommsTelegramConnectorE2eTest < ActionDispatch::IntegrationTest
     )
   end
 
-  def spawn_connector
+  def spawn_connector(extra = {})
     env = {
       "PATH" => ENV.fetch("PATH", ""), "PYTHONPATH" => SERVICE_DIR,
       "COMMS_STORE_KEY" => (@store_key ||= SecureRandom.hex(32)),
@@ -249,7 +321,7 @@ class CommsTelegramConnectorE2eTest < ActionDispatch::IntegrationTest
       "TELEGRAM_PROVIDER" => "fake", "COMMS_ALLOW_FAKE" => "1", "TELEGRAM_FAKE_DIR" => @telegram,
       "TELEGRAM_FAKE_MARKER" => CANARY, "TELEGRAM_FAKE_PASSWORD" => PASSWORD,
       "TELEGRAM_FAKE_LIVE" => LIVE.to_s, "TELEGRAM_FAKE_LIVE_INTERVAL" => "2"
-    }
+    }.merge(extra)
     Process.spawn(env, @python, "-m", "connector", chdir: SERVICE_DIR, unsetenv_others: true,
                                                    out: [ @connector_log, "a" ], err: [ @connector_log, "a" ])
   end

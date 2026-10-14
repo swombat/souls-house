@@ -74,7 +74,7 @@ module CommsConnector
   #   stale or replayed commands and commands for another connection.
   #
   # Returns the connector's JSON reply as a Hash, or :not_configured.
-  TELEGRAM_COMMANDS = %w[start_login submit_password cancel_login logout search].freeze
+  TELEGRAM_COMMANDS = %w[start_login request_code submit_code submit_password cancel_login logout search].freeze
 
   def telegram_command(connection, operation, **fields)
     raise ArgumentError, "unknown telegram command #{operation}" unless TELEGRAM_COMMANDS.include?(operation)
