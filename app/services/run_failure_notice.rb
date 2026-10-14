@@ -28,7 +28,12 @@ class RunFailureNotice
   end
 
   def content
-    tally = "#{@streak.count.ordinalize} failed run in a row since #{since_label}"
+    tally = if @streak.truncated
+      # The scan stopped before the streak's start: a lower bound, no start time.
+      "#{@streak.count} or more failed runs in a row"
+    else
+      "#{@streak.count.ordinalize} failed run in a row since #{since_label}"
+    end
     if replied?
       ended = @run.failure_category == "timed_out" ? "timed out" : "ended with an error"
       "#{@agent.name}'s run #{ended} after replying (#{tally})."
@@ -39,9 +44,17 @@ class RunFailureNotice
 
   private
 
-  # A reply that reached the room is never erased by the wording.
+  # A reply that reached the room is never erased by the wording. Only a
+  # visible reply this run posted in this room counts: not another run's
+  # reply, a rhythm opening, a progress or streaming row, a discarded or
+  # empty post, or unreclaimed safeguard-labelled house speech.
   def replied?
-    @run.linked_messages.where(role: "assistant", agent_id: @agent.id).exists? || @run.last_resident_post_at.present?
+    replies = @run.linked_messages.kept
+      .where(role: "assistant", agent_id: @agent.id, chat_id: @chat.id, progress_message: false, streaming: false)
+      .without_safeguard_label
+      .where.missing(:rhythm_occurrence)
+    with_attachments = ActiveStorage::Attachment.where(record_type: "Message", name: "attachments").select(:record_id)
+    replies.where("messages.content ~ '[^[:space:]]'").or(replies.where(id: with_attachments)).exists?
   end
 
   # The resident's Runs tab, which the people of its home account can open.

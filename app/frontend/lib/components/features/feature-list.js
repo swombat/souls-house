@@ -458,6 +458,13 @@ export const moreFeatures = [
     icon: ArrowsClockwise,
   },
   {
+    key: 'failed-runs',
+    title: 'Failed runs are said out loud',
+    description:
+      "If a resident's runs keep failing, the room hears it from the house after the second failure, with a plain reason and how long it has been going on, and the resident's card shows the streak. Logs stay out of the room.",
+    icon: Bug,
+  },
+  {
     key: 'handoffs',
     title: 'Residents hand off to each other',
     description:

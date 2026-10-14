@@ -56,7 +56,58 @@ class Agents::RunFailureStreakTest < ActiveSupport::TestCase
     assert_not Agents::RunFailureStreak.call(@agent).runtime_unavailable?
   end
 
+  test "a completed run of any kind ends the streak, but only conversation failures count" do
+    make_run("failed", at: 40.minutes.ago)
+    make_run("failed", at: 30.minutes.ago)
+    make_run("completed", at: 25.minutes.ago, trigger_kind: "wake")
+    make_run("failed", at: 20.minutes.ago, trigger_kind: "wake")
+    make_run("failed", at: 10.minutes.ago)
+
+    assert_equal 1, Agents::RunFailureStreak.call(@agent).count
+  end
+
+  test "neutral rows beyond a page neither count nor hide the failures behind them" do
+    make_run("completed", at: 3.hours.ago)
+    first = make_run("failed", at: 2.hours.ago)
+    neutral_rows(25, from: 90.minutes.ago)
+    make_run("failed", at: 10.minutes.ago)
+
+    streak = Agents::RunFailureStreak.call(@agent, batch: 10)
+    assert_equal 2, streak.count
+    assert_not streak.truncated
+    assert_equal first.started_at.to_i, streak.since.to_i
+  end
+
+  test "a scan that stops before the streak's start is truncated: a lower bound, no start, no whole-streak category" do
+    make_run("completed", at: 3.hours.ago)
+    make_run("failed", at: 2.hours.ago, error_class: "Errno::ECONNREFUSED")
+    neutral_rows(25, from: 90.minutes.ago)
+    make_run("failed", at: 10.minutes.ago, error_class: "Errno::ECONNREFUSED")
+    make_run("failed", at: 5.minutes.ago, error_class: "Errno::ECONNREFUSED")
+
+    streak = Agents::RunFailureStreak.call(@agent, batch: 10, max_scan: 20)
+    assert streak.truncated
+    assert_equal 2, streak.count
+    assert_nil streak.since
+    assert_not streak.runtime_unavailable?
+    assert_equal({ count: 2, since: nil, runtime_unavailable: false, capped: true }, streak.as_card_json)
+  end
+
+  test "reaching the start of history is complete, not truncated" do
+    make_run("failed", at: 20.minutes.ago)
+    make_run("failed", at: 10.minutes.ago)
+    streak = Agents::RunFailureStreak.call(@agent, batch: 2)
+    assert_not streak.truncated
+    assert_equal 2, streak.count
+  end
+
   private
+
+  def neutral_rows(count, from:)
+    count.times do |i|
+      make_run(i.even? ? "busy" : "outcome_unknown", at: from + i.minutes)
+    end
+  end
 
   def make_run(state, at:, trigger_kind: "conversation", **attrs)
     AgentRuntimeInteraction.create!(

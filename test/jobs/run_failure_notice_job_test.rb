@@ -51,11 +51,54 @@ class RunFailureNoticeJobTest < ActiveSupport::TestCase
   test "a reply that reached the room is never written over: the notice says the run failed after replying" do
     failed_run(at: 20.minutes.ago)
     run = failed_run(at: 1.minute.ago)
-    @chat.messages.create!(role: "assistant", agent: @agent, content: "Here is my answer.", created_at: 90.seconds.ago)
+    @chat.messages.create!(role: "assistant", agent: @agent, content: "Here is my answer.", runtime_interaction: run)
 
     RunFailureNoticeJob.perform_now(run.id)
     assert_match(/\A#{@agent.name}'s run ended with an error after replying \(2nd failed run in a row since \d\d:\d\d CES?T\)\.\z/,
       @chat.messages.where(role: "system").last.content)
+  end
+
+  test "only a visible reply this run posted here counts as replying" do
+    failed_run(at: 30.minutes.ago)
+    run = failed_run(at: 10.minutes.ago)
+    other_run = failed_run(at: 5.minutes.ago, state: "busy")
+    other_room = @agent.account.chats.create!(title: "Elsewhere", manual_responses: true, agents: [ @agent ])
+    # Another run's reply, after this one ended (a delayed notice must not count it).
+    @chat.messages.create!(role: "assistant", agent: @agent, content: "A later reply.", runtime_interaction: other_run)
+    # This run's rows that nobody saw as a reply.
+    @chat.messages.create!(role: "assistant", agent: @agent, content: "Working on it", runtime_interaction: run, progress_message: true)
+    @chat.messages.create!(role: "assistant", agent: @agent, content: "Half a rep", runtime_interaction: run, streaming: true)
+    @chat.messages.create!(role: "assistant", agent: @agent, content: "   ", runtime_interaction: run)
+    @chat.messages.create!(role: "assistant", agent: @agent, content: "Withdrawn", runtime_interaction: run).discard!
+    other_room.messages.create!(role: "assistant", agent: @agent, content: "Wrong room", runtime_interaction: run)
+    opening = @chat.messages.create!(role: "assistant", agent: @agent, content: "Good morning, what came in?", runtime_interaction: run)
+    RhythmOccurrence.create!(chat: @chat, message: opening, creator_label: "Lume", title: "Field notes", rhythm_title: "Field notes",
+      opening: "Good morning, what came in?", scheduled_for: 11.minutes.ago)
+
+    assert_match(/\A#{@agent.name} couldn't respond here: /, notice_for(run))
+  end
+
+  test "duplicate finalization of a run still gives one notice" do
+    failed_run(at: 20.minutes.ago)
+    run = failed_run(at: 10.minutes.ago, state: "outcome_unknown")
+    jobs = []
+    RunFailureNoticeJob.stub(:perform_later, ->(id) { jobs << id }) do
+      run.finish_execution!("failed")
+      run.update!(finished_at: Time.current)
+    end
+    assert_equal [ run.id, run.id ], jobs
+    assert_difference -> { @chat.messages.where(role: "system").count }, 1 do
+      jobs.each { |id| RunFailureNoticeJob.perform_now(id) }
+    end
+  end
+
+  test "a truncated streak is said as a lower bound with no start time" do
+    failed_run(at: 30.minutes.ago)
+    run = failed_run(at: 20.minutes.ago)
+    truncated = Agents::RunFailureStreak::Result.new(count: 2, since: nil, categories: %w[unknown unknown], truncated: true)
+    Agents::RunFailureStreak.stub(:call, truncated) do
+      assert_match(/\(2 or more failed runs in a row\)\.\z/, notice_for(run))
+    end
   end
 
   test "each category has its own plain cause, and unknown is said as unknown" do
