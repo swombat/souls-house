@@ -11,7 +11,7 @@ class FieldTweetsConcurrencyTest < ActiveSupport::TestCase
 
   setup do
     @setting_was = Setting.instance.attributes.select { |name, _| name.start_with?("field_tweets_") }
-    @account = Account.create!(name: "Tweet race #{SecureRandom.hex(4)}", account_type: "team")
+    @account = Account.create!(name: "Tweet race #{SecureRandom.hex(4)}", account_type: "team", field_tweets_house_key: true)
     enable_field_tweets(site: "0.004", account: "1")
     @source = @account.create_field_tweet_source!(handle: "racer")
   end

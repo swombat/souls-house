@@ -284,6 +284,7 @@ Rails.application.routes.draw do
         patch :shared_ai_credentials
         patch :founding
         patch :field_swarm
+        patch :field_tweets_house_key
         post :refresh_storage
       end
       resources :memberships, only: [ :create, :destroy ], controller: "account_memberships"

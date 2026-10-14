@@ -45,6 +45,16 @@ module FieldTweets
 
     end
 
+    # The account's integration has no key in it to send.
+    class MissingKey < StandardError
+
+      def initialize = super("The TwitterAPI.io integration has no key")
+      def status = 401
+      def funding? = true
+      def transient? = false
+
+    end
+
     def self.due(now: Time.current)
       FieldTweetSource.where(state: "active").where("next_attempt_at IS NULL OR next_attempt_at <= ?", now)
     end
@@ -107,11 +117,16 @@ module FieldTweets
     end
 
     def funding_open?
-      @source.house_paid? ? FieldTweets.house_available? : FieldTweets.enabled?
+      case @source.funding
+      when "house" then FieldTweets.house_available_for?(@source.account)
+      when "own" then FieldTweets.enabled?
+      else false
+      end
     end
 
     def funding_closed_reason
       if !FieldTweets.enabled? then "Tweet collection is off for this house"
+      elsif @source.funding.nil? then FieldTweets::NO_FUNDING
       elsif Setting.instance.field_tweets_house_halted_at then "Collection paid by the house is halted: #{Setting.instance.field_tweets_house_halt_reason}"
       else "Collection paid by the house isn't available yet"
       end
@@ -129,21 +144,33 @@ module FieldTweets
     def fetch_page!
       call = FieldTweets.reserve!(@source, retry_call: @source.failure_count.positive?, now: now)
     rescue FieldTweets::LimitReached => e
-      schedule!(FieldTweets.month_start(now) + 1.month, reason: e.message)
+      # Nobody paying is waited out at the poll interval (a funding change
+      # also brings it forward); a spent budget waits for the next month.
+      retry_at = e.message == FieldTweets::NO_FUNDING ? now + FieldTweets.poll_interval : FieldTweets.month_start(now) + 1.month
+      schedule!(retry_at, reason: e.message)
       :waiting
     else
+      key = FieldTweets.key_for(@source.account, call.funding)
+      if key.blank?
+        # Nothing was asked, so nothing was spent.
+        call.release!
+        return failed!(MissingKey.new, funding: call.funding)
+      end
+
       begin
-        page = client.search(@source.query_for(@source.window_since, @source.window_until), cursor: @source.window_cursor)
+        page = client_for(call.funding, key).search(@source.query_for(@source.window_since, @source.window_until), cursor: @source.window_cursor)
       rescue TwitterApiIo::Error => e
         call.fail!(e)
-        return failed!(e)
+        return failed!(e, funding: call.funding)
       end
 
       process_page!(page, call)
     end
 
-    def client
-      @client ||= @client_factory.call(@source.house_paid? ? FieldTweets.house_key : @source.api_key)
+    # The key that pays is the one the reservation was made for.
+    def client_for(funding, key)
+      @clients ||= {}
+      @clients[[ funding, key ]] ||= @client_factory.call(key)
     end
 
     def process_page!(page, call)
@@ -213,14 +240,15 @@ module FieldTweets
       @source.update!(gap_since: [ @source.gap_since, since ].compact.min, gap_until: [ @source.gap_until, until_time ].compact.max)
     end
 
-    def failed!(error)
+    def failed!(error, funding: @source.funding)
       if error.funding?
-        if @source.house_paid?
+        if funding == "house"
           FieldTweets.halt_house!("TwitterAPI.io refused the house key (#{error.status})", now: now)
           schedule!(now + FieldTweets.poll_interval, reason: funding_closed_reason)
         else
           # Never the house's key instead: the account chose its own.
-          @source.needs_attention!("TwitterAPI.io refused this account's key (#{error.status}). Replace it, or remove it to use the house's allowance.")
+          @source.needs_attention!("TwitterAPI.io refused the key in this account's TwitterAPI.io integration (#{error.status}). " \
+            "Add credit on twitterapi.io, or replace the key under Integrations.")
         end
       elsif error.status == 400 && @source.window_cursor.present?
         # Most likely a cursor gone stale while the window waited: page the

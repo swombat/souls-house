@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_13_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_14_070000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -40,6 +40,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_190000) do
     t.boolean "founding", default: false, null: false
     t.bigint "resident_room_id"
     t.boolean "field_swarm_enabled", default: false, null: false
+    t.boolean "field_tweets_house_key", default: false, null: false
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
@@ -1153,7 +1154,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_190000) do
     t.boolean "include_replies", default: true, null: false
     t.boolean "include_quotes", default: true, null: false
     t.boolean "include_reposts", default: false, null: false
-    t.text "api_key"
     t.decimal "own_monthly_usd_limit", precision: 10, scale: 4, default: "5.0", null: false
     t.string "state", default: "active", null: false
     t.string "state_reason", limit: 300
@@ -2173,8 +2173,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_190000) do
     t.boolean "field_ocr_enabled", default: false, null: false
     t.datetime "field_ocr_enabled_at"
     t.decimal "field_ocr_daily_usd_ceiling", precision: 10, scale: 4, default: "1.0", null: false
-    t.boolean "field_tweets_enabled", default: false, null: false
-    t.decimal "field_tweets_site_monthly_usd_ceiling", precision: 10, scale: 4, default: "0.0", null: false
+    t.boolean "field_tweets_enabled", default: true, null: false
+    t.decimal "field_tweets_site_monthly_usd_ceiling", precision: 10, scale: 4, default: "10.0", null: false
     t.decimal "field_tweets_account_monthly_usd_ceiling", precision: 10, scale: 4, default: "1.0", null: false
     t.integer "field_tweets_daily_import_cap", default: 50, null: false
     t.integer "field_tweets_poll_minutes", default: 15, null: false

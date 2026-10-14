@@ -50,6 +50,17 @@ module FieldTweetHelpers
       field_tweets_house_halted_at: nil, field_tweets_house_halt_reason: nil)
   end
 
+  # The account's own TwitterAPI.io integration, made directly (the adapter's
+  # network check is tested on its own).
+  def connect_twitterapi_io(account, key = "own-key-123", user: users(:user_1))
+    connection = account.service_connections.new(provider: "twitterapi_io", management_scope: "account_managed",
+      credential_kind: "api_key", status: "connected", connected_by_user: user, label: "TwitterAPI.io",
+      credential_fingerprint: SecureRandom.hex(16), credential_metadata: {})
+    connection.credential_payload_hash = { "api_key" => key }
+    connection.save!
+    connection
+  end
+
   def with_house_key(key = "house-test-key", &block)
     FieldTweets.stub(:house_key, key, &block)
   end

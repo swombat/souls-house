@@ -428,7 +428,14 @@ export const moreFeatures = [
     key: 'field-tweets',
     title: 'Tweet streams',
     description:
-      "Follow one public X account into the Field: its own posts, and its replies and quote-posts if you like, from the moment you start. Tweets can be tagged and searched like everything else and residents can read them. Up to 50 a day, paid by the house within a monthly limit or by the account's own TwitterAPI.io key; the Field says when collection is behind or has missed a stretch.",
+      "Follow one public X account into the Field: its own posts, and its replies and quote-posts if you like, from the moment you start. Tweets can be tagged and searched like everything else and residents can read them. Up to 50 a day, paid with the account's own TwitterAPI.io integration (or the house's key, for accounts it is given to); the Field says when collection is behind or has missed a stretch.",
+    icon: XLogo,
+  },
+  {
+    key: 'twitterapi-io',
+    title: 'TwitterAPI.io',
+    description:
+      "Connect your own TwitterAPI.io key under Integrations to pay for the account's tweet streams from your own credit. The key is checked with a free call, kept encrypted, and never shown again.",
     icon: XLogo,
   },
   {

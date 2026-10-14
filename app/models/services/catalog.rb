@@ -469,5 +469,42 @@ module Services
       requires_env: CommsConnector::TELEGRAM_ENV
     )
 
+    # Pays for the account's tweet streams (FieldTweets). Account-managed
+    # only: it spends the account's TwitterAPI.io credit. Residents may be
+    # granted it like any other key, but none are by default.
+    Services::Definition.register(
+      key: "twitterapi_io",
+      name: "TwitterAPI.io",
+      management_scopes: %w[account_managed],
+      connection_method: "credentials",
+      credential_strategy: "static",
+      api_origins: %w[https://api.twitterapi.io],
+      documentation: [
+        "https://docs.twitterapi.io/",
+        "https://twitterapi.io/pricing"
+      ],
+      access_profiles: {
+        api_key: []
+      },
+      default_access_profile: "api_key",
+      credential_fields: [
+        {
+          key: "api_key",
+          label: "API key",
+          type: "password",
+          placeholder: "",
+          help: "twitterapi.io: sign in, then copy the key from the dashboard. Top up credit there; the key spends it."
+        }
+      ],
+      runtime_notes: [
+        "Send the key as the X-API-Key header (credentials.api_key) to https://api.twitterapi.io. Never put it in a URL or a message.",
+        "Every call is billed to the account's TwitterAPI.io credit: $0.15 per 1,000 tweets returned, at least $0.00015 a call. " \
+        "GET /oapi/my/info is free and says how much credit is left. Search with /twitter/tweet/advanced_search " \
+        "(query, queryType=Latest, cursor); keep queries bounded and don't loop over pages without a reason.",
+        "The account's tweet stream in the Field already uses this key; don't build a second poller for the same handle."
+      ],
+      adapter_class: "Services::TwitterApiIoAdapter"
+    )
+
   end
 end

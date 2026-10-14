@@ -117,9 +117,14 @@ module FieldItems
     return nil unless FieldTweets.enabled?
 
     source = account.field_tweet_source
+    url_helpers = Rails.application.routes.url_helpers
     {
       source: source&.status_json,
-      house_available: FieldTweets.house_available?,
+      # Who would pay: "own" (the account's TwitterAPI.io integration),
+      # "house" (granted the house key) or nil (nobody yet).
+      funding: FieldTweets.funding_for(account),
+      integration_url: url_helpers.account_integrations_path(account, connect: "twitterapi_io"),
+      house_available: FieldTweets.house_available_for?(account),
       daily_import_cap: FieldTweets.daily_import_cap,
       account_monthly_usd_ceiling: Setting.instance.field_tweets_account_monthly_usd_ceiling.to_s,
       poll_minutes: Setting.instance.field_tweets_poll_minutes

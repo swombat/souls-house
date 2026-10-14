@@ -9,12 +9,13 @@
   <CardHeader>
     <CardTitle>Tweet streams</CardTitle>
     <CardDescription>
-      When this is on, an account manager can have one public X handle followed into the account's Field: its own
-      posts, and by default its own replies and quote-posts. Collection uses TwitterAPI.io's search (read-only, no X
-      login) every few minutes, from the moment the handle is added. TwitterAPI.io charges $0.15 per 1,000 tweets
-      returned, at least $0.00015 a call, so an idle handle polled every 15 minutes costs about $0.43 a month. Accounts
-      may give their own TwitterAPI.io key, which pays for their collection instead of the house. A refused key is
-      never replaced by the house's.
+      When this is on, an account manager can have one public X handle followed into the account's Field: its own posts,
+      and by default its own replies and quote-posts. Collection uses TwitterAPI.io's search (read-only, no X login)
+      every few minutes, from the moment the handle is added. TwitterAPI.io charges $0.15 per 1,000 tweets returned, at
+      least $0.00015 a call, so an idle handle polled every 15 minutes costs about $0.43 a month. Each account pays with
+      its own TwitterAPI.io integration (Settings → Integrations). The house key pays only for accounts granted it under
+      Site Admin → Accounts, within the ceilings below. An account with its own integration is never paid for by the
+      house, even when its key is refused.
     </CardDescription>
   </CardHeader>
   <CardContent class="space-y-4">
@@ -28,7 +29,8 @@
 
     <div class="grid gap-4 sm:grid-cols-2">
       <div class="space-y-2">
-        <label for="field_tweets_site_monthly_usd_ceiling" class="font-medium">House spend, all accounts, per month (USD)</label>
+        <label for="field_tweets_site_monthly_usd_ceiling" class="font-medium"
+          >House spend, all accounts, per month (USD)</label>
         <input
           id="field_tweets_site_monthly_usd_ceiling"
           class="block h-10 w-28 rounded-md border bg-background px-3"
@@ -38,10 +40,11 @@
           step="0.01"
           required
           bind:value={form.field_tweets_site_monthly_usd_ceiling} />
-        <p class="text-sm text-muted-foreground">At 0, only accounts with their own key are collected.</p>
+        <p class="text-sm text-muted-foreground">At 0, only accounts with their own integration are collected.</p>
       </div>
       <div class="space-y-2">
-        <label for="field_tweets_account_monthly_usd_ceiling" class="font-medium">House spend per account per month (USD)</label>
+        <label for="field_tweets_account_monthly_usd_ceiling" class="font-medium"
+          >House spend per account per month (USD)</label>
         <input
           id="field_tweets_account_monthly_usd_ceiling"
           class="block h-10 w-28 rounded-md border bg-background px-3"
@@ -80,8 +83,9 @@
     </div>
 
     <p class="text-sm text-muted-foreground" data-testid="field-tweets-status">
-      House key: {status.house_key_configured ? 'configured' : 'not configured'}. This month the house has spent
-      ${Number(status.house_spent_this_month ?? 0).toFixed(4)} on {status.house_calls_this_month ?? 0} calls, which returned
+      House key: {status.house_key_configured ? 'configured' : 'not configured'}, granted to {status.house_key_accounts ??
+        0} account(s). This month the house has spent ${Number(status.house_spent_this_month ?? 0).toFixed(4)} on {status.house_calls_this_month ??
+        0} calls, which returned
       {status.returned_this_month ?? 0} tweets ({status.already_stored_this_month ?? 0} of them already stored).
     </p>
 

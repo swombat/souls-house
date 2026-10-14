@@ -40,6 +40,8 @@ class ServiceConnection < ApplicationRecord
 
   after_create_commit :apply_default_accesses
   after_update_commit :reconcile_authority_change, if: :runtime_authority_changed?
+  # The account's tweet stream is paid by this connection (FieldTweets).
+  after_commit -> { FieldTweets.integration_changed!(account) }, if: :tweet_funding_changed?
 
   scope :connected, -> { where(status: "connected") }
   scope :personal, -> { where(management_scope: "personal") }
@@ -450,6 +452,15 @@ class ServiceConnection < ApplicationRecord
     credential_metadata.to_h.except(
       "credential_strategy", "granted_scopes", "effective_authority", "authority_warnings"
     )
+  end
+
+  # Only what decides whether this connection pays, and with which key: a
+  # label or resident-access edit must not restart a stopped stream.
+  def tweet_funding_changed?
+    return false unless provider == "twitterapi_io"
+
+    previously_new_record? || destroyed? || saved_change_to_status? ||
+      saved_change_to_credential_payload? || saved_change_to_management_scope?
   end
 
   def provider_contract

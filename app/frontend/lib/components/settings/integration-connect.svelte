@@ -115,7 +115,10 @@
     </div>
   {:else}
     <p class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
-      {#if canManageAccount}
+      {#if focusedService.management_scopes?.length === 1 && focusedService.management_scopes[0] === 'account_managed'}
+        {focusedService.name} is connected for the whole account. It belongs to the account, not to you: account admins manage
+        or disconnect it and choose which residents can use it.
+      {:else if canManageAccount}
         {focusedService.name} can only be connected personally. It will belong to you, and you choose which residents can
         use it.
       {:else}
@@ -169,6 +172,13 @@
           Profile → API Tokens → Create Token, starting from the "Edit zone DNS" template, limited to the zones
           residents should manage; add the Single Redirect permission if they should manage redirects. Don't use the
           Global API Key.
+        </div>
+      {/if}
+      {#if focusedService.key === 'twitterapi_io'}
+        <div class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+          This key pays for the account's tweet streams in the Field: each check costs a little of your TwitterAPI.io
+          credit, about $0.15 per 1,000 posts brought back and at least $0.00015 a call. Create an account on
+          twitterapi.io, add credit, and copy the key from its dashboard. It reads public posts only and cannot post.
         </div>
       {/if}
       {#if focusedService.key === 'tailscale'}

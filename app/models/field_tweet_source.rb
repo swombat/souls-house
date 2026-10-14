@@ -9,8 +9,8 @@
 # retries, pauses and outages. The checkpoint never jumps to now after a
 # failure. A stretch that couldn't be collected is kept as a gap and shown.
 #
-# Paid by the house unless the account gives its own TwitterAPI.io key
-# (api_key, encrypted, write-only from outside). A failing own key never
+# Paid by the account's own TwitterAPI.io integration, or by the house key
+# for accounts granted it (FieldTweets.funding_for). A failing own key never
 # falls back to the house.
 class FieldTweetSource < ApplicationRecord
 
@@ -18,21 +18,17 @@ class FieldTweetSource < ApplicationRecord
 
   STATES = %w[active paused needs_attention].freeze
 
-  encrypts :api_key
-
   belongs_to :account
   belongs_to :created_by, polymorphic: true, optional: true
   has_many :field_tweets, dependent: :nullify
   has_many :backlog_items, class_name: "FieldTweetBacklogItem", dependent: :delete_all
 
   normalizes :handle, with: ->(value) { value.to_s.strip.delete_prefix("@") }
-  normalizes :api_key, with: ->(value) { value.to_s.strip.presence }
 
   validates :handle, format: { with: FieldTweet::HANDLE, message: "must be an X handle (letters, digits and _, up to 15)" }
   validates :account_id, uniqueness: { message: "already follows a handle" }
   validates :state, inclusion: { in: STATES }
   validates :own_monthly_usd_limit, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
-  validates :api_key, length: { maximum: 200 }
 
   before_validation(on: :create) do
     self.connected_at ||= Time.current
@@ -50,7 +46,8 @@ class FieldTweetSource < ApplicationRecord
     self.window_pages = 0
   end
 
-  def funding = api_key.present? ? "own" : "house"
+  # "own", "house" or nil: decided by the account, not the source, each time.
+  def funding = FieldTweets.funding_for(account)
   def house_paid? = funding == "house"
 
   def window_open? = window_until.present?
@@ -70,7 +67,6 @@ class FieldTweetSource < ApplicationRecord
       include_quotes: include_quotes,
       include_reposts: include_reposts,
       funding: funding,
-      has_own_key: api_key.present?,
       own_monthly_usd_limit: own_monthly_usd_limit.to_s,
       state: display_state(now),
       state_reason: state_reason,

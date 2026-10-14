@@ -58,10 +58,11 @@ class Api::V1::Field::TweetsControllerTest < ActionDispatch::IntegrationTest
     assert @tweet.reload.discarded?
 
     enable_field_tweets
-    @account.create_field_tweet_source!(handle: "danielt", api_key: "never-shown")
+    connect_twitterapi_io(@account, "never-shown")
+    @account.create_field_tweet_source!(handle: "danielt")
     get api_v1_field_tweet_stream_path, headers: @headers
     assert_response :success
-    assert_equal "danielt", response.parsed_body.dig("source", "handle")
+    assert_equal [ "danielt", "own" ], [ response.parsed_body.dig("source", "handle"), response.parsed_body["funding"] ]
     assert_not_includes response.body, "never-shown"
   end
 

@@ -15,6 +15,8 @@ export function serviceDescription(service) {
   if (service.key === 'porkbun') return 'DNS records, URL forwards and nameservers for your Porkbun domains.';
   if (service.key === 'cloudflare')
     return 'DNS records and redirects for your Cloudflare zones, with a scoped API token.';
+  if (service.key === 'twitterapi_io')
+    return "Pays for this account's tweet streams in the Field, from your own TwitterAPI.io credit.";
   return 'Direct external-service access for selected residents.';
 }
 
@@ -29,5 +31,6 @@ export function serviceIconClass(serviceKey) {
   if (serviceKey === 'whatsapp') return 'bg-green-500 text-white';
   if (serviceKey === 'porkbun') return 'bg-pink-600 text-white';
   if (serviceKey === 'cloudflare') return 'bg-orange-500 text-white';
+  if (serviceKey === 'twitterapi_io') return 'bg-neutral-800 text-white';
   return 'bg-red-500 text-white';
 }

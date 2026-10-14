@@ -11,6 +11,7 @@
     GlobeHemisphereWest,
     Cloud,
     Heartbeat,
+    XLogo,
   } from 'phosphor-svelte';
 
   // The glyph for one service, in every place a service is shown. The tile
@@ -29,6 +30,7 @@
     whatsapp: [WhatsappLogo, 'fill'],
     porkbun: [GlobeHemisphereWest, 'bold'],
     cloudflare: [Cloud, 'fill'],
+    twitterapi_io: [XLogo, 'bold'],
   };
   let [Icon, weight] = $derived(icons[provider] || [Heartbeat, 'fill']);
 </script>

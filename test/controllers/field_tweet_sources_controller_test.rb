@@ -14,10 +14,24 @@ class FieldTweetSourcesControllerTest < ActionDispatch::IntegrationTest
     post login_path, params: { email_address: @user.email_address, password: "password123" }
   end
 
-  test "a manager follows a handle; collection starts from now and the key is never shown" do
+  test "without an integration or a house grant, following says to set one up first" do
+    get account_field_path(@account, tab: "tweets")
+    stream = inertia_props["tweet_stream"]
+    assert_nil stream["funding"]
+    assert_equal account_integrations_path(@account, connect: "twitterapi_io"), stream["integration_url"]
+
+    assert_no_enqueued_jobs do
+      post account_field_tweet_source_path(@account), params: { field_tweet_source: { handle: "danielt" } }
+    end
+    assert_nil @account.reload.field_tweet_source
+    assert_equal "You need to set up a TwitterAPI.io integration first.", flash[:alert]
+  end
+
+  test "with the account's integration a manager follows a handle; the key is never shown" do
+    connect_twitterapi_io(@account, "my-secret-key")
     assert_enqueued_with(job: FieldTweets::SyncJob) do
       post account_field_tweet_source_path(@account), params: { field_tweet_source: {
-        handle: "@danielt", include_replies: "1", include_quotes: "0", include_reposts: "0", api_key: "my-secret-key"
+        handle: "@danielt", include_replies: "1", include_quotes: "0", include_reposts: "0", api_key: "ignored-key"
       } }
     end
     assert_redirected_to account_field_path(@account, tab: "tweets")
@@ -28,27 +42,28 @@ class FieldTweetSourcesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_not_includes response.body, "my-secret-key"
     stream = inertia_props["tweet_stream"]
-    assert_equal "danielt", stream.dig("source", "handle")
-    assert_equal true, stream.dig("source", "has_own_key")
+    assert_equal [ "danielt", "own", "own" ], [ stream.dig("source", "handle"), stream.dig("source", "funding"), stream["funding"] ]
   end
 
-  test "an empty key field leaves the key; removing it goes back to the house" do
-    source = @account.create_field_tweet_source!(handle: "danielt", api_key: "k1")
-    patch account_field_tweet_source_path(@account), params: { field_tweet_source: { api_key: "", include_reposts: "1" } }
-    assert_equal [ "k1", true ], [ source.reload.api_key, source.include_reposts ]
-
-    patch account_field_tweet_source_path(@account), params: { field_tweet_source: { remove_api_key: "true" } }
-    assert_equal "house", source.reload.funding
+  test "an account granted the house key follows without an integration" do
+    @account.update!(field_tweets_house_key: true)
+    post account_field_tweet_source_path(@account), params: { field_tweet_source: { handle: "danielt" } }
+    assert_equal "house", @account.reload.field_tweet_source.funding
   end
 
-  test "a new key resumes a stream stopped for its old one" do
-    source = @account.create_field_tweet_source!(handle: "danielt", api_key: "k1")
-    source.needs_attention!("refused")
-    patch account_field_tweet_source_path(@account), params: { field_tweet_source: { api_key: "k2" } }
-    assert_equal [ "active", "k2" ], [ source.reload.state, source.api_key ]
+  test "only a site admin grants the house key" do
+    assert_not @user.is_site_admin?
+    patch field_tweets_house_key_admin_account_path(@account), params: { account: { field_tweets_house_key: true } }
+    assert_not @account.reload.field_tweets_house_key?
+
+    delete logout_path
+    post login_path, params: { email_address: users(:site_admin_user).email_address, password: "password123" }
+    patch field_tweets_house_key_admin_account_path(@account), params: { account: { field_tweets_house_key: true } }
+    assert @account.reload.field_tweets_house_key?
   end
 
   test "pause, resume and stop following; tweets already in stay" do
+    @account.update!(field_tweets_house_key: true)
     source = @account.create_field_tweet_source!(handle: "danielt")
     tweet = @account.field_tweets.create!(FieldTweet.attributes_from(tweet_payload(1, at: Time.current), fetched_at: Time.current).merge(field_tweet_source: source))
 

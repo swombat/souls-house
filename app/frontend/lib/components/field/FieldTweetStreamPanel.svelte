@@ -1,7 +1,10 @@
 <script>
   // The Tweets tab's own panel: follow one public X handle, or see and
   // manage the one already being followed. Shown only when tweet_stream is
-  // not null (the house has the feature switched on).
+  // not null (the house has the feature switched on). Following needs
+  // someone to pay: the account's TwitterAPI.io integration, or the house
+  // key for accounts granted it (stream.funding); with neither, the panel
+  // says so and links to the integration.
   import { router } from '@inertiajs/svelte';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
@@ -19,7 +22,6 @@
   let includeReplies = $state(true);
   let includeQuotes = $state(true);
   let includeReposts = $state(false);
-  let apiKey = $state('');
   let ownLimit = $state('5');
   let following = $state(false);
 
@@ -36,7 +38,6 @@
           include_replies: includeReplies,
           include_quotes: includeQuotes,
           include_reposts: includeReposts,
-          api_key: apiKey.trim(),
           own_monthly_usd_limit: ownLimit,
         },
       },
@@ -48,8 +49,6 @@
   let settingsReplies = $state(false);
   let settingsQuotes = $state(false);
   let settingsReposts = $state(false);
-  let settingsKey = $state('');
-  let settingsRemoveKey = $state(false);
   let settingsLimit = $state('5');
   let savingSettings = $state(false);
   let working = $state(false);
@@ -61,8 +60,6 @@
     settingsQuotes = source.include_quotes;
     settingsReposts = source.include_reposts;
     settingsLimit = source.own_monthly_usd_limit;
-    settingsKey = '';
-    settingsRemoveKey = false;
   });
 
   function saveSettings(event) {
@@ -76,8 +73,6 @@
           include_replies: settingsReplies,
           include_quotes: settingsQuotes,
           include_reposts: settingsReposts,
-          api_key: settingsKey.trim(),
-          remove_api_key: settingsRemoveKey ? 'true' : 'false',
           own_monthly_usd_limit: settingsLimit,
         },
       },
@@ -100,7 +95,17 @@
 
 <Card.Root class="mb-4" data-testid="field-tweet-stream-panel">
   <Card.Content class="p-4 space-y-4">
-    {#if !stream.source}
+    {#if !stream.source && !stream.funding}
+      <div class="space-y-2" data-testid="tweet-stream-needs-integration">
+        <p class="font-medium">You need to set up a TwitterAPI.io integration first.</p>
+        <p class="text-sm text-muted-foreground">
+          Following an X handle reads its new posts through TwitterAPI.io, which charges for every check (about $0.15
+          per 1,000 posts, at least $0.00015 a call; an idle handle checked every {stream.poll_minutes} minutes costs about
+          $0.43 a month). Add your own TwitterAPI.io key and it pays for this account's tweets.
+        </p>
+        <Button size="sm" href={stream.integration_url}>Set up TwitterAPI.io</Button>
+      </div>
+    {:else if !stream.source}
       <form onsubmit={follow} class="space-y-3" data-testid="tweet-stream-follow-form">
         <div class="space-y-1">
           <Label for="tweet-stream-handle">Follow an X handle</Label>
@@ -117,14 +122,9 @@
             <input type="checkbox" bind:checked={includeReposts} /> Include its reposts
           </label>
         </div>
-        <div class="space-y-1">
-          <Label for="tweet-stream-key"
-            >Your own TwitterAPI.io key <span class="text-muted-foreground">(optional)</span></Label>
-          <Input id="tweet-stream-key" type="password" autocomplete="off" bind:value={apiKey} />
-        </div>
-        {#if apiKey.trim()}
+        {#if stream.funding === 'own'}
           <div class="space-y-1">
-            <Label for="tweet-stream-limit">Your monthly limit (USD)</Label>
+            <Label for="tweet-stream-limit">Monthly limit on your TwitterAPI.io spend (USD)</Label>
             <Input
               id="tweet-stream-limit"
               type="number"
@@ -138,10 +138,12 @@
         <p class="text-sm text-muted-foreground">
           Posts from now on are brought in, not its history. Checked every {stream.poll_minutes} minutes, up to {stream.daily_import_cap}
           new tweets a day.
-          {#if stream.house_available || apiKey.trim()}
-            Paid by the house, up to ${stream.account_monthly_usd_ceiling} a month, unless a key is given above.
+          {#if stream.funding === 'own'}
+            Paid by this account's TwitterAPI.io integration, up to the monthly limit above.
+          {:else if stream.house_available}
+            Paid by the house, up to ${stream.account_monthly_usd_ceiling} a month.
           {:else}
-            Collection paid by the house isn't available yet, so a key is needed for now.
+            Collection paid by the house is paused right now, so nothing will be collected until it resumes.
           {/if}
           Search may miss or delay some posts; this is not a complete archive.
         </p>
@@ -174,7 +176,14 @@
           </p>
         {/if}
         <p class="text-muted-foreground">
-          {stream.source.funding === 'own' ? 'Paid by your own key.' : 'Paid by the house.'}
+          {#if stream.source.funding === 'own'}
+            Paid by this account's TwitterAPI.io integration.
+          {:else if stream.source.funding === 'house'}
+            Paid by the house.
+          {:else}
+            Nobody pays for collection right now: <a href={stream.integration_url} class="underline"
+              >set up a TwitterAPI.io integration</a> to start it again.
+          {/if}
         </p>
       </div>
 
@@ -197,29 +206,19 @@
             <input type="checkbox" bind:checked={settingsReposts} /> Include its reposts
           </label>
         </div>
-        <div class="space-y-1">
-          <Label for="tweet-stream-settings-key">
-            {stream.source.has_own_key ? 'Replace your key' : 'Your own TwitterAPI.io key'}
-            <span class="text-muted-foreground">(leave blank to keep it unchanged)</span>
-          </Label>
-          <Input id="tweet-stream-settings-key" type="password" autocomplete="off" bind:value={settingsKey} />
-        </div>
-        {#if stream.source.has_own_key}
-          <label class="flex items-center gap-2 text-sm">
-            <input type="checkbox" bind:checked={settingsRemoveKey} /> Remove my key
-          </label>
+        {#if stream.source.funding === 'own'}
+          <div class="space-y-1">
+            <Label for="tweet-stream-settings-limit">Monthly limit on your TwitterAPI.io spend (USD)</Label>
+            <Input
+              id="tweet-stream-settings-limit"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              class="w-28"
+              bind:value={settingsLimit} />
+          </div>
         {/if}
-        <div class="space-y-1">
-          <Label for="tweet-stream-settings-limit">Your monthly limit (USD)</Label>
-          <Input
-            id="tweet-stream-settings-limit"
-            type="number"
-            min="0"
-            max="100"
-            step="0.01"
-            class="w-28"
-            bind:value={settingsLimit} />
-        </div>
         <Button type="submit" size="sm" variant="outline" disabled={savingSettings}>Save settings</Button>
       </form>
     {/if}

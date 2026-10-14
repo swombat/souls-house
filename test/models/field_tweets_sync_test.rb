@@ -11,6 +11,8 @@ class FieldTweetsSyncTest < ActiveSupport::TestCase
     @connected = Time.utc(2026, 10, 11, 12, 0)
     travel_to @connected
     enable_field_tweets
+    @account.update!(field_tweets_house_key: true)
+    accounts(:another_team).update!(field_tweets_house_key: true)
     @source = @account.create_field_tweet_source!(handle: "@danielt", created_by: users(:user_1))
   end
 
@@ -304,7 +306,7 @@ class FieldTweetsSyncTest < ActiveSupport::TestCase
   end
 
   test "a refused own key stops this stream and never falls back to the house" do
-    @source.update!(api_key: "own-key-123")
+    connect_twitterapi_io(@account)
     travel 15.minutes
     client = FakeClient.new(TwitterApiIo::Error.new("TwitterAPI.io answered 401", status: 401))
     with_house_key { run_sync(@source, client) }
@@ -312,7 +314,7 @@ class FieldTweetsSyncTest < ActiveSupport::TestCase
     assert_equal [ "own-key-123" ], client.keys
     @source.reload
     assert_equal "needs_attention", @source.state
-    assert_match(/refused this account's key/, @source.state_reason)
+    assert_match(/refused the key in this account's TwitterAPI.io integration/, @source.state_reason)
     assert_equal "own", FieldTweetCall.sole.funding
     assert_nil Setting.instance.field_tweets_house_halted_at
 
@@ -323,7 +325,8 @@ class FieldTweetsSyncTest < ActiveSupport::TestCase
 
   test "an own key collects even while house-paid collection is shut" do
     enable_field_tweets(site: "0")
-    @source.update!(api_key: "own-key-123")
+    @account.update!(field_tweets_house_key: false)
+    connect_twitterapi_io(@account)
     travel 15.minutes
     client = FakeClient.new(page_of([]))
     with_house_key(nil) { assert_equal :done, run_sync(@source, client) }
@@ -428,12 +431,118 @@ class FieldTweetsSyncTest < ActiveSupport::TestCase
   end
 
   test "what a person sees about a stream never includes the key" do
-    @source.update!(api_key: "secret-key-xyz")
+    connect_twitterapi_io(@account, "secret-key-xyz")
     json = @source.status_json.to_json
     assert_not_includes json, "secret-key-xyz"
-    assert_includes json, "\"has_own_key\":true"
+    assert_includes json, "\"funding\":\"own\""
     assert_not_includes FieldItems.tweet_stream_json(@account).to_json, "secret-key-xyz"
-    assert_not_equal "secret-key-xyz", FieldTweetSource.connection.select_value("SELECT api_key FROM field_tweet_sources WHERE id = #{@source.id}")
+  end
+
+  # Who pays (Daniel, 2026-10-14): the account's integration, else the house
+  # key if a site admin granted it, else nobody.
+  test "without an integration or a house grant, nothing is asked and the stream says why" do
+    @account.update!(field_tweets_house_key: false)
+    travel 15.minutes
+    client = FakeClient.new
+    with_house_key { assert_equal :waiting, run_sync(@source, client) }
+    assert_empty client.calls
+    assert_empty FieldTweetCall.all
+    assert_equal FieldTweets::NO_FUNDING, @source.reload.state_reason
+    assert_nil @source.funding
+    with_house_key do
+      error = assert_raises(FieldTweets::LimitReached) { FieldTweets.reserve!(@source) }
+      assert_equal FieldTweets::NO_FUNDING, error.message
+    end
+  end
+
+  test "an integration pays before a house grant, and its key is the one sent" do
+    connect_twitterapi_io(@account, "account-key")
+    travel 15.minutes
+    client = FakeClient.new(page_of([]))
+    with_house_key { assert_equal :done, run_sync(@source, client) }
+    assert_equal [ "account-key" ], client.keys
+    assert_equal "own", FieldTweetCall.sole.funding
+  end
+
+  test "a disconnected integration no longer pays; the house grant does" do
+    connection = connect_twitterapi_io(@account, "account-key")
+    connection.update!(status: "revoked", credential_payload: nil)
+    travel 15.minutes
+    client = FakeClient.new(page_of([]))
+    with_house_key { run_sync(@source, client) }
+    assert_equal [ "house-test-key" ], client.keys
+  end
+
+  test "an integration with no key in it spends nothing and needs attention" do
+    connection = connect_twitterapi_io(@account)
+    connection.update!(credential_payload: nil)
+    travel 15.minutes
+    client = FakeClient.new
+    with_house_key { assert_equal :failed, run_sync(@source, client) }
+    assert_empty client.calls
+    assert_equal [ "failed", 0 ], [ FieldTweetCall.sole.status, FieldTweetCall.sole.charge_usd.to_d ]
+    assert_equal "needs_attention", @source.reload.state
+    assert_nil Setting.instance.field_tweets_house_halted_at
+  end
+
+  # Mira, #349 review: a grant revoked while page one is in flight stops page
+  # two; the account is read fresh at each reservation.
+  test "revoking the house grant mid-run stops the next page" do
+    travel 15.minutes
+    revoke = Object.new
+    first_page = page_of([ tweet_payload(1, at: @connected + 1.minute) ], cursor: "c2")
+    revoke.define_singleton_method(:search) do |_query, cursor: nil|
+      Account.find(@account_id).update!(field_tweets_house_key: false)
+      @page
+    end
+    revoke.instance_variable_set(:@account_id, @account.id)
+    revoke.instance_variable_set(:@page, first_page)
+    calls = 0
+    factory = ->(_key) { calls += 1; revoke }
+    with_house_key { FieldTweets::Sync.new(@source, client: factory).call }
+    assert_equal 1, FieldTweetCall.count, "page two must not be reserved after the grant was revoked"
+    assert_equal FieldTweets::NO_FUNDING, @source.reload.state_reason
+  end
+
+  test "renaming the integration does not restart a stream stopped for its failures" do
+    connection = connect_twitterapi_io(@account)
+    @source.update!(failure_count: 8)
+    @source.needs_attention!("TwitterAPI.io kept failing")
+    connection.update!(label: "Our TwitterAPI.io")
+    connection.update!(enabled_for_new_agents: true)
+    assert_equal [ "needs_attention", 8 ], [ @source.reload.state, @source.failure_count ]
+
+    connection.update!(status: "revoked", credential_payload: nil)
+    assert_equal "active", @source.reload.state, "removing the key is a change to who pays"
+  end
+
+  test "a paused stream stays paused when the integration changes" do
+    @source.pause!("Paused by Daniel")
+    connect_twitterapi_io(@account)
+    assert_equal "paused", @source.reload.state
+  end
+
+  test "disconnecting the integration hands an account with a house grant back to the house" do
+    connection = connect_twitterapi_io(@account, "account-key")
+    connection.update!(status: "revoked", credential_payload: nil)
+    travel 15.minutes
+    client = FakeClient.new(page_of([]))
+    with_house_key { assert_equal :done, run_sync(@source, client) }
+    assert_equal [ "house-test-key" ], client.keys
+    assert_equal "house", FieldTweetCall.sole.funding
+  end
+
+  test "connecting an integration restarts a stream stopped for its key" do
+    connect_twitterapi_io(@account, "bad")
+    travel 15.minutes
+    with_house_key { run_sync(@source, FakeClient.new(TwitterApiIo::Error.new("TwitterAPI.io answered 402", status: 402))) }
+    assert_equal "needs_attention", @source.reload.state
+
+    connect_twitterapi_io(@account, "topped-up")
+    assert_equal "active", @source.reload.state
+    client = FakeClient.new(page_of([]))
+    with_house_key { assert_equal :done, run_sync(@source, client) }
+    assert_equal [ "topped-up" ], client.keys
   end
 
   private
