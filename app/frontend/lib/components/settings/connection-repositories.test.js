@@ -206,12 +206,18 @@ describe('GitHub card repositories', () => {
 
 describe('placement on the integration card', () => {
   it('appears on GitHub connections that carry repositories', () => {
-    render(IntegrationConnection, { account: { id: 'house' }, services: [], connection: connectionWith({}) });
+    render(IntegrationConnection, {
+      open: true,
+      account: { id: 'house' },
+      services: [],
+      connection: connectionWith({}),
+    });
     expect(screen.getByRole('heading', { name: 'Repositories' })).toBeInTheDocument();
   });
 
   it('adds nothing to other providers', () => {
     render(IntegrationConnection, {
+      open: true,
       account: { id: 'house' },
       services: [],
       connection: connectionWith({ provider: 'dropbox', repositories: undefined }),
