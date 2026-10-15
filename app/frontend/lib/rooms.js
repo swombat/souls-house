@@ -23,6 +23,13 @@ export function waitingIn(key, attention) {
   return attention?.rooms?.[key] || 0;
 }
 
+// Residents working in a room, newest start first (RoomActivity). The first
+// one's colour is the spinner's.
+export function workingIn(key, activity) {
+  if (key === ALL) return activity?.all || [];
+  return activity?.rooms?.[key] || [];
+}
+
 export function roomsPath(accountId, key) {
   return `/accounts/${accountId}/chats?room=${encodeURIComponent(key)}`;
 }

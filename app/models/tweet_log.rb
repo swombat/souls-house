@@ -1,9 +1,6 @@
 class TweetLog < ApplicationRecord
 
   STATUSES = %w[pending posted failed outcome_unknown resolved_posted resolved_not_posted].freeze
-  # Everything that did or may have become a public post counts toward the
-  # account's daily ceiling; only definite failures do not.
-  COUNTING_STATUSES = %w[pending posted outcome_unknown resolved_posted].freeze
   # A pending post is still being sent, or its sender was interrupted. A
   # live sender finishes within about two minutes of its last touch, and it
   # rechecks under this row's lock before sending, so after this long with
@@ -20,7 +17,6 @@ class TweetLog < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
 
   scope :recent, -> { order(created_at: :desc) }
-  scope :counting_toward_limit, -> { where(status: COUNTING_STATUSES) }
   scope :outcome_unknown, -> { where(status: "outcome_unknown") }
 
   def url

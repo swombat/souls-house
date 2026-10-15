@@ -33,6 +33,10 @@ class AgentRuntimeInteraction < ApplicationRecord
   scope :recent, -> { order(created_at: :desc) }
   scope :timeline_order, -> { order(Arel.sql("COALESCE(finished_at, started_at, created_at) ASC"), :id) }
   scope :active, -> { where(finished_at: nil).where("run_id IS NOT NULL OR started_at >= ?", ACTIVE_WINDOW.ago) }
+  # Shown as working: the sidebar's avatar rings and the room switchers' spinners.
+  scope :working, -> {
+    active.where("agent_runtime_interactions.execution_state IS NULL OR agent_runtime_interactions.execution_state NOT IN (?)", TERMINAL_STATES)
+  }
 
   def self.record_trigger!(agent:, chat:, trigger_kind:, conversation_id:, requested_by:, session_id:, endpoint_url:, request_text:, last_included_message_id: nil, provider_auth_mode: "api_key", provider: nil, model: nil)
     interaction = agent.with_lock do
@@ -595,6 +599,7 @@ class AgentRuntimeInteraction < ApplicationRecord
         "Chat:#{chat.obfuscated_id}",
         { action: "refresh", prop: "runtime_interactions" }
       )
+      RoomActivity.refresh_for(chat.account)
     end
 
     broadcast_linked_message_refresh if previous_changes.key?("finished_at")

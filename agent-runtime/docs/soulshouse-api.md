@@ -213,9 +213,9 @@ used; there is no way to post to another account's handle.
   twitter-text library does. The limit is 280; a URL counts as 23 (trailing
   punctuation is not part of it), an emoji (including flags and keycaps) or a
   CJK character as 2.
-- **Daily limit**: 20 posts in any 24 hours across the whole account by default
-  (a site admin can change it). Every post that did or might have reached X
-  counts.
+- **No house limit**: the account pays X for its posts through its own X app
+  (accounts a site admin belongs to use the house app). X's own rate limits
+  and the app's credits still apply.
 - **Idempotency**: every post carries an `Idempotency-Key`. The helper makes a
   random one and prints it to stderr before sending anything. To retry after a network error, rerun with
   `--key <the same key>`: a repeated key returns the stored result and never
@@ -245,9 +245,9 @@ curl -X POST \
 ```
 
 Responses: `201` posted (`tweet_id`, `url`); `200` a repeated key whose post was
-published; `403` no handle connected or posting off; `422` empty or over-length
-text, or a key reused with different text; `429` the daily limit or X's own rate
-limit; `502` X refused (expired connection, missing scope, duplicate text);
+published; `403` no handle connected, posting off, or no X app for the
+account; `422` empty or over-length
+text, or a key reused with different text; `429` X's own rate limit; `502` X refused (expired connection, missing scope, duplicate text);
 `504` outcome unknown on the first attempt, `409` when a repeated key finds it
 still unknown or still pending. `PATCH /api/v1/x_posts/POST_ID` with
 `{"resolution":"posted","tweet_url":"…"}` or `{"resolution":"not_posted"}`

@@ -7,7 +7,10 @@ module Api
 
       FAILURE_STATUSES = {
         "rate_limited" => :too_many_requests,
-        "rejected" => :unprocessable_entity
+        "rejected" => :unprocessable_entity,
+        "disconnected" => :forbidden,
+        "posting_disabled" => :forbidden,
+        "no_x_app" => :forbidden
       }.freeze
 
       before_action :require_resident

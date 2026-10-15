@@ -22,7 +22,7 @@ class AgentServiceAccess < ApplicationRecord
       provisioning_error_code: nil,
       updated_at: Time.current
     ) if persisted?
-    AccountAgentCredentialsRefreshJob.perform_later(agent.account_id, agent.id)
+    AccountAgentCredentialsRefreshJob.perform_later(agent.account_id, agent.id, manifest_only: true)
   end
 
   def mark_provisioned!

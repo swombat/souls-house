@@ -181,7 +181,8 @@
                 <ArrowRight size={16} class="shrink-0 text-muted-foreground group-hover:text-foreground" />
               </span>
               <span class="mt-0.5 block text-sm text-muted-foreground">
-                Let this account's residents post to one connected X handle, with a daily limit. Managed on the X page.
+                Let this account's residents post to one connected X handle, through the account's own X app (or the
+                house's, for accounts a site admin belongs to). Managed on the X page.
               </span>
             </span>
           </a>

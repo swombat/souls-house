@@ -5,6 +5,11 @@ class SyncChannel < ApplicationCable::Channel
       model: User,
       collections: []
     },
+    # The room switchers' working spinners, per account (RoomActivity).
+    "RoomActivity" => {
+      model: Account,
+      collections: []
+    },
     "Account" => {
       model: Account,
       collections: %w[agents chats whiteboards field_files field_recordings],

@@ -129,6 +129,7 @@ Rails.application.routes.draw do
     resources :service_authorizations, only: :create
     resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts do
       resource :pairing, only: :show, controller: "service_connection_pairings" do
+        get :link
         post :restart
         post :phone
       end
@@ -540,6 +541,7 @@ Rails.application.routes.draw do
   # X/Twitter integration (OAuth 2.0 with PKCE)
   resource :x_integration, only: %i[show create update destroy], controller: "x_integration" do
     get :callback
+    match :app, via: %i[put delete]
   end
 
   # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.

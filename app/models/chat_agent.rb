@@ -11,6 +11,9 @@ class ChatAgent < ApplicationRecord
 
   # A second seat ends a quiet rhythm run's solitude (Chat::QuietRhythmRun).
   after_create_commit -> { chat.announce_listing_change }
+  # Leaving one resident can make a rhythm run quiet again: off the list, so
+  # its room stops spinning for it.
+  after_destroy_commit -> { chat.refresh_room_activity if chat.rhythm_run? }
 
   scope :closed_for_initiation, -> { where.not(closed_for_initiation_at: nil) }
   scope :open_for_initiation, -> { where(closed_for_initiation_at: nil) }

@@ -27,7 +27,7 @@ class AgentServiceAccessTest < ActiveSupport::TestCase
   test "creating access schedules runtime reconciliation" do
     assert_enqueued_with(
       job: AccountAgentCredentialsRefreshJob,
-      args: [ @account.id, @agent.id ]
+      args: [ @account.id, @agent.id, { manifest_only: true } ]
     ) do
       @agent.agent_service_accesses.create!(
         service_connection: @connection,
@@ -45,7 +45,7 @@ class AgentServiceAccessTest < ActiveSupport::TestCase
 
     assert_enqueued_with(
       job: AccountAgentCredentialsRefreshJob,
-      args: [ @account.id, @agent.id ]
+      args: [ @account.id, @agent.id, { manifest_only: true } ]
     ) do
       access.update!(enabled: false)
     end
@@ -60,7 +60,7 @@ class AgentServiceAccessTest < ActiveSupport::TestCase
 
     assert_enqueued_with(
       job: AccountAgentCredentialsRefreshJob,
-      args: [ @account.id, @agent.id ]
+      args: [ @account.id, @agent.id, { manifest_only: true } ]
     ) do
       access.destroy!
     end

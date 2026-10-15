@@ -95,6 +95,30 @@ class Accounts::ServiceConnectionPairingsControllerTest < ActionDispatch::Integr
     assert_equal @owner, connection.connected_by_user
     assert_match(/\A[0-9a-f]{64}\z/, connection.credential_payload_hash["callback_secret"])
     assert_equal [ connection.id ], started
+    assert_redirected_to link_account_service_connection_pairing_path(@account, connection.public_id)
+  end
+
+  test "the focused pairing page shows the owner this connection, and no code in its props" do
+    sign_in @owner
+    get link_account_service_connection_pairing_path(@account, @connection.public_id)
+
+    assert_response :ok
+    assert_equal "no-store", response.headers["Cache-Control"]
+    assert_not_includes response.body, "QR-SECRET"
+    page = inertia_props
+    assert_equal "accounts/whatsapp_link", page["component"]
+    assert_equal @connection.public_id, page.dig("props", "connection", "id")
+    assert_equal "pairing", page.dig("props", "connection", "status")
+    assert_equal account_integrations_path(@account), page.dig("props", "integrations_url")
+  end
+
+  test "only the owner can open the focused pairing page" do
+    [ @account_admin, @member ].each do |user|
+      sign_in user
+      get link_account_service_connection_pairing_path(@account, @connection.public_id)
+      assert_response :not_found
+      assert_not_includes response.body, "QR-SECRET"
+    end
   end
 
   test "without a configured connector, WhatsApp is neither offered nor connectable" do

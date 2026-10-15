@@ -29,6 +29,20 @@ class Accounts::ServiceConnectionPairingsController < ApplicationController
     render json: json
   end
 
+  # GET .../pairing/link (WhatsApp): the focused page Connect WhatsApp
+  # opens, so that on a phone the pairing is the whole screen rather than a
+  # card halfway down Integrations. The same pairing is also on that card.
+  # The codes themselves still come only from show, by fetch.
+  def link
+    return head :not_found unless @connection.provider == "whatsapp"
+
+    render inertia: "accounts/whatsapp_link", props: {
+      account: current_account.as_json,
+      connection: @connection.as_connection_json(current_user: Current.user),
+      integrations_url: account_integrations_path(current_account)
+    }
+  end
+
   # POST .../pairing/restart (WhatsApp; Telegram restarts through its login
   # steps). Pairs again from the start: after the codes expired, an error,
   # or WhatsApp logging the device out. Owner only, like the QR itself.

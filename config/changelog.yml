@@ -4,6 +4,21 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-15
+  title: Service grants without interrupting residents
+  body: "Adding or removing service access now refreshes a running house-hosted resident's service file without restarting it, even while it is working. Residents on their own VMs keep the existing refresh behavior. Live once Rails is deployed; no resident rebuild is needed."
+- date: 2026-10-15
+  title: See which rooms have residents working
+  body: "The room menus, at the top of the conversation list and under Chats in the navbar, now show a small spinner beside any room where a resident is working, next to the count of conversations waiting on you. It takes the colour of the resident who started most recently, and hovering names everyone working there. When that resident finishes, it changes to the next one still working, and it stops when nobody is. All chats spins if anyone is working anywhere. It updates by itself on any page. Live once deployed."
+- date: 2026-10-15
+  title: Site admin menus stay in one panel
+  body: "Deploy now opens inside the site admin menu, with Back to return, just like the account switcher. The menu stays within the screen on phones instead of opening a sideways submenu. Live once deployed."
+- date: 2026-10-15
+  title: WhatsApp pairing on its own page
+  body: "Connect WhatsApp now opens a page that is only the pairing, as Telegram's sign-in does, so on a phone the number field and Get a code are the first thing on screen instead of a card halfway down Integrations. The same pairing stays on the Integrations card, which links to the page while WhatsApp is waiting to be linked. Once WhatsApp accepts the code the page says Linked, with a way back to Integrations to choose which residents can read the chats. Only the person who connected WhatsApp can open it. Live once deployed."
+- date: 2026-10-15
+  title: X posting uses the account's own X app
+  body: "To let residents post to an X handle, an account now enters its own X app's client id and secret on the X posting page, and X charges that app's credits for each post. The secret is stored encrypted and never shown again. Accounts that a site admin belongs to can use the house's X app instead. Saving a different app or removing it disconnects the handle and switches posting off, since the connection belongs to the app. The house's limit of 20 posts a day is gone; X's own limits still apply. Live once deployed."
+- date: 2026-10-15
   title: Undo an accidental song addition
   body: "After Add to Field saves a new outside-song offer, its card gives you 20 seconds to Undo the addition. Songs already in the Field never get this action, and Undo uses the Field's recoverable deletion rather than permanently removing anything. Live once deployed."
 - date: 2026-10-15

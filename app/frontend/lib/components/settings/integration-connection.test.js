@@ -151,3 +151,22 @@ describe('a WhatsApp disconnect the connector has not confirmed', () => {
     expect(screen.queryByTestId('unpair-pending')).not.toBeInTheDocument();
   });
 });
+
+describe('a WhatsApp connection waiting to be linked', () => {
+  const whatsapp = { provider: 'whatsapp', label: 'WhatsApp', management_scope: 'personal', can_manage: true };
+
+  it('offers the owner the pairing on its own page', () => {
+    globalThis.fetch = vi.fn(() => new Promise(() => {}));
+    mount({ ...whatsapp, status: 'pairing', can_delegate: true });
+    expect(screen.getByTestId('whatsapp-link-page-link')).toHaveAttribute(
+      'href',
+      '/accounts/selected-house/service_connections/svc_test/pairing/link'
+    );
+  });
+
+  it('offers nobody else the page', () => {
+    globalThis.fetch = vi.fn(() => new Promise(() => {}));
+    mount({ ...whatsapp, status: 'pairing', can_delegate: false });
+    expect(screen.queryByTestId('whatsapp-link-page-link')).not.toBeInTheDocument();
+  });
+});

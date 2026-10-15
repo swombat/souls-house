@@ -83,4 +83,17 @@ class SyncChannelTest < ActionCable::Channel::TestCase
     assert subscription.rejected?
   end
 
+  test "room activity streams per accessible account" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "RoomActivity", id: @account.obfuscated_id
+    assert subscription.confirmed?
+    assert_has_stream "RoomActivity:#{@account.obfuscated_id}"
+  end
+
+  test "room activity of an inaccessible account is rejected" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "RoomActivity", id: accounts(:existing_user_account).obfuscated_id
+    assert subscription.rejected?
+  end
+
 end

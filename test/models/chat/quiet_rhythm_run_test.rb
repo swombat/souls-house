@@ -93,7 +93,58 @@ class Chat::QuietRhythmRunTest < ActiveSupport::TestCase
     assert_not chat.reload.quiet_rhythm_run?
   end
 
+  test "a quiet run's working resident spins only once a person's reply brings it into the list" do
+    chat = fire(resident_rhythm)
+    working_in(chat)
+    assert_empty RoomActivity.summary_for(@account)[:all]
+
+    assert_broadcast_on(room_activity, action: "refresh") do
+      chat.messages.create!(role: "user", user: @user, content: "Thanks, noted.", suppress_automatic_dispatch: true)
+    end
+    assert_equal [ @agent.to_param ], RoomActivity.summary_for(@account)[:all].map { |agent| agent[:id] }
+  end
+
+  test "the eye on a quiet run refreshes room activity while its resident works" do
+    chat = fire(resident_rhythm)
+    working_in(chat)
+    message = chat.messages.create!(role: "assistant", agent: @agent, content: "Daniel?", suppress_automatic_dispatch: true)
+    assert_broadcast_on(room_activity, action: "refresh") do
+      ReplyExpectation.record!(message: message, user: @user, score: 0.9, classifier_version: "test")
+    end
+    assert_equal 1, RoomActivity.summary_for(@account)[:all].size
+  end
+
+  test "a seat taken or given up changes whether the run spins, and says so" do
+    chat = fire(resident_rhythm)
+    working_in(chat)
+    seat = nil
+    assert_broadcast_on(room_activity, action: "refresh") { seat = chat.chat_agents.create!(agent: @other_agent) }
+    assert_equal 1, RoomActivity.summary_for(@account)[:all].size
+
+    assert_broadcast_on(room_activity, action: "refresh") { seat.destroy! }
+    assert chat.reload.quiet_rhythm_run?
+    assert_empty RoomActivity.summary_for(@account)[:all]
+  end
+
+  test "a discarded reply sends the run back off the list and its spinner with it" do
+    chat = fire(resident_rhythm)
+    working_in(chat)
+    reply = chat.messages.create!(role: "user", user: @user, content: "Oops", suppress_automatic_dispatch: true)
+    assert_equal 1, RoomActivity.summary_for(@account)[:all].size
+    assert_broadcast_on(room_activity, action: "refresh") { reply.discard! }
+    assert_empty RoomActivity.summary_for(@account)[:all]
+  end
+
   private
+
+  def room_activity
+    "RoomActivity:#{@account.obfuscated_id}"
+  end
+
+  def working_in(chat)
+    AgentRuntimeInteraction.create!(agent: @agent, chat: chat, trigger_kind: "conversation",
+      started_at: Time.current, run_id: SecureRandom.uuid, execution_state: "running")
+  end
 
   def resident_rhythm
     Rhythm.create!(account: @account, creator_agent: @agent, title: "House watch", opening: "Look round the house.",

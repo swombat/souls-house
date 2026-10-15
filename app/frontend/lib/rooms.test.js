@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALL, MAIN, destinations, roomName, roomsPath, views, waitingIn } from './rooms';
+import { ALL, MAIN, destinations, roomName, roomsPath, views, waitingIn, workingIn } from './rooms';
 
 const rooms = [
   { id: 'abc', name: 'Life' },
@@ -25,6 +25,14 @@ describe('rooms', () => {
     expect(waitingIn('abc', { rooms: { abc: 2 } })).toBe(2);
     expect(waitingIn('def', { rooms: {} })).toBe(0);
     expect(waitingIn(MAIN, undefined)).toBe(0);
+  });
+
+  it('reads working residents from room activity, with All chats spanning rooms', () => {
+    const activity = { rooms: { abc: [{ id: 'm', name: 'Mira', colour: 'violet' }] }, all: [{ id: 'l' }, { id: 'm' }] };
+    expect(workingIn('abc', activity).map((a) => a.id)).toEqual(['m']);
+    expect(workingIn('def', activity)).toEqual([]);
+    expect(workingIn(ALL, activity).map((a) => a.id)).toEqual(['l', 'm']);
+    expect(workingIn(MAIN, undefined)).toEqual([]);
   });
 
   it('builds the room selection path', () => {

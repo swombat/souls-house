@@ -22,10 +22,13 @@ class Accounts::ServiceConnectionsController < ApplicationController
           management_scope: connection.management_scope,
           external_identity: connection.external_identity,
           authority_summary: connection.credential_metadata["authority_summary"])
-    # Telegram's sign-in has its own focused page (it is also on the
-    # Integrations card).
+    # Telegram's sign-in and WhatsApp's pairing have their own focused
+    # pages (they are also on the Integrations card).
     if connection.provider == "telegram" && connection.status == "pairing"
       return redirect_to account_service_connection_login_path(current_account, connection.public_id)
+    end
+    if connection.provider == "whatsapp" && connection.status == "pairing"
+      return redirect_to link_account_service_connection_pairing_path(current_account, connection.public_id)
     end
 
     redirect_to account_integrations_path(current_account),

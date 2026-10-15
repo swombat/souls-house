@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_14_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_15_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2437,13 +2437,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_160000) do
   create_table "x_integrations", force: :cascade do |t|
     t.text "access_token"
     t.bigint "account_id", null: false
+    t.integer "app_generation", default: 0, null: false
+    t.string "client_id"
+    t.text "client_secret"
     t.datetime "created_at", null: false
     t.boolean "enabled", default: true, null: false
     t.text "refresh_token"
     t.datetime "token_expires_at"
     t.datetime "updated_at", null: false
     t.string "x_username"
-    t.integer "daily_post_limit", default: 20, null: false
     t.index ["account_id"], name: "index_x_integrations_on_account_id", unique: true
   end
 

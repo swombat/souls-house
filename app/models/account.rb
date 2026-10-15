@@ -340,7 +340,12 @@ class Account < ApplicationRecord
     tiers.sum { |id| Billing::Tier.find(id)&.swarm_searches.to_i }
   end
 
-  def recording_unlimited?
+  def recording_unlimited? = includes_site_admin?
+
+  # A site admin's own account, or any account a site admin is a confirmed
+  # member of. Such accounts may use house-paid credentials (unlimited
+  # recording, the house X app).
+  def includes_site_admin?
     return true if is_site_admin?
 
     memberships.confirmed.includes(:user).any? { |membership| membership.user&.site_admin }

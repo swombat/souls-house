@@ -12,7 +12,7 @@ module Api
         @agent = agents(:research_assistant)
         @api_key = ApiKey.generate_for(@user, name: "Resident X", agent: @agent)
         @integration = XIntegration.create!(
-          account: @agent.account, enabled: true, x_username: "househandle",
+          account: @agent.account, enabled: true, x_username: "househandle", client_id: "own-cid", client_secret: "own-secret",
           access_token: "live-token", refresh_token: "refresh-1", token_expires_at: 2.hours.from_now
         )
       end

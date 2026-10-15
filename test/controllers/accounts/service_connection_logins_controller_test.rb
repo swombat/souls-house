@@ -297,6 +297,12 @@ class Accounts::ServiceConnectionLoginsControllerTest < ActionDispatch::Integrat
     assert_equal account_integrations_path(@account), page.dig("props", "integrations_url")
   end
 
+  test "WhatsApp's focused pairing page is not a way into a Telegram connection" do
+    sign_in @owner
+    get link_account_service_connection_pairing_path(@account, @connection.public_id)
+    assert_response :not_found
+  end
+
   test "Connect Telegram opens the focused sign-in page" do
     sign_in @owner
     with_telegram_connector do |requests|

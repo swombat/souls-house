@@ -27,7 +27,12 @@
   const updateAttentionSync = createDynamicSync();
   $effect(() => {
     const id = $page.props?.user?.id;
-    updateAttentionSync(id ? { [`ReplyAttention:${id}`]: 'reply_attention' } : {});
+    const accountId = $page.props?.account?.id;
+    const subs = {};
+    if (id) subs[`ReplyAttention:${id}`] = 'reply_attention';
+    // The room switchers' working spinners, here so they update on any page.
+    if (accountId) subs[`RoomActivity:${accountId}`] = 'room_activity';
+    updateAttentionSync(subs);
   });
 
   function handleLogout(event) {

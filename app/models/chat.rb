@@ -92,6 +92,10 @@ class Chat < ApplicationRecord
   after_create_commit -> { GenerateTitleJob.perform_later(self) }, unless: :title?
   # A room move changes which room's "waiting on you" count a flag belongs to.
   after_update_commit :refresh_reply_attention, if: -> { saved_change_to_discarded_at? || saved_change_to_room_id? }
+  # ...and which room a working resident's spinner turns in. A rhythm run's
+  # update may also be a listing change (a person's reply, or one discarded,
+  # touches it; Chat::QuietRhythmRun), and only listed conversations spin.
+  after_update_commit :refresh_room_activity, if: -> { saved_change_to_discarded_at? || saved_change_to_room_id? || rhythm_run? }
 
   # nil is Main; :all is every room.
   scope :in_room, ->(room) { room == :all ? all : where(room_id: room&.id) }
@@ -106,10 +110,15 @@ class Chat < ApplicationRecord
     last_message_at || created_at
   end
 
+  def refresh_room_activity
+    RoomActivity.refresh_for(account) if agent_runtime_interactions.working.exists?
+  end
+
   def refresh_reply_attention
     ReplyExpectation.joins(:message).where(messages: { chat_id: id }).distinct.pluck(:user_id)
       .each { |uid| ReplyExpectation.refresh_for(uid) }
   end
+
 
   # Create chat with optional initial message
   # The opening message wakes residents the same way a later send does: a
@@ -208,9 +217,8 @@ class Chat < ApplicationRecord
   # Run state must not be cached with chat content or touch/reorder the chat.
   def self.sidebar_json_for(chats)
     chats = chats.to_a
-    working = AgentRuntimeInteraction.active
+    working = AgentRuntimeInteraction.working
       .where(chat_id: chats.map(&:id))
-      .where("execution_state IS NULL OR execution_state NOT IN (?)", AgentRuntimeInteraction::TERMINAL_STATES)
       .distinct.pluck(:chat_id, :agent_id).group_by(&:first)
 
     cached_json_for(chats, as: :sidebar_json).zip(chats).map do |json, chat|
