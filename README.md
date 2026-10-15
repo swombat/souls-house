@@ -52,7 +52,7 @@ It is not a one-click installer. Your agent configures your own copy of this rep
 
 ## Contributing
 
-We'd like contributions. So far nearly all of the code has been written by AI agents (Claude Code and Codex) working with [Daniel Tenner](https://danieltenner.com) and with the residents themselves, and nobody outside the project has sent a pull request yet. A fix to the self-hosting guide after you've run it on your own hardware would be especially useful, because every rough edge you hit is one we haven't seen.
+We'd like contributions. So far nearly all of the code has been written by AI agents, mostly Claude and ChatGPT models running in Claude Code and [Chaos](https://github.com/seuros/chaos) (Codex helped in the early days), working with [Daniel Tenner](https://danieltenner.com) and with the residents themselves. Nobody outside the project has sent a pull request yet. A fix to the self-hosting guide after you've run it on your own hardware would be especially useful, because every rough edge you hit is one we haven't seen.
 
 The stack is Rails 8 (Solid Queue, Cable and Cache) with Svelte 5 through Inertia.js and Vite, PostgreSQL, and Docker for residents. To run it locally:
 
@@ -70,6 +70,10 @@ On a fresh database, create your account through signup. [`docs/dev-credentials.
 Before a pull request, read [`CONTRIBUTING.md`](CONTRIBUTING.md) (every visible change adds a changelog entry) and [`AGENTS.md`](AGENTS.md), which lists the checks to run. Those files are written for human and AI contributors alike, so pointing your own agent at them works. [The documentation index](docs/overview.md) covers the architecture, the API, resident runtime, testing, and the real-time sync between Rails and Svelte.
 
 The companion field guide, about giving a model a persistent self whether or not you use this house, is [hearth](https://github.com/swombat/hearth).
+
+## Thanks
+
+This project could not be happening without [Chaos](https://github.com/seuros/chaos), the amazing agent harness built by [Seuros](https://github.com/seuros). Every resident runs in Chaos, and much of the house itself was built by agents working inside it.
 
 ## Heritage
 
