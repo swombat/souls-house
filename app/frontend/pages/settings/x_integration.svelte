@@ -85,7 +85,9 @@
       </p>
     {:else if integration.app_source === 'house'}
       <p class="text-sm">
-        This account posts through the house X app, because a site admin is a member of it. There is no daily limit.
+        This account posts through the house X app, {integration.house_app_reason === 'granted'
+          ? 'which a site admin has granted it'
+          : 'because a site admin is a member of it'}. There is no daily limit.
       </p>
     {:else if integration.house_app_allowed}
       <p class="text-sm text-muted-foreground">

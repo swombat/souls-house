@@ -54,6 +54,40 @@ class XIntegrationControllerTest < ActionDispatch::IntegrationTest
     assert_match %r{client_id=cid}, response.location
   end
 
+  test "an account a site admin granted the house app connects through it" do
+    @account.update!(x_posting_house_app: true)
+    sign_in(@owner)
+
+    with_x_credentials do
+      get x_integration_path(account_id: @account.to_param)
+      assert_equal "house", inertia_props.dig("props", "integration", "app_source")
+      assert_equal "granted", inertia_props.dig("props", "integration", "house_app_reason")
+
+      post x_integration_path(account_id: @account.to_param)
+    end
+
+    assert_match %r{client_id=cid}, response.location
+  end
+
+  test "only a site admin grants or withdraws the house X app, and withdrawing disconnects" do
+    integration = XIntegration.create!(account: @account, enabled: true,
+      access_token: "t", refresh_token: "rt", token_expires_at: 1.hour.from_now)
+    sign_in(@owner)
+    patch x_posting_house_app_admin_account_path(@account), params: { account: { x_posting_house_app: true } }
+    assert_not @account.reload.x_posting_house_app?
+
+    delete logout_path
+    sign_in(users(:site_admin_user))
+    patch x_posting_house_app_admin_account_path(@account), params: { account: { x_posting_house_app: true } }
+    assert @account.reload.x_posting_house_app?
+    assert integration.reload.connected?
+
+    patch x_posting_house_app_admin_account_path(@account), params: { account: { x_posting_house_app: false } }
+    assert_not @account.reload.x_posting_house_app?
+    assert_not integration.reload.connected?
+    assert_not integration.enabled?
+  end
+
   test "an admin saves the account's own X app; the secret never comes back to the page" do
     sign_in(@owner)
 

@@ -289,6 +289,7 @@ Rails.application.routes.draw do
         patch :founding
         patch :field_swarm
         patch :field_tweets_house_key
+        patch :x_posting_house_app
         post :refresh_storage
       end
       resources :memberships, only: [ :create, :destroy ], controller: "account_memberships"

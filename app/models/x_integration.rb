@@ -1,13 +1,15 @@
 # One account's X handle, and the X app it connects through.
 #
-# The house X app (x.client_id / x.client_secret in Rails credentials) is only
-# for accounts with a site admin in them. Every other account enters its own
-# X app's client id and secret, and pays X for its own posts; it never falls
-# back to the house app. An account that has entered its own app uses it even
-# when it could use the house app.
+# The house X app (x.client_id / x.client_secret in Rails credentials) is for
+# accounts with a site admin among their confirmed members, and for accounts a
+# site admin has granted it to (accounts.x_posting_house_app). Every other
+# account enters its own X app's client id and secret, and pays X for its own
+# posts; it never falls back to the house app. An account that has entered
+# its own app uses it even when it could use the house app.
 #
 # Tokens belong to the app that issued them, so changing or removing the own
-# app disconnects the handle and switches posting off.
+# app disconnects the handle and switches posting off, and so does losing the
+# house app while connected through it.
 class XIntegration < ApplicationRecord
 
   include XApi
@@ -30,7 +32,32 @@ class XIntegration < ApplicationRecord
 
   def own_app? = client_id.present? && client_secret.present?
 
-  def house_app_allowed? = account.includes_site_admin?
+  def house_app_allowed? = account.x_posting_house_app? || account.includes_site_admin?
+
+  # "site_admin", "granted", or nil: why this account may use the house app.
+  def house_app_reason
+    if account.includes_site_admin? then "site_admin"
+    elsif account.x_posting_house_app? then "granted"
+    end
+  end
+
+  # After a site admin withdraws the house app grant: an integration
+  # connected through the house app that can no longer use it disconnects,
+  # under the same row lock as an app change, so it waits for a send in
+  # progress and bumps app_generation against an OAuth exchange in flight.
+  # An account with its own app, or still with a site admin, is untouched.
+  def self.house_app_access_changed!(account)
+    account.x_integration&.disconnect_unless_house_app_allowed!
+  end
+
+  def disconnect_unless_house_app_allowed!
+    with_lock do
+      account.reload
+      next if own_app? || house_app_allowed?
+
+      update!(**disconnected_attributes)
+    end
+  end
 
   # "own", "house", or nil when this account has no X app to connect through.
   def app_source

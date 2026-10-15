@@ -68,6 +68,16 @@ describe('X posting page', () => {
     expect(screen.getByRole('button', { name: /Connect with X/ })).toBeInTheDocument();
   });
 
+  it('says when the house app was granted by a site admin', () => {
+    render(XIntegration, {
+      account_id: 'acct',
+      integration: { ...base, app_source: 'house', house_app_allowed: true, house_app_reason: 'granted' },
+      can_manage: true,
+    });
+
+    expect(screen.getByText(/which a site admin has granted it/)).toBeInTheDocument();
+  });
+
   it('lets an admin of a house-app account switch to its own app', async () => {
     render(XIntegration, {
       account_id: 'acct',

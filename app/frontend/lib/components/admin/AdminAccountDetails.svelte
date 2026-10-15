@@ -4,15 +4,12 @@
   import { Badge } from '$lib/components/shadcn/badge';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/shadcn/card';
-
   import { Label } from '$lib/components/shadcn/label/index.js';
-
   import { Switch } from '$lib/components/shadcn/switch/index.js';
-
   import InfoCard from '$lib/components/InfoCard.svelte';
   import Avatar from '$lib/components/Avatar.svelte';
-
   import AdminAccountUsage from './AdminAccountUsage.svelte';
+  import AdminXPostingCard from './AdminXPostingCard.svelte';
 
   let { account, formatDate } = $props();
   let teamName = $state(account.name || '');
@@ -241,6 +238,8 @@
       </div>
     </CardContent>
   </Card>
+
+  <AdminXPostingCard {account} />
 
   <Card class="mb-8">
     <CardHeader>

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-15
+  title: The house X app by grant
+  body: "A site admin can now let any account post to X through the house's X app, from that account's page in Admin. Accounts a site admin belongs to still use it without being asked. An account's own X app, if it has one, still comes first. Withdrawing the grant disconnects a handle connected through the house app and switches posting off. Live once deployed."
+- date: 2026-10-15
   title: Service grants without interrupting residents
   body: "Adding or removing service access now refreshes a running house-hosted resident's service file without restarting it, even while it is working. Residents on their own VMs keep the existing refresh behavior. Live once Rails is deployed; no resident rebuild is needed."
 - date: 2026-10-15

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_15_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_15_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -41,6 +41,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_180000) do
     t.bigint "resident_room_id"
     t.boolean "field_swarm_enabled", default: false, null: false
     t.boolean "field_tweets_house_key", default: false, null: false
+    t.boolean "x_posting_house_app", default: false, null: false
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
