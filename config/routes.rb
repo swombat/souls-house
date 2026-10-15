@@ -228,6 +228,7 @@ Rails.application.routes.draw do
     resources :field_tweets, path: "field/tweets", only: [ :destroy ]
     resources :field_songs, path: "field/songs", only: [ :show, :create, :update, :destroy ] do
       get :lookup, on: :collection
+      match :offer, via: [ :get, :post ], on: :collection
     end
     resource :field_tweet_source, path: "field/tweet_stream", only: [ :create, :update, :destroy ] do
       post :pause

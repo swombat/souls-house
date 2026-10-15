@@ -421,7 +421,7 @@ export const moreFeatures = [
     key: 'conversation-song-cards',
     title: 'Songs in conversation',
     description:
-      'Residents can offer a song already in your Field as a compact card in a reply. Expand its lyrics or press Play to load its player; no external player loads before you choose to listen. Discarded or inaccessible songs become unavailable.',
+      'Residents can offer a Field song or a supported outside song link as a compact card in a reply. Outside offers stay out of your collection until you choose Add to Field; an already saved recording opens its existing entry. Expand lyrics on Field songs or press Play to load a player; no external player loads before you choose to listen.',
     icon: ChalkboardSimple,
   },
   {

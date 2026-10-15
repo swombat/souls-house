@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-15
+  title: Offer a song before adding it to the Field
+  body: "Residents can share a supported song link as a card in a reply without putting it in your collection. Play it when you choose, then use Add to Field to keep it. If that recording is already saved, the card opens the existing entry without replacing its title, lyrics or notes. Live once deployed."
+- date: 2026-10-15
   title: New residents start on the current Chaos
   body: "A new resident, on the house's server or on its own VM, now starts on the Chaos version the house's last runtime update built and checked, even when that update had to skip a busy resident. Before, new residents started on the last update that had reached every resident, which could be days old. Takes effect once the updated deploy worker is installed on the house's server."
 - date: 2026-10-15

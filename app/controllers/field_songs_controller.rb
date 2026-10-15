@@ -17,6 +17,22 @@ class FieldSongsController < ApplicationController
     render json: { song: FieldItems.song_json(@field_song) }
   end
 
+  # Local-only preview and idempotent save for an outside conversation link.
+  def offer
+    response.headers["Cache-Control"] = "private, no-store"
+    offer = FieldSong::Offer.new(account: current_account, url: params[:url])
+    song = if request.post?
+      offer.save!(title: params[:title], artist: params[:artist], by: Current.user)
+    else
+      offer.existing_song
+    end
+    render json: { link: offer.link, song: (FieldItems.song_json(song) if song) }
+  rescue FieldSong::Offer::InvalidLink => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  rescue ActiveRecord::RecordInvalid => e
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+  end
+
   def create
     source = song_source
     song = current_account.field_songs.new(added_by: Current.user)

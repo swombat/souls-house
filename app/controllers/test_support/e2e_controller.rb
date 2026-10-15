@@ -36,6 +36,19 @@ module TestSupport
 
             [[song:#{song.to_param}]]
       TEXT
+      if params[:outside_offers]
+        chat.messages.create!(role: "assistant", agent: account.agents.first!, content: <<~TEXT)
+          An offer, not an addition to your Field.
+
+          [[song:https://youtu.be/aqz-KE-bpKQ | Outside song | Example artist]]
+
+          [[song:https://music.apple.com/us/album/example/123 | Apple offer | Example artist]]
+
+          [[song:https://example.invalid/unsafe | Unsupported offer | Nobody]]
+
+          [[song:https://youtu.be/aqz-KE-bpKQ | | Example artist]]
+        TEXT
+      end
       render json: {
         chat_url: account_chat_path(account, chat),
         song_url: account_field_song_path(account, song)

@@ -1,6 +1,7 @@
 <script>
   import { untrack } from 'svelte';
-  import { embedUrl, embedHeight, stanzas } from '$lib/field-songs';
+  import { embedUrl, stanzas } from '$lib/field-songs';
+  import SongCardPlayer from './SongCardPlayer.svelte';
 
   let { accountId, songId } = $props();
   const identity = $derived(`${accountId}/${songId}`);
@@ -23,9 +24,7 @@
         ]
       : []
   );
-  const active = $derived(
-    song && playback?.identity === identity ? sources.find((source) => source.key === playback.key) : null
-  );
+  const activeKey = $derived(playback?.identity === identity ? playback.key : null);
 
   async function load(expected) {
     controller?.abort();
@@ -89,44 +88,7 @@
         target="_blank"
         rel="noopener noreferrer">Open in Field</a>
     </div>
-    {#if sources.length}
-      {#if !active}
-        <button class="text-sm underline" disabled={busy} onclick={() => play()}>
-          {busy ? 'Checking…' : 'Play'}
-        </button>
-      {:else}
-        {#if sources.length > 1}
-          <div class="flex flex-wrap gap-3" aria-label="Listen on">
-            {#each sources as source (source.key)}
-              <button
-                class="text-sm underline"
-                aria-pressed={active.key === source.key}
-                disabled={busy}
-                onclick={() => play(source.key)}>{source.label}</button>
-            {/each}
-          </div>
-        {/if}
-        {#if active.key === 'file'}
-          <audio controls preload="none" src={song.audio.url} class="w-full"></audio>
-        {:else}
-          <iframe
-            title={`${song.title} on ${active.label}`}
-            src={active.embed}
-            height={embedHeight(active.link) || 240}
-            class="w-full rounded-md border-0"
-            referrerpolicy="strict-origin-when-cross-origin"
-            allow="encrypted-media; picture-in-picture; fullscreen"
-            allowfullscreen></iframe>
-        {/if}
-      {/if}
-    {/if}
-    {#if song.links?.length}
-      <div class="flex flex-wrap gap-3 text-xs">
-        {#each song.links as link}
-          <a href={link.url} target="_blank" rel="noopener noreferrer" class="underline">Open on {link.label}</a>
-        {/each}
-      </div>
-    {/if}
+    <SongCardPlayer {song} {activeKey} {busy} onplay={play} />
     {#if song.lyrics_state === 'present'}
       <button class="text-sm underline" aria-expanded={expanded} onclick={() => (expanded = !expanded)}>
         {expanded ? 'Hide lyrics' : 'Show lyrics'}

@@ -4,6 +4,20 @@
 const SPOTIFY_EMBED = /^(track|album|playlist|episode)\/[A-Za-z0-9]{10,40}$/;
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
 
+export function songProviderLabel(link) {
+  return (
+    link.label ||
+    {
+      spotify: 'Spotify',
+      youtube: 'YouTube',
+      apple_music: 'Apple Music',
+      bandcamp: 'Bandcamp',
+      soundcloud: 'SoundCloud',
+    }[link.provider] ||
+    link.provider
+  );
+}
+
 // The player for a link, built only from the id the server parsed out of it
 // (never the address itself). null when the provider has no embed here.
 export function embedUrl(link) {

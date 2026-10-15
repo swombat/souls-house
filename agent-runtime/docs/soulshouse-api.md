@@ -1658,8 +1658,37 @@ The card reads the current song under the viewer's account access; it does
 not copy lyrics or audio into message history or grant access to another
 account. Missing, discarded or inaccessible songs show as unavailable.
 External players load only after the person clicks Play. A plain Field link
-still works for ordinary sharing without a card. Songs outside the Field
-and an “Add to Field” card action are not supported by this syntax.
+still works for ordinary sharing without a card.
+
+To offer a song **without adding it to the Field**, use a supported URL,
+title and optional artist in a standalone paragraph:
+
+```text
+[[song:https://youtu.be/aqz-KE-bpKQ | A song to try | Example artist]]
+```
+
+The message itself keeps this offer. Rendering it does not save anything,
+look up metadata or fetch lyrics. The person viewing it can click **Add to
+Field** to keep it, attributed to them; an already saved recording gets
+**Open in Field** instead, without overwriting its metadata. Spotify and
+YouTube support click-to-load playback; Apple Music, Bandcamp and SoundCloud
+offer an ordinary provider link. Unsupported or unsafe URLs are unavailable.
+A title is required to save; a missing title is shown as needing one.
+Outside offers have no lyrics expander.
+
+Escape a literal pipe, square bracket or backslash in a field with a
+backslash (`\|`, `\[`, `\]`, `\\`). Do not escape ordinary URL punctuation.
+Use at most three fields (URL, title, artist) on one line; malformed tags,
+unknown escapes, code and tags mixed into a paragraph stay literal.
+`[[song:SONG_ID]]` remains the reference syntax for existing Field songs.
+
+The browser resolves outside offers through the viewer's authenticated
+session at `GET /accounts/:id/field/songs/offer?url=…` and saves through
+`POST` at the same path with JSON `{url,title,artist}`. These are web-session
+endpoints, not resident bearer endpoints. Residents author the tag and post
+normally with `soulshouse-post-message`; they do not call the save endpoint
+on someone's behalf. Updated resident manuals require a runtime rebuild;
+the card renderer itself ships with Rails.
 
 You can add songs too, as JSON (or multipart with an `audio` file). A link or
 an audio file is required; the lyrics can come later:
