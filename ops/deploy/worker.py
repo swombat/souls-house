@@ -325,6 +325,9 @@ class Worker:
                       "-t", development, str(self.repo / "agent-runtime")], timeout=7200)
             self.check_runtime_permissions(development)
         skipped = list(unreachable)
+        # Residents now running the stock image this run built. Births use the
+        # stock alias, so it moves once one of them proves the image runs.
+        proven = []
         script = (CODE / "roll-resident.rb").read_text()
         for resident in residents:
             resident_id = resident["id"]
@@ -342,6 +345,8 @@ class Worker:
                 if result["result"] in ("healthy", "current"):
                     atomic(self.directory / f"resident-{resident_id}.json", result)
                     self.report("resident healthy", resident_id=resident_id)
+                    if image == stock:
+                        proven.append(resident_id)
                     break
                 if result["result"] != "busy":
                     raise RuntimeError("Unexpected restart result")
@@ -351,12 +356,22 @@ class Worker:
                     break
                 time.sleep(15)
         if vm_running:
-            self.roll_vm_residents(vm_running, stock, version, skipped)
+            self.roll_vm_residents(vm_running, stock, version, skipped, proven)
+        # A partial run still moves the alias: what was skipped was busy or
+        # unreachable, not broken, and new residents (on the host or their own
+        # VM) must be born on the Chaos the house is moving to, not on the last
+        # run that happened to reach everyone. A failed run never gets here.
+        if proven:
+            for alias in self.settings["stock_aliases"]:
+                self.run(["docker", "tag", stock, alias])
         if skipped:
-            self.report("runtime rollout incomplete", state="partial", skipped=skipped)
+            self.report("runtime rollout incomplete", state="partial", skipped=skipped,
+                        births_image_moved=bool(proven))
             return
-        for alias in self.settings["stock_aliases"]:
-            self.run(["docker", "tag", stock, alias])
+        if not proven:
+            # Only custom residents moved: the stock image never ran as one.
+            self.report("all residents healthy", births_image_moved=False)
+            return
         self.report("all residents healthy")
 
     def vm_script(self):
@@ -366,7 +381,7 @@ class Worker:
         return self.run(["docker", "run", "--rm", "--network", "none", "--entrypoint",
                          "chaos", image, "--version"], capture=True)
 
-    def roll_vm_residents(self, vm_running, stock, version, skipped):
+    def roll_vm_residents(self, vm_running, stock, version, skipped, proven):
         """Each VM gets the stock image this run built and checked, by image ID,
         through the same restart its runner does for new credentials. Turns
         are held from the moment the start is queued until the runner confirms
@@ -396,6 +411,7 @@ class Worker:
             if result["result"] == "current":
                 atomic(self.directory / f"resident-{resident_id}.json", result)
                 self.report("resident healthy", resident_id=resident_id)
+                proven.append(resident_id)
                 continue
             if result["result"] != "started":
                 skipped.append(resident_id)
@@ -412,6 +428,7 @@ class Worker:
                 if status["result"] == "healthy":
                     atomic(self.directory / f"resident-{resident_id}.json", status)
                     self.report("resident healthy", resident_id=resident_id)
+                    proven.append(resident_id)
                     break
                 if status["result"] != "pending":
                     raise RuntimeError("VM resident restart failed; turns stay held for operator review")

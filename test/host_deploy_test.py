@@ -723,7 +723,8 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual("partial", self.w.data["state"])
         self.assertEqual([1], self.w.data["skipped"])
         self.assertEqual(["inspect"], [env["DEPLOY_VM_MODE"] for env in self.vm_calls])
-        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+        # Resident 0 proved the image, so births move to it even though the run is partial.
+        self.assertEqual(["docker", "tag", "stock:deploy-" + "a" * 32, "stock:latest"], commands[-1])
 
     def assert_vm_resident_skipped(self, answer):
         commands = self.vm_fixture(start=[{"result": answer}])
@@ -731,13 +732,43 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual("partial", self.w.data["state"])
         self.assertEqual([1], self.w.data["skipped"])
         self.assertNotIn("status", [env["DEPLOY_VM_MODE"] for env in self.vm_calls])
-        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+        self.assertEqual(["docker", "tag", "stock:deploy-" + "a" * 32, "stock:latest"], commands[-1])
 
     def test_busy_vm_resident_is_skipped(self):
         self.assert_vm_resident_skipped("busy")
 
     def test_vm_resident_unreachable_at_start_is_skipped(self):
         self.assert_vm_resident_skipped("unavailable")
+
+    def test_busy_host_resident_still_moves_births_to_the_proven_image(self):
+        # The stale-birth bug: a run that skips one busy resident used to leave
+        # the alias on the previous complete run, so new VMs got old Chaos.
+        commands = self.pinned_fixture(["c" * 40, "c" * 40])
+        rails = self.w.rails.side_effect
+        self.w.rails.side_effect = lambda code, env=None: (
+            rails(code, env) if env is None or env["DEPLOY_RESIDENT_ID"] == "0" else {"result": "busy"})
+        self.w.rebuild_residents()
+        self.assertEqual("partial", self.w.data["state"])
+        self.assertEqual([1], self.w.data["skipped"])
+        self.assertTrue(self.w.data["births_image_moved"])
+        self.assertEqual(["docker", "tag", "stock:deploy-" + "a" * 32, "stock:latest"], commands[-1])
+
+    def test_partial_run_where_nothing_ran_the_image_keeps_the_alias(self):
+        commands = self.pinned_fixture(["c" * 40])
+        rails = self.w.rails.side_effect
+        self.w.rails.side_effect = lambda code, env=None: (
+            rails(code, env) if env is None else {"result": "busy"})
+        self.w.rebuild_residents()
+        self.assertEqual("partial", self.w.data["state"])
+        self.assertFalse(self.w.data["births_image_moved"])
+        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+
+    def test_custom_resident_alone_does_not_prove_the_stock_image(self):
+        commands = self.pinned_fixture(["c" * 40])
+        self.w.settings["custom_residents"] = {"0": "development"}
+        self.w.rebuild_residents()
+        self.assertFalse(self.w.data["births_image_moved"])
+        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
 
     def test_failed_vm_restart_stops_the_run_without_moving_the_alias(self):
         commands = self.vm_fixture(start=[{"result": "started", "command_id": 77}],
