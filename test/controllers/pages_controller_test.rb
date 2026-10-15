@@ -27,12 +27,14 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert inertia_props.key?("version")
   end
 
-  test "home page carries the ten latest changelog entries" do
+  test "home page carries the ten latest changelog entries that have a clip" do
     get root_path
 
     latest = inertia_shared_props["changelog"]
-    assert_equal Changelog.entries.first(10).map { |entry| entry[:title] }, latest.map { |entry| entry["title"] }
+    expected = Changelog.entries.select { |entry| entry[:clip] }.first(10)
+    assert_equal expected.map { |entry| entry[:title] }, latest.map { |entry| entry["title"] }
     assert_operator latest.size, :<=, 10
+    assert latest.all? { |entry| entry["clip"].present? }
   end
 
   test "should get privacy policy without authentication" do

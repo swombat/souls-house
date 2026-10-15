@@ -21,4 +21,9 @@ class Changelog
     entries.select { |entry| Date.iso8601(entry[:date]) > cutoff }
   end
 
+  # The newest entries that carry a clip, for the home page: those are the changes worth showing.
+  def self.clipped(limit)
+    entries.select { |entry| entry[:clip] }.first(limit)
+  end
+
 end

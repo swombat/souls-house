@@ -5,7 +5,7 @@ class PagesController < ApplicationController
   HOME_CHANGELOG_SIZE = 10
 
   def home
-    render inertia: "home", props: { changelog: Changelog.entries.first(HOME_CHANGELOG_SIZE) }
+    render inertia: "home", props: { changelog: Changelog.clipped(HOME_CHANGELOG_SIZE) }
   end
 
   def features
