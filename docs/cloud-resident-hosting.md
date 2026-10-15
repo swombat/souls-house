@@ -192,3 +192,33 @@ registry, no registry credential, nothing in cloud-init.
 
 Not in this slice: moving an existing resident's data (backup, restore,
 single-writer cutover), real residents, and console containment on a VM.
+
+## Deploys reach VM residents (ops/deploy)
+
+"Update Chaos" and "Rebuild residents" roll residents on their own VMs as
+well as those on the house host. The host worker builds and checks one stock
+image as before, then, after the host residents, rolls each active VM
+resident through its runner (`ops/deploy/roll-vm-resident.rb`):
+
+- **What it runs now.** The image ID in the runner's own answer to its latest
+  finished `start_resident`, not whatever the resident's tag on this host now
+  points to. That image is still on the host (built here, handed over by ID),
+  so its Chaos source label and version are read from it. The single-revision
+  and no-downgrade rules cover VM residents too.
+- **Restart.** Only between turns, under the turn gate: the resident's image
+  is set to the new tag and `begin_refresh!` queues its start pinned by the
+  built image ID. Turn admission stays held until the runner answers.
+  If the tag resolves to any other ID, nothing is sent and nothing changes.
+- **Healthy** only when the restart settles done and the runner confirmed the
+  exact new image ID. A failed start gets the refresh's one recovery. If that
+  fails too, or no answer comes within `vm_restart_wait_seconds` (default
+  3600, as the VM fetches the image first), the run fails, the stock alias
+  does not move, and turns stay held for an operator.
+- **Skipped**, so the run ends partial: a VM resident that is busy past
+  `idle_wait_seconds`, or not reachable (placement not ready, birth not
+  finished, runner silent, or no confirmed start).
+- Inactive VM residents (retired throwaways) are left alone. A custom
+  (development) runtime is never sent to a VM.
+
+Not covered: the runner program itself (`host-runner/`) still ships only with
+a VM's user_data, so a runner change reaches existing VMs only by rebuilding them.

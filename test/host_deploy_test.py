@@ -537,7 +537,11 @@ class WorkerTest(unittest.TestCase):
         rebuild.assert_called_once()
         self.assertEqual("success", self.w.data["state"])
 
-    def pinned_fixture(self, refs, running="chaos 47.11.0.1", missing=(), inactive=(), on_vm=()):
+    def pinned_fixture(self, refs, running="chaos 47.11.0.1", missing=(), inactive=(), on_vm=(),
+                       vm=None):
+        """vm maps a VM resident's id to the answers its Rails script gives:
+        "image" (what its runner last confirmed, None when unreachable), and
+        lists of "start" and "status" results consumed in order."""
         self.w.settings.update(custom_residents={}, stock_repositories=["stock"],
                                stock_repository="stock", stock_aliases=["stock:latest"],
                                development_repository="dev", idle_wait_seconds=0)
@@ -545,6 +549,11 @@ class WorkerTest(unittest.TestCase):
                           active=i not in inactive, on_vm=i in on_vm)
                      for i in range(len(refs))]
         labels = {f"stock:{i}": ref for i, ref in enumerate(refs)}
+        vm = {i: dict(answers) for i, answers in (vm or {}).items()}
+        for i, answers in vm.items():
+            if answers.get("image"):
+                labels[answers["image"]] = answers.pop("ref", refs[i])
+        self.vm_calls = []
         commands = []
 
         def run(args, **kwargs):
@@ -553,11 +562,24 @@ class WorkerTest(unittest.TestCase):
                 return running
             if "--version" in args:
                 return "chaos 47.11.0.1"
+            if args[:4] == ["docker", "image", "inspect", "--format"]:
+                return self.BUILT
             return None
+
+        def rails(code, env=None):
+            if env is None:
+                return {"residents": residents}
+            if "DEPLOY_VM_MODE" not in env:
+                return {"result": "healthy"}
+            self.vm_calls.append(env)
+            answers = vm[int(env["DEPLOY_RESIDENT_ID"])]
+            if env["DEPLOY_VM_MODE"] == "inspect":
+                return {"result": "inspected", "running": bool(answers.get("image")),
+                        "image": answers.get("image")}
+            return answers[env["DEPLOY_VM_MODE"]].pop(0)
         patches = [
             patch.object(worker, "github", side_effect=AssertionError("pinned must not ask upstream")),
-            patch.object(self.w, "rails", side_effect=lambda code, env=None:
-                         {"residents": residents} if env is None else {"result": "healthy"}),
+            patch.object(self.w, "rails", side_effect=rails),
             patch.object(self.w, "inspect_image", side_effect=lambda image:
                          {"Config": {"Labels": {"house.souls.chaos-ref": labels[image]}}}),
             patch.object(self.w, "run", side_effect=run),
@@ -565,12 +587,17 @@ class WorkerTest(unittest.TestCase):
             patch.object(self.w, "container_exists",
                          side_effect=lambda name: int(name[1:]) not in missing),
             patch.object(worker, "CODE", self.root),
+            patch.object(worker.time, "sleep"),
         ]
         (self.root / "roll-resident.rb").write_text("")
+        (self.root / "roll-vm-resident.rb").write_text("")
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
         return commands
+
+    RUNNING = "sha256:" + "1" * 64
+    BUILT = "sha256:" + "2" * 64
 
     def update_fixture(self, accepted=None):
         """Update Chaos from c... to n..., where upstream deleted one applied migration."""
@@ -645,16 +672,105 @@ class WorkerTest(unittest.TestCase):
                   if call.args[1:]]
         self.assertEqual(["0"], rolled)
 
-    def test_active_resident_on_its_own_vm_is_left_alone(self):
-        # Its container lives on the VM, so there is nothing here to probe or roll.
-        commands = self.pinned_fixture(["c" * 40, "c" * 40], missing=(1,), on_vm=(1,))
+    def test_inactive_resident_on_its_own_vm_is_left_alone(self):
+        # A retired throwaway: nothing here to probe, and nothing to roll there.
+        commands = self.pinned_fixture(["c" * 40, "c" * 40], missing=(1,), on_vm=(1,), inactive=(1,))
         self.w.rebuild_residents()
         self.assertEqual("all residents healthy", self.w.data["step"])
         self.assertEqual([1], self.w.data["on_vm"])
         self.assertNotIn(call("r1"), self.w.container_exists.call_args_list)
         self.assertFalse(any("r1" in c for c in commands if c[:2] == ["docker", "exec"]))
+        self.assertEqual([], self.vm_calls)
         rolled = [c.args[1]["DEPLOY_RESIDENT_ID"] for c in self.w.rails.call_args_list if c.args[1:]]
         self.assertEqual(["0"], rolled)
+
+    def vm_fixture(self, start, status=(), image=None, ref=None, refs=("c" * 40, "c" * 40)):
+        answers = dict(image=image or self.RUNNING, start=list(start), status=list(status))
+        if ref:
+            answers["ref"] = ref
+        return self.pinned_fixture(list(refs), missing=(1,), on_vm=(1,), vm={1: answers})
+
+    def test_active_resident_on_its_own_vm_gets_the_built_image_by_id(self):
+        commands = self.vm_fixture(start=[{"result": "started", "command_id": 77}],
+                                   status=[{"result": "pending"}, {"result": "healthy"}])
+        self.w.rebuild_residents()
+        self.assertEqual("all residents healthy", self.w.data["step"])
+        # Never probed or exec'd here: its container is on the VM.
+        self.assertNotIn(call("r1"), self.w.container_exists.call_args_list)
+        self.assertFalse(any("r1" in c for c in commands if c[:2] == ["docker", "exec"]))
+        # The binary it runs now is read from the image its runner confirmed.
+        self.assertIn(["docker", "run", "--rm", "--network", "none", "--entrypoint", "chaos",
+                       self.RUNNING, "--version"], commands)
+        modes = [env["DEPLOY_VM_MODE"] for env in self.vm_calls]
+        self.assertEqual(["inspect", "start", "status", "status"], modes)
+        start = self.vm_calls[1]
+        self.assertEqual(self.BUILT, start["DEPLOY_RESIDENT_IMAGE_ID"])
+        self.assertEqual("stock:deploy-" + "a" * 32, start["DEPLOY_RESIDENT_IMAGE"])
+        self.assertEqual("77", self.vm_calls[2]["DEPLOY_VM_COMMAND_ID"])
+        # Host residents first, then the VM; the alias moves only after both.
+        self.assertEqual(["docker", "tag", "stock:deploy-" + "a" * 32, "stock:latest"], commands[-1])
+
+    def test_vm_resident_already_on_the_image_is_current(self):
+        self.vm_fixture(start=[{"result": "current"}])
+        self.w.rebuild_residents()
+        self.assertEqual("all residents healthy", self.w.data["step"])
+        self.assertEqual(["inspect", "start"], [env["DEPLOY_VM_MODE"] for env in self.vm_calls])
+
+    def test_unreachable_vm_resident_is_skipped_and_the_run_is_partial(self):
+        commands = self.pinned_fixture(["c" * 40, "c" * 40], missing=(1,), on_vm=(1,),
+                                       vm={1: dict(image=None)})
+        self.w.rebuild_residents()
+        self.assertEqual("partial", self.w.data["state"])
+        self.assertEqual([1], self.w.data["skipped"])
+        self.assertEqual(["inspect"], [env["DEPLOY_VM_MODE"] for env in self.vm_calls])
+        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+
+    def assert_vm_resident_skipped(self, answer):
+        commands = self.vm_fixture(start=[{"result": answer}])
+        self.w.rebuild_residents()
+        self.assertEqual("partial", self.w.data["state"])
+        self.assertEqual([1], self.w.data["skipped"])
+        self.assertNotIn("status", [env["DEPLOY_VM_MODE"] for env in self.vm_calls])
+        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+
+    def test_busy_vm_resident_is_skipped(self):
+        self.assert_vm_resident_skipped("busy")
+
+    def test_vm_resident_unreachable_at_start_is_skipped(self):
+        self.assert_vm_resident_skipped("unavailable")
+
+    def test_failed_vm_restart_stops_the_run_without_moving_the_alias(self):
+        commands = self.vm_fixture(start=[{"result": "started", "command_id": 77}],
+                                   status=[{"result": "failed"}])
+        with self.assertRaisesRegex(RuntimeError, "turns stay held"):
+            self.w.rebuild_residents()
+        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+
+    def test_vm_restart_that_never_settles_stops_the_run(self):
+        self.w.settings["vm_restart_wait_seconds"] = 0
+        commands = self.vm_fixture(start=[{"result": "started", "command_id": 77}],
+                                   status=[{"result": "pending"}])
+        with self.assertRaisesRegex(RuntimeError, "did not settle"):
+            self.w.rebuild_residents()
+        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+
+    def test_rebuild_reads_the_revision_a_vm_actually_runs(self):
+        # Its tag here says c..., but the image its runner confirmed is d...
+        commands = self.vm_fixture(start=[], ref="d" * 40)
+        with self.assertRaisesRegex(RuntimeError, "different Chaos revisions"):
+            self.w.rebuild_residents()
+        self.assertFalse(any(c[:2] == ["docker", "build"] for c in commands))
+
+    def test_custom_runtime_is_never_sent_to_a_vm(self):
+        commands = self.vm_fixture(start=[])
+        self.w.settings["custom_residents"] = {"1": "development"}
+        with self.assertRaisesRegex(RuntimeError, "Custom runtime on a VM"):
+            self.w.rebuild_residents()
+        self.assertEqual([], self.vm_calls)
+        self.assertFalse(any(c[:2] == ["docker", "build"] for c in commands))
+
+    def test_install_ships_the_vm_restart_script(self):
+        self.assertIn("roll-vm-resident.rb", (OPS / "install").read_text())
 
     def test_rails_query_marks_residents_on_their_own_vm(self):
         source = (OPS / "worker.py").read_text()
