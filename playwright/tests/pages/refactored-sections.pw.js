@@ -86,6 +86,7 @@ test('integration cards retain resident provisioning controls after extraction',
       ],
     },
   });
+  await component.getByRole('button', { name: 'Show details for Synthetic repository' }).click();
   await component.getByRole('switch', { name: 'Enable Synthetic repository for Synthetic resident' }).click();
   await expect.poll(() => requestBody).toEqual({ enabled: true });
 });
