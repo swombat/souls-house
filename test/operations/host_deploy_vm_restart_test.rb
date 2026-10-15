@@ -116,13 +116,28 @@ class HostDeployVmRestartTest < ActiveJob::TestCase
   test "a done answer naming another image is not healthy" do
     command = restart_command(started)
     answer(command, "done", RUNNING)
+    # One recovery, pinned to the built image; turns stay held throughout.
+    assert_equal "pending", run_script("status", DEPLOY_VM_COMMAND_ID: command.id).fetch("result")
+    assert Agents::RemoteRuntime.refresh_pending?(@agent)
+    recovery = RunnerCommand.find(@placement.reload.refresh_command_id)
+    assert_equal BUILT, JSON.parse(recovery.payload_json)["image"]
+    answer(recovery, "done", nil)
     assert_equal "failed", run_script("status", DEPLOY_VM_COMMAND_ID: command.id).fetch("result")
+    assert Agents::RemoteRuntime.refresh_pending?(@agent)
+  end
+
+  test "the background settler keeps the hold on a wrong-image answer too" do
+    command = restart_command(started)
+    answer(command, "done", RUNNING)
+    Agents::RemoteRuntime.stub(:local_image_id, BUILT) { RemoteRefreshSettleJob.perform_now(@placement.id) }
+    assert Agents::RemoteRuntime.refresh_pending?(@agent)
   end
 
   test "a failed restart gets one recovery; a second failure keeps turns held" do
     command = restart_command(started)
     answer(command, "failed")
     assert_equal "pending", run_script("status", DEPLOY_VM_COMMAND_ID: command.id).fetch("result")
+    assert Agents::RemoteRuntime.refresh_pending?(@agent)
     recovery = RunnerCommand.find(@placement.reload.refresh_command_id)
     assert_equal BUILT, JSON.parse(recovery.payload_json)["image"]
     answer(recovery, "failed")

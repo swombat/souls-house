@@ -34,9 +34,47 @@ module Agents
       RemoteRuntime.stub(:local_image_id, IMAGE) { RemoteRuntime.begin_refresh!(@agent) }
     end
 
-    def answer(command, outcome)
+    # The runner's done answer to a start names the image it now runs.
+    def answer(command, outcome, image: IMAGE)
       command.deliver!(now: Time.current)
-      command.record_result!({ "outcome" => outcome, "error" => (outcome == "done" ? nil : "boom") }.compact, now: Time.current)
+      result = { "outcome" => outcome, "error" => (outcome == "done" ? nil : "boom") }.compact
+      result["result"] = { "state" => "running", "image" => image }.compact if outcome == "done"
+      command.record_result!(result, now: Time.current)
+    end
+
+    test "done naming another image, or none, keeps the hold and recovers pinned to the carried image" do
+      [ "sha256:#{'e' * 64}", nil ].each do |image|
+        @placement.update_columns(refresh_command_id: nil, refresh_snapshot: nil, refresh_last_error: nil)
+        @access.update_columns(provisioning_status: "pending", provisioning_error_code: nil)
+        command = begin_refresh
+        answer(command, "done", image:)
+        other = "sha256:#{'f' * 64}" # the tag moved meanwhile: recovery must not follow it
+        result = RemoteRuntime.stub(:local_image_id, other) { RemoteRuntime.settle_refresh!(@placement.reload) }
+        assert_equal :recovering, result, image.inspect
+        assert RemoteRuntime.refresh_pending?(@agent)
+        assert_equal "failed", @access.reload.provisioning_status
+        assert_equal "vm_restart_wrong_image", @access.provisioning_error_code
+        recovery = RunnerCommand.find(@placement.reload.refresh_command_id)
+        assert_equal IMAGE, JSON.parse(recovery.payload_json)["image"]
+        answer(recovery, "done", image:)
+        assert_equal :held, RemoteRuntime.settle_refresh!(@placement.reload)
+        assert RemoteRuntime.refresh_pending?(@agent)
+      end
+    end
+
+    test "the background settler never releases a wrong-image answer" do
+      command = begin_refresh
+      answer(command, "done", image: "sha256:#{'e' * 64}")
+      RemoteRuntime.stub(:local_image_id, IMAGE) { RemoteRefreshSettleJob.perform_now(@placement.id) }
+      assert RemoteRuntime.refresh_pending?(@agent)
+      assert_not_equal command.id, @placement.reload.refresh_command_id
+    end
+
+    test "a refresh recorded before it carried its image settles as before" do
+      command = begin_refresh
+      @placement.reload.update_columns(refresh_snapshot: @placement.refresh_snapshot.except("image"))
+      answer(command, "done", image: nil)
+      assert_equal :done, RemoteRuntime.settle_refresh!(@placement.reload)
     end
 
     def queue_turn

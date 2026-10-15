@@ -210,13 +210,20 @@ resident through its runner (`ops/deploy/roll-vm-resident.rb`):
   built image ID. Turn admission stays held until the runner answers.
   If the tag resolves to any other ID, nothing is sent and nothing changes.
 - **Healthy** only when the restart settles done and the runner confirmed the
-  exact new image ID. A failed start gets the refresh's one recovery. If that
+  exact new image ID. Every refresh (deploy or credentials) records the image
+  ID it sent, and `settle_refresh!` (the deploy's polling and the background
+  sweep alike) releases turns only for a done answer naming exactly that ID.
+  A done answer naming another image or none is a failed restart. Its
+  recovery is pinned to the recorded ID, never to whatever the tag says now. A failed start gets the refresh's one recovery. If that
   fails too, or no answer comes within `vm_restart_wait_seconds` (default
   3600, as the VM fetches the image first), the run fails, the stock alias
   does not move, and turns stay held for an operator.
 - **Skipped**, so the run ends partial: a VM resident that is busy past
   `idle_wait_seconds`, or not reachable (placement not ready, birth not
   finished, runner silent, or no confirmed start).
+- Exception: if there is no host resident and every VM resident is
+  unreachable, no running revision is known, so the run fails (closed)
+  rather than ending partial.
 - Inactive VM residents (retired throwaways) are left alone. A custom
   (development) runtime is never sent to a VM.
 
