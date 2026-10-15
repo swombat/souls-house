@@ -257,6 +257,9 @@ module Agents
     # runner's own answer to name exactly that image.
     def refresh_image_confirmed?(command, snapshot)
       return true if snapshot["image"].nil?
+      # The "invalid" sentinel (or anything not an image ID) never matches,
+      # even an answer that is equally malformed.
+      return false unless IMAGE_ID.match?(snapshot["image"])
 
       command.result.to_h.dig("result", "image") == snapshot["image"]
     end

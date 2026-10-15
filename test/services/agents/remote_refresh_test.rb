@@ -70,6 +70,14 @@ module Agents
       assert_not_equal command.id, @placement.reload.refresh_command_id
     end
 
+    test "a malformed saved image is never confirmed, even by an equally malformed answer" do
+      command = begin_refresh
+      @placement.reload.update_columns(refresh_snapshot: @placement.refresh_snapshot.merge("image" => "garbage"))
+      answer(command, "done", image: "invalid")
+      assert_equal :held, RemoteRuntime.settle_refresh!(@placement.reload)
+      assert RemoteRuntime.refresh_pending?(@agent)
+    end
+
     test "a refresh recorded before it carried its image settles as before" do
       command = begin_refresh
       @placement.reload.update_columns(refresh_snapshot: @placement.refresh_snapshot.except("image"))
