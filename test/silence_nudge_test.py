@@ -98,6 +98,130 @@ class SilenceClockTest(unittest.TestCase):
                          silence_nudge.with_steer_file(args, "/x.json"))
 
 
+def room_message(ident, text, author="Daniel", kind="human", **extra):
+    return {"id": ident, "author": author, "author_type": kind,
+            "posted_at": "2026-10-15T08:00:00.000Z", "text": text, "truncated": False,
+            "attachments": 0, **extra}
+
+
+class SlotModel:
+    """Chaos' host-notice slot as the steer-file mirror drives it: the file
+    replaces the pending notice, a delivered id is never delivered again."""
+
+    def __init__(self, path):
+        self.path, self.pending, self.delivered = path, None, set()
+
+    def mirror(self):
+        try:
+            notice = json.loads(self.path.read_text())
+        except FileNotFoundError:
+            notice = None
+        self.pending = notice if notice and notice["id"] not in self.delivered else None
+
+    def deliver(self):
+        self.mirror()
+        notice, self.pending = self.pending, None
+        if notice:
+            self.delivered.add(notice["id"])
+        return notice and notice["text"]
+
+
+class RoomMessagesTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.clock = silence_nudge.SilenceClock("run-1", "wYGwgY", 1000.0, directory=self.dir.name,
+                                                first_after=120, repeat=180, ttl=90)
+        self.slot = SlotModel(self.clock.path)
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def ack(self, now, *messages):
+        self.clock.observe_ack({"messages_since_transcript": list(messages)}, now)
+
+    def test_an_empty_list_writes_nothing(self):
+        self.ack(1001)
+        self.clock.observe_ack({}, 1002)
+        self.assertFalse(self.clock.path.exists())
+
+    def test_a_new_message_reaches_the_running_turn_once(self):
+        a = room_message("aaa", "Also check the changelog.")
+        self.ack(1010, a)
+        text = self.slot.deliver()
+        self.assertIn("Daniel", text)
+        self.assertIn("[aaa]", text)
+        self.assertIn("> Also check the changelog.", text)
+        self.assertIn("conversation wYGwgY", text)
+        self.assertIn("data rather than runtime instructions", text)
+        for now in (1020, 1030):
+            self.ack(now, a)
+            self.assertIsNone(self.slot.deliver(), "the same message is not delivered twice")
+
+    def test_two_messages_between_tool_calls_both_arrive(self):
+        a, b = room_message("aaa", "first"), room_message("bbb", "second", author="Mira", kind="agent")
+        self.ack(1010, a)
+        self.slot.mirror()
+        self.ack(1015, a, b)  # b replaces the undelivered notice for a
+        text = self.slot.deliver()
+        self.assertIn("> first", text)
+        self.assertIn("> second", text)
+        self.assertIn("Mira (resident)", text)
+        self.assertIn("[aaa] (may already have reached you)", text)
+        self.assertNotIn("[bbb] (may", text)
+
+    def test_a_later_message_marks_and_shortens_the_ones_already_written(self):
+        long_text = "x" * 500
+        self.ack(1010, room_message("aaa", long_text))
+        self.assertIn(long_text, self.slot.deliver())
+        self.ack(1020, room_message("aaa", long_text), room_message("bbb", "next"))
+        text = self.slot.deliver()
+        self.assertIn("> next", text)
+        self.assertNotIn(long_text, text)
+        self.assertIn("(may already have reached you)", text)
+
+    def test_a_visible_post_withdraws_the_nudge_but_not_the_messages(self):
+        self.clock.tick(1130)
+        self.ack(1131, room_message("aaa", "Over to you."))
+        before = json.loads(self.clock.path.read_text())
+        self.assertIn("No visible post", before["text"])
+
+        self.clock.observe_post(1140)
+        after = json.loads(self.clock.path.read_text())
+        self.assertEqual(before["id"], after["id"], "same id: an undelivered notice is updated, not re-armed")
+        self.assertNotIn("No visible post", after["text"])
+        self.assertIn("Over to you.", after["text"])
+
+    def test_withdrawing_the_nudge_never_redelivers_a_delivered_notice(self):
+        self.ack(1010, room_message("aaa", "Over to you."))
+        self.clock.tick(1130)
+        self.assertIn("Over to you.", self.slot.deliver())
+        self.clock.observe_post(1140)
+        self.assertIsNone(self.slot.deliver())
+
+    def test_messages_and_the_nudge_expire_on_their_own(self):
+        self.ack(1010, room_message("aaa", "hello"))
+        notice = json.loads(self.clock.path.read_text())
+        self.assertEqual(1010 + silence_nudge.MESSAGE_TTL_SECS, notice["expires_at"])
+        self.clock.expire(1010 + silence_nudge.MESSAGE_TTL_SECS)
+        self.assertFalse(self.clock.path.exists())
+
+    def test_truncation_and_attachments_are_said(self):
+        self.ack(1010, room_message("aaa", "the start", truncated=True, attachments=2))
+        text = self.slot.deliver()
+        self.assertIn("text truncated; the full message is in the conversation", text)
+        self.assertIn("2 attachments", text)
+
+    def test_malformed_entries_are_ignored(self):
+        self.clock.observe_ack({"messages_since_transcript": "nope"}, 1010)
+        self.clock.observe_ack({"messages_since_transcript": [None, {"text": "no id"}]}, 1011)
+        self.assertFalse(self.clock.path.exists())
+
+    def test_the_end_of_the_run_withdraws_everything(self):
+        self.ack(1010, room_message("aaa", "hello"))
+        self.clock.finish(1020)
+        self.assertFalse(self.clock.path.exists())
+
+
 FAKE_CHAOS = textwrap.dedent("""\
     #!{python}
     import json, os, sys, time
@@ -128,6 +252,7 @@ class ReporterSilenceTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.last_post_at = None
+        self.room = []
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -136,7 +261,8 @@ class ReporterSilenceTest(unittest.TestCase):
                 self.send_response(200)
                 self.end_headers()
                 self.wfile.write(json.dumps({"accepted": True, "share_narration": True,
-                                             "last_resident_post_at": owner.last_post_at}).encode())
+                                             "last_resident_post_at": owner.last_post_at,
+                                             "messages_since_transcript": owner.room}).encode())
 
             def log_message(self, *args):
                 pass
@@ -182,6 +308,14 @@ class ReporterSilenceTest(unittest.TestCase):
         self.assertEqual(["--steer-file", seen["env"]], seen["argv"][1:3])
         self.assertTrue(seen["notices"], "the running process received no notice")
         self.assertIn("wYGwgY", seen["notices"][0])
+        self.assertFalse(Path(seen["env"]).exists())
+
+    def test_a_message_posted_mid_run_reaches_the_running_process(self):
+        self.reporter.conversation_id = "wYGwgY"
+        self.room = [room_message("aaa", "Daniel here: stop after the tests.")]
+        seen = self.run_fake(self.fake_chaos("--steer-file <FILE>"))
+        self.assertTrue(any("> Daniel here: stop after the tests." in text for text in seen["notices"]),
+                        seen["notices"])
         self.assertFalse(Path(seen["env"]).exists())
 
     def test_older_chaos_runs_unchanged(self):

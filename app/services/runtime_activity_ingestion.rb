@@ -92,7 +92,8 @@ class RuntimeActivityIngestion
     end
     {
       accepted: true, share_narration: run.narration_shared && run.agent.reload.share_working_narration?,
-      last_resident_post_at: run.last_resident_post_at&.iso8601(3), server_time: Time.current.iso8601(3)
+      last_resident_post_at: run.last_resident_post_at&.iso8601(3), server_time: Time.current.iso8601(3),
+      messages_since_transcript: run.messages_since_transcript
     }
   end
 

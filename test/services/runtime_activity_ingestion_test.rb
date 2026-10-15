@@ -458,6 +458,21 @@ class RuntimeActivityIngestionTest < ActiveSupport::TestCase
     assert_in_delta Time.current, Time.iso8601(ack[:server_time]), 5
   end
 
+  test "ack carries messages posted since the run's transcript without moving the cursor" do
+    shown = @chat.messages.create!(role: "user", user: users(:user_1), content: "Start here.")
+    @run.update_columns(last_included_message_id: shown.id)
+
+    ack = ingest(1, "attempt.started", { "narration_capability" => "unknown" })
+    assert_equal [], ack[:messages_since_transcript]
+
+    later = @chat.messages.create!(role: "user", user: users(:user_1), content: "One more thing.")
+    @chat.messages.create!(role: "assistant", agent: @agent, content: "My own post.")
+    ack = ingest(2, "heartbeat", { "operations" => [], "detail_dropped" => 0 })
+    assert_equal [ later.obfuscated_id ], ack[:messages_since_transcript].map { |m| m[:id] }
+    assert_equal "One more thing.", ack[:messages_since_transcript].first[:text]
+    assert_equal shown.id, @run.reload.last_included_message_id
+  end
+
   private
 
   def start_helpers

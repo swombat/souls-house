@@ -210,6 +210,31 @@ class AgentRuntimeInteraction < ApplicationRecord
       .maximum(:created_at)
   end
 
+  MID_RUN_MESSAGE_LIMIT = 10
+  MID_RUN_MESSAGE_CHARS = 1_500
+
+  # What has been posted in this run's conversation since the transcript this
+  # run was shown, so the runtime can put it into the running turn. It reads
+  # past `last_included_message_id` and never moves it: the transcript cursor
+  # still advances only when a run's transcript is built, so a message seen
+  # here mid-run is in the next run's transcript as well. Kept, finished rows
+  # only; not this resident's own posts, not progress rows, not
+  # safeguard-labelled speech (the next transcript labels that properly),
+  # not empty placeholders. The newest few, oldest first, each text bounded.
+  def messages_since_transcript
+    return [] unless chat_id && last_included_message_id && trigger_kind == "conversation" && finished_at.nil?
+
+    scope = Message.kept.where(chat_id:, progress_message: false, streaming: false)
+      .where("messages.id > ?", last_included_message_id)
+      .where("messages.agent_id IS DISTINCT FROM ?", agent_id)
+      .without_safeguard_label
+    with_attachments = ActiveStorage::Attachment.where(record_type: "Message", name: "attachments").select(:record_id)
+    scope.where("messages.content ~ '[^[:space:]]'").or(scope.where(id: with_attachments))
+      .includes(:user, :agent, attachments_attachments: :blob)
+      .order(id: :desc).limit(MID_RUN_MESSAGE_LIMIT).to_a.reverse
+      .map { |message| mid_run_message_json(message) }
+  end
+
   def ran_out_of_memory?
     container_oom_kills.to_i.positive? && finished_at.present? && ended_badly?
   end
@@ -466,6 +491,21 @@ class AgentRuntimeInteraction < ApplicationRecord
   end
 
   private
+
+  def mid_run_message_json(message)
+    author = if message.agent then message.agent.name
+    elsif message.user then message.user.email_address
+    elsif message.role == "system" then "souls.house (platform)"
+    else message.role
+    end
+    text = message.content.to_s.strip
+    truncated = text.length > MID_RUN_MESSAGE_CHARS
+    {
+      id: message.obfuscated_id, author:, author_type: message.agent ? "agent" : (message.user ? "human" : "platform"),
+      posted_at: message.created_at.iso8601(3), text: truncated ? text[0, MID_RUN_MESSAGE_CHARS] : text,
+      truncated:, attachments: message.attachments.size
+    }
+  end
 
   def interaction_summary
     parts = [ trigger_kind.to_s.humanize ]

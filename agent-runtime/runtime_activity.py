@@ -25,6 +25,11 @@ silence_nudge = importlib.util.module_from_spec(_silence_spec)
 _silence_spec.loader.exec_module(silence_nudge)
 
 
+# The ack carries up to ten room messages (see silence_nudge); Rails bounds
+# each one, and this bounds what the shim will read.
+ACK_MAX_BYTES = 262_144
+
+
 def command_preview(command, extra_secrets=()):
     secrets = [value for key, value in os.environ.items() if _preview_module.SENSITIVE.search(key)]
     return _preview_module.preview(command, secrets + list(extra_secrets))
@@ -411,7 +416,7 @@ class Reporter:
                 req = urllib.request.Request(self.url, data=encoded, method="POST",
                     headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.token}"})
                 with opener.open(req, timeout=5) as response:
-                    ack = json.loads(response.read(8192))
+                    ack = json.loads(response.read(ACK_MAX_BYTES))
                 if self.silence and isinstance(ack, dict):
                     self.silence.observe_ack(ack, time.time())
                 if ack.get("share_narration") is False:
