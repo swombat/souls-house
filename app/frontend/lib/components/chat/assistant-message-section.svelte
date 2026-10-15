@@ -9,6 +9,7 @@
   import AudioPlayer from '$lib/components/chat/AudioPlayer.svelte';
   import MessageTelemetry from '$lib/components/chat/MessageTelemetry.svelte';
   import HandoffReceipts from '$lib/components/chat/HandoffReceipts.svelte';
+  import SongReferenceParagraph from './SongReferenceParagraph.svelte';
   import { Streamdown } from 'svelte-streamdown';
   import { formatTime, formatDateTime } from '$lib/utils';
   import { reasoningSkipTooltip } from '$lib/chat-utils';
@@ -17,6 +18,7 @@
 
   let {
     message,
+    accountId,
     streamingThinking = '',
     isGroupChat = false,
     showMessageTelemetry = false,
@@ -42,6 +44,10 @@
   <span class="expression-tag">{token.text}</span>
 {/snippet}
 
+{#snippet songParagraph({ token, children })}
+  <SongReferenceParagraph {token} {children} {accountId} />
+{/snippet}
+
 {#if message.status === 'failed'}
   <div class="text-red-600 mb-2 text-sm">Failed to generate response</div>
 {:else if message.status === 'pending'}
@@ -64,6 +70,7 @@
     content={message.content}
     parseIncompleteMarkdown={message.streaming === true}
     inlineCitation={expressionTag}
+    paragraph={songParagraph}
     baseTheme="shadcn"
     {shikiTheme}
     shikiPreloadThemes={['catppuccin-latte', 'catppuccin-mocha']}

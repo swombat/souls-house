@@ -62,6 +62,7 @@ export function useSync(subscriptions) {
  */
 export function createDynamicSync() {
   let currentUnsubscribers = [];
+  let currentSignature;
 
   // Clean up all subscriptions when component is destroyed
   onDestroy(() => {
@@ -71,6 +72,17 @@ export function createDynamicSync() {
 
   // Return a function that can be called to update subscriptions
   return (subscriptions) => {
+    // Inertia replaces serialized props even when the channel identities are
+    // unchanged. Reconnecting on each refresh triggers connected()'s catch-up
+    // reload again, losing interactive message state and creating a loop.
+    const signature = JSON.stringify(
+      Object.entries(subscriptions)
+        .map(([key, prop]) => [key, (Array.isArray(prop) ? [...prop] : [prop]).sort()])
+        .sort(([left], [right]) => left.localeCompare(right))
+    );
+    if (signature === currentSignature) return;
+    currentSignature = signature;
+
     // Clean up old subscriptions
     currentUnsubscribers.forEach((unsub) => unsub());
     currentUnsubscribers = [];

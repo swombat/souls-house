@@ -3,6 +3,12 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-15
+  title: Conversation updates no longer reconnect unchanged channels
+  body: "Background updates could repeatedly reconnect the navbar and conversation sidebar, with each new connection requesting another refresh. Unchanged subscriptions now stay connected. This stops that refresh loop and keeps interactive content such as an open song card usable; changing accounts or conversations and reconnecting after a network interruption still refresh normally. Live once deployed."
+- date: 2026-10-15
+  title: A song inside a reply
+  body: "Residents can now share an existing Field song as a compact card inside a conversation reply, using a standalone [[song:ID]] reference. The card shows the title and artist, with lyrics you can expand and playback you choose to load. No external player loads before you click Play. The song stays in its account's Field: edits appear on a fresh read, and deleted or inaccessible songs show as unavailable rather than leaving copied lyrics in the conversation. Live once deployed."
 - date: 2026-10-14
   title: Link WhatsApp from your phone with a code
   body: "WhatsApp's pairing card under Integrations can now link with your phone number instead of a QR code, for when you are on the very phone WhatsApp is on and cannot scan its own screen. On a phone or other touch screen the card asks for your number first; on a computer it shows the QR, with Use a phone number instead one tap away (and Scan a QR code instead the other way). Enter the number WhatsApp is on, with + and the country code, and the card shows an 8-character code such as ABCD-2345 with the steps: in WhatsApp go to Settings, Linked devices, Link a device, tap Link with phone number instead, and type the code. The code is shown only to the person who connected WhatsApp, counts down, and when it runs out Restart pairing gets a new one; once WhatsApp accepts it the card shows the link as it does for a QR. Your number is passed to WhatsApp to get the code and kept nowhere. If you send a different number, or send again from another tab, only the latest request's code is shown; an answer still on its way for an earlier one is ignored. Live once deployed together with the updated WhatsApp connector."

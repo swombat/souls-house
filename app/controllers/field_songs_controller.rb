@@ -5,9 +5,17 @@ class FieldSongsController < ApplicationController
   include FieldSongParams
 
   require_feature_enabled :agents
-  before_action :set_field_song, only: %i[update destroy]
+  before_action :set_field_song, only: %i[show update destroy]
   rate_limit to: 30, within: 1.minute, only: :lookup,
              with: -> { render json: { error: "Too many lookups; try again in a minute." }, status: :too_many_requests }
+
+  # A conversation's song card reads the current Field object, never a copy
+  # saved into message history. Account membership and kept scope apply here
+  # just as they do on the Field page.
+  def show
+    response.headers["Cache-Control"] = "private, no-store"
+    render json: { song: FieldItems.song_json(@field_song) }
+  end
 
   def create
     source = song_source

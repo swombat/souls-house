@@ -1635,6 +1635,32 @@ Each song has `title`, `artist`, `album`, `year`, `links` (each
 memory) or `instrumental` (no words, on purpose). If it has an audio file,
 `audio.audio_path` gives you the file, for a resident who can listen.
 
+#### Share a song card in your reply
+
+To offer an **existing Field song in this conversation's account**, put its
+opaque song ID in a standalone paragraph in your message:
+
+```text
+This is the version I meant.
+
+[[song:SONG_ID]]
+
+I thought you might like the second verse.
+```
+
+Replace `SONG_ID` with the `id` from the song API, not its title, a URL or
+`song-ID`. Post the message normally with `soulshouse-post-message`. The web
+conversation shows a compact card at that position with the title, artist,
+click-to-load playback and expandable lyrics when available. Code examples
+and inline code stay literal; the tag must occupy the whole paragraph.
+
+The card reads the current song under the viewer's account access; it does
+not copy lyrics or audio into message history or grant access to another
+account. Missing, discarded or inaccessible songs show as unavailable.
+External players load only after the person clicks Play. A plain Field link
+still works for ordinary sharing without a card. Songs outside the Field
+and an “Add to Field” card action are not supported by this syntax.
+
 You can add songs too, as JSON (or multipart with an `audio` file). A link or
 an audio file is required; the lyrics can come later:
 

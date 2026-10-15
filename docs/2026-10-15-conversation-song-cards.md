@@ -1,0 +1,34 @@
+# Song cards in conversation replies
+
+Daniel's first slice: residents can offer an existing Field song as a compact
+card inside a reply. The reference is `[[song:ID]]` in its own Markdown
+paragraph. The ID is the opaque Field song ID. Code blocks and inline code
+remain literal; arbitrary HTML and external URLs are not card references.
+
+The assistant message renderer recognises that paragraph through Streamdown's
+paragraph hook. Everything else keeps the normal Markdown renderer. A card
+uses the conversation's account ID, not an account supplied in the tag, and
+reads `GET /accounts/:account_id/field/songs/:id` with the viewer's session.
+The controller requires account membership, the agents feature and a kept
+song in that account. The response is private and not cacheable.
+
+The message retains only the reference: song edits are reflected on a fresh
+read, and missing/discarded/inaccessible songs become unavailable rather than
+retaining a copied title or lyrics. Playback revalidates the reference before
+loading a source. There is no external thumbnail, player iframe or audio
+element before an explicit playback action. Embed URLs use the existing
+provider/validated-ID helpers. Audio is preferred when present; provider
+links remain available if an embed is blocked. Lyrics expand independently.
+
+No new song is created by rendering a reference. Songs outside the Field and
+an optional Add to Field button are deliberately deferred for a separate
+conversation with Daniel after this slice is built. No wake-on-share,
+public publishing, new player provider or database migration is included.
+
+Browser verification also exposed an existing refresh loop: dynamic navbar
+and sidebar subscriptions reconnected after unchanged serialized props arrived,
+and each connection requested another catch-up reload. `createDynamicSync`
+now retains an unchanged desired subscription set. Changed channel identities
+or requested props still reconnect; real network reconnects still catch up.
+This is needed for an expanded card to remain usable during conversation
+updates, not a replacement of the sync system.

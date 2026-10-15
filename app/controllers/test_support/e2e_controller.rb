@@ -8,6 +8,40 @@ module TestSupport
 
     PASSWORD = "password123"
 
+    def song_card_fixture
+      account = Account.find(params.fetch(:account_id))
+      raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
+
+      song = account.field_songs.create!(title: "Hallelujah", artist: "Jeff Buckley",
+        links: [ "https://youtu.be/y8AWFf7EAc4" ], lyrics: "A secret chord\nA second line",
+        added_by: account.users.first!)
+      gone = account.field_songs.create!(title: "Discarded secret",
+        links: [ "https://youtu.be/y8AWFf7EAc4" ], lyrics: "discarded words")
+      gone.discard!
+      chat = account.chats.create!(title: "Song card conversation", model_id: "openrouter/auto")
+      chat.messages.create!(role: "assistant", agent: account.agents.first!, content: <<~TEXT)
+        This is the version I meant.
+
+        [[song:#{song.to_param}]]
+
+        This one is no longer here:
+
+        [[song:#{gone.to_param}]]
+
+        Example, not a card: `[[song:#{song.to_param}]]`
+
+        ```text
+        [[song:#{song.to_param}]]
+        ```
+
+            [[song:#{song.to_param}]]
+      TEXT
+      render json: {
+        chat_url: account_chat_path(account, chat),
+        song_url: account_field_song_path(account, song)
+      }
+    end
+
     # A recording that never became ready (failed), carrying meeting notes:
     # its notes must still be reachable from the Field viewer.
     def field_recording_fixture

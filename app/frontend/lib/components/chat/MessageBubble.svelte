@@ -160,6 +160,7 @@
                   {/if}
                   <AssistantMessageSection
                     message={section}
+                    {accountId}
                     streamingThinking={sectionThinking[section.id] ||
                       (section.id === message.id ? streamingThinking : '')}
                     {isGroupChat}

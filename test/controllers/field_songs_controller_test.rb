@@ -52,6 +52,47 @@ class FieldSongsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, @account.field_songs.count
   end
 
+  test "a conversation card resolves the current song only inside its account" do
+    song = @account.field_songs.create!(title: "Hallelujah", artist: "Jeff Buckley",
+      links: [ "https://youtu.be/y8AWFf7EAc4" ], lyrics: "secret chord", added_by: @user)
+
+    get account_field_song_path(@account, song), as: :json
+    assert_response :success
+    assert_equal "secret chord", response.parsed_body.dig("song", "lyrics")
+    assert_equal "YouTube", response.parsed_body.dig("song", "links", 0, "label")
+    assert_includes response.headers["Cache-Control"], "no-store"
+
+    song.update!(lyrics: "changed words")
+    get account_field_song_path(@account, song), as: :json
+    assert_equal "changed words", response.parsed_body.dig("song", "lyrics")
+
+    other = accounts(:team_account).field_songs.create!(title: "Private title",
+      links: [ "https://youtu.be/y8AWFf7EAc4" ], lyrics: "private words")
+    get account_field_song_path(@account, other), as: :json
+    assert_response :not_found
+    assert_not_includes response.body, "Private title"
+    assert_not_includes response.body, "private words"
+
+    song.discard!
+    get account_field_song_path(@account, song), as: :json
+    assert_response :not_found
+    assert_not_includes response.body, "changed words"
+  end
+
+  test "song cards require a signed in account member" do
+    song = @account.field_songs.create!(title: "Hallelujah", links: [ "https://youtu.be/y8AWFf7EAc4" ])
+    outside_account = Account.create!(name: "Outside card account", account_type: :team)
+    other = outside_account.field_songs.create!(title: "Private song",
+      links: [ "https://youtu.be/y8AWFf7EAc4" ])
+    get account_field_song_path(other.account, other), as: :json
+    assert_response :not_found
+    assert_not_includes response.body, "Private song"
+
+    delete logout_path
+    get account_field_song_path(@account, song), as: :json
+    assert_redirected_to login_path
+  end
+
   test "an mp3 dropped in fills the title and artist from its tags" do
     post account_field_songs_path(@account), params: { field_song: { audio: fixture_file_upload("field_song.mp3", "audio/mpeg") } }
     song = @account.field_songs.last
