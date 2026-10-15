@@ -19,11 +19,13 @@ undelivered one, and the shim is never told what was delivered. So the file
 holds one composed notice with two parts, the room's new messages and the
 silence nudge. The id changes only when there is something new to say (a new
 message, a new nudge), and then the notice carries every message the ack still
-lists, so nothing is lost to replacement; a message already written under an
-earlier id is marked as possibly seen. Dropping a part (a visible post ends the
-nudge, the nudge's own expiry) rewrites the text under the same id, so chaos
-updates an undelivered notice and never re-delivers a delivered one. The end of
-the run deletes the file. Chaos checks expiry again at delivery.
+lists, in full, so nothing is lost to replacement; a message already written
+under an earlier id is marked as possibly seen, but its text is never shortened,
+because the shim can't tell whether that earlier notice was delivered. Any other
+change (a visible post ends the nudge, a part's own expiry, a message the ack no
+longer lists or whose text changed) rewrites the text under the same id, so
+chaos updates an undelivered notice and never re-delivers a delivered one. The
+end of the run deletes the file. Chaos checks expiry again at delivery.
 
 Reading the messages never moves souls.house's transcript cursor; they are in
 the next run's transcript as well.
@@ -40,7 +42,6 @@ FIRST_AFTER_SECS = 120
 REPEAT_SECS = 180
 NOTICE_TTL_SECS = 90
 MESSAGE_TTL_SECS = 900
-SEEN_EXCERPT_CHARS = 200
 
 _support = {}
 _support_lock = threading.Lock()
@@ -102,9 +103,9 @@ def describe_message(message, maybe_seen):
     head = f"- {who}, {stamp} [{message.get('id')}]"
     if maybe_seen:
         head += " (may already have reached you)"
+    # Full text even when maybe seen: Rails already bounds it, and a notice
+    # that replaced an undelivered one is the only copy that will arrive.
     body = str(message.get("text") or "").strip()
-    if maybe_seen and len(body) > SEEN_EXCERPT_CHARS:
-        body = body[:SEEN_EXCERPT_CHARS].rstrip() + " …"
     lines = [head + ":"] + [f"  > {line}" if line else "  >" for line in body.splitlines()]
     extras = []
     if message.get("truncated"):
@@ -128,6 +129,11 @@ def messages_text(messages, written, conversation_id):
         "They will also be in your next transcript. Take them into account; reply in the "
         "conversation if they change what you are doing."
     )
+
+
+def _rendered_fields(messages):
+    keys = ("id", "author", "author_type", "posted_at", "text", "truncated", "attachments")
+    return [tuple(m.get(k) for k in keys) for m in messages]
 
 
 class SilenceClock:
@@ -185,18 +191,26 @@ class SilenceClock:
 
     def observe_messages(self, messages, now):
         """Take the ack's list of messages posted since this run's transcript.
-        A message not offered before starts a new notice carrying them all."""
+        A message not offered before starts a new notice carrying them all.
+        Otherwise a changed list (a message discarded or edited) is re-rendered
+        under the same id: an undelivered notice is corrected, a delivered one
+        is not re-armed."""
         if not isinstance(messages, list):
             return
         messages = [m for m in messages if isinstance(m, dict) and isinstance(m.get("id"), str)]
         with self.lock:
             fresh = [m for m in messages if m["id"] not in self.room_ids]
-            self.room = messages
-            if not fresh:
+            if fresh:
+                self.room = messages
+                self.room_ids.update(m["id"] for m in fresh)
+                self.messages_expire_at = now + self.message_ttl
+                self._new_notice()
                 return
-            self.room_ids.update(m["id"] for m in fresh)
-            self.messages_expire_at = now + self.message_ttl
-            self._new_notice()
+            if self.messages_expire_at is None or self.messages_expire_at <= now:
+                return  # nothing live to correct; expired messages stay expired
+            if _rendered_fields(messages) != _rendered_fields(self.room):
+                self.room = messages
+                self._render()
 
     def _close_gap(self, until):
         self.longest_silence = max(self.longest_silence, until - self.anchor())

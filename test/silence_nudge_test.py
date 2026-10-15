@@ -169,15 +169,77 @@ class RoomMessagesTest(unittest.TestCase):
         self.assertIn("[aaa] (may already have reached you)", text)
         self.assertNotIn("[bbb] (may", text)
 
-    def test_a_later_message_marks_and_shortens_the_ones_already_written(self):
+    def test_a_later_message_marks_the_ones_already_written_and_keeps_their_text(self):
         long_text = "x" * 500
         self.ack(1010, room_message("aaa", long_text))
         self.assertIn(long_text, self.slot.deliver())
         self.ack(1020, room_message("aaa", long_text), room_message("bbb", "next"))
         text = self.slot.deliver()
         self.assertIn("> next", text)
-        self.assertNotIn(long_text, text)
+        self.assertIn(long_text, text)
         self.assertIn("(may already have reached you)", text)
+
+    def test_an_undelivered_long_message_keeps_its_full_text_when_replaced(self):
+        # Mira's repro: the material sentence sits past character 200, and the
+        # first notice is replaced before any tool call delivers it.
+        long_a = room_message("aaa", ("context " * 34) + "STOP: do not merge.")
+        self.ack(1010, long_a)
+        self.slot.mirror()
+        self.ack(1015, long_a, room_message("bbb", "second"))
+        text = self.slot.deliver()
+        self.assertIn("STOP: do not merge.", text)
+        self.assertIn("> second", text)
+
+    def test_a_nudge_replacing_an_undelivered_message_keeps_its_full_text(self):
+        long_a = room_message("aaa", ("context " * 34) + "STOP: do not merge.")
+        self.ack(1010, long_a)
+        self.slot.mirror()
+        self.clock.tick(1130)
+        text = self.slot.deliver()
+        self.assertIn("STOP: do not merge.", text)
+        self.assertIn("No visible post", text)
+
+    def test_a_discarded_undelivered_message_is_withdrawn(self):
+        self.ack(1010, room_message("aaa", "Please ignore the staging box."))
+        self.slot.mirror()
+        self.ack(1020)  # A was discarded; the ack no longer lists it
+        self.assertFalse(self.clock.path.exists())
+        self.assertIsNone(self.slot.deliver())
+
+    def test_a_discarded_message_leaves_the_rest_under_the_same_id(self):
+        a, b = room_message("aaa", "first"), room_message("bbb", "second")
+        self.ack(1010, a, b)
+        before = json.loads(self.clock.path.read_text())
+        self.ack(1020, b)
+        after = json.loads(self.clock.path.read_text())
+        self.assertEqual(before["id"], after["id"])
+        self.assertNotIn("> first", after["text"])
+        self.assertIn("> second", after["text"])
+
+    def test_an_edited_undelivered_message_is_rewritten_under_the_same_id(self):
+        self.ack(1010, room_message("aaa", "Deploy at noon."))
+        before = json.loads(self.clock.path.read_text())
+        self.ack(1020, room_message("aaa", "Deploy at three."))
+        after = json.loads(self.clock.path.read_text())
+        self.assertEqual(before["id"], after["id"], "an edit is not a new message")
+        text = self.slot.deliver()
+        self.assertIn("Deploy at three.", text)
+        self.assertNotIn("Deploy at noon.", text)
+
+    def test_an_edit_after_delivery_is_not_delivered_again(self):
+        self.ack(1010, room_message("aaa", "Deploy at noon."))
+        self.assertIn("noon", self.slot.deliver())
+        self.ack(1020, room_message("aaa", "Deploy at three."))
+        self.assertIsNone(self.slot.deliver())
+
+    def test_expired_messages_are_not_revived_by_a_later_ack(self):
+        a = room_message("aaa", "hello")
+        self.ack(1010, a)
+        self.clock.expire(1010 + silence_nudge.MESSAGE_TTL_SECS)
+        self.ack(1010 + silence_nudge.MESSAGE_TTL_SECS + 5, room_message("aaa", "hello, edited"))
+        self.assertFalse(self.clock.path.exists())
+        self.clock.tick(1010 + silence_nudge.MESSAGE_TTL_SECS + 10)
+        self.assertNotIn("hello", json.loads(self.clock.path.read_text())["text"])
 
     def test_a_visible_post_withdraws_the_nudge_but_not_the_messages(self):
         self.clock.tick(1130)
