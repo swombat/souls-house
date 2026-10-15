@@ -47,8 +47,10 @@ test('the owner signs in to Telegram and sees the connection', async ({ page, re
     expect(page.url()).toBe(urlBefore);
     expect(await page.evaluate(() => JSON.stringify(window.history.state ?? null))).not.toContain('correct horse');
 
-    // Anchored on the status: the phone sign-in also says "Telegram account".
-    const connected = page.getByRole('article').filter({ has: page.getByTestId('telegram-status') });
+    // The connected account is a collapsed row until it is opened.
+    const connected = page.locator('article[data-provider="telegram"][data-status="connected"]');
+    await expect(connected.getByTestId('telegram-status')).toHaveCount(0);
+    await connected.getByRole('button', { name: /^Show details for / }).click();
     const status = connected.getByTestId('telegram-status');
     await expect(status).toContainText('Ada Example (@ada_example)');
     await expect(status).toContainText('2 of 3 chats synced');
@@ -62,6 +64,7 @@ test('the owner signs in to Telegram and sees the connection', async ({ page, re
     await searchAll.check();
     await saved;
     await page.reload();
+    await connected.getByRole('button', { name: /^Show details for / }).click();
     await expect(searchAll).toBeChecked();
     await connected.screenshot({ path: testInfo.outputPath('telegram-desktop-connected.png') });
     await expect(qr).toBeVisible();

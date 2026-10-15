@@ -3,6 +3,8 @@
   import IntegrationConnect from '$lib/components/settings/integration-connect.svelte';
   import IntegrationConnection from '$lib/components/settings/integration-connection.svelte';
   import { serviceDescription, serviceIconClass } from '$lib/service-presentation';
+  import { startsOpen } from '$lib/connection-summary';
+  import { untrack } from 'svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
 
   import { XLogo, ArrowLeft, ArrowRight, Plus, Pulse } from 'phosphor-svelte';
@@ -31,6 +33,22 @@
       connections: connections.filter((connection) => connection.management_scope === 'personal'),
     },
   ]);
+
+  // Each integration is a compact row; its switches open underneath. Rows
+  // that need something done start open. Several can be open at once.
+  // A row's starting state is latched when it first appears, so a WhatsApp
+  // row that opened for pairing stays open once the pairing succeeds.
+  let openRows = $state({});
+  $effect(() => {
+    const fresh = connections.filter((connection) => untrack(() => openRows[connection.id]) === undefined);
+    for (const connection of fresh) openRows[connection.id] = startsOpen(connection);
+  });
+  const isOpen = (connection) => openRows[connection.id] ?? startsOpen(connection);
+  const toggle = (connection) => (openRows[connection.id] = !isOpen(connection));
+  let allOpen = $derived(connections.length > 0 && connections.every(isOpen));
+  function setAll(value) {
+    openRows = Object.fromEntries(connections.map((connection) => [connection.id, value]));
+  }
 </script>
 
 <svelte:head><title>Integrations</title></svelte:head>
@@ -54,6 +72,53 @@
       {/key}
     </div>
   {:else}
+    <section class="space-y-6" aria-labelledby="existing-heading">
+      <div class="flex items-end justify-between gap-4 border-b pb-3">
+        <div>
+          <h2 id="existing-heading" class="text-xl font-semibold">Your integrations</h2>
+          <p class="text-sm text-muted-foreground">
+            Everything already connected, and which residents can use it. Tap one to change it.
+          </p>
+        </div>
+        {#if connections.length > 1}
+          <button
+            type="button"
+            class="shrink-0 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            onclick={() => setAll(!allOpen)}>
+            {allOpen ? 'Close all' : 'Open all'}
+          </button>
+        {/if}
+      </div>
+      {#if connections.length === 0}
+        <div class="rounded-xl border bg-card p-8 text-center">
+          <p class="font-medium">Nothing connected yet</p>
+          <p class="mt-1 text-sm text-muted-foreground">
+            Pick a service below. Once it's connected it appears here, with a switch for each resident.
+          </p>
+        </div>
+      {/if}
+      {#each groups as group (group.key)}
+        {#if group.connections.length > 0}
+          <div class="space-y-2" aria-labelledby={`group-${group.key}`}>
+            <div>
+              <h3 id={`group-${group.key}`} class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                {group.title}
+              </h3>
+              <p class="text-sm text-muted-foreground">{group.hint}</p>
+            </div>
+            {#each group.connections as connection (connection.id)}
+              <IntegrationConnection
+                {connection}
+                {account}
+                {services}
+                open={isOpen(connection)}
+                onToggle={() => toggle(connection)} />
+            {/each}
+          </div>
+        {/if}
+      {/each}
+    </section>
+
     <section
       id="connect-new"
       aria-labelledby="connect-new-heading"
@@ -122,36 +187,6 @@
           </a>
         </li>
       </ul>
-    </section>
-
-    <section class="space-y-6" aria-labelledby="existing-heading">
-      <div class="border-b pb-3">
-        <h2 id="existing-heading" class="text-xl font-semibold">Your integrations</h2>
-        <p class="text-sm text-muted-foreground">Everything already connected, and which residents can use it.</p>
-      </div>
-      {#if connections.length === 0}
-        <div class="rounded-xl border bg-card p-8 text-center">
-          <p class="font-medium">Nothing connected yet</p>
-          <p class="mt-1 text-sm text-muted-foreground">
-            Pick a service above. Once it's connected it appears here, with a switch for each resident.
-          </p>
-        </div>
-      {/if}
-      {#each groups as group (group.key)}
-        {#if group.connections.length > 0}
-          <div class="space-y-3" aria-labelledby={`group-${group.key}`}>
-            <div>
-              <h3 id={`group-${group.key}`} class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {group.title}
-              </h3>
-              <p class="text-sm text-muted-foreground">{group.hint}</p>
-            </div>
-            {#each group.connections as connection (connection.id)}
-              <IntegrationConnection {connection} {account} {services} />
-            {/each}
-          </div>
-        {/if}
-      {/each}
     </section>
   {/if}
 </AccountSettingsLayout>

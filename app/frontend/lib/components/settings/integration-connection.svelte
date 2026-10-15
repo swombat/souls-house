@@ -10,7 +10,13 @@
   import ConnectionTelegramStatus from './connection-telegram-status.svelte';
   import ConnectionWhatsappPairing from './connection-whatsapp-pairing.svelte';
   import ConnectionWhatsappStatus from './connection-whatsapp-status.svelte';
-  let { connection, services, account } = $props();
+  import { accessSummary, attentionLabel, connectionTitle } from '$lib/connection-summary';
+  import { CaretDown, UsersThree, WarningCircle } from 'phosphor-svelte';
+  let { connection, services, account, open = false, onToggle = () => {} } = $props();
+  let title = $derived(connectionTitle(connection));
+  let summary = $derived(accessSummary(connection));
+  let attention = $derived(attentionLabel(connection));
+  let panelId = $derived(`connection-${connection.id}-details`);
   function updateConnection(connection, attributes) {
     router.patch(`/accounts/${account.id}/service_connections/${connection.id}`, {
       service_connection: attributes,
@@ -40,29 +46,59 @@
   }
 </script>
 
-<article class="overflow-hidden rounded-xl border bg-card shadow-sm">
-  <div class="space-y-5 p-5 sm:p-6">
-    <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div class="flex min-w-0 items-center gap-4">
-        <div
-          class={`flex size-12 shrink-0 items-center justify-center rounded-xl ${serviceIconClass(connection.provider)}`}>
-          <ServiceIcon provider={connection.provider} size={26} />
-        </div>
-        <div class="min-w-0">
-          <h3 class="truncate text-lg font-semibold">
-            {connection.provider === 'google_workspace' ? connection.identity : connection.label}
-          </h3>
-          <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-            <span
-              class={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                connection.management_scope === 'personal'
-                  ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200'
-                  : 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200'
-              }`}>
-              {connection.management_scope === 'personal' ? 'Personal' : 'Account'}
-            </span>
-            <span class="truncate">Connected by {connection.connected_by_name}</span>
-          </p>
+<article
+  class="overflow-hidden rounded-xl border bg-card shadow-sm"
+  data-provider={connection.provider}
+  data-status={connection.status}>
+  <div class="relative flex items-center gap-3 p-4 sm:gap-4 sm:px-5">
+    <button
+      type="button"
+      class="absolute inset-0 rounded-xl transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      aria-expanded={open}
+      aria-controls={panelId}
+      aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`}
+      onclick={onToggle}></button>
+    <div
+      class={`pointer-events-none relative flex size-10 shrink-0 items-center justify-center rounded-lg ${serviceIconClass(connection.provider)}`}>
+      <ServiceIcon provider={connection.provider} size={22} />
+    </div>
+    <div class="pointer-events-none relative min-w-0 flex-1 space-y-1">
+      <h3 class="line-clamp-2 break-words font-semibold leading-snug">{title}</h3>
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span
+          class={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+            connection.management_scope === 'personal'
+              ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200'
+              : 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200'
+          }`}>
+          {connection.management_scope === 'personal' ? 'Personal' : 'Account'}
+        </span>
+        {#if attention}
+          <span
+            class="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+            data-testid="connection-attention">
+            <WarningCircle size={14} weight="bold" />
+            {attention}
+          </span>
+        {/if}
+        <span
+          class={`inline-flex min-w-0 items-center gap-1.5 ${summary.none ? 'italic text-muted-foreground/80' : 'text-muted-foreground'}`}
+          data-testid="connection-access-summary">
+          <UsersThree size={16} class="shrink-0" />
+          <span class="break-words">{summary.text}</span>
+        </span>
+      </div>
+    </div>
+    <CaretDown
+      size={18}
+      class={`pointer-events-none relative shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+  </div>
+
+  {#if open}
+    <div id={panelId} class="space-y-5 border-t px-4 pb-5 pt-4 sm:px-6">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div class="min-w-0 space-y-1">
+          <p class="truncate text-sm text-muted-foreground">Connected by {connection.connected_by_name}</p>
           {#if connection.status === 'reauthorizing' && connection.provider === 'whatsapp'}
             <p class="text-sm text-amber-700">Pair again before residents can use this connection.</p>
           {:else if connection.status === 'reauthorizing'}
@@ -78,67 +114,69 @@
             </p>
           {/if}
         </div>
-      </div>
-      {#if connection.can_manage}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          class="border-destructive/20 text-destructive shadow-none hover:bg-destructive/10 hover:text-destructive"
-          onclick={() => removeConnection(connection)}>
-          Disconnect
-        </Button>
-      {:else}
-        <p class="text-sm text-muted-foreground sm:text-right">Managed by account admins</p>
-      {/if}
-    </header>
-
-    <ConnectionGoogleAuthority {connection} {services} {account} />
-
-    {#if connection.provider === 'telegram'}
-      {#if connection.status === 'pairing' || connection.status === 'reauthorizing'}
-        <ConnectionTelegramLogin {connection} {account} />
-        {#if connection.can_delegate}
-          <a
-            class="text-sm text-muted-foreground underline"
-            href={`/accounts/${account.id}/service_connections/${connection.id}/login`}
-            data-testid="telegram-sign-in-page-link">
-            Open the sign-in on its own page
-          </a>
+        {#if connection.can_manage}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            class="border-destructive/20 text-destructive shadow-none hover:bg-destructive/10 hover:text-destructive"
+            onclick={() => removeConnection(connection)}>
+            Disconnect
+          </Button>
+        {:else}
+          <p class="text-sm text-muted-foreground sm:text-right">Managed by account admins</p>
         {/if}
-      {:else if connection.status === 'connected'}
-        <ConnectionTelegramStatus {connection} {account} />
-      {/if}
-    {:else if connection.provider === 'whatsapp'}
-      {#if ['pairing', 'reauthorizing', 'error'].includes(connection.status)}
-        <ConnectionWhatsappPairing {connection} {account} />
-      {:else if connection.status === 'connected'}
-        <ConnectionWhatsappStatus {connection} />
-      {/if}
-    {/if}
+      </div>
 
-    <ConnectionResidentAccess {connection} />
-    {#if connection.provider === 'github' && connection.repositories}
-      <ConnectionRepositories {connection} />
-    {/if}
-    <div class="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:gap-8">
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={connection.enabled_for_new_agents}
-          disabled={!connection.can_manage}
-          onchange={(event) => updateConnection(connection, { enabled_for_new_agents: event.currentTarget.checked })} />
-        Turn on for new residents automatically
-      </label>
-      {#if connection.can_delegate}
+      <ConnectionGoogleAuthority {connection} {services} {account} />
+
+      {#if connection.provider === 'telegram'}
+        {#if connection.status === 'pairing' || connection.status === 'reauthorizing'}
+          <ConnectionTelegramLogin {connection} {account} />
+          {#if connection.can_delegate}
+            <a
+              class="text-sm text-muted-foreground underline"
+              href={`/accounts/${account.id}/service_connections/${connection.id}/login`}
+              data-testid="telegram-sign-in-page-link">
+              Open the sign-in on its own page
+            </a>
+          {/if}
+        {:else if connection.status === 'connected'}
+          <ConnectionTelegramStatus {connection} {account} />
+        {/if}
+      {:else if connection.provider === 'whatsapp'}
+        {#if ['pairing', 'reauthorizing', 'error'].includes(connection.status)}
+          <ConnectionWhatsappPairing {connection} {account} />
+        {:else if connection.status === 'connected'}
+          <ConnectionWhatsappStatus {connection} />
+        {/if}
+      {/if}
+
+      <ConnectionResidentAccess {connection} />
+      {#if connection.provider === 'github' && connection.repositories}
+        <ConnectionRepositories {connection} />
+      {/if}
+      <div class="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:gap-8">
         <label class="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
-            checked={connection.freely_provisionable}
-            onchange={(event) => updateConnection(connection, { freely_provisionable: event.currentTarget.checked })} />
-          Let account admins switch this on for residents
+            checked={connection.enabled_for_new_agents}
+            disabled={!connection.can_manage}
+            onchange={(event) =>
+              updateConnection(connection, { enabled_for_new_agents: event.currentTarget.checked })} />
+          Turn on for new residents automatically
         </label>
-      {/if}
+        {#if connection.can_delegate}
+          <label class="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={connection.freely_provisionable}
+              onchange={(event) =>
+                updateConnection(connection, { freely_provisionable: event.currentTarget.checked })} />
+            Let account admins switch this on for residents
+          </label>
+        {/if}
+      </div>
     </div>
-  </div>
+  {/if}
 </article>
