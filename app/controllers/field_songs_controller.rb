@@ -26,7 +26,8 @@ class FieldSongsController < ApplicationController
     else
       offer.existing_song
     end
-    render json: { link: offer.link, song: (FieldItems.song_json(song) if song) }
+    render json: { link: offer.link, song: (FieldItems.song_json(song) if song),
+                   created: request.post? && song.previously_new_record? }
   rescue FieldSong::Offer::InvalidLink => e
     render json: { error: e.message }, status: :unprocessable_entity
   rescue ActiveRecord::RecordInvalid => e
@@ -67,7 +68,10 @@ class FieldSongsController < ApplicationController
 
   def destroy
     @field_song.discard!
-    redirect_to account_field_path(current_account, tab: "songs"), notice: "Deleted from the Field."
+    respond_to do |format|
+      format.json { head :no_content }
+      format.html { redirect_to account_field_path(current_account, tab: "songs"), notice: "Deleted from the Field." }
+    end
   end
 
   # GET ?url=…               a title and artist from the link

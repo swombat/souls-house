@@ -20,6 +20,7 @@ class FieldSongOffersControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal({ "provider" => "youtube", "url" => URL, "embed_id" => "y8AWFf7EAc4" }, response.parsed_body["link"])
     assert_nil response.parsed_body["song"]
+    assert_equal false, response.parsed_body["created"]
     assert_includes response.headers["Cache-Control"], "no-store"
     assert_not_requested :any, /./
   end
@@ -44,6 +45,7 @@ class FieldSongOffersControllerTest < ActionDispatch::IntegrationTest
     assert_not song.instrumental
     assert_equal "missing", song.lyrics_state
     assert_equal song.to_param, response.parsed_body.dig("song", "id")
+    assert_equal true, response.parsed_body["created"]
     assert_equal "youtube", response.parsed_body.dig("link", "provider")
     assert_not_requested :any, /./
   end
@@ -57,6 +59,7 @@ class FieldSongOffersControllerTest < ActionDispatch::IntegrationTest
     get offer_account_field_songs_path(@account), params: { url: EQUIVALENT_URL }, as: :json
     assert_response :success
     assert_equal original.to_param, response.parsed_body.dig("song", "id")
+    assert_equal false, response.parsed_body["created"]
     assert_equal "Kept words", response.parsed_body.dig("song", "lyrics")
     2.times do
       assert_no_difference "FieldSong.count" do
@@ -66,6 +69,7 @@ class FieldSongOffersControllerTest < ActionDispatch::IntegrationTest
       end
       assert_response :success
       assert_equal original.to_param, response.parsed_body.dig("song", "id")
+      assert_equal false, response.parsed_body["created"]
     end
     assert_equal before, original.reload.attributes
   end
@@ -83,7 +87,43 @@ class FieldSongOffersControllerTest < ActionDispatch::IntegrationTest
     end
     assert_response :success
     assert_not_equal discarded.to_param, response.parsed_body.dig("song", "id")
+    assert_equal true, response.parsed_body["created"]
     assert discarded.reload.discarded?
+  end
+
+  test "a newly offered song can be recoverably discarded with a JSON success response" do
+    post offer_account_field_songs_path(@account), params: { url: URL, title: "Accidental addition" }, as: :json
+    assert_response :success
+    song = @account.field_songs.find(response.parsed_body.dig("song", "id"))
+    assert_equal true, response.parsed_body["created"]
+
+    assert_no_difference "FieldSong.count" do
+      delete account_field_song_path(@account, song), as: :json
+    end
+    assert_response :no_content
+    assert song.reload.discarded?
+    get offer_account_field_songs_path(@account), params: { url: URL }, as: :json
+    assert_nil response.parsed_body["song"]
+    assert_equal false, response.parsed_body["created"]
+  end
+
+  test "JSON discard retains account, authentication and feature boundaries" do
+    other = accounts(:team_account).field_songs.create!(title: "Elsewhere", links: [ URL ])
+    delete account_field_song_path(@account, other), as: :json
+    assert_response :not_found
+    assert other.reload.kept?
+
+    song = @account.field_songs.create!(title: "Kept here", links: [ URL ])
+    Setting.instance.update!(allow_agents: false)
+    delete account_field_song_path(@account, song), as: :json
+    assert_redirected_to root_path
+    assert song.reload.kept?
+    Setting.instance.update!(allow_agents: true)
+
+    delete logout_path
+    delete account_field_song_path(@account, song), as: :json
+    assert_redirected_to login_path
+    assert song.reload.kept?
   end
 
   test "title is required and title and artist are bounded to 200 characters" do

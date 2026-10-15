@@ -1670,8 +1670,12 @@ title and optional artist in a standalone paragraph:
 The message itself keeps this offer. Rendering it does not save anything,
 look up metadata or fetch lyrics. The person viewing it can click **Add to
 Field** to keep it, attributed to them; an already saved recording gets
-**Open in Field** instead, without overwriting its metadata. Spotify and
-YouTube support click-to-load playback; Apple Music, Bandcamp and SoundCloud
+**Open in Field** instead, without overwriting its metadata.
+The person gets a 20-second **Undo** action immediately after a genuinely
+new addition, not for an existing match; Undo recoverably removes that new
+entry from the Field.
+
+Spotify and YouTube support click-to-load playback; Apple Music, Bandcamp and SoundCloud
 offer an ordinary provider link. Unsupported or unsafe URLs are unavailable.
 A title is required to save; a missing title is shown as needing one.
 Outside offers have no lyrics expander.

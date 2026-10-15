@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import { afterEach, expect, test, vi } from 'vitest';
+import { tick } from 'svelte';
 import SongOfferCard from './SongOfferCard.svelte';
 import MessageBubble from './MessageBubble.svelte';
 
@@ -7,14 +8,15 @@ afterEach(() => {
   cleanup();
   document.querySelector('meta[name="csrf-token"]')?.remove();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 const link = { provider: 'youtube', embed_id: 'y8AWFf7EAc4', url: 'https://youtu.be/y8AWFf7EAc4' };
 const offer = { url: link.url, title: 'Offered title', artist: 'Offered artist' };
 const saved = { id: 'Saved123', title: 'Existing title', artist: 'Existing artist', lyrics: 'Private lyrics' };
-const response = (song = null, approvedLink = link) => ({
+const response = (song = null, approvedLink = link, created = false) => ({
   ok: true,
-  json: async () => ({ link: approvedLink, song }),
+  json: async () => ({ link: approvedLink, song, created }),
 });
 function mockFetch() {
   const fetch = vi.fn().mockResolvedValue(response());
@@ -90,6 +92,123 @@ test('reloading an existing offer does not POST or replace metadata', async () =
   expect(fetch).toHaveBeenCalledTimes(2);
   expect(fetch.mock.calls.every(([, options]) => options.method === 'GET')).toBe(true);
   expect(screen.queryByRole('button', { name: 'Add to Field' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+async function newlySaved() {
+  const fetch = mockFetch();
+  const view = render(SongOfferCard, { accountId: 'account', offer });
+  await screen.findByRole('button', { name: 'Add to Field' });
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-15T10:00:00Z'));
+  fetch.mockResolvedValueOnce(response(saved, link, true));
+  await fireEvent.click(screen.getByRole('button', { name: 'Add to Field' }));
+  await tick();
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
+  return { fetch, ...view };
+}
+
+test('only a new POST grants Undo, which expires after 20 seconds without removing the Field link', async () => {
+  await newlySaved();
+  await vi.advanceTimersByTimeAsync(19999);
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  expect(screen.getByRole('link', { name: 'Open in Field' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Add to Field' })).toBeNull();
+});
+
+test.each([false, undefined, 'true'])('an idempotent save with created=%s never grants Undo', async (created) => {
+  const fetch = mockFetch();
+  render(SongOfferCard, { accountId: 'account', offer });
+  await screen.findByRole('button', { name: 'Add to Field' });
+  fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ link, song: saved, created }) });
+  await fireEvent.click(screen.getByRole('button', { name: 'Add to Field' }));
+  await screen.findByRole('link', { name: 'Open in Field' });
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('even a GET claiming created does not grant Undo', async () => {
+  const fetch = mockFetch();
+  fetch.mockResolvedValue(response(saved, link, true));
+  render(SongOfferCard, { accountId: 'account', offer });
+  await screen.findByRole('link', { name: 'Open in Field' });
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('Undo sends a CSRF-protected discard, stays busy, and only 204 permits adding again', async () => {
+  const { fetch } = await newlySaved();
+  const meta = document.createElement('meta');
+  meta.name = 'csrf-token';
+  meta.content = 'undo-csrf';
+  document.head.append(meta);
+  let resolve;
+  fetch.mockImplementationOnce(() => new Promise((done) => (resolve = done)));
+  await fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+  expect(screen.getAllByRole('button').every((button) => button.disabled)).toBe(true);
+  expect(fetch.mock.calls[2]).toEqual([
+    '/accounts/account/field/songs/Saved123',
+    expect.objectContaining({
+      method: 'DELETE',
+      headers: expect.objectContaining({ Accept: 'application/json', 'X-CSRF-Token': 'undo-csrf' }),
+    }),
+  ]);
+  resolve({ ok: true, status: 204 });
+  await vi.advanceTimersByTimeAsync(0);
+  await tick();
+  expect(screen.getByRole('button', { name: 'Add to Field' })).toBeTruthy();
+  expect(screen.queryByRole('link', { name: 'Open in Field' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  expect(vi.getTimerCount()).toBe(0);
+  fetch.mockResolvedValueOnce(response(saved, link, true));
+  await fireEvent.click(screen.getByRole('button', { name: 'Add to Field' }));
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
+});
+
+test.each([200, 403, 422, 500])('failed Undo (%s) keeps the saved song and original retry deadline', async (status) => {
+  const { fetch } = await newlySaved();
+  await vi.advanceTimersByTimeAsync(10000);
+  fetch.mockResolvedValueOnce({ ok: status === 200, status });
+  await fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+  expect(screen.getByText('Could not confirm undo. Try again.')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Open in Field' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Add to Field' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Undo' }).disabled).toBe(false);
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  expect(screen.getByText('Could not confirm undo. Check the Field.')).toBeTruthy();
+});
+
+test('Play and equivalent props refresh preserve Undo without extending its deadline', async () => {
+  const { fetch, rerender, container } = await newlySaved();
+  await vi.advanceTimersByTimeAsync(10000);
+  fetch.mockResolvedValueOnce(response(saved));
+  await fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+  await vi.advanceTimersByTimeAsync(0);
+  await tick();
+  expect(container.querySelector('iframe')).not.toBeNull();
+  await rerender({ accountId: 'account', offer: { ...offer } });
+  expect(fetch).toHaveBeenCalledTimes(3);
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  expect(screen.getByRole('link', { name: 'Open in Field' })).toBeTruthy();
+});
+
+test.each(['unmount', 'identity'])('%s clears the Undo timer and aborts and ignores a late discard', async (change) => {
+  const { fetch, rerender, unmount } = await newlySaved();
+  let resolve;
+  fetch.mockImplementationOnce(() => new Promise((done) => (resolve = done)));
+  await fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+  const signal = fetch.mock.calls[2][1].signal;
+  if (change === 'unmount') unmount();
+  else await rerender({ accountId: 'new-account', offer });
+  expect(signal.aborted).toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
+  resolve({ ok: true, status: 204 });
+  await tick();
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Open in Field' })).toBeNull();
 });
 
 test('missing title allows listening but cannot save', async () => {

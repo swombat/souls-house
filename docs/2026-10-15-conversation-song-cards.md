@@ -53,6 +53,19 @@ The GET performs the same match so reloads show Open in Field. Authentication,
 account membership and the agents feature gate are the same as ordinary web
 Field song operations.
 
+### Undo an accidental addition (#369)
+
+Daniel requested a short undo window in `WjmPbe/YqEEEY`. The POST response
+includes `created: true` only for the request that created a new row; matches
+and GET previews return false. That flag, not a guess from the previous card
+state, enables Undo for 20 seconds after the save response. Refreshing or
+playing does not restart the deadline; reload does not restore the action.
+The action uses the existing authenticated, account-scoped DELETE endpoint,
+which now answers JSON requests with 204 after recoverable discard while
+retaining the ordinary HTML redirect. This is a temporary UI affordance, not
+a new deletion permission or a server-enforced expiry. A failed undo keeps
+the card's saved state and reports the failure.
+
 Browser verification also exposed an existing refresh loop: dynamic navbar
 and sidebar subscriptions reconnected after unchanged serialized props arrived,
 and each connection requested another catch-up reload. `createDynamicSync`

@@ -9,30 +9,52 @@
   let playback = $state(null);
   let pending = $state(null);
   let saveError = $state(null);
+  let undoError = $state(null);
+  let undoWindow = $state(null);
+  let undoTimer;
   let controller;
 
   const current = $derived(result?.identity === identity ? result : null);
   const busy = $derived(pending === identity);
   const activeKey = $derived(playback?.identity === identity ? playback.key : null);
+  const canUndo = $derived(undoWindow?.identity === identity && undoWindow.songId === current?.song?.id);
   // Only the server-approved link is ever exposed, even for an existing song.
   // An outside offer never includes stored audio or lyrics.
   const display = $derived(
     current?.link ? { title: offer.title || current.song?.title || 'Title needed', links: [current.link] } : null
   );
 
-  async function request(expected, save = false) {
+  function clearUndo() {
+    clearTimeout(undoTimer);
+    undoWindow = null;
+  }
+
+  async function request(expected, action = 'check') {
+    const save = action === 'save';
+    const discard = action === 'discard';
+    if (discard && (!canUndo || Date.now() >= undoWindow.deadline || busy)) {
+      if (undoWindow && Date.now() >= undoWindow.deadline) clearUndo();
+      return null;
+    }
+    const songId = current?.song?.id;
     controller?.abort();
     const requestController = new AbortController();
     controller = requestController;
     pending = expected;
     saveError = null;
+    undoError = null;
     const endpoint = `/accounts/${encodeURIComponent(accountId)}/field/songs/offer`;
     try {
-      const response = await fetch(save ? endpoint : `${endpoint}?${new URLSearchParams({ url: offer.url })}`, {
-        method: save ? 'POST' : 'GET',
+      const url = discard
+        ? `/accounts/${encodeURIComponent(accountId)}/field/songs/${encodeURIComponent(songId)}`
+        : save
+          ? endpoint
+          : `${endpoint}?${new URLSearchParams({ url: offer.url })}`;
+      const response = await fetch(url, {
+        method: discard ? 'DELETE' : save ? 'POST' : 'GET',
         headers: {
           Accept: 'application/json',
-          ...(save
+          ...(save || discard
             ? {
                 'Content-Type': 'application/json',
                 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
@@ -43,19 +65,35 @@
         cache: 'no-store',
         signal: requestController.signal,
       });
+      if (discard) {
+        if (response.status !== 204) throw new Error('Unavailable');
+        if (requestController.signal.aborted || expected !== identity) return null;
+        clearUndo();
+        result = { identity: expected, link: current.link, song: null };
+        return true;
+      }
       if (!response.ok) throw new Error('Unavailable');
       const data = await response.json();
       if (!data.link || typeof data.link.url !== 'string' || (save && !data.song?.id)) {
         throw new Error('Unavailable');
       }
       if (requestController.signal.aborted || expected !== identity) return null;
+      if (undoWindow && undoWindow.songId !== data.song?.id) clearUndo();
       result = { identity: expected, link: data.link, song: data.song };
+      if (save && data.created === true) {
+        clearUndo();
+        undoWindow = { identity: expected, songId: data.song.id, deadline: Date.now() + 20000 };
+        undoTimer = setTimeout(clearUndo, 20000);
+      }
       return data;
     } catch {
       if (requestController.signal.aborted || expected !== identity) return null;
-      playback = null;
-      if (save) saveError = { identity: expected };
-      else result = { identity: expected, failed: true };
+      if (discard) undoError = { identity: expected };
+      else {
+        playback = null;
+        if (save) saveError = { identity: expected };
+        else result = { identity: expected, failed: true };
+      }
       return null;
     } finally {
       if (!requestController.signal.aborted && expected === identity) pending = null;
@@ -68,9 +106,14 @@
       result = null;
       playback = null;
       saveError = null;
+      undoError = null;
+      clearUndo();
       if (accountId && offer.url) request(expected);
     });
-    return () => controller?.abort();
+    return () => {
+      controller?.abort();
+      clearTimeout(undoTimer);
+    };
   });
 
   async function play() {
@@ -98,8 +141,13 @@
         href={`/accounts/${encodeURIComponent(accountId)}/field?tab=songs&item=song-${encodeURIComponent(current.song.id)}`}
         target="_blank"
         rel="noopener noreferrer">Open in Field</a>
+      {#if canUndo}
+        <button class="ml-3 text-sm underline" disabled={busy} onclick={() => request(identity, 'discard')}>
+          Undo
+        </button>
+      {/if}
     {:else if offer.title}
-      <button class="text-sm underline" disabled={busy} onclick={() => request(identity, true)}>
+      <button class="text-sm underline" disabled={busy} onclick={() => request(identity, 'save')}>
         {busy ? 'Checking…' : 'Add to Field'}
       </button>
     {:else}
@@ -107,6 +155,11 @@
     {/if}
     {#if saveError?.identity === identity}
       <p class="text-sm text-muted-foreground" role="status">Could not save to Field. Try again.</p>
+    {/if}
+    {#if undoError?.identity === identity}
+      <p class="text-sm text-muted-foreground" role="status">
+        Could not confirm undo.{canUndo ? ' Try again.' : ' Check the Field.'}
+      </p>
     {/if}
   {:else if current?.failed}
     <p class="text-sm text-muted-foreground" role="status">Song unavailable</p>

@@ -55,6 +55,8 @@ class FieldSongOfferConcurrencyTest < ActiveSupport::TestCase
     end
 
     assert_equal first.value.id, second.value.id
+    assert first.value.previously_new_record?
+    assert_not second.value.previously_new_record?
     assert_equal 1, @account.field_songs.kept.count
     song = @account.field_songs.kept.first
     assert_equal [ "First title", "First artist" ], [ song.title, song.artist ]
