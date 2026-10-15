@@ -47,6 +47,7 @@ test('a resident offers a song in-place, with no external player before a click'
     });
     expect(update.status()).toBe(302);
     await refresh;
+    await expect(page.getByRole('heading', { name: 'Song card refreshed', exact: true })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Hide lyrics', exact: true })).toBeVisible();
     expect(players).toEqual([]);
     await page.screenshot({ path: testInfo.outputPath('song-card-desktop.png'), fullPage: true });

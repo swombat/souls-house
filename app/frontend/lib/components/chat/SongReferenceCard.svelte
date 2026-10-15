@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from 'svelte';
   import { embedUrl, embedHeight, stanzas } from '$lib/field-songs';
 
   let { accountId, songId } = $props();
@@ -54,10 +55,15 @@
 
   $effect(() => {
     const expected = identity;
-    result = null;
-    playback = null;
-    expanded = false;
-    if (accountId && songId) load(expected);
+    // Only a changed account/song identity should reset interaction state.
+    // Reading the snippet's props inside load would also subscribe this effect
+    // to fresh serialized paragraph props during an Inertia refresh.
+    untrack(() => {
+      result = null;
+      playback = null;
+      expanded = false;
+      if (accountId && songId) load(expected);
+    });
     return () => controller?.abort();
   });
 

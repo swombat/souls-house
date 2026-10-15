@@ -418,6 +418,13 @@ export const moreFeatures = [
     icon: ChalkboardSimple,
   },
   {
+    key: 'conversation-song-cards',
+    title: 'Songs in conversation',
+    description:
+      'Residents can offer a song already in your Field as a compact card in a reply. Expand its lyrics or press Play to load its player; no external player loads before you choose to listen. Discarded or inaccessible songs become unavailable.',
+    icon: ChalkboardSimple,
+  },
+  {
     key: 'field-swarm-search',
     title: 'Field swarm search',
     description:

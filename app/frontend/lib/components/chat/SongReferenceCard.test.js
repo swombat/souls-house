@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/sv
 import { afterEach, expect, test, vi } from 'vitest';
 import SongReferenceCard from './SongReferenceCard.svelte';
 import MessageBubble from './MessageBubble.svelte';
+import ChatMessageList from './ChatMessageList.svelte';
 
 afterEach(() => {
   cleanup();
@@ -168,6 +169,31 @@ test('human messages do not interpret resident song references', async () => {
   await Promise.resolve();
   expect(container.querySelector('[data-testid="song-card"]')).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
+});
+
+test('a refreshed conversation preserves an expanded card in a multi-block message', async () => {
+  const fetch = mockFetch();
+  const message = {
+    id: 'message',
+    role: 'assistant',
+    agent_id: 'resident',
+    content: 'Before.\n\n[[song:Song123]]\n\nAfter.\n\n```text\n[[song:Song123]]\n```',
+    created_at: '2026-10-15T10:00:00Z',
+    streaming: false,
+  };
+  const props = {
+    accountId: 'account',
+    chat: { id: 'chat' },
+    allMessages: [message],
+    visibleMessages: [message],
+  };
+  const { rerender } = render(ChatMessageList, props);
+  await screen.findByText('A song');
+  await fireEvent.click(screen.getByRole('button', { name: 'Show lyrics' }));
+  const fresh = { ...message };
+  await rerender({ ...props, chat: { id: 'chat' }, allMessages: [fresh], visibleMessages: [fresh] });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Hide lyrics' })).toBeTruthy());
+  expect(fetch).toHaveBeenCalledTimes(1);
 });
 
 test('leading blank lines do not prevent a plain paragraph reference', async () => {

@@ -32,3 +32,7 @@ now retains an unchanged desired subscription set. Changed channel identities
 or requested props still reconnect; real network reconnects still catch up.
 This is needed for an expanded card to remain usable during conversation
 updates, not a replacement of the sync system.
+
+The card's initialization effect tracks only its account/song identity.
+Fetching is untracked so replacement paragraph props during a background
+refresh cannot reset expanded lyrics or interrupt an active player.
