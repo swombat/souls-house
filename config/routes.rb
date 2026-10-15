@@ -129,6 +129,7 @@ Rails.application.routes.draw do
     resources :service_authorizations, only: :create
     resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts do
       resource :pairing, only: :show, controller: "service_connection_pairings" do
+        get :link
         post :restart
         post :phone
       end

@@ -112,6 +112,14 @@
     {:else if connection.provider === 'whatsapp'}
       {#if ['pairing', 'reauthorizing', 'error'].includes(connection.status)}
         <ConnectionWhatsappPairing {connection} {account} />
+        {#if connection.can_delegate}
+          <a
+            class="text-sm text-muted-foreground underline"
+            href={`/accounts/${account.id}/service_connections/${connection.id}/pairing/link`}
+            data-testid="whatsapp-link-page-link">
+            Open the pairing on its own page
+          </a>
+        {/if}
       {:else if connection.status === 'connected'}
         <ConnectionWhatsappStatus {connection} />
       {/if}

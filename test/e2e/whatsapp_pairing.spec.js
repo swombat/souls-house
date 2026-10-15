@@ -463,3 +463,47 @@ test('another member of the account can neither see nor fetch the phone code', a
     expect((await request.post('/test/e2e/cleanup', { data: { run_id: runId } })).ok()).toBe(true);
   }
 });
+
+test('on a phone, the pairing opens on its own page, number first, and ends linked', async ({
+  browser,
+  request,
+}, testInfo) => {
+  const runId = `whatsapp-link-page-${Date.now()}`;
+  const response = await request.post('/test/e2e/setup', { data: { run_id: runId, whatsapp: true } });
+  expect(response.ok()).toBe(true);
+  const setup = await response.json();
+  const connection = setup.whatsapp;
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const page = await context.newPage();
+  try {
+    await logIn(page, setup.primary_user.email, setup.password);
+    await page.goto(`/accounts/${setup.account_param}/integrations`);
+    const card = page.getByRole('article').filter({ hasText: 'WhatsApp' });
+    await card.getByTestId('whatsapp-link-page-link').click();
+    await expect(page).toHaveURL(
+      new RegExp(`/accounts/${setup.account_param}/service_connections/${connection.id}/pairing/link$`)
+    );
+
+    // The whole screen is the pairing: the number field is in view without
+    // scrolling past anything else.
+    await expect(page.getByRole('heading', { name: 'Link WhatsApp' })).toBeVisible();
+    const phoneInput = page.getByTestId('whatsapp-link-page').getByLabel('Phone number');
+    await expect(phoneInput).toBeInViewport();
+    await expect(page.getByRole('button', { name: 'Get a code' })).toBeInViewport();
+    await page.screenshot({ path: testInfo.outputPath('whatsapp-link-page.png') });
+
+    const linked = await sendEvent(request, connection, {
+      type: 'status.changed',
+      seq: 1,
+      status: 'connected',
+      identity: { user_id: '447700900123', display_name: 'Ada Example' },
+    });
+    expect(linked.status()).toBe(200);
+    await expect(page.getByTestId('whatsapp-link-done')).toContainText('Linked');
+    await expect(page.getByRole('link', { name: 'Back to Integrations' })).toBeVisible();
+    await expect(page.getByTestId('whatsapp-pairing')).toHaveCount(0);
+  } finally {
+    await context.close();
+    expect((await request.post('/test/e2e/cleanup', { data: { run_id: runId } })).ok()).toBe(true);
+  }
+});

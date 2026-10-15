@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-15
+  title: WhatsApp pairing on its own page
+  body: "Connect WhatsApp now opens a page that is only the pairing, as Telegram's sign-in does, so on a phone the number field and Get a code are the first thing on screen instead of a card halfway down Integrations. The same pairing stays on the Integrations card, which links to the page while WhatsApp is waiting to be linked. Once WhatsApp accepts the code the page says Linked, with a way back to Integrations to choose which residents can read the chats. Only the person who connected WhatsApp can open it. Live once deployed."
+- date: 2026-10-15
   title: Undo an accidental song addition
   body: "After Add to Field saves a new outside-song offer, its card gives you 20 seconds to Undo the addition. Songs already in the Field never get this action, and Undo uses the Field's recoverable deletion rather than permanently removing anything. Live once deployed."
 - date: 2026-10-15
