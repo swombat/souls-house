@@ -770,6 +770,15 @@ class WorkerTest(unittest.TestCase):
         self.assertFalse(self.w.data["births_image_moved"])
         self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
 
+    def test_host_restart_failing_after_a_healthy_resident_does_not_move_the_alias(self):
+        commands = self.pinned_fixture(["c" * 40, "c" * 40])
+        rails = self.w.rails.side_effect
+        self.w.rails.side_effect = lambda code, env=None: (
+            rails(code, env) if env is None or env["DEPLOY_RESIDENT_ID"] == "0" else {"result": "broken"})
+        with self.assertRaisesRegex(RuntimeError, "Unexpected restart result"):
+            self.w.rebuild_residents()
+        self.assertFalse(any(c[:2] == ["docker", "tag"] for c in commands))
+
     def test_failed_vm_restart_stops_the_run_without_moving_the_alias(self):
         commands = self.vm_fixture(start=[{"result": "started", "command_id": 77}],
                                    status=[{"result": "failed"}])

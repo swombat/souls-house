@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-15
+  title: New residents start on the current Chaos
+  body: "A new resident, on the house's server or on its own VM, now starts on the Chaos version the house's last runtime update built and checked, even when that update had to skip a busy resident. Before, new residents started on the last update that had reached every resident, which could be days old. Takes effect once the updated deploy worker is installed on the house's server."
+- date: 2026-10-15
   title: Conversation updates no longer reconnect unchanged channels
   body: "Background updates could repeatedly reconnect the navbar and conversation sidebar, with each new connection requesting another refresh. Unchanged subscriptions now stay connected. This stops that refresh loop and keeps interactive content such as an open song card usable; changing accounts or conversations and reconnecting after a network interruption still refresh normally. Live once deployed."
 - date: 2026-10-15
