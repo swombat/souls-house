@@ -493,11 +493,7 @@ class AgentRuntimeInteraction < ApplicationRecord
   private
 
   def mid_run_message_json(message)
-    author = if message.agent then message.agent.name
-    elsif message.user then message.user.email_address
-    elsif message.role == "system" then "souls.house (platform)"
-    else message.role
-    end
+    author = ExternalAgentResponseRequest.speaker_for(message)
     text = message.content.to_s.strip
     truncated = text.length > MID_RUN_MESSAGE_CHARS
     {

@@ -1,5 +1,19 @@
 class ExternalAgentResponseRequest
 
+  # How a transcript names a message's author. Shared with the mid-run
+  # messages a running resident is shown (AgentRuntimeInteraction).
+  def self.speaker_for(message)
+    if message.agent
+      message.agent.name
+    elsif message.user
+      message.user.email_address
+    elsif message.role == "system"
+      "souls.house (platform)"
+    else
+      message.role
+    end
+  end
+
   TRANSCRIPT_MESSAGE_LIMIT = 30
   TRANSCRIPT_BYTE_BUDGET = 80_000
   TRANSCRIPT_SEPARATOR = "\n\n"
@@ -350,15 +364,7 @@ class ExternalAgentResponseRequest
   def format_transcript_line(message)
     return format_safeguard_transcript_line(message) if message.safeguard_labelled?
 
-    speaker = if message.agent
-      message.agent.name
-    elsif message.user
-      message.user.email_address
-    elsif message.role == "system"
-      "souls.house (platform)"
-    else
-      message.role
-    end
+    speaker = self.class.speaker_for(message)
 
     # IDs distinguish stored turns from ordinary "Name:" addresses in a body
     # and let residents verify attribution through the conversation API.
