@@ -126,6 +126,13 @@ class FieldSongOffersControllerTest < ActionDispatch::IntegrationTest
     assert song.reload.kept?
   end
 
+  test "discard without a specific Accept format retains the HTML redirect" do
+    song = @account.field_songs.create!(title: "Accidental addition", links: [ URL ])
+    delete account_field_song_path(@account, song), headers: { "Accept" => "*/*" }
+    assert_redirected_to account_field_path(@account, tab: "songs")
+    assert song.reload.discarded?
+  end
+
   test "title is required and title and artist are bounded to 200 characters" do
     [ { title: "" }, { title: " " }, { title: "t" * 201 }, { title: "Title", artist: "a" * 201 } ].each do |attributes|
       assert_no_difference "FieldSong.count" do

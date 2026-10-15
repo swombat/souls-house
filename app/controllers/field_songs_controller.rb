@@ -69,8 +69,8 @@ class FieldSongsController < ApplicationController
   def destroy
     @field_song.discard!
     respond_to do |format|
-      format.json { head :no_content }
       format.html { redirect_to account_field_path(current_account, tab: "songs"), notice: "Deleted from the Field." }
+      format.json { head :no_content }
     end
   end
 
