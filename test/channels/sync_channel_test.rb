@@ -198,4 +198,55 @@ class SyncChannelTest < ActionCable::Channel::TestCase
     assert_no_streams
   end
 
+  test "tweet stream subscribes only to the accessible account marker" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "FieldTweetStream", id: @account.to_param
+    assert subscription.confirmed?
+    assert_equal [ "FieldTweetStream:#{@account.to_param}" ], subscription.streams
+  end
+
+  test "site administrator can read a specific tweet stream" do
+    stub_connection current_user: @admin, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "FieldTweetStream", id: accounts(:existing_user_account).to_param
+    assert subscription.confirmed?
+    assert_equal [ "FieldTweetStream:#{accounts(:existing_user_account).to_param}" ], subscription.streams
+  end
+
+  test "tweet stream rejects foreign accounts" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "FieldTweetStream", id: accounts(:existing_user_account).to_param
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "tweet stream rejects pending membership" do
+    stub_connection current_user: users(:unconfirmed_user), current_app_session: nil
+    subscribe channel: "SyncChannel", model: "FieldTweetStream", id: accounts(:another_team).to_param
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "tweet stream rejects native connections" do
+    client = Doorkeeper::Application.create!(name: "App", uid: "tweet-stream-refusal",
+      redirect_uri: "https://example.com/cb", scopes: "chat", confidential: false)
+    stub_connection current_user: @user, current_app_session: AppSession.create!(user: @user, oauth_application: client)
+    subscribe channel: "SyncChannel", model: "FieldTweetStream", id: @account.to_param
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "tweet stream rejects all even for site administrators" do
+    stub_connection current_user: @admin, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "FieldTweetStream", id: "all"
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "tweet stream rejects collections" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "FieldTweetStream", id: "#{@account.to_param}:field_tweets"
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
 end

@@ -192,9 +192,10 @@ module FieldTweets
           @source.backlog_items.where(provider_tweet_id: ids).pluck(:provider_tweet_id)
         fresh = attrs.reject { known.include?(it[:provider_tweet_id]) }.uniq { it[:provider_tweet_id] }
         if fresh.any?
-          FieldTweetBacklogItem.insert_all(fresh.map { |item|
+          inserted = FieldTweetBacklogItem.insert_all(fresh.map { |item|
             { field_tweet_source_id: @source.id, provider_tweet_id: item[:provider_tweet_id], posted_at: item[:posted_at], attrs: item }
-          }, unique_by: :index_field_tweet_backlog_on_source_and_tweet)
+          }, unique_by: :index_field_tweet_backlog_on_source_and_tweet, returning: %w[id])
+          FieldTweetStream.refresh!(@source.account_id) if inserted.rows.any?
         end
 
         @source.update!(window_rejected: @source.window_rejected + rejected) if rejected.positive?
@@ -294,7 +295,10 @@ module FieldTweets
             FieldTweet.create!(attributes.merge(account_id: @source.account_id, field_tweet_source: @source))
             imported += 1
           end
-          item.delete
+          # delete bypasses callbacks, including when the tweet already exists.
+          # Only a real removal changes the backlog; a concurrent drain is quiet.
+          removed = FieldTweetBacklogItem.where(id: item.id).delete_all
+          FieldTweetStream.refresh!(@source.account_id) if removed.positive?
         end
       end
       imported

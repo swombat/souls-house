@@ -16,6 +16,17 @@ class FieldTweetSource < ApplicationRecord
 
   include ObfuscatesId
 
+  # status_json and display_state only. Claim/cursor/page/failure bookkeeping
+  # and attribution do not change the panel's rendered source projection.
+  STREAM_STATUS_COLUMNS = %w[
+    account_id handle include_replies include_quotes include_reposts
+    own_monthly_usd_limit state state_reason connected_at checkpoint_at
+    window_since gap_since gap_until last_success_at next_attempt_at
+  ].freeze
+
+  after_save :refresh_stream_status, if: -> { (saved_changes.keys & STREAM_STATUS_COLUMNS).any? }
+  after_destroy -> { FieldTweetStream.refresh!(account_id) }
+
   STATES = %w[active paused needs_attention].freeze
 
   belongs_to :account
@@ -76,7 +87,7 @@ class FieldTweetSource < ApplicationRecord
       gap: (gap_since && { since: gap_since.iso8601, until: gap_until&.iso8601 }),
       last_success_at: last_success_at&.iso8601,
       next_attempt_at: next_attempt_at&.iso8601,
-      imported_today: FieldTweets.imported_today(account),
+      imported_today: FieldTweets.imported_today(account, now: now),
       daily_import_cap: FieldTweets.daily_import_cap
     }
   end
@@ -103,6 +114,12 @@ class FieldTweetSource < ApplicationRecord
   # window and backlog are kept, not dropped).
   def resume!(now: Time.current)
     update!(state: "active", state_reason: nil, failure_count: 0, next_attempt_at: now)
+  end
+
+  private
+
+  def refresh_stream_status
+    FieldTweetStream.refresh!([ account_id, *saved_change_to_account_id ])
   end
 
 end

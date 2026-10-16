@@ -31,6 +31,10 @@ class FieldTweet < ApplicationRecord
 
   broadcasts_to :account
 
+  # imported_today counts rows created for the account, including tweets whose
+  # source was removed. Discard/restore, tags and edits do not change that count.
+  after_create -> { FieldTweetStream.refresh!(account_id) }
+
   scope :newest_first, -> { order(posted_at: :desc, id: :desc) }
 
   def title = "@#{author_handle}: #{text.to_s.squish.truncate(80)}"
