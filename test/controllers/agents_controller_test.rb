@@ -19,6 +19,43 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
+  test "guest-only partial skips resident cards catalog and journal-stat jobs" do
+    Agents::ResidentDirectory.stub :new, ->(*) { flunk "guest-only refresh built resident cards" } do
+      Agents::ModelCatalogue.stub :grouped, -> { flunk "guest-only refresh built model catalog" } do
+        assert_no_enqueued_jobs only: AgentJournalStatsJob do
+        get account_agents_path(@account), headers: {
+          "X-Inertia" => "true",
+          "X-Inertia-Version" => ViteRuby.digest,
+          "X-Inertia-Partial-Component" => "agents/index",
+          "X-Inertia-Partial-Data" => "guest_memberships,away_memberships,guest_candidates,can_end_guest_memberships"
+        }
+          assert_response :success
+        end
+      end
+    end
+    props = response.parsed_body.fetch("props")
+    assert props.key?("guest_candidates")
+    assert props.key?("can_end_guest_memberships")
+    assert_not props.key?("agents")
+    assert_not props.key?("grouped_models")
+  end
+
+  test "agents-only partial still evaluates the requested resident cards" do
+    sentinel = [ { id: "synthetic", name: "Requested card" } ]
+    directory = Struct.new(:call).new(sentinel)
+    Agents::ResidentDirectory.stub :new, ->(*) { directory } do
+      get account_agents_path(@account), headers: {
+        "X-Inertia" => "true",
+        "X-Inertia-Version" => ViteRuby.digest,
+        "X-Inertia-Partial-Component" => "agents/index",
+        "X-Inertia-Partial-Data" => "agents"
+      }
+      assert_response :success
+    end
+    assert_equal "Requested card", response.parsed_body.dig("props", "agents", 0, "name")
+    assert_not response.parsed_body.fetch("props").key?("grouped_models")
+  end
+
   test "birth claims funding atomically and a second birth creates no resident key or job" do
     attrs = { name: "House birth", system_prompt: "Synthetic seed", model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID }
     assert_difference [ "Agent.count", "ApiKey.count", "HouseInferenceGrant.count" ], 1 do
