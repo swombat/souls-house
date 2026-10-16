@@ -25,7 +25,7 @@ class FieldController < ApplicationController
       tags: FieldItems.tags_json(current_account),
       filter_tags: filter_tags,
       query: params[:q].is_a?(String) ? params[:q].to_s.strip : "",
-      search: search_props,
+      search: -> { search_props },
       recording_allowance: FieldItems.allowance_json(current_account),
       suggestions_enabled: FieldSuggestions.enabled?,
       summaries_enabled: FieldSummaries.enabled?,

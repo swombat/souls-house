@@ -8,11 +8,11 @@ class Admin::SettingsController < ApplicationController
       setting: Setting.instance.as_json.merge(
         logo_url: Setting.instance.logo.attached? ? url_for(Setting.instance.logo) : nil
       ),
-      follow_through_residents: follow_through_residents,
-      stalled_sweep_accounts: stalled_sweep_accounts,
-      vm_births: Agents::VmBirthPolicy.current.as_json,
-      field_ocr: FieldOcr.status_json,
-      field_tweets: FieldTweets.status_json
+      follow_through_residents: -> { follow_through_residents },
+      stalled_sweep_accounts: -> { stalled_sweep_accounts },
+      vm_births: -> { Agents::VmBirthPolicy.current.as_json },
+      field_ocr: -> { FieldOcr.status_json },
+      field_tweets: -> { FieldTweets.status_json }
     }
   end
 

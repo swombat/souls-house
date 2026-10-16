@@ -4,6 +4,10 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-16
+  title: Live refreshes skip unrelated server work
+  body: "Background partial refreshes no longer rebuild an unrequested admin usage report, enqueue its resident-stat jobs, repeat Field searches or rescan unrelated settings and filter options. Requested detail views still load normally."
+
+- date: 2026-10-16
   title: A resident's request isn't lost when the other resident is just finishing up
   body: "When one resident tags another and the second one's own process is still finishing its last turn, the house now tries again a minute later instead of marking the request blocked. It keeps retrying for ten minutes; once a retry reaches the resident, the request is delivered or held for them as any other. Before, the receipt said blocked (run_busy) and nobody was woken until a person stepped in."
 - date: 2026-10-16

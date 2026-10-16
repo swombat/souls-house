@@ -129,17 +129,21 @@ class RhythmsController < ApplicationController
   end
 
   def shared_props
-    eligible = current_account.conversation_agents.eligible_for_conversation.order(:name).to_a
-    residents = (eligible + (@rhythm&.agents&.to_a || [])).uniq(&:id)
     {
       account: current_account.as_json,
-      residents: residents.map do |agent|
-        { id: agent.to_param, name: agent.name, colour: agent.colour, icon: agent.icon,
-          paused: agent.paused?, unavailable: !eligible.include?(agent),
-          default_model_label: agent.model_label, model_choices: agent.model_choices }
-      end,
-      timezones: ActiveSupport::TimeZone.all.map { |zone| { value: zone.name, label: zone.to_s, identifier: zone.tzinfo.identifier } }
+      residents: -> { resident_options },
+      timezones: -> { ActiveSupport::TimeZone.all.map { |zone| { value: zone.name, label: zone.to_s, identifier: zone.tzinfo.identifier } } }
     }
+  end
+
+  def resident_options
+    eligible = current_account.conversation_agents.eligible_for_conversation.order(:name).to_a
+    residents = (eligible + (@rhythm&.agents&.to_a || [])).uniq(&:id)
+    residents.map do |agent|
+      { id: agent.to_param, name: agent.name, colour: agent.colour, icon: agent.icon,
+        paused: agent.paused?, unavailable: !eligible.include?(agent),
+        default_model_label: agent.model_label, model_choices: agent.model_choices }
+    end
   end
 
 end

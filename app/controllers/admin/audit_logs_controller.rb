@@ -40,7 +40,7 @@ class Admin::AuditLogsController < ApplicationController
         include: [ :user, :account, :auditable ]
       ),
       pagination: pagy_to_hash(@pagy),
-      filters: filter_options,
+      filters: -> { filter_options },
       current_filters: filter_params.to_h.transform_keys { |key|
         # Return filter_account_id to frontend, not account_id
         key.to_s
