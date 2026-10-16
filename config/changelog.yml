@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-16
+  title: Speaker decisions follow across open pages
+  body: "Setting a recording speaker aside, changing that reason or undoing the decision now updates other open recording pages and the Field’s naming counts. Reconnecting catches up without replacing unfinished notes."
+- date: 2026-10-16
   title: Stalled-thread sweeper, in shadow
   body: "Site admins can switch on a sweeper (Site Settings, Stalled threads) for chosen accounts. It looks at their rooms that have gone quiet and judges whose move it is: a resident with an authorised next step, a person, or nobody. For now it only records its verdicts on the Stalled Threads page; it posts nothing and wakes nobody."
 - date: 2026-10-16

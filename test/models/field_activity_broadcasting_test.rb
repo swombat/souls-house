@@ -85,6 +85,37 @@ class FieldActivityBroadcastingTest < ActiveSupport::TestCase
     assert_no_broadcasts(stream) { file.send(:broadcast_refresh) }
   end
 
+  %i[tag tagging].each do |kind|
+    test "#{kind} explicit refresh and removal work without Broadcastable super methods" do
+      record = build_record(kind)
+      record.save!
+
+      assert_refresh { record.send(:broadcast_refresh) }
+      assert_refresh { record.send(:broadcast_removal) }
+    end
+  end
+
+  test "optional super preserves item record markers and skip behavior" do
+    file = build_record(:file)
+    file.save!
+    record_stream = "FieldFile:#{file.obfuscated_id}"
+
+    assert_broadcasts(record_stream, 1) do
+      assert_refresh { file.send(:broadcast_refresh) }
+    end
+    assert_broadcasts(record_stream, 1) do
+      assert_refresh { file.send(:broadcast_removal) }
+    end
+
+    file.skip_broadcast = true
+    assert_no_broadcasts(record_stream) do
+      assert_no_broadcasts(stream) do
+        file.send(:broadcast_refresh)
+        file.send(:broadcast_removal)
+      end
+    end
+  end
+
   test "tag add remove rename merge and discard refresh without a parent item edit" do
     note = build_record(:whiteboard)
     note.save!

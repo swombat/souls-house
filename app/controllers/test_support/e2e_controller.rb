@@ -147,8 +147,17 @@ module TestSupport
 
       audio = ActiveStorage::Blob.create_and_upload!(io: file_fixture_audio, filename: "standup.mp3", content_type: "audio/mpeg")
       recording = account.field_recordings.create!(title: params.fetch(:title, "Failed standup"), notes: params[:notes],
+        transcript_source: params[:speakers_ready] ? "supplied" : "vendor",
         uploaded_by: account.users.first!, audio: audio)
-      recording.update_columns(status: "failed", failure_reason: "The transcriber couldn't read this file.")
+      if params[:speakers_ready]
+        # Synthetic supplied transcript: no transcriber, recognition or remote jobs.
+        recording.store_supplied_transcript!([
+          { "spk" => "speaker_0", "s" => nil, "t" => "A local speaker's first words." },
+          { "spk" => "speaker_1", "s" => nil, "t" => "Another local speaker replies." }
+        ])
+      else
+        recording.update_columns(status: "failed", failure_reason: "The transcriber couldn't read this file.")
+      end
       render json: { recording_param: recording.to_param }
     end
 

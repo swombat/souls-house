@@ -15,12 +15,12 @@ module FieldActivityBroadcasting
   private
 
   def broadcast_refresh
-    super
+    super if defined?(super)
     broadcast_field_activity
   end
 
   def broadcast_removal
-    super
+    super if defined?(super)
     broadcast_field_activity
   end
 
