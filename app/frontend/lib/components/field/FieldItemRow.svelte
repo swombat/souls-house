@@ -6,6 +6,7 @@
   import { formatWhen } from '$lib/field';
   import { recordingStatusLine } from '$lib/field-recordings';
   import { tweetBadge } from '$lib/field-tweets';
+  import { songAttribution } from '$lib/field-songs';
   import { File, Microphone, MusicNotes, Notepad, XLogo } from 'phosphor-svelte';
   import UnnamedSpeakersBadge from './UnnamedSpeakersBadge.svelte';
 
@@ -23,7 +24,13 @@
       item.unnamed_speakers ? `${item.unnamed_speakers} to name` : null,
       item.kind === 'song' ? item.artist : null,
       item.kind === 'song' && item.lyrics_state === 'missing' ? 'No lyrics yet' : null,
-      item.kind === 'note' ? item.editor_name : item.kind === 'tweet' ? item.author_name : item.uploader_name,
+      item.kind === 'note'
+        ? item.editor_name
+        : item.kind === 'tweet'
+          ? item.author_name
+          : item.kind === 'song'
+            ? songAttribution(item)
+            : item.uploader_name,
       item.tags?.length ? item.tags.join(' · ') : null,
     ]
       .filter(Boolean)

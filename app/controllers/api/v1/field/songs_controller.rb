@@ -43,7 +43,7 @@ module Api
           else return render json: { error: "lyrics may only be 'missing'" }, status: :unprocessable_entity
           end
           page = params[:page].to_s.match?(/\A\d+\z/) ? params[:page].to_i : 0
-          songs = scope.includes(:added_by, :shared_for, audio_attachment: :blob)
+          songs = scope.includes(:added_by, :suggested_by, :shared_for, audio_attachment: :blob)
             .newest_first.offset(page * PAGE_SIZE).limit(PAGE_SIZE + 1).to_a
           more = songs.size > PAGE_SIZE
           songs = songs.first(PAGE_SIZE)
@@ -152,6 +152,9 @@ module Api
             lyrics: song.lyrics,
             note: song.note,
             added_by: { kind: song.added_by_kind, name: song.added_by_name },
+            # The resident whose message offered the song, when it came in
+            # through Add to Field; added_by is then the person who clicked.
+            suggested_by: (song.suggested_by && { kind: song.suggested_by_kind, name: song.suggested_by_name }),
             shared_for: (song.shared_for && { kind: song.shared_for_kind, name: song.shared_for_name, key: FieldSong.person_key(song.shared_for) }),
             duration_ms: song.duration_ms,
             audio: (if song.audio.attached?

@@ -22,7 +22,8 @@ class FieldSongsController < ApplicationController
     response.headers["Cache-Control"] = "private, no-store"
     offer = FieldSong::Offer.new(account: current_account, url: params[:url])
     song = if request.post?
-      offer.save!(title: params[:title], artist: params[:artist], by: Current.user)
+      offer.save!(title: params[:title], artist: params[:artist], by: Current.user,
+        suggested_by: offer.suggester(params[:message_id]))
     else
       offer.existing_song
     end

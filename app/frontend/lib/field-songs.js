@@ -76,12 +76,25 @@ export function songByline(song) {
   return [song?.artist, song?.album, song?.year].filter(Boolean).join(' · ');
 }
 
-// "Shared by Daniel for Lume", "Shared by Mira"
+// Who brought a song: "Shared by Daniel", and for a song a resident offered
+// in a conversation and a person then added, "Suggested by Mira, added by
+// Daniel". added_by is always whoever put it in the Field.
+export function songAttribution(song) {
+  const suggester = song?.suggested_by_name;
+  const adder = song?.added_by_name;
+  if (suggester && suggester !== adder) {
+    return adder ? `Suggested by ${suggester}, added by ${adder}` : `Suggested by ${suggester}`;
+  }
+  return adder ? `Shared by ${adder}` : '';
+}
+
+// "Shared by Daniel for Lume", "Shared by Mira",
+// "Suggested by Mira, added by Daniel, for Lume"
 export function sharedBy(song) {
-  if (!song?.added_by_name) return song?.shared_for_name ? `For ${song.shared_for_name}` : '';
-  return song.shared_for_name
-    ? `Shared by ${song.added_by_name} for ${song.shared_for_name}`
-    : `Shared by ${song.added_by_name}`;
+  const who = songAttribution(song);
+  if (!song?.shared_for_name) return who;
+  if (!who) return `For ${song.shared_for_name}`;
+  return who.includes(',') ? `${who}, for ${song.shared_for_name}` : `${who} for ${song.shared_for_name}`;
 }
 
 export function formatSeconds(seconds) {

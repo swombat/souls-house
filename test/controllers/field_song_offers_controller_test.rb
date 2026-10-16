@@ -50,6 +50,43 @@ class FieldSongOffersControllerTest < ActionDispatch::IntegrationTest
     assert_not_requested :any, /./
   end
 
+  test "a resident's offering message makes that resident the suggester; the clicker stays the adder" do
+    agent = agents(:research_assistant)
+    assert_equal @account.id, agent.account_id
+    chat = @account.chats.create!(title: "Songs", model_id: "openrouter/auto")
+    message = chat.messages.create!(role: "assistant", agent: agent, content: "Listen:\n\n[[song:#{URL}|Hallelujah|Jeff Buckley]]")
+
+    post offer_account_field_songs_path(@account), params: { url: URL, title: "Hallelujah", message_id: message.to_param }, as: :json
+    assert_response :success
+    song = @account.field_songs.find(response.parsed_body.dig("song", "id"))
+    assert_equal @user, song.added_by
+    assert_equal agent, song.suggested_by
+    assert_equal agent.name, response.parsed_body.dig("song", "suggested_by_name")
+    assert_equal "resident", response.parsed_body.dig("song", "suggested_by_kind")
+  end
+
+  test "a message that cannot vouch for the offer leaves the song unsuggested" do
+    agent = agents(:research_assistant)
+    chat = @account.chats.create!(title: "Songs", model_id: "openrouter/auto")
+    other_chat = accounts(:team_account).chats.create!(title: "Elsewhere", model_id: "openrouter/auto")
+    candidates = {
+      "missing" => nil,
+      "garbage" => "not-an-id",
+      "a human's message" => chat.messages.create!(role: "user", user: @user, content: "[[song:#{URL}]]").to_param,
+      "a message without the link" => chat.messages.create!(role: "assistant", agent: agent, content: "No song here").to_param,
+      "another account's message" => other_chat.messages.create!(role: "assistant", agent: agents(:other_account_agent),
+        content: "[[song:#{URL}]]").to_param
+    }
+    candidates.each do |label, message_id|
+      @account.field_songs.destroy_all
+      post offer_account_field_songs_path(@account), params: { url: URL, title: "Hallelujah", message_id: message_id }.compact, as: :json
+      assert_response :success, label
+      song = @account.field_songs.find(response.parsed_body.dig("song", "id"))
+      assert_equal @user, song.added_by, label
+      assert_nil song.suggested_by, label
+    end
+  end
+
   test "equivalent links fetch the kept song without overwriting any metadata or attribution" do
     original = @account.field_songs.create!(title: "Original", artist: "Original artist", album: "Original album",
       links: [ URL ], lyrics: "Kept words", note: "Kept note", added_by: agents(:research_assistant),

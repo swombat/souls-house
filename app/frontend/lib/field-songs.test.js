@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { embedUrl, formatSeconds, guessFromFilename, lyricsChoice, sharedBy, songByline, stanzas } from './field-songs';
+import {
+  embedUrl,
+  formatSeconds,
+  guessFromFilename,
+  lyricsChoice,
+  sharedBy,
+  songAttribution,
+  songByline,
+  stanzas,
+} from './field-songs';
 
 describe('field songs', () => {
   it('builds players only from parsed ids', () => {
@@ -39,6 +48,12 @@ describe('field songs', () => {
   it('says who shared it with whom', () => {
     expect(sharedBy({ added_by_name: 'Daniel', shared_for_name: 'Lume' })).toBe('Shared by Daniel for Lume');
     expect(sharedBy({ added_by_name: 'Mira' })).toBe('Shared by Mira');
+    expect(sharedBy({ added_by_name: 'Daniel', suggested_by_name: 'Mira' })).toBe('Suggested by Mira, added by Daniel');
+    expect(sharedBy({ added_by_name: 'Daniel', suggested_by_name: 'Mira', shared_for_name: 'Lume' })).toBe(
+      'Suggested by Mira, added by Daniel, for Lume'
+    );
+    expect(sharedBy({ added_by_name: 'Mira', suggested_by_name: 'Mira' })).toBe('Shared by Mira');
+    expect(songAttribution({ suggested_by_name: 'Lume' })).toBe('Suggested by Lume');
     expect(songByline({ artist: 'Jeff Buckley', year: 1994 })).toBe('Jeff Buckley · 1994');
     expect(formatSeconds(413)).toBe('6:53');
   });

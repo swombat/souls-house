@@ -120,7 +120,7 @@ class FieldListing
     when "file" then @account.field_files.where(id: ids).includes(:uploaded_by, file_attachment: :blob)
     when "note" then @account.whiteboards.where(id: ids).includes(:last_edited_by)
     when "tweet" then @account.field_tweets.where(id: ids)
-    when "song" then @account.field_songs.where(id: ids).includes(:added_by, :shared_for, audio_attachment: :blob)
+    when "song" then @account.field_songs.where(id: ids).includes(:added_by, :suggested_by, :shared_for, audio_attachment: :blob)
     else @account.field_recordings.where(id: ids).includes(:uploaded_by, audio_attachment: :blob, speakers: :field_voice)
     end
   end

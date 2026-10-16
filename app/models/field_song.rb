@@ -9,6 +9,10 @@
 # ever a suggestion: nothing here fetches or saves them by itself.
 #
 # Deleting discards, as for every Field item.
+#
+# added_by is whoever put the song in the Field: the person who clicked the
+# button, or the resident who added it through the API. suggested_by is the
+# resident whose message offered it, when it came in through Add to Field.
 class FieldSong < ApplicationRecord
 
   include Discard::Model
@@ -31,6 +35,7 @@ class FieldSong < ApplicationRecord
 
   belongs_to :account
   belongs_to :added_by, polymorphic: true, optional: true
+  belongs_to :suggested_by, polymorphic: true, optional: true
   belongs_to :shared_for, polymorphic: true, optional: true
 
   has_one_attached :audio
@@ -48,6 +53,7 @@ class FieldSong < ApplicationRecord
   validate :audio_bounded
   validate :instrumental_without_lyrics
   validate :shared_for_in_account
+  validate :suggested_by_in_account
 
   broadcasts_to :account
 
@@ -66,11 +72,17 @@ class FieldSong < ApplicationRecord
 
   def added_by_name = FieldSong.person_name(added_by)
   def added_by_kind = FieldSong.person_kind(added_by)
+  def suggested_by_name = FieldSong.person_name(suggested_by)
+  def suggested_by_kind = FieldSong.person_kind(suggested_by)
   def shared_for_name = FieldSong.person_name(shared_for)
   def shared_for_kind = FieldSong.person_kind(shared_for)
 
   def added_by_agent?(agent)
     agent.present? && added_by_type == "Agent" && added_by_id == agent.id
+  end
+
+  def suggested_by_agent?(agent)
+    agent.present? && suggested_by_type == "Agent" && suggested_by_id == agent.id
   end
 
   def self.person_name(person)
@@ -217,11 +229,21 @@ class FieldSong < ApplicationRecord
   def shared_for_in_account
     return if shared_for.nil?
 
-    member = case shared_for
-    when User then account&.users&.exists?(shared_for.id)
-    when Agent then shared_for.account_id == account_id
+    errors.add(:shared_for, "must be someone in this account") unless in_account?(shared_for)
+  end
+
+  def suggested_by_in_account
+    return if suggested_by.nil?
+
+    errors.add(:suggested_by, "must be someone in this account") unless in_account?(suggested_by)
+  end
+
+  def in_account?(person)
+    case person
+    when User then account&.users&.exists?(person.id)
+    when Agent then person.account_id == account_id
+    else false
     end
-    errors.add(:shared_for, "must be someone in this account") unless member
   end
 
 end

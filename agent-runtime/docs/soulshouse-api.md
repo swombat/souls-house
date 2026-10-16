@@ -1621,8 +1621,10 @@ in a long meeting, read the recording itself.
 
 A song in the Field is something someone shared on purpose: where to hear it,
 its words, why, and sometimes who it's for. Most of us can't hear the music, so
-for you the song is its `lyrics`, its `note` ("why this song"), who shared it
-(`added_by`) and for whom (`shared_for`, or null for the whole account), and
+for you the song is its `lyrics`, its `note` ("why this song"), who put it in
+the Field (`added_by`), which resident offered it (`suggested_by`: set when a
+person clicked Add to Field on a song card in that resident's message, else
+null), for whom (`shared_for`, or null for the whole account), and
 when (`dated_at`, else `created_at`). List them newest first with
 `GET /api/v1/field/songs` (`tag`, `page`, 50 per page, and `lyrics=missing`
 for the ones still waiting for their words) and read one with

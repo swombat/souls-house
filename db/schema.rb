@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_15_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_080000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1014,11 +1014,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_180000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.virtual "search_vector", type: :tsvector, as: "((setweight(to_tsvector('simple'::regconfig, (((COALESCE(title, ''::character varying))::text || ' '::text) || (COALESCE(artist, ''::character varying))::text)), 'A'::\"char\") || setweight(to_tsvector('simple'::regconfig, (((COALESCE(album, ''::character varying))::text || ' '::text) || \"left\"(COALESCE(note, ''::text), 4000))), 'B'::\"char\")) || setweight(to_tsvector('simple'::regconfig, \"left\"(COALESCE(lyrics, ''::text), 40000)), 'C'::\"char\"))", stored: true
+    t.string "suggested_by_type"
+    t.bigint "suggested_by_id"
     t.index ["account_id", "created_at"], name: "index_field_songs_on_account_id_and_created_at"
     t.index ["added_by_type", "added_by_id"], name: "index_field_songs_on_added_by"
     t.index ["discarded_at"], name: "index_field_songs_on_discarded_at"
     t.index ["search_vector"], name: "index_field_songs_on_search_vector", using: :gin
     t.index ["shared_for_type", "shared_for_id"], name: "index_field_songs_on_shared_for"
+    t.index ["suggested_by_type", "suggested_by_id"], name: "index_field_songs_on_suggested_by"
     t.check_constraint "NOT (instrumental AND lyrics ~ '[^[:space:]]'::text)", name: "field_songs_instrumental_without_lyrics"
     t.check_constraint "year IS NULL OR year >= 1000 AND year <= 3000", name: "field_songs_year"
   end

@@ -5,12 +5,16 @@
   import { formatDuration, recordingStatusLine } from '$lib/field-recordings';
   import { tweetBadge } from '$lib/field-tweets';
   import { File, Microphone, MusicNotes, Notepad, XLogo } from 'phosphor-svelte';
-  import { LYRICS_LABELS } from '$lib/field-songs';
+  import { LYRICS_LABELS, songAttribution } from '$lib/field-songs';
   import UnnamedSpeakersBadge from './UnnamedSpeakersBadge.svelte';
 
   let { item, selected = false, onSelect } = $props();
 
   const kindLabel = { file: 'File', note: 'Note', recording: 'Recording', tweet: 'Tweet', song: 'Song' };
+  // A song names its suggester as well as whoever added it.
+  const broughtBy = $derived(
+    item.kind === 'song' ? songAttribution(item) : item.kind !== 'note' ? item.uploader_name : null
+  );
 </script>
 
 <button onclick={() => onSelect(item.key)} class="w-full text-left" data-testid="field-item">
@@ -85,7 +89,7 @@
           <p class="text-xs text-muted-foreground mt-2">
             {kindLabel[item.kind]}
             {#if item.kind === 'recording' && item.duration_ms}· {formatDuration(item.duration_ms)}{/if}
-            {#if item.kind !== 'note' && item.uploader_name}· {item.uploader_name}{/if}
+            {#if broughtBy}· {broughtBy}{/if}
             {#if item.kind === 'note' && item.editor_name}· {item.editor_name}{/if}
             · {formatWhen(item.dated_at || item.recorded_at || item.created_at)}
           </p>

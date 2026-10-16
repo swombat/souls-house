@@ -8,6 +8,7 @@ class FieldSong::Offer
 
   def initialize(account:, url:)
     @account = account
+    @url = url.to_s.strip
     @link = FieldSong::Links.normalise(url)
     uri = URI.parse(url.to_s.strip) if @link
     unless @link && @link["provider"] != "other" && uri.userinfo.nil? &&
@@ -25,8 +26,28 @@ class FieldSong::Offer
     nil
   end
 
-  def save!(title:, artist:, by:)
-    song = @account.field_songs.new(title: title, artist: artist, links: [ link ], added_by: by)
+  # The resident whose message offered this link, or nil. The message must be
+  # a resident's reply in a conversation of this account, written by one of
+  # its own residents, and must contain the link: the page names the message,
+  # the server decides whether it counts.
+  def suggester(message_id)
+    return if message_id.blank?
+
+    message = Message.find_by_obfuscated_id(message_id.to_s) rescue nil
+    return unless message&.role == "assistant" && message.chat&.account_id == @account.id
+
+    agent = message.agent
+    return unless agent && agent.account_id == @account.id
+    return unless message.content.to_s.include?(@url)
+
+    agent
+  end
+
+  # An existing song keeps its attribution: whoever offers the same link
+  # later finds the song, they don't take it over.
+  def save!(title:, artist:, by:, suggested_by: nil)
+    song = @account.field_songs.new(title: title, artist: artist, links: [ link ], added_by: by,
+      suggested_by: suggested_by)
     song.validate!
 
     # A transaction alone permits two requests to both observe no match.

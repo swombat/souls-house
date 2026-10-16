@@ -87,6 +87,17 @@ class FieldSongTest < ActiveSupport::TestCase
     end
   end
 
+  test "a song is suggested by someone in the account, and only someone in it" do
+    record = song(links: [ "https://youtu.be/y8AWFf7EAc4" ], suggested_by: @resident)
+    assert record.valid?
+    assert_equal @resident.name, record.suggested_by_name
+    assert record.suggested_by_agent?(@resident)
+
+    record.suggested_by = agents(:other_account_agent)
+    assert_not record.valid?
+    assert_includes record.errors[:suggested_by], "must be someone in this account"
+  end
+
   test "recipients are found by key or exact name" do
     assert_equal @resident, FieldSong.find_recipient(@account, FieldSong.person_key(@resident))
     assert_equal @resident, FieldSong.find_recipient(@account, @resident.name.upcase)

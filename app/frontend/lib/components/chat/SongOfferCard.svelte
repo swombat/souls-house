@@ -3,7 +3,9 @@
   import { embedUrl } from '$lib/field-songs';
   import SongCardPlayer from './SongCardPlayer.svelte';
 
-  let { accountId, offer } = $props();
+  // messageId names the resident message that offered the song; the server
+  // checks it and records that resident as the song's suggester.
+  let { accountId, offer, messageId = null } = $props();
   const identity = $derived(JSON.stringify([accountId, offer.url, offer.title, offer.artist]));
   let result = $state(null);
   let playback = $state(null);
@@ -61,7 +63,16 @@
               }
             : {}),
         },
-        ...(save ? { body: JSON.stringify({ url: offer.url, title: offer.title, artist: offer.artist }) } : {}),
+        ...(save
+          ? {
+              body: JSON.stringify({
+                url: offer.url,
+                title: offer.title,
+                artist: offer.artist,
+                ...(messageId ? { message_id: messageId } : {}),
+              }),
+            }
+          : {}),
         cache: 'no-store',
         signal: requestController.signal,
       });

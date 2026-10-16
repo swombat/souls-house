@@ -34,7 +34,7 @@ module FieldItems
     when "song"
       base.merge(
         artist: record.artist, lyrics_state: record.lyrics_state, added_by: record.added_by_name,
-        shared_for: record.shared_for_name,
+        suggested_by: record.suggested_by_name, shared_for: record.shared_for_name,
         web_path: routes.account_field_path(record.account, tab: "songs", item: "song-#{record.to_param}"),
         api_path: routes.api_v1_field_song_path(record)
       )
@@ -96,6 +96,8 @@ module FieldItems
       note: (content ? song.note : song.note.to_s.truncate(200).presence),
       added_by_name: song.added_by_name,
       added_by_kind: song.added_by_kind,
+      suggested_by_name: song.suggested_by_name,
+      suggested_by_kind: song.suggested_by_kind,
       uploader_name: song.added_by_name,
       shared_for_name: song.shared_for_name,
       shared_for_kind: song.shared_for_kind,

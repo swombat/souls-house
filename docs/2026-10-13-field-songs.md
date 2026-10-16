@@ -18,6 +18,7 @@ A new Field kind, `song`, beside files, notes, recordings and tweets, with its o
 | `lyrics` | text ≤20k, line breaks kept exactly |
 | `note` | "Why this song" ≤2,000: the part that makes it this relationship's song and not the training data's |
 | `added_by` | polymorphic User/Agent, like `FieldFile#uploaded_by` |
+| `suggested_by` | polymorphic, the resident whose message offered it through Add to Field (2026-10-16) |
 | `shared_for` | optional polymorphic User/Agent in the account: "for Lume" |
 | `dated_at` | optional "when this song came into it"; sorts by it, else `created_at` |
 

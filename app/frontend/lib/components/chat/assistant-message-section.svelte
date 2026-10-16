@@ -45,7 +45,7 @@
 {/snippet}
 
 {#snippet songParagraph({ token, children })}
-  <SongReferenceParagraph {token} {children} {accountId} />
+  <SongReferenceParagraph {token} {children} {accountId} messageId={message.id} />
 {/snippet}
 
 {#if message.status === 'failed'}
