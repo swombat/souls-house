@@ -13,15 +13,29 @@ module TestSupport
       raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
 
       case params.fetch(:operation)
-      when "enable"
+      when "enable", "enable_unfunded"
         Setting.instance.update!(field_tweets_enabled: true, field_tweets_site_monthly_usd_ceiling: 10,
           field_tweets_account_monthly_usd_ceiling: 1, field_tweets_daily_import_cap: 50,
           field_tweets_poll_minutes: 15)
-        connection = account.service_connections.new(provider: "twitterapi_io", management_scope: "account_managed",
-          credential_kind: "api_key", status: "connected", connected_by_user: account.users.first!,
-          label: "Synthetic tweet funding", credential_fingerprint: SecureRandom.hex(16))
-        connection.credential_payload_hash = { "api_key" => "synthetic-no-vendor-access" }
-        connection.save!
+        return head :ok if params[:operation] == "enable_unfunded"
+
+        create_synthetic_tweet_funding!(account)
+      when "fund"
+        create_synthetic_tweet_funding!(account)
+      when "unfund"
+        account.service_connections.connected.where(label: "Synthetic tweet funding").last!.update!(status: "revoked")
+      when "funding_bookkeeping"
+        account.service_connections.find_by!(label: "Synthetic tweet funding").update!(comms_event_seq: 7)
+      when "limits", "feature_off", "feature_on"
+        attributes = case params[:operation]
+        when "limits" then { field_tweets_daily_import_cap: 37, field_tweets_poll_minutes: 30 }
+        when "feature_off" then { field_tweets_enabled: false }
+        else { field_tweets_enabled: true }
+        end
+        Setting.instance.update!(attributes)
+        # The isolated browser server has no queue worker. Producer/job enqueue
+        # semantics are covered separately; execute the real fan-out job here.
+        FieldTweets::RefreshSettingsJob.perform_now
       when "create"
         account.create_field_tweet_source!(handle: "example", own_monthly_usd_limit: 5)
       when "advance"
@@ -33,6 +47,15 @@ module TestSupport
       end
       head :ok
     end
+
+    def create_synthetic_tweet_funding!(account)
+      connection = account.service_connections.new(provider: "twitterapi_io", management_scope: "account_managed",
+        credential_kind: "api_key", status: "connected", connected_by_user: account.users.first!,
+        label: "Synthetic tweet funding", credential_fingerprint: SecureRandom.hex(16))
+      connection.credential_payload_hash = { "api_key" => "synthetic-no-vendor-access" }
+      connection.save!
+    end
+    private :create_synthetic_tweet_funding!
 
     def field_activity_fixture
       account = Account.find(params.fetch(:account_id))
