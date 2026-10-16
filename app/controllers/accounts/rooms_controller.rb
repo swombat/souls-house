@@ -8,7 +8,8 @@ class Accounts::RoomsController < ApplicationController
       account: current_account.as_json,
       can_manage: current_account.manageable_by?(Current.user),
       main_count: counts.fetch(nil, 0),
-      rooms: current_account.rooms.map { |room| room.as_json.merge("conversation_count" => counts.fetch(room.id, 0)) },
+      rooms: -> { current_account.rooms.map(&:as_json) },
+      room_counts: counts.except(nil).transform_keys { |id| Room.encode_id(id) },
       resident_room_id: current_account.resident_room&.to_param
     }
   end

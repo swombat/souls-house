@@ -10,7 +10,7 @@
   import { destinations, roomName, MAIN } from '$lib/rooms';
   import { createDynamicSync } from '$lib/use-sync';
 
-  let { account, rooms = [], main_count = 0, resident_room_id = null, can_manage = false } = $props();
+  let { account, rooms = [], room_counts = {}, main_count = 0, resident_room_id = null, can_manage = false } = $props();
 
   let name = $state('');
   const errors = $derived($page.props.errors || {});
@@ -18,7 +18,10 @@
 
   const updateSync = createDynamicSync();
   $effect(() => {
-    updateSync({ [`Account:${account.id}`]: ['rooms', 'main_count', 'resident_room_id'] });
+    updateSync({
+      [`RoomNavigation:${account.id}`]: ['rooms', 'current_room'],
+      [`Account:${account.id}`]: ['room_counts', 'main_count', 'resident_room_id'],
+    });
   });
 
   function addRoom(event) {
@@ -65,7 +68,7 @@
       {#each rooms as room, index (room.id)}
         <RoomRow
           accountId={account.id}
-          {room}
+          room={{ ...room, conversation_count: room_counts[room.id] || 0 }}
           first={index === 0}
           last={index === rooms.length - 1}
           canManage={can_manage} />

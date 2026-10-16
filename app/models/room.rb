@@ -20,6 +20,7 @@ class Room < ApplicationRecord
   validate :account_cannot_change, on: :update
   before_validation -> { self.name = name.strip if name.is_a?(String) }
   before_create -> { self.position = (account.rooms.maximum(:position) || -1) + 1 }
+  after_commit :broadcast_navigation
 
   scope :ordered, -> { order(:position, :id) }
 
@@ -46,15 +47,24 @@ class Room < ApplicationRecord
     other = siblings[index + direction] if index && (index + direction).between?(0, siblings.size - 1)
     return unless other
 
-    transaction do
+    transaction do |transaction|
       siblings.each_with_index { |room, i| room.update_column(:position, i) }
       mine = index
       update_column(:position, mine + direction)
       other.update_column(:position, mine)
+      # These position writes bypass model callbacks. Defer the single marker
+      # to the outer commit too, so a rolled-back move never reaches the UI.
+      transaction.after_commit { broadcast_navigation }
     end
   end
 
   private
+
+  def broadcast_navigation
+    return if skip_broadcast
+
+    ActionCable.server.broadcast("RoomNavigation:#{account.to_param}", action: "refresh")
+  end
 
   def move_chats_to_main
     account.chats.with_discarded.where(room_id: id).find_each { |chat| chat.room = nil; chat.save!(validate: false) }

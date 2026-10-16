@@ -48,6 +48,34 @@ test('account sidebar catches up on connect/reconnect and receives lifecycle bro
   vi.useRealTimers();
 });
 
+test('room navigation catches up on connect and reconnect using only its mapped props', () => {
+  vi.useFakeTimers();
+  router.reload.mockClear();
+  const unsubscribe = subscribeToModel('RoomNavigation', 'account', ['rooms', 'current_room']);
+  const callbacks = create.mock.calls.at(-1)[1];
+  for (let connection = 0; connection < 2; connection += 1) {
+    router.reload.mockClear();
+    callbacks.connected();
+    vi.advanceTimersByTime(300);
+    expect(router.reload).toHaveBeenCalledOnce();
+    expect(router.reload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        only: ['rooms', 'current_room'],
+        preserveState: true,
+        preserveScroll: true,
+        preserveUrl: true,
+      })
+    );
+  }
+  router.reload.mockClear();
+  callbacks.received({ action: 'refresh' });
+  vi.advanceTimersByTime(300);
+  expect(router.reload).toHaveBeenCalledOnce();
+  expect(router.reload).toHaveBeenCalledWith(expect.objectContaining({ only: ['rooms', 'current_room'] }));
+  unsubscribe();
+  vi.useRealTimers();
+});
+
 test.each(['RoomActivity', 'FieldActivity'])('%s catches up on connect and every reconnect', (model) => {
   vi.useFakeTimers();
   router.reload.mockClear();

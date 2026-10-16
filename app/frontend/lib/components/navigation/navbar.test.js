@@ -35,7 +35,9 @@ test('navbar watches all confirmed accounts, keeps stable subscriptions and remo
     'accounts',
     'expired_subscriptions',
   ]);
-  const initialAccountUnsubscribers = subscribe.mock.results.slice(-2).map(({ value }) => value);
+  const initialAccountUnsubscribers = subscribe.mock.calls.flatMap(([model], index) =>
+    model === 'Account' ? [subscribe.mock.results[index].value] : []
+  );
   page.set({
     props: { ...props, account: props.accounts[0], accounts: [...props.accounts].reverse() },
   });
@@ -47,9 +49,53 @@ test('navbar watches all confirmed accounts, keeps stable subscriptions and remo
   await tick();
   for (const unsubscribe of initialAccountUnsubscribers) expect(unsubscribe).toHaveBeenCalledOnce();
   expect(accountCalls().at(-1)).toEqual(['Account', 'one', ['accounts', 'expired_subscriptions']]);
-  const last = subscribe.mock.results.at(-1).value;
+  const lastAccountIndex = subscribe.mock.calls.findLastIndex(([model]) => model === 'Account');
+  const last = subscribe.mock.results[lastAccountIndex].value;
   page.set({ props: {} });
   await tick();
   expect(last).toHaveBeenCalledOnce();
   component.unmount();
+});
+
+test('room navigation watches only the active account, even empty, without resubscribing on reload', async () => {
+  const props = {
+    user: { id: 'me', email_address: 'me@example.com' },
+    account: { id: 'one', name: 'First' },
+    accounts: [{ id: 'one' }, { id: 'two' }],
+    rooms: [],
+    current_room: 'main',
+  };
+  page.set({ props });
+  const component = render(Navbar);
+  await tick();
+  const roomCalls = () => subscribe.mock.calls.filter(([model]) => model === 'RoomNavigation');
+  expect(roomCalls()).toEqual([['RoomNavigation', 'one', ['rooms', 'current_room']]]);
+  const firstIndex = subscribe.mock.calls.findIndex(([model]) => model === 'RoomNavigation');
+  const firstCleanup = subscribe.mock.results[firstIndex].value;
+
+  page.set({ props: { ...props, rooms: [{ id: 'life', name: 'Life' }] } });
+  await tick();
+  expect(roomCalls()).toHaveLength(1);
+  expect(firstCleanup).not.toHaveBeenCalled();
+
+  page.set({ props: { ...props, account: { id: 'two', name: 'Second' } } });
+  await tick();
+  expect(firstCleanup).toHaveBeenCalledOnce();
+  expect(roomCalls()).toEqual([
+    ['RoomNavigation', 'one', ['rooms', 'current_room']],
+    ['RoomNavigation', 'two', ['rooms', 'current_room']],
+  ]);
+  const secondIndex = subscribe.mock.calls.findLastIndex(([model]) => model === 'RoomNavigation');
+  const secondCleanup = subscribe.mock.results[secondIndex].value;
+  page.set({ props: {} });
+  await tick();
+  expect(secondCleanup).toHaveBeenCalledOnce();
+  expect(roomCalls()).toHaveLength(2);
+
+  page.set({ props });
+  await tick();
+  const finalIndex = subscribe.mock.calls.findLastIndex(([model]) => model === 'RoomNavigation');
+  const finalCleanup = subscribe.mock.results[finalIndex].value;
+  component.unmount();
+  expect(finalCleanup).toHaveBeenCalledOnce();
 });

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-16
+  title: Room navigation updates live
+  body: "Adding, renaming, reordering or removing a room now updates the Chats menu while you keep another page open. Reconnecting catches up missed room changes without a manual reload. Live once Rails is deployed."
+- date: 2026-10-16
   title: The Field stays current
   body: "New items, removals, counts and tags now update while the Field stays open, including songs and tweets. Updates preserve unsaved notes and the order of an open search."
 - date: 2026-10-16

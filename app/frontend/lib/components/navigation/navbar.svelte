@@ -50,6 +50,17 @@
     updateSubscriptionSync(subs);
   });
 
+  const updateRoomNavigationSync = createDynamicSync();
+  $effect(() => {
+    const accountId = $page.props?.account?.id;
+    const subs = {};
+    // Watch even an empty account: its first room turns Chats into a menu.
+    if ($page.props?.user?.id && accountId) {
+      subs[`RoomNavigation:${accountId}`] = ['rooms', 'current_room'];
+    }
+    updateRoomNavigationSync(subs);
+  });
+
   function handleLogout(event) {
     event.preventDefault();
     const userId = currentUser?.id;
