@@ -61,24 +61,24 @@ class AgentsController < ApplicationController
   end
 
   def edit
-    interactions_pagy, interactions = pagy(
-      :offset,
-      @agent.agent_runtime_interactions.includes(:chat).recent,
-      limit: 25
-    )
-
-    catalog = @agent.subagent_catalog
+    interaction_data = nil
+    load_interactions = -> {
+      interaction_data ||= pagy(:offset, @agent.agent_runtime_interactions.includes(:chat).recent, limit: 25)
+    }
+    catalog = nil
+    load_catalog = -> { catalog ||= @agent.subagent_catalog }
     render inertia: "agents/edit", props: {
-      portability: portability_props,
-      agent: @agent.as_json,
-      house_allowance: HouseInferenceGrant.find_by(agent: @agent)&.presentation,
-      subagent_catalog: catalog.options,
-      subagent_providers: catalog.providers,
-      subagent_catalog_empty_reason: catalog.empty_reason,
-      telegram_deep_link: @agent.telegram_configured? ? @agent.telegram_deep_link_for(Current.user) : nil,
-      telegram_subscriber_count: @agent.telegram_subscriptions.active.count,
-      memories: memories_for_display,
-      grouped_models: grouped_models,
+      portability: -> { portability_props },
+      agent: -> { @agent.as_json },
+      house_allowance: -> { HouseInferenceGrant.find_by(agent: @agent)&.presentation },
+      subagent_catalog: -> { load_catalog.call.options },
+      subagent_providers: -> { load_catalog.call.providers },
+      subagent_catalog_empty_reason: -> { load_catalog.call.empty_reason },
+      # Count/provider partials must not mint another registration token.
+      telegram_deep_link: -> { @agent.telegram_configured? ? @agent.telegram_deep_link_for(Current.user) : nil },
+      telegram_subscriber_count: -> { @agent.telegram_subscriptions.active.count },
+      memories: -> { memories_for_display },
+      grouped_models: -> { grouped_models },
       colour_options: Agent::VALID_COLOURS,
       icon_options: Agent::VALID_ICONS,
       active_tab: params[:tab],
@@ -89,12 +89,12 @@ class AgentsController < ApplicationController
       hosting_diagnostics_url: account_agent_hosting_diagnostics_path(current_account, @agent),
       runtime_observability_url: Current.user&.is_site_admin? ? admin_agent_runtime_path(@agent) : nil,
       sandbox_recreation_url: account_agent_sandbox_recreation_path(current_account, @agent),
-      provider_subscription: Agents::ProviderSubscriptionPresentation.call(@agent),
-      service_connections: service_connections_for_agent,
-      can_manage_provider_subscription: current_account.ai_credentials_manageable_by?(Current.user),
-      interactions: interactions.map(&:as_session_json),
-      interactions_pagination: pagy_to_hash(interactions_pagy),
-      cost_report: AgentInteractionCostReport.new(agent: @agent).call,
+      provider_subscription: -> { Agents::ProviderSubscriptionPresentation.call(@agent) },
+      service_connections: -> { service_connections_for_agent },
+      can_manage_provider_subscription: -> { current_account.ai_credentials_manageable_by?(Current.user) },
+      interactions: -> { load_interactions.call.last.map(&:as_session_json) },
+      interactions_pagination: -> { pagy_to_hash(load_interactions.call.first) },
+      cost_report: -> { AgentInteractionCostReport.new(agent: @agent).call },
       account: current_account.as_json
     }
   end

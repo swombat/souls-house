@@ -82,6 +82,8 @@ class Agents::PortabilityController < ApplicationController
           activation_error = "Activation failed; resident inactive/paused but runtime exit is UNKNOWN. Operator verification required"
         end
       end
+      # The failure paths intentionally use direct columns, not orientation callbacks.
+      agent.refresh_provider_presentation if activation_error
     end
     raise Agents::Portability::Error, activation_error if activation_error
     redirect_to edit_account_agent_path(current_account, agent, tab: "portability"), status: :see_other

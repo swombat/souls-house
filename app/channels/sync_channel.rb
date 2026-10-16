@@ -39,6 +39,10 @@ class SyncChannel < ApplicationCable::Channel
       model: Account,
       collections: []
     },
+    "ProviderPresentation" => {
+      model: Account,
+      collections: []
+    },
     "Account" => {
       model: Account,
       collections: %w[agents chats whiteboards field_files field_recordings],

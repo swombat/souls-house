@@ -6,9 +6,9 @@ module Accounts
     def show
       render inertia: "accounts/agent_api_keys", props: {
         account: current_account,
-        ai_api_keys_configured: current_account.ai_api_keys_configured,
-        can_manage_ai_credentials: current_account.ai_credentials_manageable_by?(Current.user),
-        subscription_agents: subscription_agents
+        ai_api_keys_configured: -> { current_account.ai_api_keys_configured },
+        can_manage_ai_credentials: -> { current_account.ai_credentials_manageable_by?(Current.user) },
+        subscription_agents: -> { subscription_agents }
       }
     end
 

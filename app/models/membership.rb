@@ -101,6 +101,7 @@ class Membership < ApplicationRecord
 
   def refresh_integration_permissions
     account_ids = [ account_id, account_id_before_last_save ].compact.uniq
+    ProviderPresentation.refresh!(account_ids)
     ActiveRecord.after_all_transactions_commit do
       IntegrationStatus.refresh!(account_ids)
     end

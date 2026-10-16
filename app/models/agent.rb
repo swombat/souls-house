@@ -139,6 +139,36 @@ class Agent < ApplicationRecord
   end
   private :snapshot_guest_directory, :refresh_guest_directory
 
+  after_save :refresh_provider_presentation, if: :provider_presentation_changed?
+  after_destroy :refresh_provider_presentation, if: -> { provider_presentation_projection.present? }
+
+  # Compare only rendered state, not the whole JSON columns or health timestamps.
+  def provider_presentation_projection
+    value = Agents::ProviderSubscriptionPresentation.call(self)
+    return unless value
+
+    value.except(:connection).merge(connection: value[:connection].to_h.slice("status", "email", "plan"))
+  end
+
+  def provider_presentation_changed?
+    fields = %w[id account_id name model_id runtime health_state provider_auth_modes provider_connections]
+    return false if (saved_changes.keys & fields).empty?
+    return provider_presentation_projection.present? if previously_new_record?
+
+    previous = dup
+    (saved_changes.keys & fields).each { |key| previous[key] = saved_changes[key].first }
+    # Dup clears the identity even if id itself did not change.
+    previous.id = id unless saved_change_to_id?
+    previous.provider_presentation_projection != provider_presentation_projection ||
+      (saved_change_to_account_id? && (previous.provider_presentation_projection || provider_presentation_projection).present?)
+  end
+
+  # Also used by explicit callback-bypassing portability transitions.
+  def refresh_provider_presentation
+    ProviderPresentation.refresh!([ account_id, account_id_before_last_save ])
+  end
+  private :provider_presentation_changed?
+
   def refresh_integration_presentation
     account_ids = [ account_id, account_id_before_last_save ].compact.uniq
     ActiveRecord.after_all_transactions_commit do

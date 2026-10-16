@@ -50,6 +50,7 @@ module Agents::Portability
         # direct columns deliberately bypass model-change orientation callbacks.
         agent.update_columns(runtime: "offline", identity_seeded_at: Time.current,
           portability_custody: custody.merge("graph_id_map" => mapping))
+        agent.refresh_provider_presentation
         agent.memory_vault&.update_columns(suspended_at: nil)
         agent
       end
