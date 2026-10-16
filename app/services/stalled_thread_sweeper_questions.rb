@@ -23,10 +23,12 @@ module StalledThreadSweeperQuestions
     <<~TEXT
       Judge whether #{name}, a resident in this room, is the one whose move is next: an action #{name} is
       already authorised to take, that nobody is stopping, and that no later message shows done. The ball is
-      with #{name} when the latest substantive message leaves it there. Answer yes in these cases, unless a
-      later message from #{name} shows the step done: (1) the other resident or a person asked #{name} for a
-      review, re-review or fix, including a resident posting a PR, a new head or a diff "ready for review" or
-      "for your re-review" to #{name}, with or without an @-tag; (2) the other resident approved #{name}'s
+      with #{name} when the latest substantive message leaves it there; latest_by_participant shows whose
+      message came last and who has said nothing since. Answer yes in these cases, unless a later message
+      from #{name} shows the step done: (1) the other resident or a person asked #{name} for a review,
+      re-review or fix: when the other resident posts a PR, a new head or a diff "ready for review", "for your
+      re-review" or "@#{name}, could you review", that post is finished work for its author and a request to
+      #{name}, so if #{name} has not replied since, answer yes; (2) the other resident approved #{name}'s
       work and left the merge, CI gate, deploy or next slice with #{name} ("merge once CI is green", "CI, merge
       and deploy remain with you", "please merge and bring the receipt"): the approval is the handover, and
       #{name} replying "thanks, merging once green" or "waiting on CI" is a promise, not the merge, so answer
@@ -34,8 +36,11 @@ module StalledThreadSweeperQuestions
       question and #{name} has not acted on or answered it, counting a go-ahead in earlier_human_request even
       when #{name} later asked whether to proceed; (4) #{name} itself said what it would do next ("slice 3 is
       next", "PR to follow", "I'll report back", "I'll retry once the limit clears", "I'll start it now") and
-      nothing after shows it done. Answer no when: the latest substantive message is #{name}'s own report of
-      finished work with nothing left pending and nothing asked of #{name}; the step is the other resident's,
+      nothing after shows it done; (5) the other resident approved or signed off #{name}'s own proposal, PR or
+      review request and the next step (release, undraft, build, carry the spec forward) is #{name}'s. Answer
+      no when: the latest substantive message is #{name}'s own report of finished work with nothing left
+      pending and nothing asked of #{name} (a report by the other resident never counts as #{name}'s finished
+      work); the step is the other resident's,
       not #{name}'s, and #{name} is waiting on them; the next move is a person's alone (an approval or decision
       not yet given, a question only they can answer, a merge, deploy or connection only they can do); #{name}
       is paused; the thread was closed by thanks, by a decision, or by moving the work elsewhere; or the wait

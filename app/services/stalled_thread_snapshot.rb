@@ -74,6 +74,8 @@ class StalledThreadSnapshot
       end,
       quiet_for_minutes: last ? ((now - last.created_at) / 60).floor : nil,
       last_message: last && { id: last.obfuscated_id, author: author_name(last), kind: author_kind(last) },
+      # Who spoke last, and who has not spoken since: the shape of a handover.
+      latest_by_participant: latest_by_participant,
       last_human_after_last_resident: last_human_message && last_resident_message ? last_human_message.id > last_resident_message.id : last_human_message.present?,
       window: window.map { |m| describe(m, MESSAGE_CHARS) },
       window_truncated: first ? visible_messages.where("messages.id < ?", first.id).exists? : false,
@@ -86,6 +88,29 @@ class StalledThreadSnapshot
   end
 
   private
+
+  # For each resident in the room and for the latest human: their last
+  # message id and time, and whether anyone else has spoken since it.
+  def latest_by_participant
+    last = window.last
+    entries = chat.agents.map do |agent|
+      message = visible_messages.where(agent_id: agent.id).reorder(id: :desc).first
+      {
+        participant: agent.name, kind: "resident",
+        last_message_id: message&.obfuscated_id, at: message&.created_at&.iso8601,
+        others_spoke_since: message ? (last && last.id > message.id) : nil,
+        in_window: message ? window.any? { |m| m.id == message.id } : false
+      }
+    end
+    if last_human_message
+      entries << {
+        participant: author_name(last_human_message), kind: "human",
+        last_message_id: last_human_message.obfuscated_id, at: last_human_message.created_at.iso8601,
+        others_spoke_since: last && last.id > last_human_message.id, in_window: window.any? { |m| m.id == last_human_message.id }
+      }
+    end
+    entries
+  end
 
   def author_key(message)
     if message.agent_id then "agent:#{message.agent_id}"

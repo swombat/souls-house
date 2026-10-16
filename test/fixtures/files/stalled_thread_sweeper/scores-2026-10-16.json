@@ -1,0 +1,3843 @@
+[
+{
+"chat": "zjBkVJ",
+"as_of": "jPbOaY",
+"scores": {
+"wake:Grok": 0.07,
+"person_holds": 0.07
+}
+},
+{
+"chat": "zjBkVJ",
+"as_of": "JGKlzJ",
+"scores": {
+"wake:Grok": 0.15,
+"person_holds": 0.11
+}
+},
+{
+"chat": "wYGmqj",
+"as_of": "YQbbqJ",
+"scores": {
+"wake:Grok": 0.08,
+"person_holds": 0.07
+}
+},
+{
+"chat": "WjNXkY",
+"as_of": "YqbEnJ",
+"scores": {
+"wake:Grok": 0.43,
+"person_holds": 0.24
+}
+},
+{
+"chat": "MYnrWY",
+"as_of": "YVGAPJ",
+"scores": {
+"wake:Grok": 0.07,
+"person_holds": 0.08
+}
+},
+{
+"chat": "MYnrWY",
+"as_of": "jKgprj",
+"scores": {
+"wake:Grok": 0.08,
+"person_holds": 0.14
+}
+},
+{
+"chat": "MYnrWY",
+"as_of": "YoZmXe",
+"scores": {
+"wake:Grok": 0.08,
+"person_holds": 0.12
+}
+},
+{
+"chat": "MYnrWY",
+"as_of": "eyZGEY",
+"scores": {
+"wake:Grok": 0.06,
+"person_holds": 0.12
+}
+},
+{
+"chat": "zYBpdj",
+"as_of": "jvyxqJ",
+"scores": {
+"wake:Mira": 0.13,
+"person_holds": 0.12
+}
+},
+{
+"chat": "vJxgNj",
+"as_of": "eBPKEJ",
+"scores": {
+"wake:Mira": 0.18,
+"person_holds": 0.22
+}
+},
+{
+"chat": "vJxgNj",
+"as_of": "JMLdLY",
+"scores": {
+"wake:Mira": 0.29,
+"person_holds": 0.15
+}
+},
+{
+"chat": "OjzEoe",
+"as_of": "eZLdpJ",
+"scores": {
+"wake:Mira": 0.13,
+"person_holds": 0.1
+}
+},
+{
+"chat": "neogXe",
+"as_of": "JaEPNJ",
+"scores": {
+"wake:Mira": 0.27,
+"person_holds": 0.14
+}
+},
+{
+"chat": "neogXe",
+"as_of": "JpxdaJ",
+"scores": {
+"wake:Mira": 0.31,
+"person_holds": 0.49
+}
+},
+{
+"chat": "neogXe",
+"as_of": "YxwWMe",
+"scores": {
+"wake:Mira": 0.29,
+"person_holds": 0.1
+}
+},
+{
+"chat": "wjGRVe",
+"as_of": "enmQEj",
+"scores": {
+"wake:Mira": 0.91,
+"wake:Grok": 0.27,
+"person_holds": 0.53
+}
+},
+{
+"chat": "wjGRVe",
+"as_of": "JpxEaJ",
+"scores": {
+"wake:Mira": 0.66,
+"wake:Grok": 0.09,
+"person_holds": 0.2
+}
+},
+{
+"chat": "wjGRVe",
+"as_of": "jdELze",
+"scores": {
+"wake:Mira": 0.7,
+"wake:Grok": 0.07,
+"person_holds": 0.49
+}
+},
+{
+"chat": "oJwkRJ",
+"as_of": "eGzmwj",
+"scores": {
+"wake:Mira": 0.57,
+"wake:Grok": 0.47,
+"person_holds": 0.26
+}
+},
+{
+"chat": "oJwkRJ",
+"as_of": "jLLLxj",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Grok": 0.05,
+"person_holds": 0.27
+}
+},
+{
+"chat": "oJwkRJ",
+"as_of": "jkWalj",
+"scores": {
+"wake:Mira": 0.19,
+"wake:Grok": 0.23,
+"person_holds": 0.3
+}
+},
+{
+"chat": "zYbNDY",
+"as_of": "JXEAkj",
+"scores": {
+"wake:Mira": 0.09,
+"person_holds": 0.08
+}
+},
+{
+"chat": "OYyWEj",
+"as_of": "JDmmQj",
+"scores": {
+"wake:Mira": 0.29,
+"person_holds": 0.1
+}
+},
+{
+"chat": "RYpnEj",
+"as_of": "jWLLAe",
+"scores": {
+"wake:Mira": 0.1,
+"person_holds": 0.09
+}
+},
+{
+"chat": "qelzyJ",
+"as_of": "YlPqrY",
+"scores": {
+"wake:Mira": 0.33,
+"person_holds": 0.11
+}
+},
+{
+"chat": "bJQVgY",
+"as_of": "YPLqpY",
+"scores": {
+"wake:Mira": 0.22,
+"person_holds": 0.77
+}
+},
+{
+"chat": "bJQVgY",
+"as_of": "eZLVxJ",
+"scores": {
+"wake:Mira": 0.6,
+"person_holds": 0.18
+}
+},
+{
+"chat": "bJQVgY",
+"as_of": "JMLMzY",
+"scores": {
+"wake:Mira": 0.18,
+"person_holds": 0.16
+}
+},
+{
+"chat": "AYavEe",
+"as_of": "Yxwgwe",
+"scores": {
+"wake:Mira": 0.32,
+"wake:Lume": 0.14,
+"person_holds": 0.22
+}
+},
+{
+"chat": "AYavEe",
+"as_of": "YxwMwe",
+"scores": {
+"wake:Mira": 0.49,
+"wake:Lume": 0.38,
+"person_holds": 0.3
+}
+},
+{
+"chat": "AYavEe",
+"as_of": "JywkLe",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.13,
+"person_holds": 0.14
+}
+},
+{
+"chat": "AYavEe",
+"as_of": "eDmAqY",
+"scores": {
+"wake:Mira": 0.15,
+"wake:Lume": 0.2,
+"person_holds": 0.13
+}
+},
+{
+"chat": "AYavEe",
+"as_of": "JNLQBe",
+"scores": {
+"wake:Mira": 0.21,
+"wake:Lume": 0.3,
+"person_holds": 0.71
+}
+},
+{
+"chat": "AYavEe",
+"as_of": "JZzrKJ",
+"scores": {
+"wake:Mira": 0.5,
+"wake:Lume": 0.3,
+"person_holds": 0.28
+}
+},
+{
+"chat": "AYavEe",
+"as_of": "YLaBGJ",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.19,
+"person_holds": 0.14
+}
+},
+{
+"chat": "AYavEe",
+"as_of": "jRkbwe",
+"scores": {
+"wake:Mira": 0.13,
+"wake:Lume": 0.1,
+"person_holds": 0.19
+}
+},
+{
+"chat": "KYXVBj",
+"as_of": "JZLaxe",
+"scores": {
+"wake:Mira": 0.46,
+"person_holds": 0.17
+}
+},
+{
+"chat": "nedkqY",
+"as_of": "JMLwOY",
+"scores": {
+"wake:Mira": 0.5,
+"person_holds": 0.16
+}
+},
+{
+"chat": "QJqEkJ",
+"as_of": "jdEpoe",
+"scores": {
+"wake:Mira": 0.18,
+"wake:Lume": 0.15,
+"person_holds": 0.09
+}
+},
+{
+"chat": "QJqEkJ",
+"as_of": "eElNMj",
+"scores": {
+"wake:Mira": 0.4,
+"wake:Lume": 0.14,
+"person_holds": 0.2
+}
+},
+{
+"chat": "BjZVVj",
+"as_of": "JEBApj",
+"scores": {
+"wake:Mira": 0.25,
+"person_holds": 0.09
+}
+},
+{
+"chat": "NeKErJ",
+"as_of": "jxwAaJ",
+"scores": {
+"wake:Mira": 0.49,
+"person_holds": 0.08
+}
+},
+{
+"chat": "NeKErJ",
+"as_of": "jKLaPe",
+"scores": {
+"wake:Mira": 0.07,
+"person_holds": 0.05
+}
+},
+{
+"chat": "PevMwY",
+"as_of": "jdERDe",
+"scores": {
+"wake:Mira": 0.18,
+"person_holds": 0.1
+}
+},
+{
+"chat": "PevMwY",
+"as_of": "jPLnAj",
+"scores": {
+"wake:Mira": 0.24,
+"person_holds": 0.6
+}
+},
+{
+"chat": "WjNVkj",
+"as_of": "JnmENY",
+"scores": {
+"wake:Mira": 0.58,
+"person_holds": 0.71
+}
+},
+{
+"chat": "WjNVkj",
+"as_of": "YVLrEj",
+"scores": {
+"wake:Mira": 0.73,
+"person_holds": 0.17
+}
+},
+{
+"chat": "OjMGoY",
+"as_of": "YdEDyJ",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.23,
+"person_holds": 0.4
+}
+},
+{
+"chat": "OjMGoY",
+"as_of": "joBDnJ",
+"scores": {
+"wake:Mira": 0.2,
+"wake:Lume": 0.19,
+"person_holds": 0.37
+}
+},
+{
+"chat": "OjMGoY",
+"as_of": "eElxQj",
+"scores": {
+"wake:Mira": 0.29,
+"wake:Lume": 0.18,
+"person_holds": 0.11
+}
+},
+{
+"chat": "Kekxoj",
+"as_of": "JZLQme",
+"scores": {
+"wake:Mira": 0.24,
+"wake:Lume": 0.44,
+"person_holds": 0.45
+}
+},
+{
+"chat": "Kekxoj",
+"as_of": "egNqoj",
+"scores": {
+"wake:Mira": 0.27,
+"wake:Lume": 0.42,
+"person_holds": 0.31
+}
+},
+{
+"chat": "Kekxoj",
+"as_of": "JbKZQj",
+"scores": {
+"wake:Mira": 0.48,
+"wake:Lume": 0.36,
+"person_holds": 0.23
+}
+},
+{
+"chat": "Kekxoj",
+"as_of": "YvBdLY",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.08,
+"person_holds": 0.06
+}
+},
+{
+"chat": "WerOKj",
+"as_of": "eAWbvJ",
+"scores": {
+"wake:Mira": 0.45,
+"person_holds": 0.12
+}
+},
+{
+"chat": "WerOKj",
+"as_of": "YdEvRJ",
+"scores": {
+"wake:Mira": 0.56,
+"person_holds": 0.1
+}
+},
+{
+"chat": "WerOKj",
+"as_of": "jOLabe",
+"scores": {
+"wake:Mira": 0.12,
+"person_holds": 0.08
+}
+},
+{
+"chat": "GePVnJ",
+"as_of": "YKLPyJ",
+"scores": {
+"wake:Mira": 0.16,
+"person_holds": 0.07
+}
+},
+{
+"chat": "WYmRWe",
+"as_of": "Jmvrqj",
+"scores": {
+"wake:Mira": 0.06,
+"person_holds": 0.05
+}
+},
+{
+"chat": "zjBDdY",
+"as_of": "YvBALY",
+"scores": {
+"wake:Mira": 0.52,
+"person_holds": 0.08
+}
+},
+{
+"chat": "vexrNJ",
+"as_of": "JyRgNj",
+"scores": {
+"wake:Mira": 0.48,
+"person_holds": 0.14
+}
+},
+{
+"chat": "vexrNJ",
+"as_of": "YWmkWj",
+"scores": {
+"wake:Mira": 0.27,
+"person_holds": 0.16
+}
+},
+{
+"chat": "vexrNJ",
+"as_of": "YvBpwY",
+"scores": {
+"wake:Mira": 0.32,
+"person_holds": 0.1
+}
+},
+{
+"chat": "OYzPoj",
+"as_of": "jvBNLj",
+"scores": {
+"wake:Mira": 0.19,
+"person_holds": 0.08
+}
+},
+{
+"chat": "EeRawY",
+"as_of": "YRkNQJ",
+"scores": {
+"wake:Mira": 0.56,
+"person_holds": 0.19
+}
+},
+{
+"chat": "nJoAXe",
+"as_of": "JpkykY",
+"scores": {
+"wake:Mira": 0.48,
+"person_holds": 0.11
+}
+},
+{
+"chat": "RYgpVe",
+"as_of": "YQMoXY",
+"scores": {
+"wake:Mira": 0.2,
+"person_holds": 0.08
+}
+},
+{
+"chat": "MYnAWJ",
+"as_of": "YoMPbj",
+"scores": {
+"wake:Mira": 0.23,
+"person_holds": 0.06
+}
+},
+{
+"chat": "QJOqAe",
+"as_of": "epkDkj",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.44,
+"person_holds": 0.63
+}
+},
+{
+"chat": "wYGoVY",
+"as_of": "YdQrpJ",
+"scores": {
+"wake:Mira": 0.45,
+"wake:Lume": 0.08,
+"person_holds": 0.11
+}
+},
+{
+"chat": "oewNRY",
+"as_of": "JbQMAY",
+"scores": {
+"wake:Mira": 0.23,
+"wake:Lume": 0.61,
+"person_holds": 0.36
+}
+},
+{
+"chat": "oewNRY",
+"as_of": "ezKQmY",
+"scores": {
+"wake:Mira": 0.13,
+"wake:Lume": 0.14,
+"person_holds": 0.1
+}
+},
+{
+"chat": "oewNRY",
+"as_of": "eyRVEY",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.11,
+"person_holds": 0.1
+}
+},
+{
+"chat": "weVakY",
+"as_of": "YrWPKJ",
+"scores": {
+"wake:Mira": 0.23,
+"wake:Lume": 0.07,
+"person_holds": 0.11
+}
+},
+{
+"chat": "weVakY",
+"as_of": "eNKRkY",
+"scores": {
+"wake:Mira": 0.29,
+"wake:Lume": 0.08,
+"person_holds": 0.19
+}
+},
+{
+"chat": "zjbpDY",
+"as_of": "eAlgpj",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.05,
+"person_holds": 0.1
+}
+},
+{
+"chat": "OjykEY",
+"as_of": "JyREEj",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.16,
+"person_holds": 0.19
+}
+},
+{
+"chat": "RjppEj",
+"as_of": "JZzpVJ",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.34,
+"person_holds": 0.09
+}
+},
+{
+"chat": "qJlpyJ",
+"as_of": "JElbgY",
+"scores": {
+"wake:Mira": 0.53,
+"wake:Lume": 0.51,
+"person_holds": 0.79
+}
+},
+{
+"chat": "qJlpyJ",
+"as_of": "JDQBGj",
+"scores": {
+"wake:Mira": 0.23,
+"wake:Lume": 0.1,
+"person_holds": 0.12
+}
+},
+{
+"chat": "beQAge",
+"as_of": "emvoEY",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.06,
+"person_holds": 0.07
+}
+},
+{
+"chat": "AjaaEj",
+"as_of": "eBlGoJ",
+"scores": {
+"wake:Lume": 0.27,
+"person_holds": 0.19
+}
+},
+{
+"chat": "AjaaEj",
+"as_of": "jKlwle",
+"scores": {
+"wake:Lume": 0.23,
+"person_holds": 0.22
+}
+},
+{
+"chat": "KjXaBJ",
+"as_of": "YOvpoe",
+"scores": {
+"wake:Mira": 0.15,
+"person_holds": 0.18
+}
+},
+{
+"chat": "nJdpqJ",
+"as_of": "Jgadqe",
+"scores": {
+"wake:Mira": 0.47,
+"wake:Lume": 0.17,
+"person_holds": 0.41
+}
+},
+{
+"chat": "nJdpqJ",
+"as_of": "YrWOmJ",
+"scores": {
+"wake:Mira": 0.58,
+"wake:Lume": 0.09,
+"person_holds": 0.11
+}
+},
+{
+"chat": "nJdpqJ",
+"as_of": "JAlnMY",
+"scores": {
+"wake:Mira": 0.55,
+"wake:Lume": 0.08,
+"person_holds": 0.23
+}
+},
+{
+"chat": "QeqpkY",
+"as_of": "YLagrJ",
+"scores": {
+"wake:Mira": 0.36,
+"wake:Lume": 0.06,
+"person_holds": 0.1
+}
+},
+{
+"chat": "meLGPY",
+"as_of": "YxzpXj",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.05,
+"person_holds": 0.33
+}
+},
+{
+"chat": "BYZaVJ",
+"as_of": "YOvXae",
+"scores": {
+"wake:Mira": 0.75,
+"wake:Lume": 0.11,
+"person_holds": 0.12
+}
+},
+{
+"chat": "BYZaVJ",
+"as_of": "eMqwWe",
+"scores": {
+"wake:Mira": 0.26,
+"wake:Lume": 0.24,
+"person_holds": 0.13
+}
+},
+{
+"chat": "BYZaVJ",
+"as_of": "Jmvpxj",
+"scores": {
+"wake:Mira": 0.21,
+"wake:Lume": 0.22,
+"person_holds": 0.54
+}
+},
+{
+"chat": "BYZaVJ",
+"as_of": "YkqoZj",
+"scores": {
+"wake:Mira": 0.36,
+"wake:Lume": 0.12,
+"person_holds": 0.84
+}
+},
+{
+"chat": "BYZaVJ",
+"as_of": "YVKARJ",
+"scores": {
+"wake:Mira": 0.17,
+"wake:Lume": 0.1,
+"person_holds": 0.75
+}
+},
+{
+"chat": "Pevvve",
+"as_of": "YwxBMJ",
+"scores": {
+"wake:Mira": 0.32,
+"wake:Lume": 0.25,
+"person_holds": 0.26
+}
+},
+{
+"chat": "Pevvve",
+"as_of": "JNKVKj",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.07,
+"person_holds": 0.19
+}
+},
+{
+"chat": "WjNaDe",
+"as_of": "Jmvdbj",
+"scores": {
+"wake:Mira": 0.34,
+"wake:Lume": 0.27,
+"person_holds": 0.37
+}
+},
+{
+"chat": "WjNaDe",
+"as_of": "YPNVaj",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.08,
+"person_holds": 0.09
+}
+},
+{
+"chat": "OjMwvY",
+"as_of": "JnNvxJ",
+"scores": {
+"wake:Mira": 0.16,
+"wake:Lume": 0.08,
+"person_holds": 0.95
+}
+},
+{
+"chat": "OjMwvY",
+"as_of": "YLaGKJ",
+"scores": {
+"wake:Mira": 0.16,
+"wake:Lume": 0.06,
+"person_holds": 0.09
+}
+},
+{
+"chat": "KekpBj",
+"as_of": "jQMzGj",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.09,
+"person_holds": 0.07
+}
+},
+{
+"chat": "KekpBj",
+"as_of": "enNKDe",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.07,
+"person_holds": 0.07
+}
+},
+{
+"chat": "pJWaZe",
+"as_of": "ezKPAY",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.07,
+"person_holds": 0.12
+}
+},
+{
+"chat": "GePaMj",
+"as_of": "eAlDMj",
+"scores": {
+"wake:Mira": 0.13,
+"wake:Lume": 0.1,
+"person_holds": 0.08
+}
+},
+{
+"chat": "gjDxwj",
+"as_of": "JElzQY",
+"scores": {
+"wake:Mira": 0.31,
+"wake:Lume": 0.07,
+"person_holds": 0.14
+}
+},
+{
+"chat": "WYmpEJ",
+"as_of": "eyRmDY",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.11,
+"person_holds": 0.19
+}
+},
+{
+"chat": "zjBmoe",
+"as_of": "enNGde",
+"scores": {
+"wake:Mira": 0.16,
+"wake:Lume": 0.09,
+"person_holds": 0.18
+}
+},
+{
+"chat": "vexMEj",
+"as_of": "YQMrnY",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.14,
+"person_holds": 0.08
+}
+},
+{
+"chat": "OYzryY",
+"as_of": "YWmRXj",
+"scores": {
+"wake:Mira": 0.21,
+"wake:Lume": 0.07,
+"person_holds": 0.07
+}
+},
+{
+"chat": "EeRaXY",
+"as_of": "eMqMLe",
+"scores": {
+"wake:Mira": 0.28,
+"wake:Lume": 0.06,
+"person_holds": 0.94
+}
+},
+{
+"chat": "EeRaXY",
+"as_of": "JElarY",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.06,
+"person_holds": 0.06
+}
+},
+{
+"chat": "nJoAle",
+"as_of": "YLaNnJ",
+"scores": {
+"wake:Mira": 0.22,
+"wake:Lume": 0.08,
+"person_holds": 0.89
+}
+},
+{
+"chat": "nJoAle",
+"as_of": "eBlaEJ",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.07,
+"person_holds": 0.07
+}
+},
+{
+"chat": "RYgzgJ",
+"as_of": "YOvrKe",
+"scores": {
+"wake:Mira": 0.29,
+"wake:Lume": 0.06,
+"person_holds": 0.09
+}
+},
+{
+"chat": "RYEwRj",
+"as_of": "jVKzZe",
+"scores": {
+"wake:Mira": 0.13,
+"person_holds": 0.13
+}
+},
+{
+"chat": "QJOmoe",
+"as_of": "jOvnKJ",
+"scores": {
+"wake:Mira": 0.32,
+"wake:Lume": 0.07,
+"person_holds": 0.08
+}
+},
+{
+"chat": "oewPQj",
+"as_of": "YLaZnJ",
+"scores": {
+"wake:Mira": 0.52,
+"wake:Lume": 0.32,
+"person_holds": 0.22
+}
+},
+{
+"chat": "oewPQj",
+"as_of": "jOvZkJ",
+"scores": {
+"wake:Mira": 0.35,
+"wake:Lume": 0.06,
+"person_holds": 0.08
+}
+},
+{
+"chat": "qJlEoY",
+"as_of": "egavnJ",
+"scores": {
+"wake:Mira": 0.35,
+"wake:Lume": 0.06,
+"person_holds": 0.1
+}
+},
+{
+"chat": "beQxbY",
+"as_of": "joMmoY",
+"scores": {
+"wake:Mira": 0.3,
+"wake:Lume": 0.08,
+"person_holds": 0.1
+}
+},
+{
+"chat": "beQxbY",
+"as_of": "JmamAJ",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.04,
+"person_holds": 0.06
+}
+},
+{
+"chat": "AjaWoY",
+"as_of": "jOvkkJ",
+"scores": {
+"wake:Mira": 0.32,
+"wake:Lume": 0.1,
+"person_holds": 0.38
+}
+},
+{
+"chat": "AjaWoY",
+"as_of": "jWmGqY",
+"scores": {
+"wake:Mira": 0.31,
+"wake:Lume": 0.07,
+"person_holds": 0.11
+}
+},
+{
+"chat": "KjXOAe",
+"as_of": "jrWkqe",
+"scores": {
+"wake:Mira": 0.16,
+"wake:Lume": 0.16,
+"person_holds": 0.65
+}
+},
+{
+"chat": "KjXOAe",
+"as_of": "jODwme",
+"scores": {
+"wake:Mira": 0.19,
+"wake:Lume": 0.43,
+"person_holds": 0.72
+}
+},
+{
+"chat": "KjXOAe",
+"as_of": "YRxXOj",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.24,
+"person_holds": 0.93
+}
+},
+{
+"chat": "KjXOAe",
+"as_of": "jqkGKY",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.21,
+"person_holds": 0.89
+}
+},
+{
+"chat": "KjXOAe",
+"as_of": "YkdNPJ",
+"scores": {
+"wake:Mira": 0.21,
+"wake:Lume": 0.36,
+"person_holds": 0.62
+}
+},
+{
+"chat": "KjXOAe",
+"as_of": "jRKaLe",
+"scores": {
+"wake:Mira": 0.18,
+"wake:Lume": 0.4,
+"person_holds": 0.85
+}
+},
+{
+"chat": "KjXOAe",
+"as_of": "YwBABe",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.35,
+"person_holds": 0.12
+}
+},
+{
+"chat": "KjXOAe",
+"as_of": "YvmDge",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.82,
+"person_holds": 0.21
+}
+},
+{
+"chat": "KjXOAe",
+"as_of": "jWOdWj",
+"scores": {
+"wake:Mira": 0.17,
+"wake:Lume": 0.87,
+"person_holds": 0.14
+}
+},
+{
+"chat": "KjXOAe",
+"as_of": "jkNArJ",
+"scores": {
+"wake:Mira": 0.24,
+"wake:Lume": 0.83,
+"person_holds": 0.28
+}
+},
+{
+"chat": "KjXOAe",
+"as_of": "JbNmdJ",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.29,
+"person_holds": 0.89
+}
+},
+{
+"chat": "KjXOAe",
+"as_of": "JExyKY",
+"scores": {
+"wake:Mira": 0.27,
+"wake:Lume": 0.85,
+"person_holds": 0.11
+}
+},
+{
+"chat": "KjXOAe",
+"as_of": "YdkpXe",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.37,
+"person_holds": 0.51
+}
+},
+{
+"chat": "nJdmEY",
+"as_of": "egaxrJ",
+"scores": {
+"wake:Mira": 0.59,
+"wake:Lume": 0.29,
+"person_holds": 0.22
+}
+},
+{
+"chat": "nJdmEY",
+"as_of": "jlQGre",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.16,
+"person_holds": 0.35
+}
+},
+{
+"chat": "Qeqvrj",
+"as_of": "emvBDY",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.09,
+"person_holds": 0.07
+}
+},
+{
+"chat": "meLWrY",
+"as_of": "eDQoDY",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.06,
+"person_holds": 0.2
+}
+},
+{
+"chat": "meLWrY",
+"as_of": "JZGWxj",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.11,
+"person_holds": 0.07
+}
+},
+{
+"chat": "BYZwXe",
+"as_of": "JXBwke",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.17,
+"person_holds": 0.14
+}
+},
+{
+"chat": "BYZwXe",
+"as_of": "eNPwdJ",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.12,
+"person_holds": 0.08
+}
+},
+{
+"chat": "NJKrEj",
+"as_of": "JNPxde",
+"scores": {
+"wake:Mira": 0.45,
+"wake:Lume": 0.08,
+"person_holds": 0.08
+}
+},
+{
+"chat": "NJKrEj",
+"as_of": "JABddj",
+"scores": {
+"wake:Mira": 0.47,
+"wake:Lume": 0.1,
+"person_holds": 0.2
+}
+},
+{
+"chat": "PJvKvY",
+"as_of": "Yxvkwj",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.2,
+"person_holds": 0.41
+}
+},
+{
+"chat": "PJvKvY",
+"as_of": "YODymJ",
+"scores": {
+"wake:Mira": 0.42,
+"wake:Lume": 0.17,
+"person_holds": 0.2
+}
+},
+{
+"chat": "PJvKvY",
+"as_of": "eEoLpJ",
+"scores": {
+"wake:Mira": 0.61,
+"wake:Lume": 0.22,
+"person_holds": 0.23
+}
+},
+{
+"chat": "WYNDDj",
+"as_of": "JXGDwY",
+"scores": {
+"wake:Mira": 0.19,
+"wake:Lume": 0.09,
+"person_holds": 0.11
+}
+},
+{
+"chat": "WJrNMJ",
+"as_of": "YqAGoY",
+"scores": {
+"wake:Mira": 0.3,
+"wake:Lume": 0.28,
+"person_holds": 0.3
+}
+},
+{
+"chat": "WJrNMJ",
+"as_of": "JDRBre",
+"scores": {
+"wake:Mira": 0.72,
+"wake:Lume": 0.4,
+"person_holds": 0.26
+}
+},
+{
+"chat": "WJrNMJ",
+"as_of": "jkanrY",
+"scores": {
+"wake:Mira": 0.44,
+"wake:Lume": 0.24,
+"person_holds": 0.12
+}
+},
+{
+"chat": "peWEZJ",
+"as_of": "YwdGPJ",
+"scores": {
+"wake:Mira": 0.15,
+"wake:Lume": 0.17,
+"person_holds": 0.15
+}
+},
+{
+"chat": "peWEZJ",
+"as_of": "YLrGAj",
+"scores": {
+"wake:Mira": 0.15,
+"wake:Lume": 0.13,
+"person_holds": 0.27
+}
+},
+{
+"chat": "peWEZJ",
+"as_of": "epKoZj",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.1,
+"person_holds": 0.07
+}
+},
+{
+"chat": "GJPBMe",
+"as_of": "YoakZj",
+"scores": {
+"wake:Mira": 0.19,
+"wake:Lume": 0.07,
+"person_holds": 0.09
+}
+},
+{
+"chat": "gYDGwJ",
+"as_of": "emawoe",
+"scores": {
+"wake:Mira": 0.05,
+"wake:Lume": 0.1,
+"person_holds": 0.06
+}
+},
+{
+"chat": "WjmOEY",
+"as_of": "JNPOwe",
+"scores": {
+"wake:Mira": 0.13,
+"wake:Lume": 0.09,
+"person_holds": 0.06
+}
+},
+{
+"chat": "WjmOEY",
+"as_of": "eDRMMJ",
+"scores": {
+"wake:Mira": 0.94,
+"wake:Lume": 0.15,
+"person_holds": 0.46
+}
+},
+{
+"chat": "WjmOEY",
+"as_of": "YdqAyJ",
+"scores": {
+"wake:Mira": 0.43,
+"wake:Lume": 0.23,
+"person_holds": 0.24
+}
+},
+{
+"chat": "zYBEoJ",
+"as_of": "JMWOAe",
+"scores": {
+"wake:Mira": 0.55,
+"wake:Lume": 0.3,
+"person_holds": 0.46
+}
+},
+{
+"chat": "vJxDEJ",
+"as_of": "YODQXJ",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.17,
+"person_holds": 0.08
+}
+},
+{
+"chat": "vJxDEJ",
+"as_of": "YlqqMJ",
+"scores": {
+"wake:Mira": 0.13,
+"wake:Lume": 0.41,
+"person_holds": 0.14
+}
+},
+{
+"chat": "OjzByj",
+"as_of": "Yvazoe",
+"scores": {
+"wake:Mira": 0.78,
+"wake:Lume": 0.2,
+"person_holds": 0.17
+}
+},
+{
+"chat": "OjzByj",
+"as_of": "JbGBPj",
+"scores": {
+"wake:Mira": 0.17,
+"wake:Lume": 0.07,
+"person_holds": 0.06
+}
+},
+{
+"chat": "neowle",
+"as_of": "Yrayoe",
+"scores": {
+"wake:Mira": 0.65,
+"wake:Lume": 0.12,
+"person_holds": 0.1
+}
+},
+{
+"chat": "Rjgrge",
+"as_of": "JaGPBe",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.2,
+"person_holds": 0.51
+}
+},
+{
+"chat": "Rjgrge",
+"as_of": "eyNZnY",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.35,
+"person_holds": 0.88
+}
+},
+{
+"chat": "Rjgrge",
+"as_of": "JXlOrJ",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.1,
+"person_holds": 0.08
+}
+},
+{
+"chat": "Mjnzwj",
+"as_of": "jKkMPj",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.06,
+"person_holds": 0.1
+}
+},
+{
+"chat": "RjEARj",
+"as_of": "YoaQEj",
+"scores": {
+"wake:Mira": 0.15,
+"wake:Lume": 0.05,
+"person_holds": 0.07
+}
+},
+{
+"chat": "RjEARj",
+"as_of": "YQBbPJ",
+"scores": {
+"wake:Mira": 0.39,
+"wake:Lume": 0.09,
+"person_holds": 0.31
+}
+},
+{
+"chat": "RjEARj",
+"as_of": "JaGlle",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.22,
+"person_holds": 0.1
+}
+},
+{
+"chat": "RjEARj",
+"as_of": "JgGrwJ",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.18,
+"person_holds": 0.16
+}
+},
+{
+"chat": "QeOMoJ",
+"as_of": "jdqOye",
+"scores": {
+"wake:Mira": 0.72,
+"wake:Lume": 0.21,
+"person_holds": 0.1
+}
+},
+{
+"chat": "QeOMoJ",
+"as_of": "JDRXbe",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.1,
+"person_holds": 0.08
+}
+},
+{
+"chat": "oJwVQj",
+"as_of": "jlqABe",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.08,
+"person_holds": 0.11
+}
+},
+{
+"chat": "OYypaJ",
+"as_of": "JXGBOY",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.39,
+"person_holds": 0.8
+}
+},
+{
+"chat": "OYypaJ",
+"as_of": "eEpzrj",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.16,
+"person_holds": 0.4
+}
+},
+{
+"chat": "qelBoJ",
+"as_of": "YxvMoj",
+"scores": {
+"wake:Mira": 0.41,
+"wake:Lume": 0.58,
+"person_holds": 0.28
+}
+},
+{
+"chat": "qelBoJ",
+"as_of": "YraEKe",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.11,
+"person_holds": 0.15
+}
+},
+{
+"chat": "KYXKAJ",
+"as_of": "YPmaPJ",
+"scores": {
+"wake:Mira": 0.21,
+"wake:Lume": 0.74,
+"person_holds": 0.23
+}
+},
+{
+"chat": "KYXKAJ",
+"as_of": "jKkrvj",
+"scores": {
+"wake:Mira": 0.2,
+"wake:Lume": 0.74,
+"person_holds": 0.15
+}
+},
+{
+"chat": "BjZoXJ",
+"as_of": "YQBOgJ",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.75,
+"person_holds": 0.12
+}
+},
+{
+"chat": "BjZoXJ",
+"as_of": "YLrvrj",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.16,
+"person_holds": 0.08
+}
+},
+{
+"chat": "BjZoXJ",
+"as_of": "YwdDMJ",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.52,
+"person_holds": 0.71
+}
+},
+{
+"chat": "BjZoXJ",
+"as_of": "YxxlMY",
+"scores": {
+"wake:Mira": 0.73,
+"wake:Lume": 0.87,
+"person_holds": 0.49
+}
+},
+{
+"chat": "BjZoXJ",
+"as_of": "JzEEAY",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.34,
+"person_holds": 0.08
+}
+},
+{
+"chat": "BjAApj",
+"as_of": "YRxGwj",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.11,
+"person_holds": 0.09
+}
+},
+{
+"chat": "Pevwvj",
+"as_of": "JXGvBY",
+"scores": {
+"wake:Mira": 0.5,
+"wake:Lume": 0.9,
+"person_holds": 0.34
+}
+},
+{
+"chat": "Pevwvj",
+"as_of": "JzMxoY",
+"scores": {
+"wake:Mira": 0.24,
+"wake:Lume": 0.22,
+"person_holds": 0.74
+}
+},
+{
+"chat": "KekmBJ",
+"as_of": "YQBkgJ",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.15,
+"person_holds": 0.14
+}
+},
+{
+"chat": "WernMe",
+"as_of": "ezMLyj",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.11,
+"person_holds": 0.1
+}
+},
+{
+"chat": "WernMe",
+"as_of": "JbGEnj",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.09,
+"person_holds": 0.07
+}
+},
+{
+"chat": "pJWxZY",
+"as_of": "egGvge",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.2,
+"person_holds": 0.36
+}
+},
+{
+"chat": "pJWxZY",
+"as_of": "YPmXEJ",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.24,
+"person_holds": 0.16
+}
+},
+{
+"chat": "pJWxZY",
+"as_of": "eGpmwY",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.81,
+"person_holds": 0.22
+}
+},
+{
+"chat": "gjDAwJ",
+"as_of": "jkarBY",
+"scores": {
+"wake:Mira": 0.19,
+"wake:Lume": 0.18,
+"person_holds": 0.27
+}
+},
+{
+"chat": "gjDAwJ",
+"as_of": "Yoamlj",
+"scores": {
+"wake:Mira": 0.19,
+"wake:Lume": 0.13,
+"person_holds": 0.08
+}
+},
+{
+"chat": "vexbEJ",
+"as_of": "joaGlY",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.93,
+"person_holds": 0.14
+}
+},
+{
+"chat": "EeRWXj",
+"as_of": "JMWmwe",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.1,
+"person_holds": 0.09
+}
+},
+{
+"chat": "nJoRlj",
+"as_of": "eyNblY",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.13,
+"person_holds": 0.13
+}
+},
+{
+"chat": "RYgWgY",
+"as_of": "YLrVqj",
+"scores": {
+"wake:Mira": 0.9,
+"wake:Lume": 0.1,
+"person_holds": 0.11
+}
+},
+{
+"chat": "RYgWgY",
+"as_of": "YWXdVJ",
+"scores": {
+"wake:Mira": 0.33,
+"wake:Lume": 0.15,
+"person_holds": 0.09
+}
+},
+{
+"chat": "RYgWgY",
+"as_of": "eaZLRY",
+"scores": {
+"wake:Mira": 0.19,
+"wake:Lume": 0.08,
+"person_holds": 0.11
+}
+},
+{
+"chat": "MYnRwY",
+"as_of": "YVgDwJ",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.11,
+"person_holds": 0.2
+}
+},
+{
+"chat": "QJOroj",
+"as_of": "eyKrXJ",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.06,
+"person_holds": 0.07
+}
+},
+{
+"chat": "wYGakj",
+"as_of": "JGpOOj",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.11,
+"person_holds": 0.09
+}
+},
+{
+"chat": "oewbQY",
+"as_of": "YkdXxJ",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.1,
+"person_holds": 0.92
+}
+},
+{
+"chat": "oewbQY",
+"as_of": "JZldVe",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.12,
+"person_holds": 0.14
+}
+},
+{
+"chat": "weVzle",
+"as_of": "JDXbGJ",
+"scores": {
+"wake:Mira": 0.26,
+"wake:Lume": 0.7,
+"person_holds": 0.58
+}
+},
+{
+"chat": "weVzle",
+"as_of": "YwBRme",
+"scores": {
+"wake:Mira": 0.2,
+"wake:Lume": 0.84,
+"person_holds": 0.59
+}
+},
+{
+"chat": "weVzle",
+"as_of": "YkdlZJ",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.14,
+"person_holds": 0.67
+}
+},
+{
+"chat": "zjbvnj",
+"as_of": "YxxGmY",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.11,
+"person_holds": 0.19
+}
+},
+{
+"chat": "Rjpgde",
+"as_of": "jVXkRY",
+"scores": {
+"wake:Mira": 0.68,
+"wake:Lume": 0.27,
+"person_holds": 0.54
+}
+},
+{
+"chat": "qJlxoJ",
+"as_of": "jKwobj",
+"scores": {
+"wake:Mira": 0.13,
+"wake:Lume": 0.24,
+"person_holds": 0.16
+}
+},
+{
+"chat": "qJlxoJ",
+"as_of": "jrrDRj",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.18,
+"person_holds": 0.08
+}
+},
+{
+"chat": "beQPbY",
+"as_of": "emdgpj",
+"scores": {
+"wake:Mira": 0.31,
+"wake:Lume": 0.13,
+"person_holds": 0.09
+}
+},
+{
+"chat": "beQPbY",
+"as_of": "YVXPbj",
+"scores": {
+"wake:Mira": 0.05,
+"wake:Lume": 0.1,
+"person_holds": 0.07
+}
+},
+{
+"chat": "Ajayoj",
+"as_of": "jRKnGe",
+"scores": {
+"wake:Mira": 0.38,
+"wake:Lume": 0.44,
+"person_holds": 0.82
+}
+},
+{
+"chat": "Ajayoj",
+"as_of": "jQXmwJ",
+"scores": {
+"wake:Mira": 0.34,
+"wake:Lume": 0.69,
+"person_holds": 0.55
+}
+},
+{
+"chat": "KjXoAe",
+"as_of": "YRKBGJ",
+"scores": {
+"wake:Lume": 0.23,
+"person_holds": 0.19
+}
+},
+{
+"chat": "meLNrJ",
+"as_of": "emdNkj",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.19,
+"person_holds": 0.09
+}
+},
+{
+"chat": "BYZKXe",
+"as_of": "eGpWPY",
+"scores": {
+"wake:Mira": 0.3,
+"wake:Lume": 0.39,
+"person_holds": 0.39
+}
+},
+{
+"chat": "BYZKXe",
+"as_of": "JbdDqe",
+"scores": {
+"wake:Mira": 0.23,
+"wake:Lume": 0.82,
+"person_holds": 0.22
+}
+},
+{
+"chat": "PevVRe",
+"as_of": "YrryRY",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.1,
+"person_holds": 0.07
+}
+},
+{
+"chat": "OjMMwj",
+"as_of": "JBwkwj",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.12,
+"person_holds": 0.12
+}
+},
+{
+"chat": "KekBnY",
+"as_of": "jldobj",
+"scores": {
+"wake:Mira": 0.17,
+"wake:Lume": 0.32,
+"person_holds": 0.18
+}
+},
+{
+"chat": "KekBnY",
+"as_of": "JaZGpj",
+"scores": {
+"wake:Mira": 0.24,
+"wake:Lume": 0.28,
+"person_holds": 0.29
+}
+},
+{
+"chat": "KekBnY",
+"as_of": "joNpZJ",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.11,
+"person_holds": 0.47
+}
+},
+{
+"chat": "KekBnY",
+"as_of": "YOXNvJ",
+"scores": {
+"wake:Mira": 0.35,
+"wake:Lume": 0.26,
+"person_holds": 0.18
+}
+},
+{
+"chat": "pJWRRj",
+"as_of": "envZGe",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.14,
+"person_holds": 0.32
+}
+},
+{
+"chat": "pJWRRj",
+"as_of": "YRKkRJ",
+"scores": {
+"wake:Mira": 0.17,
+"wake:Lume": 0.28,
+"person_holds": 0.82
+}
+},
+{
+"chat": "pJWRRj",
+"as_of": "eZXGrJ",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.14,
+"person_holds": 0.13
+}
+},
+{
+"chat": "pJWRRj",
+"as_of": "emdbMj",
+"scores": {
+"wake:Mira": 0.2,
+"wake:Lume": 0.54,
+"person_holds": 0.3
+}
+},
+{
+"chat": "GePWEY",
+"as_of": "YQXgRe",
+"scores": {
+"wake:Mira": 0.48,
+"wake:Lume": 0.36,
+"person_holds": 0.16
+}
+},
+{
+"chat": "GePWEY",
+"as_of": "YKwWDY",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.13,
+"person_holds": 0.14
+}
+},
+{
+"chat": "GePWEY",
+"as_of": "YRKRxJ",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.18,
+"person_holds": 0.08
+}
+},
+{
+"chat": "WYmzLe",
+"as_of": "YvmaEe",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.18,
+"person_holds": 0.21
+}
+},
+{
+"chat": "zjBaOe",
+"as_of": "jLXPdj",
+"scores": {
+"wake:Mira": 0.22,
+"wake:Lume": 0.15,
+"person_holds": 0.1
+}
+},
+{
+"chat": "zjBaOe",
+"as_of": "jddNDj",
+"scores": {
+"wake:Mira": 0.3,
+"wake:Lume": 0.47,
+"person_holds": 0.81
+}
+},
+{
+"chat": "zjBaOe",
+"as_of": "jldgBj",
+"scores": {
+"wake:Mira": 0.21,
+"wake:Lume": 0.84,
+"person_holds": 0.7
+}
+},
+{
+"chat": "zjBaOe",
+"as_of": "eZXQgJ",
+"scores": {
+"wake:Mira": 0.16,
+"wake:Lume": 0.21,
+"person_holds": 0.5
+}
+},
+{
+"chat": "EeRDmJ",
+"as_of": "jWXOQe",
+"scores": {
+"wake:Lume": 0.16,
+"person_holds": 0.47
+}
+},
+{
+"chat": "EeRDmJ",
+"as_of": "envove",
+"scores": {
+"wake:Lume": 0.15,
+"person_holds": 0.07
+}
+},
+{
+"chat": "EeRDmJ",
+"as_of": "JBwMnj",
+"scores": {
+"wake:Lume": 0.14,
+"person_holds": 0.72
+}
+},
+{
+"chat": "nJoozJ",
+"as_of": "epMggY",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.08,
+"person_holds": 0.08
+}
+},
+{
+"chat": "nJoozJ",
+"as_of": "YwBKke",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.09,
+"person_holds": 0.06
+}
+},
+{
+"chat": "RYgWEY",
+"as_of": "YLXAMY",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.11,
+"person_holds": 0.11
+}
+},
+{
+"chat": "MYnRyY",
+"as_of": "YqkDdj",
+"scores": {
+"wake:Lume": 0.11,
+"person_holds": 0.19
+}
+},
+{
+"chat": "RYEWdj",
+"as_of": "YldxVY",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.21,
+"person_holds": 0.1
+}
+},
+{
+"chat": "RYEWdj",
+"as_of": "jvmlZJ",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.11,
+"person_holds": 0.07
+}
+},
+{
+"chat": "QJOnyj",
+"as_of": "jldBVj",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.11,
+"person_holds": 0.09
+}
+},
+{
+"chat": "zjbxXY",
+"as_of": "jrrEGj",
+"scores": {
+"wake:Lume": 0.15,
+"person_holds": 0.21
+}
+},
+{
+"chat": "OjyBlJ",
+"as_of": "eEbVBY",
+"scores": {
+"wake:Mira": 0.41,
+"wake:Lume": 0.35,
+"person_holds": 0.13
+}
+},
+{
+"chat": "OjyBlJ",
+"as_of": "eglKwY",
+"scores": {
+"wake:Mira": 0.23,
+"wake:Lume": 0.78,
+"person_holds": 0.48
+}
+},
+{
+"chat": "RjpvrY",
+"as_of": "YVXxEj",
+"scores": {
+"wake:Mira": 0.74,
+"wake:Lume": 0.28,
+"person_holds": 0.76
+}
+},
+{
+"chat": "RjpvrY",
+"as_of": "eGpPzY",
+"scores": {
+"wake:Mira": 0.49,
+"wake:Lume": 0.3,
+"person_holds": 0.59
+}
+},
+{
+"chat": "beQOmJ",
+"as_of": "envDZe",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.16,
+"person_holds": 0.22
+}
+},
+{
+"chat": "beQOmJ",
+"as_of": "ebLaAJ",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.12,
+"person_holds": 0.61
+}
+},
+{
+"chat": "beQOmJ",
+"as_of": "enrWBe",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.11,
+"person_holds": 0.11
+}
+},
+{
+"chat": "AjaBDJ",
+"as_of": "JMXNEY",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.14,
+"person_holds": 0.13
+}
+},
+{
+"chat": "AjaBDJ",
+"as_of": "eGNdrj",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.12,
+"person_holds": 0.27
+}
+},
+{
+"chat": "KjXvqY",
+"as_of": "JaZbBj",
+"scores": {
+"wake:Mira": 0.66,
+"wake:Lume": 0.15,
+"person_holds": 0.16
+}
+},
+{
+"chat": "nJdRLe",
+"as_of": "eNXoBJ",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.27,
+"person_holds": 0.89
+}
+},
+{
+"chat": "nJdRLe",
+"as_of": "YrrLxY",
+"scores": {
+"wake:Mira": 0.5,
+"wake:Lume": 0.12,
+"person_holds": 0.93
+}
+},
+{
+"chat": "QeqNbj",
+"as_of": "YPqPyJ",
+"scores": {
+"wake:Lume": 0.1,
+"person_holds": 0.11
+}
+},
+{
+"chat": "QeqNbj",
+"as_of": "JyKbNe",
+"scores": {
+"wake:Lume": 0.18,
+"person_holds": 0.09
+}
+},
+{
+"chat": "meLRLJ",
+"as_of": "JBwybj",
+"scores": {
+"wake:Lume": 0.07,
+"person_holds": 0.04
+}
+},
+{
+"chat": "BYZMzJ",
+"as_of": "jldrpj",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.59,
+"person_holds": 0.08
+}
+},
+{
+"chat": "BYANBe",
+"as_of": "ebdzQJ",
+"scores": {
+"wake:Mira": 0.16,
+"wake:Lume": 0.38,
+"person_holds": 0.09
+}
+},
+{
+"chat": "BYANBe",
+"as_of": "eGNgqj",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.1,
+"person_holds": 0.07
+}
+},
+{
+"chat": "BYANBe",
+"as_of": "JalLGY",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.28,
+"person_holds": 0.59
+}
+},
+{
+"chat": "NJKzwj",
+"as_of": "JmdyqY",
+"scores": {
+"wake:Mira": 0.43,
+"wake:Lume": 0.47,
+"person_holds": 0.11
+}
+},
+{
+"chat": "NJKzwj",
+"as_of": "jkNXQJ",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.14,
+"person_holds": 0.94
+}
+},
+{
+"chat": "PJvPRe",
+"as_of": "jwBvpJ",
+"scores": {
+"wake:Mira": 0.19,
+"wake:Lume": 0.82,
+"person_holds": 0.64
+}
+},
+{
+"chat": "PJvPRe",
+"as_of": "Yqkdnj",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.11,
+"person_holds": 0.08
+}
+},
+{
+"chat": "PJvPRe",
+"as_of": "JBpZVe",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.1,
+"person_holds": 0.08
+}
+},
+{
+"chat": "PJvPRe",
+"as_of": "ezEZmj",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.09,
+"person_holds": 0.06
+}
+},
+{
+"chat": "WYNgVe",
+"as_of": "jKwPaj",
+"scores": {
+"wake:Mira": 0.59,
+"wake:Lume": 0.25,
+"person_holds": 0.1
+}
+},
+{
+"chat": "WYNgVe",
+"as_of": "emkrrJ",
+"scores": {
+"wake:Mira": 0.05,
+"wake:Lume": 0.12,
+"person_holds": 0.06
+}
+},
+{
+"chat": "KJkwnJ",
+"as_of": "emdVqj",
+"scores": {
+"wake:Mira": 0.35,
+"wake:Lume": 0.84,
+"person_holds": 0.24
+}
+},
+{
+"chat": "KJkwnJ",
+"as_of": "YQXLVe",
+"scores": {
+"wake:Mira": 0.58,
+"wake:Lume": 0.45,
+"person_holds": 0.19
+}
+},
+{
+"chat": "WJrMnj",
+"as_of": "JDXrbJ",
+"scores": {
+"wake:Mira": 0.05,
+"wake:Lume": 0.58,
+"person_holds": 0.42
+}
+},
+{
+"chat": "WJrMnj",
+"as_of": "eMDERj",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.21,
+"person_holds": 0.89
+}
+},
+{
+"chat": "WJrMnj",
+"as_of": "JpPDZJ",
+"scores": {
+"wake:Mira": 0.23,
+"wake:Lume": 0.19,
+"person_holds": 0.67
+}
+},
+{
+"chat": "WJrMnj",
+"as_of": "JalOoY",
+"scores": {
+"wake:Mira": 0.21,
+"wake:Lume": 0.3,
+"person_holds": 0.74
+}
+},
+{
+"chat": "WJrMnj",
+"as_of": "eEpKdj",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.23,
+"person_holds": 0.94
+}
+},
+{
+"chat": "WJrMnj",
+"as_of": "Yrmpae",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.3,
+"person_holds": 0.27
+}
+},
+{
+"chat": "peWpRj",
+"as_of": "jxxNdj",
+"scores": {
+"wake:Mira": 0.19,
+"wake:Lume": 0.78,
+"person_holds": 0.39
+}
+},
+{
+"chat": "peWpRj",
+"as_of": "JglDAj",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.25,
+"person_holds": 0.08
+}
+},
+{
+"chat": "vJxmXY",
+"as_of": "joNlkJ",
+"scores": {
+"wake:Mira": 0.17,
+"wake:Lume": 0.88,
+"person_holds": 0.6
+}
+},
+{
+"chat": "vJxmXY",
+"as_of": "YPqdQJ",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.92,
+"person_holds": 0.74
+}
+},
+{
+"chat": "vJxmXY",
+"as_of": "jQzwXe",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.76,
+"person_holds": 0.17
+}
+},
+{
+"chat": "vJxmXY",
+"as_of": "eynXqY",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.1,
+"person_holds": 0.1
+}
+},
+{
+"chat": "EJRGmY",
+"as_of": "Jmkmre",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.43,
+"person_holds": 0.1
+}
+},
+{
+"chat": "EJRGmY",
+"as_of": "jKWMEj",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.14,
+"person_holds": 0.09
+}
+},
+{
+"chat": "MjnKyJ",
+"as_of": "jdXrXj",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.14,
+"person_holds": 0.3
+}
+},
+{
+"chat": "RjEZdJ",
+"as_of": "YLPEGY",
+"scores": {
+"wake:VM live check 3 (throwaway)": 0.13,
+"wake:Lume": 0.27,
+"person_holds": 0.12
+}
+},
+{
+"chat": "QeOZyY",
+"as_of": "YdXzXY",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.86,
+"person_holds": 0.55
+}
+},
+{
+"chat": "QeOZyY",
+"as_of": "YwoxMY",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.12,
+"person_holds": 0.07
+}
+},
+{
+"chat": "wjGZge",
+"as_of": "JApyAY",
+"scores": {
+"wake:Lume": 0.13,
+"person_holds": 0.13
+}
+},
+{
+"chat": "wjGZge",
+"as_of": "jWOkzj",
+"scores": {
+"wake:Lume": 0.44,
+"person_holds": 0.12
+}
+},
+{
+"chat": "wjGZge",
+"as_of": "YQzQgJ",
+"scores": {
+"wake:Lume": 0.18,
+"person_holds": 0.1
+}
+},
+{
+"chat": "oJwAGe",
+"as_of": "YkNOre",
+"scores": {
+"wake:Lume": 0.08,
+"person_holds": 0.04
+}
+},
+{
+"chat": "wJVAWj",
+"as_of": "jQzGge",
+"scores": {
+"wake:Mira": 0.18,
+"wake:Lume": 0.29,
+"person_holds": 0.15
+}
+},
+{
+"chat": "wJVAWj",
+"as_of": "eGNaPj",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.16,
+"person_holds": 0.81
+}
+},
+{
+"chat": "wJVAWj",
+"as_of": "jQzWLe",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.71,
+"person_holds": 0.12
+}
+},
+{
+"chat": "wJVAWj",
+"as_of": "jPxPpj",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.22,
+"person_holds": 0.89
+}
+},
+{
+"chat": "wJVAWj",
+"as_of": "Jnogvj",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.6,
+"person_holds": 0.82
+}
+},
+{
+"chat": "wJVAWj",
+"as_of": "JDBOMe",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.52,
+"person_holds": 0.16
+}
+},
+{
+"chat": "zYbrXY",
+"as_of": "eNmOkj",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.09,
+"person_holds": 0.06
+}
+},
+{
+"chat": "OYyAlY",
+"as_of": "JmkGWe",
+"scores": {
+"wake:Mira": 0.24,
+"wake:Lume": 0.88,
+"person_holds": 0.64
+}
+},
+{
+"chat": "RYpGrJ",
+"as_of": "emkNWJ",
+"scores": {
+"wake:Mira": 0.5,
+"wake:Lume": 0.6,
+"person_holds": 0.29
+}
+},
+{
+"chat": "qelgNY",
+"as_of": "ezEQoj",
+"scores": {
+"wake:Mira": 0.27,
+"wake:Lume": 0.24,
+"person_holds": 0.91
+}
+},
+{
+"chat": "qelgNY",
+"as_of": "JGNKgY",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.16,
+"person_holds": 0.21
+}
+},
+{
+"chat": "qelgNY",
+"as_of": "jlMMDe",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.25,
+"person_holds": 0.56
+}
+},
+{
+"chat": "qelgNY",
+"as_of": "JEpWOY",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.22,
+"person_holds": 0.84
+}
+},
+{
+"chat": "bJQZmY",
+"as_of": "ezEvoj",
+"scores": {
+"wake:Mira": 0.13,
+"wake:Lume": 0.22,
+"person_holds": 0.57
+}
+},
+{
+"chat": "bJQZmY",
+"as_of": "joWrlj",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.27,
+"person_holds": 0.17
+}
+},
+{
+"chat": "AYakDj",
+"as_of": "jkNGoJ",
+"scores": {
+"wake:Mira": 0.48,
+"wake:Lume": 0.68,
+"person_holds": 0.62
+}
+},
+{
+"chat": "AYakDj",
+"as_of": "JbLQwe",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.26,
+"person_holds": 0.87
+}
+},
+{
+"chat": "AYakDj",
+"as_of": "YkxBoJ",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.36,
+"person_holds": 0.87
+}
+},
+{
+"chat": "AYakDj",
+"as_of": "JMGQve",
+"scores": {
+"wake:Mira": 0.78,
+"wake:Lume": 0.15,
+"person_holds": 0.69
+}
+},
+{
+"chat": "nedPLe",
+"as_of": "JzEnoY",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.42,
+"person_holds": 0.4
+}
+},
+{
+"chat": "nedPLe",
+"as_of": "JEpXRY",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.63,
+"person_holds": 0.42
+}
+},
+{
+"chat": "nedPLe",
+"as_of": "jvRBaj",
+"scores": {
+"wake:Mira": 0.05,
+"wake:Lume": 0.11,
+"person_holds": 0.82
+}
+},
+{
+"chat": "nedPLe",
+"as_of": "eXlVbe",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.44,
+"person_holds": 0.89
+}
+},
+{
+"chat": "nedPLe",
+"as_of": "jLOmbJ",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.23,
+"person_holds": 0.15
+}
+},
+{
+"chat": "nedPLe",
+"as_of": "egPwNY",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.41,
+"person_holds": 0.12
+}
+},
+{
+"chat": "nedPLe",
+"as_of": "JDBqPe",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.31,
+"person_holds": 0.11
+}
+},
+{
+"chat": "BjZZzj",
+"as_of": "YvRzvY",
+"scores": {
+"wake:Lume": 0.2,
+"person_holds": 0.2
+}
+},
+{
+"chat": "BjZZzj",
+"as_of": "YlMooJ",
+"scores": {
+"wake:Lume": 0.14,
+"person_holds": 0.07
+}
+},
+{
+"chat": "NeKZwY",
+"as_of": "JBpXoe",
+"scores": {
+"wake:Mira": 0.7,
+"wake:Lume": 0.15,
+"person_holds": 0.12
+}
+},
+{
+"chat": "NeKZwY",
+"as_of": "jwoOQj",
+"scores": {
+"wake:Mira": 0.18,
+"wake:Lume": 0.15,
+"person_holds": 0.14
+}
+},
+{
+"chat": "NeKZwY",
+"as_of": "YQzXGJ",
+"scores": {
+"wake:Mira": 0.18,
+"wake:Lume": 0.57,
+"person_holds": 0.2
+}
+},
+{
+"chat": "PevlRJ",
+"as_of": "YRRlXY",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.08,
+"person_holds": 0.05
+}
+},
+{
+"chat": "WjNZVj",
+"as_of": "jkNlBJ",
+"scores": {
+"wake:Mira": 0.2,
+"wake:Lume": 0.78,
+"person_holds": 0.22
+}
+},
+{
+"chat": "WjNZVj",
+"as_of": "YPxvMY",
+"scores": {
+"wake:Mira": 0.17,
+"wake:Lume": 0.84,
+"person_holds": 0.41
+}
+},
+{
+"chat": "WjNZVj",
+"as_of": "eBplLJ",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.11,
+"person_holds": 0.07
+}
+},
+{
+"chat": "OjMZwJ",
+"as_of": "YkNbBe",
+"scores": {
+"wake:Mira": 0.28,
+"wake:Lume": 0.08,
+"person_holds": 0.07
+}
+},
+{
+"chat": "Kekone",
+"as_of": "eGNmgj",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.13,
+"person_holds": 0.1
+}
+},
+{
+"chat": "WerVne",
+"as_of": "JynPaj",
+"scores": {
+"wake:Mira": 0.27,
+"wake:Lume": 0.26,
+"person_holds": 0.09
+}
+},
+{
+"chat": "WerVne",
+"as_of": "JAprBY",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.14,
+"person_holds": 0.1
+}
+},
+{
+"chat": "GePZEJ",
+"as_of": "eglZEY",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.2,
+"person_holds": 0.54
+}
+},
+{
+"chat": "GePZEJ",
+"as_of": "ebLGwJ",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.08,
+"person_holds": 0.07
+}
+},
+{
+"chat": "gjDZZY",
+"as_of": "YWOmEY",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.16,
+"person_holds": 0.2
+}
+},
+{
+"chat": "WYmnLe",
+"as_of": "JApBWY",
+"scores": {
+"wake:Lume": 0.11,
+"person_holds": 0.21
+}
+},
+{
+"chat": "zjBLOY",
+"as_of": "Yrmape",
+"scores": {
+"wake:Lume": 0.07,
+"person_holds": 0.05
+}
+},
+{
+"chat": "vexAXj",
+"as_of": "JNmXKY",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.24,
+"person_holds": 0.92
+}
+},
+{
+"chat": "OYzAzJ",
+"as_of": "eZlXAJ",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.15,
+"person_holds": 0.92
+}
+},
+{
+"chat": "EeRZme",
+"as_of": "YQzznJ",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.38,
+"person_holds": 0.25
+}
+},
+{
+"chat": "EeRZme",
+"as_of": "JDpBGJ",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.58,
+"person_holds": 0.45
+}
+},
+{
+"chat": "EeRZme",
+"as_of": "jlMxRe",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.12,
+"person_holds": 0.06
+}
+},
+{
+"chat": "MYnEyJ",
+"as_of": "jdXXgj",
+"scores": {
+"wake:Mira": 0.45,
+"person_holds": 0.12
+}
+},
+{
+"chat": "RYEOdj",
+"as_of": "jRRRrj",
+"scores": {
+"wake:Mira": 0.62,
+"wake:Lume": 0.17,
+"person_holds": 0.4
+}
+},
+{
+"chat": "RYEOdj",
+"as_of": "enrode",
+"scores": {
+"wake:Mira": 0.47,
+"wake:Lume": 0.48,
+"person_holds": 0.09
+}
+},
+{
+"chat": "QJONyj",
+"as_of": "JBpmEe",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.18,
+"person_holds": 0.09
+}
+},
+{
+"chat": "wYGwgY",
+"as_of": "JNmZbY",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.14,
+"person_holds": 0.08
+}
+},
+{
+"chat": "wYGwgY",
+"as_of": "JZVWnJ",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.31,
+"person_holds": 0.26
+}
+},
+{
+"chat": "wYGwgY",
+"as_of": "jogVZj",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.1,
+"person_holds": 0.08
+}
+},
+{
+"chat": "oewLGj",
+"as_of": "jlMERe",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.21,
+"person_holds": 0.7
+}
+},
+{
+"chat": "weVmWY",
+"as_of": "eZlwpJ",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.14,
+"person_holds": 0.74
+}
+},
+{
+"chat": "zjbVXj",
+"as_of": "jLPZwj",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.11,
+"person_holds": 0.06
+}
+},
+{
+"chat": "zjbVXj",
+"as_of": "YPxnLY",
+"scores": {
+"wake:Mira": 0.88,
+"wake:Lume": 0.15,
+"person_holds": 0.7
+}
+},
+{
+"chat": "zjbVXj",
+"as_of": "Jglmlj",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.18,
+"person_holds": 0.08
+}
+},
+{
+"chat": "qJlLNJ",
+"as_of": "YkNoZe",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.08,
+"person_holds": 0.06
+}
+},
+{
+"chat": "beQkmJ",
+"as_of": "YKWZMY",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.07,
+"person_holds": 0.08
+}
+},
+{
+"chat": "AjawDY",
+"as_of": "JMDZpY",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.08,
+"person_holds": 0.05
+}
+},
+{
+"chat": "nJdyLY",
+"as_of": "YPxMLY",
+"scores": {
+"wake:Lume": 0.13,
+"person_holds": 0.13
+}
+},
+{
+"chat": "nJdyLY",
+"as_of": "JMDRVY",
+"scores": {
+"wake:Lume": 0.12,
+"person_holds": 0.07
+}
+},
+{
+"chat": "QeqLbY",
+"as_of": "JBpgwe",
+"scores": {
+"wake:Lume": 0.13,
+"person_holds": 0.15
+}
+},
+{
+"chat": "QeqLbY",
+"as_of": "jkNklJ",
+"scores": {
+"wake:Lume": 0.32,
+"person_holds": 0.53
+}
+},
+{
+"chat": "QeqLbY",
+"as_of": "YvRZEY",
+"scores": {
+"wake:Lume": 0.22,
+"person_holds": 0.11
+}
+},
+{
+"chat": "meLlLe",
+"as_of": "YPxXpY",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.19,
+"person_holds": 0.1
+}
+},
+{
+"chat": "BYZRzY",
+"as_of": "YRRvRY",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.18,
+"person_holds": 0.88
+}
+},
+{
+"chat": "BYZRzY",
+"as_of": "YOVzVe",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.1,
+"person_holds": 0.83
+}
+},
+{
+"chat": "BYZRzY",
+"as_of": "eZVpme",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.21,
+"person_holds": 0.63
+}
+},
+{
+"chat": "BYZRzY",
+"as_of": "eNVNke",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.15,
+"person_holds": 0.48
+}
+},
+{
+"chat": "PevLaJ",
+"as_of": "jqDVGJ",
+"scores": {
+"wake:Mira": 0.56,
+"wake:Lume": 0.2,
+"person_holds": 0.43
+}
+},
+{
+"chat": "WjNvXj",
+"as_of": "eEprWj",
+"scores": {
+"wake:Mira": 0.62,
+"wake:Lume": 0.74,
+"person_holds": 0.27
+}
+},
+{
+"chat": "WjNvXj",
+"as_of": "JzEGRY",
+"scores": {
+"wake:Mira": 0.16,
+"wake:Lume": 0.83,
+"person_holds": 0.62
+}
+},
+{
+"chat": "WjNvXj",
+"as_of": "YvRGXY",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.12,
+"person_holds": 0.68
+}
+},
+{
+"chat": "WjNvXj",
+"as_of": "jxgBwJ",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.8,
+"person_holds": 0.23
+}
+},
+{
+"chat": "WjNvXj",
+"as_of": "jWVQMJ",
+"scores": {
+"wake:Mira": 0.21,
+"wake:Lume": 0.35,
+"person_holds": 0.88
+}
+},
+{
+"chat": "OjMQDj",
+"as_of": "YqDBRe",
+"scores": {
+"wake:Mira": 0.46,
+"wake:Lume": 0.08,
+"person_holds": 0.09
+}
+},
+{
+"chat": "pJWKEJ",
+"as_of": "eZlmNJ",
+"scores": {
+"wake:Lume": 0.12,
+"person_holds": 0.57
+}
+},
+{
+"chat": "pJWKEJ",
+"as_of": "eynOvY",
+"scores": {
+"wake:Lume": 0.07,
+"person_holds": 0.07
+}
+},
+{
+"chat": "GePMkj",
+"as_of": "Jynxvj",
+"scores": {
+"wake:Mira": 0.49,
+"wake:Lume": 0.54,
+"person_holds": 0.19
+}
+},
+{
+"chat": "WYmLbJ",
+"as_of": "YqDaRe",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.09,
+"person_holds": 0.07
+}
+},
+{
+"chat": "zjBgLJ",
+"as_of": "YQzadJ",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.14,
+"person_holds": 0.19
+}
+},
+{
+"chat": "vexLLe",
+"as_of": "YxgNwe",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.46,
+"person_holds": 0.72
+}
+},
+{
+"chat": "OYzLwj",
+"as_of": "JnryoJ",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.12,
+"person_holds": 0.07
+}
+},
+{
+"chat": "OYzLwj",
+"as_of": "eExXKj",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.18,
+"person_holds": 0.06
+}
+},
+{
+"chat": "OYzLwj",
+"as_of": "YWVqbe",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.18,
+"person_holds": 0.06
+}
+},
+{
+"chat": "nJoLvY",
+"as_of": "YqEXdY",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.13,
+"person_holds": 0.22
+}
+},
+{
+"chat": "MYnLxj",
+"as_of": "YrOBlJ",
+"scores": {
+"wake:Lume": 0.13,
+"person_holds": 0.14
+}
+},
+{
+"chat": "MYnLxj",
+"as_of": "jwkrxj",
+"scores": {
+"wake:Lume": 0.29,
+"person_holds": 0.35
+}
+},
+{
+"chat": "RYEOgj",
+"as_of": "jKEmnY",
+"scores": {
+"wake:Lume": 0.23,
+"person_holds": 0.11
+}
+},
+{
+"chat": "QJONaj",
+"as_of": "jkxRze",
+"scores": {
+"wake:Mira": 0.72,
+"wake:Lume": 0.31,
+"person_holds": 0.17
+}
+},
+{
+"chat": "QJONaj",
+"as_of": "eXVrRJ",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.15,
+"person_holds": 0.08
+}
+},
+{
+"chat": "wYGyOj",
+"as_of": "jqEZoj",
+"scores": {
+"wake:Mira": 0.2,
+"wake:Lume": 0.73,
+"person_holds": 0.37
+}
+},
+{
+"chat": "wYGyOj",
+"as_of": "YxrRaj",
+"scores": {
+"wake:Mira": 0.35,
+"wake:Lume": 0.28,
+"person_holds": 0.11
+}
+},
+{
+"chat": "OjyGXY",
+"as_of": "JXVQPe",
+"scores": {
+"wake:Mira": 0.16,
+"person_holds": 0.15
+}
+},
+{
+"chat": "RjpBXY",
+"as_of": "JmRwMj",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.3,
+"person_holds": 0.11
+}
+},
+{
+"chat": "qJlWKj",
+"as_of": "JavKBj",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.08,
+"person_holds": 0.05
+}
+},
+{
+"chat": "beQWGJ",
+"as_of": "eDBNPJ",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.12,
+"person_holds": 0.06
+}
+},
+{
+"chat": "AjabgJ",
+"as_of": "eZVdme",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.22,
+"person_holds": 0.06
+}
+},
+{
+"chat": "KjXRyY",
+"as_of": "epnWVJ",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.07,
+"person_holds": 0.1
+}
+},
+{
+"chat": "QeqxQY",
+"as_of": "YRVMlY",
+"scores": {
+"wake:Mira": 0.1,
+"wake:Lume": 0.74,
+"person_holds": 0.17
+}
+},
+{
+"chat": "QeqxQY",
+"as_of": "eBDGbJ",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.1,
+"person_holds": 0.07
+}
+},
+{
+"chat": "QeqxQY",
+"as_of": "jOVBPJ",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.08,
+"person_holds": 0.06
+}
+},
+{
+"chat": "meLvqJ",
+"as_of": "YLOKle",
+"scores": {
+"wake:Mira": 0.12,
+"wake:Lume": 0.41,
+"person_holds": 0.29
+}
+},
+{
+"chat": "meLvqJ",
+"as_of": "YwkAQY",
+"scores": {
+"wake:Mira": 0.28,
+"wake:Lume": 0.25,
+"person_holds": 0.1
+}
+},
+{
+"chat": "BYZgAe",
+"as_of": "JAPgvY",
+"scores": {
+"wake:Lume": 0.42,
+"person_holds": 0.22
+}
+},
+{
+"chat": "BYZgAe",
+"as_of": "Yxrgoj",
+"scores": {
+"wake:Lume": 0.27,
+"person_holds": 0.09
+}
+},
+{
+"chat": "BYAEWY",
+"as_of": "egPyoY",
+"scores": {
+"wake:Lume": 0.07,
+"person_holds": 0.05
+}
+},
+{
+"chat": "NJKale",
+"as_of": "YrOqXJ",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.08,
+"person_holds": 0.08
+}
+},
+{
+"chat": "PJvnaJ",
+"as_of": "jdkkXJ",
+"scores": {
+"wake:Mira": 0.36,
+"wake:Lume": 0.18,
+"person_holds": 0.46
+}
+},
+{
+"chat": "KJkrxj",
+"as_of": "JbNLAJ",
+"scores": {
+"wake:Mira": 0.14,
+"wake:Lume": 0.15,
+"person_holds": 0.08
+}
+},
+{
+"chat": "WJrzpJ",
+"as_of": "JNVaZJ",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.25,
+"person_holds": 0.94
+}
+},
+{
+"chat": "WJrzpJ",
+"as_of": "jOVmQJ",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.15,
+"person_holds": 0.07
+}
+},
+{
+"chat": "peWzEY",
+"as_of": "jvMaLJ",
+"scores": {
+"wake:Mira": 0.2,
+"wake:Lume": 0.39,
+"person_holds": 0.13
+}
+},
+{
+"chat": "GJPrke",
+"as_of": "JmRdrj",
+"scores": {
+"wake:VM live check 4 (throwaway)": 0.18,
+"wake:Lume": 0.2,
+"person_holds": 0.11
+}
+},
+{
+"chat": "gYDwaJ",
+"as_of": "YRVxQY",
+"scores": {
+"wake:Lume": 0.09,
+"person_holds": 0.09
+}
+},
+{
+"chat": "WjmPbe",
+"as_of": "eyWkqJ",
+"scores": {
+"wake:Mira": 0.11,
+"wake:Lume": 0.07,
+"person_holds": 0.07
+}
+},
+{
+"chat": "WjmPbe",
+"as_of": "JyWmqe",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.06,
+"person_holds": 0.07
+}
+},
+{
+"chat": "OjzwwJ",
+"as_of": "jLOGGJ",
+"scores": {
+"wake:Mira": 0.36,
+"wake:Lume": 0.11,
+"person_holds": 0.44
+}
+},
+{
+"chat": "OjzwwJ",
+"as_of": "YwkPyY",
+"scores": {
+"wake:Mira": 0.13,
+"wake:Lume": 0.1,
+"person_holds": 0.11
+}
+},
+{
+"chat": "neomvJ",
+"as_of": "eAPADj",
+"scores": {
+"wake:Mira": 0.29,
+"wake:Lume": 0.26,
+"person_holds": 0.14
+}
+},
+{
+"chat": "neomvJ",
+"as_of": "YqExrY",
+"scores": {
+"wake:Mira": 0.08,
+"wake:Lume": 0.1,
+"person_holds": 0.08
+}
+},
+{
+"chat": "Rjgvqe",
+"as_of": "YrOEKJ",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.07,
+"person_holds": 0.05
+}
+},
+{
+"chat": "MjnDxY",
+"as_of": "YVVAlY",
+"scores": {
+"wake:Mira": 0.07,
+"wake:Lume": 0.1,
+"person_holds": 0.07
+}
+},
+{
+"chat": "RjEVgJ",
+"as_of": "JBDgoe",
+"scores": {
+"wake:Mira": 0.09,
+"wake:Lume": 0.1,
+"person_holds": 0.07
+}
+},
+{
+"chat": "QeOkae",
+"as_of": "eGRykj",
+"scores": {
+"wake:Mira": 0.06,
+"wake:Lume": 0.1,
+"person_holds": 0.06
+}
+},
+{
+"chat": "oJwaMe",
+"as_of": "egPvEY",
+"scores": {
+"wake:Lume": 0.43,
+"person_holds": 0.64
+}
+}
+]
