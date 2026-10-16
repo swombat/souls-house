@@ -102,7 +102,9 @@ test('an open draft gains and clears cross-account expired logins, including rec
     await menu.click();
     await page.getByRole('menuitem', { name: /^Account E2E/ }).click();
     await page.getByRole('menuitem', { name: / Team Other$/ }).click();
-    await expect(page).toHaveURL(new RegExp(`/accounts/${other}/chats`));
+    // Its only resident was retired above, so the normal account entry sends
+    // us to onboarding. The global count must also work on that different page.
+    await expect(page).toHaveURL(new RegExp(`/accounts/${other}/residents/new`));
     await expect(menu.locator('[aria-label$="expired subscription"]')).toHaveCount(0);
     await mutate(setup.account_id, 'expire');
     await expect(badge).toBeVisible();
