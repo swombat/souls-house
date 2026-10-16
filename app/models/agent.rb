@@ -122,6 +122,22 @@ class Agent < ApplicationRecord
     (saved_changes.keys & %w[id account_id name active github_resident_import_id]).any?
   }
   after_destroy :refresh_integration_presentation
+  after_save :refresh_guest_directory, if: -> {
+    (saved_changes.keys & %w[id account_id name colour icon active runtime]).any?
+  }
+  # The join uses delete_all, so the snapshot must precede association callbacks.
+  before_destroy :snapshot_guest_directory, prepend: true
+  after_destroy -> { GuestDirectory.refresh!(@guest_directory_account_ids) },
+    unless: -> { destroyed_by_association&.active_record == Account }
+
+  def snapshot_guest_directory
+    @guest_directory_account_ids = [ account_id, *guest_memberships.pluck(:account_id) ]
+  end
+
+  def refresh_guest_directory
+    GuestDirectory.refresh!([ account_id, account_id_before_last_save, *guest_memberships.pluck(:account_id) ])
+  end
+  private :snapshot_guest_directory, :refresh_guest_directory
 
   def refresh_integration_presentation
     account_ids = [ account_id, account_id_before_last_save ].compact.uniq

@@ -81,6 +81,20 @@ class Membership < ApplicationRecord
     (saved_changes.keys & %w[id account_id user_id role confirmed_at]).any?
   }
   after_destroy :refresh_integration_permissions
+  after_save :refresh_guest_directory, if: -> {
+    (saved_changes.keys & %w[id account_id user_id role confirmed_at]).any?
+  }
+  # Account destruction owns the complete pre-deletion snapshot.
+  after_destroy :refresh_guest_directory, unless: -> { destroyed_by_association&.active_record == Account }
+
+  def refresh_guest_directory
+    account_ids = [ account_id, account_id_before_last_save ].compact.uniq
+    # Ownership changes affect removal controls here, and derived personal
+    # account labels on the opposite side of existing guest relationships.
+    personal_ids = Account.personal.where(id: account_ids).ids
+    GuestDirectory.refresh!(account_ids + GuestDirectory.account_ids_for(personal_ids))
+  end
+  private :refresh_guest_directory
 
   def refresh_integration_permissions
     account_ids = [ account_id, account_id_before_last_save ].compact.uniq

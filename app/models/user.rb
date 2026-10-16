@@ -55,6 +55,7 @@ class User < ApplicationRecord
   after_create :ensure_membership_exists
   after_create :create_profile
   after_update :refresh_connection_owner_name, if: :saved_change_to_email_address?
+  after_update -> { GuestDirectory.refresh_personal_labels!([ id ]) }, if: :saved_change_to_email_address?
 
   def refresh_connection_owner_name
     owner_id = id

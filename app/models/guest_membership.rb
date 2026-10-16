@@ -15,6 +15,16 @@ class GuestMembership < ApplicationRecord
   validate :added_by_belongs_to_both_accounts, on: :create
 
   before_destroy :close_seats
+  after_save :refresh_guest_directory, if: -> {
+    (saved_changes.keys & %w[id account_id agent_id]).any?
+  }
+  after_destroy :refresh_guest_directory
+
+  def refresh_guest_directory
+    home_ids = Agent.where(id: [ agent_id, agent_id_before_last_save ]).pluck(:account_id)
+    GuestDirectory.refresh!([ account_id, account_id_before_last_save, *home_ids ])
+  end
+  private :refresh_guest_directory
 
   # Residents this user may bring into the account as guests: active residents
   # hosted in the user's other accounts, not already present. Membership is
