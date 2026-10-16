@@ -73,6 +73,11 @@ test('voice roster and open speaker picker catch changes without replacing draft
     await detail.getByRole('button', { name: 'Remote voice', exact: true }).click();
     await expect(page.getByTestId('voice-row')).toContainText('named in 2 speakers');
     await expect(renameDraft).toHaveValue('Unfinished roster rename');
+    await page.waitForLoadState('networkidle');
+    // Existing FieldRecording broadcasts_to :account hints add two layout props.
+    expect([...reloads.at(-1)].sort()).toEqual([
+      'voices', 'recognise_voices', 'can_change_setting', 'accounts', 'expired_subscriptions',
+    ].sort());
 
     drop = true;
     await editor.getByRole('button', { name: 'Rename', exact: true }).click();
@@ -84,7 +89,8 @@ test('voice roster and open speaker picker catch changes without replacing draft
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(page.getByTestId('voice-row')).toContainText('After reconnect', { timeout: 20_000 });
     await page.waitForLoadState('networkidle');
-    expect([...reloads.at(-1)].sort()).toEqual(['voices', 'recognise_voices', 'can_change_setting'].sort());
+    // Reconnect also catches up the layout's room/account/attention lanes.
+    expect(reloads.at(-1)).toEqual(expect.arrayContaining(['voices', 'recognise_voices', 'can_change_setting']));
     page.on('dialog', (dialog) => dialog.accept());
     await editor.getByRole('button', { name: 'Rename', exact: true }).click();
     await page.getByRole('button', { name: 'Rename', exact: true }).click();
@@ -94,7 +100,7 @@ test('voice roster and open speaker picker catch changes without replacing draft
     await editor.getByRole('button', { name: 'Cancel', exact: true }).click();
     await editor.getByRole('button', { name: 'Delete name', exact: true }).click();
     await expect(page.getByText(/No voices yet/)).toBeVisible();
-    await expect(page.getByRole('textbox')).toHaveCount(0);
+    await expect(page.getByRole('textbox', { name: 'Name', exact: true })).toHaveCount(0);
     await expect(notes).toHaveValue('Unfinished meeting notes');
     await page.screenshot({ path: testInfo.outputPath('voice-roster-live.png'), fullPage: true });
   } finally {
