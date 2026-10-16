@@ -98,6 +98,7 @@ class Account < ApplicationRecord
   before_validation :set_default_name, on: :create
   before_validation :generate_slug, on: :create
   after_create :create_default_visual_tags
+  after_save -> { FieldTweetStream.refresh!(id) }, if: :saved_change_to_field_tweets_house_key?
   before_destroy :mark_memberships_for_skip_check, prepend: true
   after_update_commit :disconnect_members_app_cable, if: -> { saved_change_to_disabled_at? && disabled? }
   after_update_commit -> { users.ids.each { |id| ReplyExpectation.refresh_for(id) } }, if: :saved_change_to_disabled_at?

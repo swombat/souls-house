@@ -49,7 +49,8 @@ class ServiceConnection < ApplicationRecord
   after_create_commit :apply_default_accesses
   after_update_commit :reconcile_authority_change, if: :runtime_authority_changed?
   # The account's tweet stream is paid by this connection (FieldTweets).
-  after_commit -> { FieldTweets.integration_changed!(account) }, if: :tweet_funding_changed?
+  after_save :refresh_tweet_funding, if: :tweet_funding_changed?
+  after_destroy :refresh_tweet_funding, if: :tweet_funding_changed?
 
   # Capture each write before a later save/touch replaces saved_changes.
   # IntegrationStatus defers delivery until the outermost transaction commits.
@@ -600,6 +601,39 @@ class ServiceConnection < ApplicationRecord
   # Only what decides whether this connection pays, and with which key: a
   # label or resident-access edit must not restart a stopped stream.
   def tweet_funding_changed?
+    tweet_funding_restart? || tweet_funding_accounts_changed.any?
+  end
+
+  def refresh_tweet_funding
+    FieldTweetStream.refresh!(tweet_funding_accounts_changed)
+    # Keep key rotation's existing worker restart, without treating the key as
+    # a panel dependency. Capture before another save replaces saved_changes.
+    if tweet_funding_restart?
+      funding_account_id = account_id
+      self.class.current_transaction.after_commit do
+        if funding_account = Account.find_by(id: funding_account_id)
+          FieldTweets.integration_changed!(funding_account)
+        end
+      end
+    end
+  end
+
+  def tweet_funding_accounts_changed
+    columns = %w[account_id provider management_scope status]
+    after = columns.index_with { |column| self[column] }
+    before = after.merge(saved_changes.slice(*columns).transform_values(&:first))
+    before = nil if previously_new_record? && !destroyed?
+    before = after if destroyed?
+    after = nil if destroyed?
+    eligible_account = ->(values) do
+      values["account_id"] if values && values["provider"] == "twitterapi_io" &&
+        values["management_scope"] == "account_managed" && values["status"] == "connected"
+    end
+    old_id, new_id = [ before, after ].map(&eligible_account)
+    old_id == new_id ? [] : [ old_id, new_id ].compact
+  end
+
+  def tweet_funding_restart?
     return false unless provider == "twitterapi_io"
 
     previously_new_record? || destroyed? || saved_change_to_status? ||
