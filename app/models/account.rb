@@ -108,7 +108,9 @@ class Account < ApplicationRecord
   # Both hosted agents and receiving joins disappear in dependent callbacks.
   before_destroy :snapshot_guest_directory, prepend: true
   after_destroy -> { GuestDirectory.refresh!(@guest_directory_account_ids) }
-  after_save -> { GuestDiscovery.refresh_accounts!([ id ]) }, if: :saved_change_to_disabled_at?
+  after_save -> { GuestDiscovery.refresh_accounts!([ id ]) }, if: -> {
+    (saved_changes.keys & %w[name disabled_at]).any?
+  }
   before_destroy :snapshot_guest_discovery, prepend: true
   after_destroy -> { GuestDiscovery.refresh!(@guest_discovery_user_ids) }
 

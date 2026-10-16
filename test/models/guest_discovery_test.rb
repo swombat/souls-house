@@ -43,10 +43,17 @@ class GuestDiscoveryTest < ActiveSupport::TestCase
     assert_refreshes(@second) { @agent.destroy! }
   end
 
-  test "account disable and enable invalidate confirmed members but presentation does not" do
+  test "account disable and enable invalidate confirmed members" do
     assert_refreshes(@first, @second) { @home.disable! }
     assert_refreshes(@first, @second) { @home.enable! }
-    assert_quiet { @home.update!(name: "Not a candidate dependency", logo_colour: "moss") }
+  end
+
+  test "account rename invalidates confirmed members" do
+    assert_refreshes(@first, @second) { @home.update!(name: "Renamed discovery home") }
+  end
+
+  test "unrelated account presentation stays quiet" do
+    assert_quiet { @home.update!(logo_colour: "moss") }
   end
 
   test "confirmation and revocation include the changed human and do not revoke accepted guests" do
