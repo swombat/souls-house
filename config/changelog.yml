@@ -7,6 +7,9 @@
   title: Search results scroll, and fit on phones
   body: "Message search now scrolls, so every result on the page can be reached, on desktop and on phones. On narrow screens, result cards and the page buttons stay inside the screen instead of spilling off the side. Live once deployed."
 - date: 2026-10-16
+  title: Tweet collection status follows across open pages
+  body: "Open Field pages catch source and backlog changes without replacing unfinished stream settings. A status-only refresh shows current counts and time-based status; the panel labels these as refreshed snapshots."
+- date: 2026-10-16
   title: Tweet-stream settings keep unfinished edits
   body: "Refreshing a tweet stream's status no longer replaces unfinished options or spending-limit edits. Switching accounts or followed sources starts a fresh form."
 - date: 2026-10-16

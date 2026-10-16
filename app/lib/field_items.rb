@@ -115,13 +115,14 @@ module FieldItems
 
   # The account's tweet stream for the Field page: nil while the house has
   # streams switched off, so the page shows nothing about them.
-  def tweet_stream_json(account)
+  def tweet_stream_json(account, now: Time.current)
     return nil unless FieldTweets.enabled?
 
     source = account.field_tweet_source
     url_helpers = Rails.application.routes.url_helpers
     {
-      source: source&.status_json,
+      refreshed_at: now.iso8601,
+      source: source&.status_json(now:),
       # Who would pay: "own" (the account's TwitterAPI.io integration),
       # "house" (granted the house key) or nil (nobody yet).
       funding: FieldTweets.funding_for(account),

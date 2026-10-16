@@ -8,6 +8,27 @@ module TestSupport
 
     PASSWORD = "password123"
 
+    def tweet_stream_fixture
+      account = Account.find(params.fetch(:account_id))
+      raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
+
+      case params.fetch(:operation)
+      when "enable"
+        Setting.instance.update!(field_tweets_enabled: true, field_tweets_site_monthly_usd_ceiling: 10,
+          field_tweets_account_monthly_usd_ceiling: 1, field_tweets_daily_import_cap: 50,
+          field_tweets_poll_minutes: 15)
+      when "create"
+        account.create_field_tweet_source!(handle: "example", own_monthly_usd_limit: 5)
+      when "advance"
+        account.field_tweet_source.update!(checkpoint_at: Time.current, last_success_at: Time.current)
+      when "bookkeeping"
+        account.field_tweet_source.update!(window_cursor: "hidden-browser-cursor", failure_count: 2)
+      else
+        return head :unprocessable_entity
+      end
+      head :ok
+    end
+
     def field_activity_fixture
       account = Account.find(params.fetch(:account_id))
       raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")

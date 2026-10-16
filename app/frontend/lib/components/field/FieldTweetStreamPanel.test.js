@@ -20,6 +20,7 @@ const source = {
   backlog: 0,
 };
 const stream = {
+  refreshed_at: '2026-10-16T08:00:00Z',
   source,
   funding: 'own',
   integration_url: '/integrations',
@@ -45,6 +46,24 @@ function mount(initial = stream) {
     refresh: (changes) => component.rerender({ accountId: 'one', stream: { ...stream, ...changes } }),
   };
 }
+
+test('manual status refresh requests only the snapshot and retains dirty controls', async () => {
+  const component = mount();
+  await editLimit('7.');
+  await fireEvent.click(screen.getByRole('button', { name: 'Refresh status' }));
+  expect(router.reload).toHaveBeenCalledOnce();
+  expect(router.reload).toHaveBeenCalledWith(
+    expect.objectContaining({ only: ['tweet_stream'], preserveState: true, preserveScroll: true })
+  );
+  expect(screen.getByRole('button', { name: 'Refresh status' })).toBeDisabled();
+  expect(screen.getByTestId('tweet-stream-refreshed')).toHaveTextContent('Status as of refresh');
+  await component.refresh({ refreshed_at: '2026-10-17T00:00:01Z', source: { ...source, imported_today: 0 } });
+  expect(limit()).toHaveValue('7.');
+  expect(screen.getByText(/Imported today: 0 of 100/)).toBeInTheDocument();
+  router.reload.mock.calls[0][0].onFinish();
+  await tick();
+  expect(screen.getByRole('button', { name: 'Refresh status' })).not.toBeDisabled();
+});
 
 test('pristine settings accept remote edits and decimal representations compare numerically', async () => {
   const component = mount();

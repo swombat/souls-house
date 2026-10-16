@@ -89,7 +89,12 @@
     // without reloading the Field for unrelated chat/account activity.
     // Search results remain the requested window until explicit navigation;
     // live counts and the selected item may refresh without re-ranking it.
-    updateSync({ [`FieldActivity:${account.id}`]: LIVE_PROPS });
+    updateSync({
+      [`FieldActivity:${account.id}`]: LIVE_PROPS,
+      // Subscribe even without a source or while the panel is unavailable.
+      // Status never re-ranks search or refreshes the selected item's draft.
+      [`FieldTweetStream:${account.id}`]: ['tweet_stream'],
+    });
   });
 
   // Search, tag filter and page ride along in the URL so a link reopens

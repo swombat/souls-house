@@ -17,6 +17,18 @@
   const base = $derived(`/accounts/${accountId}/field/tweet_stream`);
 
   let working = $state(false);
+  let refreshing = $state(false);
+
+  function refreshStatus() {
+    if (refreshing) return;
+    refreshing = true;
+    router.reload({
+      only: ['tweet_stream'],
+      preserveState: true,
+      preserveScroll: true,
+      onFinish: () => (refreshing = false),
+    });
+  }
 
   function pauseOrResume() {
     if (working) return;
@@ -33,6 +45,13 @@
 
 <Card.Root class="mb-4" data-testid="field-tweet-stream-panel">
   <Card.Content class="p-4 space-y-4">
+    <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <p data-testid="tweet-stream-refreshed">
+        Status as of refresh{stream.refreshed_at ? `: ${formatWhenWithTime(stream.refreshed_at)}` : ''}. Counts and
+        time-based status update when refreshed.
+      </p>
+      <Button size="sm" variant="ghost" disabled={refreshing} onclick={refreshStatus}>Refresh status</Button>
+    </div>
     {#if !stream.source && !stream.funding}
       <div class="space-y-2" data-testid="tweet-stream-needs-integration">
         <p class="font-medium">You need to set up a TwitterAPI.io integration first.</p>

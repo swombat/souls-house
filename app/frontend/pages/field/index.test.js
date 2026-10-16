@@ -6,7 +6,7 @@ const subscribe = vi.hoisted(() => vi.fn(() => vi.fn()));
 vi.mock('$lib/cable', () => ({ subscribeToModel: subscribe }));
 import FieldPage from './index.svelte';
 
-test('Field watches one narrow account stream, leaves search stable and cleans up on account switch', async () => {
+test('Field watches separate list and status streams even without a panel, and switches both with the account', async () => {
   const props = { account: { id: 'one' }, items: [], field_empty: true };
   const component = render(FieldPage, { props });
   await tick();
@@ -20,17 +20,21 @@ test('Field watches one narrow account stream, leaves search stable and cleans u
     'recording_allowance',
     'tags',
   ];
-  expect(subscribe).toHaveBeenCalledExactlyOnceWith('FieldActivity', 'one', liveProps);
+  expect(subscribe).toHaveBeenCalledWith('FieldActivity', 'one', liveProps);
+  expect(subscribe).toHaveBeenCalledWith('FieldTweetStream', 'one', ['tweet_stream']);
+  expect(subscribe).toHaveBeenCalledTimes(2);
   expect(liveProps).not.toContain('search');
   const unsubscribe = subscribe.mock.results[0].value;
   await component.rerender({ ...props, account: { id: 'one' }, counts: { all: 1 } });
   await tick();
-  expect(subscribe).toHaveBeenCalledTimes(1);
+  expect(subscribe).toHaveBeenCalledTimes(2);
   expect(unsubscribe).not.toHaveBeenCalled();
   await component.rerender({ ...props, account: { id: 'two' } });
   await tick();
   expect(unsubscribe).toHaveBeenCalledOnce();
-  expect(subscribe).toHaveBeenLastCalledWith('FieldActivity', 'two', liveProps);
+  expect(subscribe).toHaveBeenCalledWith('FieldActivity', 'two', liveProps);
+  expect(subscribe).toHaveBeenLastCalledWith('FieldTweetStream', 'two', ['tweet_stream']);
+  expect(subscribe.mock.results[1].value).toHaveBeenCalledOnce();
   const last = subscribe.mock.results.at(-1).value;
   component.unmount();
   expect(last).toHaveBeenCalledOnce();
