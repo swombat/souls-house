@@ -65,6 +65,17 @@ class FieldSongOffersControllerTest < ActionDispatch::IntegrationTest
     assert_equal "resident", response.parsed_body.dig("song", "suggested_by_kind")
   end
 
+  test "the remix of a SoundCloud song doesn't vouch for the song (review of #381)" do
+    agent = agents(:research_assistant)
+    chat = @account.chats.create!(title: "Songs", model_id: "openrouter/auto")
+    message = chat.messages.create!(role: "assistant", agent: agent,
+      content: "[[song:https://soundcloud.com/artist/song-remix|Song (remix)]]")
+    post offer_account_field_songs_path(@account),
+      params: { url: "https://soundcloud.com/artist/song", title: "Song", message_id: message.to_param }, as: :json
+    assert_response :success
+    assert_nil @account.field_songs.find(response.parsed_body.dig("song", "id")).suggested_by
+  end
+
   test "a message that cannot vouch for the offer leaves the song unsuggested" do
     agent = agents(:research_assistant)
     chat = @account.chats.create!(title: "Songs", model_id: "openrouter/auto")
@@ -74,6 +85,10 @@ class FieldSongOffersControllerTest < ActionDispatch::IntegrationTest
       "garbage" => "not-an-id",
       "a human's message" => chat.messages.create!(role: "user", user: @user, content: "[[song:#{URL}]]").to_param,
       "a message without the link" => chat.messages.create!(role: "assistant", agent: agent, content: "No song here").to_param,
+      "a message offering a longer link" => chat.messages.create!(role: "assistant", agent: agent,
+        content: "[[song:#{URL}-remix|Remix]]").to_param,
+      "a message mentioning the link outside an offer" => chat.messages.create!(role: "assistant", agent: agent,
+        content: "Not this one: #{URL}").to_param,
       "another account's message" => other_chat.messages.create!(role: "assistant", agent: agents(:other_account_agent),
         content: "[[song:#{URL}]]").to_param
     }

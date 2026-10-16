@@ -67,4 +67,21 @@ class FieldSongOfferTest < ActiveSupport::TestCase
     assert_raises(FieldSong::Offer::InvalidLink) { FieldSong::Offer.new(account: @account, url: url) }
   end
 
+  test "offered URLs are read the way the page reads offers, whole" do
+    content = <<~TEXT
+      Two songs for you:
+
+      [[song:https://soundcloud.com/artist/song-remix|Song (remix)|Artist]]
+
+      [[song:https://example.com/a\\|b|Escaped pipe]]
+      [[song:AbC123]]
+      [[song:https://youtu.be/one|a|b|too many fields]]
+      [[song:https://youtu.be/two|bad \\x escape]]
+      Inline [[song:https://youtu.be/three]] is not an offer
+    TEXT
+    assert_equal [ "https://soundcloud.com/artist/song-remix", "https://example.com/a|b" ],
+      FieldSong::Offer.offered_urls(content)
+    assert_not_includes FieldSong::Offer.offered_urls(content), "https://soundcloud.com/artist/song"
+  end
+
 end

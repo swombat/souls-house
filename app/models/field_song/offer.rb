@@ -28,8 +28,8 @@ class FieldSong::Offer
 
   # The resident whose message offered this link, or nil. The message must be
   # a resident's reply in a conversation of this account, written by one of
-  # its own residents, and must contain the link: the page names the message,
-  # the server decides whether it counts.
+  # its own residents, and must carry an offer of exactly this link: the page
+  # names the message, the server decides whether it counts.
   def suggester(message_id)
     return if message_id.blank?
 
@@ -38,7 +38,7 @@ class FieldSong::Offer
 
     agent = message.agent
     return unless agent && agent.account_id == @account.id
-    return unless message.content.to_s.include?(@url)
+    return unless FieldSong::Offer.offered_urls(message.content).include?(@url)
 
     agent
   end
@@ -55,6 +55,51 @@ class FieldSong::Offer
     @account.with_lock do
       existing_song || song.tap(&:save!)
     end
+  end
+
+  # The URLs of the [[song:URL|title|artist]] offers in a message, read the
+  # way the page reads them (app/frontend/lib/song-reference.js): one offer per
+  # paragraph line, only the \\ \| \[ \] escapes, the URL as its first field.
+  # A URL that merely contains another one is a different offer.
+  OFFER_LINE = /\A\[\[song:([^\r\n]*)\]\][ \t]*\z/
+
+  def self.offered_urls(content)
+    content.to_s.each_line.filter_map do |line|
+      match = OFFER_LINE.match(line.chomp)
+      fields = match && offer_fields(match[1])
+      next unless fields
+      # One bare field without a scheme is the legacy [[song:ID]] reference.
+      next if fields.size == 1 && !fields.first.match?(/\A[A-Za-z][A-Za-z0-9+.-]*:/)
+
+      fields.first.strip.presence
+    end
+  end
+
+  # The |-separated fields of an offer, unescaped, or nil when the page would
+  # not read it as an offer at all (an unknown escape, a bare bracket, more
+  # than three fields).
+  def self.offer_fields(body)
+    fields = [ +"" ]
+    chars = body.chars
+    index = 0
+    while index < chars.size
+      char = chars[index]
+      if char == "\\"
+        index += 1
+        char = chars[index]
+        return nil unless char && "\\|[]".include?(char)
+      elsif char == "|"
+        fields << +""
+        return nil if fields.size > 3
+        index += 1
+        next
+      elsif "[]".include?(char)
+        return nil
+      end
+      fields.last << char
+      index += 1
+    end
+    fields
   end
 
   private
