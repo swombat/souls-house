@@ -10,9 +10,11 @@
 # A room is a candidate when it is active and respondable, has residents, its
 # account has opted in and is enabled, its last message (StalledThreadSnapshot's
 # definition) is older than the interval, and that state has no verdict yet.
-# Candidates are taken most recently quiet first. Rooms with a run going are
-# skipped without a row and don't use the per-tick budget, which counts only
-# verdicts; a room quiet for days is still judged, once, as the backlog drains.
+# Candidates are ordered most recently quiet first, and each tick resumes the
+# list where the previous one stopped (Setting#stalled_sweep_cursor), wrapping
+# round. Rooms with a run going are skipped without a row and don't use the
+# per-tick verdict budget; a room quiet for days is still judged, once, as the
+# backlog drains.
 class StalledThreadSweeper
 
   INTERVALS = [ 0, 10, 30, 60 ].freeze
@@ -39,13 +41,23 @@ class StalledThreadSweeper
   def call
     return [] unless @interval
 
-    verdicts = []
-    candidates.first(MAX_CHECKS_PER_TICK).each do |chat, message|
-      break if verdicts.size >= PER_TICK
+    queue = candidates
+    return [] if queue.empty?
 
+    # Resume where the last tick stopped and wrap around, so rooms skipped as
+    # busy can't hold the front of the queue every tick.
+    setting = Setting.instance
+    start = setting.stalled_sweep_cursor % queue.size
+    verdicts = []
+    checks = 0
+    queue.rotate(start).each do |chat, message|
+      break if verdicts.size >= PER_TICK || checks >= MAX_CHECKS_PER_TICK
+
+      checks += 1
       sweep = judge(chat, message)
       verdicts << sweep if sweep
     end
+    setting.update_column(:stalled_sweep_cursor, (start + checks) % queue.size)
     verdicts
   end
 

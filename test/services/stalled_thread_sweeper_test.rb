@@ -86,6 +86,21 @@ class StalledThreadSweeperTest < ActiveSupport::TestCase
     assert_equal [ @chat ], StalledThreadSweep.all.map(&:chat)
   end
 
+  test "past the check cap, the next tick resumes where the last stopped instead of rechecking the same busy rooms" do
+    stub_const(StalledThreadSweeper, :MAX_CHECKS_PER_TICK, 5) do
+      7.times do |i|
+        busy = room(@lume, "Busy #{i}", quiet_since: @now - 1.hour - i.minutes)
+        AgentRuntimeInteraction.create!(agent: @lume, chat: busy, trigger_kind: "conversation", requested_by: "souls.house",
+          started_at: 5.minutes.ago, execution_state: "running")
+      end
+      post(@lume, "Waiting on review.", at: @now - 3.hours)
+      quiet = ->(**) { { "can_act:1" => 0.1, "can_act:2" => 0.1, "person_holds" => 0.1 } }
+
+      assert_equal [], sweeper(decide: quiet).call, "the first tick spends its five checks on busy rooms"
+      assert_equal [ @chat ], sweeper(decide: quiet).call.map(&:chat), "the second tick reaches the eligible room"
+    end
+  end
+
   test "only accounts that opted in are read" do
     post(@lume, "Done.", at: @now - 2.hours)
     other = agents(:other_account_agent)
@@ -158,6 +173,16 @@ class StalledThreadSweeperTest < ActiveSupport::TestCase
 
   def sweeper(interval: 30.minutes, decide:)
     StalledThreadSweeper.new(now: @now, interval: interval, decide: decide)
+  end
+
+  def stub_const(klass, name, value)
+    old = klass.const_get(name)
+    klass.send(:remove_const, name)
+    klass.const_set(name, value)
+    yield
+  ensure
+    klass.send(:remove_const, name)
+    klass.const_set(name, old)
   end
 
   def room(agent, title, quiet_since:)

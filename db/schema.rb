@@ -2191,6 +2191,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_100000) do
     t.datetime "field_tweets_house_halted_at"
     t.string "field_tweets_house_halt_reason", limit: 300
     t.integer "stalled_sweep_minutes", default: 0, null: false
+    t.integer "stalled_sweep_cursor", default: 0, null: false
   end
 
   create_table "stalled_thread_sweeps", force: :cascade do |t|

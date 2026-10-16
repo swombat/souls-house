@@ -4,6 +4,9 @@ class CreateStalledThreadSweeps < ActiveRecord::Migration[8.1]
     # Site kill switch: 0 = off; otherwise how long a room must be quiet
     # before it is judged.
     add_column :settings, :stalled_sweep_minutes, :integer, null: false, default: 0
+    # Where the next tick resumes in the candidate list, so rooms skipped as
+    # busy can't hold the front of the queue tick after tick.
+    add_column :settings, :stalled_sweep_cursor, :integer, null: false, default: 0
     # Accounts opt in one by one; no room in an account that hasn't is read.
     add_column :accounts, :stalled_sweep_enabled, :boolean, null: false, default: false
 
