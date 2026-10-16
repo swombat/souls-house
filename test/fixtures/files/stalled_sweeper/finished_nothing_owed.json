@@ -1,0 +1,56 @@
+{
+  "note": "Synthetic room (no real conversation text). recorded_answers are from live Jev on prompt v3.",
+  "snapshot_id": "synthetic:finished_nothing_owed",
+  "expected": {
+    "wake": [],
+    "person_holds": false
+  },
+  "state": {
+    "now": "2026-10-01T12:00:00+00:00",
+    "minutes_since_last_message": 110,
+    "residents_in_room": [
+      {
+        "name": "Lume",
+        "paused": false,
+        "run_in_progress": false
+      },
+      {
+        "name": "Mira",
+        "paused": false,
+        "run_in_progress": false
+      }
+    ],
+    "recent_messages": [
+      {
+        "id": "ddd002",
+        "author": "Dana",
+        "author_kind": "person",
+        "at": "2026-10-01T10:00:00+00:00",
+        "content": "Thanks both, the export works on my phone. Great job!"
+      },
+      {
+        "id": "ddd003",
+        "author": "Lume",
+        "author_kind": "resident",
+        "at": "2026-10-01T10:05:00+00:00",
+        "content": "Glad it works. Nothing else is open on this one."
+      },
+      {
+        "id": "ddd004",
+        "author": "Mira",
+        "author_kind": "resident",
+        "at": "2026-10-01T10:06:00+00:00",
+        "content": "Same here, all done."
+      }
+    ],
+    "recent_messages_truncated": false,
+    "last_human_message_after_last_resident_message": false,
+    "follow_through_nudges_since_last_human_message": 0,
+    "last_human_message_at": "2026-10-01T10:00:00+00:00"
+  },
+  "recorded_answers": {
+    "can_act:lume": 0.06,
+    "can_act:mira": 0.06,
+    "person_holds": 0.15
+  }
+}

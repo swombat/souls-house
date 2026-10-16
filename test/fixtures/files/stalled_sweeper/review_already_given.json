@@ -1,0 +1,65 @@
+{
+  "note": "Synthetic room (no real conversation text). recorded_answers are from live Jev on prompt v3.",
+  "snapshot_id": "synthetic:review_already_given",
+  "expected": {
+    "wake": [
+      "Mira"
+    ],
+    "person_holds": false
+  },
+  "state": {
+    "now": "2026-10-01T12:00:00+00:00",
+    "minutes_since_last_message": 90,
+    "residents_in_room": [
+      {
+        "name": "Lume",
+        "paused": false,
+        "run_in_progress": false
+      },
+      {
+        "name": "Mira",
+        "paused": false,
+        "run_in_progress": false
+      }
+    ],
+    "recent_messages": [
+      {
+        "id": "bbb002",
+        "author": "Mira",
+        "author_kind": "resident",
+        "at": "2026-10-01T10:00:00+00:00",
+        "content": "Scope for the export work is posted in the issue. Lume, please review the scope before I start building."
+      },
+      {
+        "id": "bbb003",
+        "author": "Lume",
+        "author_kind": "resident",
+        "at": "2026-10-01T10:20:00+00:00",
+        "content": "Scope review done: approved, with two small notes in the issue. Neither blocks starting."
+      },
+      {
+        "id": "bbb004",
+        "author": "Mira",
+        "author_kind": "resident",
+        "at": "2026-10-01T10:30:00+00:00",
+        "content": "I'm holding at the scope-review gate until Lume's review arrives. Lume, please wake me when it's ready."
+      }
+    ],
+    "recent_messages_truncated": false,
+    "last_human_message_after_last_resident_message": false,
+    "follow_through_nudges_since_last_human_message": 0,
+    "last_human_message_at": "2026-10-01T09:00:00+00:00",
+    "last_human_message_before_window": {
+      "id": "aaa001",
+      "author": "Dana",
+      "author_kind": "person",
+      "at": "2026-10-01T09:00:00+00:00",
+      "content": "Please add the export button to the settings page. Lume builds, Mira reviews."
+    }
+  },
+  "recorded_answers": {
+    "can_act:lume": 0.39,
+    "can_act:mira": 0.85,
+    "person_holds": 0.15
+  }
+}
