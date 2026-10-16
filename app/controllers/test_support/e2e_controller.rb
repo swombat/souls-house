@@ -8,6 +8,39 @@ module TestSupport
 
     PASSWORD = "password123"
 
+    def expired_subscription_fixture
+      account = Account.find(params.fetch(:account_id))
+      raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
+
+      if params[:operation] == "setup"
+        user = account.users.find_by!(email_address: params.fetch(:email))
+        other = Account.create!(name: "#{account.name} Other", account_type: :team)
+        other.add_user!(user, role: "member", skip_confirmation: true)
+        private_account = Account.create!(name: "#{account.name} Inaccessible", account_type: :team)
+        [ other, private_account ].each { |target| create_agent!(target, "#{target.name} Resident", "slate") }
+        render json: { other: other.to_param, hidden: private_account.to_param }
+        return
+      end
+
+      agent = account.agents.first!
+      case params.fetch(:operation)
+      when "expire"
+        agent.record_provider_connection!("anthropic", status: "connected")
+        agent.mark_provider_connection_status!("anthropic", "expired")
+      when "reconnect"
+        agent.record_provider_connection!("anthropic", status: "connected")
+      when "api_key"
+        agent.use_provider_auth_mode!("anthropic", "api_key")
+      when "retire"
+        agent.update!(runtime: "deprecated")
+      when "remove"
+        agent.destroy!
+      else
+        return head :unprocessable_entity
+      end
+      render json: { agent_name: agent.name }
+    end
+
     def song_card_fixture
       account = Account.find(params.fetch(:account_id))
       raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")

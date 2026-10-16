@@ -5,6 +5,31 @@ import { reloadProps, subscribeToModel } from './cable';
 const { create } = vi.hoisted(() => ({ create: vi.fn(() => ({ unsubscribe: vi.fn() })) }));
 vi.mock('@rails/actioncable', () => ({ createConsumer: () => ({ subscriptions: { create } }) }));
 
+test('cross-account subscription counts catch up in one narrow reload on every reconnect', () => {
+  vi.useFakeTimers();
+  router.reload.mockClear();
+  const cleanups = ['first', 'second'].map((id) =>
+    subscribeToModel('Account', id, ['accounts', 'expired_subscriptions'])
+  );
+  const callbacks = create.mock.calls.slice(-2).map(([, callbacks]) => callbacks);
+  for (let connection = 0; connection < 2; connection += 1) {
+    router.reload.mockClear();
+    callbacks.forEach((callback) => callback.connected());
+    vi.advanceTimersByTime(300);
+    expect(router.reload).toHaveBeenCalledOnce();
+    expect(router.reload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        only: ['accounts', 'expired_subscriptions'],
+        preserveState: true,
+        preserveScroll: true,
+        preserveUrl: true,
+      })
+    );
+  }
+  cleanups.forEach((cleanup) => cleanup());
+  vi.useRealTimers();
+});
+
 test('account sidebar catches up on connect/reconnect and receives lifecycle broadcasts', () => {
   vi.useFakeTimers();
   const unsubscribe = subscribeToModel('Account', 'account', ['chats']);

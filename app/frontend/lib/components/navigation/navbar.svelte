@@ -29,10 +29,25 @@
     const id = $page.props?.user?.id;
     const accountId = $page.props?.account?.id;
     const subs = {};
-    if (id) subs[`ReplyAttention:${id}`] = 'reply_attention';
+    // Membership changes already invalidate this private stream. Refresh the
+    // subscription set too, including newly confirmed or removed accounts.
+    if (id) subs[`ReplyAttention:${id}`] = ['reply_attention', 'accounts', 'expired_subscriptions'];
     // The room switchers' working spinners, here so they update on any page.
     if (accountId) subs[`RoomActivity:${accountId}`] = 'room_activity';
     updateAttentionSync(subs);
+  });
+
+  const updateSubscriptionSync = createDynamicSync();
+  $effect(() => {
+    const subs = {};
+    if ($page.props?.user?.id) {
+      // Subscribe even when an account has no expiries yet. The summary spans
+      // every confirmed account, not only the account currently being viewed.
+      for (const account of $page.props?.accounts || []) {
+        subs[`Account:${account.id}`] = ['accounts', 'expired_subscriptions'];
+      }
+    }
+    updateSubscriptionSync(subs);
   });
 
   function handleLogout(event) {
