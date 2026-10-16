@@ -39,7 +39,13 @@ class FieldSongOfferConcurrencyTest < ActiveSupport::TestCase
           offer.save!(title: "Second title", artist: "Second artist", by: @user)
         end
       end
-      backend_pid = Timeout.timeout(10) { started.pop }
+      # Not Timeout: on a stall, say where the second thread is stuck. It has
+      # stalled here on CI (2026-10-16, #399) without raising, then finished
+      # once the first save was released, so it waits on something the first
+      # holds, and the backtrace and pool state should name it.
+      backend_pid = started.pop(timeout: 10) or
+        flunk "the second thread never reached its first query (status #{second.status.inspect}, " \
+              "pool #{ActiveRecord::Base.connection_pool.stat.inspect}):\n#{Array(second.backtrace).first(25).join("\n")}"
       # Uncached: every test runs inside the executor, which turns the query
       # cache on for this thread, so a cached poll would replay its first
       # answer for the whole wait. When the first poll ran before the second
