@@ -11,22 +11,22 @@ class FieldRecordingsController < ApplicationController
     recording = @field_recording
     recognition = FieldVoiceprints.enabled_for?(current_account)
     render inertia: "field/recordings/show", props: {
-      recording: FieldItems.recording_json(recording).merge(
+      recording: -> { FieldItems.recording_json(recording).merge(
         audio_url: (rails_blob_path(recording.audio, disposition: :inline) if recording.audio.attached?),
         words: recording.ready? ? recording.transcript_words : [],
         turns: (recording.transcript_turns if recording.ready? && recording.supplied?),
         language_code: recording.language_code,
         transcript_revision: (recording.transcript_revision if recording.ready?),
         ready_at: recording.ready_at&.iso8601
-      ),
-      speakers: recording.speakers.includes(:field_voice, :recognised_voice, :enrolments).map do |speaker|
+      ) },
+      speakers: -> { recording.speakers.includes(:field_voice, :recognised_voice, :enrolments).map do |speaker|
         FieldItems.speaker_json(speaker).merge(FieldItems.speaker_recognition_json(speaker, enabled: recognition))
-      end,
+      end },
       recognition_enabled: recognition,
-      voices: FieldItems.voices_json(current_account),
-      members_without_voice: FieldItems.members_without_voice_json(current_account, except: Current.user),
-      my_voice_id: current_account.field_voices.kept.find_by(user: Current.user)&.to_param,
-      show_you_hint: show_you_hint?(recording),
+      voices: -> { FieldItems.voices_json(current_account) },
+      members_without_voice: -> { FieldItems.members_without_voice_json(current_account, except: Current.user) },
+      my_voice_id: -> { current_account.field_voices.kept.find_by(user: Current.user)&.to_param },
+      show_you_hint: -> { show_you_hint?(recording) },
       suggestions_enabled: FieldSuggestions.enabled?,
       account: current_account.as_json
     }
