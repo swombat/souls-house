@@ -127,7 +127,16 @@
       const data = await response.json();
 
       if (response.ok && data.text) {
-        onsuccess?.(data.text, data.audio_signed_id);
+        // Hand over without a gap: a quiet hold covers the moment between dropping the
+        // recording's warning hold (so the composer's own send is not met with "discard the
+        // recording?") and the composer taking its hold for the send.
+        const handover = holdForRecording({ warn: false });
+        release();
+        try {
+          onsuccess?.(data.text, data.audio_signed_id);
+        } finally {
+          handover();
+        }
       } else {
         onerror?.(data.error || 'Transcription failed');
       }

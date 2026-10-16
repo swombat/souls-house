@@ -9,6 +9,7 @@
   import NewChatRoomPicker from './NewChatRoomPicker.svelte';
   import { accountChatsPath } from '@/routes';
   import { NewConversationDraft } from '$lib/new-conversation-draft';
+  import { holdForRecording } from '$lib/recording-guard';
 
   let {
     chats = [],
@@ -44,12 +45,25 @@
   let selectedFiles = $state([]);
   let processing = $state(false);
   let pendingAudioSignedId = $state(null);
+  // The transcribed voice note's audio is attached only in memory until the chat is created, so
+  // background refreshes (and the reload a deploy turns them into) wait until then. A failed
+  // start keeps both the audio and the hold for the retry.
+  let releaseAudioHold = null;
+  function setPendingAudio(signedId) {
+    pendingAudioSignedId = signedId;
+    if (signedId) releaseAudioHold ??= holdForRecording({ warn: false });
+    else {
+      releaseAudioHold?.();
+      releaseAudioHold = null;
+    }
+  }
+  onDestroy(() => setPendingAudio(null));
   let error = $state('');
 
   function handleTranscription(text, audioSignedId) {
     message = text;
     draft.edit({ message: text });
-    pendingAudioSignedId = audioSignedId || null;
+    setPendingAudio(audioSignedId || null);
     startChat();
   }
 
@@ -97,7 +111,7 @@
           message = '';
           title = '';
           selectedFiles = [];
-          pendingAudioSignedId = null;
+          setPendingAudio(null);
           if (textareaRef) textareaRef.style.height = 'auto';
         }
       },

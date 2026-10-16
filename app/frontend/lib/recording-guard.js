@@ -1,32 +1,52 @@
 import { router } from '@inertiajs/svelte';
+import axios from 'axios';
 
-// A voice note lives only in the page's memory until it has been transcribed, so nothing may
-// unload the page while one is being recorded or transcribed.
+// A voice note lives only in the page's memory until it has been transcribed and sent, so
+// nothing may unload the page in that time.
 //
 // The usual culprit is a deploy. Every Inertia request carries the asset version of the build
-// that rendered the page; after a deploy the server answers an old version with a 409 and
-// Inertia replaces the whole page. Inertia gives no way to refuse that once the 409 is back,
-// and it can be any background refresh that triggers it (a message landing, a response
+// that rendered the page; after a deploy the server answers a stale GET with a 409 and Inertia
+// replaces the whole page. Any background refresh can trigger it (a message landing, a response
 // finishing, the cable reconnecting). So while a recording is held:
 // - background visits (router.reload, polls, prefetches: Inertia's async GETs) are not sent;
 //   the props a refresh asked for are queued and reloaded once the last hold is released;
-// - a visit the person starts themselves asks before leaving, since it discards the recording;
-// - closing or reloading the tab asks first (beforeunload).
-// A quiet hold ({ warn: false }) only holds background visits. The composer uses one between
-// transcription and sending: the text is already saved as a draft, but the audio is attached
-// only in memory, so a refresh should wait without making leaving the page a question.
+// - a refresh already in flight when the hold began can still come back as a 409; Inertia sends
+//   through the shared axios instance, so an interceptor turns that response into a cancellation
+//   (which Inertia ignores) and queues its props instead of letting Inertia reload the page;
+// - a visit the person starts themselves asks before leaving, and so does closing or reloading
+//   the tab (beforeunload).
+// A quiet hold ({ warn: false }) holds refreshes without asking anything. The composers take one
+// from transcription until the message is sent: the text is saved as a draft, but the audio is
+// attached only in memory, and their own send must not be met with "discard the recording?".
 
 export const LEAVE_WARNING = 'A voice note is still recording. Leaving this page will discard it.';
 
+const header = (headers, name) => {
+  if (!headers) return undefined;
+  if (typeof headers.get === 'function') return headers.get(name);
+  const key = Object.keys(headers).find((candidate) => candidate.toLowerCase() === name.toLowerCase());
+  return key ? headers[key] : undefined;
+};
+
+export function isVersionConflict(error) {
+  const response = error?.response;
+  return response?.status === 409 && Boolean(header(response.headers, 'x-inertia-location'));
+}
+
 export function createRecordingGuard({
   router: inertia = router,
+  http = axios,
   win = typeof window === 'undefined' ? null : window,
 } = {}) {
   let holds = 0;
   let warningHolds = 0;
-  let stopListening = null;
   const queuedProps = new Set();
   let queuedEverything = false;
+
+  function queue(only) {
+    if (!only || only.length === 0) queuedEverything = true;
+    else only.forEach((prop) => queuedProps.add(prop));
+  }
 
   const onBeforeUnload = (event) => {
     event.preventDefault();
@@ -41,15 +61,22 @@ export function createRecordingGuard({
 
     if (visit.async && method === 'get') {
       event.preventDefault();
-      if (visit.prefetch) return;
-      const only = visit.only || [];
-      if (only.length === 0) queuedEverything = true;
-      only.forEach((prop) => queuedProps.add(prop));
+      if (!visit.prefetch) queue(visit.only);
       return;
     }
 
     if (!visit.async && warningHolds > 0 && !win?.confirm(LEAVE_WARNING)) event.preventDefault();
   }
+
+  function onResponseError(error) {
+    if (holds === 0 || !isVersionConflict(error)) return Promise.reject(error);
+    const partial = header(error.config?.headers, 'X-Inertia-Partial-Data');
+    queue(partial ? String(partial).split(',').filter(Boolean) : []);
+    return Promise.reject(new axios.CanceledError('Held while a voice note is recording'));
+  }
+
+  inertia.on?.('before', onBeforeVisit);
+  http?.interceptors?.response.use(undefined, onResponseError);
 
   function flush() {
     if (!queuedEverything && queuedProps.size === 0) return;
@@ -66,7 +93,6 @@ export function createRecordingGuard({
 
   function hold({ warn = true } = {}) {
     holds += 1;
-    if (holds === 1) stopListening = inertia.on('before', onBeforeVisit);
     if (warn) {
       warningHolds += 1;
       if (warningHolds === 1) win?.addEventListener('beforeunload', onBeforeUnload);
@@ -80,10 +106,7 @@ export function createRecordingGuard({
         if (warningHolds === 0) win?.removeEventListener('beforeunload', onBeforeUnload);
       }
       holds -= 1;
-      if (holds > 0) return;
-      stopListening?.();
-      stopListening = null;
-      flush();
+      if (holds === 0) flush();
     };
   }
 
@@ -92,6 +115,7 @@ export function createRecordingGuard({
 
 const guard = createRecordingGuard();
 
-// Returns a release function; call it once the recording has been transcribed or abandoned.
+// Returns a release function; call it once the recording has been transcribed and sent, or
+// abandoned. Releasing twice is harmless.
 export const holdForRecording = guard.hold;
 export const isRecordingHeld = guard.isHeld;

@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { vi } from 'vitest';
-import { router } from '@inertiajs/svelte';
+import { router, routerListeners } from '@inertiajs/svelte';
 import { clearLocalDrafts } from '$lib/conversation-draft';
 import NewChat from './new.svelte';
 
@@ -270,4 +270,90 @@ test('shows recording errors without creating a conversation', async () => {
   await fireEvent.click(screen.getByTitle('Record voice message'));
   expect(await screen.findByRole('alert')).toHaveTextContent('Microphone access denied');
   expect(router.post).not.toHaveBeenCalled();
+});
+
+function stubRecorder(transcriptionResponse) {
+  vi.stubGlobal('navigator', {
+    mediaDevices: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }) },
+  });
+  vi.stubGlobal(
+    'MediaRecorder',
+    class {
+      static isTypeSupported() {
+        return true;
+      }
+      mimeType = 'audio/webm';
+      start() {
+        this.state = 'recording';
+      }
+      stop() {
+        this.ondataavailable({ data: new Blob(['x'.repeat(2000)]) });
+        this.onstop();
+      }
+    }
+  );
+  const fetch = vi.fn().mockImplementation(transcriptionResponse);
+  vi.stubGlobal('fetch', fetch);
+  return fetch;
+}
+
+// What the real router does before sending any visit: fire the cancellable `before` event.
+function fireBefore(visit) {
+  const event = new CustomEvent('inertia:before', { cancelable: true, detail: { visit } });
+  (routerListeners.before || []).forEach((callback) => callback(event));
+  return !event.defaultPrevented;
+}
+
+test('holds background refreshes while recording, and the voice send itself asks nothing', async () => {
+  let release;
+  const transcribed = new Promise((resolve) => (release = resolve));
+  stubRecorder(async () => {
+    await transcribed;
+    return { ok: true, json: async () => ({ text: 'Long note', audio_signed_id: 'signed-audio' }) };
+  });
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  const sends = [];
+  router.post.mockImplementation((url, body, callbacks) => {
+    sends.push({ allowed: fireBefore({ method: 'post', async: false }), callbacks });
+  });
+
+  render(NewChat, props);
+  await fireEvent.click(screen.getByTitle('Record voice message'));
+  await screen.findByTitle('Stop recording');
+
+  expect(fireBefore({ method: 'get', async: true, only: ['chats'] })).toBe(false);
+  expect(fireBefore({ method: 'get', async: false })).toBe(false);
+  expect(confirm).toHaveBeenCalledTimes(1);
+  confirm.mockClear();
+
+  await fireEvent.click(screen.getByTitle('Stop recording'));
+  release();
+  await waitFor(() => expect(router.post).toHaveBeenCalled());
+
+  expect(sends[0].allowed).toBe(true);
+  expect(confirm).not.toHaveBeenCalled();
+  // Until the conversation exists, the audio is only in memory: refreshes still wait.
+  expect(fireBefore({ method: 'get', async: true, only: ['chats'] })).toBe(false);
+  expect(router.reload).not.toHaveBeenCalled();
+  router.post.mockReset();
+});
+
+test('a failed voice start keeps the audio and the hold for the retry', async () => {
+  stubRecorder(async () => ({
+    ok: true,
+    json: async () => ({ text: 'Long note', audio_signed_id: 'signed-audio' }),
+  }));
+  render(NewChat, props);
+  await fireEvent.click(screen.getByTitle('Record voice message'));
+  await fireEvent.click(await screen.findByTitle('Stop recording'));
+  await waitFor(() => expect(router.post).toHaveBeenCalledTimes(1));
+
+  const [, , callbacks] = router.post.mock.calls[0];
+  callbacks.onError();
+  callbacks.onFinish();
+  expect(fireBefore({ method: 'get', async: true, only: ['chats'] })).toBe(false);
+
+  await fireEvent.click(screen.getByLabelText('Start conversation'));
+  await waitFor(() => expect(router.post).toHaveBeenCalledTimes(2));
+  expect(router.post.mock.calls[1][1].get('audio_signed_id')).toBe('signed-audio');
 });

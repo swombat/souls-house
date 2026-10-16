@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
+import axios from 'axios';
 import { createRecordingGuard, LEAVE_WARNING } from './recording-guard';
 
 function fakeRouter() {
@@ -14,7 +15,6 @@ function fakeRouter() {
       listeners.forEach((callback) => callback(event));
       return !event.defaultPrevented;
     },
-    listenerCount: () => listeners.size,
   };
 }
 
@@ -40,7 +40,7 @@ describe('recording guard', () => {
     const win = fakeWindow();
     createRecordingGuard({ router, win });
 
-    expect(router.listenerCount()).toBe(0);
+    expect(router.visit(reload(['messages']))).toBe(true);
     expect(win.unload()).toBe(false);
   });
 
@@ -56,7 +56,6 @@ describe('recording guard', () => {
     release();
     expect(router.reload).toHaveBeenCalledTimes(1);
     expect(router.reload.mock.calls[0][0]).toMatchObject({ only: ['messages', 'chat'], preserveUrl: true });
-    expect(router.listenerCount()).toBe(0);
     expect(router.visit(reload(['messages']))).toBe(true);
   });
 
@@ -121,5 +120,44 @@ describe('recording guard', () => {
     sending();
     expect(guard.isHeld()).toBe(false);
     expect(router.reload).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('responses already in flight', () => {
+  function fakeHttp() {
+    let onRejected;
+    return {
+      interceptors: { response: { use: (_ok, rejected) => (onRejected = rejected) } },
+      fail: (error) => onRejected(error),
+    };
+  }
+  const conflict = (partial) => ({
+    response: { status: 409, headers: { 'x-inertia-location': '/accounts/1/chats/2' } },
+    config: { headers: partial ? { 'X-Inertia-Partial-Data': partial } : {} },
+  });
+
+  test('a version conflict that lands during a hold becomes a cancellation and is replayed', async () => {
+    const router = fakeRouter();
+    const http = fakeHttp();
+    const guard = createRecordingGuard({ router, http, win: fakeWindow() });
+
+    const release = guard.hold();
+    const error = await http.fail(conflict('messages,chat')).catch((rejection) => rejection);
+    expect(axios.isCancel(error)).toBe(true);
+
+    release();
+    expect(router.reload.mock.calls[0][0].only).toEqual(['messages', 'chat']);
+  });
+
+  test('outside a hold, and for other errors, responses pass through untouched', async () => {
+    const http = fakeHttp();
+    const guard = createRecordingGuard({ router: fakeRouter(), http, win: fakeWindow() });
+
+    const outside = conflict('messages');
+    await expect(http.fail(outside)).rejects.toBe(outside);
+
+    guard.hold();
+    const serverError = { response: { status: 500, headers: {} }, config: {} };
+    await expect(http.fail(serverError)).rejects.toBe(serverError);
   });
 });

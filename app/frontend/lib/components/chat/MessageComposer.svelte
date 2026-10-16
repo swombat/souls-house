@@ -155,7 +155,7 @@
       logging.error('Message send failed:', error);
       draft.failed();
       submitting = false;
-      setPendingAudio(null);
+      // The draft keeps the text for a retry; keep the voice note's audio (and its hold) too.
       onerror?.(error?.message || 'Failed to send message');
     }
   }
