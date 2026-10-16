@@ -1,5 +1,7 @@
 <script>
   import { Microphone, MicrophoneSlash, Spinner } from 'phosphor-svelte';
+  import { onDestroy } from 'svelte';
+  import { holdForRecording } from '$lib/recording-guard';
 
   const MIN_AUDIO_BYTES = 1000;
 
@@ -9,6 +11,16 @@
 
   let mediaRecorder = null;
   let audioChunks = [];
+  // Held from the moment recording starts until the transcript (or an error) is back, so a
+  // background refresh after a deploy cannot reload the page and lose the audio.
+  let releaseHold = null;
+
+  function release() {
+    releaseHold?.();
+    releaseHold = null;
+  }
+
+  onDestroy(release);
 
   const isRecording = $derived(state === 'recording');
   const isTranscribing = $derived(state === 'transcribing');
@@ -48,6 +60,7 @@
 
         if (audioChunks.length === 0) {
           state = 'idle';
+          release();
           return;
         }
 
@@ -57,6 +70,7 @@
 
         if (blob.size < MIN_AUDIO_BYTES) {
           state = 'idle';
+          release();
           onerror?.('Recording too short');
           return;
         }
@@ -67,8 +81,10 @@
       recorder.start();
       mediaRecorder = recorder;
       state = 'recording';
+      releaseHold = holdForRecording();
     } catch (err) {
       state = 'idle';
+      release();
       if (err.name === 'NotAllowedError') {
         onerror?.('Microphone access denied. Please allow microphone access in your browser settings.');
       } else if (err.name === 'NotFoundError') {
@@ -119,6 +135,7 @@
       onerror?.('Network error during transcription');
     } finally {
       state = 'idle';
+      release();
     }
   }
 </script>
