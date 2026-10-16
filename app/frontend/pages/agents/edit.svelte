@@ -75,6 +75,12 @@
   $effect(() => {
     updateIntegrationSync({ [`IntegrationStatus:${account.id}`]: ['service_connections'] });
   });
+  const updateProviderSync = createDynamicSync();
+  $effect(() => {
+    updateProviderSync({
+      [`ProviderPresentation:${account.id}`]: ['provider_subscription', 'can_manage_provider_subscription'],
+    });
+  });
 
   let selectedModel = $state(agent.model_id);
   let sendingTestNotification = $state(false);

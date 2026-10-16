@@ -1,5 +1,5 @@
 import { displayUsageWindows } from '$lib/subscription-usage.js';
-import { onDestroy } from 'svelte';
+import { onDestroy, untrack } from 'svelte';
 import {
   accountAgentProviderSubscriptionPath,
   accountAgentProviderSubscriptionUsagePath,
@@ -8,8 +8,16 @@ import {
 
 export function createProviderSubscription(context) {
   let agent = $state({ ...context().subscriptionAgent });
-  // Do not subscribe request effects to every replacement of the edit props.
-  let accountId = $derived(context().account.id);
+  let accountId = $state(context().account.id);
+  const identity = (account, value) =>
+    value?.id && ['anthropic', 'gemini', 'openai', 'xai'].includes(value.provider)
+      ? `${account}:${value.id}:${value.provider}`
+      : null;
+  let currentIdentity = identity(context().account.id, context().subscriptionAgent);
+  let seenPresentation;
+  let seenAgent;
+  let pendingPresentation;
+  let mutating = $state(false);
   let connectOpen = $state(false);
   let ceremony = $state(null);
   let actionError = $state(null);
@@ -17,10 +25,12 @@ export function createProviderSubscription(context) {
   let secondsRemaining = $state(0);
   let pollTimer = null;
   let generation = 0;
+  let identityGeneration = 0;
   let checking = false;
   const lifetime = new AbortController();
   onDestroy(() => {
     generation++;
+    identityGeneration++;
     stopPolling();
     lifetime.abort();
   });
@@ -31,6 +41,10 @@ export function createProviderSubscription(context) {
   let usage = $state(null);
   let usageLoading = $state(false);
   let usageError = $state(null);
+  const capabilityKey = $derived(JSON.stringify([accountId, agent.id, agent.provider, agent.available]));
+  const usageKey = $derived(JSON.stringify([capabilityKey, agent.model, agent.auth_mode, agent.connection]));
+  let capabilityRequest = 0;
+  let usageRequest = 0;
   let displayWindows = $derived(displayUsageWindows(usage, agent.provider, agent.model));
   let isAnthropic = $derived(agent.provider === 'anthropic');
   let isGemini = $derived(agent.provider === 'gemini');
@@ -40,6 +54,42 @@ export function createProviderSubscription(context) {
   let connectLabel = $derived(
     isAnthropic ? 'Connect Claude subscription' : isGemini ? 'Connect Google AI subscription' : 'Connect subscription'
   );
+
+  $effect(() => {
+    const next = context();
+    // Track delivered snapshots, not local mutations. A later delivery may
+    // legitimately restore the same persisted values after an optimistic edit.
+    const presentation = JSON.stringify([next.account.id, next.subscriptionAgent ?? null]);
+    const busy = connectOpen || mutating;
+    untrack(() => {
+      if (presentation !== seenPresentation || next.subscriptionAgent !== seenAgent) {
+        seenPresentation = presentation;
+        seenAgent = next.subscriptionAgent;
+        pendingPresentation = { accountId: next.account.id, agent: { ...next.subscriptionAgent } };
+      }
+      if (!pendingPresentation) return;
+      const nextIdentity = identity(pendingPresentation.accountId, pendingPresentation.agent);
+      if (nextIdentity !== currentIdentity || !nextIdentity) {
+        // An obsolete identity cannot finish a ceremony against a different
+        // resident/provider. Close locally; never send an automatic cancellation.
+        generation++;
+        identityGeneration++;
+        stopPolling();
+        connectOpen = false;
+        ceremony = null;
+        browserCode = '';
+        secondsRemaining = 0;
+        startingConnection = submittingCode = mutating = checking = false;
+        actionError = null;
+        currentIdentity = nextIdentity;
+      } else if (busy) {
+        return;
+      }
+      accountId = pendingPresentation.accountId;
+      agent = pendingPresentation.agent;
+      pendingPresentation = null;
+    });
+  });
 
   $effect(() => {
     if (!connectOpen || !ceremony?.expires_at) return;
@@ -53,13 +103,25 @@ export function createProviderSubscription(context) {
   });
 
   $effect(() => {
-    if (!agent.available) return;
-    checkCapabilities();
+    const key = capabilityKey;
+    untrack(() => {
+      const request = ++capabilityRequest;
+      capabilityChecked = false;
+      subscriptionSupported = true;
+      if (agent.available && identity(accountId, agent)) checkCapabilities(key, request);
+    });
   });
 
   $effect(() => {
-    if (!agent.available || agent.connection?.status !== 'connected') return;
-    loadUsage();
+    const key = usageKey;
+    untrack(() => {
+      ++usageRequest;
+      usage = null;
+      usageError = null;
+      usageLoading = false;
+      if (agent.available && agent.connection?.status === 'connected' && identity(accountId, agent))
+        loadUsage(false, key);
+    });
   });
 
   function csrfToken() {
@@ -93,47 +155,72 @@ export function createProviderSubscription(context) {
   }
 
   async function setAuthMode(authMode) {
+    if (!currentIdentity || mutating || connectOpen) return;
+    const version = generation;
+    mutating = true;
     actionError = null;
     try {
       await jsonRequest(subscriptionPath(), {
         method: 'PATCH',
         body: JSON.stringify({ provider: agent.provider, auth_mode: authMode }),
       });
-      agent = { ...agent, auth_mode: authMode };
+      if (version === generation) updateAgent({ auth_mode: authMode });
     } catch (error) {
-      actionError = error.message;
+      if (version === generation) actionError = error.message;
+    } finally {
+      if (version === generation) mutating = false;
     }
   }
 
-  async function loadUsage(refresh = false) {
+  // A refresh received before a successful local write must not undo that
+  // write when the deferred snapshot is adopted. Other fields still reconcile.
+  function updateAgent(changes) {
+    agent = { ...agent, ...changes };
+    if (pendingPresentation) {
+      pendingPresentation.agent = { ...pendingPresentation.agent, ...changes };
+    }
+  }
+
+  async function loadUsage(refresh = false, key = usageKey) {
+    if (!currentIdentity) return;
+    const request = ++usageRequest;
+    const version = identityGeneration;
+    const current = () => version === identityGeneration && key === usageKey && request === usageRequest;
     usageLoading = true;
     usageError = null;
     try {
-      usage = await jsonRequest(`${usagePath()}${refresh ? '?refresh=1' : ''}`);
+      const result = await jsonRequest(`${usagePath()}${refresh ? '?refresh=1' : ''}`);
+      if (current()) usage = result;
     } catch (error) {
-      usageError = error.message;
+      if (current()) usageError = error.message;
     } finally {
-      usageLoading = false;
+      if (current()) usageLoading = false;
     }
   }
 
-  async function checkCapabilities() {
+  async function checkCapabilities(key, request) {
+    const version = identityGeneration;
+    const provider = agent.provider;
+    const current = () => version === identityGeneration && key === capabilityKey && request === capabilityRequest;
     try {
       const capabilities = await jsonRequest(`${subscriptionPath()}?capabilities=1`);
-      subscriptionSupported = capabilities.providers?.[agent.provider]?.oauth_account === true;
+      if (current()) subscriptionSupported = capabilities.providers?.[provider]?.oauth_account === true;
     } catch {
       // A temporarily unreachable runtime is already represented by the
       // hosting-health state. Keep the server-side provider fallback rather
       // than making an existing connection disappear.
     } finally {
-      capabilityChecked = true;
+      if (current()) capabilityChecked = true;
     }
   }
 
   async function beginConnection() {
+    if (!currentIdentity || mutating || startingConnection || submittingCode) return;
     const version = ++generation;
+    checking = false;
     ceremony = null;
     browserCode = '';
+    secondsRemaining = 0;
     actionError = null;
     connectOpen = true;
     startingConnection = true;
@@ -173,8 +260,7 @@ export function createProviderSubscription(context) {
       if (status.status === 'connected') {
         stopPolling();
         ceremony = status;
-        agent = {
-          ...agent,
+        updateAgent({
           auth_mode: 'oauth_account',
           connection: {
             status: 'connected',
@@ -182,7 +268,7 @@ export function createProviderSubscription(context) {
             plan: status.plan || null,
             connected_at: new Date().toISOString(),
           },
-        };
+        });
       } else if (status.status === 'failed' || status.status === 'expired') {
         stopPolling();
         ceremony = status;
@@ -195,14 +281,17 @@ export function createProviderSubscription(context) {
         actionError = error.message;
       }
     } finally {
-      checking = false;
+      if (version === generation) checking = false;
     }
   }
 
   async function cancelConnection() {
     generation++;
+    checking = false;
     stopPolling();
     connectOpen = false;
+    mutating = true;
+    const version = generation;
     if (startingConnection || ['starting', 'awaiting_code', 'pending', 'finalizing'].includes(ceremony?.status)) {
       try {
         await jsonRequest(subscriptionPath(true), {
@@ -213,20 +302,30 @@ export function createProviderSubscription(context) {
         // Closing the modal should not be blocked by a best-effort cancellation.
       }
     }
+    if (version === generation) {
+      startingConnection = false;
+      submittingCode = false;
+      mutating = false;
+    }
   }
 
   async function disconnectSubscription() {
+    if (!currentIdentity || mutating || connectOpen) return;
     if (!confirm(`Disconnect ${agent.name} from ${agent.provider_name}?`)) return;
 
+    const version = generation;
+    mutating = true;
     actionError = null;
     try {
       await jsonRequest(subscriptionPath(), {
         method: 'DELETE',
         body: JSON.stringify({ provider: agent.provider }),
       });
-      agent = { ...agent, auth_mode: 'api_key', connection: {} };
+      if (version === generation) updateAgent({ auth_mode: 'api_key', connection: {} });
     } catch (error) {
-      actionError = error.message;
+      if (version === generation) actionError = error.message;
+    } finally {
+      if (version === generation) mutating = false;
     }
   }
 
@@ -235,26 +334,36 @@ export function createProviderSubscription(context) {
   }
 
   async function submitBrowserCode() {
-    const version = generation;
+    if (!currentIdentity || !connectOpen || submittingCode || startingConnection) return;
+    const version = ++generation;
+    checking = false;
+    stopPolling();
+    const submittedCode = browserCode;
     actionError = null;
     submittingCode = true;
     try {
       const result = await jsonRequest(`${subscriptionPath()}/code`, {
         method: 'POST',
-        body: JSON.stringify({ provider: agent.provider, code: browserCode }),
+        body: JSON.stringify({ provider: agent.provider, code: submittedCode }),
       });
       if (version !== generation) return;
       ceremony = result;
-      browserCode = '';
+      if (browserCode === submittedCode) browserCode = '';
       startPolling();
     } catch (error) {
       if (version === generation) actionError = error.message;
     } finally {
-      submittingCode = false;
+      if (version === generation) submittingCode = false;
     }
   }
 
   return {
+    get valid() {
+      return Boolean(identity(accountId, agent));
+    },
+    get mutating() {
+      return mutating;
+    },
     get agent() {
       return agent;
     },

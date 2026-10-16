@@ -84,6 +84,7 @@ test.each([
   'GuestDirectory',
   'RhythmActivity',
   'IntegrationStatus',
+  'ProviderPresentation',
 ])('%s catches up on connect and every reconnect', (model) => {
   vi.useFakeTimers();
   router.reload.mockClear();
@@ -99,6 +100,36 @@ test.each([
   expect(router.reload).toHaveBeenCalledWith(expect.objectContaining({ only: ['live_props'] }));
   unsubscribe();
   router.reload.mockReset();
+  vi.useRealTimers();
+});
+
+test.each([
+  ['provider_subscription', 'can_manage_provider_subscription'],
+  ['subscription_agents', 'can_manage_ai_credentials'],
+])('provider presentation catch-up reloads only %j and its permission prop, never on an idle timer', (...props) => {
+  vi.useFakeTimers();
+  router.reload.mockReset();
+  const unsubscribe = subscribeToModel('ProviderPresentation', 'account', props);
+  const callbacks = create.mock.calls.at(-1)[1];
+  for (let connection = 0; connection < 2; connection++) {
+    callbacks.connected();
+    vi.advanceTimersByTime(300);
+    expect(router.reload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        only: props,
+        preserveState: true,
+        preserveScroll: true,
+        preserveUrl: true,
+      })
+    );
+    router.reload.mockClear();
+    vi.advanceTimersByTime(60000);
+    expect(router.reload).not.toHaveBeenCalled();
+  }
+  callbacks.received({ action: 'refresh' });
+  vi.advanceTimersByTime(300);
+  expect(router.reload).toHaveBeenCalledWith(expect.objectContaining({ only: props }));
+  unsubscribe();
   vi.useRealTimers();
 });
 
