@@ -10,6 +10,7 @@ class FieldTag < ApplicationRecord
 
   include Discard::Model
   include ObfuscatesId
+  include FieldActivityBroadcasting
 
   class Conflict < StandardError
 

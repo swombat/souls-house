@@ -4,6 +4,7 @@
 class FieldTagging < ApplicationRecord
 
   include Discard::Model
+  include FieldActivityBroadcasting
 
   TAGGABLE_TYPES = %w[FieldFile FieldRecording Whiteboard FieldTweet FieldSong].freeze
 

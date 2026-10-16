@@ -20,6 +20,7 @@ class FieldSong < ApplicationRecord
   include ObfuscatesId
   include SyncAuthorizable
   include FieldTaggable
+  include FieldActivityBroadcasting
 
   MAX_LINKS = 4
   MAX_LYRICS = 20_000

@@ -17,6 +17,7 @@ class FieldRecording < ApplicationRecord
   include SyncAuthorizable
   include FieldRecording::Transcription
   include FieldTaggable
+  include FieldActivityBroadcasting
   include FieldSummarizable
 
   class NotRetryable < StandardError; end

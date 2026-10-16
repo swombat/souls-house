@@ -12,6 +12,7 @@ class FieldTweet < ApplicationRecord
   include ObfuscatesId
   include SyncAuthorizable
   include FieldTaggable
+  include FieldActivityBroadcasting
 
   MAX_TEXT = 30_000
   MAX_MEDIA = 4

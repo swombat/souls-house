@@ -96,4 +96,54 @@ class SyncChannelTest < ActionCable::Channel::TestCase
     assert subscription.rejected?
   end
 
+  test "field activity streams only for the accessible account" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "FieldActivity", id: @account.obfuscated_id
+
+    assert subscription.confirmed?
+    assert_equal [ "FieldActivity:#{@account.obfuscated_id}" ], subscription.streams
+  end
+
+  test "field activity of another account is rejected" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "FieldActivity", id: accounts(:existing_user_account).obfuscated_id
+
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "field activity rejects pending account membership" do
+    stub_connection current_user: users(:unconfirmed_user), current_app_session: nil
+    subscribe channel: "SyncChannel", model: "FieldActivity", id: accounts(:another_team).obfuscated_id
+
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "field activity rejects native app connections" do
+    client = Doorkeeper::Application.create!(name: "App", uid: "field-sync-refusal",
+      redirect_uri: "https://example.com/cb", scopes: "chat", confidential: false)
+    stub_connection current_user: @user, current_app_session: AppSession.create!(user: @user, oauth_application: client)
+    subscribe channel: "SyncChannel", model: "FieldActivity", id: @account.obfuscated_id
+
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "field activity rejects all even for site administrators" do
+    stub_connection current_user: @admin, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "FieldActivity", id: "all"
+
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "field activity rejects collection subscriptions" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "FieldActivity", id: "#{@account.obfuscated_id}:whiteboards"
+
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
 end

@@ -4,6 +4,7 @@ class Whiteboard < ApplicationRecord
   include ObfuscatesId
   include SyncAuthorizable
   include FieldTaggable
+  include FieldActivityBroadcasting
 
   MAX_RECOMMENDED_LENGTH = 10_000
 
