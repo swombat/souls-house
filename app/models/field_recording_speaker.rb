@@ -25,11 +25,22 @@ class FieldRecordingSpeaker < ApplicationRecord
   RECOGNITION_FIELDS = { recognised_voice: nil, recognition_confidence: nil, recognition_print_generation: nil }.freeze
   NOT_IGNORED = { ignored_at: nil, ignored_by: nil }.freeze
 
+  # Fields read by FieldItems.speaker_json (including the displayed decision
+  # tokens). Bookkeeping such as decision_generation alone is not a refresh.
+  PRESENTATION_FIELDS = %w[
+    label position field_voice_id naming_source ignored_at ignored_as
+    talk_ms clip_start_ms clip_end_ms
+    suggested_name suggestion_quote suggestion_quote_ms suggestion_generation
+    recognised_voice_id recognition_confidence recognition_print_generation recognition_decision_generation
+  ].freeze
+
   validates :label, presence: true
   validates :naming_source, inclusion: { in: NAMING_SOURCES }, allow_nil: true
   validates :ignored_as, inclusion: { in: IGNORED_AS }
 
   scope :in_order, -> { order(:position) }
+
+  after_save :touch_recording_for_presentation_changes
 
   # A supplied transcript names its speakers in its own words, which a person
   # wrote, so a real name there is shown as it was written. Generic labels
@@ -232,6 +243,18 @@ class FieldRecordingSpeaker < ApplicationRecord
       update!(decision_generation: decision_generation + 1, **NOT_IGNORED) if ignored_at.present?
       true
     end
+  end
+
+  private
+
+  def touch_recording_for_presentation_changes
+    return unless (saved_changes.keys & PRESENTATION_FIELDS).any?
+
+    # Capture the change now, before a subsequent speaker touch clears dirty
+    # tracking. Rails coalesces this with other parent saves/touches into one
+    # recording after_commit callback per outer transaction, including batches.
+    # A rolled-back savepoint rolls back the touch too; no latch survives it.
+    field_recording.touch
   end
 
 end
