@@ -40,13 +40,20 @@ class FieldSongOfferConcurrencyTest < ActiveSupport::TestCase
         end
       end
       backend_pid = Timeout.timeout(10) { started.pop }
-      blocked = Timeout.timeout(10) do
-        loop do
-          waiting = ActiveRecord::Base.connection.select_value("SELECT cardinality(pg_blocking_pids(#{backend_pid}))").to_i.positive?
-          break true if waiting
-          break false unless second.alive?
-          Thread.pass
+      # Uncached: every test runs inside the executor, which turns the query
+      # cache on for this thread, so a cached poll would replay its first
+      # answer for the whole wait. When the first poll ran before the second
+      # thread reached the lock, that answer was "not blocked" forever (master
+      # reds on 2026-10-15 and 16).
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
+      blocked = loop do
+        waiting = ActiveRecord::Base.uncached do
+          ActiveRecord::Base.connection.select_value("SELECT cardinality(pg_blocking_pids(#{backend_pid}))").to_i.positive?
         end
+        break true if waiting
+        break false unless second.alive?
+        flunk "the second save was still running after 10 s without waiting on any lock" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+        sleep 0.02
       end
       assert blocked, "the second save must actually wait on the first transaction's account row lock"
     ensure
