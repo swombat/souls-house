@@ -16,6 +16,9 @@
   title: Tweet funding changes reach open Field pages
   body: "Adding or removing tweet-collection funding now updates already-open Field pages, including accounts without a followed handle and paused streams. Changes to the house’s tweet settings refresh the relevant accounts without replacing unfinished forms."
 - date: 2026-10-16
+  title: Guest directories follow across open pages
+  body: "Guest arrivals and departures now update both the visiting and home account’s open resident lists. Reconnecting catches missed changes, while valid guest choices and unfinished resident-upgrade drafts stay in place."
+- date: 2026-10-16
   title: Companion read-plane foundation
   body: "An API-only foundation for an explicitly enrolled Linux companion adds per-resident read requests, an independent local ceiling and owner-controlled pause/revoke. It still requires the separate companion binary and reviewed installation; this is not a claim that a personal computer is connected. Writes and execution are not enabled."
 - date: 2026-10-16

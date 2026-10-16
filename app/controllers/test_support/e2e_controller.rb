@@ -8,6 +8,34 @@ module TestSupport
 
     PASSWORD = "password123"
 
+    def guest_directory_fixture
+      account = Account.find(params.fetch(:account_id))
+      raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
+
+      if params[:operation] == "setup"
+        user = account.memberships.find_by!(role: "owner").user
+        home = Account.create!(name: "#{account.name} Guest home", account_type: :team)
+        home.add_user!(user, role: "owner", skip_confirmation: true)
+        visitor = create_agent!(home, "Live visitor", "teal")
+        spare = create_agent!(home, "Spare visitor", "slate")
+        return render json: { home: home.to_param, visitor: visitor.to_param, spare: spare.to_param }
+      end
+
+      home = Account.find_by!(name: "#{account.name} Guest home")
+      visitor = home.agents.find_by!(name: "Live visitor")
+      case params.fetch(:operation)
+      when "join"
+        account.guest_memberships.create!(agent: visitor, added_by: account.memberships.find_by!(role: "owner").user)
+      when "leave"
+        account.guest_memberships.find_by!(agent: visitor).destroy!
+      when "delete"
+        visitor.destroy!
+      else
+        return head :unprocessable_entity
+      end
+      head :ok
+    end
+
     def tweet_stream_fixture
       account = Account.find(params.fetch(:account_id))
       raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")

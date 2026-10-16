@@ -19,6 +19,7 @@ Rails.application.routes.draw do
         post :field_recording_fixture, to: "/test_support/e2e#field_recording_fixture"
         post :field_activity_fixture, to: "/test_support/e2e#field_activity_fixture"
         post :tweet_stream_fixture, to: "/test_support/e2e#tweet_stream_fixture"
+        post :guest_directory_fixture, to: "/test_support/e2e#guest_directory_fixture"
         post :room_navigation_fixture, to: "/test_support/e2e#room_navigation_fixture"
         post :expired_subscription_fixture, to: "/test_support/e2e#expired_subscription_fixture"
         post :audio_blob, to: "/test_support/e2e#audio_blob"
