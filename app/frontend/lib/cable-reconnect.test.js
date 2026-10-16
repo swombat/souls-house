@@ -48,19 +48,19 @@ test('account sidebar catches up on connect/reconnect and receives lifecycle bro
   vi.useRealTimers();
 });
 
-test('room activity catches up on connect and every reconnect', () => {
+test.each(['RoomActivity', 'FieldActivity'])('%s catches up on connect and every reconnect', (model) => {
   vi.useFakeTimers();
   router.reload.mockClear();
-  const unsubscribe = subscribeToModel('RoomActivity', 'account', ['room_activity']);
+  const unsubscribe = subscribeToModel(model, 'account', ['live_props']);
   const callbacks = create.mock.calls.at(-1)[1];
   // A run that finished while disconnected leaves no broadcast to replay.
   callbacks.connected();
   vi.advanceTimersByTime(300);
-  expect(router.reload).toHaveBeenLastCalledWith(expect.objectContaining({ only: ['room_activity'] }));
+  expect(router.reload).toHaveBeenLastCalledWith(expect.objectContaining({ only: ['live_props'] }));
   router.reload.mockClear();
   callbacks.connected();
   vi.advanceTimersByTime(300);
-  expect(router.reload).toHaveBeenCalledWith(expect.objectContaining({ only: ['room_activity'] }));
+  expect(router.reload).toHaveBeenCalledWith(expect.objectContaining({ only: ['live_props'] }));
   unsubscribe();
   router.reload.mockReset();
   vi.useRealTimers();

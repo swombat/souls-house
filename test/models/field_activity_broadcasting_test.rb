@@ -31,7 +31,7 @@ class FieldActivityBroadcastingTest < ActiveSupport::TestCase
       assert_equal original_updated_at, record.reload.updated_at
 
       assert_rollback_without_refresh { record.destroy! }
-      assert record.reload.persisted?
+      assert record.class.exists?(record.id)
     end
 
     test "#{kind} never refreshes another accounts Field" do
@@ -115,7 +115,8 @@ class FieldActivityBroadcastingTest < ActiveSupport::TestCase
 
   test "chat messages and chat edits never refresh Field" do
     assert_no_broadcasts(stream) do
-      chat = @account.chats.create!(title: "Not Field", manual_responses: true)
+    chat = @account.chats.create!(title: "Not Field", manual_responses: true,
+      agents: [ agents(:research_assistant) ])
       message = chat.messages.create!(role: "user", user: @user, content: "Conversation only")
       message.update!(content: "Still conversation only")
       message.discard!
@@ -169,6 +170,7 @@ class FieldActivityBroadcastingTest < ActiveSupport::TestCase
     when Whiteboard then record.update!(content: "Updated local words")
     when FieldTag then record.update!(name: "renamed")
     when FieldTagging then record.update!(discarded_at: Time.current, discarded_by: @user)
+    when FieldTweet then record.update!(text: "Updated local post")
     else record.update!(title: "Updated local title")
     end
   end
@@ -178,7 +180,7 @@ class FieldActivityBroadcastingTest < ActiveSupport::TestCase
     when :whiteboard
       @account.whiteboards.new(name: "Local note", content: "Local words")
     when :file
-      @account.field_files.new(title: "Local file", file: Rack::Test::UploadedFile.new(file_fixture("test.txt"), "text/plain"))
+      @account.field_files.new(title: "Local file", file: Rack::Test::UploadedFile.new(file_fixture("test_image.png"), "image/png"))
     when :recording
       @account.field_recordings.new(title: "Local recording",
         audio: Rack::Test::UploadedFile.new(file_fixture("test_audio.webm"), "audio/webm"))

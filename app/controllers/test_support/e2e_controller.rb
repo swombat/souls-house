@@ -8,6 +8,38 @@ module TestSupport
 
     PASSWORD = "password123"
 
+    def field_activity_fixture
+      account = Account.find(params.fetch(:account_id))
+      raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
+
+      case params.fetch(:operation)
+      when "arrive"
+        note = account.whiteboards.create!(name: "Live arrival", content: "Live note words")
+        account.field_songs.create!(title: "Live song", instrumental: true,
+          links: [ "https://example.invalid/live-song" ])
+        account.field_tweets.create!(provider_tweet_id: "987654321", author_handle: "example",
+          text: "Live tweet", posted_at: Time.current, fetched_at: Time.current,
+          url: "https://x.com/example/status/987654321")
+        render json: { note: note.to_param }
+      when "delete"
+        account.whiteboards.find(params.fetch(:note)).soft_delete!
+        head :ok
+      when "rename"
+        account.whiteboards.find(params.fetch(:note)).update!(
+          name: "Renamed live note", content: "Changed elsewhere")
+        head :ok
+      when "late"
+        account.whiteboards.create!(name: "Live late arrival", content: "Live late words")
+        head :ok
+      when "chat"
+        chat = account.chats.create!(title: "Unrelated Field test chat", model_id: "openrouter/auto")
+        chat.messages.create!(role: "assistant", agent: account.agents.first!, content: "Unrelated chat activity")
+        head :ok
+      else
+        head :unprocessable_entity
+      end
+    end
+
     def expired_subscription_fixture
       account = Account.find(params.fetch(:account_id))
       raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")

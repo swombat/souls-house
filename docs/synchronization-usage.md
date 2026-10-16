@@ -43,6 +43,14 @@ Allowed models/collections are explicit in `SyncChannel`. Broad `Account:all` an
 server-side checks, not client convention. A `/collection` suffix in the frontend
 helper is not a wildcard subscription to arbitrary associations.
 
+The Field uses the account-authorised, content-free `FieldActivity:<account-id>`
+stream. It covers committed item/tag mutations, including new arrivals; it does
+not expand a collection into whichever records existed when the socket connected.
+Do not substitute the broad Account stream: unrelated chat writes also reach it.
+Field list/count/selected-item props refresh together, while an open search keeps
+its requested result window until the reader searches or navigates again. Note
+drafts retain both their text and the revision they started editing.
+
 ## Conversation state
 
 Chat connection/reconnection schedules a prop refresh to catch changes missed

@@ -82,19 +82,14 @@
   );
 
   const LIST_PROPS = ['items', 'current_item', 'selected', 'counts', 'field_empty', 'pagination'];
+  const LIVE_PROPS = [...LIST_PROPS, 'recording_allowance', 'tags'];
   const updateSync = createDynamicSync();
   $effect(() => {
-    const subs = {
-      // An open search refreshes too: a transcript becoming ready, or a note
-      // being edited, can change what matches.
-      [`Account:${account.id}:field_files`]: [...LIST_PROPS, 'search'],
-      [`Account:${account.id}:whiteboards`]: [...LIST_PROPS, 'search'],
-      [`Account:${account.id}:field_recordings`]: [...LIST_PROPS, 'recording_allowance', 'search'],
-      [`Account:${account.id}:field_tweets`]: [...LIST_PROPS, 'search'],
-      [`Account:${account.id}:field_songs`]: [...LIST_PROPS, 'search'],
-    };
-    if (current?.kind === 'note') subs[`Whiteboard:${current.id}`] = [...LIST_PROPS, 'search'];
-    updateSync(subs);
+    // One narrow parent stream catches new arrivals as well as existing items,
+    // without reloading the Field for unrelated chat/account activity.
+    // Search results remain the requested window until explicit navigation;
+    // live counts and the selected item may refresh without re-ranking it.
+    updateSync({ [`FieldActivity:${account.id}`]: LIVE_PROPS });
   });
 
   // Search, tag filter and page ride along in the URL so a link reopens
@@ -224,11 +219,13 @@
   // Note editing, unchanged from the whiteboards page
   let editing = $state(false);
   let editContent = $state('');
+  let editRevision = $state(null);
   let conflict = $state(null);
   let saving = $state(false);
 
   function startEditing() {
     editContent = current?.content || '';
+    editRevision = current?.revision;
     editing = true;
   }
 
@@ -245,7 +242,7 @@
       const response = await fetch(`/accounts/${account.id}/whiteboards/${current.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken || '' },
-        body: JSON.stringify({ whiteboard: { content: editContent }, expected_revision: current.revision }),
+        body: JSON.stringify({ whiteboard: { content: editContent }, expected_revision: editRevision }),
       });
       saving = false;
       if (response.ok) {
@@ -273,10 +270,12 @@
   function useServerVersion() {
     if (!conflict) return;
     editContent = conflict.serverContent;
+    editRevision = conflict.serverRevision;
     conflict = null;
   }
 
   function keepMyVersion() {
+    editRevision = conflict.serverRevision;
     conflict = null;
     saveNote();
   }
