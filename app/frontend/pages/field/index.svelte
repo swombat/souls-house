@@ -327,10 +327,6 @@
 
   {#if fieldEmpty}
     <FieldEmpty {accountLabel} />
-    <!-- An empty Field has no tabs, so a stream is set up (or shown waiting) here. -->
-    {#if tweet_stream}
-      <div class="mt-6"><FieldTweetStreamPanel accountId={account.id} stream={tweet_stream} /></div>
-    {/if}
   {:else}
     <!-- On a phone, an open item has the screen to itself. -->
     <div class={current ? 'hidden lg:block' : ''}>
@@ -368,13 +364,17 @@
     {#if tab === 'recordings' && recording_allowance}
       <div class={current ? 'hidden lg:block' : ''}><RecordingAllowance allowance={recording_allowance} /></div>
     {/if}
+  {/if}
 
-    {#if tab === 'tweets' && tweet_stream}
-      <div class={current ? 'hidden lg:block' : ''}>
-        <FieldTweetStreamPanel accountId={account.id} stream={tweet_stream} />
-      </div>
-    {/if}
+  <!-- One stable mount preserves local drafts as the Field gains/loses items
+       and across tab switches. Feature-off intentionally closes/resets forms. -->
+  {#if tweet_stream}
+    <div class={fieldEmpty ? 'mt-6' : tab !== 'tweets' ? 'hidden' : current ? 'hidden lg:block' : ''}>
+      <FieldTweetStreamPanel accountId={account.id} stream={tweet_stream} />
+    </div>
+  {/if}
 
+  {#if !fieldEmpty}
     <div class="grid gap-6 lg:grid-cols-3">
       <div class="min-w-0 space-y-3 {current ? 'hidden lg:block' : ''}">
         {#if search}
