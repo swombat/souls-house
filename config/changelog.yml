@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-16
+  title: Tweet-stream settings keep unfinished edits
+  body: "Refreshing a tweet stream's status no longer replaces unfinished options or spending-limit edits. Switching accounts or followed sources starts a fresh form."
+- date: 2026-10-16
   title: Speaker decisions follow across open pages
   body: "Setting a recording speaker aside, changing that reason or undoing the decision now updates other open recording pages and the Field’s naming counts. Reconnecting catches up without replacing unfinished notes."
 - date: 2026-10-16
