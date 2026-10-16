@@ -26,8 +26,8 @@ Raw snapshots, labels and runs stay off git, because they hold private conversat
 ## Results (account 7, 16 Oct 2026)
 
 968 snapshots across 243 rooms. 200 are excluded because a resident run was in progress at the sweep time.
-Labels: Opus helpers drafted them from a written rubric and Lume reviewed every one; 5 were changed to
-`uncertain`. Uncertain rows are excluded from P/R. Rows where residents posted through user accounts (early
+Labels: Opus helpers drafted them from a written rubric. Lume reviewed every hold-out label and changed 5 to
+`uncertain`. The 120 tuning-sample labels are unreviewed drafts. Uncertain rows are excluded from P/R. Rows where residents posted through user accounts (early
 rooms) are reported separately. Wake is counted per (row, resident) pair; person_holds per row.
 
 Prompt v3, frozen before the hold-out run; wake ≥ 0.8, person_holds ≥ 0.6.
