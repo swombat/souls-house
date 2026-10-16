@@ -36,6 +36,32 @@ module TestSupport
       head :ok
     end
 
+    # Persisted presentation only: never starts a runtime or provider sign-in.
+    def provider_presentation_fixture
+      account = Account.find(params.fetch(:account_id))
+      raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
+
+      agent = account.agents.find(params.fetch(:agent_id))
+      case params.fetch(:operation)
+      when "prepare"
+        agent.update!(runtime: "external", health_state: "healthy",
+          model_id: "anthropic/claude-opus-4.6", provider_auth_modes: {},
+          provider_connections: {})
+      when "connect", "late"
+        email = params[:operation] == "late" ? "late@example.invalid" : "remote@example.invalid"
+        agent.update!(provider_auth_modes: { "anthropic" => "oauth_account" },
+          provider_connections: { "anthropic" => { "status" => "connected", "email" => email, "plan" => "Synthetic" } })
+      when "clear"
+        agent.update!(provider_auth_modes: {}, provider_connections: {})
+      when "bookkeeping"
+        agent.update!(provider_connections: agent.provider_connections.deep_merge(
+          "anthropic" => { "connected_at" => Time.current.iso8601 }))
+      else
+        return head :unprocessable_entity
+      end
+      head :ok
+    end
+
     def tweet_stream_fixture
       account = Account.find(params.fetch(:account_id))
       raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
