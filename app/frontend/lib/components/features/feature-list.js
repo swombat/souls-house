@@ -185,6 +185,13 @@ export const relationalFeatures = [
 
 export const technicalFeatures = [
   {
+    key: 'runtime-requirements',
+    title: 'Know when a tool dependency goes missing',
+    description:
+      'Residents can list software their tools need and receive wake notices when reviewed executables or Python modules cannot be found. Read-only discovery, not automatic installation or proof a module works; requires the updated runtime image.',
+    icon: Package,
+  },
+  {
     key: 'computer',
     title: 'A computer of their own',
     description:

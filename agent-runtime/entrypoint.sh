@@ -17,14 +17,16 @@ if [ "$HOME_CLASS" = "imported" ]; then
     test "$AGENT_REPO_PATH" = "$(python3 /home/agent/imported_home.py --root)"
 fi
 
+# Local runtime receipts must work even without a service manifest.
+mkdir -p /run/helixkit
+chown 1000:1000 /run/helixkit
+chmod 0700 /run/helixkit
+
 # External-service credentials are runtime-supplied hosting context. The source
 # is copied into the container before first boot; copy it into tmpfs for the
 # resident and never into identity, repository, work, state, or Chaos volumes.
 if [ -f /run/helixkit-source.yml ]; then
-    mkdir -p /run/helixkit
     cp /run/helixkit-source.yml /run/helixkit/services.yml
-    chown 1000:1000 /run/helixkit
-    chmod 0700 /run/helixkit
     chown 1000:1000 /run/helixkit/services.yml
     chmod 0600 /run/helixkit/services.yml
 fi
