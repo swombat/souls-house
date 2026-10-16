@@ -12,7 +12,11 @@ import axios from 'axios';
 //   the props a refresh asked for are queued and reloaded once the last hold is released;
 // - a refresh already in flight when the hold began can still come back as a 409; Inertia sends
 //   through the shared axios instance, so an interceptor turns that response into a cancellation
-//   (which Inertia ignores) and queues its props instead of letting Inertia reload the page;
+//   (which Inertia ignores) and queues its props instead of letting Inertia reload the page.
+//   Only background GETs are caught. A form POST that redirects (starting a new conversation)
+//   keeps method 'post' in its axios config even though the 409 comes from the redirected GET;
+//   the write has already happened, so cancelling it would leave the form waiting forever and
+//   invite a duplicate on retry. A visit the person chose (and confirmed) passes through too;
 // - a visit the person starts themselves asks before leaving, and so does closing or reloading
 //   the tab (beforeunload).
 // A quiet hold ({ warn: false }) holds refreshes without asking anything. The composers take one
@@ -42,6 +46,9 @@ export function createRecordingGuard({
   let warningHolds = 0;
   const queuedProps = new Set();
   let queuedEverything = false;
+  // A visit the person started while a hold was on; its 409 must reach Inertia, which then
+  // loads the page they asked for.
+  let personVisitInFlight = false;
 
   function queue(only) {
     if (!only || only.length === 0) queuedEverything = true;
@@ -65,17 +72,32 @@ export function createRecordingGuard({
       return;
     }
 
-    if (!visit.async && warningHolds > 0 && !win?.confirm(LEAVE_WARNING)) event.preventDefault();
+    if (!visit.async && warningHolds > 0 && !win?.confirm(LEAVE_WARNING)) {
+      event.preventDefault();
+      return;
+    }
+    if (!visit.async) personVisitInFlight = true;
+  }
+
+  function onFinishVisit(event) {
+    if (!event?.detail?.visit?.async) personVisitInFlight = false;
+  }
+
+  function isBackgroundGet(config) {
+    return String(config?.method || 'get').toLowerCase() === 'get' && !personVisitInFlight;
   }
 
   function onResponseError(error) {
-    if (holds === 0 || !isVersionConflict(error)) return Promise.reject(error);
+    if (holds === 0 || !isVersionConflict(error) || !isBackgroundGet(error.config)) {
+      return Promise.reject(error);
+    }
     const partial = header(error.config?.headers, 'X-Inertia-Partial-Data');
     queue(partial ? String(partial).split(',').filter(Boolean) : []);
     return Promise.reject(new axios.CanceledError('Held while a voice note is recording'));
   }
 
   inertia.on?.('before', onBeforeVisit);
+  inertia.on?.('finish', onFinishVisit);
   http?.interceptors?.response.use(undefined, onResponseError);
 
   function flush() {

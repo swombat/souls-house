@@ -18,6 +18,7 @@ Rails.application.routes.draw do
         post :song_card_fixture, to: "/test_support/e2e#song_card_fixture"
         post :field_recording_fixture, to: "/test_support/e2e#field_recording_fixture"
         post :expired_subscription_fixture, to: "/test_support/e2e#expired_subscription_fixture"
+        post :audio_blob, to: "/test_support/e2e#audio_blob"
       end
     end
   end

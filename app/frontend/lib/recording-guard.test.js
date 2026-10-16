@@ -3,17 +3,21 @@ import axios from 'axios';
 import { createRecordingGuard, LEAVE_WARNING } from './recording-guard';
 
 function fakeRouter() {
-  const listeners = new Set();
+  const listeners = { before: new Set(), finish: new Set() };
   return {
     reload: vi.fn(),
     on: vi.fn((type, callback) => {
-      listeners.add(callback);
-      return () => listeners.delete(callback);
+      listeners[type]?.add(callback);
+      return () => listeners[type]?.delete(callback);
     }),
     visit(visit) {
       const event = new CustomEvent('inertia:before', { cancelable: true, detail: { visit } });
-      listeners.forEach((callback) => callback(event));
+      listeners.before.forEach((callback) => callback(event));
       return !event.defaultPrevented;
+    },
+    finish(visit) {
+      const event = new CustomEvent('inertia:finish', { detail: { visit } });
+      listeners.finish.forEach((callback) => callback(event));
     },
   };
 }
@@ -131,9 +135,9 @@ describe('responses already in flight', () => {
       fail: (error) => onRejected(error),
     };
   }
-  const conflict = (partial) => ({
+  const conflict = (partial, method = 'get') => ({
     response: { status: 409, headers: { 'x-inertia-location': '/accounts/1/chats/2' } },
-    config: { headers: partial ? { 'X-Inertia-Partial-Data': partial } : {} },
+    config: { method, headers: partial ? { 'X-Inertia-Partial-Data': partial } : {} },
   });
 
   test('a version conflict that lands during a hold becomes a cancellation and is replayed', async () => {
@@ -159,5 +163,45 @@ describe('responses already in flight', () => {
     guard.hold();
     const serverError = { response: { status: 500, headers: {} }, config: {} };
     await expect(http.fail(serverError)).rejects.toBe(serverError);
+  });
+
+  test('a redirected POST (a new conversation being created) passes through untouched', async () => {
+    const router = fakeRouter();
+    const http = fakeHttp();
+    const guard = createRecordingGuard({ router, http, win: fakeWindow() });
+
+    const release = guard.hold({ warn: false });
+    const created = conflict(null, 'post');
+    await expect(http.fail(created)).rejects.toBe(created);
+
+    release();
+    expect(router.reload).not.toHaveBeenCalled();
+  });
+
+  test('a visit the person confirmed passes through; background refreshes are caught again after it', async () => {
+    const router = fakeRouter();
+    const http = fakeHttp();
+    const guard = createRecordingGuard({ router, http, win: fakeWindow(true) });
+
+    guard.hold();
+    const visit = { method: 'get', async: false };
+    expect(router.visit(visit)).toBe(true);
+    const leaving = conflict(null);
+    await expect(http.fail(leaving)).rejects.toBe(leaving);
+
+    router.finish(visit);
+    const background = await http.fail(conflict('messages')).catch((rejection) => rejection);
+    expect(axios.isCancel(background)).toBe(true);
+  });
+
+  test('a declined visit does not let later 409s through', async () => {
+    const http = fakeHttp();
+    const router = fakeRouter();
+    const guard = createRecordingGuard({ router, http, win: fakeWindow(false) });
+
+    guard.hold();
+    expect(router.visit({ method: 'get', async: false })).toBe(false);
+    const background = await http.fail(conflict('messages')).catch((rejection) => rejection);
+    expect(axios.isCancel(background)).toBe(true);
   });
 });

@@ -41,6 +41,18 @@ module TestSupport
       render json: { agent_name: agent.name }
     end
 
+    # What the transcription endpoint returns besides the text: the recording, stored and signed.
+    # Browser tests stub transcription itself (no speech-to-text provider in test) but send a
+    # real signed id, so the composers keep their audio hold until the send has gone through.
+    def audio_blob
+      blob = ActiveStorage::Blob.create_and_upload!(
+        io: Rails.root.join("test/fixtures/files/test_audio.webm").open,
+        filename: "recording.webm",
+        content_type: "audio/webm"
+      )
+      render json: { signed_id: blob.signed_id }
+    end
+
     def song_card_fixture
       account = Account.find(params.fetch(:account_id))
       raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
