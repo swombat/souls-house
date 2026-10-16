@@ -17,6 +17,10 @@ class AgentRuntimeInteraction < ApplicationRecord
   has_one :follow_through_nudge, class_name: "AgentRuntimeInteraction", foreign_key: :follow_through_of_id,
     inverse_of: :follow_through_of, dependent: :nullify
   after_commit :broadcast_agent_runtime_interactions_refresh, on: [ :create, :update, :destroy ]
+  after_save :broadcast_rhythm_activity_after_commit, if: -> {
+    saved_changes.keys.intersect?(%w[id execution_state agent_id message_dispatch_id])
+  }
+  after_destroy :broadcast_rhythm_activity_after_commit
   after_update_commit :enqueue_follow_through_check, if: -> { saved_change_to_finished_at? && finished_at.present? }
   after_update_commit :enqueue_pending_wake_release, if: -> { saved_change_to_finished_at? && finished_at.present? && trigger_kind == "conversation" }
   after_update_commit :enqueue_oom_check, if: -> { saved_change_to_finished_at? && finished_at.present? }
@@ -495,6 +499,20 @@ class AgentRuntimeInteraction < ApplicationRecord
   end
 
   private
+
+  def broadcast_rhythm_activity_after_commit
+    # The occurrence renders the dispatch's run list and execution states,
+    # not token usage, transport results, leases or telemetry snapshots.
+    dispatch_ids = [ message_dispatch_id ]
+    dispatch_ids << message_dispatch_id_before_last_save if !destroyed? && saved_change_to_message_dispatch_id?
+    dispatch_ids = dispatch_ids.compact.uniq
+    return if dispatch_ids.empty?
+
+    ActiveRecord.after_all_transactions_commit do
+      accounts = MessageDispatch.where(id: dispatch_ids).filter_map(&:rhythm_activity_account)
+      accounts.uniq(&:id).each { |account| RhythmActivity.broadcast_for(account) }
+    end
+  end
 
   def mid_run_message_json(message)
     author = ExternalAgentResponseRequest.speaker_for(message)

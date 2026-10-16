@@ -52,6 +52,9 @@ class MessageDispatch < ApplicationRecord
   validates :client_invocation_id, :request_digest, presence: true, if: :invoke?
   validates :client_invocation_id, :request_digest, absence: true, if: :from_message?
 
+  after_save :broadcast_rhythm_activity_after_commit, if: -> { saved_changes.keys.intersect?(%w[id status reason]) }
+  after_destroy :broadcast_rhythm_activity_after_commit
+
   # Reserved and still under recovery: a settled_at on a reserved row means
   # the sweeper has closed its recovery window.
   scope :recovery_open, -> { where(status: "reserved", settled_at: nil) }
@@ -257,7 +260,25 @@ class MessageDispatch < ApplicationRecord
     }
   end
 
+  # Only the dispatch of an occurrence's opening contributes to its status.
+  # Other dispatches in the same chat (and a guest's home account) do not.
+  # Query afresh: the occurrence can be created later in this transaction.
+  def rhythm_activity_account
+    return unless rhythm? && message_id
+
+    RhythmOccurrence.find_by(message_id: message_id)&.rhythm&.account
+  end
+
   private
+
+  def broadcast_rhythm_activity_after_commit
+    # RhythmPresentation renders status/reason, not expiry/recovery metadata
+    # or the singular runtime_interaction pointer. Register at the state save
+    # so a later metadata save in the same transaction cannot mask it.
+    return unless rhythm?
+
+    ActiveRecord.after_all_transactions_commit { RhythmActivity.broadcast_for(rhythm_activity_account) }
+  end
 
   # The caller holds this row's lock.
   def close_recovery_window!
