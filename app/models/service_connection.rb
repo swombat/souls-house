@@ -51,6 +51,23 @@ class ServiceConnection < ApplicationRecord
   # The account's tweet stream is paid by this connection (FieldTweets).
   after_commit -> { FieldTweets.integration_changed!(account) }, if: :tweet_funding_changed?
 
+  # Capture each write before a later save/touch replaces saved_changes.
+  # IntegrationStatus defers delivery until the outermost transaction commits.
+  after_save :refresh_integration_status, if: :integration_status_changed?
+  after_destroy :refresh_integration_status
+
+  INTEGRATION_STATUS_COLUMNS = %w[
+    account_id provider status label external_identity management_scope
+    connected_by_user_id enabled_for_new_agents freely_provisionable
+  ].freeze
+  # as_connection_json's authority/strategy methods, ConnectionGoogleAuthority,
+  # AgentIntegrationsPanel and ConnectionTelegramStatus. Do not compare the
+  # entire runtime_metadata hash (it includes unrelated credential metadata).
+  INTEGRATION_STATUS_METADATA_KEYS = %w[
+    granted_scopes effective_authority requested_authority authority_warnings
+    authority_summary credential_strategy search_all_dialogs
+  ].freeze
+
   scope :connected, -> { where(status: "connected") }
   scope :personal, -> { where(management_scope: "personal") }
   scope :account_managed, -> { where(management_scope: "account_managed") }
@@ -301,7 +318,9 @@ class ServiceConnection < ApplicationRecord
     previous = state["unpair"].to_h
     unpair = { "since" => previous["since"] || now.utc.iso8601, "attempts" => previous["attempts"].to_i + 1,
                "last_attempt_at" => now.utc.iso8601, "last_error" => error.class.name }
-    update_columns(connector_state: state.merge("unpair" => unpair), updated_at: now)
+    written = update_columns(connector_state: state.merge("unpair" => unpair), updated_at: now)
+    IntegrationStatus.refresh!(account_id) if written
+    written
   end
 
   # One more unpair for a pending disconnect. On the connector's
@@ -317,7 +336,8 @@ class ServiceConnection < ApplicationRecord
       record_unpair_failure!(e)
       return false
     end
-    update_columns(connector_state: connector_state.to_h.except("unpair"), updated_at: Time.current)
+    written = update_columns(connector_state: connector_state.to_h.except("unpair"), updated_at: Time.current)
+    IntegrationStatus.refresh!(account_id) if written
     destroy! unless retained_after_disconnect?
     true
   end
@@ -530,6 +550,36 @@ class ServiceConnection < ApplicationRecord
   end
 
   private
+
+  def refresh_integration_status
+    IntegrationStatus.refresh!([ account_id, *saved_change_to_account_id ])
+  end
+
+  def integration_status_changed?
+    return true if previously_new_record? || (saved_changes.keys & INTEGRATION_STATUS_COLUMNS).any?
+
+    if saved_change_to_credential_metadata?
+      before, after = saved_change_to_credential_metadata
+      return true if before.to_h.slice(*INTEGRATION_STATUS_METADATA_KEYS) != after.to_h.slice(*INTEGRATION_STATUS_METADATA_KEYS)
+    end
+    if saved_change_to_connector_state?
+      return saved_change_to_connector_state.map { |state| integration_connector_projection(state) }.uniq.size > 1
+    end
+    false
+  end
+
+  def integration_connector_projection(state)
+    state = state.to_h
+    # ConnectionTelegramStatus renders state/reason; unpair is presented only
+    # as presence and these three retry fields. Login, QR, phone, unread,
+    # sequence, last_error and arbitrary future state keys are not producers.
+    availability = state["availability"].to_h
+    unpair = state["unpair"].presence
+    [
+      availability.fetch("state", "ok"), availability["reason"],
+      unpair.present?, unpair&.slice("since", "attempts", "last_attempt_at")
+    ]
+  end
 
   def comms_summary
     {

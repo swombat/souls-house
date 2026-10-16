@@ -38,7 +38,7 @@ module Agents
           credential_revision: connection.credential_revision
         )
         provisioned = access.enabled? && connections.include?(connection)
-        AgentServiceAccess.where(
+        affected = AgentServiceAccess.where(
           id: access.id, enabled: access.enabled, updated_at: access.updated_at,
           service_connection_id: unchanged_connections.select(:id)
         ).update_all(
@@ -47,6 +47,7 @@ module Agents
           provisioning_status: provisioned ? "provisioned" : "removed",
           provisioning_error_code: nil
         )
+        IntegrationStatus.refresh!(connection.account_id) if affected.positive?
       end
     end
 

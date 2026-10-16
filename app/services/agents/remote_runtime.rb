@@ -311,8 +311,9 @@ module Agents
     def record_refresh_problem!(placement, agent, snapshot, state, detail, now)
       error = "VM restart with new credentials #{state}: #{detail || 'no detail'}".first(255)
       ids = snapshot["accesses"].map { |entry| entry["id"] }
-      agent.agent_service_accesses.where(id: ids).update_all(provisioning_status: "failed",
+      affected = agent.agent_service_accesses.where(id: ids).update_all(provisioning_status: "failed",
         provisioning_error_code: "vm_restart_#{state.tr(' ', '_')}", updated_at: now)
+      IntegrationStatus.refresh!(agent.account_id) if affected.positive?
       agent.update!(sandbox_last_error: error, sandbox_last_error_at: now)
       placement.update!(refresh_last_error: error)
     end

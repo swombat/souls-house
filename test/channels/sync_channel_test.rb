@@ -146,4 +146,56 @@ class SyncChannelTest < ActionCable::Channel::TestCase
     assert_no_streams
   end
 
+  test "integration status subscribes only to the accessible account marker" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "IntegrationStatus", id: @account.to_param
+
+    assert subscription.confirmed?
+    assert_equal [ "IntegrationStatus:#{@account.to_param}" ], subscription.streams
+  end
+
+  test "integration status rejects inaccessible accounts" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "IntegrationStatus", id: accounts(:existing_user_account).to_param
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "integration status rejects pending membership" do
+    stub_connection current_user: users(:unconfirmed_user), current_app_session: nil
+    subscribe channel: "SyncChannel", model: "IntegrationStatus", id: accounts(:another_team).to_param
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "integration status rejects native connections" do
+    client = Doorkeeper::Application.create!(name: "App", uid: "integration-sync-refusal",
+      redirect_uri: "https://example.com/cb", scopes: "chat", confidential: false)
+    stub_connection current_user: @user, current_app_session: AppSession.create!(user: @user, oauth_application: client)
+    subscribe channel: "SyncChannel", model: "IntegrationStatus", id: @account.to_param
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "integration status rejects all even for administrators" do
+    stub_connection current_user: @admin, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "IntegrationStatus", id: "all"
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "integration status rejects collections and direct connection subscriptions" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "IntegrationStatus", id: "#{@account.to_param}:service_connections"
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "service connection is not a directly subscribable model" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "ServiceConnection", id: "svc_1"
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
 end
