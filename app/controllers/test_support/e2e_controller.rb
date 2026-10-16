@@ -30,6 +30,14 @@ module TestSupport
         account.guest_memberships.find_by!(agent: visitor).destroy!
       when "delete"
         visitor.destroy!
+      when "candidate_arrive"
+        create_agent!(home, "New candidate", "blue")
+      when "candidate_offline"
+        home.agents.find_by!(name: "New candidate").update!(active: false)
+      when "candidate_return"
+        home.agents.find_by!(name: "New candidate").update!(active: true)
+      when "candidate_bookkeeping"
+        home.agents.find_by!(name: "New candidate").touch
       else
         return head :unprocessable_entity
       end
