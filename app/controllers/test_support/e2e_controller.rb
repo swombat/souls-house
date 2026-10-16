@@ -40,6 +40,25 @@ module TestSupport
       end
     end
 
+    def room_navigation_fixture
+      account = Account.find(params.fetch(:account_id))
+      raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")
+
+      room = if params[:operation] == "create"
+        account.rooms.create!(name: params.fetch(:name))
+      else
+        Room.resolve_for(account, params.fetch(:room))
+      end
+      case params[:operation]
+      when "rename" then room.update!(name: params.fetch(:name))
+      when "move" then room.move!(params.fetch(:direction).to_i)
+      when "delete" then room.destroy!
+      when "create" # The create above is itself the producer.
+      else return head :unprocessable_entity
+      end
+      render json: { id: room.to_param }
+    end
+
     def expired_subscription_fixture
       account = Account.find(params.fetch(:account_id))
       raise ActiveRecord::RecordNotFound unless account.name.start_with?("E2E ")

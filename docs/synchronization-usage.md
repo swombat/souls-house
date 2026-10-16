@@ -51,6 +51,14 @@ Field list/count/selected-item props refresh together, while an open search keep
 its requested result window until the reader searches or navigates again. Note
 drafts retain both their text and the revision they started editing.
 
+Room metadata uses the account-authorised, content-free
+`RoomNavigation:<account-id>` stream, including committed reorders whose position
+writes bypass ordinary model callbacks. The navbar watches the current account
+even when it has no rooms yet. Room settings keep conversation counts separate
+from room metadata, so unrelated chat activity need not reload room names/order.
+Do not map room metadata to all confirmed accounts or the run-state
+`RoomActivity` stream.
+
 ## Conversation state
 
 Chat connection/reconnection schedules a prop refresh to catch changes missed

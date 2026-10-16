@@ -63,7 +63,7 @@ class Room < ApplicationRecord
   def broadcast_navigation
     return if skip_broadcast
 
-    ActionCable.server.broadcast("RoomNavigation:#{account.to_param}", action: "refresh")
+    ActionCable.server.broadcast("RoomNavigation:#{account.to_param}", { action: "refresh" })
   end
 
   def move_chats_to_main
