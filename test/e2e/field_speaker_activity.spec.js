@@ -55,6 +55,9 @@ test('speaker decisions reach open recording and Field pages without losing note
     await page.getByTestId('add-recording-notes').click();
     const draft = page.locator('#recording-notes');
     await draft.fill('Keep my unfinished meeting notes.');
+    await page.getByTestId('transcript-line').first().click();
+    const transcriptDraft = page.getByTestId('line-editor');
+    await transcriptDraft.fill('Keep my unfinished line correction.');
     const readerCard = page.getByTestId('speaker-card').first();
     const editorCard = editor.getByTestId('speaker-card').first();
     await editorCard.getByTestId('speaker-dismiss').click();
@@ -62,6 +65,7 @@ test('speaker decisions reach open recording and Field pages without losing note
     await expect(readerCard).toHaveAttribute('data-ignored', 'noise');
     await expect(badge).toHaveAttribute('aria-label', '1 speaker to name');
     await expect(draft).toHaveValue('Keep my unfinished meeting notes.');
+    await expect(transcriptDraft).toHaveValue('Keep my unfinished line correction.');
 
     await page.waitForLoadState('networkidle');
     const beforeReason = reloads.length;
@@ -70,6 +74,7 @@ test('speaker decisions reach open recording and Field pages without losing note
     await page.waitForLoadState('networkidle');
     expect(reloads.length - beforeReason).toBeLessThanOrEqual(2);
     await expect(draft).toHaveValue('Keep my unfinished meeting notes.');
+    await expect(transcriptDraft).toHaveValue('Keep my unfinished line correction.');
 
     // Lose the only Undo event, then reconnect with no subsequent write.
     drop = true;
@@ -80,6 +85,7 @@ test('speaker decisions reach open recording and Field pages without losing note
     drop = false;
     await expect(badge).toHaveAttribute('aria-label', '2 speakers to name');
     await expect(draft).toHaveValue('Keep my unfinished meeting notes.');
+    await expect(transcriptDraft).toHaveValue('Keep my unfinished line correction.');
 
     await page.waitForLoadState('networkidle');
     await field.waitForLoadState('networkidle');
