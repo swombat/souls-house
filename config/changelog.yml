@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-16
+  title: Rhythms stay current while open
+  body: "Schedules, pauses and new conversations now update on an open Rhythms page, including after reconnecting. Background updates preserve an unfinished pause reason and the retry key for starting a conversation."
+- date: 2026-10-16
   title: Room navigation updates live
   body: "Adding, renaming, reordering or removing a room now updates the Chats menu while you keep another page open. Reconnecting catches up missed room changes without a manual reload. Live once Rails is deployed."
 - date: 2026-10-16

@@ -1,5 +1,7 @@
 class ChatAgent < ApplicationRecord
 
+  include RhythmListingActivity
+
   SUMMARY_COOLDOWN = 5.minutes
 
   belongs_to :chat

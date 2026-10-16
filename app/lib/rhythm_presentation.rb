@@ -41,7 +41,7 @@ class RhythmPresentation
       can_manage: manageable, can_resume: holds.any? { |hold| can_release?(hold) },
       can_join: !!(present && @agent.eligible_for_conversation? && !selected.include?(@agent)),
       can_leave: !!(present && selected.include?(@agent)),
-      start_request_key: SecureRandom.uuid, errors: @rhythm.errors.to_hash(true),
+      errors: @rhythm.errors.to_hash(true),
       holds: holds.map { |hold| hold_payload(hold) },
       occurrences: history ? @rhythm.occurrences.includes(:chat, message: :message_dispatch)
         .order(created_at: :desc).limit(30).map { |occurrence| occurrence_payload(occurrence) } : [],

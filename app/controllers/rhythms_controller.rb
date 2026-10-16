@@ -15,7 +15,8 @@ class RhythmsController < ApplicationController
   end
 
   def show
-    render inertia: "rhythms/show", props: shared_props.merge(rhythm: rhythm_payload(@rhythm, history: true))
+    render inertia: "rhythms/show", props: shared_props.merge(
+      rhythm: @rhythm && rhythm_payload(@rhythm, history: true))
   end
 
   def new
@@ -78,7 +79,14 @@ class RhythmsController < ApplicationController
   private
 
   def set_rhythm
-    @rhythm = Rhythm.where(account: current_account).find(params[:id])
+    scope = Rhythm.where(account: current_account)
+    if action_name == "show" && request.headers["X-Inertia"] &&
+        request.headers["X-Inertia-Partial-Component"] == "rhythms/show" &&
+        request.headers["X-Inertia-Partial-Data"].to_s.split(",").map(&:strip).include?("rhythm")
+      @rhythm = scope.find_by_obfuscated_id(params[:id])
+    else
+      @rhythm = scope.find(params[:id])
+    end
   end
 
   def require_manager

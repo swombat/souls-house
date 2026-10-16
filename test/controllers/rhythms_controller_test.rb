@@ -30,6 +30,36 @@ class RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_rhythm_path(@account, rhythm)
   end
 
+  test "only authorized detail partials render a missing rhythm as deleted" do
+    rhythm = make_rhythm
+    path = account_rhythm_path(@account, rhythm)
+    headers = {
+      "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest,
+      "X-Inertia-Partial-Component" => "rhythms/show", "X-Inertia-Partial-Data" => "rhythm"
+    }
+    get path, headers: headers
+    assert_response :success
+    assert_equal rhythm.to_param, response.parsed_body.dig("props", "rhythm", "id")
+    assert_not response.parsed_body.dig("props", "rhythm").key?("start_request_key")
+    rhythm.destroy!
+    get path, headers: headers
+    assert_response :success
+    assert_nil response.parsed_body.dig("props", "rhythm")
+    get path
+    assert_response :not_found
+    get path, headers: headers.merge("X-Inertia-Partial-Component" => "rhythms/index")
+    assert_response :not_found
+    foreign_account = accounts(:existing_user_account)
+    foreign_agent = foreign_account.agents.create!(name: "Foreign synthetic", runtime: "external", model_id: "anthropic/claude-opus-5.5")
+    foreign = Rhythm.create!(account: foreign_account, creator: @user, title: "Foreign", opening: "Private",
+      agents: [ foreign_agent ], cadence: "daily", time_of_day: "09:00", timezone: "UTC")
+    get account_rhythm_path(@account, foreign), headers: headers
+    assert_response :success
+    assert_nil response.parsed_body.dig("props", "rhythm")
+    get account_rhythm_path(accounts(:existing_user_account), foreign), headers: headers
+    assert_response :not_found
+  end
+
   test "index shows each rhythm's last five conversations, marking the ones in the conversation list" do
     rhythm = Rhythm.create!(account: @account, creator_agent: @resident, title: "House watch", opening: "Look round.",
       agents: [ @resident ], cadence: "daily", time_of_day: "09:00", timezone: "UTC", next_run_at: 1.hour.ago)

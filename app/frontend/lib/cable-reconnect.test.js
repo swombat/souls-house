@@ -76,23 +76,26 @@ test('room navigation catches up on connect and reconnect using only its mapped 
   vi.useRealTimers();
 });
 
-test.each(['RoomActivity', 'FieldActivity'])('%s catches up on connect and every reconnect', (model) => {
-  vi.useFakeTimers();
-  router.reload.mockClear();
-  const unsubscribe = subscribeToModel(model, 'account', ['live_props']);
-  const callbacks = create.mock.calls.at(-1)[1];
-  // A run that finished while disconnected leaves no broadcast to replay.
-  callbacks.connected();
-  vi.advanceTimersByTime(300);
-  expect(router.reload).toHaveBeenLastCalledWith(expect.objectContaining({ only: ['live_props'] }));
-  router.reload.mockClear();
-  callbacks.connected();
-  vi.advanceTimersByTime(300);
-  expect(router.reload).toHaveBeenCalledWith(expect.objectContaining({ only: ['live_props'] }));
-  unsubscribe();
-  router.reload.mockReset();
-  vi.useRealTimers();
-});
+test.each(['RoomActivity', 'FieldActivity', 'RhythmActivity'])(
+  '%s catches up on connect and every reconnect',
+  (model) => {
+    vi.useFakeTimers();
+    router.reload.mockClear();
+    const unsubscribe = subscribeToModel(model, 'account', ['live_props']);
+    const callbacks = create.mock.calls.at(-1)[1];
+    // A run that finished while disconnected leaves no broadcast to replay.
+    callbacks.connected();
+    vi.advanceTimersByTime(300);
+    expect(router.reload).toHaveBeenLastCalledWith(expect.objectContaining({ only: ['live_props'] }));
+    router.reload.mockClear();
+    callbacks.connected();
+    vi.advanceTimersByTime(300);
+    expect(router.reload).toHaveBeenCalledWith(expect.objectContaining({ only: ['live_props'] }));
+    unsubscribe();
+    router.reload.mockReset();
+    vi.useRealTimers();
+  }
+);
 
 test('a navigation cancels an in-flight background refresh and re-queues it against the new page', () => {
   vi.useFakeTimers();

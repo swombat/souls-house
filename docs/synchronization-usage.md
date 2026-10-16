@@ -43,6 +43,17 @@ Allowed models/collections are explicit in `SyncChannel`. Broad `Account:all` an
 server-side checks, not client convention. A `/collection` suffix in the frontend
 helper is not a wildcard subscription to arbitrary associations.
 
+Rhythm index/detail readers use the account-authorised, content-free
+`RhythmActivity:<account-id>` stream, mapped only to `rhythms` / `rhythm`.
+Core changes, bulk hold releases and displayed dispatch/runtime transitions
+invalidate after commit. Recent-run chat title/discard changes and actual
+quiet/listed transitions invalidate too; ordinary message touches and token
+telemetry do not. Existing reconnect catch-up and coalescing apply.
+New/edit forms stay unsubscribed. Detail refreshes retain pause drafts and the
+client-owned manual-start key, rotating it only after a successful start POST.
+Authorized partial detail reloads represent deletion as `rhythm: null`; full
+missing-record navigation and account authorization retain their normal checks.
+
 The Field uses the account-authorised, content-free `FieldActivity:<account-id>`
 stream. It covers committed item/tag mutations, including new arrivals; it does
 not expand a collection into whichever records existed when the socket connected.

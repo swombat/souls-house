@@ -85,7 +85,7 @@ class RhythmActivityTest < ActiveSupport::TestCase
     before = @rhythm.updated_at
     next_run = @rhythm.next_run_at
     result = nil
-    MessageDispatchJob.stub(:perform_later, ->(*) {}) do
+    MessageDispatchJob.stub(:perform_later, ->(*) { }) do
       assert_refresh_after_commit do
         result = @rhythm.fire!(manual: true, request_key: "synthetic-manual")
       end
@@ -101,7 +101,7 @@ class RhythmActivityTest < ActiveSupport::TestCase
   test "scheduled firing refreshes and advances the schedule without invoking a resident" do
     now = Time.utc(2026, 10, 16, 10)
     @rhythm.update_column(:next_run_at, now - 1.day)
-    MessageDispatchJob.stub(:perform_later, ->(*) {}) do
+    MessageDispatchJob.stub(:perform_later, ->(*) { }) do
       assert_refresh_after_commit { assert_equal :created, @rhythm.fire!(now: now).status }
     end
     assert_operator @rhythm.reload.next_run_at, :>, now

@@ -83,6 +83,21 @@ class Chat < ApplicationRecord
 
   broadcasts_to :account
 
+  before_destroy :capture_rhythm_activity_account, prepend: true
+  after_update :refresh_rhythm_metadata, if: -> { saved_change_to_title? || saved_change_to_discarded_at? }
+  after_destroy_commit -> { RhythmActivity.broadcast_for(@rhythm_activity_account) }
+
+  def capture_rhythm_activity_account
+    @rhythm_activity_account = account if rhythm_run?
+  end
+
+  def refresh_rhythm_metadata
+    return unless rhythm_run?
+
+    activity_account = account
+    ActiveRecord.after_all_transactions_commit { RhythmActivity.broadcast_for(activity_account) }
+  end
+
   # Historical model references and string-only selections are both supported.
   validate :model_must_be_present
 
@@ -118,7 +133,6 @@ class Chat < ApplicationRecord
     ReplyExpectation.joins(:message).where(messages: { chat_id: id }).distinct.pluck(:user_id)
       .each { |uid| ReplyExpectation.refresh_for(uid) }
   end
-
 
   # Create chat with optional initial message
   # The opening message wakes residents the same way a later send does: a

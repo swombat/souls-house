@@ -1,5 +1,7 @@
 class Message < ApplicationRecord
 
+  include RhythmListingActivity
+
   include Discard::Model
   include Broadcastable
   include ObfuscatesId

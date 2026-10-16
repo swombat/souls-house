@@ -1,6 +1,8 @@
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/svelte';
 import { router, useForm } from '@inertiajs/svelte';
 import { get } from 'svelte/store';
+const { subscribe, unsubscribe } = vi.hoisted(() => ({ subscribe: vi.fn(), unsubscribe: vi.fn() }));
+vi.mock('$lib/cable', () => ({ subscribeToModel: subscribe }));
 import RhythmsIndex from './index.svelte';
 import RhythmForm from './form.svelte';
 import RhythmShow from './show.svelte';
@@ -47,13 +49,13 @@ function rhythmFixture(overrides = {}) {
     occurrences: [],
     can_manage: true,
     can_resume: false,
-    start_request_key: 'key-1',
     ...overrides,
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  subscribe.mockReturnValue(unsubscribe);
   globalThis.fetch = vi.fn(() =>
     Promise.resolve({
       ok: true,
@@ -188,14 +190,51 @@ test("a resident's pause is shown with who holds it, and only they can lift it",
   expect(screen.getByRole('button', { name: /Start one now/ })).toBeDisabled();
 });
 
-test('starting one now sends the request key so a double click cannot start two', async () => {
-  render(RhythmShow, { account, rhythm: rhythmFixture() });
+test('a manual start keeps its client key across live refresh and failed retry, rotating only after success', async () => {
+  const { rerender } = render(RhythmShow, { account, rhythm: rhythmFixture() });
   await fireEvent.click(screen.getByRole('button', { name: /Start one now/ }));
-  expect(router.post).toHaveBeenCalledWith(
-    '/accounts/acc/rhythms/r1/start',
-    { request_key: 'key-1' },
-    expect.any(Object)
-  );
+  const first = router.post.mock.calls.at(-1);
+  expect(first[0]).toBe('/accounts/acc/rhythms/r1/start');
+  expect(first[1].request_key).toMatch(/^[0-9a-f-]{36}$/);
+  await rerender({ account, rhythm: rhythmFixture({ title: 'Changed elsewhere' }) });
+  first[2].onFinish();
+  await fireEvent.click(screen.getByRole('button', { name: /Start one now/ }));
+  const retry = router.post.mock.calls.at(-1);
+  expect(retry[1].request_key).toBe(first[1].request_key);
+  retry[2].onSuccess();
+  retry[2].onFinish();
+  await fireEvent.click(screen.getByRole('button', { name: /Start one now/ }));
+  expect(router.post.mock.calls.at(-1)[1].request_key).not.toBe(first[1].request_key);
+});
+
+test('empty lists subscribe to their current account without reconnecting on prop refresh', async () => {
+  const { rerender, unmount } = render(RhythmsIndex, { account, rhythms: [] });
+  expect(subscribe).toHaveBeenCalledWith('RhythmActivity', 'acc', ['rhythms']);
+  await rerender({ account: { ...account }, rhythms: [rhythmFixture()] });
+  expect(subscribe).toHaveBeenCalledTimes(1);
+  await rerender({ account: { id: 'other' }, rhythms: [] });
+  expect(unsubscribe).toHaveBeenCalledTimes(1);
+  expect(subscribe).toHaveBeenLastCalledWith('RhythmActivity', 'other', ['rhythms']);
+  unmount();
+  expect(unsubscribe).toHaveBeenCalledTimes(2);
+});
+
+test('live detail changes preserve an unfinished pause reason and render deletion safely', async () => {
+  const { rerender } = render(RhythmShow, { account, rhythm: rhythmFixture() });
+  expect(subscribe).toHaveBeenCalledWith('RhythmActivity', 'acc', ['rhythm']);
+  await fireEvent.click(screen.getByRole('button', { name: /^Pause$/ }));
+  await fireEvent.input(screen.getByPlaceholderText('Reason (optional)'), { target: { value: 'Still thinking' } });
+  await rerender({ account, rhythm: rhythmFixture({ title: 'Live title', next_run_at: null }) });
+  expect(screen.getByDisplayValue('Still thinking')).toBeInTheDocument();
+  expect(subscribe).toHaveBeenCalledTimes(1);
+  await rerender({ account, rhythm: null });
+  expect(screen.getByText('This rhythm has been deleted')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Start one now/ })).not.toBeInTheDocument();
+});
+
+test('editing a rhythm deliberately does not subscribe over a draft', () => {
+  render(RhythmForm, { account, residents, timezones: [], rhythm: rhythmFixture() });
+  expect(subscribe).not.toHaveBeenCalled();
 });
 
 test('occurrences show late, manual and failure states honestly', () => {
