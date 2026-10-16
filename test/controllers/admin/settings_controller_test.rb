@@ -115,6 +115,28 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_not listed[other.to_param]["follow_through"]
   end
 
+  test "admin sets the stalled-thread interval and picks the accounts it may read" do
+    mine = accounts(:personal_account)
+    other = accounts(:team_account)
+    other.update_columns(stalled_sweep_enabled: true)
+    sign_in @admin
+
+    patch admin_settings_path, params: {
+      setting: { stalled_sweep_minutes: 30, stalled_sweep_account_ids: [ "", mine.to_param ] }
+    }
+
+    assert_redirected_to admin_settings_path
+    assert_equal 30, Setting.instance.reload.stalled_sweep_minutes
+    assert mine.reload.stalled_sweep_enabled?
+    assert_not other.reload.stalled_sweep_enabled?, "an account left out of the list is switched off"
+    audit = AuditLog.where(action: "update_settings").last
+    assert_equal [ [ mine.to_param ], [ other.to_param ] ], audit.data.values_at("stalled_sweep_on", "stalled_sweep_off")
+
+    patch admin_settings_path, params: { setting: { stalled_sweep_minutes: 7 } }
+    assert_equal 30, Setting.instance.reload.stalled_sweep_minutes
+    assert mine.reload.stalled_sweep_enabled?, "a failed save or other settings leave the accounts alone"
+  end
+
   test "saving other settings leaves the picked residents alone" do
     lume = agents(:research_assistant)
     lume.update_columns(follow_through: true)

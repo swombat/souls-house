@@ -41,6 +41,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_100000) do
     t.bigint "resident_room_id"
     t.boolean "field_swarm_enabled", default: false, null: false
     t.boolean "field_tweets_house_key", default: false, null: false
+    t.boolean "stalled_sweep_enabled", default: false, null: false
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
@@ -2676,9 +2677,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_100000) do
   add_foreign_key "service_connections", "oura_integrations", column: "legacy_oura_integration_id"
   add_foreign_key "service_connections", "users", column: "connected_by_user_id"
   add_foreign_key "sessions", "users"
-  add_foreign_key "stalled_thread_sweeps", "accounts"
-  add_foreign_key "stalled_thread_sweeps", "chats"
-  add_foreign_key "stalled_thread_sweeps", "messages"
+  add_foreign_key "stalled_thread_sweeps", "accounts", on_delete: :cascade
+  add_foreign_key "stalled_thread_sweeps", "chats", on_delete: :cascade
+  add_foreign_key "stalled_thread_sweeps", "messages", on_delete: :cascade
   add_foreign_key "stone_revisions", "agents"
   add_foreign_key "stone_revisions", "stones", on_delete: :cascade
   add_foreign_key "stone_revisions", "users"

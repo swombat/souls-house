@@ -8,6 +8,7 @@ class StalledThreadSweeperTest < ActiveSupport::TestCase
     @person = users(:user_1)
     @chat = @lume.account.chats.create!(title: "Quiet room", manual_responses: true, agents: [ @lume, @mira ])
     @chat.chat_agents.update_all(created_at: 1.day.ago)
+    @lume.account.update!(stalled_sweep_enabled: true)
     @now = Time.current.change(usec: 0)
   end
 
@@ -55,13 +56,9 @@ class StalledThreadSweeperTest < ActiveSupport::TestCase
     assert_equal %w[quiet quiet], StalledThreadSweep.order(:id).pluck(:outcome)
   end
 
-  test "rooms still inside the interval, too old, or with a run going are left alone" do
+  test "rooms still inside the interval or with a run going are left alone" do
     post(@lume, "Just said this.", at: @now - 5.minutes)
-    old_room = @lume.account.chats.create!(title: "Old", manual_responses: true, agents: [ @lume ])
-    old_room.messages.create!(role: "assistant", agent: @lume, content: "Long ago.").update_columns(created_at: @now - 5.days)
-    busy_room = @lume.account.chats.create!(title: "Busy", manual_responses: true, agents: [ @lume ])
-    busy_room.chat_agents.update_all(created_at: 1.day.ago)
-    busy_room.messages.create!(role: "assistant", agent: @lume, content: "Working.").update_columns(created_at: @now - 2.hours)
+    busy_room = room(@lume, "Busy", quiet_since: @now - 2.hours)
     AgentRuntimeInteraction.create!(agent: @lume, chat: busy_room, trigger_kind: "conversation", requested_by: "souls.house",
       started_at: 5.minutes.ago, execution_state: "running")
 
@@ -70,14 +67,79 @@ class StalledThreadSweeperTest < ActiveSupport::TestCase
     assert_equal 0, StalledThreadSweep.count
   end
 
+  test "a room quiet for four days is still judged" do
+    post(@lume, "I'll merge once CI is green.", at: @now - 4.days)
+    sweeper(decide: ->(**) { { "can_act:1" => 0.9, "can_act:2" => 0.1, "person_holds" => 0.1 } }).call
+    assert_equal [ "would_wake", 4 * 24 * 60 ], StalledThreadSweep.sole.values_at(:outcome, :quiet_minutes)
+  end
+
+  test "busy rooms don't use the budget: an eligible room behind twenty-five busy ones is judged" do
+    25.times do |i|
+      busy = room(@lume, "Busy #{i}", quiet_since: @now - 1.hour - i.minutes)
+      AgentRuntimeInteraction.create!(agent: @lume, chat: busy, trigger_kind: "conversation", requested_by: "souls.house",
+        started_at: 5.minutes.ago, execution_state: "running")
+    end
+    post(@lume, "Waiting on review.", at: @now - 3.hours)
+
+    2.times { sweeper(decide: ->(**) { { "can_act:1" => 0.1, "can_act:2" => 0.1, "person_holds" => 0.1 } }).call }
+
+    assert_equal [ @chat ], StalledThreadSweep.all.map(&:chat)
+  end
+
+  test "only accounts that opted in are read" do
+    post(@lume, "Done.", at: @now - 2.hours)
+    other = agents(:other_account_agent)
+    other_room = other.account.chats.create!(title: "Other account", manual_responses: true, agents: [ other ])
+    other_room.chat_agents.update_all(created_at: 1.day.ago)
+    other_room.messages.create!(role: "assistant", agent: other, content: "Private.").update_columns(created_at: @now - 2.hours)
+    seen = []
+    decide = lambda do |state:, questions:|
+      seen << state[:recent_messages].pluck(:content)
+      { "can_act:1" => 0.1, "can_act:2" => 0.1, "person_holds" => 0.1 }.slice(*questions.keys)
+    end
+
+    sweeper(decide: decide).call
+    assert_equal [ @chat ], StalledThreadSweep.all.map(&:chat)
+    assert_not_includes seen.flatten, "Private."
+
+    @lume.account.update!(stalled_sweep_enabled: false)
+    other_room.messages.create!(role: "assistant", agent: other, content: "Still private.").update_columns(created_at: @now - 1.hour)
+    post(@lume, "Another.", at: @now - 1.hour)
+    sweeper(decide: ->(**) { flunk "no account opted in" }).call
+  end
+
+  test "the room's last message is the snapshot's: an older timestamp inserted later doesn't hide the room" do
+    newest = post(@lume, "Newest by time.", at: @now - 1.hour)
+    post(@mira, "Inserted later, older timestamp.", at: @now - 2.hours)
+
+    sweeper(decide: ->(**) { { "can_act:1" => 0.1, "can_act:2" => 0.1, "person_holds" => 0.1 } }).call
+
+    assert_equal newest, StalledThreadSweep.sole.message
+  end
+
+  test "deleting a swept room or a swept account still works" do
+    post(@lume, "Done.", at: @now - 2.hours)
+    quiet = ->(**) { { "can_act:1" => 0.1, "can_act:2" => 0.1, "person_holds" => 0.1 } }
+    sweeper(decide: quiet).call
+    assert_difference(-> { StalledThreadSweep.count }, -1) { @chat.destroy! }
+
+    other = agents(:other_account_agent)
+    other.account.update!(stalled_sweep_enabled: true)
+    swept = room(other, "Swept", quiet_since: @now - 2.hours)
+    sweeper(decide: ->(**) { { "can_act:1" => 0.1, "person_holds" => 0.1 } }).call
+    assert StalledThreadSweep.exists?(chat: swept)
+    swept.messages.first.destroy!
+    assert_not StalledThreadSweep.exists?(chat: swept)
+    other.account.destroy!
+    assert_not Chat.exists?(swept.id)
+  end
+
   test "a person's hold and an inference failure are both recorded" do
     post(@lume, "Dana, archived items too, or only active ones?", at: @now - 2.hours)
     sweeper(decide: ->(**) { { "can_act:1" => 0.2, "can_act:2" => 0.1, "person_holds" => 0.9 } }).call
     assert_equal "person_holds", StalledThreadSweep.sole.outcome
 
-    other = @lume.account.chats.create!(title: "Other", manual_responses: true, agents: [ @lume ])
-    other.chat_agents.update_all(created_at: 1.day.ago)
-    other.messages.create!(role: "assistant", agent: @lume, content: "Hm.").update_columns(created_at: @now - 2.hours)
+    other = room(@lume, "Other", quiet_since: @now - 2.hours)
     sweeper(decide: ->(**) { raise UtilityInference::InvalidResponse, "nope" }).call
     error = StalledThreadSweep.find_by!(chat: other)
     assert_equal [ "error", "UtilityInference::InvalidResponse" ], [ error.outcome, error.error_class ]
@@ -96,6 +158,13 @@ class StalledThreadSweeperTest < ActiveSupport::TestCase
 
   def sweeper(interval: 30.minutes, decide:)
     StalledThreadSweeper.new(now: @now, interval: interval, decide: decide)
+  end
+
+  def room(agent, title, quiet_since:)
+    chat = agent.account.chats.create!(title: title, manual_responses: true, agents: [ agent ])
+    chat.chat_agents.update_all(created_at: 1.day.ago)
+    chat.messages.create!(role: "assistant", agent: agent, content: "#{title}: last word.").update_columns(created_at: quiet_since)
+    chat
   end
 
   def post(author, content, at:)

@@ -9,6 +9,7 @@ class Admin::SettingsController < ApplicationController
         logo_url: Setting.instance.logo.attached? ? url_for(Setting.instance.logo) : nil
       ),
       follow_through_residents: follow_through_residents,
+      stalled_sweep_accounts: stalled_sweep_accounts,
       vm_births: Agents::VmBirthPolicy.current.as_json,
       field_ocr: FieldOcr.status_json,
       field_tweets: FieldTweets.status_json
@@ -27,11 +28,12 @@ class Admin::SettingsController < ApplicationController
     saved = Setting.transaction do
       setting.update(setting_params).tap do |ok|
         update_follow_through_residents if ok && params[:setting]&.key?(:follow_through_resident_ids)
+        update_stalled_sweep_accounts if ok && params[:setting]&.key?(:stalled_sweep_account_ids)
       end
     end
 
     if saved
-      audit_with_changes("update_settings", setting, **@follow_through_changes.to_h)
+      audit_with_changes("update_settings", setting, **@follow_through_changes.to_h, **@stalled_sweep_changes.to_h)
       redirect_to admin_settings_path, notice: "Settings updated"
     else
       redirect_to admin_settings_path, inertia: { errors: setting.errors.to_hash }
@@ -94,6 +96,31 @@ class Admin::SettingsController < ApplicationController
     @follow_through_changes = {
       follow_through_on: Agent.where(id: turned_on).map(&:to_param),
       follow_through_off: Agent.where(id: turned_off).map(&:to_param)
+    }.compact_blank
+  end
+
+  # Accounts the stalled-thread sweeper may read. Each opts in separately; the
+  # site interval alone sweeps nothing.
+  def stalled_sweep_accounts
+    Account.order(:name).map do |account|
+      { id: account.to_param, name: account.name, enabled: account.stalled_sweep_enabled?, disabled: account.disabled? }
+    end
+  end
+
+  # The form sends the full list of opted-in accounts; any not in it is off.
+  def update_stalled_sweep_accounts
+    picked = Array(params[:setting][:stalled_sweep_account_ids]).compact_blank.filter_map do |param|
+      Account.find_by_obfuscated_id(param)&.id
+    rescue StandardError
+      nil
+    end
+    turned_on = Account.where(id: picked, stalled_sweep_enabled: false).pluck(:id)
+    turned_off = Account.where(stalled_sweep_enabled: true).where.not(id: picked).pluck(:id)
+    Account.where(id: turned_on).update_all(stalled_sweep_enabled: true, updated_at: Time.current)
+    Account.where(id: turned_off).update_all(stalled_sweep_enabled: false, updated_at: Time.current)
+    @stalled_sweep_changes = {
+      stalled_sweep_on: Account.where(id: turned_on).map(&:to_param),
+      stalled_sweep_off: Account.where(id: turned_off).map(&:to_param)
     }.compact_blank
   end
 

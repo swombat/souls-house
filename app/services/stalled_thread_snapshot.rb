@@ -53,8 +53,21 @@ class StalledThreadSnapshot
     @live
   end
 
+  # The messages a room is judged on, and the one canonical order for "last".
+  VISIBLE = { role: %w[user assistant], progress_message: false }.freeze
+  LATEST_FIRST = { created_at: :desc, id: :desc }.freeze
+
+  # Each room's last visible message now, by the same definition a live
+  # snapshot uses (VISIBLE, LATEST_FIRST): { chat_id => Message }.
+  def self.last_messages(chat_ids)
+    Message.kept.where(VISIBLE).where(chat_id: chat_ids)
+      .select("DISTINCT ON (messages.chat_id) messages.*")
+      .reorder(Arel.sql("messages.chat_id, messages.created_at DESC, messages.id DESC"))
+      .index_by(&:chat_id)
+  end
+
   def messages_scope
-    scope = chat.messages.where(role: %w[user assistant], progress_message: false).where("messages.created_at <= ?", at)
+    scope = chat.messages.where(VISIBLE).where("messages.created_at <= ?", at)
     live? ? scope.kept : scope.where("messages.discarded_at IS NULL OR messages.discarded_at > ?", at)
   end
 
@@ -72,7 +85,7 @@ class StalledThreadSnapshot
   end
 
   def last_message
-    @last_message ||= messages_scope.reorder(created_at: :desc, id: :desc).first
+    @last_message ||= messages_scope.reorder(LATEST_FIRST).first
   end
 
   def last_human_message

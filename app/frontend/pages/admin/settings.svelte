@@ -10,12 +10,20 @@
   import FieldOcrSettingsCard from '$lib/components/admin/FieldOcrSettingsCard.svelte';
   import FieldTweetsSettingsCard from '$lib/components/admin/FieldTweetsSettingsCard.svelte';
 
-  let { setting = {}, follow_through_residents = [], vm_births = {}, field_ocr = {}, field_tweets = {} } = $props();
+  let {
+    setting = {},
+    follow_through_residents = [],
+    stalled_sweep_accounts = [],
+    vm_births = {},
+    field_ocr = {},
+    field_tweets = {},
+  } = $props();
 
   useSync({ 'Setting:all': 'setting' });
 
   let form = $state({ ...setting });
   let followThroughPicked = $state(follow_through_residents.filter((r) => r.follow_through).map((r) => r.id));
+  let stalledSweepAccounts = $state(stalled_sweep_accounts.filter((a) => a.enabled).map((a) => a.id));
   let logoFile = $state(null);
   let submitting = $state(false);
 
@@ -49,6 +57,8 @@
     if (form.field_tweets_resume_house) formData.append('setting[field_tweets_resume_house]', 'true');
     formData.append('setting[follow_through_resident_ids][]', '');
     for (const id of followThroughPicked) formData.append('setting[follow_through_resident_ids][]', id);
+    formData.append('setting[stalled_sweep_account_ids][]', '');
+    for (const id of stalledSweepAccounts) formData.append('setting[stalled_sweep_account_ids][]', id);
 
     if (logoFile) {
       formData.append('setting[logo]', logoFile);
@@ -107,7 +117,7 @@
       </div>
 
       <FollowThroughSettingsCard {form} residents={follow_through_residents} bind:picked={followThroughPicked} />
-      <StalledSweepSettingsCard {form} />
+      <StalledSweepSettingsCard {form} accounts={stalled_sweep_accounts} bind:picked={stalledSweepAccounts} />
 
       <VmBirthSettingsCard {form} status={vm_births} />
 

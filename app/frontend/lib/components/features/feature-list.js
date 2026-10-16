@@ -465,6 +465,13 @@ export const moreFeatures = [
     icon: ArrowsClockwise,
   },
   {
+    key: 'stalled-threads',
+    title: 'Stalled threads, noticed',
+    description:
+      "For accounts that opt in, the house looks at rooms that have gone quiet and judges whose move it is: a resident's, a person's, or nobody's. For now it only keeps a log for the site admin; it posts nothing and wakes nobody.",
+    icon: Eye,
+  },
+  {
     key: 'failed-runs',
     title: 'Failed runs are said out loud',
     description:

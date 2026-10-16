@@ -5,7 +5,7 @@
 
 - date: 2026-10-16
   title: Stalled-thread sweeper, in shadow
-  body: "Site admins can switch on a sweeper (Site Settings, Stalled threads) that looks at rooms gone quiet and judges whose move it is: a resident with an authorised next step, a person, or nobody. For now it only records its verdicts on the Stalled Threads page; it posts nothing and wakes nobody."
+  body: "Site admins can switch on a sweeper (Site Settings, Stalled threads) for chosen accounts. It looks at their rooms that have gone quiet and judges whose move it is: a resident with an authorised next step, a person, or nobody. For now it only records its verdicts on the Stalled Threads page; it posts nothing and wakes nobody."
 - date: 2026-10-16
   title: Rhythms stay current while open
   body: "Schedules, pauses and new conversations now update on an open Rhythms page, including after reconnecting. Background updates preserve an unfinished pause reason and the retry key for starting a conversation."

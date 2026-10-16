@@ -1,20 +1,24 @@
 # Finds quiet rooms and judges each once per state with StalledThreadClassifier.
 #
-# Shadow mode (slice 2 of BjZQAe): every verdict becomes a StalledThreadSweep
-# row an admin can read; nothing is posted and nobody is woken. The row is
-# keyed on (chat, last message), so a room is judged again only after
-# something new is said in it.
+# Every verdict becomes a StalledThreadSweep row an admin can read; this is
+# shadow mode: nothing is posted and nobody is woken.
+#
+# Two switches: the site interval (Setting#stalled_sweep_minutes, 0 = off)
+# and each account's own opt-in (Account#stalled_sweep_enabled). No room in an
+# account that hasn't opted in is read or sent to Jev.
 #
 # A room is a candidate when it is active and respondable, has residents, its
-# account is enabled, its last message is older than the setting's interval
-# but newer than LOOKBACK (so switching the sweeper on doesn't judge every
-# room ever left quiet), no resident has a run going in it, and that state
-# has no verdict yet.
+# account has opted in and is enabled, its last message (StalledThreadSnapshot's
+# definition) is older than the interval, and that state has no verdict yet.
+# Candidates are taken most recently quiet first. Rooms with a run going are
+# skipped without a row and don't use the per-tick budget, which counts only
+# verdicts; a room quiet for days is still judged, once, as the backlog drains.
 class StalledThreadSweeper
 
   INTERVALS = [ 0, 10, 30, 60 ].freeze
-  LOOKBACK = 3.days
   PER_TICK = 20
+  # Bounds the cheap checks (busy rooms) a tick may make before giving up.
+  MAX_CHECKS_PER_TICK = 200
   PROMPT_VERSION = "v3".freeze
 
   def self.interval
@@ -35,31 +39,39 @@ class StalledThreadSweeper
   def call
     return [] unless @interval
 
-    candidates.first(PER_TICK).filter_map { |chat, message| judge(chat, message) }
+    verdicts = []
+    candidates.first(MAX_CHECKS_PER_TICK).each do |chat, message|
+      break if verdicts.size >= PER_TICK
+
+      sweep = judge(chat, message)
+      verdicts << sweep if sweep
+    end
+    verdicts
   end
 
-  # [chat, last message] pairs, oldest quiet first.
+  # [chat, last message] pairs, most recently quiet first.
   def candidates
-    last_ids = Message.where(role: %w[user assistant], progress_message: false).kept
-      .where(created_at: (@now - LOOKBACK)..)
-      .group(:chat_id).maximum(:id)
-    return [] if last_ids.empty?
+    chats = Chat.kept.active.joins(:account)
+      .where(accounts: { stalled_sweep_enabled: true })
+      .where(id: ChatAgent.select(:chat_id))
+      .includes(:account, :agents).to_a
+    lasts = StalledThreadSnapshot.last_messages(chats.map(&:id))
+    quiet = lasts.values.select { |message| message.created_at <= @now - @interval }
+    judged = StalledThreadSweep.where(message_id: quiet.map(&:id)).pluck(:message_id).to_set
+    by_id = chats.index_by(&:id)
+    quiet.reject { |message| judged.include?(message.id) }
+      .sort_by { |message| [ -message.created_at.to_f, -message.id ] }
+      .filter_map do |message|
+        chat = by_id[message.chat_id]
+        next unless chat.respondable? && !chat.account.disabled?
 
-    messages = Message.where(id: last_ids.values).where("created_at <= ?", @now - @interval).index_by(&:chat_id)
-    judged = StalledThreadSweep.where(message_id: messages.values.map(&:id)).pluck(:message_id).to_set
-    chats = Chat.kept.active.where(id: messages.keys).includes(:account, :agents)
-    chats.filter_map do |chat|
-      message = messages[chat.id]
-      next if judged.include?(message.id)
-      next unless chat.respondable? && !chat.account.disabled? && chat.agents.any?
-
-      [ chat, message ]
-    end.sort_by { |_, message| message.created_at }
+        [ chat, message ]
+      end
   end
 
   def judge(chat, message)
     # A run going (or queued) in the room: it isn't stalled, it's working.
-    # No row, so the next tick looks again once it has settled.
+    # No row, so a later tick looks again once it has settled.
     return if chat.agents.any? { |agent| chat.agent_response_active?(agent) }
 
     snapshot = StalledThreadSnapshot.new(chat, at: @now, live: true)
