@@ -17,6 +17,15 @@ test('funding discovery updates no-source and paused panels without losing draft
     });
     expect(response.ok()).toBe(true);
   };
+  let confirmed = false;
+  await page.routeWebSocket('**/cable', (socket) => {
+    socket.connectToServer().onMessage((raw) => {
+      const message = JSON.parse(raw);
+      if (message.type === 'confirm_subscription' && JSON.parse(message.identifier).model === 'FieldTweetStream')
+        confirmed = true;
+      socket.send(raw);
+    });
+  });
   const reloads = [];
   page.on('request', (req) => {
     const props = (req.headers()['x-inertia-partial-data'] || '').split(',');
@@ -31,7 +40,12 @@ test('funding discovery updates no-source and paused panels without losing draft
     await expect(page).toHaveURL(/\/$/);
     await page.goto(`/accounts/${setup.account_param}/field?tab=tweets`);
     await expect(page.getByTestId('tweet-stream-needs-integration')).toBeVisible();
+    await expect.poll(() => confirmed).toBe(true);
     await expect.poll(() => reloads.length).toBeGreaterThan(0);
+    await page.waitForLoadState('networkidle');
+    // Let all initial layout/page subscriptions finish their debounced
+    // catch-up before measuring the isolated funding mutation.
+    await page.waitForTimeout(700);
     await page.waitForLoadState('networkidle');
     const beforeFunding = reloads.length;
     await mutate('fund');
@@ -40,11 +54,11 @@ test('funding discovery updates no-source and paused panels without losing draft
     await page.waitForLoadState('networkidle');
     expect(reloads.at(-1)).toEqual(['tweet_stream']);
     expect(reloads.length - beforeFunding).toBeLessThanOrEqual(2);
-    await handle.fill('unfinished_handle');
+    await handle.fill('draft_handle');
     await mutate('unfund');
     await expect(page.getByTestId('tweet-stream-needs-integration')).toBeVisible();
     await mutate('fund');
-    await expect(handle).toHaveValue('unfinished_handle');
+    await expect(handle).toHaveValue('draft_handle');
 
     await mutate('create');
     await expect(page.getByRole('link', { name: '@example', exact: true })).toBeVisible();
@@ -78,7 +92,7 @@ test('funding discovery updates no-source and paused panels without losing draft
     await expect(page.getByTestId('field-tweet-stream-panel')).toBeVisible();
     // Feature disable deliberately resets the unavailable form, unlike a
     // funding or read-only status refresh.
-    await expect(limit).toHaveValue('5');
+    await expect.poll(async () => Number(await limit.inputValue())).toBe(5);
     await expect(page.getByLabel('Include its replies')).toBeChecked();
   } finally {
     expect((await request.post('/test/e2e/cleanup', { data: { run_id: runId } })).ok()).toBe(true);

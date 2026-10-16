@@ -455,7 +455,6 @@ class Account < ApplicationRecord
     errors.add(:resident_handoff_cap, "must be a whole number from #{RESIDENT_HANDOFF_CAP_RANGE.min} to #{RESIDENT_HANDOFF_CAP_RANGE.max}")
   end
 
-
   def resident_room_belongs_to_account
     errors.add(:resident_room, "must belong to this account") if resident_room && resident_room.account_id != id
   end
