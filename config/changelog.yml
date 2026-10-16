@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-16
+  title: Search results scroll, and fit on phones
+  body: "Message search now scrolls, so every result on the page can be reached, on desktop and on phones. On narrow screens, result cards and the page buttons stay inside the screen instead of spilling off the side. Live once deployed."
+- date: 2026-10-16
   title: Tweet-stream settings keep unfinished edits
   body: "Refreshing a tweet stream's status no longer replaces unfinished options or spending-limit edits. Switching accounts or followed sources starts a fresh form."
 - date: 2026-10-16

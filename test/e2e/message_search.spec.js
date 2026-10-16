@@ -60,6 +60,11 @@ test.describe('message search', () => {
       await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
       await expect(cards.last()).toBeInViewport();
       await expect(page.getByText(/Showing 1 to 20 of 25/)).toBeInViewport();
+      const next = page.getByRole('button', { name: /next/i });
+      await expect(next).toBeVisible();
+      await expect(next).toBeInViewport({ ratio: 1 });
+      const nextBox = await next.boundingBox();
+      expect(nextBox.x + nextBox.width).toBeLessThanOrEqual(viewport.width);
       await page.screenshot({ path: testInfo.outputPath(`${viewport.name}-bottom.png`) });
     });
   }
