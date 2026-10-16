@@ -8,6 +8,8 @@ class RhythmAgent < ApplicationRecord
   validate :resident_is_present_in_account
   validate :model_is_selectable, if: -> { model_id.present? && will_save_change_to_model_id? }
 
+  after_commit :broadcast_rhythm_activity, on: [ :create, :update, :destroy ]
+
   # The model this resident runs on in the rhythm's conversations: the
   # selected one, or the resident's default.
   def effective_model_id
@@ -15,6 +17,10 @@ class RhythmAgent < ApplicationRecord
   end
 
   private
+
+  def broadcast_rhythm_activity
+    RhythmActivity.broadcast_for(rhythm&.account)
+  end
 
   def normalize_model_id
     value = model_id.to_s.strip

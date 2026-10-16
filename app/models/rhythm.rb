@@ -39,6 +39,7 @@ class Rhythm < ApplicationRecord
   before_validation :reset_next_run, if: :schedule_changed?
   after_save :hold_empty_selection
   after_save :apply_resident_models, if: -> { @pending_resident_models }
+  after_commit :broadcast_rhythm_activity, on: [ :create, :update, :destroy ]
 
   scope :due, ->(now = Time.current) { where(next_run_at: ..now) }
 
@@ -249,15 +250,21 @@ class Rhythm < ApplicationRecord
           next Result.new(status: :unavailable, reason: reason)
         end
 
-        own_holds.update_all(released_at: Time.current, updated_at: Time.current)
-        system_holds.update_all(released_at: Time.current, updated_at: Time.current) if can_release_system
+        released = own_holds.update_all(released_at: Time.current, updated_at: Time.current)
+        released += system_holds.update_all(released_at: Time.current, updated_at: Time.current) if can_release_system
       elsif holder.is_a?(User) && manageable_by?(holder)
         if open_holds.where(kind: "system").exists? && (reason = unavailable_reason)
           next Result.new(status: :unavailable, reason: reason)
         end
-        open_holds.where(kind: %w[human system]).update_all(released_at: Time.current, updated_at: Time.current)
+        released = open_holds.where(kind: %w[human system]).update_all(released_at: Time.current, updated_at: Time.current)
       else
         next Result.new(status: :forbidden)
+      end
+      # Bulk releases skip hold callbacks. Another author's hold can remain,
+      # so the rhythm itself need not be saved. Wait for the outer commit.
+      if released.positive?
+        activity_account = account
+        ActiveRecord.after_all_transactions_commit { RhythmActivity.broadcast_for(activity_account) }
       end
       if held?
         Result.new(status: :held)
@@ -269,6 +276,10 @@ class Rhythm < ApplicationRecord
   end
 
   private
+
+  def broadcast_rhythm_activity
+    RhythmActivity.broadcast_for(account)
+  end
 
   # Each resident's rhythm model becomes its seat model before anyone is
   # woken, so the first turn already runs on it. Agents::ModelSelection reads
