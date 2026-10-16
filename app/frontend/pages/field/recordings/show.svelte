@@ -35,7 +35,10 @@
 
   const updateSync = createDynamicSync();
   $effect(() => {
-    updateSync({ [`FieldRecording:${recording.id}`]: ['recording', 'speakers'] });
+    updateSync({
+      [`FieldRecording:${recording.id}`]: ['recording', 'speakers'],
+      [`FieldVoiceActivity:${account.id}`]: ['voices', 'members_without_voice', 'my_voice_id', 'recognition_enabled'],
+    });
   });
 
   const ready = $derived(recording.status === 'ready');

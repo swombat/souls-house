@@ -79,6 +79,7 @@ test('room navigation catches up on connect and reconnect using only its mapped 
 test.each([
   'RoomActivity',
   'FieldActivity',
+  'FieldVoiceActivity',
   'FieldTweetStream',
   'GuestDirectory',
   'RhythmActivity',

@@ -10,6 +10,9 @@
   title: Stalled-thread check only looks at rooms that just went quiet
   body: "The stalled-thread check now judges a room only while it has been quiet for between the chosen time and 15 minutes longer. Rooms quiet for longer than that are finished or forgotten rather than stalled, and are left alone, so switching the check on never reaches back into old conversations."
 - date: 2026-10-16
+  title: Voice rosters stay current while open
+  body: "Named voices, their transcript usage and recognition choices now update across open Field pages. Refreshes preserve unfinished voice renames and speaker-name drafts; removed voices close an invalid rename form."
+- date: 2026-10-16
   title: Companion grant authority warnings
   body: "Human companion-grant creation responses now warn that home-volume writes are deferred code execution as the service user, even without an execute grant. Explicit execute grants allow rewriting state.json and the local ceiling; the companion is not a sandbox. No permissions change."
 - date: 2026-10-16

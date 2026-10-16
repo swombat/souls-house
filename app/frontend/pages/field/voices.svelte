@@ -4,6 +4,7 @@
   // "Forget all voices" show whenever something is remembered, even when the
   // house has recognition switched off.
   import { Link, router } from '@inertiajs/svelte';
+  import { createDynamicSync } from '$lib/use-sync';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Input } from '$lib/components/shadcn/input/index.js';
@@ -21,6 +22,11 @@
     account,
   } = $props();
 
+  const updateSync = createDynamicSync();
+  $effect(() => {
+    updateSync({ [`FieldVoiceActivity:${account.id}`]: ['voices', 'recognise_voices', 'can_change_setting'] });
+  });
+
   const base = $derived(`/accounts/${account.id}/field/voices`);
   const anyRemembered = $derived(voices.some((voice) => voice.remembered));
 
@@ -29,11 +35,17 @@
 
   function setRecognition(on) {
     if (!can_change_setting) return;
+    const identity = account.id;
     switching = on;
     router.patch(
       `${base}/recognition`,
       { recognise_voices: on },
-      { preserveScroll: true, onFinish: () => (switching = null) }
+      {
+        preserveScroll: true,
+        onFinish: () => {
+          if (account.id === identity) switching = null;
+        },
+      }
     );
   }
 
@@ -57,17 +69,36 @@
   let draft = $state('');
   let renameError = $state('');
   let renaming = $state(false);
+  let editingAccount = $state(account.id);
+  let renameRequest = 0;
+
+  $effect(() => {
+    if (editingAccount !== account.id || (editingId != null && !voices.some((voice) => voice.id === editingId))) {
+      editingAccount = account.id;
+      editingId = null;
+      draft = '';
+      renameError = '';
+      renaming = false;
+      switching = null;
+      renameRequest += 1;
+    }
+  });
 
   function startRename(voice) {
+    renameRequest += 1;
     editingId = voice.id;
     draft = voice.name;
     renameError = '';
+    renaming = false;
   }
 
   function saveRename(event, voice) {
     event.preventDefault();
     const name = draft.trim();
     if (!name) return;
+    const identity = account.id;
+    const request = ++renameRequest;
+    const current = () => account.id === identity && editingId === voice.id && renameRequest === request;
     renaming = true;
     renameError = '';
     router.patch(
@@ -75,9 +106,15 @@
       { field_voice: { name } },
       {
         preserveScroll: true,
-        onSuccess: () => (editingId = null),
-        onError: (errors) => (renameError = errors.name || 'That name could not be saved. Please try again.'),
-        onFinish: () => (renaming = false),
+        onSuccess: () => {
+          if (current() && draft.trim() === name) editingId = null;
+        },
+        onError: (errors) => {
+          if (current()) renameError = errors.name || 'That name could not be saved. Please try again.';
+        },
+        onFinish: () => {
+          if (current()) renaming = false;
+        },
       }
     );
   }
@@ -141,7 +178,9 @@
         </div>
       {/if}
       {#if anyRemembered && !house_recognition}
-        <p class="text-sm text-muted-foreground">Voices already remembered are kept but not used. You can still forget them.</p>
+        <p class="text-sm text-muted-foreground">
+          Voices already remembered are kept but not used. You can still forget them.
+        </p>
       {:else if anyRemembered && !recognitionOn}
         <p class="text-sm text-muted-foreground">Remembered voices are kept but not used while this is off.</p>
       {/if}
@@ -202,7 +241,9 @@
 
   <section class="space-y-2">
     <h2 class="text-lg font-semibold">What this means</h2>
-    <p class="text-sm text-muted-foreground">When someone agrees, on a transcript, that this Field should remember a person's voice:</p>
+    <p class="text-sm text-muted-foreground">
+      When someone agrees, on a transcript, that this Field should remember a person's voice:
+    </p>
     <VoiceMeaning whose="that person's voice" backupDays={backup_retention_days} onVoicesPage />
   </section>
 </div>
