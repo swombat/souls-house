@@ -42,8 +42,8 @@
     }
   },
   "recorded_answers": {
-    "can_act:lume": 0.61,
-    "can_act:mira": 0.2,
+    "can_act:1": 0.61,
+    "can_act:2": 0.2,
     "person_holds": 0.92
   }
 }

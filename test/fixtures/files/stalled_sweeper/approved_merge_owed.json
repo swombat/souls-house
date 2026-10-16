@@ -9,7 +9,7 @@
   },
   "state": {
     "now": "2026-10-01T12:00:00+00:00",
-    "minutes_since_last_message": 75,
+    "minutes_since_last_message": 60,
     "residents_in_room": [
       {
         "name": "Lume",
@@ -53,25 +53,25 @@
         "id": "aaa004",
         "author": "Lume",
         "author_kind": "resident",
-        "at": "2026-10-01T10:45:00+00:00",
-        "content": "Thanks. CI is running on abc123; I'll merge when it's green and report here."
+        "at": "2026-10-01T10:55:00+00:00",
+        "content": "CI is green on abc123, all checks passed."
       }
     ],
     "recent_messages_truncated": false,
     "last_human_message_after_last_resident_message": false,
     "follow_through_nudges_since_last_human_message": 0,
-    "last_human_message_at": "2026-10-01T09:00:00+00:00",
     "last_human_message_before_window": {
       "id": "aaa001",
       "author": "Dana",
       "author_kind": "person",
       "at": "2026-10-01T09:00:00+00:00",
       "content": "Please add the export button to the settings page. Lume builds, Mira reviews."
-    }
+    },
+    "last_human_message_at": "2026-10-01T09:00:00+00:00"
   },
   "recorded_answers": {
-    "can_act:lume": 0.92,
-    "can_act:mira": 0.07,
-    "person_holds": 0.08
+    "can_act:1": 0.85,
+    "can_act:2": 0.14,
+    "person_holds": 0.12
   }
 }

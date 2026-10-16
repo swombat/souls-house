@@ -12,10 +12,26 @@ class StalledThreadClassifierTest < ActiveSupport::TestCase
   test "one question per resident plus person_holds, each with its own instructions" do
     questions = StalledThreadClassifier.questions([ "Lume", "Mira" ])
 
-    assert_equal [ "can_act:lume", "can_act:mira", "person_holds" ], questions.keys
-    assert_match "Lume", questions["can_act:lume"][:instructions]
-    assert_no_match "Lume", questions["can_act:mira"][:instructions]
+    assert_equal [ "can_act:1", "can_act:2", "person_holds" ], questions.keys
+    assert_match "Lume", questions["can_act:1"][:instructions]
+    assert_no_match "Lume", questions["can_act:2"][:instructions]
     assert questions.values.all? { |q| q[:type] == "noul" }
+  end
+
+  test "residents whose names normalise alike keep separate questions and scores" do
+    state = { residents_in_room: [ { name: "Mira One" }, { name: "Mira-One" }, { name: "Mîra One" } ] }
+    seen = nil
+    decide = lambda do |state:, questions:|
+      seen = questions
+      { "can_act:1" => 0.95, "can_act:2" => 0.1, "can_act:3" => 0.2, "person_holds" => 0.1 }
+    end
+
+    verdict = StalledThreadClassifier.call(state, decide: decide)
+
+    assert_equal 4, seen.size
+    assert_match "Mira-One", seen["can_act:2"][:instructions]
+    assert_equal [ "Mira One" ], verdict.wake_names
+    assert_equal [ { name: "Mira One" } ], verdict.wake_residents
   end
 
   test "recorded answers become a verdict with separate scores" do

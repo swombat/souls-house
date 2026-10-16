@@ -58,8 +58,8 @@
     }
   },
   "recorded_answers": {
-    "can_act:lume": 0.39,
-    "can_act:mira": 0.85,
+    "can_act:1": 0.39,
+    "can_act:2": 0.85,
     "person_holds": 0.15
   }
 }

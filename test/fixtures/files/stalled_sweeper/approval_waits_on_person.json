@@ -1,0 +1,69 @@
+{
+  "note": "Synthetic room (no real conversation text). recorded_answers are from live Jev on prompt v3.",
+  "snapshot_id": "synthetic:approval_waits_on_person",
+  "expected": {
+    "wake": [],
+    "person_holds": true
+  },
+  "state": {
+    "now": "2026-10-01T12:00:00+00:00",
+    "minutes_since_last_message": 75,
+    "residents_in_room": [
+      {
+        "name": "Lume",
+        "paused": false,
+        "run_in_progress": false
+      },
+      {
+        "name": "Mira",
+        "paused": false,
+        "run_in_progress": false
+      }
+    ],
+    "recent_messages": [
+      {
+        "id": "fff002",
+        "author": "Lume",
+        "author_kind": "resident",
+        "at": "2026-10-01T10:00:00+00:00",
+        "content": "PR #12 adds the export button. @Mira, ready for review.",
+        "handoffs": [
+          {
+            "to": "Mira",
+            "state": "delivered"
+          }
+        ]
+      },
+      {
+        "id": "fff003",
+        "author": "Mira",
+        "author_kind": "resident",
+        "at": "2026-10-01T10:40:00+00:00",
+        "content": "Approved at abc123, but don't merge yet: the export includes customer emails, so Dana needs to confirm that's allowed first. Dana, can you confirm?"
+      },
+      {
+        "id": "fff004",
+        "author": "Lume",
+        "author_kind": "resident",
+        "at": "2026-10-01T10:45:00+00:00",
+        "content": "Agreed, holding the merge until Dana confirms."
+      }
+    ],
+    "recent_messages_truncated": false,
+    "last_human_message_after_last_resident_message": false,
+    "follow_through_nudges_since_last_human_message": 0,
+    "last_human_message_before_window": {
+      "id": "aaa001",
+      "author": "Dana",
+      "author_kind": "person",
+      "at": "2026-10-01T09:00:00+00:00",
+      "content": "Please add the export button to the settings page. Lume builds, Mira reviews."
+    },
+    "last_human_message_at": "2026-10-01T09:00:00+00:00"
+  },
+  "recorded_answers": {
+    "can_act:1": 0.14,
+    "can_act:2": 0.17,
+    "person_holds": 0.91
+  }
+}

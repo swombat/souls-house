@@ -3,8 +3,17 @@
 # The same builder serves the sweeper job (at = now, live receipts) and the
 # offline dataset (at = a hypothetical sweep time inside a historical gap), so
 # what the classifier is tuned on is exactly what it will be shown. Nothing
-# created after `at` is read. State that has no history (whether a resident
-# was paused then) is "unknown" in a historical snapshot, never today's value.
+# created after `at` is read; a message discarded after `at` is still shown,
+# one discarded before it is not; a resident who joined after `at` is left
+# out. State that has no history is never filled in from today: pause state
+# is "unknown", and so is a run the records never saw finish.
+#
+# Some things cannot be rewound at all. Message text has no edit history, so a
+# message updated after `at` (an edit, the end of a stream, a moderation pass)
+# may show later text than the room showed then; departures from the room
+# leave no row. A historical snapshot lists these in #provenance, outside the
+# state Jev sees, so a dataset can report or exclude them rather than claim
+# strict as-of equivalence.
 #
 # Shown: the last RUNS speaker-runs (consecutive messages by one author are one
 # run), the last human message if it falls before them, and receipts the text
@@ -16,7 +25,21 @@ class StalledThreadSnapshot
   RUNS = 3
   MESSAGE_LIMIT = 12
   MESSAGE_CHARS = 1_500
+  # Message text in recent_messages never exceeds TOTAL_CHARS (older messages
+  # are dropped, and truncation flagged, before any falls under
+  # MIN_MESSAGE_CHARS). An earlier human message outside the window adds at
+  # most MESSAGE_CHARS more.
   TOTAL_CHARS = 14_000
+  MIN_MESSAGE_CHARS = 200
+
+  SWEEP_OFFSETS = [ 60.minutes, 30.minutes, 10.minutes ].freeze
+
+  # Where in a historical gap the dataset puts its sweep: the largest offset
+  # strictly inside the gap, so the message that ended the gap is never in
+  # the snapshot. nil when none fits.
+  def self.sweep_offset(gap)
+    SWEEP_OFFSETS.find { |offset| offset < gap }
+  end
 
   attr_reader :chat, :at
 
@@ -31,7 +54,21 @@ class StalledThreadSnapshot
   end
 
   def messages_scope
-    chat.messages.kept.where(role: %w[user assistant], progress_message: false).where("messages.created_at <= ?", at)
+    scope = chat.messages.where(role: %w[user assistant], progress_message: false).where("messages.created_at <= ?", at)
+    live? ? scope.kept : scope.where("messages.discarded_at IS NULL OR messages.discarded_at > ?", at)
+  end
+
+  # What a historical snapshot could not reconstruct. Not shown to Jev.
+  def provenance
+    return { as_of: "live" } if live?
+
+    shown = window + [ last_human_message ].compact
+    {
+      as_of: "historical",
+      content_unverified_ids: shown.select { |m| m.updated_at > at }.map(&:obfuscated_id).uniq,
+      membership: "current_minus_later_joins",
+      run_state_unknown: residents.any? { |r| r[:run_in_progress] == "unknown" }
+    }
   end
 
   def last_message
@@ -70,12 +107,19 @@ class StalledThreadSnapshot
     shown = window
     budget = TOTAL_CHARS
     truncated = shown.size >= MESSAGE_LIMIT
-    described = shown.reverse.map do |message|
-      limit = [ MESSAGE_CHARS, [ budget, 200 ].max ].min
+    described = []
+    # Newest first, so the budget runs out on the oldest messages.
+    shown.reverse_each do |message|
+      limit = [ MESSAGE_CHARS, budget ].min
+      if limit < MIN_MESSAGE_CHARS
+        truncated = true
+        break
+      end
       truncated ||= message.content.to_s.length > limit
       budget -= [ message.content.to_s.length, limit ].min
-      describe(message, limit)
-    end.reverse
+      described.unshift(describe(message, limit))
+    end
+    shown = shown.last(described.size)
 
     human = last_human_message
     last_resident = shown.reverse.find { |m| m.agent_id.present? }
@@ -148,7 +192,7 @@ class StalledThreadSnapshot
   end
 
   def residents
-    chat.agents.map do |agent|
+    @residents ||= members.map do |agent|
       {
         name: agent.name,
         paused: live? ? agent.paused? : "unknown",
@@ -157,12 +201,29 @@ class StalledThreadSnapshot
     end
   end
 
+  # In seating order, the same for live and historical snapshots, so the
+  # classifier's positional question keys line up.
+  def members
+    seated = chat.agents.reorder("chat_agents.id")
+    seated = seated.where("chat_agents.created_at <= ?", at) unless live?
+    seated.to_a
+  end
+
+  # true, false, or "unknown" when a run that had started by `at` has no
+  # recorded finish and isn't running now: it ended unrecorded, and when is
+  # not known.
   def run_in_progress?(agent)
     runs = chat.agent_runtime_interactions.where(agent: agent)
     return runs.order(:id).last(5).any?(&:active?) if live?
 
-    runs.where("started_at <= ?", at).where("finished_at IS NULL OR finished_at > ?", at)
-      .where("started_at > ?", at - 2.hours).exists?
+    started = runs.where("started_at <= ?", at)
+    return true if started.where("finished_at > ?", at).exists?
+
+    unfinished = started.where(finished_at: nil).to_a
+    return true if unfinished.any?(&:active?)
+    return "unknown" if unfinished.any?
+
+    false
   end
 
   def nudges_since(human)

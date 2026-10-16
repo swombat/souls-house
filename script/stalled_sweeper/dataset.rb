@@ -19,10 +19,7 @@ out = out_path == "-" ? $stdout : File.open(out_path, "w")
 NUDGE = /\b(status|update|any news|what happened|where are we|did you|have you|go on|carry on|continue|proceed|ping|still waiting|stuck)\b|\?\s*\z/i
 
 def sweep_offset(gap)
-  return 10.minutes if gap < 30.minutes
-  return 30.minutes if gap < 60.minutes
-
-  60.minutes
+  StalledThreadSnapshot.sweep_offset(gap)
 end
 
 def bucket(gap)
@@ -63,19 +60,32 @@ def suggest(before, after)
 end
 
 rows = 0
+skipped = Hash.new(0)
 begin
   file = out
   account.chats.kept.find_each do |chat|
-    messages = chat.messages.kept.where(role: %w[user assistant], progress_message: false)
+    # Every message, discarded or not: a message discarded later still broke
+    # the silence when it was posted. One discarded before the sweep time is
+    # skipped (and counted) rather than cut around.
+    messages = chat.messages.where(role: %w[user assistant], progress_message: false)
       .includes(:agent, :user).reorder(:created_at, :id).to_a
     messages.each_cons(2).with_index do |(before, nxt), index|
       gap = nxt.created_at - before.created_at
       next if gap < min_gap
+      offset = sweep_offset(gap)
+      if offset.nil?
+        skipped[:no_offset_inside_gap] += 1
+        next
+      end
 
-      sweep_at = before.created_at + sweep_offset(gap)
+      sweep_at = before.created_at + offset
       snapshot = StalledThreadSnapshot.new(chat, at: sweep_at)
       state = snapshot.state
       next if state.nil?
+      unless snapshot.last_message.id == before.id
+        skipped[:discarded_before_sweep] += 1
+        next
+      end
 
       after = messages[(index + 1)..(index + 3)]
       file.puts({
@@ -86,6 +96,7 @@ begin
         gap_minutes: (gap / 60).round,
         gap_bucket: bucket(gap),
         state: state,
+        provenance: snapshot.provenance,
         annotation: {
           suggested: suggest(before, after),
           next_messages: after.map { |m| brief(m) },
@@ -97,17 +108,19 @@ begin
 
     # The open gap: the room is quiet now. Nothing after it to suggest a
     # label, so these are labelled by hand or not at all.
-    last = messages.last
-    if last && Time.current - last.created_at >= min_gap
-      gap = Time.current - last.created_at
+    last = messages.reject(&:discarded?).last
+    open_gap = last && Time.current - last.created_at
+    if open_gap && open_gap >= min_gap && sweep_offset(open_gap)
+      gap = open_gap
       sweep_at = last.created_at + sweep_offset(gap)
-      state = StalledThreadSnapshot.new(chat, at: sweep_at).state
+      snapshot = StalledThreadSnapshot.new(chat, at: sweep_at)
+      state = snapshot.state
       if state
         file.puts({
           snapshot_id: "#{chat.obfuscated_id}:#{last.obfuscated_id}",
           chat_id: chat.obfuscated_id, chat_title: chat.title,
           sweep_at: sweep_at.iso8601, gap_minutes: (gap / 60).round, gap_bucket: bucket(gap), open_gap: true,
-          state: state,
+          state: state, provenance: snapshot.provenance,
           annotation: { suggested: "open", next_messages: [], label: nil }
         }.to_json)
         rows += 1
@@ -118,4 +131,4 @@ ensure
   out.close unless out == $stdout
 end
 
-warn "#{rows} snapshots written to #{out_path}"
+warn "#{rows} snapshots written to #{out_path}; skipped #{skipped.to_h}"

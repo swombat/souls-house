@@ -12,10 +12,16 @@ class StalledThreadClassifier
   WAKE_THRESHOLD = 0.8
   PERSON_HOLDS_THRESHOLD = 0.6
 
+  # wake: [[resident, score], ...] in room order. A list, not a hash keyed by
+  # name: two residents may share a name, or names that look alike.
   Verdict = Struct.new(:wake, :person_holds, keyword_init: true) do
     # Residents scored over the threshold, highest first.
-    def wake_names(threshold = WAKE_THRESHOLD)
+    def wake_residents(threshold = WAKE_THRESHOLD)
       wake.select { |_, score| score >= threshold }.sort_by { |_, score| -score }.map(&:first)
+    end
+
+    def wake_names(threshold = WAKE_THRESHOLD)
+      wake_residents(threshold).map { |resident| resident[:name] || resident["name"] }
     end
 
     def person_holds?(threshold = PERSON_HOLDS_THRESHOLD)
@@ -23,14 +29,19 @@ class StalledThreadClassifier
     end
   end
 
-  def self.question_key(name)
-    "can_act:#{name.to_s.parameterize}"
+  # Keyed by position in residents_in_room, never by name: names are not
+  # unique, and normalising them ("Mira One", "Mira-One") can collide.
+  def self.question_key(index)
+    "can_act:#{index + 1}"
   end
 
   def self.questions(resident_names)
-    questions = resident_names.index_with do |name|
-      { type: "noul", instructions: PromptTemplate.render("stalled_thread_sweep", :resident_can_act, resident: name).squish }
-    end.transform_keys { |name| question_key(name) }
+    questions = {}
+    resident_names.each_with_index do |name, index|
+      questions[question_key(index)] = {
+        type: "noul", instructions: PromptTemplate.render("stalled_thread_sweep", :resident_can_act, resident: name).squish
+      }
+    end
     questions[PERSON_HOLDS] = { type: "noul", instructions: PromptTemplate.render("stalled_thread_sweep", :person_holds).squish }
     questions
   end
@@ -38,10 +49,10 @@ class StalledThreadClassifier
   # state: StalledThreadSnapshot#state (or a stored copy of one).
   # decide: the inference call, swappable for recorded answers in tests.
   def self.call(state, decide: UtilityInference.method(:decide))
-    names = Array(state[:residents_in_room] || state["residents_in_room"]).map { |r| r[:name] || r["name"] }
-    answers = decide.call(state: state, questions: questions(names))
+    residents = Array(state[:residents_in_room] || state["residents_in_room"])
+    answers = decide.call(state: state, questions: questions(residents.map { |r| r[:name] || r["name"] }))
     Verdict.new(
-      wake: names.index_with { |name| answers.fetch(question_key(name)) },
+      wake: residents.each_with_index.map { |resident, index| [ resident, answers.fetch(question_key(index)) ] },
       person_holds: answers.fetch(PERSON_HOLDS)
     )
   end

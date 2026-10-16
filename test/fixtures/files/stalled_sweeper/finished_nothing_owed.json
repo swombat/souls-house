@@ -49,8 +49,8 @@
     "last_human_message_at": "2026-10-01T10:00:00+00:00"
   },
   "recorded_answers": {
-    "can_act:lume": 0.06,
-    "can_act:mira": 0.06,
+    "can_act:1": 0.06,
+    "can_act:2": 0.06,
     "person_holds": 0.15
   }
 }
