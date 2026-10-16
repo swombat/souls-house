@@ -5,6 +5,10 @@ class SyncChannel < ApplicationCable::Channel
       model: User,
       collections: []
     },
+    "GuestDiscovery" => {
+      model: User,
+      collections: []
+    },
     # The room switchers' working spinners, per account (RoomActivity).
     "RoomActivity" => {
       model: Account,
@@ -87,6 +91,7 @@ class SyncChannel < ApplicationCable::Channel
     # Native-app connections subscribe to AppSyncChannel, whose broadcasts
     # carry no content; the web's streams do.
     return reject_for_reason("app connections use AppSyncChannel") if current_app_session
+    return reject_for_reason("current_user is not present") unless current_user
 
     model_name = params[:model].to_s
     return reject_for_reason("params[:model] is not present") if model_name.blank?
@@ -109,7 +114,7 @@ class SyncChannel < ApplicationCable::Channel
     @model = model_config[:model].find_by_obfuscated_id(record_id)
     return reject_for_reason("model is not present") unless @model
 
-    accessible = model_name == "ReplyAttention" ? @model.id == current_user.id : @model.accessible_by?(current_user)
+    accessible = %w[ReplyAttention GuestDiscovery].include?(model_name) ? @model.id == current_user.id : @model.accessible_by?(current_user)
     return reject_for_reason("model is not accessible by current_user") unless accessible
 
     if collection_name

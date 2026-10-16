@@ -83,6 +83,52 @@ class SyncChannelTest < ActionCable::Channel::TestCase
     assert subscription.rejected?
   end
 
+  test "guest discovery subscribes only to the current human marker" do
+    stub_connection current_user: @user, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "GuestDiscovery", id: @user.to_param
+    assert subscription.confirmed?
+    assert_equal [ "GuestDiscovery:#{@user.to_param}" ], subscription.streams
+  end
+
+  [ :user_1, :site_admin_user ].each do |viewer|
+    test "guest discovery rejects another human even for #{viewer}" do
+      stub_connection current_user: users(viewer), current_app_session: nil
+      subscribe channel: "SyncChannel", model: "GuestDiscovery", id: users(:existing_user).to_param
+      assert subscription.rejected?
+      assert_no_streams
+    end
+  end
+
+  test "guest discovery rejects unauthenticated connections" do
+    stub_connection current_user: nil, current_app_session: nil
+    subscribe channel: "SyncChannel", model: "GuestDiscovery", id: @user.to_param
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  test "guest discovery rejects native app connections" do
+    client = Doorkeeper::Application.create!(name: "Discovery app", uid: "discovery-sync-refusal",
+      redirect_uri: "https://example.com/cb", scopes: "chat", confidential: false)
+    stub_connection current_user: @user, current_app_session: AppSession.create!(user: @user, oauth_application: client)
+    subscribe channel: "SyncChannel", model: "GuestDiscovery", id: @user.to_param
+    assert subscription.rejected?
+    assert_no_streams
+  end
+
+  [ "all", "collections", "home-account" ].each do |target|
+    test "guest discovery rejects #{target} subscriptions" do
+      stub_connection current_user: @admin, current_app_session: nil
+      id = case target
+      when "collections" then "#{@admin.to_param}:accounts"
+      when "home-account" then accounts(:existing_user_account).to_param
+      else target
+      end
+      subscribe channel: "SyncChannel", model: "GuestDiscovery", id: id
+      assert subscription.rejected?
+      assert_no_streams
+    end
+  end
+
   test "room activity streams per accessible account" do
     stub_connection current_user: @user, current_app_session: nil
     subscribe channel: "SyncChannel", model: "RoomActivity", id: @account.obfuscated_id

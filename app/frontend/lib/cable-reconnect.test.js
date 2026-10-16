@@ -82,6 +82,7 @@ test.each([
   'FieldVoiceActivity',
   'FieldTweetStream',
   'GuestDirectory',
+  'GuestDiscovery',
   'RhythmActivity',
   'IntegrationStatus',
   'ProviderPresentation',
@@ -130,6 +131,33 @@ test.each([
   vi.advanceTimersByTime(300);
   expect(router.reload).toHaveBeenCalledWith(expect.objectContaining({ only: props }));
   unsubscribe();
+  vi.useRealTimers();
+});
+
+test('discovery marker bursts reload candidates only and coalesce with the existing directory', () => {
+  vi.useFakeTimers();
+  router.reload.mockClear();
+  const discovery = subscribeToModel('GuestDiscovery', 'self', ['guest_candidates']);
+  const discoveryCallbacks = create.mock.calls.at(-1)[1];
+  const directoryProps = ['guest_memberships', 'away_memberships', 'guest_candidates', 'can_end_guest_memberships'];
+  const directory = subscribeToModel('GuestDirectory', 'viewed', directoryProps);
+  const directoryCallbacks = create.mock.calls.at(-1)[1];
+  discoveryCallbacks.connected();
+  discoveryCallbacks.received({ action: 'refresh' });
+  discoveryCallbacks.received({ action: 'refresh' });
+  vi.advanceTimersByTime(300);
+  expect(router.reload).toHaveBeenCalledOnce();
+  expect(router.reload).toHaveBeenLastCalledWith(
+    expect.objectContaining({ only: ['guest_candidates'], preserveState: true, preserveScroll: true })
+  );
+  router.reload.mockClear();
+  discoveryCallbacks.received({ action: 'refresh' });
+  directoryCallbacks.received({ action: 'refresh' });
+  vi.advanceTimersByTime(300);
+  expect(router.reload).toHaveBeenCalledOnce();
+  expect(router.reload.mock.calls[0][0].only.sort()).toEqual([...directoryProps].sort());
+  discovery();
+  directory();
   vi.useRealTimers();
 });
 

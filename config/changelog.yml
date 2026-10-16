@@ -7,6 +7,9 @@
   title: Provider connection status stays fresh
   body: "Persisted provider connection changes now update open resident and model-key panels without losing unfinished credentials or interrupting an active sign-in. Status-only reloads no longer regenerate unrelated Telegram links."
 - date: 2026-10-16
+  title: Guest choices follow changes in your other accounts
+  body: "Open resident pages now discover eligible guests when your confirmed memberships or residents in your other accounts change. Removed choices clear deliberately; valid choices and unfinished upgrade drafts stay in place."
+- date: 2026-10-16
   title: Live refreshes skip unrelated server work
   body: "Background partial refreshes no longer rebuild an unrequested admin usage report, enqueue its resident-stat jobs, repeat Field searches or rescan unrelated settings and filter options. Requested detail views still load normally."
 

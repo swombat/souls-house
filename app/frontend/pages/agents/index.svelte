@@ -1,5 +1,5 @@
 <script>
-  import { router } from '@inertiajs/svelte';
+  import { page, router } from '@inertiajs/svelte';
   import { createDynamicSync } from '$lib/use-sync';
   import { newAccountAgentPath, accountAgentPath, accountAgentPredecessorPath } from '@/routes';
   import { findModelLabel as modelLabelFor } from '$lib/agent-models';
@@ -36,6 +36,11 @@
         'can_end_guest_memberships',
       ],
     });
+  });
+  // Discovery belongs to this human, not whichever account is being viewed.
+  const updateDiscoverySync = createDynamicSync();
+  $effect(() => {
+    updateDiscoverySync($page.props?.user?.id ? { [`GuestDiscovery:${$page.props.user.id}`]: 'guest_candidates' } : {});
   });
 
   // Upgrade-with-predecessor modal state.

@@ -119,7 +119,7 @@ class Agent < ApplicationRecord
   after_update_commit :enqueue_model_change_orientation, if: :saved_change_to_model_id?
   after_create_commit :apply_default_service_accesses
   after_save :refresh_integration_presentation, if: -> {
-    (saved_changes.keys & %w[id account_id name active github_resident_import_id]).any?
+    (saved_changes.keys & %w[id account_id name active github_resident_import_id runtime colour icon]).any?
   }
   after_destroy :refresh_integration_presentation
   after_save :refresh_guest_directory, if: -> {
@@ -171,8 +171,17 @@ class Agent < ApplicationRecord
 
   def refresh_integration_presentation
     account_ids = [ account_id, account_id_before_last_save ].compact.uniq
-    ActiveRecord.after_all_transactions_commit do
-      IntegrationStatus.refresh!(account_ids)
+    if destroyed? || (saved_changes.keys & %w[id account_id name active github_resident_import_id]).any?
+      ActiveRecord.after_all_transactions_commit do
+        IntegrationStatus.refresh!(account_ids)
+      end
+    end
+    # Share the existing allowlisted hook without making integration-only
+    # changes (or unrelated health/heartbeat writes) discovery events.
+    unless destroyed_by_association&.active_record == Account
+      if destroyed? || (saved_changes.keys & %w[id account_id name active runtime colour icon]).any?
+        GuestDiscovery.refresh_accounts!(destroyed? ? [ account_id ] : account_ids)
+      end
     end
   end
   private :refresh_integration_presentation

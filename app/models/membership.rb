@@ -86,6 +86,23 @@ class Membership < ApplicationRecord
   }
   # Account destruction owns the complete pre-deletion snapshot.
   after_destroy :refresh_directory_presentation, unless: -> { destroyed_by_association&.active_record == Account }
+  after_save :refresh_guest_discovery, if: -> {
+    (saved_changes.keys & %w[id account_id user_id confirmed_at]).any? &&
+      (confirmed? || confirmed_at_before_last_save.present?)
+  }
+  # Account owns the pre-deletion member snapshot. User deletion only removes
+  # that user's candidate authority; refresh! skips the now-deleted recipient.
+  after_destroy :refresh_guest_discovery, if: -> {
+    confirmed? && destroyed_by_association&.active_record != Account
+  }
+
+  def refresh_guest_discovery
+    user_ids = []
+    user_ids << user_id if confirmed?
+    user_ids << user_id_before_last_save if !destroyed? && confirmed_at_before_last_save.present?
+    GuestDiscovery.refresh!(user_ids)
+  end
+  private :refresh_guest_discovery
 
   def refresh_directory_presentation
     account_ids = [ account_id, account_id_before_last_save ].compact.uniq
