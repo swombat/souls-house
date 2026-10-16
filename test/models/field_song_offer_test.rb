@@ -74,14 +74,31 @@ class FieldSongOfferTest < ActiveSupport::TestCase
       [[song:https://soundcloud.com/artist/song-remix|Song (remix)|Artist]]
 
       [[song:https://example.com/a\\|b|Escaped pipe]]
+
       [[song:AbC123]]
+
       [[song:https://youtu.be/one|a|b|too many fields]]
+
       [[song:https://youtu.be/two|bad \\x escape]]
+
       Inline [[song:https://youtu.be/three]] is not an offer
     TEXT
     assert_equal [ "https://soundcloud.com/artist/song-remix", "https://example.com/a|b" ],
       FieldSong::Offer.offered_urls(content)
     assert_not_includes FieldSong::Offer.offered_urls(content), "https://soundcloud.com/artist/song"
+  end
+
+  test "an offer inside a fenced code example or the middle of a paragraph isn't one (review of #381)" do
+    fenced = "How to offer a song:\n\n```\n[[song:https://youtu.be/fenced]]\n```\n\n~~~~\n\n[[song:https://youtu.be/tilde]]\n\n~~~~"
+    assert_empty FieldSong::Offer.offered_urls(fenced)
+
+    mid_paragraph = "A line before\n[[song:https://youtu.be/middle]]\nand a line after"
+    assert_empty FieldSong::Offer.offered_urls(mid_paragraph)
+    assert_empty FieldSong::Offer.offered_urls("A line before\n[[song:https://youtu.be/end]]")
+    assert_empty FieldSong::Offer.offered_urls("[[song:https://youtu.be/start]]\nthen more")
+
+    assert_equal [ "https://youtu.be/after" ],
+      FieldSong::Offer.offered_urls("```\ncode\n```\n\n[[song:https://youtu.be/after]]\r\n")
   end
 
 end

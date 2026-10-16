@@ -58,14 +58,31 @@ class FieldSong::Offer
   end
 
   # The URLs of the [[song:URL|title|artist]] offers in a message, read the
-  # way the page reads them (app/frontend/lib/song-reference.js): one offer per
-  # paragraph line, only the \\ \| \[ \] escapes, the URL as its first field.
-  # A URL that merely contains another one is a different offer.
+  # way the page reads them (app/frontend/lib/song-reference.js): an offer is
+  # a whole Markdown paragraph of its own (blank line or edge of the message
+  # on both sides, outside any fenced code block), only the \\ \| \[ \]
+  # escapes, the URL as its first field. A URL that merely contains another
+  # one is a different offer. Stricter than the page where they disagree:
+  # that only ever leaves a song without a suggester.
   OFFER_LINE = /\A\[\[song:([^\r\n]*)\]\][ \t]*\z/
+  FENCE = /\A {0,3}(`{3,}|~{3,})/
 
   def self.offered_urls(content)
-    content.to_s.each_line.filter_map do |line|
-      match = OFFER_LINE.match(line.chomp)
+    lines = content.to_s.gsub("\r\n", "\n").split("\n", -1)
+    fence = nil
+    lines.each_with_index.filter_map do |line, index|
+      if (opening = FENCE.match(line))
+        marker = opening[1]
+        if fence.nil? then fence = marker
+        elsif marker[0] == fence[0] && marker.length >= fence.length && line.strip == marker then fence = nil
+        end
+        next
+      end
+      next if fence
+      next unless (index.zero? || lines[index - 1].strip.empty?) &&
+        (index == lines.size - 1 || lines[index + 1].strip.empty?)
+
+      match = OFFER_LINE.match(line)
       fields = match && offer_fields(match[1])
       next unless fields
       # One bare field without a scheme is the legacy [[song:ID]] reference.
