@@ -13,7 +13,7 @@ class IntegrationPresentationTest < ActiveSupport::TestCase
   test "resident name and eligibility refresh but ordinary operational edits do not" do
     assert_marker { @agent.update!(name: "Renamed resident") }
     assert_marker { @agent.update!(active: false) }
-    assert_no_broadcasts(@stream) { @agent.update!(system_prompt: "A new private prompt") }
+    assert_no_broadcasts(@stream) { @agent.update!(turn_timeout_minutes: 45) }
     assert_no_broadcasts(@stream) { @agent.touch }
   end
 
