@@ -55,7 +55,19 @@ class User < ApplicationRecord
   after_create :ensure_membership_exists
   after_create :create_profile
   after_update :refresh_connection_owner_name, if: :saved_change_to_email_address?
-  after_update -> { GuestDirectory.refresh_personal_labels!([ id ]) }, if: :saved_change_to_email_address?
+  after_update :refresh_directory_labels, if: :saved_change_to_email_address?
+  before_destroy :snapshot_voice_roster_accounts, prepend: true
+  after_destroy -> { FieldVoiceActivity.refresh!(@voice_roster_account_ids) }
+
+  def refresh_directory_labels
+    GuestDirectory.refresh_personal_labels!([ id ])
+    FieldVoiceActivity.refresh_for_users!([ id ])
+  end
+
+  def snapshot_voice_roster_accounts
+    @voice_roster_account_ids = FieldVoiceActivity.account_ids_for_users([ id ])
+  end
+  private :refresh_directory_labels, :snapshot_voice_roster_accounts
 
   def refresh_connection_owner_name
     owner_id = id

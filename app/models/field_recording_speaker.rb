@@ -41,6 +41,7 @@ class FieldRecordingSpeaker < ApplicationRecord
   scope :in_order, -> { order(:position) }
 
   after_save :touch_recording_for_presentation_changes
+  after_destroy :touch_recording_for_presentation_changes
 
   # A supplied transcript names its speakers in its own words, which a person
   # wrote, so a real name there is shown as it was written. Generic labels
@@ -249,6 +250,14 @@ class FieldRecordingSpeaker < ApplicationRecord
   private
 
   def touch_recording_for_presentation_changes
+    # Counts read the links themselves; picker ordering reads max(named_at).
+    # Resolve ownership now, including the old voice, before deletion can
+    # remove it. Do not couple roster reloads to other speaker/detail traffic.
+    if destroyed? || saved_change_to_field_voice_id? || saved_change_to_named_at?
+      voice_ids = destroyed? ? [ field_voice_id ] : [ field_voice_id, field_voice_id_before_last_save ]
+      FieldVoiceActivity.refresh!(FieldVoice.where(id: voice_ids).distinct.pluck(:account_id))
+    end
+    return if destroyed?
     return unless (saved_changes.keys & PRESENTATION_FIELDS).any?
 
     # Capture the change now, before a subsequent speaker touch clears dirty

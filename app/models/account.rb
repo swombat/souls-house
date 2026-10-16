@@ -102,8 +102,8 @@ class Account < ApplicationRecord
   before_destroy :mark_memberships_for_skip_check, prepend: true
   after_update_commit :disconnect_members_app_cable, if: -> { saved_change_to_disabled_at? && disabled? }
   after_update_commit -> { users.ids.each { |id| ReplyExpectation.refresh_for(id) } }, if: :saved_change_to_disabled_at?
-  after_save :refresh_guest_directory, if: -> {
-    (saved_changes.keys & %w[name account_type disabled_at]).any?
+  after_save :refresh_directory_presentation, if: -> {
+    (saved_changes.keys & %w[name account_type disabled_at recognise_voices]).any?
   }
   # Both hosted agents and receiving joins disappear in dependent callbacks.
   before_destroy :snapshot_guest_directory, prepend: true
@@ -113,10 +113,13 @@ class Account < ApplicationRecord
     @guest_directory_account_ids = GuestDirectory.account_ids_for([ id ])
   end
 
-  def refresh_guest_directory
-    GuestDirectory.refresh!(GuestDirectory.account_ids_for([ id ]))
+  def refresh_directory_presentation
+    if (saved_changes.keys & %w[name account_type disabled_at]).any?
+      GuestDirectory.refresh!(GuestDirectory.account_ids_for([ id ]))
+    end
+    FieldVoiceActivity.refresh!([ id ]) if saved_change_to_recognise_voices?
   end
-  private :snapshot_guest_directory, :refresh_guest_directory
+  private :snapshot_guest_directory, :refresh_directory_presentation
 
   ACCOUNT_LIMIT_MESSAGE = "This house has reached its account limit. New signups and accounts are temporarily closed."
 

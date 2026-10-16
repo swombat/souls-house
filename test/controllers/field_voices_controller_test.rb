@@ -124,4 +124,55 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Speaker 1", @speaker.reload.display_name
   end
 
+  test "the actual roster usage follows naming un-naming and relinking" do
+    get account_field_voices_path(@account)
+    assert_equal 1, props["voices"].find { |voice| voice["id"] == @voice.to_param }["used_in"]
+
+    @speaker.unname!
+    get account_field_voices_path(@account)
+    assert_equal 0, props["voices"].find { |voice| voice["id"] == @voice.to_param }["used_in"]
+
+    other = @account.field_voices.create!(name: "Other speaker")
+    @speaker.name_as!(other, by: @user)
+    get account_field_voices_path(@account)
+    assert_equal 0, props["voices"].find { |voice| voice["id"] == @voice.to_param }["used_in"]
+    assert_equal 1, props["voices"].find { |voice| voice["id"] == other.to_param }["used_in"]
+  end
+
+  test "recording member options and my voice follow explicit member linking" do
+    team = accounts(:team_account)
+    recording = long_ready_recording(account: team, user: @user)
+    member = users(:existing_user)
+    get account_field_recording_path(team, recording)
+    assert_includes props["members_without_voice"].map { |row| row["user_id"] }, member.id
+    assert_nil props["my_voice_id"]
+
+    FieldVoice.for_member!(account: team, user: member, by: @user)
+    mine = FieldVoice.for_member!(account: team, user: @user, by: @user)
+    get account_field_recording_path(team, recording)
+    assert_not_includes props["members_without_voice"].map { |row| row["user_id"] }, member.id
+    assert_equal mine.to_param, props["my_voice_id"]
+    assert props["voices"].find { |row| row["id"] == mine.to_param }["member"]
+  end
+
+  test "a stale preview after remote forget still refuses the existing confirm endpoint" do
+    with_recognition(@account) do
+      FieldVoiceprints::Sample.stub(:cut, ->(_r, _s, &block) { Tempfile.create([ "s", ".wav" ]) { |file| block.call(file.path) } }) do
+        post account_field_recording_speaker_enrolments_path(@account, @recording, @speaker), params: { enrolment: { consent: "1" } }
+      end
+      preview = FieldVoiceEnrolment.last!
+      assert_equal "previewing", preview.status
+      FieldVoice.find(@voice.id).forget!
+      assert_not FieldVoiceEnrolment.exists?(preview.id)
+
+      PyannoteClient.stub(:new, ->(*) { flunk "stale consent must not reach the vendor" }) do
+        assert_no_enqueued_jobs(only: FieldVoices::CollectPrintJob) do
+          post confirm_account_field_voice_enrolment_path(@account, preview)
+          assert_response :not_found
+        end
+      end
+      assert_not @voice.reload.remembered?
+    end
+  end
+
 end

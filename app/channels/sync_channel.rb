@@ -18,6 +18,10 @@ class SyncChannel < ApplicationCable::Channel
       model: Account,
       collections: []
     },
+    "FieldVoiceActivity" => {
+      model: Account,
+      collections: []
+    },
     # Room names/order only, separate from chat traffic and working spinners.
     "RoomNavigation" => {
       model: Account,

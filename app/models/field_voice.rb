@@ -22,6 +22,16 @@ class FieldVoice < ApplicationRecord
 
   before_validation { self.name = name.to_s.squish }
   after_update_commit :rerender_transcripts, if: -> { saved_change_to_name? }
+  after_save :refresh_roster, if: -> {
+    (saved_changes.keys & %w[id account_id name user_id discarded_at]).any?
+  }
+  after_destroy :refresh_roster
+
+  def refresh_roster
+    account_ids = destroyed? ? [ account_id ] : [ account_id, account_id_before_last_save ]
+    FieldVoiceActivity.refresh!(account_ids)
+  end
+  private :refresh_roster
 
   scope :named_like, ->(name) { where("lower(name) = ?", name.to_s.squish.downcase) }
 

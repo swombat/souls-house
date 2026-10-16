@@ -39,15 +39,17 @@ class Profile < ApplicationRecord
     (saved_changes.keys & %w[first_name last_name]).any?
   }
   after_destroy :refresh_connection_owner_name
-  after_save :refresh_guest_directory_labels, if: -> {
+  after_save :refresh_directory_labels, if: -> {
     (saved_changes.keys & %w[first_name last_name user_id]).any?
   }
-  after_destroy :refresh_guest_directory_labels
+  after_destroy :refresh_directory_labels
 
-  def refresh_guest_directory_labels
-    GuestDirectory.refresh_personal_labels!([ user_id, user_id_before_last_save ].compact)
+  def refresh_directory_labels
+    user_ids = [ user_id, user_id_before_last_save ].compact
+    GuestDirectory.refresh_personal_labels!(user_ids)
+    FieldVoiceActivity.refresh_for_users!(user_ids) unless destroyed_by_association&.active_record == User
   end
-  private :refresh_guest_directory_labels
+  private :refresh_directory_labels
 
   def refresh_connection_owner_name
     owner_id = user_id
