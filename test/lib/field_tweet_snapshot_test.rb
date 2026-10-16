@@ -15,7 +15,8 @@ class FieldTweetSnapshotTest < ActiveSupport::TestCase
     travel_to before_midnight do
       source = @account.create_field_tweet_source!(handle: "example", window_since: before_midnight - 30.minutes)
       @account.field_tweets.create!(provider_tweet_id: "123456", author_handle: "example",
-        posted_at: before_midnight, fetched_at: before_midnight, url: "https://x.com/example/status/123456")
+        text: "Snapshot clock fixture", posted_at: before_midnight, fetched_at: before_midnight,
+        url: "https://x.com/example/status/123456")
 
       first = FieldItems.tweet_stream_json(@account, now: before_midnight)
       assert_equal before_midnight.iso8601, first[:refreshed_at]

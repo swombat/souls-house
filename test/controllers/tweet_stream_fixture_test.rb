@@ -4,6 +4,7 @@ class TweetStreamFixtureTest < ActionDispatch::IntegrationTest
 
   test "browser fixture mutates only synthetic account source state" do
     account = Account.create!(name: "E2E Tweet source fixture", account_type: :team)
+    account.add_user!(users(:user_1), role: "owner", skip_confirmation: true)
     %w[enable create advance bookkeeping].each do |operation|
       post "/test/e2e/tweet_stream_fixture", params: { account_id: account.id, operation: }, as: :json
       assert_response :success

@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+test.use({ actionTimeout: 10_000 });
+
 test('source arrival, status and reconnect update an open panel without replacing its draft', async ({
   page,
   request,
@@ -44,7 +46,8 @@ test('source arrival, status and reconnect update an open panel without replacin
     const base = `/accounts/${setup.account_param}/field?tab=tweets`;
     await page.goto(base);
     await expect.poll(() => confirmed).toBe(true);
-    await expect(page.getByTestId('tweet-stream-needs-integration')).toBeVisible();
+    await expect(page.getByTestId('tweet-stream-follow-form')).toBeVisible();
+    await expect.poll(() => reloads.length).toBeGreaterThan(0);
     await page.waitForLoadState('networkidle');
     const beforeArrival = reloads.length;
     await mutate('create');
@@ -101,9 +104,11 @@ test('source arrival, status and reconnect update an open panel without replacin
         })
       ).ok()
     ).toBe(true);
+    const beforeSearch = reloads.length;
     await page.goto(`${base}&q=live`);
     const results = page.getByTestId('field-search-result');
     await expect.poll(() => results.count()).toBeGreaterThan(0);
+    await expect.poll(() => reloads.length).toBeGreaterThan(beforeSearch);
     await page.waitForLoadState('networkidle');
     const order = await results.allTextContents();
     const searchedUrl = page.url();

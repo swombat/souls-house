@@ -17,6 +17,11 @@ module TestSupport
         Setting.instance.update!(field_tweets_enabled: true, field_tweets_site_monthly_usd_ceiling: 10,
           field_tweets_account_monthly_usd_ceiling: 1, field_tweets_daily_import_cap: 50,
           field_tweets_poll_minutes: 15)
+        connection = account.service_connections.new(provider: "twitterapi_io", management_scope: "account_managed",
+          credential_kind: "api_key", status: "connected", connected_by_user: account.users.first!,
+          label: "Synthetic tweet funding", credential_fingerprint: SecureRandom.hex(16))
+        connection.credential_payload_hash = { "api_key" => "synthetic-no-vendor-access" }
+        connection.save!
       when "create"
         account.create_field_tweet_source!(handle: "example", own_monthly_usd_limit: 5)
       when "advance"
