@@ -57,6 +57,7 @@ class FieldRecordingSpeaker < ApplicationRecord
 
     "Speaker #{position + 1}"
   end
+
   # Talk time is measured from word timings; a supplied transcript has none,
   # so it is unknown rather than zero.
   def known_talk_ms = field_recording.supplied? ? nil : talk_ms
