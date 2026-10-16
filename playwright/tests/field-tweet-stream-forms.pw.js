@@ -77,7 +77,7 @@ test('a pristine form accepts remote settings and a follow draft survives fundin
 
   await panel.update({ props: { ...props, stream: { ...stream, source: null } } });
   const handle = panel.getByRole('textbox', { name: 'Follow an X handle', exact: true });
-  await handle.fill('unfinished_handle');
+  await handle.fill('draft_handle');
   await panel.update({ props: { ...props, stream: { ...stream, source: null, poll_minutes: 30 } } });
-  await expect(handle).toHaveValue('unfinished_handle');
+  await expect(handle).toHaveValue('draft_handle');
 });
