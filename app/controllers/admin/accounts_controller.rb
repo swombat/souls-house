@@ -10,14 +10,14 @@ class Admin::AccountsController < ApplicationController
     @accounts = Account.includes(:owner, memberships: :user)
                        .order(created_at: :desc)
 
-    # Admin can view any account, not just ones they belong to
-    # So we bypass the AccountScoping concern's current_account method
-    selected_account_id = params[:account_id]
-    @selected_account = Account.includes(memberships: :user).find(selected_account_id) if selected_account_id.present?
-
     render inertia: "admin/accounts", props: {
       accounts: accounts_json,
-      selected_account: @selected_account ? selected_account_json(@selected_account) : nil
+      selected_account: -> {
+        # Admin can view any account, not just ones they belong to.
+        if params[:account_id].present?
+          selected_account_json(Account.includes(memberships: :user).find(params[:account_id]))
+        end
+      }
     }
   end
 
