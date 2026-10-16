@@ -100,9 +100,10 @@ test('an open Field gets arrivals, deletion and reconnect catch-up without chat 
     const originalResults = await results.allTextContents();
     await page.waitForLoadState('networkidle');
     const refreshed = page.waitForResponse(
-      (res) =>
+      async (res) =>
         res.url().includes('/field') &&
-        (res.request().headers()['x-inertia-partial-data'] || '').split(',').includes('items')
+        (res.request().headers()['x-inertia-partial-data'] || '').split(',').includes('items') &&
+        (await res.json()).props.counts?.all === 4
     );
     await mutate('late');
     expect((await (await refreshed).json()).props.counts.all).toBe(4);
