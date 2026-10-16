@@ -30,6 +30,9 @@ Every user-visible change adds an entry to `config/changelog.yml` in the same PR
 Use short, imperative commit subjects (<72 chars) like `Add chats index pagination`, grouping related work. Reference issues in the body when useful. PRs need a problem summary, UI screenshots when visuals change, and explicit notes on migrations or secrets. Run `bin/rubocop`, `bun run format:check`, `bin/rails test`, and `bun run test` before requesting review.
 
 ## Branch Policy
+Every change to `master` goes through a pull request, whoever makes it. The one
+exception: small changes Lume makes because Daniel asked for them may be committed
+straight to `master` (ADR 0002, 2026-10-16). If in doubt about "small", open a PR.
 For major work, follow ADR 0002: an issue approved by the other author, a dedicated
 PR branch, then reciprocal review of the PR head before merge into `master`.
 Daniel explicitly authorised this process on 2026-09-28; it supersedes the former

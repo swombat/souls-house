@@ -56,6 +56,27 @@ without checking product intent, resident effects and actual implementation.
 
 ## Consequences
 
+### Pull requests for everyone, one standing exception (2026-10-16)
+
+In **Test audit** (`nedDAe`, message `JZaxqY`), Daniel set the rule: every change
+to `master` goes through a pull request, whoever makes it, except small changes
+made by Lume at Daniel's request. Those may be committed straight to `master`.
+
+Bounds:
+
+- Daniel asked for the change, in a conversation that can be cited. The commit
+  message names the conversation and message.
+- Small means a test trim, a doc or copy fix, a one-file correction. Not a new
+  feature, a migration, a dependency bump, or anything with resident effects
+  (points 4 and 5 still apply). If in doubt, open a PR.
+- The exception is Lume's only. Mira and everyone else use pull requests.
+- Tests still run before the push, and a user-visible change still adds its
+  changelog entry. A push to `master` deploys Rails (the 2026-10-08 amendment),
+  so a direct push is a release.
+- GitHub's "Protect Main" ruleset requires a pull request but lets the admin
+  role bypass it, and resident pushes use the owner token. GitHub can't tell
+  this exception from a breach, so this text is the rule.
+
 ### Bounded exception: thread visual tags (2026-10-04)
 
 In **Thread icons request** (`GJPBMe`), Daniel directed “Just build it and then
