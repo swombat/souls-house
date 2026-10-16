@@ -223,6 +223,9 @@ class RhythmStatusActivityTest < ActiveSupport::TestCase
 
   %w[mention automatic invoke].each do |kind|
     test "#{kind} dispatch and runtime lifecycle in a rhythm chat never refresh rhythms" do
+      # The first human reply legitimately promotes a quiet run. Establish
+      # that listing change before measuring unrelated dispatch activity.
+      @chat.messages.create!(role: "user", user: @user, content: "Already listed", suppress_automatic_dispatch: true)
       assert_no_broadcasts(stream) do
         dispatch = ordinary_dispatch(kind)
         dispatch.update!(status: "reserved", reason: "Synthetic unrelated status")
