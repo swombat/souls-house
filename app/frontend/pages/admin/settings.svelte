@@ -5,6 +5,7 @@
   import FeatureToggleSettingsCard from '$lib/components/admin/FeatureToggleSettingsCard.svelte';
   import SiteIdentitySettingsCard from '$lib/components/admin/SiteIdentitySettingsCard.svelte';
   import FollowThroughSettingsCard from '$lib/components/admin/FollowThroughSettingsCard.svelte';
+  import StalledSweepSettingsCard from '$lib/components/admin/StalledSweepSettingsCard.svelte';
   import VmBirthSettingsCard from '$lib/components/admin/VmBirthSettingsCard.svelte';
   import FieldOcrSettingsCard from '$lib/components/admin/FieldOcrSettingsCard.svelte';
   import FieldTweetsSettingsCard from '$lib/components/admin/FieldTweetsSettingsCard.svelte';
@@ -35,6 +36,7 @@
     formData.append('setting[show_usage_in_chat]', form.show_usage_in_chat);
     formData.append('setting[safeguard_conversations_enabled]', form.safeguard_conversations_enabled ?? false);
     formData.append('setting[follow_through_scope]', form.follow_through_scope ?? 'off');
+    formData.append('setting[stalled_sweep_minutes]', form.stalled_sweep_minutes ?? 0);
     formData.append('setting[new_residents_on_vm]', form.new_residents_on_vm ?? false);
     formData.append('setting[vm_resident_limit]', form.vm_resident_limit ?? 0);
     formData.append('setting[field_ocr_enabled]', form.field_ocr_enabled ?? false);
@@ -105,6 +107,7 @@
       </div>
 
       <FollowThroughSettingsCard {form} residents={follow_through_residents} bind:picked={followThroughPicked} />
+      <StalledSweepSettingsCard {form} />
 
       <VmBirthSettingsCard {form} status={vm_births} />
 

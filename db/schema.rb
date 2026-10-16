@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_080000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2189,6 +2189,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_080000) do
     t.integer "field_tweets_poll_minutes", default: 15, null: false
     t.datetime "field_tweets_house_halted_at"
     t.string "field_tweets_house_halt_reason", limit: 300
+    t.integer "stalled_sweep_minutes", default: 0, null: false
+  end
+
+  create_table "stalled_thread_sweeps", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "chat_id", null: false
+    t.bigint "message_id", null: false
+    t.string "outcome", null: false
+    t.jsonb "scores", default: [], null: false
+    t.float "person_holds"
+    t.jsonb "would_wake", default: [], null: false
+    t.integer "quiet_minutes"
+    t.string "prompt_version"
+    t.string "error_class"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_stalled_thread_sweeps_on_account_id"
+    t.index ["chat_id", "message_id"], name: "index_stalled_thread_sweeps_on_chat_id_and_message_id", unique: true
+    t.index ["chat_id"], name: "index_stalled_thread_sweeps_on_chat_id"
+    t.index ["created_at"], name: "index_stalled_thread_sweeps_on_created_at"
+    t.index ["message_id"], name: "index_stalled_thread_sweeps_on_message_id"
   end
 
   create_table "stone_revisions", force: :cascade do |t|
@@ -2655,6 +2676,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_080000) do
   add_foreign_key "service_connections", "oura_integrations", column: "legacy_oura_integration_id"
   add_foreign_key "service_connections", "users", column: "connected_by_user_id"
   add_foreign_key "sessions", "users"
+  add_foreign_key "stalled_thread_sweeps", "accounts"
+  add_foreign_key "stalled_thread_sweeps", "chats"
+  add_foreign_key "stalled_thread_sweeps", "messages"
   add_foreign_key "stone_revisions", "agents"
   add_foreign_key "stone_revisions", "stones", on_delete: :cascade
   add_foreign_key "stone_revisions", "users"

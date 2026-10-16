@@ -33,6 +33,14 @@ production:
 
   # Queues tweet stream runs that are due (FieldTweets::Sync). Does nothing
   # while Setting#field_tweets_enabled is off.
+  # Judges quiet rooms for the stalled-thread sweeper (StalledThreadSweeper).
+  # Does nothing while Setting#stalled_sweep_minutes is 0. Shadow only: it
+  # records verdicts and wakes nobody.
+  stalled_thread_sweep:
+    class: StalledThreadSweepJob
+    queue: default
+    schedule: every 5 minutes
+
   field_tweets_sweep:
     class: FieldTweets::SweepJob
     queue: default

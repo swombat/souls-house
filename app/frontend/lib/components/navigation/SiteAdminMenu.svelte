@@ -122,6 +122,10 @@
         <Pulse class="mr-2 size-4" />
         <span>Resident Concurrency</span>
       </DropdownMenu.Item>
+      <DropdownMenu.Item onclick={() => router.visit('/admin/stalled_sweeps')}>
+        <Pulse class="mr-2 size-4" />
+        <span>Stalled Threads</span>
+      </DropdownMenu.Item>
       <DropdownMenu.Item onclick={() => router.visit('/admin/jobs')}>
         <Play class="mr-2 size-4" />
         <span>Background Jobs</span>
