@@ -15,7 +15,7 @@ if (!window.PointerEvent) {
   };
 }
 
-vi.mock('$lib/use-sync', () => ({ useSync: vi.fn() }));
+vi.mock('$lib/use-sync', () => ({ useSync: vi.fn(), createDynamicSync: () => vi.fn() }));
 
 const account = { id: 'account' };
 const portability = { can_manage: true, export_ready: true, export_url: '/export', import_url: '/import' };

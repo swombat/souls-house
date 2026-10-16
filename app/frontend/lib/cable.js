@@ -118,6 +118,7 @@ export function subscribeToModel(model, id, props) {
           model === 'FieldActivity' ||
           model === 'RoomNavigation' ||
           model === 'RhythmActivity' ||
+          model === 'IntegrationStatus' ||
           model === 'FieldRecording'
         ) {
           // Broadcasts are not replayed. Catch up changes missed before the

@@ -54,6 +54,15 @@ class User < ApplicationRecord
 
   after_create :ensure_membership_exists
   after_create :create_profile
+  after_update :refresh_connection_owner_name, if: :saved_change_to_email_address?
+
+  def refresh_connection_owner_name
+    owner_id = id
+    ActiveRecord.after_all_transactions_commit do
+      IntegrationStatus.refresh!(ServiceConnection.where(connected_by_user_id: owner_id).distinct.pluck(:account_id))
+    end
+  end
+  private :refresh_connection_owner_name
 
   json_attributes :first_name, :last_name, :timezone, :full_name, :site_admin, :avatar_url, :initials, :preferences, :chat_colour, :theme_hue, except: [ :password_digest, :password_reset_token, :password_reset_sent_at, :default_account_id ]
 

@@ -6,6 +6,7 @@
   import { startsOpen } from '$lib/connection-summary';
   import { untrack } from 'svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
+  import { createDynamicSync } from '$lib/use-sync';
 
   import { XLogo, ArrowLeft, ArrowRight, Plus, Pulse } from 'phosphor-svelte';
 
@@ -16,6 +17,13 @@
     focused_service: focusedService = null,
     can_manage_account: canManageAccount = false,
   } = $props();
+
+  const updateSync = createDynamicSync();
+  $effect(() => {
+    updateSync({
+      [`IntegrationStatus:${account.id}`]: ['connections', 'can_manage_account', 'services'],
+    });
+  });
 
   let groups = $derived([
     {

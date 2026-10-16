@@ -18,7 +18,7 @@
     accountAgentTelegramTestPath,
     accountAgentTelegramWebhookPath,
   } from '@/routes';
-  import { useSync } from '$lib/use-sync';
+  import { useSync, createDynamicSync } from '$lib/use-sync';
 
   import AgentAppearancePanel from '$lib/components/agents/AgentAppearancePanel.svelte';
   import AgentEditHeader from '$lib/components/agents/AgentEditHeader.svelte';
@@ -69,6 +69,11 @@
       'cost_report',
       'portability',
     ],
+  });
+
+  const updateIntegrationSync = createDynamicSync();
+  $effect(() => {
+    updateIntegrationSync({ [`IntegrationStatus:${account.id}`]: ['service_connections'] });
   });
 
   let selectedModel = $state(agent.model_id);

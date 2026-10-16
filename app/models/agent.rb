@@ -118,6 +118,18 @@ class Agent < ApplicationRecord
   after_update :create_model_change_notice, if: :saved_change_to_model_id?
   after_update_commit :enqueue_model_change_orientation, if: :saved_change_to_model_id?
   after_create_commit :apply_default_service_accesses
+  after_save :refresh_integration_presentation, if: -> {
+    (saved_changes.keys & %w[id account_id name active github_resident_import_id]).any?
+  }
+  after_destroy :refresh_integration_presentation
+
+  def refresh_integration_presentation
+    account_ids = [ account_id, account_id_before_last_save ].compact.uniq
+    ActiveRecord.after_all_transactions_commit do
+      IntegrationStatus.refresh!(account_ids)
+    end
+  end
+  private :refresh_integration_presentation
   broadcasts_to :account
 
   encrypts :trigger_bearer_token

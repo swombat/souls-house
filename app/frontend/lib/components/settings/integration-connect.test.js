@@ -39,6 +39,16 @@ const twitterapi = {
 };
 
 describe('integration scope and connection flow', () => {
+  it('retains unsent credentials and ownership when read-only service props refresh', async () => {
+    const props = { account, focusedService: github, canManageAccount: true };
+    const view = render(IntegrationConnect, props);
+    await fireEvent.input(screen.getByLabelText('Token'), { target: { value: 'synthetic-unsent-token' } });
+    await fireEvent.input(screen.getByLabelText('Repository'), { target: { value: 'example/unfinished' } });
+    await view.rerender({ ...props, focusedService: { ...github }, account: { ...account } });
+    expect(screen.getByLabelText('Token')).toHaveValue('synthetic-unsent-token');
+    expect(screen.getByLabelText('Repository')).toHaveValue('example/unfinished');
+  });
+
   it('says an account-only key belongs to the account, and connects it as account-managed', async () => {
     render(IntegrationConnect, { account, focusedService: twitterapi, canManageAccount: true });
     expect(screen.getByText(/TwitterAPI.io is connected for the whole account/)).toBeInTheDocument();

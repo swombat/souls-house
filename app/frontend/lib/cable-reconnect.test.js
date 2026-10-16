@@ -76,7 +76,7 @@ test('room navigation catches up on connect and reconnect using only its mapped 
   vi.useRealTimers();
 });
 
-test.each(['RoomActivity', 'FieldActivity', 'RhythmActivity'])(
+test.each(['RoomActivity', 'FieldActivity', 'RhythmActivity', 'IntegrationStatus'])(
   '%s catches up on connect and every reconnect',
   (model) => {
     vi.useFakeTimers();

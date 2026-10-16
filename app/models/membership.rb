@@ -77,6 +77,18 @@ class Membership < ApplicationRecord
   after_update_commit :track_invitation_acceptance, if: :became_confirmed?
   after_commit :disconnect_app_cable, if: :lost_app_authority?
   after_commit -> { ReplyExpectation.refresh_for(user_id) }
+  after_save :refresh_integration_permissions, if: -> {
+    (saved_changes.keys & %w[id account_id user_id role confirmed_at]).any?
+  }
+  after_destroy :refresh_integration_permissions
+
+  def refresh_integration_permissions
+    account_ids = [ account_id, account_id_before_last_save ].compact.uniq
+    ActiveRecord.after_all_transactions_commit do
+      IntegrationStatus.refresh!(account_ids)
+    end
+  end
+  private :refresh_integration_permissions
 
   # Scopes
   scope :owners, -> { where(role: "owner") }
