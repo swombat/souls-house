@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 
-test('persisted provider updates preserve credential and active ceremony drafts', async ({ page, request }, testInfo) => {
+test('persisted provider updates preserve credential and active ceremony drafts', async ({
+  page,
+  request,
+}, testInfo) => {
   test.setTimeout(120_000);
   const runId = `provider-live-${Date.now()}`;
   const setupResponse = await request.post('/test/e2e/setup', { data: { run_id: runId } });
@@ -8,15 +11,21 @@ test('persisted provider updates preserve credential and active ceremony drafts'
   const setup = await setupResponse.json();
   const agent = setup.agents[0];
   const mutate = async (operation) => {
-    expect((await request.post('/test/e2e/provider_presentation_fixture', {
-      data: { account_id: setup.account_id, agent_id: agent.id, operation },
-    })).ok()).toBe(true);
+    expect(
+      (
+        await request.post('/test/e2e/provider_presentation_fixture', {
+          data: { account_id: setup.account_id, agent_id: agent.id, operation },
+        })
+      ).ok()
+    ).toBe(true);
   };
   // These are browser-only synthetic responses, never runtime/provider calls.
   let statusReads = 0;
+  let runtimeReads = 0;
   await page.route('**/provider_subscription**', async (route) => {
     const req = route.request();
     const url = new URL(req.url());
+    if (req.method() === 'GET') runtimeReads++;
     let body;
     if (url.searchParams.has('capabilities')) {
       body = { providers: { anthropic: { oauth_account: true } } };
@@ -24,8 +33,11 @@ test('persisted provider updates preserve credential and active ceremony drafts'
       body = { windows: [] };
     } else {
       if (req.method() === 'GET') statusReads++;
-      body = { status: 'awaiting_code', verification_url: 'https://example.invalid/sign-in',
-        expires_at: new Date(Date.now() + 600_000).toISOString() };
+      body = {
+        status: 'awaiting_code',
+        verification_url: 'https://example.invalid/sign-in',
+        expires_at: new Date(Date.now() + 600_000).toISOString(),
+      };
     }
     await route.fulfill({ json: body });
   });
@@ -61,16 +73,18 @@ test('persisted provider updates preserve credential and active ceremony drafts'
     // Initial layout catch-up legitimately combines several independent lanes.
     await page.waitForTimeout(700);
     await page.waitForLoadState('networkidle');
+    const initialRuntimeReads = runtimeReads;
     const key = page.getByLabel('Anthropic API key', { exact: true });
     await key.fill('unfinished-synthetic-key');
     await mutate('connect');
     await expect(page.getByText('Connected as remote@example.invalid · Synthetic', { exact: true })).toBeVisible();
     await expect(key).toHaveValue('unfinished-synthetic-key');
     // Existing Agent broadcasts_to :account hints coalesce two layout props.
-    expect([...reloads.at(-1)].sort()).toEqual([
-      'subscription_agents', 'can_manage_ai_credentials', 'accounts', 'expired_subscriptions',
-    ].sort());
+    expect([...reloads.at(-1)].sort()).toEqual(
+      ['subscription_agents', 'can_manage_ai_credentials', 'accounts', 'expired_subscriptions'].sort()
+    );
     await page.waitForLoadState('networkidle');
+    expect(runtimeReads).toBe(initialRuntimeReads);
     const beforeQuiet = reloads.length;
     await mutate('bookkeeping');
     await page.waitForTimeout(900);
@@ -81,8 +95,11 @@ test('persisted provider updates preserve credential and active ceremony drafts'
     await expect(page.getByText('Connected as remote@example.invalid · Synthetic', { exact: true })).toBeVisible();
     drop = false;
     cable.close({ code: 1012, reason: 'synthetic reconnect' });
-    await expect(page.getByText('Connected as late@example.invalid · Synthetic', { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText('Connected as late@example.invalid · Synthetic', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
     await expect(key).toHaveValue('unfinished-synthetic-key');
+    expect(runtimeReads).toBe(initialRuntimeReads);
     await mutate('clear');
     await page.getByRole('button', { name: 'Connect Claude subscription', exact: true }).click();
     const code = page.getByPlaceholder('Paste the localhost callback URL or code');

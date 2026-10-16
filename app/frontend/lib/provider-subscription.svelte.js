@@ -41,6 +41,9 @@ export function createProviderSubscription(context) {
   let usage = $state(null);
   let usageLoading = $state(false);
   let usageError = $state(null);
+  let usageStale = $state(false);
+  let initialCapabilities = true;
+  let initialUsage = true;
   const capabilityKey = $derived(JSON.stringify([accountId, agent.id, agent.provider, agent.available]));
   const usageKey = $derived(JSON.stringify([capabilityKey, agent.model, agent.auth_mode, agent.connection]));
   let capabilityRequest = 0;
@@ -108,7 +111,9 @@ export function createProviderSubscription(context) {
       const request = ++capabilityRequest;
       capabilityChecked = false;
       subscriptionSupported = true;
-      if (agent.available && identity(accountId, agent)) checkCapabilities(key, request);
+      // Preserve the pre-live page-load probe, not one probe per live change.
+      if (initialCapabilities && agent.available && identity(accountId, agent)) checkCapabilities(key, request);
+      initialCapabilities = false;
     });
   });
 
@@ -119,8 +124,10 @@ export function createProviderSubscription(context) {
       usage = null;
       usageError = null;
       usageLoading = false;
-      if (agent.available && agent.connection?.status === 'connected' && identity(accountId, agent))
+      usageStale = !initialUsage;
+      if (initialUsage && agent.available && agent.connection?.status === 'connected' && identity(accountId, agent))
         loadUsage(false, key);
+      initialUsage = false;
     });
   });
 
@@ -190,7 +197,10 @@ export function createProviderSubscription(context) {
     usageError = null;
     try {
       const result = await jsonRequest(`${usagePath()}${refresh ? '?refresh=1' : ''}`);
-      if (current()) usage = result;
+      if (current()) {
+        usage = result;
+        usageStale = false;
+      }
     } catch (error) {
       if (current()) usageError = error.message;
     } finally {
@@ -402,6 +412,9 @@ export function createProviderSubscription(context) {
     },
     get usageError() {
       return usageError;
+    },
+    get usageStale() {
+      return usageStale;
     },
     get displayWindows() {
       return displayWindows;

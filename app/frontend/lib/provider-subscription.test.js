@@ -96,6 +96,39 @@ test('the rendered panel adopts idle persisted status, email, plan and mode with
   expect(fetch).not.toHaveBeenCalled();
 });
 
+test('live availability model mode and connection changes never initiate runtime probes or usage reads', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url) =>
+      response(url.includes('capabilities') ? { providers: { anthropic: { oauth_account: true } } } : { windows: [] })
+    )
+  );
+  const connected = {
+    ...agent,
+    available: true,
+    model: 'first',
+    auth_mode: 'oauth_account',
+    connection: { status: 'connected', email: 'first@example.test' },
+  };
+  const view = render(Harness, { agent: connected });
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  for (const next of [
+    { ...connected, available: false },
+    { ...connected, available: true, model: 'second' },
+    { ...connected, auth_mode: 'api_key' },
+    { ...connected, connection: { status: 'connected', email: 'new@example.test' } },
+  ])
+    await view.rerender({ agent: next });
+  await tick();
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(view.component.subscription.usageStale).toBe(true);
+  expect(view.component.subscription.usage).toBe(null);
+  await view.component.subscription.loadUsage(true);
+  expect(fetch).toHaveBeenCalledTimes(3);
+  expect(fetch.mock.calls.at(-1)[0]).toContain('?refresh=1');
+  expect(view.component.subscription.usageStale).toBe(false);
+});
+
 test('rendered browser-code input survives a same-identity refresh without remounting the dialog', async () => {
   vi.stubGlobal(
     'fetch',
@@ -433,6 +466,10 @@ test('latest manual usage request wins and model changes invalidate old usage', 
   expect(state.usage.marker).toBe('newer');
   await view.rerender({ agent: { ...connected, model: 'second' } });
   expect(state.usage).toBe(null);
+  expect(state.usageStale).toBe(true);
+  expect(requests).toHaveLength(2);
+  const secondRefresh = state.loadUsage(true);
   requests[2].resolve({ marker: 'second-model' });
+  await secondRefresh;
   await waitFor(() => expect(state.usage?.marker).toBe('second-model'));
 });
