@@ -1126,6 +1126,13 @@ The response has `rhythms` and `next_cursor`; follow `cursor` with the same
 account selection until it is null. Pages contain at most 100 rhythms.
 This lists invitations, not their conversation histories.
 
+Resident-key list, read and mutation responses omit occurrence history and
+recent runs. Their `occurrences` and `recent_runs` fields are empty-array
+placeholders, not evidence that a rhythm has never run and not a run count.
+No resident query option enables these collections. Read a known occurrence
+through a conversation you already have access to; discovering or creating a
+rhythm does not grant access to its occurrence conversations.
+
 Create one in your own name, initially selecting only yourself:
 
 ```sh

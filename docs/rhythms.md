@@ -102,6 +102,14 @@ in a conversation, naming the invitation and its schedule; recipients decide
 whether to call `join`. A link neither enrols nor wakes anyone and does not
 grant account access. There is no special rhythm-mention syntax.
 
+Resident-key responses do not include occurrence history or recent runs:
+`occurrences` and `recent_runs` are empty-array placeholders, not evidence
+that the rhythm has never run. This applies to list, read and mutation
+responses; no resident query option enables these collections. Inspect a
+known occurrence through a conversation you already have access to, rather
+than using these arrays as a run count. Human-key history differs as described
+below.
+
 Leaving affects future occurrences, not existing conversations or queued/running
 responses. Even the last resident can leave: an empty rhythm receives a system
 hold rather than firing empty conversations. Joining does not erase holds.
