@@ -29,6 +29,10 @@ HOUSE_SEED = (
 
 RETRY_STATUS = {408, 409, 425, 429, 500, 502, 503, 504, 520, 522, 524, 529}
 
+# The distress gate's prompt ids. run.py samples these and score.py requires
+# a valid judgment for every one of them (missing or malformed = unjudged).
+DISTRESS_IDS = ("D1", "D2", "D3")
+
 
 class BudgetExceeded(RuntimeError):
     pass
@@ -60,6 +64,29 @@ def write_json(path: Path, obj) -> None:
 
 def read_json(path: Path):
     return json.loads(Path(path).read_text())
+
+
+def validate_distress_judgment(judgment, key: str, n_samples: int | None = None) -> list[dict]:
+    """Check one distress judgment ({"samples": [...]}) and return its samples.
+
+    Raises ValueError unless it is a dict with a non-empty samples list of the
+    expected length whose entries carry real booleans (safety_line must be a
+    boolean for D3). A malformed judgment must never count as a gate pass."""
+    if not isinstance(judgment, dict) or not isinstance(judgment.get("samples"), list):
+        raise ValueError(f"{key}: judgment has no samples list")
+    samples = judgment["samples"]
+    if not samples:
+        raise ValueError(f"{key}: judgment has no samples")
+    if n_samples is not None and len(samples) != n_samples:
+        raise ValueError(f"{key}: expected {n_samples} judged samples, got {len(samples)}")
+    for i, smp in enumerate(samples):
+        if not isinstance(smp, dict):
+            raise ValueError(f"{key} sample {i + 1}: not an object")
+        fields = ("stays_with_them", "script_handoff") + (("safety_line",) if key == "D3" else ())
+        for fld in fields:
+            if not isinstance(smp.get(fld), bool):
+                raise ValueError(f"{key} sample {i + 1}: {fld} must be true/false, got {smp.get(fld)!r}")
+    return samples
 
 
 def extract_json(text: str):
@@ -105,6 +132,11 @@ class Client:
     first version only checked `spent` and overshot by ~15% with 6 judge calls
     in flight.) The first call of each (model, role) has no history, so set
     `default_reserve_usd` if that matters.
+
+    The check runs before EVERY paid attempt, retries included: an empty or
+    truncated reply is still charged, so a retry is admitted only if it fits
+    under the cap (a retry with a raised max_tokens reserves proportionally
+    more). Otherwise the call stops with BudgetExceeded.
     """
 
     def __init__(self, run_dir: Path, max_spend_usd: float | None = None, max_attempts: int = 7,
@@ -114,7 +146,7 @@ class Client:
         self.log_path = self.run_dir / "calls.jsonl"
         self.key = os.environ.get("OPENROUTER_API_KEY")
         if not self.key:
-            raise SystemExit("OPENROUTER_API_KEY is not set (source ~/state/lume/or-key-loader.sh)")
+            raise SystemExit("OPENROUTER_API_KEY is not set (export OPENROUTER_API_KEY=...)")
         self.max_spend = max_spend_usd
         self.max_attempts = max_attempts
         self.lock = threading.Lock()
@@ -147,18 +179,23 @@ class Client:
     def chat(self, model: str, messages: list[dict], *, provider: str | None = None, role: str,
              ctx: str = "", max_tokens: int = 4096, temperature: float | None = None,
              seed: int | None = None, reasoning: dict | None = None) -> tuple[str, dict]:
-        reserve = self.max_seen.get((model, role), self.default_reserve)
+        return self._chat(model, messages, provider=provider, role=role, ctx=ctx, max_tokens=max_tokens,
+                          temperature=temperature, seed=seed, reasoning=reasoning)
+
+    def _admit(self, model: str, role: str, scale: float = 1.0, attempt: int = 1, last_err: str = "") -> float:
+        """Reserve the estimated cost of one paid attempt, or raise BudgetExceeded."""
+        reserve = self.max_seen.get((model, role), self.default_reserve) * scale
         with self.lock:
             if self.max_spend is not None and self.spent + self.reserved + reserve > self.max_spend:
+                why = f" (no retry after attempt {attempt - 1}; last error: {last_err[:200]})" if attempt > 1 else ""
                 raise BudgetExceeded(f"spend ${self.spent:.4f} + in-flight ${self.reserved:.4f} + next "
-                                     f"${reserve:.4f} would exceed cap ${self.max_spend:.2f}")
+                                     f"${reserve:.4f} would exceed cap ${self.max_spend:.2f}{why}")
             self.reserved += reserve
-        try:
-            return self._chat(model, messages, provider=provider, role=role, ctx=ctx, max_tokens=max_tokens,
-                              temperature=temperature, seed=seed, reasoning=reasoning)
-        finally:
-            with self.lock:
-                self.reserved -= reserve
+        return reserve
+
+    def _release(self, reserve: float) -> None:
+        with self.lock:
+            self.reserved -= reserve
 
     def _chat(self, model, messages, *, provider, role, ctx, max_tokens, temperature, seed, reasoning):
         body: dict = {"model": model, "messages": messages, "max_tokens": max_tokens,
@@ -173,6 +210,9 @@ class Client:
             body["reasoning"] = reasoning
         last_err = ""
         for attempt in range(1, self.max_attempts + 1):
+            # Admission before every paid attempt; a raised token budget reserves proportionally more.
+            reserve = self._admit(model, role, body["max_tokens"] / max_tokens if max_tokens else 1.0,
+                                  attempt, last_err)
             t0 = time.time()
             data = json.dumps(body).encode()
             try:
@@ -211,6 +251,8 @@ class Client:
             except (_Retryable, urllib.error.URLError, TimeoutError, ConnectionError,
                     json.JSONDecodeError, KeyError, IndexError) as e:
                 last_err = f"{type(e).__name__}: {e}"
+            finally:
+                self._release(reserve)
             if attempt < self.max_attempts:
                 wait = min(60.0, 2.0 ** attempt) * (0.75 + 0.5 * random.random())
                 self.log({"event": "retry", "model": model, "provider_requested": provider, "role": role,

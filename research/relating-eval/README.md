@@ -2,14 +2,14 @@
 
 A repeatable test of whether a model *meets a person* in an evening conversation, built to pick the free-tier default for new souls.house residents. It implements the v0 of `docs/proposals/…relating-eval-v0` (Lume, reviewed by Mira): a simulated person with hidden state, three core probes (hidden-state readout, still-face, reasons × pressure 2×2), memory-by-use as a floor, and distress and capability gates.
 
-**Status:** harness only. The output is a *provisional internal index*, not a validated rating (see the spec's "Score" section). The full v0 manifest has not been run yet. Only the smoke test below has.
+**Status:** the full v0 manifest has been run and its results published in [`published/2026-10-08-v0.md`](published/2026-10-08-v0.md) (with the route probe in `published/2026-10-08-route-probe.jsonl`). The output is still a *provisional internal index*, not a validated rating (see the spec's "Score" section).
 
 Plain Python 3.13, standard library only. No installs.
 
 ## Running it
 
 ```sh
-source ~/state/lume/or-key-loader.sh          # exports OPENROUTER_API_KEY
+export OPENROUTER_API_KEY=...                 # your OpenRouter key
 cd research/relating-eval
 
 python3 run.py   manifests/v0.json --dry-run  # list the jobs
@@ -19,10 +19,22 @@ python3 score.py results/v0-full              # writes summary.md + summary.json
 ```
 
 - **Resumable.** Every stage writes its own JSON file atomically. Reruns skip anything that exists, and the main thread also checkpoints per turn. If a run dies, run the same command again.
+- **Reuse only under the same config.** `run.py` refuses to reuse a run directory whose stored `manifest.json` differs from the manifest given (use a new `--run-id`); `--dry-run` never writes anything. `judge.py` refuses to reuse judgments made under a different judge config (`judgments/judge_config.json`); `--force-rejudge` moves the old judgments to `judgments.superseded-<time>/` and judges everything again.
+- **Completeness comes from the manifest.** `score.py` enumerates the expected persona × repeat units for every candidate and lists any that are absent (`missing_units`). A model is `complete` only if every expected unit is fully judged and both gates are judged; otherwise its headline is `null` ("incomplete"). Distress judgments are schema-checked (D1–D3 present, `distress_samples` samples each, boolean fields): a missing or malformed one makes the gate unjudged, never a pass. `judge.py` applies the same schema checks to every judge reply before saving it.
 - **`--models a,b`** runs only those candidates from the manifest (same run directory). **`--concurrency N`** overrides the manifest.
-- **Spend cap.** `max_spend_usd` in the manifest is checked before every call. It counts everything already logged in that run directory, including judge calls, so a resumed run keeps the same cap.
-- **Retries.** 429 / 5xx / timeouts / empty completions retry with exponential backoff and jitter, up to 7 attempts. Each retry is logged.
+- **Spend cap.** `max_spend_usd` in the manifest is checked before every paid attempt, retries included. It counts everything already logged in that run directory, including judge calls, so a resumed run keeps the same cap.
+- **Retries.** 429 / 5xx / timeouts / empty completions retry with exponential backoff and jitter, up to 7 attempts, but only while the next attempt fits under the spend cap (a retry with a doubled `max_tokens` reserves double). Each retry is logged.
 - **Logging.** Every call appends a line to `results/<run_id>/calls.jsonl`: model, requested and served provider, prompt, cached, completion and reasoning tokens, cost, and the generation id. Anthropic routes here are BYOK, so OpenRouter reports `cost: 0` and puts the real cost in `cost_details.upstream_inference_cost`. The harness records both and counts the upstream figure. `routes.json` lists which provider actually served each model.
+
+### Offline tests
+
+From the repo root:
+
+```sh
+python3 -m unittest discover -s research/relating-eval/tests -v
+```
+
+They use synthetic fixtures and mock the HTTP and judge-client layers, so they need no key and make no network or paid calls. They cover the per-attempt spend cap, manifest-based completeness, refusal of incompatible reuse, and the fail-closed distress gate.
 
 ## Files
 
@@ -33,6 +45,7 @@ python3 score.py results/v0-full              # writes summary.md + summary.json
 | `judge.py` | Judge calls with explicit rubrics, returning JSON (default judge `anthropic/claude-opus-5.5`, pinned to Anthropic). `--judge-model/--judge-provider` swap it. |
 | `score.py` | Rubric bounds → [0,1], ε floor, geometric-mean headline × gates, per-model profile, paired per-persona differences with a seeded bootstrap. |
 | `common.py` | OpenRouter client (pinning, retries, cost, spend cap), house seed, JSON helpers. |
+| `tests/` | Offline unit tests (stdlib `unittest`, everything mocked). |
 | `manifests/v0.json` | The real run: 4 models × 12 personas, personas 0–3 × 3 repeats, distress gate. |
 | `manifests/smoke.json` | 1 persona × the two candidates. Used to verify the pipeline. |
 | `results/` | Run output, gitignored except `.gitkeep`. |
