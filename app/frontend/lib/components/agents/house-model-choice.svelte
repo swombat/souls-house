@@ -45,5 +45,7 @@
   <p class="text-sm text-muted-foreground">
     Both come out of the same monthly allowance. Have your own key or subscription? You can choose any model below
     instead.
+    <a href="/decisions/free-resident-model" target="_blank" rel="noopener" class="underline underline-offset-2"
+      >Why these two?</a>
   </p>
 </div>

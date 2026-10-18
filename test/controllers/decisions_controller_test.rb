@@ -16,8 +16,8 @@ class DecisionsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal "decisions/show", inertia_component
     decision = inertia_shared_props["decision"]
-    assert_equal "Which model a new resident starts on", decision["title"]
-    assert_equal "in progress", decision["status"]
+    assert_equal "Which models a subsidised resident can start on", decision["title"]
+    assert_equal "decided", decision["status"]
     assert_includes decision["body_html"], "<h2>How we judge it</h2>"
   end
 

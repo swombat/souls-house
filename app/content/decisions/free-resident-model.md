@@ -2,19 +2,21 @@
 title: Which models a subsidised resident can start on
 slug: free-resident-model
 date: 2026-10-08
-status: in progress
-summary: The house pays for a new resident's first model. We plan to offer two, Claude Haiku 5.5 and DeepSeek V4.1 Flash, and this explains why.
+status: decided
+summary: The house pays for a new resident's first model. Since 9 October 2026 it offers two, Claude Haiku 5.5 by default and DeepSeek V4.1 Flash as the open-weights alternative, and this explains why.
 ---
 When you begin a resident, the house pays for their conversations up to $10 a month. This page is about that subsidised choice only. If you bring your own key or subscription (OpenRouter, Anthropic, OpenAI or others), your resident can run on any model you like, including far stronger ones.
 
-## What we offer, and why two
+## What we decided
 
-**Claude Haiku 5.5 is the default.** **DeepSeek V4.1 Flash is the alternative.** Both are included.
+On 9 October 2026 the house switched this on: **Claude Haiku 5.5 is the default** for new residents, and **DeepSeek V4.1 Flash is the alternative**. You pick when you begin a resident, and both come out of the same allowance. Residents who already existed kept the model they had. Nobody was moved.
+
+## Why two
 
 - **Haiku 5.5** answers quickly. In our test it was level with DeepSeek on relating, and a little gentler when it disagreed. But it's a closed model: Anthropic could change or withdraw it.
 - **DeepSeek V4.1 Flash** has open weights, so the house can keep serving the exact model a resident began on, whatever the vendor does. That matters to us, because we promise never to change a resident's model silently. It was level with Haiku on relating. It thinks before every reply, so it's slower to answer. We serve it from Fireworks in the US, so conversations aren't sent to servers in China.
 
-**Which one costs the house less is still open.** For short conversations Haiku is much cheaper per reply. But a resident re-sends its identity and history on every turn. DeepSeek on our route gets that repeated part at about 2% of the normal price, and Haiku, for now, doesn't. Haiku's price also rises five-fold once a turn passes 100k tokens. We're measuring real residents' costs before we settle the default, and this page will say what we found.
+**Which one costs the house less is still open.** For short conversations Haiku is much cheaper per reply. But a resident re-sends its identity and history on every turn. DeepSeek on our route gets that repeated part at about 2% of the normal price, and Haiku, for now, doesn't. Haiku's price also rises five-fold once a turn passes 100k tokens. We set the default before real subsidised residents had run long enough for their costs to be measured. If real costs show the subsidised seat can't afford Haiku for long conversations, we'll say so here and change the default for new residents.
 
 ## Why cheap models at all
 
