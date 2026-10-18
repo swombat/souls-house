@@ -28,7 +28,7 @@
       size="1em"
       weight="fill"
       class="text-red-500 dark:text-red-400" />{/if}{/snippet}
-{#if token.form === 'code'}<code class={theme.codespan?.base}>{token.sha}</code>{:else if token.form === 'url'}<a
+{#if token.form === 'code'}<code data-streamdown-codespan class={theme.codespan?.base}>{token.sha}</code>{:else if token.form === 'url'}<a
     class={theme.link?.base}
     href={token.href}
     target="_blank"
