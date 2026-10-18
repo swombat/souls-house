@@ -9,6 +9,11 @@ require "json"
 #   nil       unknown: not found, ambiguous, GitHub unreachable, rate limited,
 #             or the running revision itself is unknown
 #
+# A commit from a squash-merged pull request never reaches master itself;
+# GitHub writes a new commit instead. So before calling a commit unmerged we
+# ask GitHub whether it belongs to a merged pull request, and if it does, the
+# commit takes the status of that pull request's merge commit.
+#
 # Two kinds of answer are kept apart:
 #
 # - Resolution: which full commit an abbreviation names. This can change (a
@@ -83,6 +88,13 @@ class CommitStatus
     full = resolve(sha)
     return nil unless full
 
+    case (status = placement(full))
+    when "unmerged" then landed_as(full) || status
+    else status
+    end
+  end
+
+  def placement(full)
     case ancestor_of?(full, @deployed)
     when true then return "deployed"
     when nil then return nil
@@ -92,6 +104,36 @@ class CommitStatus
     when true then "merged"
     when false then "unmerged"
     end
+  end
+
+  # The status of the merge commit of a merged pull request containing this
+  # commit, when it is on master; nil leaves the commit "unmerged".
+  def landed_as(full)
+    merge = merge_commit_for(full)
+    return nil unless merge && merge != full
+
+    status = placement(merge)
+    status if %w[deployed merged].include?(status)
+  end
+
+  # A merged pull request's merge commit never changes, so it is kept for a
+  # long time; "no merged pull request yet" can change, so only briefly.
+  def merge_commit_for(full)
+    key = "commit_status:merge_commit:#{@repo}:#{full}"
+    cached = Rails.cache.read(key)
+    return cached.presence unless cached.nil?
+    return nil unless budget?
+
+    code, data = fetcher.call("/repos/#{@repo}/commits/#{full}/pulls")
+    return nil unless code == 200 && data.is_a?(Array)
+
+    merge = data.filter_map { |pr| pr["merge_commit_sha"].to_s.downcase if pr.is_a?(Hash) && pr["merged_at"] }
+      .find { |sha| sha.match?(FULL) }
+    Rails.cache.write(key, merge.to_s, expires_in: merge ? FACT_TTL : MISSING_TTL)
+    merge
+  rescue StandardError => e
+    Rails.logger.warn("[CommitStatus] pulls #{full}: #{e.class}: #{e.message}")
+    nil
   end
 
   # The full sha an abbreviation names, or nil when GitHub didn't say it

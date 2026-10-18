@@ -45,6 +45,10 @@ class CommitStatusTest < ActiveSupport::TestCase
     @responses["/repos/#{REPO}/compare/#{full}...#{target}"] = [ 200, { "status" => status, "base_commit" => { "sha" => base } } ]
   end
 
+  def pulls(full, prs)
+    @responses["/repos/#{REPO}/commits/#{full}/pulls"] = [ 200, prs ]
+  end
+
   test "deployed, merged and unmerged come from ancestry of the resolved sha against the running revision then master" do
     resolves("1a2b3c4", OLD)
     resolves("5f6e7d8", NEW)
@@ -54,10 +58,62 @@ class CommitStatusTest < ActiveSupport::TestCase
     compare(NEW, MASTER, "ahead")
     compare(BRANCH, DEPLOYED, "diverged")
     compare(BRANCH, MASTER, "diverged")
+    pulls(BRANCH, [])
 
     statuses = CommitStatus.lookup(%w[1a2b3c4 5f6e7d8 9c8b7a6], summary: summary)
 
     assert_equal({ "1a2b3c4" => "deployed", "5f6e7d8" => "merged", "9c8b7a6" => "unmerged" }, statuses)
+  end
+
+  test "a commit from a squash-merged pull request takes the status of the merge commit" do
+    squash = "a4e0d54e" + "0" * 32
+    compare(BRANCH, DEPLOYED, "diverged")
+    compare(BRANCH, MASTER, "diverged")
+    pulls(BRANCH, [ { "merged_at" => nil, "merge_commit_sha" => "f" * 40 }, { "merged_at" => "2026-10-18T11:19:00Z", "merge_commit_sha" => squash } ])
+    compare(squash, DEPLOYED, "ahead")
+
+    assert_equal "deployed", CommitStatus.lookup([ BRANCH ], summary: summary)[BRANCH]
+
+    compare(squash, DEPLOYED, "behind")
+    compare(squash, MASTER, "ahead")
+    rolled_back = "c" * 40
+    compare(BRANCH, rolled_back, "diverged")
+    compare(squash, rolled_back, "behind")
+    assert_equal "merged", CommitStatus.lookup([ BRANCH ], summary: summary(deployed: rolled_back))[BRANCH]
+  end
+
+  test "a branch commit stays unmerged when its pull request is open, merged off master, or GitHub fails" do
+    other = "b" * 40
+    compare(BRANCH, DEPLOYED, "diverged")
+    compare(BRANCH, MASTER, "diverged")
+
+    pulls(BRANCH, [ { "merged_at" => nil, "merge_commit_sha" => other } ])
+    assert_equal "unmerged", CommitStatus.lookup([ BRANCH ], summary: summary)[BRANCH]
+
+    Rails.cache.clear
+    pulls(BRANCH, [ { "merged_at" => "2026-10-18T11:19:00Z", "merge_commit_sha" => other } ])
+    compare(other, DEPLOYED, "diverged")
+    compare(other, MASTER, "diverged")
+    assert_equal "unmerged", CommitStatus.lookup([ BRANCH ], summary: summary)[BRANCH]
+
+    Rails.cache.clear
+    @responses["/repos/#{REPO}/commits/#{BRANCH}/pulls"] = [ 403, nil ]
+    assert_equal "unmerged", CommitStatus.lookup([ BRANCH ], summary: summary)[BRANCH]
+  end
+
+  test "an open pull request is only remembered briefly, so a later merge is picked up" do
+    squash = "a4e0d54e" + "0" * 32
+    compare(BRANCH, DEPLOYED, "diverged")
+    compare(BRANCH, MASTER, "diverged")
+    pulls(BRANCH, [])
+    assert_equal "unmerged", CommitStatus.lookup([ BRANCH ], summary: summary)[BRANCH]
+
+    pulls(BRANCH, [ { "merged_at" => "2026-10-18T11:19:00Z", "merge_commit_sha" => squash } ])
+    compare(squash, DEPLOYED, "ahead")
+    assert_equal "unmerged", CommitStatus.lookup([ BRANCH ], summary: summary)[BRANCH]
+    travel CommitStatus::MISSING_TTL + 1.minute do
+      assert_equal "deployed", CommitStatus.lookup([ BRANCH ], summary: summary)[BRANCH]
+    end
   end
 
   test "an abbreviation of the running revision is still resolved by GitHub, not by prefix" do
