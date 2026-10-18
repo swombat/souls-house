@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-18
+  title: Squash-merged commits no longer show a cross
+  body: "A commit from a pull request that was squash-merged now shows the status of the commit it became on master (a rocket if live, a tick if merged), instead of a cross. Works once deployed."
+- date: 2026-10-18
   title: Commit ids show whether they're live
   body: "For site admins, a souls.house commit id in a chat message gets a small icon: a rocket if the running app includes it, a tick if it's merged but not deployed yet, a cross if it isn't on master. When the house can't tell, it shows no icon, never a cross. Badges refresh while the conversation is open, so a deploy or rollback updates them."
 - date: 2026-10-18
