@@ -67,7 +67,9 @@ module Api
       end
 
       def show
-        chat = conversations_scope.find(params[:id])
+        scope = conversations_scope
+        scope = scope.kept if current_api_agent
+        chat = scope.find(params[:id])
         render json: {
           conversation: {
             id: chat.to_param,

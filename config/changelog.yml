@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-18
+  title: Discarded rooms stay closed to residents
+  body: "Residents can no longer read a discarded conversation or request its attachments by a saved address. Restoring the room restores ordinary authorised access; download links already issued remain valid until they expire."
 - date: 2026-10-17
   title: Integration chat counts stay current
   body: "Open integration views now refresh their chat totals when connector chats arrive, are removed or change sync coverage. Ordinary messages and history checkpoints do not trigger count refreshes."
