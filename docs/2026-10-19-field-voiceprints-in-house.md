@@ -314,8 +314,17 @@ confirm (existing stale-chip rules still refuse it).
 
 ## 10. Gates and the pyannote path
 
-- House gate: `SOULSHOUSE_FIELD_VOICEPRINTS=on` and the voice-embeddings
-  accessory healthy (replaces "pyannote configured"). Account gate unchanged.
+*Amended 2026-10-19 (Daniel, KJkkdJ: "C'mon, you know this should at worst be
+a site setting... but actually should just be on").*
+
+- House gate: the voice-embeddings service is configured
+  (`VOICE_EMBEDDING_URL` and its token, written by the deploy when the
+  accessory exists). There is no `SOULSHOUSE_FIELD_VOICEPRINTS` switch.
+- Account gate: `recognise_voices`, **on by default**, existing accounts
+  included. A Field can switch it off on its Voices page; off keeps what was
+  learned, unused, and stops learning.
+- Dropped with the env switch: the restore runbook's "house flag off" step.
+  `field:reset_biometrics_after_restore` now runs with jobs stopped instead.
 - Enrolment ("Remember this voice") is no longer needed to start a voice: a
   kept voice with `remember: true` (default) learns from its namings. The
   explicit flow becomes "Forget" and "Remember again".
@@ -350,6 +359,19 @@ confirm (existing stale-chip rules still refuse it).
   report task (§7). Backfill of eligible names.
 - **D. Matching.** House identify replaces pyannote; chips; #459's button
   uses it; thresholds tuned on the tuning set only (§7.3).
+
+  *C and D shipped as one PR (2026-10-19): a switch that learns but can't
+  suggest changes nothing a person sees. As built: the held-out check is
+  leave-one-recording-out over all eligible samples (§7.2's rules); the
+  tuning/comparison split (§7.3) is not built yet, so thresholds are still
+  the Mac's; an unnamed speaker's embedding is kept on the speaker
+  (`probe_embedding`, encrypted, cleared by any decision and by Forget all)
+  so matching again after a print changes needs no audio work; and when
+  which prints may suggest changes, every recording with undecided speakers
+  is matched again. The writer cutover is recorded on `settings`
+  (`field_naming_cutover_at`, set by the migration to slice A's deploy,
+  11:57:25 UTC). The unvalidated-print opt-in and the confirm list are slice
+  E.*
 - **E. Review list and Voices page.** Confirm-these-names, per-voice accuracy.
 - **F. Retire the Mac script**, after the comparison in §8 passes on the
   comparison set.

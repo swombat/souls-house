@@ -78,9 +78,9 @@ class FieldVoice < ApplicationRecord
   end
 
   # Deleting the name itself, atomically: under account → recordings → voice
-  # (the same order every enrolment and write-back takes), forget the print,
+  # (the same order every naming and learning write takes), forget the voice,
   # return its speakers to "Speaker N", discard the voice and re-render the
-  # transcripts. Nothing can enrol or write a print for it in between.
+  # transcripts. Nothing can learn or write a print for it in between.
   # Under the account lock first: every way of linking a speaker to a voice
   # takes it too, so the set of linked recordings gathered here can't grow
   # before the voice is discarded, and each is re-rendered.
