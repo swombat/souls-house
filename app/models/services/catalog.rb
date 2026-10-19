@@ -168,28 +168,37 @@ module Services
       adapter_class: "Services::GoogleWorkspaceAdapter"
     )
 
-    # Xero's broad accounting scopes, as its OpenAPI spec lists them. If Xero
-    # refuses them for this app (newer apps may be limited to granular scopes),
-    # this is the one place to change.
+    # Xero granular scopes. Apps created on or after 2 March 2026 cannot use
+    # the broad accounting.transactions / accounting.reports.read scopes
+    # (https://developer.xero.com/faq/granular-scopes). The read list is the
+    # one Xero's own CLI documents for a read-only integration.
     XERO_IDENTITY = %w[openid profile email offline_access].freeze
+    XERO_REPORTS = %w[
+      accounting.reports.aged.read
+      accounting.reports.balancesheet.read
+      accounting.reports.profitandloss.read
+      accounting.reports.trialbalance.read
+    ].freeze
     XERO_READ = (XERO_IDENTITY + %w[
       accounting.settings.read
       accounting.contacts.read
-      accounting.transactions.read
-      accounting.reports.read
-      accounting.journals.read
+      accounting.invoices.read
+      accounting.payments.read
+      accounting.banktransactions.read
+      accounting.manualjournals.read
       accounting.budgets.read
       accounting.attachments.read
-    ]).freeze
+    ] + XERO_REPORTS).freeze
     XERO_WRITE = (XERO_IDENTITY + %w[
       accounting.settings
       accounting.contacts
-      accounting.transactions
-      accounting.reports.read
-      accounting.journals.read
+      accounting.invoices
+      accounting.payments
+      accounting.banktransactions
+      accounting.manualjournals
       accounting.budgets.read
       accounting.attachments
-    ]).freeze
+    ] + XERO_REPORTS).freeze
 
     Services::Definition.register(
       key: "xero",

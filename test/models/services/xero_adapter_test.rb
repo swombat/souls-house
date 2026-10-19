@@ -53,8 +53,15 @@ class Services::XeroAdapterTest < ActiveSupport::TestCase
     assert_equal "refresh_broker", @definition.credential_strategy
     assert_includes read, "offline_access"
     assert read.drop(4).all? { |scope| scope.end_with?(".read") }, "read_only must not request a write scope"
-    assert_includes write, "accounting.transactions"
+    assert_includes write, "accounting.invoices"
     assert_includes write, "accounting.contacts"
+  end
+
+  test "asks only for granular scopes, which apps created after 2 March 2026 must use" do
+    broad = %w[accounting.transactions accounting.transactions.read accounting.reports.read]
+    %w[read_only read_write].each do |profile|
+      assert_empty @definition.scopes_for(profile) & broad, "#{profile} requests a deprecated broad scope"
+    end
   end
 
   test "authorization URL uses Xero's endpoint, the attempt's scopes and PKCE" do
