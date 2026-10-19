@@ -1,6 +1,6 @@
 # Presentation-only hints on the existing, account-authorized recording stream.
 # Do not touch recording rows here: forget intentionally holds only a voice lock,
-# and taking a recording write lock there would invert the enrolment lock order.
+# and taking a recording write lock there would invert the naming lock order.
 module FieldRecordingActivity
 
   def self.refresh!(recording_ids)
