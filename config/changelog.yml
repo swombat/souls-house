@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-19
+  title: Xero connections stay connected when idle
+  body: "Xero drops a connection that goes 60 days without refreshing. Once a day the house now refreshes any Xero connection that hasn't refreshed for 30 days, so one nobody uses for a while doesn't lapse. If Xero refuses a connection outright, its card under Integrations says \"Reconnect needed\" and Connect puts it back, instead of residents finding out from an error. Works once deployed."
+- date: 2026-10-19
   title: The Voices page no longer promises a backup expiry
   body: "The Voices page and the Remember-this-voice panel now say what forgetting a voice actually does: it removes the voice print from this Field's active recognition database, and backups may still hold it for an indeterminate time. Voice recognition no longer needs a backup retention period to be switched on. Live once deployed."
 - date: 2026-10-19

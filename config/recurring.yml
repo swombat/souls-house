@@ -36,6 +36,12 @@ production:
     queue: default
     schedule: every 15 minutes
 
+  # Xero refresh tokens die after 60 days unused (Services::XeroAdapter).
+  xero_keep_alive:
+    class: Services::XeroKeepAliveJob
+    queue: default
+    schedule: every day at 4:40am
+
   field_recordings_stuck_sweep:
     class: FieldRecordings::StuckSweepJob
     queue: default
