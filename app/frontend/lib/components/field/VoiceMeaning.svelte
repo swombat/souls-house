@@ -16,7 +16,7 @@
     soon as someone names that speaker, sets them aside, or turns down a guess about them.
   </li>
   <li>
-    All voice prints are kept, encrypted, only in this Field. The audio is processed inside souls.house and isn't sent
+    All voice prints are kept, encrypted, only in this Field. The audio is processed inside this house and isn't sent
     to any outside service.
   </li>
   <li>
