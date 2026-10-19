@@ -5,7 +5,8 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
 
   include FieldRecordingHelpers
 
-  SECRET_PRINT = "BIOMETRIC-#{SecureRandom.hex(8)}".freeze
+  # A print with distinctive values, so any leak of it would show.
+  SECRET_VECTOR_SEED = 7
 
   setup do
     @user = users(:user_1)
@@ -24,9 +25,11 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "forgetting works with recognition off, and so does forgetting everything" do
-    store_print!(@voice, print: SECRET_PRINT)
+    @account.update!(recognise_voices: false)
+    store_print!(@voice)
     delete forget_account_field_voice_path(@account, @voice)
     assert_nil FieldVoiceprint.find_by(field_voice: @voice)
+    assert_not @voice.reload.remember?
 
     store_print!(@voice)
     other = @account.field_voices.create!(name: "Priya")
@@ -35,45 +38,25 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, FieldVoiceprint.where(account: @account).count
   end
 
-  test "remembering needs both gates and a ticked box" do
-    post account_field_recording_speaker_enrolments_path(@account, @recording, @speaker), params: { enrolment: { consent: "1" } }
-    assert_equal 0, FieldVoiceEnrolment.count, "gate shut"
-
-    with_recognition(@account) do
-      post account_field_recording_speaker_enrolments_path(@account, @recording, @speaker), params: { enrolment: { consent: "0" } }
-      assert_equal 0, FieldVoiceEnrolment.count, "box not ticked"
-
-      FieldVoiceprints::Sample.stub(:cut, ->(_r, _s, &block) { Tempfile.create([ "s", ".wav" ]) { |f| block.call(f.path) } }) do
-        post account_field_recording_speaker_enrolments_path(@account, @recording, @speaker), params: { enrolment: { consent: "1" } }
-      end
-      assert_equal 1, FieldVoiceEnrolment.count
-
-      get account_field_recording_path(@account, @recording)
-      shown = props
-      assert shown["speakers"].first.dig("pending_enrolment", "sample_url").present?
-      assert shown["recognition_enabled"]
-
-      delete account_field_voice_enrolment_path(@account, FieldVoiceEnrolment.last)
-      assert_equal 0, FieldVoiceEnrolment.count, "'not them' throws the sample away"
-    end
-  end
-
-  test "another account's voice or speaker can't be reached" do
+  test "another account's voice can't be forgotten or remembered" do
     theirs = accounts(:another_team).field_voices.create!(name: "Them")
+    store_print!(theirs)
     delete forget_account_field_voice_path(@account, theirs)
     assert_response :not_found
+    assert theirs.reload.remembered?
 
-    their_recording = long_ready_recording(account: accounts(:another_team), user: @user)
-    post account_field_recording_speaker_enrolments_path(@account, their_recording, their_recording.speakers.first),
-      params: { enrolment: { consent: "1" } }
+    theirs.forget!
+    post remember_account_field_voice_path(@account, theirs)
     assert_response :not_found
+    assert_not theirs.reload.remember?
   end
 
   test "a member who can manage the account turns recognition on and off" do
-    patch recognition_account_field_voices_path(@account), params: { recognise_voices: true }
-    assert @account.reload.recognise_voices
+    assert @account.recognise_voices, "on by default"
     patch recognition_account_field_voices_path(@account), params: { recognise_voices: false }
     assert_not @account.reload.recognise_voices
+    patch recognition_account_field_voices_path(@account), params: { recognise_voices: true }
+    assert @account.reload.recognise_voices
   end
 
   test "the Voices page lists names and what is remembered" do
@@ -83,15 +66,20 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
     shown = props
     assert_equal "field/voices", inertia_props["component"]
     tomas = shown["voices"].find { |v| v["name"] == "Tomás" }
+    assert tomas["remember"]
     assert tomas["remembered"]
+    assert tomas["guessing"], "the print is validated on the samples it is built from"
+    assert_equal 2, tomas["recordings"]
     assert_equal 12, tomas["sample_seconds"]
+    assert tomas["learned_at"].present?
     assert_equal 1, tomas["used_in"]
     assert_not shown.key?("backup_retention_days")
     assert shown["house_recognition"]
   end
 
   test "no print ever reaches a page or the resident API" do
-    store_print!(@voice, print: SECRET_PRINT)
+    secret = voice_vector(3, noise: 0.37, seed: SECRET_VECTOR_SEED)
+    store_print!(@voice, vector: secret)
     resident = agents(:research_assistant)
     key = ApiKey.generate_for(@user, name: "Field tests", agent: resident)
     headers = { "Authorization" => "Bearer #{key.raw_token}" }
@@ -110,7 +98,7 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
       bodies << response.body
 
       bodies.each do |body|
-        assert_not_includes body, SECRET_PRINT
+        secret.first(5).each { |value| assert_not_includes body, value.to_s }
         assert_no_match(/&quot;print&quot;|"print"\s*:/, body)
       end
     end
@@ -155,24 +143,17 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
     assert props["voices"].find { |row| row["id"] == mine.to_param }["member"]
   end
 
-  test "a stale preview after remote forget still refuses the existing confirm endpoint" do
+  test "remembering again after a forget learns afresh from people's namings and brings nothing back" do
+    store_print!(@voice)
+    FieldVoice.find(@voice.id).forget!
     with_recognition(@account) do
-      FieldVoiceprints::Sample.stub(:cut, ->(_r, _s, &block) { Tempfile.create([ "s", ".wav" ]) { |file| block.call(file.path) } }) do
-        post account_field_recording_speaker_enrolments_path(@account, @recording, @speaker), params: { enrolment: { consent: "1" } }
+      assert_enqueued_with(job: FieldVoices::LearnSampleJob) do
+        post remember_account_field_voice_path(@account, @voice)
       end
-      preview = FieldVoiceEnrolment.last!
-      assert_equal "previewing", preview.status
-      FieldVoice.find(@voice.id).forget!
-      assert_not FieldVoiceEnrolment.exists?(preview.id)
-
-      PyannoteClient.stub(:new, ->(*) { flunk "stale consent must not reach the vendor" }) do
-        assert_no_enqueued_jobs(only: FieldVoices::CollectPrintJob) do
-          post confirm_account_field_voice_enrolment_path(@account, preview)
-          assert_response :not_found
-        end
-      end
-      assert_not @voice.reload.remembered?
     end
+    assert_redirected_to account_field_voices_path(@account)
+    assert @voice.reload.remember?
+    assert_not @voice.remembered?, "the forgotten print doesn't come back"
   end
 
 end

@@ -82,9 +82,7 @@ class Api::V1::Field::KeyAccountIdMismatchTest < ActionDispatch::IntegrationTest
     file = @a.field_files.create!(title: "Notes", file: Rack::Test::UploadedFile.new(file_fixture("test.txt"), "text/plain"),
                                   uploaded_by: @user)
     whiteboard = @a.whiteboards.create!(name: "Plans", content: "x")
-    enrolment = FieldVoiceEnrolment.create!(account: @a, field_voice: @voice_a, field_recording_speaker: speaker,
-      start_generation: 0, sample_ms: 12_000, consent_text_version: FieldVoiceprints::CONSENT_TEXT_VERSION,
-      consented_by: @user, expires_at: 10.minutes.from_now)
+    @voice_a.update_columns(remember: false)
 
     patch api_v1_field_recording_path(recording, @to_b), params: { title: "No" }, headers: @key, as: :json
     assert_response :not_found
@@ -100,7 +98,7 @@ class Api::V1::Field::KeyAccountIdMismatchTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     delete api_v1_field_voice_path(@voice_a, @to_b), headers: @key
     assert_response :not_found
-    delete api_v1_field_enrolment_path(enrolment, @to_b), headers: @key
+    post remember_api_v1_field_voice_path(@voice_a, @to_b), headers: @key
     assert_response :not_found
     delete api_v1_whiteboard_path(whiteboard, @to_b), headers: @key
     assert_response :not_found
@@ -111,7 +109,7 @@ class Api::V1::Field::KeyAccountIdMismatchTest < ActionDispatch::IntegrationTest
     assert recording.kept?
     assert @voice_a.kept?
     assert_nil speaker.reload.field_voice_id
-    assert FieldVoiceEnrolment.exists?(enrolment.id)
+    assert_not @voice_a.reload.remember?
     assert_equal [ 1, 1 ], [ prints(@a), prints(@b) ]
   end
 

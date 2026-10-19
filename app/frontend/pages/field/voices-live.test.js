@@ -5,7 +5,7 @@ import { subscribeToModel } from '$lib/cable';
 import { router } from '@inertiajs/svelte';
 import Voices from './voices.svelte';
 
-const voice = { id: 'voice', name: 'Alice', used_in: 1, remembered: false };
+const voice = { id: 'voice', name: 'Alice', used_in: 1, remember: true, remembered: false, recordings: 0 };
 const props = { account: { id: 'home' }, voices: [voice] };
 const begin = async () => {
   await fireEvent.click(screen.getByRole('button', { name: 'Rename', exact: true }));
@@ -37,7 +37,7 @@ test('remote rename and count refresh preserve draft; removal closes invalid for
   await begin();
   await component.rerender({ ...props, voices: [{ ...voice, name: 'Remote', used_in: 2 }] });
   expect(screen.getByRole('textbox')).toHaveValue('Unfinished');
-  expect(screen.getByText('named in 2 speakers · Name only')).toBeInTheDocument();
+  expect(screen.getByText('named in 2 speakers · Name only so far')).toBeInTheDocument();
   await component.rerender({ ...props, voices: [] });
   await waitFor(() => expect(screen.queryByRole('textbox')).not.toBeInTheDocument());
 });

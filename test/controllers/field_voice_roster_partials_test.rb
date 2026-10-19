@@ -17,11 +17,9 @@ class FieldVoiceRosterPartialsTest < ActionDispatch::IntegrationTest
     original_words = FieldRecording.instance_method(:transcript_words)
     FieldRecording.define_method(:transcript_words) { raise "Roster evaluated transcript words" }
     FieldItems.stub :speaker_json, ->(*) { flunk "Roster evaluated speaker JSON" } do
-      FieldItems.stub :speaker_recognition_json, ->(*) { flunk "Roster evaluated recognition JSON" } do
-        get account_field_recording_path(@account, @recording),
-          headers: partial("voices,members_without_voice,my_voice_id,show_you_hint")
-        assert_response :success
-      end
+      get account_field_recording_path(@account, @recording),
+        headers: partial("voices,members_without_voice,my_voice_id,show_you_hint")
+      assert_response :success
     end
     props = response.parsed_body.fetch("props")
     assert props.key?("voices")

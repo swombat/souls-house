@@ -81,6 +81,7 @@ class Api::V1::Field::OauthFieldDevicesTest < ActionDispatch::IntegrationTest
     assert_response :created
     assert @team.field_recordings.exists?(title: "Standup")
 
+    [ @team, @personal ].each { |account| account.update!(recognise_voices: false) } # on by default
     patch recognition_api_v1_field_voices_path(account_id: @team.to_param), params: { recognise_voices: true },
       headers: @headers, as: :json
     assert_response :success

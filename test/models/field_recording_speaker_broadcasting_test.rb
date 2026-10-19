@@ -11,6 +11,7 @@ class FieldRecordingSpeakerBroadcastingTest < ActiveSupport::TestCase
   self.use_transactional_tests = false
 
   setup do
+    @cutover = Setting.instance.field_naming_cutover_at
     @account = Account.create!(name: "Speaker freshness #{SecureRandom.hex(4)}", account_type: "team")
     @user = users(:user_1)
     @recording = long_ready_recording(account: @account, user: @user)
@@ -19,6 +20,7 @@ class FieldRecordingSpeakerBroadcastingTest < ActiveSupport::TestCase
   end
 
   teardown do
+    Setting.instance.update!(field_naming_cutover_at: @cutover) # nothing rolls with_recognition back here
     @recording.audio.purge
     @account.destroy!
   end
@@ -163,23 +165,22 @@ class FieldRecordingSpeakerBroadcastingTest < ActiveSupport::TestCase
   end
 
   test "multi-speaker recognition completion keeps its existing touch and emits once" do
-    store_print!(@voice)
-    identification = FieldRecordingIdentification.create!(field_recording: @recording,
-      vendor_job_id: "freshness", snapshot: { "v1" => [ @voice.id, @voice.print_generation ] },
-      speaker_decisions: [ @speaker, @other ].to_h { |speaker| [ speaker.id.to_s, speaker.decision_generation ] })
-    output = {
-      "identification" => [
-        { "start" => 0.0, "end" => 12.0, "match" => "v1", "diarizationSpeaker" => "S" },
-        { "start" => 14.0, "end" => 15.0, "match" => "v1", "diarizationSpeaker" => "T" },
-        { "start" => 17.0, "end" => 22.0, "match" => "v1", "diarizationSpeaker" => "S" }
-      ]
-    }
+    priya = @account.field_voices.create!(name: "Priya")
+    store_print!(@voice, vector: voice_vector(10))
+    store_print!(priya, vector: voice_vector(20))
+    client = FakeVoiceEmbeddings.new({ 0 => voice_vector(10), 1 => voice_vector(20) })
+    cut = ->(_recording, _segments, &block) { Tempfile.create([ "s", ".wav" ]) { |file| block.call(file.path) } }
 
     with_recognition(@account) do
-      assert_refresh_after_commit { assert FieldVoiceprints::Identification.apply!(identification, output) }
+      # Both speakers heard alone for long enough, whatever this transcript says.
+      FieldVoiceprints::Sample.stub(:segments_for, ->(_speaker) { [ [ 0, 5_000 ] ] }) do
+        FieldVoiceprints::Sample.stub(:cut, cut) do
+          assert_refresh_after_commit { assert_equal 2, FieldVoiceprints::Identification.run!(@recording, client:) }
+        end
+      end
     end
     assert_equal @voice.id, @speaker.reload.recognised_voice_id
-    assert_equal @voice.id, @other.reload.recognised_voice_id
+    assert_equal priya.id, @other.reload.recognised_voice_id
   end
 
   test "hidden suggestions state and non-rendered speaker bookkeeping stay silent" do

@@ -30,15 +30,6 @@ class FieldRecordingIdentifyAgainTest < ActiveSupport::TestCase
     end
   end
 
-  test "an identify job still out isn't doubled" do
-    FieldRecordingIdentification.create!(field_recording: @recording, vendor_job_id: "out", snapshot: {}, speaker_decisions: {})
-    with_recognition(@account) do
-      assert_no_enqueued_jobs(only: FieldRecordings::IdentifyJob) do
-        assert_equal [], FieldRecording::IdentifyAgain.queue!(@recording)
-      end
-    end
-  end
-
   test "names from what's said: a finished or failed call is reopened, a claimed one is left alone" do
     ENV["SOULSHOUSE_FIELD_SUGGESTIONS"] = "on"
     %w[done failed].each do |state|
@@ -66,48 +57,28 @@ class FieldRecordingIdentifyAgainTest < ActiveSupport::TestCase
     end
   end
 
-
-  test "two presses before any worker runs make one paid identify call" do
+  # Matching is in the house and writes under the recording lock, so two
+  # presses just match twice: one guess, and the kept probe means the audio
+  # is embedded once.
+  test "two presses before any worker runs match twice and make one guess" do
     voice = @account.field_voices.create!(name: "Tomás")
     store_print!(voice)
-    client = FakePyannote.new
+    embedded = 0
+    embed = ->(_wav) do
+      embedded += 1
+      FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: voice_vector(voice.id % 100), profile: "ecapa-test")
+    end
+    cut = ->(_recording, _segments, &block) { Tempfile.create([ "s", ".wav" ]) { |file| block.call(file.path) } }
     with_recognition(@account) do
       2.times { assert_equal [ :voices ], FieldRecording::IdentifyAgain.queue!(@recording) }
       jobs = enqueued_jobs.select { |job| job["job_class"] == "FieldRecordings::IdentifyJob" }
-      assert_equal 2, jobs.size, "both presses queue: the claim is at dispatch"
-      jobs.each { FieldRecordings::IdentifyJob.perform_now(@recording.id, client:) }
+      assert_equal 2, jobs.size, "both presses queue"
+      FieldVoiceprints::VoiceEmbeddings.stub(:embed, embed) do
+        FieldVoiceprints::Sample.stub(:cut, cut) { jobs.each { FieldRecordings::IdentifyJob.perform_now(@recording.id) } }
+      end
     end
-    assert_equal 1, client.identify_calls.size
-    assert_equal 1, @recording.identifications.where(status: "dispatched").count
-  end
-
-  test "a worker that finds an identify already out sends nothing" do
-    voice = @account.field_voices.create!(name: "Tomás")
-    store_print!(voice)
-    FieldRecordingIdentification.create!(field_recording: @recording, vendor_job_id: "out", snapshot: {}, speaker_decisions: {})
-    client = FakePyannote.new
-    with_recognition(@account) { FieldRecordings::IdentifyJob.perform_now(@recording.id, client:) }
-    assert_empty client.identify_calls
-  end
-
-  test "once the earlier identify has finished, another can be sent" do
-    voice = @account.field_voices.create!(name: "Tomás")
-    store_print!(voice)
-    FieldRecordingIdentification.create!(field_recording: @recording, vendor_job_id: "old", snapshot: {}, speaker_decisions: {}, status: "done")
-    client = FakePyannote.new
-    with_recognition(@account) { FieldRecordings::IdentifyJob.perform_now(@recording.id, client:) }
-    assert_equal 1, client.identify_calls.size
-  end
-
-
-  test "a dispatch whose collector never ran stops holding up another pass after an hour" do
-    voice = @account.field_voices.create!(name: "Tomás")
-    store_print!(voice)
-    FieldRecordingIdentification.create!(field_recording: @recording, vendor_job_id: "orphan", snapshot: {},
-      speaker_decisions: {}, created_at: 2.hours.ago)
-    client = FakePyannote.new
-    with_recognition(@account) { FieldRecordings::IdentifyJob.perform_now(@recording.id, client:) }
-    assert_equal 1, client.identify_calls.size
+    assert_equal 1, embedded
+    assert_equal [ voice.id ], @recording.speakers.reload.filter_map(&:recognised_voice_id)
   end
 
 end

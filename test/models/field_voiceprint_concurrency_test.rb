@@ -15,8 +15,9 @@ module DeletePause
 end
 FieldVoice.prepend(DeletePause)
 
-# Forget racing a print write-back (spec §11, C): if the forget commits first,
-# no print survives; whichever wins, a forgotten voice ends with no print.
+# Forget, delete-name and un-name racing a sample being learned (spec
+# 2026-10-19 §9): whichever commits first, the voice or speaker a person
+# took back ends with no sample and no print.
 class FieldVoiceprintConcurrencyTest < ActiveSupport::TestCase
 
   include FieldRecordingHelpers
@@ -25,6 +26,7 @@ class FieldVoiceprintConcurrencyTest < ActiveSupport::TestCase
 
   setup do
     @last_blob_id = ActiveStorage::Blob.maximum(:id).to_i
+    @cutover = Setting.instance.field_naming_cutover_at
     @account = Account.create!(name: "Voice race #{SecureRandom.hex(4)}", account_type: "team")
     @user = users(:user_1)
     @recording = long_ready_recording(account: @account, user: @user)
@@ -34,8 +36,9 @@ class FieldVoiceprintConcurrencyTest < ActiveSupport::TestCase
   end
 
   teardown do
+    Setting.instance.update!(field_naming_cutover_at: @cutover) # nothing rolls with_recognition back here
     FieldVoiceprint.where(account: @account).delete_all
-    FieldVoiceEnrolment.where(account: @account).find_each(&:destroy!)
+    FieldVoiceSample.where(account: @account).delete_all
     recordings = FieldRecording.where(account: @account)
     FieldRecordingSpeaker.where(field_recording: recordings).update_all(field_voice_id: nil, recognised_voice_id: nil)
     FieldVoice.where(account: @account).delete_all
@@ -45,59 +48,58 @@ class FieldVoiceprintConcurrencyTest < ActiveSupport::TestCase
     recordings.each { |r| r.audio.purge }
     recordings.delete_all
     @account.destroy!
-    # Enrolment samples are purged later, by a job these tests never run, and
-    # nothing rolls this database back: purge them here, or they outlive the test.
+    # Nothing rolls this database back: purge any blob made here, or it
+    # outlives the test.
     ActiveStorage::Blob.where("id > ?", @last_blob_id).find_each(&:purge)
   end
 
-  test "forget racing a write-back never leaves a print on a forgotten voice" do
-    enrolment = nil
+  # The snapshot a naming queues, learned with a fake cut and embedding.
+  def learn(snapshot)
+    FieldVoiceprints::Learning.learn!(snapshot, client: FakeVoiceEmbeddings.new({ default: voice_vector(1) }))
+  end
+
+  def snapshot
+    FieldVoiceprints::Learning.snapshot_for(FieldRecordingSpeaker.find(@speaker.id)).tap { |taken| assert taken }
+  end
+
+  def with_fake_cut(&)
+    FieldVoiceprints::Sample.stub(:cut, ->(_r, _s, &block) { Tempfile.create([ "s", ".wav" ]) { |f| block.call(f.path) } }, &)
+  end
+
+  test "forget racing a sample being learned never leaves a print or sample on a forgotten voice" do
     with_recognition(@account) do
-      FieldVoiceprints::Sample.stub(:cut, ->(_r, _s, &block) { Tempfile.create([ "s", ".wav" ]) { |f| block.call(f.path) } }) do
-        enrolment = FieldVoiceprints::Enrolments.start!(@speaker, by: @user)
+      with_fake_cut do
+        taken = snapshot
+        results = concurrently(2) { |i| i.zero? ? FieldVoice.find(@voice.id).forget! : learn(taken) }
+        assert_includes [ :learned, :stale ], results.last
       end
-      FieldVoiceprints::Enrolments.dispatch!(enrolment, client: FakePyannote.new)
-
-      results = concurrently(2) do |i|
-        i.zero? ? FieldVoice.find(@voice.id).forget! : FieldVoiceprints::Enrolments.write_back!(enrolment.id, "PRINT")
-      end
-
-      if results.last == true # write-back won; then the forget removed it
-        assert_nil FieldVoiceprint.find_by(field_voice_id: @voice.id)
-      else
-        assert_nil FieldVoiceprint.find_by(field_voice_id: @voice.id)
-      end
+      assert_not @voice.reload.remember?
+      assert_nil FieldVoiceprint.find_by(field_voice_id: @voice.id)
+      assert_equal 0, FieldVoiceSample.where(field_voice_id: @voice.id).count
     end
   end
 
-  def dispatched_enrolment
-    enrolment = nil
-    FieldVoiceprints::Sample.stub(:cut, ->(_r, _s, &block) { Tempfile.create([ "s", ".wav" ]) { |f| block.call(f.path) } }) do
-      enrolment = FieldVoiceprints::Enrolments.start!(@speaker, by: @user)
-    end
-    FieldVoiceprints::Enrolments.dispatch!(enrolment, client: FakePyannote.new)
-  end
-
-  test "deleting a name racing a write-back never leaves a print on the deleted voice" do
+  test "deleting a name racing a sample being learned never leaves a print on the deleted voice" do
     with_recognition(@account) do
-      enrolment = dispatched_enrolment
-      concurrently(2) do |i|
-        i.zero? ? FieldVoice.find(@voice.id).delete_identity! : FieldVoiceprints::Enrolments.write_back!(enrolment.id, "PRINT")
+      with_fake_cut do
+        taken = snapshot
+        concurrently(2) { |i| i.zero? ? FieldVoice.find(@voice.id).delete_identity! : learn(taken) }
       end
       assert @voice.reload.discarded?
       assert_nil FieldVoiceprint.find_by(field_voice_id: @voice.id)
+      assert_equal 0, FieldVoiceSample.where(field_voice_id: @voice.id).count
     end
   end
 
-  test "un-naming racing a write-back: either the print predates the correction or nothing is stored" do
+  test "un-naming racing a sample being learned: whichever lands first, no sample of the speaker stays" do
     with_recognition(@account) do
-      enrolment = dispatched_enrolment
-      results = concurrently(2) do |i|
-        i.zero? ? FieldRecordingSpeaker.find(@speaker.id).unname! : FieldVoiceprints::Enrolments.write_back!(enrolment.id, "PRINT")
+      with_fake_cut do
+        taken = snapshot
+        concurrently(2) { |i| i.zero? ? FieldRecordingSpeaker.find(@speaker.id).unname! : learn(taken) }
       end
       assert_nil @speaker.reload.field_voice
-      stored = FieldVoiceprint.find_by(field_voice_id: @voice.id)
-      assert_equal results.last == true, stored.present?, "a print exists only if its write-back committed before the un-name"
+      assert_equal 0, FieldVoiceSample.where(field_recording_speaker_id: @speaker.id).count
+      assert_nil FieldVoiceprint.find_by(field_voice_id: @voice.id), "a print built only from that sample goes with it"
     end
   end
 
