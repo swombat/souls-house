@@ -357,13 +357,15 @@ class FieldRecording < ApplicationRecord
   # from the old lines go too, and so do the speakers' samples and kept
   # embeddings: the prints they were in are rebuilt without them, and a named
   # speaker is learned again from the lines they have now. The caller holds
-  # account → recording; the voices holding their samples are locked here.
+  # account → recording (reassign_line!); the voices holding their samples
+  # are locked here.
   def invalidate_speaker_evidence!(labels)
     affected = speakers.where(label: labels).to_a
-    FieldVoiceprints::Locks.with(account:, recording: self,
-      voices: FieldVoiceprints::Learning.sample_voices(affected.map(&:id))) do
-      FieldVoiceprints::Learning.drop_samples!(affected.map(&:id))
-    end
+    # account and recording are already held, and this recording has unsaved
+    # changes, so only the voices are locked here, in id order.
+    voice_ids = FieldVoiceprints::Learning.sample_voices(affected.map(&:id)).map(&:id)
+    FieldVoice.where(id: voice_ids).order(:id).lock.to_a
+    FieldVoiceprints::Learning.drop_samples!(affected.map(&:id))
     affected.each do |speaker|
       speaker.update!(decision_generation: speaker.decision_generation + 1,
         **FieldRecordingSpeaker::SUGGESTION_FIELDS, **FieldRecordingSpeaker::RECOGNITION_FIELDS,
