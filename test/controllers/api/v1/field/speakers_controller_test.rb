@@ -123,4 +123,37 @@ class Api::V1::Field::SpeakersControllerTest < ActionDispatch::IntegrationTest
     assert_nil @speaker.reload.field_voice
   end
 
+
+  # Provenance (spec 2026-10-19 §5): an API key is a machine, whatever it says.
+  test "a naming through an API key is recorded as machine and can't teach a voice print" do
+    name_speaker({ name: "Priya" })
+    assert_response :success
+    assert_equal "machine", @speaker.reload.naming_source
+    assert_equal @user, @speaker.named_by
+    assert_not @speaker.training_label?
+  end
+
+  test "a client can't claim to be a person" do
+    name_speaker({ name: "Priya", naming_source: "human", source: "human", applied_by: "human" })
+    assert_response :success
+    assert_equal "machine", @speaker.reload.naming_source
+  end
+
+  test "a machine naming confirmed by a person in the browser becomes theirs" do
+    name_speaker({ name: "Priya" })
+    voice = @speaker.reload.field_voice
+    sign_in @user
+    patch account_field_recording_speaker_path(@account, @recording, @speaker), params: { speaker: { voice_id: voice.to_param } }
+    assert_equal "human", @speaker.reload.naming_source
+    assert @speaker.training_label?
+  end
+
+  test "a person's browser naming later overwritten through an API key is a machine's again" do
+    sign_in @user
+    patch account_field_recording_speaker_path(@account, @recording, @speaker), params: { speaker: { name: "Priya" } }
+    assert_equal "human", @speaker.reload.naming_source
+    name_speaker({ name: "Tomás" })
+    assert_equal "machine", @speaker.reload.naming_source
+  end
+
 end

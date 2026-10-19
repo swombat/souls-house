@@ -47,7 +47,7 @@ module Api
             return render_match(choice.match) if choice.match
             return render json: { error: "Choose who this is." }, status: :unprocessable_entity unless choice.voice
 
-            speaker.name_as!(choice.voice, by: current_api_user)
+            speaker.name_as!(choice.voice, by: current_api_user, source: naming_source)
           end
 
           render json: { speaker: FieldItems.plain_speaker_json(speaker.reload) }
@@ -62,6 +62,12 @@ module Api
           # Association finders decode with the owner's salt, so decode explicitly.
           recording.speakers.find_by!(id: FieldRecordingSpeaker.decode_id(params[:id]))
         end
+
+        # Who decided, from how the request authenticated, never from what it
+        # says (spec 2026-10-19 §5): a person signed in on the native app is a
+        # person; anything with an API key (a script, a resident, the Mac's
+        # voice matcher) is a machine, even when the key is a person's.
+        def naming_source = app_token_request? ? "human" : "machine"
 
         def render_match(voice)
           render json: {

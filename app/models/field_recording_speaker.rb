@@ -5,7 +5,12 @@ class FieldRecordingSpeaker < ApplicationRecord
 
   include ObfuscatesId
 
-  NAMING_SOURCES = %w[human confirmed_suggestion confirmed_recognition].freeze
+  # human: a person in the browser or the native app. machine: a write through
+  # an API key (scripts, residents, the Mac's voice matcher), whatever the
+  # client claims. unknown: a naming made before provenance was recorded
+  # (spec 2026-10-19 §5). Only a person's decision may teach a voice print.
+  NAMING_SOURCES = %w[human confirmed_suggestion confirmed_recognition machine unknown].freeze
+  TRAINING_SOURCES = %w[human confirmed_suggestion confirmed_recognition].freeze
   # Why a person stopped asking for a name: noise (not a person at all) or
   # anonymous (a person whose identity doesn't matter here). Either way the
   # speaker stops waiting; only the reason differs.
@@ -64,6 +69,10 @@ class FieldRecordingSpeaker < ApplicationRecord
   def known_talk_ms = field_recording.supplied? ? nil : talk_ms
 
   def display_name = field_voice&.kept? ? field_voice.name : default_name
+
+  # A person's decision that this speaker is this voice: the only kind of
+  # label a voice print may learn from. Fails closed on anything else.
+  def training_label? = field_voice&.kept? == true && TRAINING_SOURCES.include?(naming_source)
 
   # Who this speaker is, for grouping: the voice a human linked it to, or this
   # diarized speaker alone. Scribe sometimes hears one person as two speakers;
