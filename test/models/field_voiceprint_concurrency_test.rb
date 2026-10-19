@@ -4,6 +4,7 @@ require "support/field_recording_helpers"
 # A barrier inside delete-name, after it has taken the account lock and
 # gathered its recordings. Inert unless a test sets the hook.
 module DeletePause
+
   mattr_accessor :hook
 
   private
@@ -12,6 +13,7 @@ module DeletePause
     DeletePause.hook&.call
     super
   end
+
 end
 FieldVoice.prepend(DeletePause)
 
