@@ -1042,6 +1042,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_170000) do
     t.string "ignored_as", default: "noise", null: false
     t.text "probe_embedding"
     t.string "probe_profile"
+    t.string "recognition_cohort"
     t.index ["field_recording_id", "label"], name: "index_field_recording_speakers_on_field_recording_id_and_label", unique: true
     t.index ["field_recording_id"], name: "index_field_recording_speakers_on_field_recording_id"
     t.index ["field_voice_id"], name: "index_field_recording_speakers_on_field_voice_id"

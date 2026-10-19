@@ -1,6 +1,6 @@
 # Runs the held-out check over an account's prints (FieldVoiceprints::
 # Validation) after any of them changes, then matches again every recording
-# with someone left to guess at, if which prints may guess has changed.
+# with someone left to guess at, if the matching snapshot changed.
 module FieldVoices
   class ValidatePrintsJob < ApplicationJob
 
@@ -22,7 +22,8 @@ module FieldVoices
       return unless FieldVoiceprints::Validation.run!(account)
 
       after = active(account)
-      return if after == before || after.empty? || !FieldVoiceprints.enabled_for?(account)
+      return if after == before || !FieldVoiceprints.enabled_for?(account)
+      return if FieldVoiceprints::Identification.active_prints(account).empty?
 
       FieldVoiceprints::Identification.recordings_to_match(account).find_each do |recording|
         FieldRecordings::IdentifyJob.perform_later(recording.id)
@@ -31,9 +32,9 @@ module FieldVoices
 
     private
 
-    def active(account)
-      FieldVoiceprints::Identification.active_prints(account).map { |print| [ print.field_voice_id, print.generation ] }.sort
-    end
+    # The matching snapshot: any change cleared the guesses made in the old
+    # one, so match again.
+    def active(account) = FieldVoiceprints::Cohort.active(account).last
 
   end
 end

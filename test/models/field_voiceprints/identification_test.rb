@@ -108,6 +108,40 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
     end
   end
 
+  # Mira's second review, finding 1.
+  test "a guess stops standing, and can't be confirmed, once the cohort it was made in changes" do
+    with_recognition(@account) do
+      store_print!(@voice, vector: voice_vector(3))
+      store_print!(@other_voice, vector: voice_vector(7))
+      run_identify(FakeVoiceEmbeddings.new({ default: voice_vector(3) }))
+      token = @speaker.reload.recognition_token
+      assert_equal @voice.id, @speaker.recognised_voice_id
+
+      @other_voice.forget!
+      assert_not @speaker.reload.confirm_recognition!(by: @user, shown: token), "Tomás's print is unchanged, but its verdict isn't"
+      assert_nil @speaker.reload.field_voice_id
+
+      FieldVoiceprints::Validation.run!(@account) # no survivors: one print, no samples to check it with
+      assert_empty FieldVoiceprints::Identification.active_prints(@account)
+      assert_nil @speaker.reload.recognised_voice_id, "publishing a new verdict clears guesses made under the old one"
+    end
+  end
+
+  test "a change in which prints are active, with the same cohort, means nothing is written" do
+    with_recognition(@account) do
+      store_print!(@voice, vector: voice_vector(3))
+      store_print!(@other_voice, vector: voice_vector(7))
+      other = @other_voice
+      client = FakeVoiceEmbeddings.new({ default: voice_vector(3) })
+      client.define_singleton_method(:embed) do |wav|
+        other.voiceprint.update!(validated: false) # a verdict, not a cohort change
+        FakeVoiceEmbeddings.instance_method(:embed).bind_call(self, wav)
+      end
+      assert_equal :changed, run_identify(client)
+      assert_nil @speaker.reload.recognised_voice_id
+    end
+  end
+
   test "dismissing a name suggestion clears a kept embedding" do
     @speaker.update!(probe_embedding: "[1]", probe_profile: "ecapa-test", suggested_name: "Tomás",
       suggestion_generation: @speaker.decision_generation)

@@ -18,7 +18,8 @@
 #
 # Verdicts are stamped with the cohort digest (FieldVoiceprints::Cohort) and
 # published under every voice lock in the account, only if the cohort is
-# still the one measured.
+# still the one measured. Publishing clears every guess made in another
+# matching snapshot, so a chip never outlives the verdicts it was made under.
 module FieldVoiceprints::Validation
 
   MIN_RECORDINGS = 2
@@ -44,9 +45,21 @@ module FieldVoiceprints::Validation
         print.update!(validated: passing.include?(print.field_voice_id), validated_digest: digest,
           validation: stats.fetch(print.field_voice_id, {}))
       end
+      clear_stale_guesses!(account, FieldVoiceprints::Cohort.active(account).last)
       true
     end
     published ? stats : nil
+  end
+
+  def clear_stale_guesses!(account, key)
+    stale = FieldRecordingSpeaker.joins(:field_recording).where(field_recordings: { account_id: account.id })
+      .where.not(recognised_voice_id: nil).where("recognition_cohort IS DISTINCT FROM ?", key)
+    recording_ids = stale.distinct.pluck(:field_recording_id)
+    return if recording_ids.empty?
+
+    stale.update_all(recognised_voice_id: nil, recognition_confidence: nil, recognition_print_generation: nil,
+      recognition_decision_generation: nil, recognition_cohort: nil)
+    FieldRecordingActivity.refresh!(recording_ids)
   end
 
   def passes?(entry, print)
@@ -60,11 +73,10 @@ module FieldVoiceprints::Validation
   def measure(account, prints)
     return [ {}, Set.new ] if prints.empty?
 
-    profile = prints.max_by(&:updated_at).profile
     by_voice = prints.index_by(&:field_voice_id)
-    samples = FieldVoiceSample.eligible.where(account:, field_voice_id: by_voice.keys, profile:).to_a
+    samples = FieldVoiceSample.eligible.where(account:, field_voice_id: by_voice.keys, profile: prints.first.profile).to_a
     vectors = samples.to_h { |sample| [ sample.id, sample.vector ] }
-    candidates = by_voice.select { |_, print| print.profile == profile }.keys.to_set
+    candidates = by_voice.keys.to_set
     final = {}
 
     loop do

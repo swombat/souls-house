@@ -39,7 +39,8 @@ class FieldRecordingSpeaker < ApplicationRecord
   SUGGESTION_FIELDS = { suggested_voice: nil, suggested_name: nil, suggestion_quote: nil,
                         suggestion_quote_ms: nil, suggestion_source: nil, suggested_at: nil,
                         suggestion_generation: nil }.freeze
-  RECOGNITION_FIELDS = { recognised_voice: nil, recognition_confidence: nil, recognition_print_generation: nil }.freeze
+  RECOGNITION_FIELDS = { recognised_voice: nil, recognition_confidence: nil, recognition_print_generation: nil,
+                         recognition_cohort: nil }.freeze
   NOT_IGNORED = { ignored_at: nil, ignored_by: nil }.freeze
 
   # Fields read by FieldItems.speaker_json (including the displayed decision
@@ -191,14 +192,19 @@ class FieldRecordingSpeaker < ApplicationRecord
   # A person confirms "Tomás?" (spec §9). Under account → recording → voice
   # locks, with the speaker reloaded: both gates open, the guess still exactly
   # the one the chip showed (same voice, same print generation, no decision
-  # since), the voice kept and its print still current. Anything stale is
-  # refused and changes nothing. A confirmed guess is a person's decision, so
+  # since), the voice kept and its print still current, and the matching
+  # snapshot the guess was made in (its cohort key) still the live one, with
+  # this print active in it. Anything stale is refused and changes nothing. A confirmed guess is a person's decision, so
   # it teaches the print (confirmed_recognition).
   def confirm_recognition!(by:, shown:)
-    with_recognition_locks(shown) do |account, voice|
+    # Every voice in the account is locked: the cohort key covers all of them,
+    # and Forget and validation take voice locks.
+    with_recognition_locks(shown, all_voices: true) do |account, voice|
+      active, key = FieldVoiceprints::Cohort.active(account)
       next false unless FieldVoiceprints.enabled_for?(account) && voice&.kept? &&
                         recognition_print_generation == voice.print_generation &&
-                        FieldVoiceprint.where(field_voice: voice, generation: voice.print_generation).exists?
+                        recognition_cohort.present? && recognition_cohort == key &&
+                        active.any? { |print| print.field_voice_id == voice.id && print.generation == voice.print_generation }
 
       name_as!(voice, by:, source: "confirmed_recognition")
       true
@@ -214,13 +220,14 @@ class FieldRecordingSpeaker < ApplicationRecord
     end
   end
 
-  def with_recognition_locks(shown)
+  def with_recognition_locks(shown, all_voices: false)
     shown = (shown || {}).to_h.symbolize_keys
     voice = FieldVoice.find_by(id: FieldVoice.decode_id(shown[:voice_id].to_s))
     recording = field_recording
-    FieldVoiceprints::Locks.with(account: recording.account, recording:, voices: [ voice ].compact) do |account, locked_recording, voices|
+    voices = all_voices && voice ? FieldVoice.where(account_id: recording.account_id).to_a : [ voice ].compact
+    FieldVoiceprints::Locks.with(account: recording.account, recording:, voices:) do |account, locked_recording, locked|
       reload
-      live_voice = voices.first
+      live_voice = locked.find { |candidate| candidate.id == voice&.id }
       current = locked_recording.kept? && locked_recording.ready? && live_voice && !field_voice&.kept? &&
         recognised_voice_id == live_voice.id &&
         recognition_print_generation.to_s == shown[:print_generation].to_s &&

@@ -115,6 +115,30 @@ class FieldVoiceprints::MatchingValidationTest < ActiveSupport::TestCase
     assert FieldVoiceprint.where(account:).none?(&:validated)
   end
 
+  # Mira's second review, finding 2: the profile comes from the samples, so
+  # publishing verdicts can't change which profile the next check uses.
+  test "validating twice in a mixed-profile account gives the same verdicts" do
+    account = accounts(:personal_account)
+    user = users(:user_1)
+    old_voices = (1..6).map { |axis| account.field_voices.create!(name: "Old #{axis}") }
+    recordings = (1..3).map { long_ready_recording(account:, user:) }
+    old_voices.each_with_index do |voice, i|
+      recordings.each do |recording|
+        add_sample(account, voice, recording, unit("e#{i + 1}": 1.0)).update_columns(profile: "ecapa-old")
+      end
+    end
+    rebuild_all(old_voices)
+    current_voices = (1..6).map { |axis| account.field_voices.create!(name: "Current #{axis}") }
+    current_voices.each_with_index { |voice, i| recordings.each { |recording| add_sample(account, voice, recording, unit("e#{i + 20}": 1.0)) } }
+    rebuild_all(current_voices)
+
+    FieldVoiceprints::Validation.run!(account)
+    first = active_voice_ids(account).sort
+    FieldVoiceprints::Validation.run!(account)
+    assert_equal first, active_voice_ids(account).sort
+    assert_equal current_voices.map(&:id).sort, first
+  end
+
   # Six voices, each named in three recordings: every print is checked
   # against recordings it wasn't built from.
   def build_account(confuser: false)

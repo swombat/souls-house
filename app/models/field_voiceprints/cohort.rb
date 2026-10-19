@@ -1,17 +1,36 @@
-# The prints that can take part in matching in one account, and a digest of
-# them (Mira's review of #474, finding 3). A print's verdict depends on every
-# other print it was measured against: their samples set its negatives, its
-# margins and the false accepts into it. So a verdict is stamped with the
-# digest of the whole cohort it was computed in, and a print may guess only
-# while the cohort is still exactly that one. Any rebuild, Forget, deletion or
-# Remember again anywhere in the account changes the digest.
+# The prints that can take part in matching in one account, and digests of
+# them (Mira's reviews of #474). A print's verdict depends on every other
+# print it was measured against: their samples set its negatives, its margins
+# and the false accepts into it. So a verdict is stamped with the digest of
+# the whole cohort it was computed in, and a print may guess only while the
+# cohort is still exactly that one. Any rebuild, Forget, deletion or Remember
+# again anywhere in the account changes the digest.
+#
+# The cohort uses one service profile: the profile of the newest eligible
+# sample, which is stable provenance (validating doesn't change it). Prints
+# made with another profile take no part until they are learned again.
+#
+# A guess is stamped with the key: the cohort digest and which prints were
+# active in it. It stands, and can be confirmed, only while the key is the
+# same.
 module FieldVoiceprints::Cohort
 
   module_function
 
+  # Rows only ever gain higher ids, and validating writes no sample, so this
+  # doesn't move unless something is learned.
+  def profile(account)
+    FieldVoiceSample.eligible.joins(:field_voice).merge(FieldVoice.kept)
+      .where(account:, field_voices: { remember: true }).order(id: :desc).pick(:profile) ||
+      FieldVoiceprint.where(account:).order(id: :desc).pick(:profile)
+  end
+
   def prints(account)
+    current = profile(account)
+    return [] unless current
+
     FieldVoiceprint.joins(:field_voice).merge(FieldVoice.kept)
-      .where(account:, field_voices: { remember: true }).includes(:field_voice).order(:id).to_a
+      .where(account:, profile: current, field_voices: { remember: true }).includes(:field_voice).order(:id).to_a
       .select { |print| print.generation == print.field_voice.print_generation }
   end
 
@@ -21,11 +40,17 @@ module FieldVoiceprints::Cohort
     end.join(","))
   end
 
-  # [active prints, cohort digest]: validated prints stamped with this cohort.
+  # [active prints, key]: the validated prints stamped with this cohort, and
+  # a key naming both the cohort and that active set.
   def active(account)
     all = prints(account)
     digest = digest(all)
-    [ all.select { |print| print.validated && print.validated_digest == digest }, digest ]
+    active = all.select { |print| print.validated && print.validated_digest == digest }
+    [ active, key(digest, active) ]
+  end
+
+  def key(digest, active)
+    Digest::SHA256.hexdigest([ digest, *active.map { |print| "#{print.id}:#{print.generation}" }.sort ].join("|"))
   end
 
 end

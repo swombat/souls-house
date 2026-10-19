@@ -40,6 +40,9 @@ class LearnVoiceprintsInHouse < ActiveRecord::Migration[8.1]
     # Bumped by Forget all (and the restore reset): a matching job that was
     # embedding when it happened keeps no probe and makes no guess.
     add_column :accounts, :field_probe_generation, :bigint, default: 0, null: false
+    # The matching snapshot a guess was made in (FieldVoiceprints::Cohort.key):
+    # a guess stands, and can be confirmed, only while that snapshot does.
+    add_column :field_recording_speakers, :recognition_cohort, :string
 
     execute "DELETE FROM field_voiceprints"
     remove_reference :field_voiceprints, :sample_recording, index: true

@@ -10,11 +10,12 @@
 # Embedding happens outside any lock. The write happens under account →
 # recording → every voice in the cohort, with fresh rows, and only if
 # nothing the guesses were computed from has moved: recognition still on, the
-# recording kept and ready, the cohort digest unchanged (so the same prints
-# are active, with the same samples; a new competitor or a Forget anywhere
-# changes it), the account's probe generation unchanged (Forget all), and each
-# speaker still undecided at the generation snapshotted. If the cohort moved,
-# nothing is written and the job runs again.
+# recording kept and ready, the cohort key unchanged (the same prints, with
+# the same samples, and the same of them active; a new competitor, a verdict
+# or a Forget anywhere changes it), the account's probe generation unchanged
+# (Forget all), and each speaker still undecided at the generation
+# snapshotted. If the key moved, nothing is written and the job runs again.
+# Each guess is stamped with the key, and stands only while it does.
 module FieldVoiceprints::Identification
 
   module_function
@@ -25,12 +26,11 @@ module FieldVoiceprints::Identification
     account = recording.account
     return nil unless FieldVoiceprints.enabled_for?(account) && recording.kept? && recording.ready? && !recording.supplied?
 
-    prints, digest = FieldVoiceprints::Cohort.active(account)
+    prints, key = FieldVoiceprints::Cohort.active(account)
     return nil if prints.empty?
 
     probe_generation = account.field_probe_generation
-    profile = prints.max_by(&:updated_at).profile
-    prints = prints.select { |print| print.profile == profile }
+    profile = prints.first.profile
     candidates = recording.speakers.select { |speaker| undecided?(speaker) }
     return nil if candidates.empty?
 
@@ -54,7 +54,7 @@ module FieldVoiceprints::Identification
     FieldVoiceprints::Locks.with(account:, recording:, voices:) do |live_account, live_recording, _voices|
       next nil unless FieldVoiceprints.enabled_for?(live_account) && live_recording.kept? && live_recording.ready?
       next nil unless live_account.field_probe_generation == probe_generation
-      next :changed unless FieldVoiceprints::Cohort.active(live_account).last == digest
+      next :changed unless FieldVoiceprints::Cohort.active(live_account).last == key
 
       written = 0
       live_recording.speakers.each do |speaker|
@@ -64,7 +64,8 @@ module FieldVoiceprints::Identification
         voice_id, score = guesses[speaker.id]
         if voice_id
           speaker.update!(recognised_voice_id: voice_id, recognition_confidence: (score * 100).round,
-            recognition_print_generation: generations[voice_id], recognition_decision_generation: speaker.decision_generation)
+            recognition_print_generation: generations[voice_id], recognition_decision_generation: speaker.decision_generation,
+            recognition_cohort: key)
           written += 1
         elsif speaker.recognised_voice_id
           speaker.update!(**FieldRecordingSpeaker::RECOGNITION_FIELDS, recognition_decision_generation: nil)
