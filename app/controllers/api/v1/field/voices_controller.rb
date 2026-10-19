@@ -19,8 +19,9 @@ module Api
           account = human_request_account!
           voices = account.field_voices.kept.includes(:user, :voiceprint).order(Arel.sql("lower(name)"))
           used = FieldRecordingSpeaker.where(field_voice_id: voices.map(&:id)).group(:field_voice_id).count
+          active_ids = FieldVoiceprints::Identification.active_prints(account).map(&:id)
           render json: {
-            voices: voices.map { |voice| FieldItems.voice_page_json(voice, used.fetch(voice.id, 0)) },
+            voices: voices.map { |voice| FieldItems.voice_page_json(voice, used.fetch(voice.id, 0), active_ids) },
             members_without_voice: FieldItems.members_without_voice_json(account, except: current_api_user),
             my_voice_id: account.field_voices.kept.find_by(user: current_api_user)&.to_param,
             recognise_voices: account.recognise_voices,

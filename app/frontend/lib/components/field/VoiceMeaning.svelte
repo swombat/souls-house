@@ -9,11 +9,15 @@
 <ul class="list-disc pl-5 space-y-1.5 text-sm text-muted-foreground" data-testid="voice-meaning">
   <li>
     When someone names a speaker, or confirms a guess, this Field takes that person's clear speech from the recording
-    and turns it into a voice print. Each naming adds to it, so it gets better over time.
+    and adds it to their voice print. Each naming changes the print; that usually helps, though it can't promise to.
   </li>
   <li>
-    Voice prints are kept, encrypted, only in this Field. The audio is processed inside souls.house and isn't sent to
-    any outside service.
+    To look for known voices, the Field also keeps a voice print of each speaker nobody has named yet. It is deleted as
+    soon as someone names that speaker, sets them aside, or turns down a guess about them.
+  </li>
+  <li>
+    All voice prints are kept, encrypted, only in this Field. The audio is processed inside souls.house and isn't sent
+    to any outside service.
   </li>
   <li>
     A print is used only to suggest who's speaking in this Field's recordings, and only after it has been checked
@@ -21,7 +25,8 @@
   </li>
   <li>
     Anyone in this Field can forget a voice at any time on {onVoicesPage ? 'this page' : 'the Voices page'}. A
-    forgotten voice stops learning until someone chooses to remember it again.
+    forgotten voice stops learning until someone chooses to remember it again. Forget all voices also deletes the
+    voice prints of unnamed speakers.
   </li>
   <li data-testid="voice-meaning-backups">
     Backups of this Field may still hold a voice print after it's forgotten, for an indeterminate time.

@@ -327,6 +327,7 @@ class FieldVoiceprintsTest < ActiveSupport::TestCase
     generation = @voice.reload.print_generation + 1
     @voice.update_columns(print_generation: generation)
     FieldVoiceprint.find_by!(field_voice: @voice).update!(generation:, print: JSON.generate(voice_vector(150)))
+    restamp_cohort!(@account) # as the check would, once it has run on the new print
     assert_equal 0, identify!(fresh)
     assert_nil speaker.reload.recognised_voice_id
   end

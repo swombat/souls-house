@@ -40,7 +40,10 @@ module FieldVoiceprints
 
   # Forget every voice in an account, and every unnamed speaker's kept
   # embedding. Never gated. One lock per voice.
+  # The probe generation moves on first, so a matching job embedding right
+  # now keeps nothing it computed.
   def forget_all!(account)
+    Account.where(id: account.id).update_all("field_probe_generation = field_probe_generation + 1")
     account.field_voices.find_each(&:forget!)
     FieldRecordingSpeaker.joins(:field_recording).where(field_recordings: { account_id: account.id })
       .where.not(probe_embedding: nil).update_all(probe_embedding: nil, probe_profile: nil)
@@ -54,6 +57,7 @@ module FieldVoiceprints
   def reset_all!
     counts = { prints: FieldVoiceprint.count, samples: FieldVoiceSample.count,
                recognitions: FieldRecordingSpeaker.where.not(recognised_voice_id: nil).count, voices: FieldVoice.count }
+    Account.update_all("field_probe_generation = field_probe_generation + 1")
     FieldVoice.update_all("print_generation = print_generation + 1, learning_generation = learning_generation + 1")
     FieldVoiceSample.delete_all
     FieldVoiceprint.delete_all

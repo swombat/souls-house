@@ -4,26 +4,32 @@
 # set aside, or had a guess dismissed) and with at least 4 s of clean speech
 # are embedded, once: the embedding is kept on the speaker as its probe, so
 # matching again after a print changes costs no audio work. Probes are
-# compared with the account's active prints (validated on the samples they're
-# built from now). A guess is a chip; a person confirms it.
+# compared with the account's active prints (FieldVoiceprints::Cohort). A
+# guess is a chip; a person confirms it.
 #
-# Embedding happens outside any lock. The write rechecks, under account →
-# recording → voices with fresh rows, that recognition is still on, the
-# recording is still kept and ready, each speaker is still undecided at the
-# generation snapshotted, and each print's generation is unchanged.
+# Embedding happens outside any lock. The write happens under account →
+# recording → every voice in the cohort, with fresh rows, and only if
+# nothing the guesses were computed from has moved: recognition still on, the
+# recording kept and ready, the cohort digest unchanged (so the same prints
+# are active, with the same samples; a new competitor or a Forget anywhere
+# changes it), the account's probe generation unchanged (Forget all), and each
+# speaker still undecided at the generation snapshotted. If the cohort moved,
+# nothing is written and the job runs again.
 module FieldVoiceprints::Identification
 
   module_function
 
-  # Returns the number of guesses written, or nil when nothing could run.
+  # Returns the number of guesses written; nil when nothing could run;
+  # :changed when the cohort moved while embedding (nothing was written).
   def run!(recording, client: FieldVoiceprints::VoiceEmbeddings)
     account = recording.account
     return nil unless FieldVoiceprints.enabled_for?(account) && recording.kept? && recording.ready? && !recording.supplied?
 
-    prints = active_prints(account)
+    prints, digest = FieldVoiceprints::Cohort.active(account)
     return nil if prints.empty?
 
-    profile = prints.first.profile
+    probe_generation = account.field_probe_generation
+    profile = prints.max_by(&:updated_at).profile
     prints = prints.select { |print| print.profile == profile }
     candidates = recording.speakers.select { |speaker| undecided?(speaker) }
     return nil if candidates.empty?
@@ -44,20 +50,19 @@ module FieldVoiceprints::Identification
     generations = prints.to_h { |print| [ print.field_voice_id, print.generation ] }
     guesses = FieldVoiceprints::Matching.guesses(probes, prints.to_h { |print| [ print.field_voice_id, print.vector ] })
 
-    voices = FieldVoice.where(id: generations.keys).to_a
-    FieldVoiceprints::Locks.with(account:, recording:, voices:) do |live_account, live_recording, live_voices|
+    voices = FieldVoice.where(account:).to_a
+    FieldVoiceprints::Locks.with(account:, recording:, voices:) do |live_account, live_recording, _voices|
       next nil unless FieldVoiceprints.enabled_for?(live_account) && live_recording.kept? && live_recording.ready?
+      next nil unless live_account.field_probe_generation == probe_generation
+      next :changed unless FieldVoiceprints::Cohort.active(live_account).last == digest
 
-      current = live_voices.select { |voice| voice.kept? && voice.print_generation == generations[voice.id] }.index_by(&:id)
       written = 0
       live_recording.speakers.each do |speaker|
         next unless snapshot.key?(speaker.id) && speaker.decision_generation == snapshot[speaker.id] && undecided?(speaker)
 
-        if fresh[speaker.id]
-          speaker.update!(probe_embedding: JSON.generate(fresh[speaker.id]), probe_profile: profile)
-        end
+        speaker.update!(probe_embedding: JSON.generate(fresh[speaker.id]), probe_profile: profile) if fresh[speaker.id]
         voice_id, score = guesses[speaker.id]
-        if voice_id && current[voice_id]
+        if voice_id
           speaker.update!(recognised_voice_id: voice_id, recognition_confidence: (score * 100).round,
             recognition_print_generation: generations[voice_id], recognition_decision_generation: speaker.decision_generation)
           written += 1
@@ -69,10 +74,8 @@ module FieldVoiceprints::Identification
     end
   end
 
-  def active_prints(account)
-    FieldVoiceprint.joins(:field_voice).merge(FieldVoice.kept).where(account:).where(field_voices: { remember: true })
-      .select { |print| print.active? && print.generation == print.field_voice.print_generation }
-  end
+  # The prints that may guess now (validated in the current cohort).
+  def active_prints(account) = FieldVoiceprints::Cohort.active(account).first
 
   def undecided?(speaker)
     speaker.decision_generation.zero? && !speaker.field_voice&.kept? && !speaker.ignored?

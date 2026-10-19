@@ -172,7 +172,7 @@ class FieldRecordingSpeaker < ApplicationRecord
     with_decision_locks do |recording|
       next false unless recording.kept? && recording.ready? && suggestion_current?(shown_generation)
 
-      update!(decision_generation: decision_generation + 1, **SUGGESTION_FIELDS)
+      update!(decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **NO_PROBE)
       true
     end
   end
@@ -280,7 +280,7 @@ class FieldRecordingSpeaker < ApplicationRecord
       raise ActiveRecord::RecordNotFound unless recording.kept? && recording.ready?
 
       reload
-      update!(decision_generation: decision_generation + 1, **NOT_IGNORED) if ignored_at.present?
+      update!(decision_generation: decision_generation + 1, **NOT_IGNORED, **NO_PROBE) if ignored_at.present?
       true
     end
   end

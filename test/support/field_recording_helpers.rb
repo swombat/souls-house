@@ -75,15 +75,24 @@ module FieldRecordingHelpers
     vector.map { |value| value / norm }
   end
 
-  # A stored print, active (validated on its own digest) unless active: false.
+  # A stored print, active unless active: false. Validation is stamped with
+  # the account's cohort digest, so every validated print in the account is
+  # restamped as the cohort grows (as a real validation run would).
   def store_print!(voice, vector: voice_vector(voice.id % 100), active: true, profile: "ecapa-test")
-    voice.with_lock do
+    print = voice.with_lock do
       generation = voice.print_generation + 1
       voice.update_columns(print_generation: generation)
       FieldVoiceprint.create!(field_voice: voice, account: voice.account, print: JSON.generate(vector), generation:,
         profile:, sample_count: 2, recording_count: 2, speech_ms: 12_000, sample_digest: "digest-#{generation}",
-        validated: active, validated_digest: (active ? "digest-#{generation}" : nil))
+        validated: active)
     end
+    restamp_cohort!(voice.account)
+    print.reload
+  end
+
+  def restamp_cohort!(account)
+    digest = FieldVoiceprints::Cohort.digest(FieldVoiceprints::Cohort.prints(account))
+    FieldVoiceprint.where(account:, validated: true).update_all(validated_digest: digest)
   end
 
   # Stands in for FieldVoiceprints::VoiceEmbeddings. `vectors` maps a call

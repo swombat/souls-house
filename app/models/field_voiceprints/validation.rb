@@ -1,14 +1,24 @@
-# The held-out check (spec 2026-10-19 §7). For each recording R that has
-# eligible samples, every print is rebuilt without any sample from R, and R's
-# samples are matched against those prints with the production matcher.
+# The held-out check (spec 2026-10-19 §7; Mira's review of #474). For each
+# recording R with eligible samples, every candidate print is rebuilt without
+# any sample from R, and every eligible sample in R is matched against those
+# prints with the production matcher.
 #
 # A print may guess only when, over its held-out queries, it has samples from
 # at least two recordings, at least two correct and at least 80% of its own
 # queries correct, and no false accept into it from at least ten other
-# people's queries. Anything less is "not yet checked" and makes no guesses.
+# people's queries. A query whose own voice has no held-out print (a
+# single-recording voice, say) still counts: any guess it gets is a false
+# accept into the winner.
 #
-# Results are stamped with the sample set they were computed on
-# (validated_digest); a print rebuilt since is inactive until this runs again.
+# Production matches only against the prints that may guess, so validation
+# must too: a print that fails can't be left in as a competitor that absorbs
+# a wrong match. Candidates start as every print in the cohort; each round
+# drops those that fail, and the check repeats on the rest until every
+# remaining print passes when measured against only the others that pass.
+#
+# Verdicts are stamped with the cohort digest (FieldVoiceprints::Cohort) and
+# published under every voice lock in the account, only if the cohort is
+# still the one measured.
 module FieldVoiceprints::Validation
 
   MIN_RECORDINGS = 2
@@ -18,24 +28,25 @@ module FieldVoiceprints::Validation
 
   module_function
 
-  # Returns {voice_id => stats}. Writes each print's verdict under its voice
-  # lock, only if its samples haven't changed since they were read.
+  # Returns {voice_id => stats}, or nil when the cohort changed meanwhile (the
+  # caller checks again later).
   def run!(account)
-    prints = FieldVoiceprint.joins(:field_voice).merge(FieldVoice.kept).where(account:).to_a
-    return {} if prints.empty?
+    prints = FieldVoiceprints::Cohort.prints(account)
+    digest = FieldVoiceprints::Cohort.digest(prints)
+    stats, passing = measure(account, prints)
 
-    stats = measure(account, prints)
-    prints.each do |print|
-      voice = print.field_voice
-      voice.with_lock do
-        live = FieldVoiceprint.find_by(id: print.id)
-        next unless live && live.sample_digest == print.sample_digest && live.generation == voice.print_generation
+    published = ApplicationRecord.transaction do
+      FieldVoice.where(account:).order(:id).lock.to_a
+      live = FieldVoiceprints::Cohort.prints(account)
+      next false unless FieldVoiceprints::Cohort.digest(live) == digest
 
-        entry = stats.fetch(voice.id)
-        live.update!(validated: passes?(entry, live), validated_digest: live.sample_digest, validation: entry)
+      live.each do |print|
+        print.update!(validated: passing.include?(print.field_voice_id), validated_digest: digest,
+          validation: stats.fetch(print.field_voice_id, {}))
       end
+      true
     end
-    stats
+    published ? stats : nil
   end
 
   def passes?(entry, print)
@@ -44,33 +55,47 @@ module FieldVoiceprints::Validation
       entry["negatives"] >= MIN_NEGATIVES
   end
 
-  # Leave-one-recording-out over the samples the prints are built from.
+  # [{voice_id => stats}, Set of voice ids that pass]. Stats are each print's
+  # from the last round it was a candidate in.
   def measure(account, prints)
-    profiles = prints.to_h { |print| [ print.field_voice_id, print.profile ] }
-    samples = FieldVoiceSample.eligible.where(account:, field_voice_id: profiles.keys).to_a
-      .select { |sample| profiles[sample.field_voice_id] == sample.profile }
+    return [ {}, Set.new ] if prints.empty?
+
+    profile = prints.max_by(&:updated_at).profile
+    by_voice = prints.index_by(&:field_voice_id)
+    samples = FieldVoiceSample.eligible.where(account:, field_voice_id: by_voice.keys, profile:).to_a
     vectors = samples.to_h { |sample| [ sample.id, sample.vector ] }
-    stats = profiles.keys.to_h do |voice_id|
+    candidates = by_voice.select { |_, print| print.profile == profile }.keys.to_set
+    final = {}
+
+    loop do
+      stats = evaluate(samples, vectors, candidates)
+      final.merge!(stats)
+      passing = candidates.select { |voice_id| passes?(stats.fetch(voice_id), by_voice.fetch(voice_id)) }.to_set
+      return [ final, passing ] if passing == candidates
+
+      candidates = passing
+    end
+  end
+
+  def evaluate(samples, vectors, candidates)
+    stats = candidates.to_h do |voice_id|
       [ voice_id, { "queries" => 0, "correct" => 0, "rejected" => 0, "wrong" => 0, "false_accepts_into" => 0,
                     "negatives" => 0 } ]
     end
-
     samples.group_by(&:field_recording_id).each do |recording_id, queries|
-      references = samples.reject { |sample| sample.field_recording_id == recording_id }.group_by(&:field_voice_id)
-      by_profile = references.group_by { |voice_id, _| profiles[voice_id] }
-      queries.group_by(&:profile).each do |profile, same_profile|
-        held_out = (by_profile[profile] || []).to_h do |voice_id, own|
-          [ voice_id, FieldVoiceprints.centroid(own.map { |sample| vectors[sample.id] }) ]
-        end.compact
-        guesses = FieldVoiceprints::Matching.guesses(same_profile.to_h { |sample| [ sample.id, vectors[sample.id] ] }, held_out)
+      held_out = samples.reject { |sample| sample.field_recording_id == recording_id }
+        .select { |sample| candidates.include?(sample.field_voice_id) }
+        .group_by(&:field_voice_id)
+        .to_h { |voice_id, own| [ voice_id, FieldVoiceprints.centroid(own.map { |sample| vectors[sample.id] }) ] }
+        .compact
+      guesses = FieldVoiceprints::Matching.guesses(queries.to_h { |sample| [ sample.id, vectors[sample.id] ] }, held_out)
 
-        same_profile.each do |query|
-          held_out.each_key { |voice_id| stats[voice_id]["negatives"] += 1 unless voice_id == query.field_voice_id }
-          next unless held_out.key?(query.field_voice_id)
-
+      queries.each do |query|
+        held_out.each_key { |voice_id| stats[voice_id]["negatives"] += 1 unless voice_id == query.field_voice_id }
+        guess = guesses[query.id]&.first
+        if held_out.key?(query.field_voice_id)
           entry = stats[query.field_voice_id]
           entry["queries"] += 1
-          guess = guesses[query.id]&.first
           if guess.nil?
             entry["rejected"] += 1
           elsif guess == query.field_voice_id
@@ -79,6 +104,8 @@ module FieldVoiceprints::Validation
             entry["wrong"] += 1
             stats[guess]["false_accepts_into"] += 1
           end
+        elsif guess
+          stats[guess]["false_accepts_into"] += 1
         end
       end
     end

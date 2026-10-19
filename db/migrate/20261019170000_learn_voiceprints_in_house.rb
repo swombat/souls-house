@@ -37,6 +37,9 @@ class LearnVoiceprintsInHouse < ActiveRecord::Migration[8.1]
     # them, and by Forget all voices.
     add_column :field_recording_speakers, :probe_embedding, :text
     add_column :field_recording_speakers, :probe_profile, :string
+    # Bumped by Forget all (and the restore reset): a matching job that was
+    # embedding when it happened keeps no probe and makes no guess.
+    add_column :accounts, :field_probe_generation, :bigint, default: 0, null: false
 
     execute "DELETE FROM field_voiceprints"
     remove_reference :field_voiceprints, :sample_recording, index: true

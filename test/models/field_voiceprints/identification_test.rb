@@ -67,6 +67,54 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
     end
   end
 
+  test "a competitor that becomes active while embedding means nothing is written, and the job runs again" do
+    with_recognition(@account) do
+      store_print!(@voice, vector: voice_vector(3))
+      account = @account
+      helper = self
+      between = Array.new(FieldVoiceprints::VoiceEmbeddings::DIMENSIONS, 0.0)
+      between[3] = 0.75
+      between[7] = Math.sqrt(1 - (0.75**2)) # 0.75 to Tomás, 0.66 to Priya: a margin of 0.09
+      client = FakeVoiceEmbeddings.new({ default: between })
+      client.define_singleton_method(:embed) do |wav|
+        helper.store_print!(account.field_voices.find_by!(name: "Priya"), vector: helper.voice_vector(7))
+        FakeVoiceEmbeddings.instance_method(:embed).bind_call(self, wav)
+      end
+      assert_equal :changed, run_identify(client), "alone, Tomás would have won; with Priya the margin is too small"
+      assert_nil @speaker.reload.recognised_voice_id
+      assert_nil @speaker.probe_embedding
+
+      FieldVoiceprints::Identification.stub(:run!, :changed) do
+        assert_enqueued_with(job: FieldRecordings::IdentifyJob, args: [ @recording.id, 1 ]) do
+          FieldRecordings::IdentifyJob.perform_now(@recording.id)
+        end
+      end
+    end
+  end
+
+  test "Forget all while embedding keeps no probe and makes no guess" do
+    with_recognition(@account) do
+      store_print!(@voice, vector: voice_vector(3))
+      account = @account
+      client = FakeVoiceEmbeddings.new({ default: voice_vector(3) })
+      client.define_singleton_method(:embed) do |wav|
+        FieldVoiceprints.forget_all!(account)
+        FakeVoiceEmbeddings.instance_method(:embed).bind_call(self, wav)
+      end
+      assert_nil run_identify(client)
+      @speaker.reload
+      assert_nil @speaker.probe_embedding, "a forgotten account's probe must not come back"
+      assert_nil @speaker.recognised_voice_id
+    end
+  end
+
+  test "dismissing a name suggestion clears a kept embedding" do
+    @speaker.update!(probe_embedding: "[1]", probe_profile: "ecapa-test", suggested_name: "Tomás",
+      suggestion_generation: @speaker.decision_generation)
+    assert @speaker.dismiss_suggestion!(@speaker.decision_generation)
+    assert_nil @speaker.reload.probe_embedding
+  end
+
   test "a print rebuilt while embedding is not used" do
     with_recognition(@account) do
       store_print!(@voice, vector: voice_vector(3))
@@ -76,7 +124,7 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
         voice.update_columns(print_generation: voice.print_generation + 1)
         FakeVoiceEmbeddings.instance_method(:embed).bind_call(self, wav)
       end
-      assert_equal 0, run_identify(client)
+      assert_equal :changed, run_identify(client)
       assert_nil @speaker.reload.recognised_voice_id
     end
   end
@@ -103,7 +151,8 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
   test "a change in which prints may guess matches the account's recordings again" do
     with_recognition(@account) do
       store_print!(@voice, vector: voice_vector(3), active: false)
-      FieldVoiceprints::Validation.stub(:run!, ->(_account) { @voice.voiceprint.update!(validated: true, validated_digest: @voice.voiceprint.sample_digest) }) do
+      validate = ->(_account) { @voice.voiceprint.update!(validated: true) && restamp_cohort!(@account) && {} }
+      FieldVoiceprints::Validation.stub(:run!, validate) do
         assert_enqueued_with(job: FieldRecordings::IdentifyJob, args: [ @recording.id ]) do
           FieldVoices::ValidatePrintsJob.perform_now(@account.id)
         end

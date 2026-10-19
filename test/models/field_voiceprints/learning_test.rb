@@ -47,7 +47,8 @@ class FieldVoiceprints::LearningTest < ActiveSupport::TestCase
       assert_equal @voice.print_generation, print.generation
       assert_equal [ 1, 1 ], [ print.sample_count, print.recording_count ]
       assert_in_delta 1.0, FieldVoiceprints.cosine(print.vector, voice_vector(3)), 1e-9
-      assert_not print.active?, "a new print is unchecked until validation runs"
+      assert_not_includes FieldVoiceprints::Identification.active_prints(@account), print,
+        "a new print is unchecked until validation runs"
       assert_raises(NotImplementedError) { print.as_json }
       assert_raises(NotImplementedError) { sample.as_json }
     end

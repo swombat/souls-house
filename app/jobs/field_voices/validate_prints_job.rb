@@ -17,7 +17,10 @@ module FieldVoices
       return unless account
 
       before = active(account)
-      FieldVoiceprints::Validation.run!(account)
+      # nil: the cohort changed while measuring. Whatever changed it queued
+      # its own check, which runs after this one.
+      return unless FieldVoiceprints::Validation.run!(account)
+
       after = active(account)
       return if after == before || after.empty? || !FieldVoiceprints.enabled_for?(account)
 

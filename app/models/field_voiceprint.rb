@@ -4,8 +4,8 @@
 # every change, never added to, so the order samples land in doesn't matter.
 #
 # A print guesses only when it is validated against recordings it wasn't built
-# from (FieldVoiceprints::Validation) and that validation was computed on the
-# samples it is built from now (validated_digest == sample_digest).
+# from (FieldVoiceprints::Validation) and that validation was computed in the
+# account's current cohort (FieldVoiceprints::Cohort).
 class FieldVoiceprint < ApplicationRecord
 
   belongs_to :field_voice
@@ -24,8 +24,6 @@ class FieldVoiceprint < ApplicationRecord
 
   # Current only while the voice hasn't moved on (forgotten or rebuilt).
   def current? = generation == field_voice.print_generation
-
-  def active? = validated && validated_digest.present? && validated_digest == sample_digest
 
   def serializable_hash(*)
     raise NotImplementedError, "voice prints are never serialised"

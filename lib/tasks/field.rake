@@ -33,13 +33,15 @@ namespace :field do
   desc "Report held-out voice-print accuracy (ACCOUNT=<id>)"
   task voiceprint_report: :environment do
     account = Account.find(ENV.fetch("ACCOUNT") { abort "Set ACCOUNT=<id>." })
-    prints = FieldVoiceprint.joins(:field_voice).merge(FieldVoice.kept).where(account:).includes(:field_voice).to_a
-    stats = FieldVoiceprints::Validation.measure(account, prints)
+    prints = FieldVoiceprints::Cohort.prints(account)
+    stats, passing = FieldVoiceprints::Validation.measure(account, prints)
     totals = Hash.new(0)
     prints.sort_by { |print| print.field_voice.name.downcase }.each do |print|
-      entry = stats.fetch(print.field_voice_id)
+      entry = stats[print.field_voice_id]
+      next unless entry
+
       entry.each { |key, value| totals[key] += value }
-      verdict = FieldVoiceprints::Validation.passes?(entry, print) ? "suggests" : "not yet checked"
+      verdict = passing.include?(print.field_voice_id) ? "suggests" : "not yet checked"
       puts format("%-28s %2d rec  queries %2d  correct %2d  rejected %2d  wrong %2d  false accepts into %2d  negatives %3d  %s",
         print.field_voice.name.truncate(28), print.recording_count, entry["queries"], entry["correct"], entry["rejected"],
         entry["wrong"], entry["false_accepts_into"], entry["negatives"], verdict)

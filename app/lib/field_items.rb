@@ -293,7 +293,8 @@ module FieldItems
 
   # A voice on the Voices page. Never the print or a sample: only what was
   # learned from (counts) and whether the print may guess yet.
-  def voice_page_json(voice, used_count)
+  # active_ids: the prints that may guess now (Identification.active_prints).
+  def voice_page_json(voice, used_count, active_ids = [])
     print = voice.voiceprint
     print = nil unless print&.generation == voice.print_generation
     {
@@ -305,7 +306,7 @@ module FieldItems
       remembered: print.present?,
       recordings: print&.recording_count || 0,
       sample_seconds: (print.speech_ms / 1000 if print),
-      guessing: print&.active? || false,
+      guessing: print.present? && active_ids.include?(print.id),
       learned_at: print&.updated_at&.iso8601
     }
   end

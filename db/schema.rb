@@ -42,6 +42,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_170000) do
     t.boolean "field_swarm_enabled", default: false, null: false
     t.boolean "field_tweets_house_key", default: false, null: false
     t.boolean "stalled_sweep_enabled", default: false, null: false
+    t.bigint "field_probe_generation", default: 0, null: false
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"

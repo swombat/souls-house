@@ -74,6 +74,7 @@ class FieldVoice < ApplicationRecord
   # queued fresh. Nothing forgotten comes back.
   def remember_again!
     with_lock { update!(remember: true) }
+    FieldVoices::ValidatePrintsJob.queue!(account)
     FieldVoiceprints::Learning.queue_account!(account, voice: self)
   end
 
@@ -112,6 +113,8 @@ class FieldVoice < ApplicationRecord
     FieldVoiceprint.where(field_voice_id: id).destroy_all
     FieldVoiceSample.where(field_voice_id: id).delete_all
     FieldVoiceActivity.refresh!([ account_id ])
+    # Every other print's verdict was measured with this one in the cohort.
+    FieldVoices::ValidatePrintsJob.queue!(account)
     FieldRecordingSpeaker.where(recognised_voice_id: id)
       .update_all(recognised_voice_id: nil, recognition_confidence: nil, recognition_print_generation: nil,
         recognition_decision_generation: nil)
