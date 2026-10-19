@@ -344,4 +344,25 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     FieldSummaries.live = false
   end
 
+
+  test "looking for known voices again queues the pass and returns to the transcript" do
+    recording = long_ready_recording(account: @account, user: @user)
+    with_recognition(@account) do
+      assert_enqueued_with(job: FieldRecordings::IdentifyJob, args: [ recording.id ]) do
+        post identify_again_account_field_recording_path(@account, recording)
+      end
+    end
+    assert_redirected_to account_field_recording_path(@account, recording)
+    assert_match "Looking again", flash[:notice]
+
+    post identify_again_account_field_recording_path(@account, recording)
+    assert_equal "Nothing to look for again here.", flash[:notice], "recognition off: nothing queued, and it says so"
+  end
+
+  test "another account's recording can't be looked at again" do
+    other = long_ready_recording(account: accounts(:another_team), user: @user)
+    post identify_again_account_field_recording_path(@account, other)
+    assert_response :not_found
+  end
+
 end

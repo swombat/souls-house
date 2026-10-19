@@ -3,7 +3,7 @@
 class FieldRecordingsController < ApplicationController
 
   require_feature_enabled :agents
-  before_action :set_field_recording, only: %i[show update destroy retry correct_line reassign_line resummarize]
+  before_action :set_field_recording, only: %i[show update destroy retry correct_line reassign_line resummarize identify_again]
 
   # The transcript page (spec §7). Words are sent whole: the page renders turns
   # from them, and clicking a word seeks the audio.
@@ -92,6 +92,22 @@ class FieldRecordingsController < ApplicationController
     redirect_to item_path(recording), notice: "Trying again."
   rescue FieldRecording::NotRetryable
     redirect_to item_path(@field_recording), alert: "This recording can't be tried again."
+  end
+
+  # "Look for known voices again": the same two passes that ran when the
+  # transcript landed, run again now that the Field may know more people
+  # (remembered voices, or names). Each pass keeps its own rules: only
+  # speakers no person has decided anything about are guessed at, a guess is
+  # shown for a person to confirm, and each gate is checked as it was then.
+  def identify_again
+    recording = @field_recording
+    passes = FieldRecording::IdentifyAgain.queue!(recording)
+    notice = if passes.any?
+      "Looking again. New guesses appear on the speaker cards for you to confirm."
+    else
+      "Nothing to look for again here."
+    end
+    redirect_to account_field_recording_path(current_account, recording), notice:
   end
 
   # One line of the transcript corrected by hand ("Dan", not "Dad").

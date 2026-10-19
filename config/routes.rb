@@ -252,6 +252,7 @@ Rails.application.routes.draw do
     resources :field_recordings, path: "field/recordings", only: [ :show, :create, :update, :destroy ] do
       post :retry, on: :member
       post :resummarize, on: :member
+      post :identify_again, on: :member
       patch :line, on: :member, action: :correct_line
       patch :line_speaker, on: :member, action: :reassign_line
       post :dismiss_you_hint, on: :collection

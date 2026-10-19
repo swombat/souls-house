@@ -169,6 +169,22 @@
     router.post(`${recording.show_url}/retry`);
   }
 
+  // The passes that ran when the transcript landed, run again: voices this
+  // Field has remembered since, and names it has learned. Only speakers nobody
+  // has decided about get a guess, and a guess waits for a person to confirm.
+  let lookingAgain = $state(false);
+  function identifyAgain() {
+    lookingAgain = true;
+    router.post(
+      `${recording.show_url}/identify_again`,
+      {},
+      {
+        preserveScroll: true,
+        onFinish: () => (lookingAgain = false),
+      }
+    );
+  }
+
   // The same discard as the Field list's Delete: the recording leaves the
   // index, search and residents' reads; the server sends us back to the list.
   function remove() {
@@ -273,7 +289,19 @@
           for a person to confirm or dismiss.
         </p>
       {/if}
-      <div class="flex justify-end">
+      <div class="flex items-center justify-end gap-3">
+        {#if (recognition_enabled || suggestions_enabled) && !supplied}
+          <Button
+            variant="ghost"
+            size="sm"
+            class="text-muted-foreground"
+            onclick={identifyAgain}
+            disabled={lookingAgain}
+            title="Look for voices and names this Field has learned since this transcript was made"
+            data-testid="identify-again">
+            <ArrowClockwise class="size-4" /> Look for known voices again
+          </Button>
+        {/if}
         <Link
           href={`/accounts/${account.id}/field/voices`}
           class="text-sm text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
