@@ -109,12 +109,16 @@ anything not positively known to be a person's decision is not eligible.
 - `naming_source` gains `machine` and `unknown`.
 - **Web clicks** (`FieldRecordingSpeakersController`, a signed-in person in
   the browser) are `human`. **A confirmed guess** is `confirmed_recognition`.
-  Only these two are eligible.
-- **Every API naming is `machine` by default.** The speakers API
-  (`/api/v1/field/...`) records `machine` whether or not the client says
-  anything, so an old Mac script that sends no provenance can never produce a
-  training label. There is no API flag that makes a write `human`. A person's
-  decision only enters through the page, or through the confirm list below.
+  A confirmed text suggestion (`confirmed_suggestion`) is a person's tap too.
+  Only these three are eligible.
+- **An API naming's source comes from how it authenticated, never from what
+  it says** (amended in slice A, 2026-10-19). Through an **API key** (a
+  person's key used by a script such as the Mac's matcher; resident keys are
+  refused by this endpoint) it is `machine`, so an old client that sends no
+  provenance can never produce a training label. Through the **native app**
+  (an OAuth app session, `app_token_request?`), a person is acting, so it is
+  `human`. No request parameter changes either. Otherwise a person's decision
+  enters through the page, or through the confirm list below.
 - **Existing 926 rows start as `unknown`.** Absence from a log isn't proof of
   a human (Mira). Ways out:
   1. *Evidence*, which is thin (checked 2026-10-19). Request logs live only in
@@ -128,7 +132,9 @@ anything not positively known to be a person's decision is not eligible.
      page, per voice: "Confirm these N names", playing a few seconds of each.
      One tap confirms a speaker (→ `human`, `named_by` the person who tapped),
      and one marks it wrong (un-names it).
-- Tests: an old-client API write with no provenance field stays `machine`;
+- Tests: an API-key write with or without forged provenance fields is
+  `machine`; a native-app write is `human`; an old-client API write with no
+  provenance field stays `machine`;
   a historical speaker named by the web and then re-named by the API is not
   `human`; a speaker named by the API and then confirmed on the page is
   `human`.
