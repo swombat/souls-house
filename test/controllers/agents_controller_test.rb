@@ -183,6 +183,19 @@ class AgentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "connected", subscription.dig("connection", "status")
   end
 
+  test "index offers subscription reconnect only to the account owner, who the reconnect endpoints allow" do
+    get account_agents_path(@account)
+    assert_equal true, inertia_shared_props.fetch("can_manage_provider_subscription")
+
+    sign_in users(:existing_user)
+    account = accounts(:team_account)
+    assert_not account.owned_by?(users(:existing_user))
+    get account_agents_path(account)
+    assert_response :success
+    @inertia_props = nil
+    assert_equal false, inertia_shared_props.fetch("can_manage_provider_subscription")
+  end
+
   test "should get new agent wizard" do
     HouseInference::Offering.stub(:configured?, true) do
       get new_account_agent_path(@account)

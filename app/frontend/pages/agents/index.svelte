@@ -19,6 +19,7 @@
     away_memberships: awayMemberships = [],
     guest_candidates: guestCandidates = [],
     can_end_guest_memberships: canEndGuestMemberships = false,
+    can_manage_provider_subscription: canManageProviderSubscription = false,
   } = $props();
 
   // Subscribe to both:
@@ -104,7 +105,12 @@
   {#if agents.length === 0}
     <AgentEmptyState onCreate={() => router.visit(newAccountAgentPath(account.id))} />
   {:else}
-    <AgentGrid {agents} accountId={account.id} onUpgrade={openUpgradeModal} onDisable={disableAgent} />
+    <AgentGrid
+      {agents}
+      accountId={account.id}
+      {canManageProviderSubscription}
+      onUpgrade={openUpgradeModal}
+      onDisable={disableAgent} />
   {/if}
 
   {#key account.id}

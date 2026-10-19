@@ -38,7 +38,15 @@
     return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
   }
 
-  let { agent, accountId, onupgrade, ondisable, showActions = true, admin = false } = $props();
+  let {
+    agent,
+    accountId,
+    onupgrade,
+    ondisable,
+    showActions = true,
+    admin = false,
+    canManageProviderSubscription = false,
+  } = $props();
   let heartbeatEnabled = $derived(agent.scheduled_wakes_enabled && agent.active && !agent.paused && !agent.deprecated);
   let IconComponent = $derived(agentIconFor(agent.icon));
   let failedRuns = $derived(agent.failed_runs);
@@ -161,7 +169,8 @@
         usageUrl={admin ? `/admin/agents/${agent.id}/provider_subscription_usage` : undefined}
         agentId={agent.id}
         modelId={agent.model_id}
-        subscription={agent.provider_subscription} />
+        subscription={agent.provider_subscription}
+        canReconnect={canManageProviderSubscription && !admin} />
     {/if}
 
     <ResidentActivity days={agent.activity || []} />

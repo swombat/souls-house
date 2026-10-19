@@ -17,6 +17,8 @@ class AgentsController < ApplicationController
       # Directory-only hints must not rebuild cards or claim journal-stat jobs.
       agents: -> { Agents::ResidentDirectory.new(current_account).call },
       can_end_guest_memberships: current_account.owned_by?(Current.user),
+      # The reconnect endpoints require the account owner; offer the button to the same people.
+      can_manage_provider_subscription: current_account.owned_by?(Current.user),
       guest_memberships: current_account.guest_memberships.includes(agent: :account).order(:created_at).as_json,
       away_memberships: GuestMembership.where(agent: current_account.agents).includes(:account, agent: :account).order(:created_at).as_json,
       guest_candidates: GuestMembership.candidates_for(account: current_account, user: Current.user)

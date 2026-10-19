@@ -1,7 +1,10 @@
-import { render, screen, cleanup } from '@testing-library/svelte';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { afterEach, expect, test, vi } from 'vitest';
 import { tick } from 'svelte';
+import { router } from '@inertiajs/svelte';
 import Summary from './AgentSubscriptionUsageSummary.svelte';
+
+vi.mock('@inertiajs/svelte', () => ({ router: { reload: vi.fn() } }));
 
 const subscription = {
   available: true,
@@ -11,6 +14,7 @@ const subscription = {
 };
 afterEach(() => {
   cleanup();
+  vi.clearAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -140,4 +144,74 @@ test('ignores an old request after switching residents and clears usage on disco
   await rerender({ accountId: 'a', agentId: 'c', subscription: { ...subscription, connection: {} } });
   expect(await screen.findByText('Subscription not connected')).toBeVisible();
   expect(fetchUsage).toHaveBeenCalledTimes(2);
+});
+
+const lost = {
+  id: 'lume',
+  name: 'Lume',
+  provider: 'anthropic',
+  provider_name: 'Claude',
+  available: true,
+  auth_mode: 'oauth_account',
+  connection: { status: 'expired' },
+};
+
+function providerFetch({ supported = true, poll = { status: 'pending' } } = {}) {
+  return vi.fn((url, options = {}) => {
+    const json = (body) => Promise.resolve({ ok: true, json: async () => body });
+    if (url.includes('capabilities=1')) return json({ providers: { anthropic: { oauth_account: supported } } });
+    if (options.method === 'POST')
+      return json({ status: 'awaiting_code', verification_url: 'https://claude.example/sign-in' });
+    if (url.includes('?provider=')) return json(poll);
+    return json({});
+  });
+}
+
+test('offers no reconnect button unless the viewer can manage the subscription', async () => {
+  vi.stubGlobal('fetch', providerFetch());
+  render(Summary, { accountId: 'a', agentId: 'lume', subscription: lost });
+  expect(await screen.findByText('Subscription not connected')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+test('a lost subscription can be reconnected from the resident card', async () => {
+  vi.stubGlobal('fetch', providerFetch());
+  render(Summary, { accountId: 'a', agentId: 'lume', subscription: lost, canReconnect: true });
+  const button = await screen.findByRole('button', { name: 'Reconnect' });
+  await waitFor(() => expect(button).toBeEnabled());
+  await fireEvent.click(button);
+  expect(await screen.findByText('Open Claude sign-in')).toBeVisible();
+  const start = fetch.mock.calls.find(([, options]) => options?.method === 'POST');
+  expect(start[0]).toBe('/accounts/a/residents/lume/provider_subscription');
+  expect(JSON.parse(start[1].body)).toEqual({ provider: 'anthropic' });
+});
+
+test('refreshes the resident cards once the sign-in completes', async () => {
+  vi.stubGlobal('fetch', providerFetch({ poll: { status: 'connected', email: 'lume@example.com' } }));
+  render(Summary, { accountId: 'a', agentId: 'lume', subscription: lost, canReconnect: true });
+  const button = await screen.findByRole('button', { name: 'Reconnect' });
+  await waitFor(() => expect(button).toBeEnabled());
+  await fireEvent.click(button);
+  await waitFor(() => expect(router.reload).toHaveBeenCalledWith({ only: ['agents'] }), { timeout: 4000 });
+  expect(router.reload).toHaveBeenCalledTimes(1);
+});
+
+test('explains why reconnecting waits for an unhealthy runtime', async () => {
+  vi.stubGlobal('fetch', providerFetch());
+  render(Summary, {
+    accountId: 'a',
+    agentId: 'lume',
+    subscription: { ...lost, available: false },
+    canReconnect: true,
+  });
+  expect(await screen.findByRole('button', { name: 'Reconnect' })).toBeDisabled();
+  expect(screen.getByText('The runtime needs to be healthy before it can be signed in again.')).toBeVisible();
+});
+
+test('hides the reconnect action when the runtime cannot sign in to a subscription', async () => {
+  vi.stubGlobal('fetch', providerFetch({ supported: false }));
+  render(Summary, { accountId: 'a', agentId: 'lume', subscription: lost, canReconnect: true });
+  expect(await screen.findByText('This runtime does not support subscription sign-in.')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Reconnect' })).toBeDisabled();
 });
