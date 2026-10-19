@@ -39,11 +39,11 @@ class FieldVoiceLifecycleChannelTest < ActionCable::Channel::TestCase
     assert_no_streams
   end
 
-  test "no all collection print or enrolment subscriptions even for an administrator" do
+  test "no all collection print or voice sample subscriptions even for an administrator" do
     stub_connection current_user: users(:site_admin_user), current_app_session: nil
     [
       [ "FieldRecording", "all" ], [ "FieldRecording", "#{@recording.to_param}:speakers" ],
-      [ "FieldVoiceprint", @recording.to_param ], [ "FieldVoiceEnrolment", @recording.to_param ]
+      [ "FieldVoiceprint", @recording.to_param ], [ "FieldVoiceSample", @recording.to_param ]
     ].each do |model, id|
       subscribe(model:, id:)
       assert subscription.rejected?

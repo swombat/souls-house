@@ -106,14 +106,16 @@ class FieldVoiceActivityTest < ActiveSupport::TestCase
     assert_silent { FieldVoiceActivity.refresh!([ @other.id ]) }
   end
 
+  # Recognition is on by default now, so the switch is exercised off, then on.
   test "recognition switch refreshes roster without emitting guest or recording hints" do
+    assert @account.recognise_voices?, "on by default"
     assert_no_broadcasts("GuestDirectory:#{@account.to_param}") do
       assert_no_broadcasts(detail_stream) do
-        assert_refreshes(@account) { @account.with_lock { @account.update!(recognise_voices: true) } }
+        assert_refreshes(@account) { @account.with_lock { @account.update!(recognise_voices: false) } }
       end
     end
-    assert_refreshes(@account) { @account.update!(recognise_voices: false) }
-    assert_silent { @account.update!(recognise_voices: false) }
+    assert_refreshes(@account) { @account.update!(recognise_voices: true) }
+    assert_silent { @account.update!(recognise_voices: true) }
   end
 
   test "membership role confirmation reassignment and removal refresh permission and member options" do
@@ -148,23 +150,6 @@ class FieldVoiceActivityTest < ActiveSupport::TestCase
       assert_refreshes(@account) { @member.profile.destroy! }
       assert_match "voice-renamed-", FieldItems.members_without_voice_json(@account).find { |row| row[:user_id] == @member.id }[:name]
     end
-  end
-
-  test "profile changes refresh former members who still supply a remembered-by label" do
-    print = FieldVoiceprint.create!(account: @other, field_voice: @other.field_voices.create!(name: "Other voice"),
-      print: "SECRET-PRINT", generation: 0, sample_ms: 12_000, consented_by: @member,
-      consented_at: Time.current, consent_text_version: FieldVoiceprints::CONSENT_TEXT_VERSION)
-    assert_refreshes(@account, @other) { @member.profile.update!(last_name: "Changed") }
-    assert_equal "Roster Changed", FieldItems.voice_page_json(print.field_voice.reload, 0)[:remembered_by]
-  end
-
-  test "remembered-by labels follow current voice ownership rather than stale print ownership" do
-    print = FieldVoiceprint.create!(account: @other, field_voice: @other.field_voices.create!(name: "Movable voice"),
-      print: "SECRET-PRINT", generation: 0, sample_ms: 12_000, consented_by: @member,
-      consented_at: Time.current, consent_text_version: FieldVoiceprints::CONSENT_TEXT_VERSION)
-    print.field_voice.update!(account: @account)
-    assert_refreshes(@account) { @member.profile.update!(last_name: "Moved label") }
-    assert_equal "Roster Moved label", FieldItems.voice_page_json(print.field_voice.reload, 0)[:remembered_by]
   end
 
   test "member presentation rollback at the outer and savepoint boundaries stays silent" do
@@ -371,9 +356,11 @@ class FieldVoiceActivityTest < ActiveSupport::TestCase
     end
   end
 
-  test "generation-only forget and invalid or unchanged writes stay silent in A" do
+  # Forget turns the voice's learning off, which the roster shows, so it is
+  # one roster hint even with no print; invalid or unchanged writes stay silent.
+  test "forget is one roster hint; invalid or unchanged writes stay silent in A" do
+    assert_refreshes(@account) { @voice.forget! }
     assert_silent do
-      @voice.forget!
       assert_not @voice.update(name: "")
       @voice.reload.update!(name: @voice.name)
       @voice.touch

@@ -51,24 +51,26 @@ class FieldRecording::LineSpeakerTest < ActiveSupport::TestCase
     assert_includes @recording.transcript_text, "Speaker 3: reply"
   end
 
-  test "a speaker left with no lines stays while a sent voice sample is out" do
+  # Voice samples no longer hold a speaker back: one left with no lines goes,
+  # and its samples with it.
+  test "a speaker left with no lines goes, even one a voice sample was learned from" do
     voice = @account.field_voices.create!(name: "Tomás")
-    FieldVoiceEnrolment.create!(account: @account, field_voice: voice, field_recording_speaker: speaker("speaker_1"),
-      start_generation: 0, sample_ms: 1000, consent_text_version: FieldVoiceprints::CONSENT_TEXT_VERSION,
-      consented_by: @user, expires_at: 10.minutes.from_now, status: "dispatched", vendor_job_id: "job_1")
+    FieldVoiceSample.create!(account: @account, field_voice: voice, field_recording_speaker: speaker("speaker_1"),
+      field_recording_id: @recording.id, speech_ms: 1000, profile: "ecapa-test", label_origin: "human", eligible: true,
+      embedding: JSON.generate(voice_vector(1)))
 
     @recording.reassign_line!({ first: 2, last: 2 }, to: speaker("speaker_0"), was: "reply",
       revision: @recording.transcript_revision)
 
-    kept = @recording.reload.speakers.find_by(label: "speaker_1")
-    assert kept
-    assert_equal 0, kept.talk_ms
-    assert_nil kept.clip_start_ms
+    assert_nil @recording.reload.speakers.find_by(label: "speaker_1")
+    assert_equal 0, FieldVoiceSample.where(field_voice: voice).count
   end
 
   def cut_stub(during = nil)
     ->(_recording, _segments, &block) { during&.call; Tempfile.create([ "s", ".wav" ]) { |f| block.call(f.path) } }
   end
+
+  def embeddings = FakeVoiceEmbeddings.new({ default: voice_vector(1) })
 
   test "moving a line while a voice sample is being cut refuses the sample" do
     anna = speaker("speaker_0")
@@ -77,30 +79,32 @@ class FieldRecording::LineSpeakerTest < ActiveSupport::TestCase
       revision: @recording.transcript_revision) }
 
     with_recognition(@account) do
+      snapshot = FieldVoiceprints::Learning.snapshot_for(anna.reload)
       FieldVoiceprints::Sample.stub(:cut, cut_stub(move)) do
-        assert_raises(FieldVoiceprints::Enrolments::Refused) { FieldVoiceprints::Enrolments.start!(anna.reload, by: @user) }
+        assert_equal :stale, FieldVoiceprints::Learning.learn!(snapshot, client: embeddings)
       end
     end
-    assert_equal 0, FieldVoiceEnrolment.where(field_recording_speaker: anna).count
+    assert_equal 0, FieldVoiceSample.where(field_recording_speaker: anna).count
   end
 
-  test "moving a line throws away a waiting preview, and a sent sample's print is refused" do
+  test "moving a line drops the samples learned from the old lines and learns again from the new ones" do
     anna = speaker("speaker_0")
     voice = @account.field_voices.create!(name: "Anna")
     anna.name_as!(voice, by: @user)
 
     with_recognition(@account) do
-      preview = FieldVoiceprints::Sample.stub(:cut, cut_stub) { FieldVoiceprints::Enrolments.start!(anna.reload, by: @user) }
-      @recording.reload.reassign_line!({ first: 3, last: 3 }, to: speaker("speaker_1"), was: "again",
-        revision: @recording.transcript_revision)
-      assert_not FieldVoiceEnrolment.exists?(preview.id)
+      snapshot = FieldVoiceprints::Learning.snapshot_for(anna.reload)
+      FieldVoiceprints::Sample.stub(:cut, cut_stub) do
+        assert_equal :learned, FieldVoiceprints::Learning.learn!(snapshot, client: embeddings)
+      end
+      assert voice.reload.remembered?
 
-      sent = FieldVoiceprints::Sample.stub(:cut, cut_stub) { FieldVoiceprints::Enrolments.start!(anna.reload, by: @user) }
-      FieldVoiceprints::Enrolments.dispatch!(sent, client: FakePyannote.new)
-      @recording.reload.reassign_line!({ first: 2, last: 2 }, to: anna.reload, was: "reply",
-        revision: @recording.transcript_revision)
-      assert_equal false, FieldVoiceprints::Enrolments.write_back!(sent.id, "PRINT")
-      assert_nil FieldVoiceprint.find_by(field_voice: voice)
+      assert_enqueued_with(job: FieldVoices::LearnSampleJob) do
+        @recording.reload.reassign_line!({ first: 2, last: 2 }, to: anna.reload, was: "reply",
+          revision: @recording.transcript_revision)
+      end
+      assert_equal 0, FieldVoiceSample.where(field_recording_speaker: anna).count
+      assert_nil FieldVoiceprint.find_by(field_voice: voice), "the print built only from that sample goes"
     end
   end
 

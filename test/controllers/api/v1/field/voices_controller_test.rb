@@ -7,7 +7,6 @@ class Api::V1::Field::VoicesControllerTest < ActionDispatch::IntegrationTest
   include FieldRecordingHelpers
   include ApiHumanKeyHelpers
 
-  SECRET_PRINT = "BIOMETRIC-#{SecureRandom.hex(8)}".freeze
 
   setup do
     Setting.instance.update!(allow_agents: true)
@@ -21,14 +20,22 @@ class Api::V1::Field::VoicesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "a person lists voices and what is remembered, never the print" do
-    store_print!(@voice, print: SECRET_PRINT)
+    secret = voice_vector(3, noise: 0.37, seed: 7)
+    store_print!(@voice, vector: secret)
     get api_v1_field_voices_path, headers: @headers
     assert_response :success
     tomas = response.parsed_body["voices"].find { |v| v["name"] == "Tomás" }
+    assert tomas["remember"]
     assert tomas["remembered"]
+    assert tomas["guessing"]
+    assert_equal 2, tomas["recordings"]
+    assert_equal 12, tomas["sample_seconds"]
     assert_equal 1, tomas["used_in"]
-    assert_not_includes response.body, SECRET_PRINT
-    assert_equal [], response.parsed_body["pending_enrolments"]
+    secret.first(5).each { |value| assert_not_includes response.body, value.to_s }
+    assert_no_match(/"print"\s*:/, response.body)
+    assert_not response.parsed_body.key?("pending_enrolments"), "there are no enrolments any more"
+    assert response.parsed_body["recognise_voices"], "on by default"
+    assert_not response.parsed_body["house_recognition"], "no voice service configured here"
     assert response.parsed_body["can_change_setting"]
   end
 
@@ -42,11 +49,17 @@ class Api::V1::Field::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Tomás G", @voice.reload.name
   end
 
-  test "forget one print, forget all, delete a voice" do
+  test "forget one voice, remember it again, forget all, delete a voice" do
     store_print!(@voice)
     delete forget_api_v1_field_voice_path(@voice), headers: @headers
     assert_response :no_content
     assert_nil FieldVoiceprint.find_by(field_voice: @voice)
+    assert_not @voice.reload.remember?
+
+    post remember_api_v1_field_voice_path(@voice), headers: @headers
+    assert_response :no_content
+    assert @voice.reload.remember?
+    assert_not @voice.remembered?, "nothing forgotten comes back"
 
     store_print!(@voice)
     store_print!(@account.field_voices.create!(name: "Priya"))
@@ -70,20 +83,6 @@ class Api::V1::Field::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
-  test "a pending enrolment can be removed" do
-    enrolment = FieldVoiceEnrolment.create!(account: @account, field_voice: @voice, field_recording_speaker: @speaker,
-      start_generation: 0, sample_ms: 12_000, consent_text_version: FieldVoiceprints::CONSENT_TEXT_VERSION,
-      consented_by: @user, expires_at: 10.minutes.from_now)
-    get api_v1_field_voices_path, headers: @headers
-    assert_equal [ enrolment.to_param ], response.parsed_body["pending_enrolments"].map { |e| e["id"] }
-
-    delete api_v1_field_enrolment_path(enrolment), headers: resident_headers(@user, agents(:research_assistant))
-    assert_response :forbidden
-    delete api_v1_field_enrolment_path(enrolment), headers: @headers
-    assert_response :no_content
-    assert_nil FieldVoiceEnrolment.find_by(id: enrolment.id)
-  end
-
   test "resident keys are refused, other accounts' voices are 404, and former members reach nothing" do
     resident = resident_headers(@user, agents(:research_assistant))
     get api_v1_field_voices_path, headers: resident
@@ -98,6 +97,10 @@ class Api::V1::Field::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     assert theirs.reload.kept?
 
+    post remember_api_v1_field_voice_path(@voice), headers: resident
+    assert_response :forbidden
+
+    @account.update!(recognise_voices: false)
     end_membership!(@user, @account)
     patch recognition_api_v1_field_voices_path, params: { recognise_voices: true }, headers: @headers, as: :json
     assert_response :not_found
