@@ -66,4 +66,48 @@ class FieldRecordingIdentifyAgainTest < ActiveSupport::TestCase
     end
   end
 
+
+  test "two presses before any worker runs make one paid identify call" do
+    voice = @account.field_voices.create!(name: "Tomás")
+    store_print!(voice)
+    client = FakePyannote.new
+    with_recognition(@account) do
+      2.times { assert_equal [ :voices ], FieldRecording::IdentifyAgain.queue!(@recording) }
+      jobs = enqueued_jobs.select { |job| job["job_class"] == "FieldRecordings::IdentifyJob" }
+      assert_equal 2, jobs.size, "both presses queue: the claim is at dispatch"
+      jobs.each { FieldRecordings::IdentifyJob.perform_now(@recording.id, client:) }
+    end
+    assert_equal 1, client.identify_calls.size
+    assert_equal 1, @recording.identifications.where(status: "dispatched").count
+  end
+
+  test "a worker that finds an identify already out sends nothing" do
+    voice = @account.field_voices.create!(name: "Tomás")
+    store_print!(voice)
+    FieldRecordingIdentification.create!(field_recording: @recording, vendor_job_id: "out", snapshot: {}, speaker_decisions: {})
+    client = FakePyannote.new
+    with_recognition(@account) { FieldRecordings::IdentifyJob.perform_now(@recording.id, client:) }
+    assert_empty client.identify_calls
+  end
+
+  test "once the earlier identify has finished, another can be sent" do
+    voice = @account.field_voices.create!(name: "Tomás")
+    store_print!(voice)
+    FieldRecordingIdentification.create!(field_recording: @recording, vendor_job_id: "old", snapshot: {}, speaker_decisions: {}, status: "done")
+    client = FakePyannote.new
+    with_recognition(@account) { FieldRecordings::IdentifyJob.perform_now(@recording.id, client:) }
+    assert_equal 1, client.identify_calls.size
+  end
+
+
+  test "a dispatch whose collector never ran stops holding up another pass after an hour" do
+    voice = @account.field_voices.create!(name: "Tomás")
+    store_print!(voice)
+    FieldRecordingIdentification.create!(field_recording: @recording, vendor_job_id: "orphan", snapshot: {},
+      speaker_decisions: {}, created_at: 2.hours.ago)
+    client = FakePyannote.new
+    with_recognition(@account) { FieldRecordings::IdentifyJob.perform_now(@recording.id, client:) }
+    assert_equal 1, client.identify_calls.size
+  end
+
 end

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-19
+  title: Look for known voices again
+  body: "A recording's transcript page has a Look for known voices again button. It checks the recording against voices this Field has remembered since it was transcribed, and suggests names it has learned if name suggestions are on. Only speakers nobody has named, set aside or dismissed a guess for are considered, and anything found is a guess for you to confirm. Naming someone isn't enough for their voice to be found: their voice has to be remembered on the Voices page. Recordings brought in with their own transcript don't have the button. Works once deployed."
+- date: 2026-10-19
   title: Xero
   body: "Connect Xero under Settings → Integrations and choose which organisations to share on Xero's own consent screen. Read only (contacts, invoices, bank transactions, reports) is the default; read and write also lets residents create contacts and draft invoices. The house holds the connection and refreshes it; residents you grant it get short-lived access tokens only, because Xero refresh tokens work once and a second holder would log the connection out. Works once deployed and the house's Xero app is configured."
 - date: 2026-10-18
