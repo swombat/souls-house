@@ -113,10 +113,13 @@ confirmed. A machine's guess never trains itself.**
   guess is `confirmed_recognition`. Both are eligible.
 - **Existing 926 rows start as `unknown`, not eligible.** Absence from a log
   isn't proof of a human (Mira). Two ways out:
-  1. *Evidence*: if the host's request logs still show the PATCH that made a
-     naming, a web-controller request makes it `human`, an `/api/v1/` one makes
-     it `machine`. Anything unproven stays `unknown`. (To check: how far back
-     Kamal/docker logs go on the host.)
+  1. *Evidence* (checked 2026-10-19, and it's thin): request logs live only
+     in each web container's json-file log (10 MB cap, no volume), and every
+     deploy starts a new container; only the previous one is kept, exited. So
+     logs reach back to the deploy before last, usually hours. They can't
+     vouch for history. Only a naming with a surviving log line becomes
+     `human` (web controller) or `machine` (`/api/v1/`); everything else
+     stays `unknown`.
   2. *Confirmation*: a review list on the Voices page, per voice, "Confirm
      these N names", playing a few seconds of each; one tap confirms a speaker
      (→ `human`), one marks it wrong (un-names it). Daniel's namings from this
@@ -209,7 +212,8 @@ Each slice is its own PR, reviewed by Mira.
 ## 11. Open questions
 
 1. Auto-apply above a high threshold (§8)? Daniel.
-2. How far back do the host's request logs go (§5.1)? Lume, before slice A.
+2. ~~How far back do the host's request logs go?~~ Hours, not days (§5.1), so
+   the confirm list (§5.2) carries the backfill.
 3. Thresholds: start from the Mac's, then set from slice C's table. Re-check
    after the first month.
 4. CPU on the house host during backfill: measure with slice B (ECAPA on 60 s
