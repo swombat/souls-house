@@ -84,8 +84,8 @@ Audio never leaves the house. The service is an implementation detail behind
 | `embedding` | encrypted (non-deterministic), never serialised, like `FieldVoiceprint#print` |
 | `speech_ms` | clean speech used |
 | `profile` | the service profile that made it |
-| `label_origin` | `human` · `confirmed_recognition` · `machine` · `unknown` (§5) |
-| `eligible` | true only for `human` and `confirmed_recognition` |
+| `label_origin` | the speaker's `naming_source` when sampled: `human` · `confirmed_suggestion` · `confirmed_recognition` · `machine` · `unknown` (§5) |
+| `eligible` | true only for `human`, `confirmed_suggestion` and `confirmed_recognition` (`FieldRecordingSpeaker#training_label?`) |
 | `created_at` | |
 
 **`field_voiceprints`** keeps its role and its generation protocol (spec §9 C5,
@@ -325,9 +325,24 @@ confirm (existing stale-chip rules still refuse it).
 
 ## 11. Slices
 
-- **A. Provenance first.** `machine` and `unknown` naming sources, every API
-  write recorded as `machine`, existing rows marked `unknown`, the narrow log
-  reconstruction (§5.1). Small, and it has to land before any sample exists.
+- **A. Provenance first.** `machine` and `unknown` naming sources; API
+  namings take their source from authentication (API key → `machine`,
+  native-app session → `human`, §5); existing `human` rows marked `unknown` by
+  an irreversible migration; `training_label?`. No log reconstruction ships:
+  the logs reach back hours and can't establish both the authentication path
+  and the final naming, so those rows stay `unknown`. Internal only, no
+  changelog entry: nothing a person sees changes yet. Small, and it has to
+  land before any sample exists.
+
+  **Writer cutover checkpoint (before slice C's backfill or any learning).**
+  The migration's sweep can run while old web or jobs processes still record
+  API namings as `human`. Once every process runs slice A's code and the old
+  ones are gone, note when the last old process stopped and run
+  `bin/rails field:mark_unproven_namings_unknown BEFORE=<that time>`. It marks
+  `human` namings from before then `unknown`, and never promotes anything.
+  Rolling back to pre-slice-A writers invalidates the checkpoint: run it
+  again after rolling forward. Slice C adds the guard: its backfill and
+  learning refuse to start until the checkpoint is recorded.
 - **B. The service.** `services/voice-embeddings`, accessory, client, health
   check, release command. Deployed and idle.
 - **C. Samples and prints.** Table, sample job, mean print, forget/un-name
