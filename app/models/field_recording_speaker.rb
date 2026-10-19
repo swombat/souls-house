@@ -30,6 +30,12 @@ class FieldRecordingSpeaker < ApplicationRecord
   encrypts :probe_embedding
   NO_PROBE = { probe_embedding: nil, probe_profile: nil }.freeze
 
+  def serializable_hash(options = nil)
+    options = (options || {}).dup
+    options[:except] = Array(options[:except]) + %w[probe_embedding probe_profile]
+    super(options)
+  end
+
   SUGGESTION_FIELDS = { suggested_voice: nil, suggested_name: nil, suggestion_quote: nil,
                         suggestion_quote_ms: nil, suggestion_source: nil, suggested_at: nil,
                         suggestion_generation: nil }.freeze

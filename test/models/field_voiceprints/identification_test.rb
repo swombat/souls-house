@@ -39,6 +39,8 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
       assert_operator @speaker.recognition_confidence, :>=, 55
       assert @speaker.recognition?
       assert_equal "ecapa-test", @speaker.probe_profile
+      assert_not_includes @speaker.as_json.keys, "probe_embedding", "a kept embedding is never serialised"
+      assert_not_includes @speaker.to_json, "probe"
 
       assert_equal 1, run_identify(client)
       assert_equal 1, client.calls.size, "matching again uses the kept embedding"
