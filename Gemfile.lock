@@ -161,7 +161,7 @@ GEM
       ostruct
     i18n (1.15.2)
       concurrent-ruby (~> 1.0)
-    image_processing (2.1.0)
+    image_processing (2.2.0)
     inertia_rails (3.22.0)
       railties (>= 6)
     io-console (0.9.4)
@@ -492,7 +492,7 @@ DEPENDENCIES
   fiddle (~> 1.1)
   hashids
   honeybadger (~> 6.9)
-  image_processing (~> 2.1.0)
+  image_processing (~> 2.2.0)
   inertia_rails (~> 3.22)
   jbuilder
   js-routes (~> 2.4)
