@@ -8,12 +8,10 @@ import argparse
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hmac
-import io
 import json
 import os
 from pathlib import Path
 import threading
-import wave
 
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
@@ -22,12 +20,11 @@ import numpy as np
 import torch
 from speechbrain.inference.speaker import EncoderClassifier
 
+from wav import SAMPLE_RATE, pcm16_mono
+
 MODEL_REVISION = "0f99f2d0ebe89ac095bcc5903c4dd8f72b367286"
 DIMENSIONS = 192
-SAMPLE_RATE = 16000
 MAX_BYTES = 8 * 1024 * 1024
-MAX_SECONDS = 120
-MIN_SECONDS = 0.5
 CHUNK_SECONDS = 10
 MIN_TAIL_SECONDS = 2
 
@@ -39,18 +36,8 @@ def profile():
 
 
 def read_wav(data):
-    """Returns float32 samples in [-1, 1], or raises ValueError."""
-    with wave.open(io.BytesIO(data), "rb") as wav:
-        if wav.getnchannels() != 1 or wav.getframerate() != SAMPLE_RATE or wav.getsampwidth() != 2:
-            raise ValueError("format")
-        frames = wav.getnframes()
-        if not MIN_SECONDS * SAMPLE_RATE <= frames <= MAX_SECONDS * SAMPLE_RATE:
-            raise ValueError("length")
-        raw = wav.readframes(frames)
-    samples = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
-    if samples.size == 0 or not np.any(samples):
-        raise ValueError("silent")
-    return samples
+    """Returns float32 samples in [-1, 1], or raises ValueError (see wav.pcm16_mono)."""
+    return np.frombuffer(pcm16_mono(data), dtype="<i2").astype(np.float32) / 32768.0
 
 
 def chunks(samples):

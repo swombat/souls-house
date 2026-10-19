@@ -4,7 +4,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 COPY download.py .
 RUN HF_HUB_DISABLE_TELEMETRY=1 python download.py /model && rm -rf /model/.cache
-COPY server.py model-sha256.json ./
+COPY server.py wav.py model-sha256.json ./
 RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin embeddings
 USER embeddings
 ENV HF_HUB_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 VOICE_MODEL_SAVEDIR=/tmp/ecapa

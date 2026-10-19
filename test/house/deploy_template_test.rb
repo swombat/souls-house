@@ -209,6 +209,34 @@ class DeployTemplateTest < ActiveSupport::TestCase
     end
   end
 
+  test "the voice embeddings service is absent unless HOUSE_VOICE_EMBEDDINGS_IMAGE is set" do
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST)) do
+      config = YAML.safe_load(render_deploy_yml)
+      assert_not config.fetch("accessories").key?("voice-embeddings")
+      assert_not config.fetch("env").fetch("clear").key?("VOICE_EMBEDDING_URL")
+      assert_not_includes config.fetch("env").fetch("secret"), "VOICE_EMBEDDING_TOKEN"
+    end
+  end
+
+  test "turning voice embeddings on wires Rails and a private, read-only accessory together" do
+    voice = { "HOUSE_VOICE_EMBEDDINGS_IMAGE" => "registry.example/voice", "HOUSE_VOICE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST }
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(voice)) do
+      config = YAML.safe_load(render_deploy_yml)
+      accessory = config.fetch("accessories").fetch("voice-embeddings")
+      assert_equal "registry.example/voice@#{DUMMY_DIGEST}", accessory.fetch("image")
+      assert_equal [ "VOICE_EMBEDDING_TOKEN" ], accessory.fetch("env").fetch("secret")
+      assert_equal true, accessory.fetch("options").fetch("read-only")
+      assert_equal "core=0", accessory.fetch("options").fetch("ulimit")
+      assert_not accessory.key?("port"), "no public port"
+      runtime = config.fetch("env")
+      assert_equal "http://souls-house-voice-embeddings:8080", runtime.dig("clear", "VOICE_EMBEDDING_URL")
+      assert_equal 1, runtime.fetch("secret").count("VOICE_EMBEDDING_TOKEN")
+    end
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(voice).merge("HOUSE_VOICE_EMBEDDINGS_DIGEST" => "latest")) do
+      assert_raises(RuntimeError) { render_deploy_yml }
+    end
+  end
+
   private
 
   def render_deploy_yml

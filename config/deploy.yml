@@ -95,6 +95,19 @@
     end
   end
 
+  # Voice embeddings (services/voice-embeddings, docs/2026-10-19-field-
+  # voiceprints-in-house.md §3, slice B). Off until HOUSE_VOICE_EMBEDDINGS_IMAGE
+  # is set, like the connectors: with it unset nothing here changes. Turning it
+  # on needs HOUSE_VOICE_EMBEDDINGS_DIGEST (bin/house release-voice-embeddings
+  # writes it) and VOICE_EMBEDDING_TOKEN in .kamal/secrets.
+  voice_embeddings_image = house_optional.call("HOUSE_VOICE_EMBEDDINGS_IMAGE")
+  if voice_embeddings_image
+    voice_embeddings_digest = ENV["HOUSE_VOICE_EMBEDDINGS_DIGEST"].to_s.strip
+    unless voice_embeddings_digest.match?(/\Asha256:[0-9a-f]{64}\z/)
+      raise "Set HOUSE_VOICE_EMBEDDINGS_DIGEST to the reviewed voice embeddings image digest (sha256:...)."
+    end
+  end
+
   comms_any = comms_whatsapp_image || comms_telegram_image
   if comms_any
     comms_tls_dir = house.call("HOUSE_COMMS_TLS_DIR")
@@ -137,6 +150,9 @@ env:
 <% end %>
     MNEMODYNE_EMBEDDING_URL: http://souls-house-embeddings:8080/v1/embeddings
     MNEMODYNE_EMBEDDING_PROFILE: bge-small-en-v1.5-q-52398278842e-fastembed-0.7.4-v1
+<% if voice_embeddings_image %>
+    VOICE_EMBEDDING_URL: http://souls-house-voice-embeddings:8080 # FieldVoiceprints::VoiceEmbeddings; audio stays on the private network.
+<% end %>
 <% if comms_whatsapp_image %>
     # Rails → WhatsApp connector commands: mutual TLS over the private network
     # (CommsConnector). Setting these is what makes WhatsApp appear on the
@@ -156,6 +172,9 @@ env:
     - RAILS_MASTER_KEY # Rails master key (provide in .kamal/secrets)
     - DATABASE_URL # Database connection string (provided per env in secrets)
     - MNEMODYNE_EMBEDDING_TOKEN # Same private token on web/jobs and embedding accessory.
+<% if voice_embeddings_image %>
+    - VOICE_EMBEDDING_TOKEN # Same private token on web/jobs and the voice-embeddings accessory.
+<% end %>
 <% if comms_any %>
     - COMMS_COMMAND_KEY # Signs Rails → connector commands; same value on the connectors.
 <% end %>
@@ -224,6 +243,25 @@ accessories:
       read-only: true
       tmpfs: /tmp
     # No public port. Kamal's private network supplies souls-house-embeddings.
+<% if voice_embeddings_image %>
+  voice-embeddings:
+    # Built from services/voice-embeddings by bin/house release-voice-embeddings,
+    # reviewed, pinned by digest. Boot it with `bin/kamal accessory boot
+    # voice-embeddings`; it survives web deploys. Speaker embeddings (ECAPA)
+    # for Field voiceprints, computed in the house: audio never leaves it.
+    image: <%= voice_embeddings_image %>@<%= voice_embeddings_digest %>
+    host: <%= house_host %>
+    env:
+      secret:
+        - VOICE_EMBEDDING_TOKEN
+    options:
+      ulimit: core=0 # No core may hold resident audio.
+      memory: 1g
+      cpus: 2
+      read-only: true
+      tmpfs: /tmp
+    # No public port. Kamal's private network supplies souls-house-voice-embeddings.
+<% end %>
 <% if comms_whatsapp_image %>
   comms-whatsapp:
     # Built from services/comms-connector (Dockerfile there), reviewed, pushed,
