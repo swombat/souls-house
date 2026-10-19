@@ -103,28 +103,35 @@ destroys its samples.
 ## 5. Provenance: what may train
 
 Mira's rule, adopted: **a print learns only from labels a person made or
-confirmed. A machine's guess never trains itself.**
+confirmed. A machine's guess never trains itself.** Provenance fails closed:
+anything not positively known to be a person's decision is not eligible.
 
-- `naming_source` gains `machine` (written by a script through the API). The
-  speakers API accepts `applied_by: "machine"` and records it; the Mac
-  `grove_sync.py` and `identify.py` send it from the day this ships, before
-  anything else here goes live.
-- Web clicks (`FieldRecordingSpeakersController`) are `human`; a confirmed
-  guess is `confirmed_recognition`. Both are eligible.
-- **Existing 926 rows start as `unknown`, not eligible.** Absence from a log
-  isn't proof of a human (Mira). Two ways out:
-  1. *Evidence* (checked 2026-10-19, and it's thin): request logs live only
-     in each web container's json-file log (10 MB cap, no volume), and every
-     deploy starts a new container; only the previous one is kept, exited. So
-     logs reach back to the deploy before last, usually hours. They can't
-     vouch for history. Only a naming with a surviving log line becomes
-     `human` (web controller) or `machine` (`/api/v1/`); everything else
-     stays `unknown`.
-  2. *Confirmation*: a review list on the Voices page, per voice, "Confirm
-     these N names", playing a few seconds of each; one tap confirms a speaker
-     (→ `human`), one marks it wrong (un-names it). Daniel's namings from this
-     morning would be confirmed in minutes this way if the logs can't vouch
-     for them.
+- `naming_source` gains `machine` and `unknown`.
+- **Web clicks** (`FieldRecordingSpeakersController`, a signed-in person in
+  the browser) are `human`. **A confirmed guess** is `confirmed_recognition`.
+  Only these two are eligible.
+- **Every API naming is `machine` by default.** The speakers API
+  (`/api/v1/field/...`) records `machine` whether or not the client says
+  anything, so an old Mac script that sends no provenance can never produce a
+  training label. There is no API flag that makes a write `human`. A person's
+  decision only enters through the page, or through the confirm list below.
+- **Existing 926 rows start as `unknown`.** Absence from a log isn't proof of
+  a human (Mira). Ways out:
+  1. *Evidence*, which is thin (checked 2026-10-19). Request logs live only in
+     each web container's json-file log (10 MB cap, no volume). Every deploy
+     starts a new container and keeps only the previous one, so logs reach
+     back hours. A row becomes `human` only if a surviving web-controller
+     request named **that speaker to its current voice**, and no later naming
+     of that speaker (from any route) superseded it. A route alone is not
+     enough. Anything unresolved stays `unknown`.
+  2. *Confirmation*, which is the real route. A review list on the Voices
+     page, per voice: "Confirm these N names", playing a few seconds of each.
+     One tap confirms a speaker (→ `human`, `named_by` the person who tapped),
+     and one marks it wrong (un-names it).
+- Tests: an old-client API write with no provenance field stays `machine`;
+  a historical speaker named by the web and then re-named by the API is not
+  `human`; a speaker named by the API and then confirmed on the page is
+  `human`.
 
 ## 6. Samples
 
@@ -135,28 +142,76 @@ Reuse `FieldVoiceprints::Sample.segments_for`, with two changes for learning:
 - per-sample minimum 4 s of clean speech (was 8 s for a single enrolment),
   maximum 60 s, longest turns first. A speaker under 4 s contributes nothing.
 
-A sample is made by a job after an eligible naming commits (`after_commit`,
-deduplicated per speaker), under the same lock order as everything else. No
-human listens first, because the print is no longer one sample: one bad
-sample is diluted and caught by §7.
+A sample is made by a job after an eligible naming commits (`after_commit`),
+under the freshness contract in §9. No human listens before a sample is used.
+That is a risk, not something averaging removes. A mixed or mislabelled sample
+still pulls its print. Averaging only reduces its weight once a voice has
+several recordings, and does nothing for a single-recording voice. §7's
+checks are what catch it, and the review list's "maybe not this person" flag
+is how a person sees it.
 
-## 7. The held-out check
+## 7. Measuring accuracy
 
-For a voice with samples from ≥ 2 recordings, leave-one-recording-out:
-build the print without that recording's sample, then score the held-out
-sample against every voice's print the same way. Record hit / wrong / miss.
+### 7.1 What is measured
 
-- A voice's print is **active** (may produce guesses) when its held-out hits
-  are ≥ 80% and wrong is 0, over ≥ 2 recordings.
-- A single-recording voice is **active only if** its sample doesn't clear the
-  matching threshold against any other voice's eligible samples (the Ellen
-  case). Otherwise it waits for a second confirmed recording.
-- Results are shown per voice on the Voices page ("recognised 5 of 6 held-out
-  recordings") and in a `field:voiceprint_report` task that prints the whole
-  table, so Daniel can see accuracy, not take it on trust.
-- A sample whose own held-out score is far below its voice's others is
-  flagged on the review list as "maybe not this person"; it isn't removed
-  automatically.
+Queries are **(recording, speaker)** pairs whose label is eligible (§5). The
+labels come from people, and the scores come from the production matcher (§8)
+with its real threshold, margin and duplicate-speaker rule, never a simplified
+"nearest print" score.
+
+For each query recording R, every print used to score it is rebuilt **without
+any sample from R**, for every voice and every diarized fragment of R. That
+covers the target voice and every other voice. No audio from R is in any
+reference.
+
+Each query has one of four outcomes:
+- **correct**: the matcher guesses the labelled voice;
+- **wrong**: it guesses another voice. This is a false accept, **charged to the
+  print that won**;
+- **rejected**: no guess (below threshold, margin or duplicate rule);
+- for **other-person** queries (speakers labelled as someone with no print, or
+  as anonymous), any guess is a false accept charged to the winning print.
+
+### 7.2 Per-print activation
+
+A print may produce guesses ("active") only when, over its held-out data:
+- it has samples from ≥ 2 recordings, with ≥ 2 correct and ≥ 80% of its own
+  queries correct; and
+- it has **zero false accepts into it** from other people's queries, with at
+  least 10 negative queries scored against it (other voices' and other-person
+  queries).
+
+A print that can't be measured this way (one recording, or too few
+negatives) is **not validated**. It stays inactive by default. The Voices page
+can turn a voice's unvalidated print on, and its chips then read "maybe
+Tomás? (not yet checked)". Unvalidated prints are excluded from every accuracy
+figure and are never auto-applied.
+
+Validation results are tied to the sample set they were computed on, and are
+recomputed whenever that set changes (§9). Stale validation means inactive
+until recomputed.
+
+### 7.3 Tuning and comparison use different data
+
+Recordings are split once, by recording and stably (hash of recording id):
+- a **tuning set**, used to choose the threshold and margin;
+- a **comparison set**, used only for the house-vs-Mac comparison in §8 and
+  the figures shown to Daniel.
+
+Comparison-set audio is absent from the house's reference prints and from the
+Mac cache's samples for that run. The Mac side is rebuilt from
+`embeddings.json` minus comparison recordings, or that recording is dropped
+from the comparison if it can't be. Both systems answer the identical query
+list.
+
+### 7.4 Reporting
+
+`field:voiceprint_report` prints, per voice and in total: correct, wrong
+(false accepts into it, and by it), rejected, the number of queries, and
+whether the print is validated. If there are too few comparison queries to
+say anything (fewer than 30 eligible queries across at least 5 voices), the
+report says **"insufficient evidence"** and no comparison counts as passed.
+The Voices page shows the same per-voice line.
 
 ## 8. Applying prints
 
@@ -164,25 +219,72 @@ sample against every voice's print the same way. Record hit / wrong / miss.
 is transcribed (and on "Look for known voices again", #459):
 
 - each unnamed, un-ignored speaker with ≥ 4 s of clean speech is embedded;
-- cosine against every active print; a guess when the best is ≥ 0.55 and
-  ≥ 0.15 ahead of the second (the Mac's thresholds, re-tuned from §7's data
-  before launch);
+- cosine against every **active** print; a guess when the best is ≥ the tuned
+  threshold and ahead of the second by the tuned margin (starting points: the
+  Mac's 0.55 and 0.15, set from the tuning set, §7.3);
 - two speakers in one recording matching the same voice: both stay unguessed
-  unless both are ≥ 0.75 (a diarizer split), as `identify.py` does today;
+  unless both clear the split threshold (Mac: 0.75), as `identify.py` does;
 - the guess is the existing recognition chip. Confirm → `confirmed_recognition`
   (trains), dismiss → nothing learned.
 
-**Question for Daniel:** should a very confident match (say ≥ 0.80 with a wide
-margin, from a voice with a passing held-out check) be applied as a name
-without a tap, as the Mac does today? If yes it's recorded as `machine` and
-never trains; the chip is the default either way.
+**Question for Daniel:** should a very confident match from a **validated**
+print be applied as a name without a tap, as the Mac does today? If yes, it's
+recorded as `machine` and never trains. Unvalidated prints never auto-apply.
+Chips are the default either way.
 
-Retiring the Mac: when the house's held-out table is at least as good as the
-Mac cache's on the same recordings, `identify.py` stops running (its
-`--identify` waiter in `tilerec_intake.py` is removed) and `cache.json`
-becomes history.
+Retiring the Mac script: on the comparison set, the house must have
+**correct ≥ the Mac's and wrong ≤ the Mac's** on the identical queries, and
+the report must not say "insufficient evidence". Then `identify.py` stops
+running (its `--identify` waiter in `tilerec_intake.py` is removed) and
+`cache.json` becomes history. Until then both run, and the Mac script's writes
+are `machine` (§5).
 
-## 9. Gates and the pyannote path
+## 9. Learning freshness: queued work can't undo a decision
+
+The sample job runs after embedding, which can take seconds and can be
+delivered twice. Anything a person does meanwhile wins.
+
+**Snapshot when the job is queued:** speaker id, the speaker's
+`decision_generation`, its `field_voice_id`, its `naming_source`, the voice's
+`print_generation` and `remember` flag, the recording's id, and the service
+profile.
+
+**Recheck under the lock order (account → recording → voice) before
+writing anything,** with fresh rows. Write nothing (and drop the embedding) if
+any of these has changed or no longer holds:
+- the recording is kept and ready;
+- the speaker's `decision_generation` and `field_voice_id` are as snapshotted,
+  and its `naming_source` is still eligible;
+- the voice is kept, `remember: true`, and its `print_generation` is as
+  snapshotted. A Forget bumps it, so work queued before a Forget can't write
+  after a "Remember again";
+- the service profile still matches the current profile.
+
+The sample is upserted by (voice, speaker) under that lock, so duplicate
+delivery writes one row. Each write bumps `print_generation`, rebuilds the
+print and marks validation stale.
+
+**What each decision does, all under the same locks:**
+- *Forget*: destroys the voice's samples and print, bumps `print_generation`,
+  clears guesses that came from that print, sets `remember: false`.
+- *Remember again*: sets `remember: true`. It does not revive old samples;
+  learning restarts from eligible namings, re-queued fresh.
+- *Un-name / rename a speaker*: destroys that speaker's sample from the old
+  voice, rebuilds and invalidates the old voice's print, and clears guesses
+  made from it. A rename then queues a sample for the new voice.
+- *Discard a recording*: destroys every sample from it and rebuilds the
+  affected prints.
+- *Profile change* (a new model build): samples on the old profile are
+  re-embedded by a backfill job. Prints use only one profile at a time and
+  are inactive until rebuilt and re-validated.
+
+**Acceptance tests:** duplicate job delivery; Forget while an embedding is in
+flight; Forget → Remember again while an old job is queued (the old job
+writes nothing); un-name and rename in flight; discard in flight; profile
+change in flight; a confirmed guess whose print was rebuilt before the
+confirm (existing stale-chip rules still refuse it).
+
+## 10. Gates and the pyannote path
 
 - House gate: `SOULSHOUSE_FIELD_VOICEPRINTS=on` and the voice-embeddings
   accessory healthy (replaces "pyannote configured"). Account gate unchanged.
@@ -193,28 +295,30 @@ becomes history.
   in the slice that switches matching over; nothing has ever been sent to
   pyannote, so there is nothing there to forget.
 
-## 10. Slices
+## 11. Slices
 
-- **A. Provenance first.** `machine` naming source, `applied_by` on the API,
-  the Mac scripts sending it, existing rows marked `unknown`, the log
-  reconstruction attempt. Small, and it has to land before any sample exists.
+- **A. Provenance first.** `machine` and `unknown` naming sources, every API
+  write recorded as `machine`, existing rows marked `unknown`, the narrow log
+  reconstruction (§5.1). Small, and it has to land before any sample exists.
 - **B. The service.** `services/voice-embeddings`, accessory, client, health
   check, release command. Deployed and idle.
 - **C. Samples and prints.** Table, sample job, mean print, forget/un-name
-  cleanup, held-out check and report task. Backfill of eligible names.
+  cleanup, the freshness contract and its tests (§9), the measurement and
+  report task (§7). Backfill of eligible names.
 - **D. Matching.** House identify replaces pyannote; chips; #459's button
-  uses it; thresholds tuned from C's report.
+  uses it; thresholds tuned on the tuning set only (§7.3).
 - **E. Review list and Voices page.** Confirm-these-names, per-voice accuracy.
-- **F. Retire the Mac script**, after the comparison in §8.
+- **F. Retire the Mac script**, after the comparison in §8 passes on the
+  comparison set.
 
 Each slice is its own PR, reviewed by Mira.
 
-## 11. Open questions
+## 12. Open questions
 
 1. Auto-apply above a high threshold (§8)? Daniel.
 2. ~~How far back do the host's request logs go?~~ Hours, not days (§5.1), so
    the confirm list (§5.2) carries the backfill.
-3. Thresholds: start from the Mac's, then set from slice C's table. Re-check
-   after the first month.
+3. Thresholds: start from the Mac's, then set on the tuning set (§7.3).
+   Re-check after the first month.
 4. CPU on the house host during backfill: measure with slice B (ECAPA on 60 s
    is expected to be around a second or two of CPU; unmeasured here).
