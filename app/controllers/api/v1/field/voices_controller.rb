@@ -3,13 +3,11 @@ module Api
     module Field
       # The voices this Field knows, as on the Voices page (FieldVoicesController,
       # spec §7, §9): list, rename (the name changes everywhere), delete the
-      # identity, forget a print, forget every print, and the account's
-      # recognition setting. Forgetting is never gated.
+      # identity, forget a voice, remember it again, forget every voice, and the
+      # account's recognition setting. Forgetting is never gated.
       #
       # This is the one place the API says whether a voice is remembered (has a
-      # print). It never returns a print. Remembering a voice (enrolment) needs
-      # the person's own consent and stays on the page; a pending enrolment can
-      # be removed with DELETE /api/v1/field/enrolments/:id.
+      # print). It never returns a print or a sample.
       class VoicesController < BaseController
 
         include ApiHumanReach
@@ -25,7 +23,6 @@ module Api
             voices: voices.map { |voice| FieldItems.voice_page_json(voice, used.fetch(voice.id, 0)) },
             members_without_voice: FieldItems.members_without_voice_json(account, except: current_api_user),
             my_voice_id: account.field_voices.kept.find_by(user: current_api_user)&.to_param,
-            pending_enrolments: pending_enrolments_json(account),
             recognise_voices: account.recognise_voices,
             house_recognition: FieldVoiceprints.house_enabled?,
             can_change_setting: account.manageable_by?(current_api_user)
@@ -51,13 +48,18 @@ module Api
           head :no_content
         end
 
+        def remember
+          find_voice.remember_again!
+          head :no_content
+        end
+
         def forget_all
           FieldVoiceprints.forget_all!(human_request_account!)
           head :no_content
         end
 
-        # Same lock as the page: the account row, which identify and print
-        # write-back also take. Off keeps stored prints, unused.
+        # Same lock as the page: the account row, which learning and matching
+        # also take. Off keeps what was learned, unused.
         def recognition
           account = human_request_account!
           unless account.manageable_by?(current_api_user)
@@ -76,20 +78,6 @@ module Api
 
         def find_voice
           find_human_record!(FieldVoice.kept, params[:id])
-        end
-
-        def pending_enrolments_json(account)
-          account.field_voice_enrolments.includes(:field_voice, field_recording_speaker: :field_recording)
-            .order(:id).map do |enrolment|
-              {
-                id: enrolment.to_param,
-                status: enrolment.status,
-                voice_id: enrolment.field_voice.to_param,
-                recording_id: enrolment.field_recording_speaker.field_recording.to_param,
-                speaker_id: enrolment.field_recording_speaker.to_param,
-                expires_at: enrolment.expires_at&.iso8601
-              }
-            end
         end
 
       end

@@ -256,15 +256,11 @@ Rails.application.routes.draw do
       patch :line, on: :member, action: :correct_line
       patch :line_speaker, on: :member, action: :reassign_line
       post :dismiss_you_hint, on: :collection
-      resources :speakers, only: [ :update ], controller: "field_recording_speakers" do
-        resources :enrolments, only: [ :create ], controller: "field_voice_enrolments"
-      end
-    end
-    resources :field_voice_enrolments, path: "field/enrolments", only: [ :destroy ] do
-      post :confirm, on: :member
+      resources :speakers, only: [ :update ], controller: "field_recording_speakers"
     end
     resources :field_voices, path: "field/voices", only: [ :index, :update, :destroy ] do
       delete :forget, on: :member, path: "print"
+      post :remember, on: :member
       delete :forget_all, on: :collection, path: "prints"
       patch :recognition, on: :collection
     end
@@ -544,9 +540,9 @@ Rails.application.routes.draw do
           resources :speakers, only: :update
           resource :tags, only: :update, controller: "item_tags"
         end
-        resources :enrolments, only: :destroy
         resources :voices, only: [ :index, :update, :destroy ] do
           delete :forget, on: :member, path: "print"
+          post :remember, on: :member
           delete :forget_all, on: :collection, path: "prints"
           patch :recognition, on: :collection
         end

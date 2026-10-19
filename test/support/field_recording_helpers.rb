@@ -38,15 +38,18 @@ module FieldRecordingHelpers
     recording.reload
   end
 
-  # Both recognition gates open for the block: the house flag in ENV,
-  # pyannote "configured", and the account setting on.
+  # Both recognition gates open for the block: the voice service
+  # "configured", the account setting on, and the writer cutover recorded so
+  # learning may start.
   def with_recognition(account)
-    previous = ENV.to_h.slice("SOULSHOUSE_FIELD_VOICEPRINTS")
-    ENV["SOULSHOUSE_FIELD_VOICEPRINTS"] = "on"
+    previous = ENV.to_h.slice("VOICE_EMBEDDING_URL", "VOICE_EMBEDDING_TOKEN")
+    ENV["VOICE_EMBEDDING_URL"] = "http://souls-house-voice-embeddings:8000"
+    ENV["VOICE_EMBEDDING_TOKEN"] = "t" * 32
     account.update!(recognise_voices: true)
-    PyannoteClient.stub(:api_key, "pk_test") { yield }
+    Setting.instance.update!(field_naming_cutover_at: 1.day.ago)
+    yield
   ensure
-    ENV["SOULSHOUSE_FIELD_VOICEPRINTS"] = previous["SOULSHOUSE_FIELD_VOICEPRINTS"]
+    %w[VOICE_EMBEDDING_URL VOICE_EMBEDDING_TOKEN].each { |key| ENV[key] = previous[key] }
   end
 
   # A recording where speaker_0 talks alone for long enough to remember.
@@ -61,29 +64,47 @@ module FieldRecordingHelpers
     recording.reload
   end
 
-  def store_print!(voice, print: "PRINT-#{SecureRandom.hex(4)}")
+  # A unit vector pointing mostly along `axis`, for synthetic voices.
+  def voice_vector(axis, noise: 0.0, seed: 0)
+    random = Random.new(seed)
+    vector = Array.new(FieldVoiceprints::VoiceEmbeddings::DIMENSIONS) { noise * (random.rand - 0.5) }
+    vector[axis] += 1.0
+    norm = Math.sqrt(vector.sum { |value| value * value })
+    vector.map { |value| value / norm }
+  end
+
+  # A stored print, active (validated on its own digest) unless active: false.
+  def store_print!(voice, vector: voice_vector(voice.id % 100), active: true, profile: "ecapa-test")
     voice.with_lock do
       generation = voice.print_generation + 1
       voice.update_columns(print_generation: generation)
-      FieldVoiceprint.create!(field_voice: voice, account: voice.account, print:, generation:, sample_ms: 12_000,
-        consented_at: Time.current, consent_text_version: FieldVoiceprints::CONSENT_TEXT_VERSION)
+      FieldVoiceprint.create!(field_voice: voice, account: voice.account, print: JSON.generate(vector), generation:,
+        profile:, sample_count: 2, recording_count: 2, speech_ms: 12_000, sample_digest: "digest-#{generation}",
+        validated: active, validated_digest: (active ? "digest-#{generation}" : nil))
     end
   end
 
-  # Stands in for PyannoteClient.
-  class FakePyannote
+  # Stands in for FieldVoiceprints::VoiceEmbeddings. `vectors` maps a call
+  # index (or :default) to the embedding returned; records each call.
+  class FakeVoiceEmbeddings
 
-    attr_reader :voiceprint_calls, :identify_calls
+    attr_reader :calls
 
-    def initialize(jobs: {})
-      @jobs = jobs
-      @voiceprint_calls = []
-      @identify_calls = []
+    def initialize(vectors = {}, profile: "ecapa-test", fail_with: nil)
+      @vectors = vectors
+      @profile = profile
+      @fail_with = fail_with
+      @calls = []
     end
 
-    def voiceprint(url:) = (@voiceprint_calls << url) && "vp_job"
-    def identify(**kwargs) = (@identify_calls << kwargs) && "id_job"
-    def job(id) = @jobs.fetch(id)
+    def embed(wav)
+      raise @fail_with if @fail_with
+
+      index = @calls.size
+      @calls << wav.bytesize
+      vector = @vectors.fetch(index) { @vectors.fetch(:default) }
+      FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: vector, profile: @profile)
+    end
 
   end
 

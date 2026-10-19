@@ -205,9 +205,8 @@ class FieldRecording < ApplicationRecord
   # a speaker of this recording, or :new for someone the transcriber didn't
   # separate; :new makes an unnamed speaker, which the page then asks a name
   # for. Speakers' talk time and clips are measured again. A speaker left
-  # with no lines goes, unless it holds a voice sample (an enrolment), which
-  # is never thrown away here. Positions of the others don't change, so
-  # nobody's "Speaker N" is renumbered under them.
+  # with no lines goes. Positions of the others don't change, so nobody's
+  # "Speaker N" is renumbered under them.
   #
   # Takes the naming lock order, account → recording, so it is serialized with
   # every speaker decision. Raises LineCorrection::Stale as correct_line!
@@ -304,7 +303,7 @@ class FieldRecording < ApplicationRecord
       discard!
       settle_reservation_after_discard!(now:)
       true
-    end
+    end.tap { |discarded| FieldVoiceprints::Learning.recording_discarded!(self) if discarded }
   end
 
   def settle_reservation_after_discard!(now: Time.current)
@@ -352,24 +351,30 @@ class FieldRecording < ApplicationRecord
   private
 
   # Who said what changed for these speakers, so whatever was decided or
-  # prepared from their old audio and lines no longer stands: a voice sample
-  # being prepared or waiting for "use it" holds audio that may now be someone
-  # else's. Bumping the decision generation makes every snapshot taken before
-  # (Enrolments.start!, dispatch!, write_back!; suggestion and recognition
-  # jobs) refuse; previews are thrown away now, a dispatched sample is refused
-  # when its print comes back. Suggestions and guesses drawn from the old
-  # lines go too. A print already stored for the voice is not touched.
+  # prepared from their old audio and lines no longer stands. Bumping the
+  # decision generation makes every snapshot taken before (learning,
+  # suggestion and recognition jobs) refuse. Suggestions and guesses drawn
+  # from the old lines go too, and so do the speakers' samples and kept
+  # embeddings: the prints they were in are rebuilt without them, and a named
+  # speaker is learned again from the lines they have now. The caller holds
+  # account → recording; the voices holding their samples are locked here.
   def invalidate_speaker_evidence!(labels)
-    speakers.where(label: labels).find_each do |speaker|
-      speaker.enrolments.where(status: "previewing").find_each(&:destroy!)
+    affected = speakers.where(label: labels).to_a
+    FieldVoiceprints::Locks.with(account:, recording: self,
+      voices: FieldVoiceprints::Learning.sample_voices(affected.map(&:id))) do
+      FieldVoiceprints::Learning.drop_samples!(affected.map(&:id))
+    end
+    affected.each do |speaker|
       speaker.update!(decision_generation: speaker.decision_generation + 1,
-        **FieldRecordingSpeaker::SUGGESTION_FIELDS, **FieldRecordingSpeaker::RECOGNITION_FIELDS)
+        **FieldRecordingSpeaker::SUGGESTION_FIELDS, **FieldRecordingSpeaker::RECOGNITION_FIELDS,
+        **FieldRecordingSpeaker::NO_PROBE)
+      FieldVoiceprints::Learning.queue!(speaker) if speaker.training_label?
     end
   end
 
   # After a line moved: talk time and clips from the words as they now are,
-  # and speakers with nothing left to say removed (not those holding a voice
-  # sample). A supplied transcript has no timings, only labels to count.
+  # and speakers with nothing left to say removed. A supplied
+  # transcript has no timings, only labels to count.
   def remeasure_speakers!
     speakers.reset
     present = if supplied?
@@ -379,8 +384,8 @@ class FieldRecording < ApplicationRecord
       (transcript_words || []).filter_map { |word| word["spk"] if word["k"] != "s" }.to_set
     end
 
-    speakers.includes(:enrolments).each do |speaker|
-      if !present.include?(speaker.label) && speaker.enrolments.empty?
+    speakers.each do |speaker|
+      if !present.include?(speaker.label)
         speaker.destroy!
       elsif measured
         entry = measured[speaker.label]

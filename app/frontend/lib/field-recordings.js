@@ -142,13 +142,6 @@ export function groupSpeakers(speakers = []) {
   });
 }
 
-// Parts of a merged card, other than the one standing for it, that have a
-// voice sample waiting for a decision or being remembered. Those states are
-// per diarized speaker, so the card shows each with its own enrolment.
-export function partsWithOwnEnrolment(parts = [], representative = null) {
-  return (parts || []).filter((part) => part.id !== representative?.id && (part.pending_enrolment || part.remembering));
-}
-
 export function turnSpeakerName(turn, names) {
   if (!turn.spk) return UNATTRIBUTED;
   return names[turn.spk] || turn.spk;

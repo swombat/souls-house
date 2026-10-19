@@ -1,11 +1,12 @@
-# Choosing and cutting the sample a print is made from (spec §9). Only turns
+# Choosing and cutting a speaker's sample (spec 2026-10-19 §6). Only turns
 # where nobody else speaks within a second either side, longest first, up to
-# 30 s, and at least 8 s of them. Never a fallback: if the speaker isn't heard
+# 60 s, and at least 4 s of them. Never a fallback: if the speaker isn't heard
 # alone for long enough, there is no sample. When the uploader said how many
 # people speak and the transcriber found fewer, two voices may be merged into
 # one speaker, so there is no sample either. These guards reduce the risk of
-# a mixed sample; they don't prove one person, which is why the person hears
-# the sample before anything is sent.
+# a mixed sample; they don't prove one person. Nobody listens before a sample
+# is used: the held-out check (FieldVoiceprints::Validation) is what keeps a
+# print that a bad sample pulled from guessing.
 module FieldVoiceprints::Sample
 
   class Refused < StandardError; end
@@ -16,14 +17,12 @@ module FieldVoiceprints::Sample
   def segments_for(speaker)
     recording = speaker.field_recording
     if recording.supplied?
-      raise Refused, "This recording came with its own transcript, which has no word timings, so no sample of " \
-                     "#{speaker.display_name} can be cut from it."
+      raise Refused, "This recording came with its own transcript, which has no word timings."
     end
 
     words = recording.transcript_words || []
     if recording.expected_speakers && recording.speakers.size < recording.expected_speakers
-      raise Refused, "Fewer voices were found than expected, so #{speaker.display_name} may be merged with someone. " \
-                     "Nothing can be remembered from this recording."
+      raise Refused, "Fewer voices were found than expected, so #{speaker.display_name} may be merged with someone."
     end
 
     others = words.select { |word| word["k"] == "w" && word["spk"] && word["spk"] != speaker.label }
@@ -43,8 +42,7 @@ module FieldVoiceprints::Sample
     end
 
     if total < FieldVoiceprints::MIN_SAMPLE_MS
-      raise Refused, "There isn't enough clear speech from #{speaker.display_name} alone in this recording to remember " \
-                     "their voice. It can be offered again on a later recording."
+      raise Refused, "There isn't enough clear speech from #{speaker.display_name} alone in this recording."
     end
 
     chosen.sort

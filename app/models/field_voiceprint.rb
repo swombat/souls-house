@@ -1,26 +1,31 @@
-# A stored voice print (spec §9). Encrypted at rest (non-deterministic), never
-# serialised: there is no JSON, prop or API shape that carries one, and asking
-# for one raises. Destroyed, not discarded, when forgotten.
+# A voice's print: the L2-normalised mean of its eligible samples, all made
+# with one service profile (spec 2026-10-19 §4). Encrypted at rest
+# (non-deterministic), never serialised. Rebuilt from all current samples on
+# every change, never added to, so the order samples land in doesn't matter.
+#
+# A print guesses only when it is validated against recordings it wasn't built
+# from (FieldVoiceprints::Validation) and that validation was computed on the
+# samples it is built from now (validated_digest == sample_digest).
 class FieldVoiceprint < ApplicationRecord
 
   belongs_to :field_voice
   belongs_to :account
-  belongs_to :sample_recording, class_name: "FieldRecording", optional: true
-  belongs_to :consented_by, polymorphic: true, optional: true
 
   encrypts :print
 
-  validates :print, :generation, :sample_ms, :consented_at, :consent_text_version, presence: true
+  validates :print, :generation, :profile, :sample_digest, presence: true
 
-  # The print row is the producer even when its writer uses update_columns
-  # on the voice generation. Print contents and vendor bookkeeping are not UI.
   after_save :refresh_presentation, if: -> {
-    (saved_changes.keys & %w[id field_voice_id generation sample_ms consented_by_type consented_by_id consented_at]).any?
+    (saved_changes.keys & %w[id field_voice_id generation sample_count recording_count speech_ms validated validated_digest]).any?
   }
   before_destroy { refresh_presentation(destroying: true) }
 
-  # Current only while the voice hasn't moved on (forgotten or replaced).
+  def vector = JSON.parse(print)
+
+  # Current only while the voice hasn't moved on (forgotten or rebuilt).
   def current? = generation == field_voice.print_generation
+
+  def active? = validated && validated_digest.present? && validated_digest == sample_digest
 
   def serializable_hash(*)
     raise NotImplementedError, "voice prints are never serialised"
@@ -32,15 +37,7 @@ class FieldVoiceprint < ApplicationRecord
 
   def refresh_presentation(destroying: false)
     voice_ids = destroying ? [ field_voice_id ] : [ field_voice_id, field_voice_id_before_last_save ].compact.uniq
-    # Ownership follows the voices, not a stale print.account_id. Capture it
-    # before destructive associations disappear.
     FieldVoiceActivity.refresh!(FieldVoice.where(id: voice_ids).distinct.pluck(:account_id))
-    # Consent labels and dates are roster-only. Speaker cards read existence,
-    # the generation and sample length, never consent attribution.
-    return unless destroying || (saved_changes.keys & %w[id field_voice_id generation sample_ms]).any?
-
-    recording_ids = FieldRecordingSpeaker.where(field_voice_id: voice_ids).distinct.pluck(:field_recording_id)
-    FieldRecordingActivity.refresh!(recording_ids)
   end
 
 end

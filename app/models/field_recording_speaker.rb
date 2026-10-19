@@ -22,7 +22,13 @@ class FieldRecordingSpeaker < ApplicationRecord
   belongs_to :ignored_by, polymorphic: true, optional: true
   belongs_to :suggested_voice, class_name: "FieldVoice", optional: true
   belongs_to :recognised_voice, class_name: "FieldVoice", optional: true
-  has_many :enrolments, class_name: "FieldVoiceEnrolment", dependent: :destroy
+  has_many :voice_samples, class_name: "FieldVoiceSample", dependent: :delete_all
+
+  # The speaker's own embedding while nobody has named them, so matching
+  # again needs no audio work (FieldVoiceprints::Identification). Encrypted,
+  # never serialised, cleared by any decision about the speaker.
+  encrypts :probe_embedding
+  NO_PROBE = { probe_embedding: nil, probe_profile: nil }.freeze
 
   SUGGESTION_FIELDS = { suggested_voice: nil, suggested_name: nil, suggestion_quote: nil,
                         suggestion_quote_ms: nil, suggestion_source: nil, suggested_at: nil,
@@ -118,18 +124,24 @@ class FieldRecordingSpeaker < ApplicationRecord
   def name_as!(voice, by:, source: "human")
     raise ArgumentError, "voice from another account" unless voice.account_id == field_recording.account_id
 
-    FieldVoiceprints::Locks.with(account: field_recording.account, recording: field_recording, voices: [ voice ]) do |_account, recording, voices|
-      raise ActiveRecord::RecordNotFound unless recording.kept? && recording.ready? && voices.first&.kept?
+    # The voice this speaker was linked to before, and any voice holding a
+    # sample of them, are locked too: their prints are rebuilt without it.
+    others = [ field_voice, *FieldVoiceprints::Learning.sample_voices([ id ]) ].compact
+    FieldVoiceprints::Locks.with(account: field_recording.account, recording: field_recording, voices: [ voice, *others ]) do |_account, recording, voices|
+      target = voices.find { |locked| locked.id == voice.id }
+      raise ActiveRecord::RecordNotFound unless recording.kept? && recording.ready? && target&.kept?
 
       reload
-      update!(field_voice: voices.first, naming_source: source, named_by: by, named_at: Time.current,
-        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **RECOGNITION_FIELDS, **NOT_IGNORED)
+      update!(field_voice: target, naming_source: source, named_by: by, named_at: Time.current,
+        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **RECOGNITION_FIELDS, **NOT_IGNORED, **NO_PROBE)
+      FieldVoiceprints::Learning.drop_samples!([ id ])
       recording.update!(transcript_text: recording.render_transcript_text)
       # The explicit naming API and attributed confirmations are deliberate
       # edits. An automatic write with no confirmer must not queue inference.
       if (source == "human" || by.present?) && recording.saved_change_to_transcript_text?
         recording.schedule_summary_refresh
       end
+      FieldVoiceprints::Learning.queue!(self) if training_label?
     end
   end
 
@@ -174,7 +186,8 @@ class FieldRecordingSpeaker < ApplicationRecord
   # locks, with the speaker reloaded: both gates open, the guess still exactly
   # the one the chip showed (same voice, same print generation, no decision
   # since), the voice kept and its print still current. Anything stale is
-  # refused and changes nothing. Confirming never builds a print.
+  # refused and changes nothing. A confirmed guess is a person's decision, so
+  # it teaches the print (confirmed_recognition).
   def confirm_recognition!(by:, shown:)
     with_recognition_locks(shown) do |account, voice|
       next false unless FieldVoiceprints.enabled_for?(account) && voice&.kept? &&
@@ -190,7 +203,7 @@ class FieldRecordingSpeaker < ApplicationRecord
   # only for the guess the chip showed.
   def dismiss_recognition!(shown:)
     with_recognition_locks(shown) do
-      update!(decision_generation: decision_generation + 1, **RECOGNITION_FIELDS)
+      update!(decision_generation: decision_generation + 1, **RECOGNITION_FIELDS, **NO_PROBE)
       true
     end
   end
@@ -214,14 +227,16 @@ class FieldRecordingSpeaker < ApplicationRecord
   end
 
   def unname!
-    with_decision_locks do |recording|
+    voices = [ field_voice, *FieldVoiceprints::Learning.sample_voices([ id ]) ].compact
+    FieldVoiceprints::Locks.with(account: field_recording.account, recording: field_recording, voices:) do |_account, recording, _voices|
       # Same guard as name_as!: a request that found the recording before a
       # discard must not change it after waiting for the lock.
       raise ActiveRecord::RecordNotFound unless recording.kept? && recording.ready?
 
       reload
       update!(field_voice: nil, naming_source: nil, named_by: nil, named_at: nil,
-        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **NOT_IGNORED)
+        decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **NOT_IGNORED, **NO_PROBE)
+      FieldVoiceprints::Learning.drop_samples!([ id ])
       recording.update!(transcript_text: recording.render_transcript_text)
       recording.schedule_summary_refresh if recording.saved_change_to_transcript_text?
     end
@@ -249,7 +264,7 @@ class FieldRecordingSpeaker < ApplicationRecord
       end
 
       update!(ignored_at: Time.current, ignored_by: by, ignored_as: as, decision_generation: decision_generation + 1,
-        **SUGGESTION_FIELDS, **RECOGNITION_FIELDS)
+        **SUGGESTION_FIELDS, **RECOGNITION_FIELDS, **NO_PROBE)
       true
     end
   end

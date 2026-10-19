@@ -2,11 +2,10 @@
 # ran once when the transcript landed (TranscriptReceiver), run again because
 # the Field may know more people since. Each pass keeps its own rules:
 #
-# - voices (spec §9): queued when recognition is on for the account and no
-#   identify job for this recording is still out. Two presses before a worker
-#   runs can still queue it twice; dispatch! rechecks under the recording lock,
-#   so only one is sent. It sends every voice
-#   remembered now, and guesses only for speakers no person has decided about;
+# - voices (spec 2026-10-19 §8): queued when recognition is on for the
+#   account. Matching is in the house and writes under the recording lock, so
+#   two presses only match twice. It uses every print that may guess now, and
+#   guesses only for speakers no person has decided about;
 # - names from what's said (spec §8): queued when that gate is on and no call
 #   is claimed right now; reopening the one-call claim is what lets it run
 #   again, and it still considers only undecided speakers.
@@ -28,7 +27,6 @@ module FieldRecording::IdentifyAgain
 
   def queue_voices(recording)
     return false unless FieldVoiceprints.enabled_for?(recording.account)
-    return false if recording.identifications.outstanding.exists?
 
     FieldRecordings::IdentifyJob.perform_later(recording.id)
     true

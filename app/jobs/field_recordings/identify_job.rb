@@ -1,18 +1,18 @@
-# Sends a ready recording to identify when recognition is on for its account
-# (spec §9), then hands polling to CollectIdentificationJob.
+# Guesses who a ready recording's unnamed speakers are, from the prints this
+# Field has learned (FieldVoiceprints::Identification). The voice service
+# being down is retried; a guess is only ever a chip.
 module FieldRecordings
   class IdentifyJob < ApplicationJob
 
-    queue_as :default
+    queue_as :background
 
-    def perform(recording_id, client: PyannoteClient.new)
+    retry_on FieldVoiceprints::VoiceEmbeddings::Unavailable, wait: :polynomially_longer, attempts: 6
+
+    def perform(recording_id)
       recording = FieldRecording.kept.find_by(id: recording_id)
-      return unless recording&.ready? && FieldVoiceprints.enabled_for?(recording.account)
+      return unless recording&.ready?
 
-      identification = FieldVoiceprints::Identification.dispatch!(recording, client:)
-      CollectIdentificationJob.set(wait: CollectIdentificationJob::POLL_EVERY).perform_later(identification.id) if identification
-    rescue PyannoteClient::Error
-      nil
+      FieldVoiceprints::Identification.run!(recording)
     end
 
   end

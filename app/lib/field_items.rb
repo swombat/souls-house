@@ -291,37 +291,22 @@ module FieldItems
     }
   end
 
-  # Recognition affordances for one speaker on the transcript page (spec §9).
-  # Only meaningful when both gates are open; the caller passes that in.
-  def speaker_recognition_json(speaker, enabled:)
-    return { can_remember: false, remembered: false, pending_enrolment: nil } unless enabled
-
-    voice = speaker.field_voice&.kept? ? speaker.field_voice : nil
-    pending = voice && speaker.enrolments.find { |e| e.status == "previewing" && !e.expired? && e.sample.attached? }
-    print = voice&.voiceprint
-    {
-      can_remember: voice.present? && (print.nil? || !voice.remembered? ||
-                                       FieldVoiceprints::Sample.clean_ms(speaker) > print.sample_ms),
-      remembered: voice&.remembered? || false,
-      remembering: voice.present? && speaker.enrolments.any? { |e| e.status == "dispatched" },
-      pending_enrolment: (if pending
-                            { id: pending.to_param, sample_ms: pending.sample_ms,
-                              sample_url: Rails.application.routes.url_helpers.rails_blob_path(pending.sample, disposition: :inline, only_path: true) }
-                          end)
-    }
-  end
-
+  # A voice on the Voices page. Never the print or a sample: only what was
+  # learned from (counts) and whether the print may guess yet.
   def voice_page_json(voice, used_count)
     print = voice.voiceprint
+    print = nil unless print&.generation == voice.print_generation
     {
       id: voice.to_param,
       name: voice.name,
       member: voice.user_id.present?,
       used_in: used_count,
-      remembered: voice.remembered?,
-      sample_seconds: (print.sample_ms / 1000 if print),
-      remembered_at: print&.consented_at&.iso8601,
-      remembered_by: (print&.consented_by.respond_to?(:full_name) ? print.consented_by.full_name.presence : nil)
+      remember: voice.remember?,
+      remembered: print.present?,
+      recordings: print&.recording_count || 0,
+      sample_seconds: (print.speech_ms / 1000 if print),
+      guessing: print&.active? || false,
+      learned_at: print&.updated_at&.iso8601
     }
   end
 

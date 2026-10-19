@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_19_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_19_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -36,7 +36,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_120000) do
     t.text "xai_api_key"
     t.text "zai_api_key"
     t.bigint "recording_ms_weekly_limit", default: 72000000, null: false
-    t.boolean "recognise_voices", default: false, null: false
+    t.boolean "recognise_voices", default: true, null: false
     t.boolean "founding", default: false, null: false
     t.bigint "resident_room_id"
     t.boolean "field_swarm_enabled", default: false, null: false
@@ -993,18 +993,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_120000) do
     t.index ["request_id"], name: "index_field_recording_dispatches_on_request_id"
   end
 
-  create_table "field_recording_identifications", force: :cascade do |t|
-    t.bigint "field_recording_id", null: false
-    t.string "vendor_job_id", null: false
-    t.jsonb "snapshot", default: {}, null: false
-    t.jsonb "speaker_decisions", default: {}, null: false
-    t.string "status", default: "dispatched", null: false
-    t.integer "poll_count", default: 0, null: false
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["field_recording_id"], name: "index_field_recording_identifications_on_field_recording_id"
-  end
-
   create_table "field_recording_reservations", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "field_recording_id", null: false
@@ -1051,6 +1039,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_120000) do
     t.string "ignored_by_type"
     t.bigint "ignored_by_id"
     t.string "ignored_as", default: "noise", null: false
+    t.text "probe_embedding"
+    t.string "probe_profile"
     t.index ["field_recording_id", "label"], name: "index_field_recording_speakers_on_field_recording_id_and_label", unique: true
     t.index ["field_recording_id"], name: "index_field_recording_speakers_on_field_recording_id"
     t.index ["field_voice_id"], name: "index_field_recording_speakers_on_field_voice_id"
@@ -1332,26 +1322,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_120000) do
     t.index ["search_vector"], name: "index_field_tweets_on_search_vector", using: :gin
   end
 
-  create_table "field_voice_enrolments", force: :cascade do |t|
+  create_table "field_voice_samples", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "field_voice_id", null: false
     t.bigint "field_recording_speaker_id", null: false
-    t.bigint "start_generation", null: false
-    t.integer "decision_generation", default: 0, null: false
-    t.integer "sample_ms", null: false
-    t.string "consented_by_type"
-    t.bigint "consented_by_id"
-    t.string "consent_text_version", null: false
-    t.string "status", default: "previewing", null: false
-    t.string "vendor_job_id"
-    t.integer "poll_count", default: 0, null: false
-    t.datetime "expires_at", null: false
+    t.bigint "field_recording_id", null: false
+    t.text "embedding", null: false
+    t.integer "speech_ms", null: false
+    t.string "profile", null: false
+    t.string "label_origin", null: false
+    t.boolean "eligible", default: false, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id"], name: "index_field_voice_enrolments_on_account_id"
-    t.index ["consented_by_type", "consented_by_id"], name: "index_field_voice_enrolments_on_consented_by"
-    t.index ["field_recording_speaker_id"], name: "index_field_voice_enrolments_on_field_recording_speaker_id"
-    t.index ["field_voice_id"], name: "index_field_voice_enrolments_on_field_voice_id"
+    t.index ["account_id"], name: "index_field_voice_samples_on_account_id"
+    t.index ["field_recording_id"], name: "index_field_voice_samples_on_field_recording_id"
+    t.index ["field_recording_speaker_id"], name: "index_field_voice_samples_on_field_recording_speaker_id"
+    t.index ["field_voice_id", "field_recording_speaker_id"], name: "index_field_voice_samples_on_voice_and_speaker", unique: true
   end
 
   create_table "field_voiceprints", force: :cascade do |t|
@@ -1359,19 +1345,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_120000) do
     t.bigint "account_id", null: false
     t.text "print", null: false
     t.bigint "generation", null: false
-    t.bigint "sample_recording_id"
-    t.integer "sample_ms", null: false
-    t.string "consented_by_type"
-    t.bigint "consented_by_id"
-    t.datetime "consented_at", null: false
-    t.string "consent_text_version", null: false
-    t.string "vendor", default: "pyannote", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "engine", default: "ecapa", null: false
+    t.string "profile", null: false
+    t.integer "sample_count", default: 0, null: false
+    t.integer "recording_count", default: 0, null: false
+    t.integer "speech_ms", default: 0, null: false
+    t.string "sample_digest", null: false
+    t.string "validated_digest"
+    t.boolean "validated", default: false, null: false
+    t.jsonb "validation", default: {}, null: false
     t.index ["account_id"], name: "index_field_voiceprints_on_account_id"
-    t.index ["consented_by_type", "consented_by_id"], name: "index_field_voiceprints_on_consented_by"
     t.index ["field_voice_id"], name: "index_field_voiceprints_on_field_voice_id", unique: true
-    t.index ["sample_recording_id"], name: "index_field_voiceprints_on_sample_recording_id"
   end
 
   create_table "field_voices", force: :cascade do |t|
@@ -1384,6 +1370,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_120000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.bigint "print_generation", default: 0, null: false
+    t.boolean "remember", default: true, null: false
+    t.bigint "learning_generation", default: 0, null: false
     t.index "account_id, lower((name)::text)", name: "index_field_voices_unique_kept_name", unique: true, where: "(discarded_at IS NULL)"
     t.index ["account_id", "user_id"], name: "index_field_voices_unique_kept_user", unique: true, where: "((discarded_at IS NULL) AND (user_id IS NOT NULL))"
     t.index ["account_id"], name: "index_field_voices_on_account_id"
@@ -2290,6 +2278,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_120000) do
     t.boolean "show_usage_in_chat", default: false, null: false
     t.string "site_name", default: "souls.house", null: false
     t.datetime "updated_at", null: false
+    t.datetime "field_naming_cutover_at"
     t.string "follow_through_scope", default: "off", null: false
     t.boolean "safeguard_conversations_enabled", default: false, null: false
     t.boolean "new_residents_on_vm", default: false, null: false
@@ -2668,7 +2657,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_120000) do
   add_foreign_key "field_ocr_calls", "field_files"
   add_foreign_key "field_recording_dispatches", "accounts"
   add_foreign_key "field_recording_dispatches", "field_recordings"
-  add_foreign_key "field_recording_identifications", "field_recordings"
   add_foreign_key "field_recording_reservations", "accounts"
   add_foreign_key "field_recording_reservations", "field_recordings"
   add_foreign_key "field_recording_speakers", "field_recordings"
@@ -2691,11 +2679,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_120000) do
   add_foreign_key "field_tweet_sources", "accounts"
   add_foreign_key "field_tweets", "accounts"
   add_foreign_key "field_tweets", "field_tweet_sources", on_delete: :nullify
-  add_foreign_key "field_voice_enrolments", "accounts"
-  add_foreign_key "field_voice_enrolments", "field_recording_speakers"
-  add_foreign_key "field_voice_enrolments", "field_voices"
+  add_foreign_key "field_voice_samples", "accounts"
+  add_foreign_key "field_voice_samples", "field_recording_speakers"
+  add_foreign_key "field_voice_samples", "field_voices"
   add_foreign_key "field_voiceprints", "accounts"
-  add_foreign_key "field_voiceprints", "field_recordings", column: "sample_recording_id", on_delete: :nullify
   add_foreign_key "field_voiceprints", "field_voices"
   add_foreign_key "field_voices", "accounts"
   add_foreign_key "field_voices", "users", on_delete: :nullify

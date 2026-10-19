@@ -15,7 +15,7 @@ class FieldVoice < ApplicationRecord
   belongs_to :created_by, polymorphic: true, optional: true
   has_many :speakers, class_name: "FieldRecordingSpeaker", dependent: :nullify
   has_one :voiceprint, class_name: "FieldVoiceprint", dependent: :destroy
-  has_many :enrolments, class_name: "FieldVoiceEnrolment", dependent: :destroy
+  has_many :samples, class_name: "FieldVoiceSample", dependent: :delete_all
 
   validates :name, presence: true, length: { maximum: MAX_NAME_LENGTH }
   validate :name_unique_among_kept, if: -> { kept? && (new_record? || will_save_change_to_name?) }
@@ -23,7 +23,7 @@ class FieldVoice < ApplicationRecord
   before_validation { self.name = name.to_s.squish }
   after_update_commit :rerender_transcripts, if: -> { saved_change_to_name? }
   after_save :refresh_roster, if: -> {
-    (saved_changes.keys & %w[id account_id name user_id discarded_at]).any?
+    (saved_changes.keys & %w[id account_id name user_id discarded_at remember]).any?
   }
   after_destroy :refresh_roster
 
@@ -60,14 +60,21 @@ class FieldVoice < ApplicationRecord
     print.present? && print.generation == print_generation
   end
 
-  # Forget this voice's print (spec §9). Always allowed: no gate, no current
-  # print and no pending consent are needed, because revocation must work
-  # whatever state recognition is in. Under the voice lock: the generation
-  # moves on (so nothing in flight can match, even after a later re-enrol),
-  # the print row is destroyed, pending enrolments and their samples go, and
-  # recognitions pointing here are cleared. Names people gave stay.
+  # Forget this voice (spec 2026-10-19 §9). Always allowed: no gate is
+  # needed, because revocation must work whatever state recognition is in.
+  # Under the voice lock: both generations move on (so no sample or guess in
+  # flight can land, even after a later "Remember again"), the print and every
+  # sample are destroyed, guesses pointing here are cleared, and the voice
+  # stops learning until someone turns it back on. Names people gave stay.
   def forget!
     with_lock { forget_locked! }
+  end
+
+  # "Remember again": learning restarts from this voice's eligible namings,
+  # queued fresh. Nothing forgotten comes back.
+  def remember_again!
+    with_lock { update!(remember: true) }
+    FieldVoiceprints::Learning.queue_account!(account, voice: self)
   end
 
   # Deleting the name itself, atomically: under account → recordings → voice
@@ -100,9 +107,11 @@ class FieldVoice < ApplicationRecord
 
   def forget_locked!
     recognised_recording_ids = FieldRecordingSpeaker.where(recognised_voice_id: id).distinct.pluck(:field_recording_id)
-    update_columns(print_generation: print_generation + 1, updated_at: Time.current)
+    update_columns(print_generation: print_generation + 1, learning_generation: learning_generation + 1,
+      remember: false, updated_at: Time.current)
     FieldVoiceprint.where(field_voice_id: id).destroy_all
-    FieldVoiceEnrolment.where(field_voice_id: id).find_each(&:destroy!)
+    FieldVoiceSample.where(field_voice_id: id).delete_all
+    FieldVoiceActivity.refresh!([ account_id ])
     FieldRecordingSpeaker.where(recognised_voice_id: id)
       .update_all(recognised_voice_id: nil, recognition_confidence: nil, recognition_print_generation: nil,
         recognition_decision_generation: nil)

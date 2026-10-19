@@ -1,51 +1,83 @@
-# The two gates on voice recognition (spec §9). The house gate is deploy
-# configuration, outside the database, so restoring a database can never
-# switch recognition back on. It also requires pyannote to be configured. The
-# account gate is `recognise_voices`, off by default. Backups aren't pruned,
-# so no retention is stated or required (Daniel, 2026-10-19).
+# Voice recognition in the house (docs/2026-10-19-field-voiceprints-in-house.md).
 #
-# Forgetting is never gated: it works whatever these say.
+# Prints are learned here, from people's namings, by the house's own ECAPA
+# service (services/voice-embeddings), and matched here. Audio never leaves
+# the house.
+#
+# Two gates. The house gate is that the voice service is configured: there is
+# no other switch (Daniel, 2026-10-19, KJkkdJ: "should just be on"). The
+# account gate is `recognise_voices`, on by default, which a Field can turn off
+# on its Voices page; off keeps what was learned, unused. Forgetting is never
+# gated: it works whatever these say. Backups aren't pruned, so no retention
+# is stated or required (Daniel, 2026-10-19).
 module FieldVoiceprints
 
-  CONSENT_TEXT_VERSION = "2026-10-08"
-  IDENTIFY_THRESHOLD = 50
-  MIN_SAMPLE_MS = 8_000
-  MAX_SAMPLE_MS = 30_000
+  # A sample is the clean speech of one speaker in one recording.
+  MIN_SAMPLE_MS = 4_000
+  MAX_SAMPLE_MS = 60_000
   ISOLATION_MS = 1_000
-  ENROLMENT_TTL = 1.hour
+
+  # Matching (spec §8). Starting points from the Mac's identify.py; the
+  # held-out report (field:voiceprint_report) is where they get checked.
+  MATCH_THRESHOLD = 0.55
+  MATCH_MARGIN = 0.15
+  SPLIT_THRESHOLD = 0.75
 
   module_function
 
-  def house_enabled?
-    ENV["SOULSHOUSE_FIELD_VOICEPRINTS"] == "on" && PyannoteClient.configured?
-  end
+  def house_enabled? = FieldVoiceprints::VoiceEmbeddings.configured?
 
   def enabled_for?(account)
     house_enabled? && account.recognise_voices?
   end
 
-
-  # Forget every print in an account. Never gated. Keep one lock/transaction
-  # per voice; presentation coalescing must not broaden these locks.
-  def forget_all!(account)
-    account.field_voices.find_each(&:forget!)
+  # Learning reads only namings a person made or confirmed, and only once the
+  # slice A writer cutover is recorded (spec §11): before it, a "human" naming
+  # may have come from an API key.
+  def learning_ready?
+    Setting.instance.field_naming_cutover_at.present?
   end
 
-  # The restore reset (lib/tasks/field.rake). Never gated. Operator-only:
-  # readers refresh/reconnect after restore, rather than cross-account live
-  # fan-out. delete_all deliberately skips print presentation callbacks too.
+  # Forget every voice in an account, and every unnamed speaker's kept
+  # embedding. Never gated. One lock per voice.
+  def forget_all!(account)
+    account.field_voices.find_each(&:forget!)
+    FieldRecordingSpeaker.joins(:field_recording).where(field_recordings: { account_id: account.id })
+      .where.not(probe_embedding: nil).update_all(probe_embedding: nil, probe_profile: nil)
+  end
+
+  # The restore reset (lib/tasks/field.rake). Never gated. A restored
+  # database may hold samples and prints of voices someone forgot after the
+  # backup was taken, so all of them go, every voice's generations move on,
+  # and guesses are cleared. Names people gave stay; learning starts again
+  # from them with `field:learn_voices`.
   def reset_all!
-    counts = { prints: FieldVoiceprint.count, enrolments: FieldVoiceEnrolment.count,
+    counts = { prints: FieldVoiceprint.count, samples: FieldVoiceSample.count,
                recognitions: FieldRecordingSpeaker.where.not(recognised_voice_id: nil).count, voices: FieldVoice.count }
-    FieldVoice.update_all("print_generation = print_generation + 1")
+    FieldVoice.update_all("print_generation = print_generation + 1, learning_generation = learning_generation + 1")
+    FieldVoiceSample.delete_all
     FieldVoiceprint.delete_all
-    FieldVoiceEnrolment.find_each do |enrolment|
-      enrolment.skip_broadcast = true
-      enrolment.destroy!
-    end
+    FieldRecordingSpeaker.where.not(probe_embedding: nil).update_all(probe_embedding: nil, probe_profile: nil)
     FieldRecordingSpeaker.where.not(recognised_voice_id: nil)
       .update_all(recognised_voice_id: nil, recognition_confidence: nil, recognition_print_generation: nil)
     counts
+  end
+
+  # Cosine similarity of two unit vectors.
+  def cosine(a, b)
+    a.each_with_index.sum { |value, index| value * b[index] }
+  end
+
+  # The L2-normalised mean of unit vectors, or nil for none.
+  def centroid(vectors)
+    return nil if vectors.empty?
+
+    sum = Array.new(vectors.first.length, 0.0)
+    vectors.each { |vector| vector.each_with_index { |value, index| sum[index] += value } }
+    norm = Math.sqrt(sum.sum { |value| value * value })
+    return nil if norm.zero?
+
+    sum.map { |value| value / norm }
   end
 
 end

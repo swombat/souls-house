@@ -1,6 +1,6 @@
 # The voices this Field knows (spec §7, §9): rename (changes the name
-# everywhere), delete the identity, forget a print, forget all prints, and the
-# account's recognition setting. Forgetting is never gated.
+# everywhere), delete the identity, forget a voice, remember it again, forget
+# all voices, and the account's recognition setting. Forgetting is never gated.
 class FieldVoicesController < ApplicationController
 
   require_feature_enabled :agents
@@ -39,14 +39,21 @@ class FieldVoicesController < ApplicationController
     redirect_back_or_to account_field_voices_path(current_account), notice: "This Field has forgotten #{voice.name}'s voice."
   end
 
+  def remember
+    voice = find_voice
+    voice.remember_again!
+    redirect_back_or_to account_field_voices_path(current_account),
+      notice: "This Field will learn #{voice.name}'s voice again from the names people give."
+  end
+
   def forget_all
     FieldVoiceprints.forget_all!(current_account)
     redirect_to account_field_voices_path(current_account), notice: "This Field has forgotten every voice it remembered."
   end
 
   # Turning recognition on or off for the account. Takes the account lock, the
-  # same lock identify and print write-back take, so a change can't slip
-  # between their check and their send. Off keeps stored prints, unused;
+  # same lock learning and matching write under, so a change can't slip
+  # between their check and their write. Off keeps what was learned, unused;
   # "Forget all voices" sits beside it.
   def recognition
     return head(:forbidden) unless current_account.manageable_by?(Current.user)

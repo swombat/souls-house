@@ -1,8 +1,8 @@
 <script>
-  // The voices this Field knows (spec §7, §9). Names live here whatever the
-  // recognition gate says. Forgetting is never gated: "Forget voice" and
-  // "Forget all voices" show whenever something is remembered, even when the
-  // house has recognition switched off.
+  // The voices this Field knows (spec §7, §9; learning in the house, spec
+  // 2026-10-19). Names live here whatever the recognition setting says.
+  // Forgetting is never gated: "Forget voice" and "Forget all voices" show
+  // whenever something is remembered, even with recognition off.
   import { Link, router } from '@inertiajs/svelte';
   import { createDynamicSync } from '$lib/use-sync';
   import * as Card from '$lib/components/shadcn/card/index.js';
@@ -10,12 +10,11 @@
   import { Input } from '$lib/components/shadcn/input/index.js';
   import { Switch } from '$lib/components/shadcn/switch';
   import VoiceMeaning from '$lib/components/field/VoiceMeaning.svelte';
-  import { formatWhen } from '$lib/field';
   import { ArrowLeft } from 'phosphor-svelte';
 
   let {
     voices = [],
-    recognise_voices = false,
+    recognise_voices = true,
     house_recognition = false,
     can_change_setting = false,
     account,
@@ -54,8 +53,13 @@
   }
 
   function forget(voice) {
-    if (!confirm(`Forget ${voice.name}'s voice? The print is deleted now. Names on transcripts stay.`)) return;
+    const message = `Forget ${voice.name}'s voice? The print is deleted now and stops learning. Names on transcripts stay.`;
+    if (!confirm(message)) return;
     router.delete(`${base}/${voice.id}/print`);
+  }
+
+  function rememberAgain(voice) {
+    router.post(`${base}/${voice.id}/remember`, {}, { preserveScroll: true });
   }
 
   function deleteName(voice) {
@@ -122,13 +126,13 @@
     return `named in ${count} ${count === 1 ? 'speaker' : 'speakers'}`;
   }
 
-  function rememberedLine(voice) {
-    const parts = [
-      voice.sample_seconds != null ? `${voice.sample_seconds} s sample` : null,
-      voice.remembered_by ? `by ${voice.remembered_by}` : null,
-      formatWhen(voice.remembered_at) || null,
-    ].filter(Boolean);
-    return parts.length ? `Voice remembered (${parts.join(', ')})` : 'Voice remembered';
+  function learnedLine(voice) {
+    if (!voice.remember) return 'Voice forgotten, not learning';
+    if (!voice.remembered) return 'Name only so far';
+    const recordings = `${voice.recordings} ${voice.recordings === 1 ? 'recording' : 'recordings'}`;
+    const seconds = voice.sample_seconds != null ? `, ${voice.sample_seconds} s` : '';
+    const state = voice.guessing ? 'suggesting' : 'not yet checked, so not suggesting';
+    return `Voice learned from ${recordings}${seconds} · ${state}`;
   }
 </script>
 
@@ -153,7 +157,7 @@
     <Card.Content class="p-4 space-y-3">
       {#if !house_recognition}
         <p class="text-sm" data-testid="voices-house-off">
-          Voice recognition isn't available in this house yet. Names you give speakers still work.
+          Voice recognition isn't running in this house right now. Names you give speakers still work.
         </p>
       {:else}
         <div class="flex items-start gap-3">
@@ -165,10 +169,11 @@
             data-testid="voices-switch" />
           <div class="space-y-1">
             <label for="recognise_voices" class="text-sm font-medium">
-              Suggest who's speaking from voices this Field remembers
+              Learn voices from the names people give, and suggest who's speaking
             </label>
             <p class="text-xs text-muted-foreground">
-              A suggestion only. Someone still confirms who it is before a name goes on a transcript.
+              On by default. A suggestion only: someone still confirms who it is before a name goes on a transcript.
+              Turning this off keeps what was learned, unused, and stops learning.
             </p>
             {#if !can_change_setting}
               <p class="text-xs text-muted-foreground">Only people who manage this account can change this.</p>
@@ -181,7 +186,7 @@
           Voices already remembered are kept but not used. You can still forget them.
         </p>
       {:else if anyRemembered && !recognitionOn}
-        <p class="text-sm text-muted-foreground">Remembered voices are kept but not used while this is off.</p>
+        <p class="text-sm text-muted-foreground">Learned voices are kept but not used while this is off.</p>
       {/if}
       {#if anyRemembered}
         <div>
@@ -214,13 +219,16 @@
                 </p>
               {/if}
               <p class="text-sm text-muted-foreground">
-                {usedLine(voice.used_in)} · {voice.remembered ? rememberedLine(voice) : 'Name only'}
+                {usedLine(voice.used_in)} · {learnedLine(voice)}
               </p>
               {#if editingId !== voice.id}
                 <div class="flex flex-wrap gap-1">
-                  {#if voice.remembered}
+                  {#if voice.remembered || voice.remember}
                     <Button size="sm" variant="outline" onclick={() => forget(voice)} data-testid="voice-forget"
                       >Forget voice</Button>
+                  {:else}
+                    <Button size="sm" variant="outline" onclick={() => rememberAgain(voice)} data-testid="voice-remember"
+                      >Remember again</Button>
                   {/if}
                   <Button size="sm" variant="ghost" onclick={() => startRename(voice)}>Rename</Button>
                   <Button size="sm" variant="ghost" class="text-destructive" onclick={() => deleteName(voice)}
@@ -240,9 +248,6 @@
 
   <section class="space-y-2">
     <h2 class="text-lg font-semibold">What this means</h2>
-    <p class="text-sm text-muted-foreground">
-      When someone agrees, on a transcript, that this Field should remember a person's voice:
-    </p>
-    <VoiceMeaning whose="that person's voice" onVoicesPage />
+    <VoiceMeaning onVoicesPage />
   </section>
 </div>

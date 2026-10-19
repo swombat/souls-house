@@ -7,8 +7,7 @@
   import SpeakerChip from '$lib/components/field/SpeakerChip.svelte';
   import SuggestionChip from '$lib/components/field/SuggestionChip.svelte';
   import RecognitionChip from '$lib/components/field/RecognitionChip.svelte';
-  import RememberVoice from '$lib/components/field/RememberVoice.svelte';
-  import { formatDuration, partsWithOwnEnrolment } from '$lib/field-recordings';
+  import { formatDuration } from '$lib/field-recordings';
 
   let {
     speaker,
@@ -25,17 +24,12 @@
 
   const share = $derived(totalTalkMs > 0 ? Math.round((100 * (speaker.talk_ms || 0)) / totalTalkMs) : null);
   const hasClip = $derived(speaker.clip_start_ms != null && speaker.clip_end_ms != null);
-  const isMe = $derived(!!chip.myVoiceId && speaker.voice_id === chip.myVoiceId);
   // Diarized speakers a person linked to this one voice. Each can still be
   // heard alone and unlinked: the transcriber may have merged two people too.
   const merged = $derived(parts.length > 1);
   let showParts = $state(false);
   let unlinking = $state(null);
   const partHasClip = (part) => part.clip_start_ms != null && part.clip_end_ms != null;
-  // A sample preview or a remembering in progress belongs to the diarized
-  // speaker it was taken from, not to the card's representative: keep each
-  // one on view, with its own Use it / Not them.
-  const ownEnrolments = $derived(partsWithOwnEnrolment(parts, speaker));
 
   function unlink(part) {
     unlinking = part.id;
@@ -176,19 +170,8 @@
     {#if speaker.suggestion && !speaker.named}
       <SuggestionChip suggestion={speaker.suggestion} url={chip.url} {onSeek} />
     {/if}
-    {#if recognitionEnabled}
-      {#if speaker.recognition && !speaker.named}
-        <RecognitionChip recognition={speaker.recognition} url={chip.url} />
-      {/if}
-      {#if speaker.named}
-        <RememberVoice {speaker} {accountId} {recordingId} {isMe} />
-        {#each ownEnrolments as part (part.id)}
-          <div class="space-y-1" data-testid="speaker-part-enrolment">
-            <p class="text-xs text-muted-foreground">From {part.default_name}</p>
-            <RememberVoice speaker={part} {accountId} {recordingId} {isMe} offer={false} />
-          </div>
-        {/each}
-      {/if}
+    {#if recognitionEnabled && speaker.recognition && !speaker.named}
+      <RecognitionChip recognition={speaker.recognition} url={chip.url} />
     {/if}
   </Card.Content>
 </Card.Root>

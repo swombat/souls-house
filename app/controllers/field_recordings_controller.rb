@@ -19,9 +19,7 @@ class FieldRecordingsController < ApplicationController
         transcript_revision: (recording.transcript_revision if recording.ready?),
         ready_at: recording.ready_at&.iso8601
       ) },
-      speakers: -> { recording.speakers.includes(:field_voice, :recognised_voice, :enrolments).map do |speaker|
-        FieldItems.speaker_json(speaker).merge(FieldItems.speaker_recognition_json(speaker, enabled: recognition))
-      end },
+      speakers: -> { recording.speakers.includes(:field_voice, :recognised_voice).map { |speaker| FieldItems.speaker_json(speaker) } },
       recognition_enabled: recognition,
       voices: -> { FieldItems.voices_json(current_account) },
       members_without_voice: -> { FieldItems.members_without_voice_json(current_account, except: Current.user) },
@@ -96,7 +94,7 @@ class FieldRecordingsController < ApplicationController
 
   # "Look for known voices again": the same two passes that ran when the
   # transcript landed, run again now that the Field may know more people
-  # (remembered voices, or names). Each pass keeps its own rules: only
+  # (learned voices, or names). Each pass keeps its own rules: only
   # speakers no person has decided anything about are guessed at, a guess is
   # shown for a person to confirm, and each gate is checked as it was then.
   def identify_again
