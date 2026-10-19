@@ -186,7 +186,7 @@ class FieldRecordingSpeaker < ApplicationRecord
     return nil unless recognition?
 
     { voice_id: recognised_voice.to_param, print_generation: recognition_print_generation,
-      decision_generation: recognition_decision_generation }
+      decision_generation: recognition_decision_generation, cohort: recognition_cohort }
   end
 
   # A person confirms "Tomás?" (spec §9). Under account → recording → voice
@@ -232,7 +232,8 @@ class FieldRecordingSpeaker < ApplicationRecord
         recognised_voice_id == live_voice.id &&
         recognition_print_generation.to_s == shown[:print_generation].to_s &&
         recognition_decision_generation.to_s == shown[:decision_generation].to_s &&
-        decision_generation.to_s == shown[:decision_generation].to_s
+        decision_generation.to_s == shown[:decision_generation].to_s &&
+        recognition_cohort.to_s == shown[:cohort].to_s
       next false unless current
 
       yield account, live_voice

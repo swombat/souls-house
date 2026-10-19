@@ -127,6 +127,30 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
     end
   end
 
+  # Mira's third look: the same winner, rematched under a new key, must not
+  # accept the old chip's token.
+  test "an old token can't confirm or dismiss a guess rematched to the same winner under a new key" do
+    with_recognition(@account) do
+      store_print!(@voice, vector: voice_vector(3))
+      store_print!(@other_voice, vector: voice_vector(7))
+      run_identify(FakeVoiceEmbeddings.new({ default: voice_vector(3) }))
+      old_token = @speaker.reload.recognition_token
+
+      @other_voice.voiceprint.destroy!
+      store_print!(@other_voice.reload, vector: voice_vector(8)) # Priya relearned: a new cohort, Tomás unchanged
+      run_identify(FakeVoiceEmbeddings.new({ default: voice_vector(3) }))
+      fresh_token = @speaker.reload.recognition_token
+      assert_equal old_token.except(:cohort), fresh_token.except(:cohort), "same winner, same generations"
+      assert_not_equal old_token[:cohort], fresh_token[:cohort]
+
+      assert_not @speaker.confirm_recognition!(by: @user, shown: old_token)
+      assert_not @speaker.reload.dismiss_recognition!(shown: old_token)
+      assert_equal @voice.id, @speaker.reload.recognised_voice_id, "the stale tokens changed nothing"
+      assert @speaker.confirm_recognition!(by: @user, shown: fresh_token)
+      assert_equal @voice.id, @speaker.reload.field_voice_id
+    end
+  end
+
   test "a change in which prints are active, with the same cohort, means nothing is written" do
     with_recognition(@account) do
       store_print!(@voice, vector: voice_vector(3))

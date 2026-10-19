@@ -24,7 +24,7 @@ class FieldRecordingSpeakersController < ApplicationController
     attributes = params.require(:speaker).permit(:me, :voice_id, :member_user_id, :name, :link_existing, :unname,
       :ignore, :ignore_as, :unignore,
       :confirm_suggestion, :dismiss_suggestion, :suggestion_generation, :confirm_recognition, :dismiss_recognition,
-      recognition: %i[voice_id print_generation decision_generation], with: [])
+      recognition: %i[voice_id print_generation decision_generation cohort], with: [])
     companion_ids = decode_ids(attributes[:with])
 
     if truthy?(attributes[:ignore])

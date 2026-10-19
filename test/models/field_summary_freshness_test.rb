@@ -208,7 +208,8 @@ class FieldSummaryFreshnessTest < ActiveJob::TestCase
     store_print!(voice)
     second.update!(recognised_voice: voice, recognition_confidence: 80,
       recognition_print_generation: voice.reload.print_generation,
-      recognition_decision_generation: second.decision_generation)
+      recognition_decision_generation: second.decision_generation,
+      recognition_cohort: FieldVoiceprints::Cohort.active(@account).last)
     shown = second.reload.recognition_token
     with_recognition(@account) do
       run_commit_callbacks do
