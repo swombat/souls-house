@@ -81,14 +81,10 @@ module Services
     end
 
     def current_access_token(connection)
-      with_dead_grant_handling(connection) do
-        connection.with_lock do
-          connection.reload
-          payload = connection.credential_payload_hash
-          next payload.fetch("access_token") if token_fresh?(payload)
+      under_lock(connection) do |payload|
+        next payload.fetch("access_token") if token_fresh?(payload)
 
-          refresh!(connection, payload).fetch("access_token")
-        end
+        refresh!(connection, payload).fetch("access_token")
       end
     end
 
@@ -97,18 +93,14 @@ module Services
     # broker, so an unused connection never reaches Xero's 60-day limit.
     # Returns true when it refreshed.
     def keep_alive!(connection)
-      with_dead_grant_handling(connection) do
-        connection.with_lock do
-          connection.reload
-          next false unless connection.status == "connected"
+      under_lock(connection) do |payload|
+        next false unless connection.status == "connected"
 
-          payload = connection.credential_payload_hash
-          last = Time.iso8601(payload["refreshed_at"].to_s) rescue connection.created_at
-          next false if last > KEEP_ALIVE_AFTER.ago
+        last = Time.iso8601(payload["refreshed_at"].to_s) rescue connection.created_at
+        next false if last > KEEP_ALIVE_AFTER.ago
 
-          refresh!(connection, payload)
-          true
-        end
+        refresh!(connection, payload)
+        true
       end
     end
 
@@ -143,15 +135,28 @@ module Services
       refreshed_payload
     end
 
-    # A dead grant can't be fixed by retrying. Mark the connection as needing
-    # a reconnect (the Integrations card then says "Reconnect needed" and
-    # Connect reuses this row), after the lock's transaction has ended so the
-    # mark isn't rolled back with it. Network errors mark nothing.
-    def with_dead_grant_handling(connection)
-      yield
-    rescue DeadGrant
-      connection.reload.update!(status: "reauthorizing", credential_payload: nil)
-      raise
+    # Runs the block under the connection's row lock with its current payload.
+    # A dead grant can't be fixed by retrying, so it is marked here, under the
+    # same lock that read the dead token: the connection becomes
+    # "reauthorizing" (Reconnect needed; Connect reuses this row). The mark
+    # commits with the lock's transaction and the error is raised after it, so
+    # the mark is neither rolled back nor able to clear a grant reconnected
+    # after the lock was released. Network and provider errors mark nothing.
+    def under_lock(connection)
+      dead = nil
+      result = connection.with_lock do
+        connection.reload
+        begin
+          yield connection.credential_payload_hash
+        rescue DeadGrant => e
+          connection.update!(status: "reauthorizing", credential_payload: nil)
+          dead = e
+          nil
+        end
+      end
+      raise dead if dead
+
+      result
     end
 
     def token_request(params)
@@ -225,7 +230,8 @@ module Services
     def http(uri, &block)
       Net::HTTP.start(uri.hostname, uri.port, use_ssl: true,
         open_timeout: TIMEOUT, read_timeout: TIMEOUT, max_retries: 0, &block)
-    rescue Timeout::Error, SystemCallError, SocketError, OpenSSL::SSL::SSLError
+    rescue Timeout::Error, SystemCallError, SocketError, OpenSSL::SSL::SSLError,
+           IOError, Net::ProtocolError, Net::HTTPBadResponse
       raise Error, "Xero could not be reached"
     end
 
