@@ -373,4 +373,38 @@ class FieldVoiceprintsTest < ActiveSupport::TestCase
     assert_match "Speaker 1:", @recording.reload.transcript_text
   end
 
+
+  test "a second pass finds a voice remembered since the first, and a miss keeps a current guess" do
+    fresh = untouched_recording
+    first, = identify!(fresh) # nobody remembered yet: nothing is sent
+    assert_nil first
+
+    store_print!(@voice)
+    second, label = identify!(fresh)
+    with_recognition(@account) { FieldVoiceprints::Identification.apply!(second, { "identification" => [ segment(0.0, 23.0, label) ] }) }
+    speaker = fresh.speakers.first.reload
+    assert_equal @voice, speaker.recognised_voice
+
+    third, = identify!(fresh)
+    with_recognition(@account) { FieldVoiceprints::Identification.apply!(third, { "identification" => [] }) }
+    assert_equal @voice, speaker.reload.recognised_voice, "a pass that finds nothing doesn't take back a current guess"
+  end
+
+  test "a pass that finds nothing clears a guess made with a print that's since been replaced" do
+    store_print!(@voice)
+    fresh = untouched_recording
+    identification, label = identify!(fresh)
+    with_recognition(@account) { FieldVoiceprints::Identification.apply!(identification, { "identification" => [ segment(0.0, 23.0, label) ] }) }
+    speaker = fresh.speakers.first.reload
+    assert_equal @voice, speaker.recognised_voice
+
+    # Remembered again from a better sample: same voice, a newer print.
+    generation = @voice.reload.print_generation + 1
+    @voice.update_columns(print_generation: generation)
+    FieldVoiceprint.where(field_voice: @voice).update_all(generation:)
+    again, = identify!(fresh)
+    with_recognition(@account) { FieldVoiceprints::Identification.apply!(again, { "identification" => [] }) }
+    assert_nil speaker.reload.recognised_voice_id
+  end
+
 end

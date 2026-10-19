@@ -9,4 +9,11 @@ class FieldRecordingIdentification < ApplicationRecord
 
   validates :status, inclusion: { in: STATUSES }
 
+  # Still out: dispatched, and young enough that its collector may still be
+  # polling (CollectIdentificationJob gives up after POLL_LIMIT × POLL_EVERY).
+  # An older one whose collector never ran doesn't hold up another pass.
+  OUTSTANDING_FOR = 1.hour
+
+  scope :outstanding, -> { where(status: "dispatched").where(created_at: OUTSTANDING_FOR.ago..) }
+
 end

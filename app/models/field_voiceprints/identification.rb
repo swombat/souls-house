@@ -1,7 +1,8 @@
 # Sending a recording to identify, and using the answer (spec §9), both under
 # the full lock order (FieldVoiceprints::Locks: account → recording → voices).
 #
-# Sending: both gates rechecked, the recording still kept and ready, every
+# Sending: both gates rechecked, the recording still kept and ready, no
+# identify already out for it, every
 # kept voice with a print locked, only current prints collected, labels opaque
 # (never names), and the POST made while the locks are held, so neither a
 # gate change, a discard nor a forget can slip between the check and the send.
@@ -21,6 +22,11 @@ module FieldVoiceprints::Identification
 
     FieldVoiceprints::Locks.with(account:, recording:, voices: candidates) do |locked_account, locked_recording, voices|
       next nil unless FieldVoiceprints.enabled_for?(locked_account) && locked_recording.kept? && locked_recording.ready?
+      # One identify out per recording. Jobs queued twice (the button pressed
+      # again before the worker ran, or pressed as the transcript lands) meet
+      # here under the recording lock; the first records its dispatch before
+      # releasing it, so the second sees that and makes no paid call.
+      next nil if locked_recording.identifications.outstanding.exists?
 
       prints = voices.filter_map do |voice|
         print = FieldVoiceprint.find_by(field_voice: voice)
@@ -67,15 +73,27 @@ module FieldVoiceprints::Identification
         untouched = sent_decision == 0 && speaker.decision_generation.zero? && !speaker.field_voice&.kept?
         next unless untouched
 
+        # No match keeps an earlier guess whose print is still the voice's
+        # current one: a second pass ("look again") adds what it finds and
+        # doesn't take back what an earlier pass found with the same print.
         hit = found[speaker.label]
-        speaker.update!(recognised_voice_id: hit&.dig(:voice_id), recognition_confidence: hit&.dig(:confidence),
-          recognition_print_generation: hit&.dig(:generation),
-          recognition_decision_generation: (speaker.decision_generation if hit))
+        if hit
+          speaker.update!(recognised_voice_id: hit[:voice_id], recognition_confidence: hit[:confidence],
+            recognition_print_generation: hit[:generation], recognition_decision_generation: speaker.decision_generation)
+        elsif speaker.recognised_voice_id && !guess_still_current?(speaker)
+          speaker.update!(**FieldRecordingSpeaker::RECOGNITION_FIELDS)
+        end
       end
       identification.update!(status: "done")
       locked_recording.touch
       true
     end
+  end
+
+  def guess_still_current?(speaker)
+    voice = FieldVoice.find_by(id: speaker.recognised_voice_id)
+    voice&.kept? && voice.print_generation == speaker.recognition_print_generation &&
+      FieldVoiceprint.where(field_voice: voice, generation: voice.print_generation).exists?
   end
 
 end
