@@ -169,8 +169,11 @@ Each query has one of four outcomes:
 - **wrong**: it guesses another voice. This is a false accept, **charged to the
   print that won**;
 - **rejected**: no guess (below threshold, margin or duplicate rule);
-- for **other-person** queries (speakers labelled as someone with no print, or
-  as anonymous), any guess is a false accept charged to the winning print.
+- for **other-person** queries (speakers labelled as a named person who has no
+  print), any guess is a false accept charged to the winning print. Speakers
+  set aside as **anonymous** count as negatives only when known not to be an
+  enrolled person (a person confirmed that on the review list). Otherwise an
+  anonymous speaker may be someone with a print, and isn't scored.
 
 ### 7.2 Per-print activation
 
@@ -244,9 +247,19 @@ are `machine` (§5).
 The sample job runs after embedding, which can take seconds and can be
 delivered twice. Anything a person does meanwhile wins.
 
+Two counters on the voice, kept apart so samples don't cancel each other:
+- **`learning_generation`** changes only when the whole voice's learning is
+  revoked: Forget. Jobs are checked against it. Revoking one speaker's sample
+  (un-name, rename, discard) is caught by that speaker's own checks below, so
+  it doesn't touch sibling jobs either.
+- **`print_generation`** changes whenever the centroid is rebuilt, including
+  after every sample write. Chips and guesses are checked against it, as now.
+  A job never checks it, so one sample landing doesn't invalidate the
+  others queued for the same voice.
+
 **Snapshot when the job is queued:** speaker id, the speaker's
 `decision_generation`, its `field_voice_id`, its `naming_source`, the voice's
-`print_generation` and `remember` flag, the recording's id, and the service
+`learning_generation` and `remember` flag, the recording's id, and the service
 profile.
 
 **Recheck under the lock order (account → recording → voice) before
@@ -255,30 +268,39 @@ any of these has changed or no longer holds:
 - the recording is kept and ready;
 - the speaker's `decision_generation` and `field_voice_id` are as snapshotted,
   and its `naming_source` is still eligible;
-- the voice is kept, `remember: true`, and its `print_generation` is as
+- the voice is kept, `remember: true`, and its `learning_generation` is as
   snapshotted. A Forget bumps it, so work queued before a Forget can't write
   after a "Remember again";
 - the service profile still matches the current profile.
 
 The sample is upserted by (voice, speaker) under that lock, so duplicate
-delivery writes one row. Each write bumps `print_generation`, rebuilds the
-print and marks validation stale.
+delivery writes one row. Each write then rebuilds the centroid from **all**
+current eligible samples (not by adding to the previous one), bumps
+`print_generation` and marks validation stale. Because the rebuild reads every
+sample under the voice lock, two jobs finishing in either order give the same
+print.
 
 **What each decision does, all under the same locks:**
-- *Forget*: destroys the voice's samples and print, bumps `print_generation`,
-  clears guesses that came from that print, sets `remember: false`.
+- *Forget*: destroys the voice's samples and print, bumps `learning_generation`
+  and `print_generation`, clears guesses that came from that print, sets
+  `remember: false`.
 - *Remember again*: sets `remember: true`. It does not revive old samples;
   learning restarts from eligible namings, re-queued fresh.
-- *Un-name / rename a speaker*: destroys that speaker's sample from the old
-  voice, rebuilds and invalidates the old voice's print, and clears guesses
-  made from it. A rename then queues a sample for the new voice.
+- *Un-name / rename a speaker*: bumps the speaker's `decision_generation` (so
+  its in-flight job writes nothing), destroys its sample from the old voice,
+  rebuilds and invalidates the old voice's print, and clears guesses made from
+  it. Other speakers' jobs for that voice are unaffected. A rename then queues
+  a sample for the new voice.
 - *Discard a recording*: destroys every sample from it and rebuilds the
-  affected prints.
+  affected prints. Jobs for its speakers fail the "recording is kept" check.
 - *Profile change* (a new model build): samples on the old profile are
   re-embedded by a backfill job. Prints use only one profile at a time and
   are inactive until rebuilt and re-validated.
 
-**Acceptance tests:** duplicate job delivery; Forget while an embedding is in
+**Acceptance tests:** two samples for the same voice from different speakers
+queued together, completing in both orders: both samples kept, the same print
+either way; a backfill of N speakers for one voice keeps N samples; duplicate
+job delivery; Forget while an embedding is in
 flight; Forget → Remember again while an old job is queued (the old job
 writes nothing); un-name and rename in flight; discard in flight; profile
 change in flight; a confirmed guess whose print was rebuilt before the
