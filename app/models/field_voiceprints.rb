@@ -1,8 +1,8 @@
 # The two gates on voice recognition (spec §9). The house gate is deploy
 # configuration, outside the database, so restoring a database can never
-# switch recognition back on. It also requires the backup retention to be
-# stated (a precondition in the spec) and pyannote to be configured. The
-# account gate is `recognise_voices`, off by default.
+# switch recognition back on. It also requires pyannote to be configured. The
+# account gate is `recognise_voices`, off by default. Backups aren't pruned,
+# so no retention is stated or required (Daniel, 2026-10-19).
 #
 # Forgetting is never gated: it works whatever these say.
 module FieldVoiceprints
@@ -17,17 +17,13 @@ module FieldVoiceprints
   module_function
 
   def house_enabled?
-    ENV["SOULSHOUSE_FIELD_VOICEPRINTS"] == "on" && backup_retention_days.present? && PyannoteClient.configured?
+    ENV["SOULSHOUSE_FIELD_VOICEPRINTS"] == "on" && PyannoteClient.configured?
   end
 
   def enabled_for?(account)
     house_enabled? && account.recognise_voices?
   end
 
-  def backup_retention_days
-    days = ENV["SOULSHOUSE_BACKUP_RETENTION_DAYS"].to_s
-    days.match?(/\A\d+\z/) ? days.to_i : nil
-  end
 
   # Forget every print in an account. Never gated. Keep one lock/transaction
   # per voice; presentation coalescing must not broaden these locks.

@@ -18,7 +18,6 @@
     recognise_voices = false,
     house_recognition = false,
     can_change_setting = false,
-    backup_retention_days = null,
     account,
   } = $props();
 
@@ -244,6 +243,6 @@
     <p class="text-sm text-muted-foreground">
       When someone agrees, on a transcript, that this Field should remember a person's voice:
     </p>
-    <VoiceMeaning whose="that person's voice" backupDays={backup_retention_days} onVoicesPage />
+    <VoiceMeaning whose="that person's voice" onVoicesPage />
   </section>
 </div>

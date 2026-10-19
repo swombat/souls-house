@@ -161,7 +161,7 @@
         <details class="rounded-md bg-muted/50 px-3 py-2">
           <summary class="cursor-pointer text-sm font-medium">What this means</summary>
           <div class="pt-2">
-            <VoiceMeaning whose={isMe ? 'your voice' : `${name}'s voice`} {voicesUrl} />
+            <VoiceMeaning whose={isMe ? 'your voice' : `${name}'s voice`} />
           </div>
         </details>
         {#if error}<p class="text-sm text-destructive" role="alert">{error}</p>{/if}

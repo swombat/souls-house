@@ -38,16 +38,15 @@ module FieldRecordingHelpers
     recording.reload
   end
 
-  # Both recognition gates open for the block: the house flag and retention
-  # in ENV, pyannote "configured", and the account setting on.
+  # Both recognition gates open for the block: the house flag in ENV,
+  # pyannote "configured", and the account setting on.
   def with_recognition(account)
-    previous = ENV.to_h.slice("SOULSHOUSE_FIELD_VOICEPRINTS", "SOULSHOUSE_BACKUP_RETENTION_DAYS")
+    previous = ENV.to_h.slice("SOULSHOUSE_FIELD_VOICEPRINTS")
     ENV["SOULSHOUSE_FIELD_VOICEPRINTS"] = "on"
-    ENV["SOULSHOUSE_BACKUP_RETENTION_DAYS"] = "30"
     account.update!(recognise_voices: true)
     PyannoteClient.stub(:api_key, "pk_test") { yield }
   ensure
-    %w[SOULSHOUSE_FIELD_VOICEPRINTS SOULSHOUSE_BACKUP_RETENTION_DAYS].each { |key| ENV[key] = previous[key] }
+    ENV["SOULSHOUSE_FIELD_VOICEPRINTS"] = previous["SOULSHOUSE_FIELD_VOICEPRINTS"]
   end
 
   # A recording where speaker_0 talks alone for long enough to remember.

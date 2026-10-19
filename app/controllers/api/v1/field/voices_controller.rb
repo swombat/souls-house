@@ -28,8 +28,7 @@ module Api
             pending_enrolments: pending_enrolments_json(account),
             recognise_voices: account.recognise_voices,
             house_recognition: FieldVoiceprints.house_enabled?,
-            can_change_setting: account.manageable_by?(current_api_user),
-            backup_retention_days: FieldVoiceprints.backup_retention_days
+            can_change_setting: account.manageable_by?(current_api_user)
           }
         end
 

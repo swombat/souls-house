@@ -86,7 +86,7 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
     assert tomas["remembered"]
     assert_equal 12, tomas["sample_seconds"]
     assert_equal 1, tomas["used_in"]
-    assert_equal 30, shown["backup_retention_days"]
+    assert_not shown.key?("backup_retention_days")
     assert shown["house_recognition"]
   end
 

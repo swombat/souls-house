@@ -1035,7 +1035,7 @@ test('with recognition on, speakers get the recognition chip, the remember offer
   await expect(page.getByTestId('remember-voice-continue')).toBeDisabled();
   await panel.getByText('What this means').click();
   await expect(page.getByTestId('voice-meaning')).toContainText('voice print');
-  await expect(page.getByTestId('voice-meaning')).toContainText('The Voices page says how long');
+  await expect(page.getByTestId('voice-meaning')).toContainText('indeterminate time');
   await page.getByTestId('remember-voice-consent').check();
   await expect(page.getByTestId('remember-voice-continue')).toBeEnabled();
   await page.screenshot({ path: 'tmp/field-recognition-remember.png', fullPage: true });
@@ -1083,14 +1083,13 @@ const voices = [
   },
 ];
 
-test('the Voices page, house gate on: the switch, Forget and the backup days', async ({ mount, page }) => {
+test('the Voices page, house gate on: the switch, Forget and the backups line', async ({ mount, page }) => {
   const component = await mount(VoicesPage, {
     props: {
       voices,
       recognise_voices: false,
       house_recognition: true,
       can_change_setting: true,
-      backup_retention_days: 30,
       account,
     },
   });
@@ -1103,7 +1102,7 @@ test('the Voices page, house gate on: the switch, Forget and the backup days', a
   await expect(page.getByTestId('voice-forget')).toHaveCount(1);
   await expect(page.getByTestId('voice-row').first()).toContainText('Voice remembered (22 s sample, by Sam Rivers');
   await expect(page.getByTestId('voice-row').nth(1)).toContainText('Name only');
-  await expect(page.getByTestId('voice-meaning-backups')).toContainText('after 30 days');
+  await expect(page.getByTestId('voice-meaning-backups')).toContainText('indeterminate time');
   await expect(component).not.toContainText('thinks');
   await page.screenshot({ path: 'tmp/field-voices-on.png', fullPage: true });
 });
@@ -1118,7 +1117,6 @@ test('the Voices page, house gate off: no switch, but a remembered voice can sti
       recognise_voices: true,
       house_recognition: false,
       can_change_setting: true,
-      backup_retention_days: null,
       account,
     },
   });
@@ -1126,7 +1124,7 @@ test('the Voices page, house gate off: no switch, but a remembered voice can sti
   await expect(page.getByTestId('voices-switch')).toHaveCount(0);
   await expect(page.getByTestId('voice-forget')).toHaveCount(1);
   await expect(page.getByTestId('voices-forget-all')).toBeVisible();
-  await expect(page.getByTestId('voice-meaning-backups')).toHaveCount(0);
+  await expect(page.getByTestId('voice-meaning-backups')).toContainText('indeterminate time');
   await page.screenshot({ path: 'tmp/field-voices-house-off.png', fullPage: true });
 });
 

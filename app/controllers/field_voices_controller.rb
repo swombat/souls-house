@@ -13,7 +13,6 @@ class FieldVoicesController < ApplicationController
       recognise_voices: current_account.recognise_voices,
       house_recognition: FieldVoiceprints.house_enabled?,
       can_change_setting: current_account.manageable_by?(Current.user),
-      backup_retention_days: FieldVoiceprints.backup_retention_days,
       account: current_account.as_json
     }
   end

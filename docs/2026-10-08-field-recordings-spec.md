@@ -577,12 +577,12 @@ revocation flow that the person themself can use. That flow is out of scope
 for this spec and comes back to Daniel when the basis is known. Slice A and B don't
 depend on it.
 
-**As built.** The house gate is `SOULSHOUSE_FIELD_VOICEPRINTS=on`, **and**
-`SOULSHOUSE_BACKUP_RETENTION_DAYS=<n>`, **and** a pyannote key in
-credentials (`ai.pyannote.api_key`). All three live outside the database. The
-retention requirement is enforced in code, so the precondition can't be skipped
-by turning the flag on alone, and the number it gives is what the Voices page
-tells people. The account gate is `accounts.recognise_voices`. Only someone
+**As built.** The house gate is `SOULSHOUSE_FIELD_VOICEPRINTS=on` **and** a
+pyannote key in credentials (`ai.pyannote.api_key`). Both live outside the
+database. (Until 2026-10-19 it also required `SOULSHOUSE_BACKUP_RETENTION_DAYS`.
+Daniel dropped that: the backup bucket has no expiry rule, so the Voices page
+now says backups may keep a forgotten print for an indeterminate time and
+promises nothing about how long.) The account gate is `accounts.recognise_voices`. Only someone
 who can manage the account changes it, under the account lock that identify
 and print write-back also take. "Forget voice", "Forget all voices", deleting
 a name and the restore reset (`bin/rails field:reset_biometrics_after_restore`)
