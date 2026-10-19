@@ -13,7 +13,8 @@
   </li>
   <li>Anyone in this Field can forget it at any time on {onVoicesPage ? 'this page' : 'the Voices page'}.</li>
   <li>
-    Forgetting deletes the voice print. Recordings already sent to the voice service can't be called back. That
+    Forgetting removes the voice print from this Field's active recognition database; it doesn't guarantee that
+    every retained copy is erased. Recordings already sent to the voice service can't be called back. That
     service deletes what it was sent straight after processing, and its results within a day.
   </li>
   <li data-testid="voice-meaning-backups">

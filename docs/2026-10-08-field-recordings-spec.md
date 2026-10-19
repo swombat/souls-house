@@ -733,11 +733,11 @@ means":
   24 h.
 - Database backups taken before the forget still contain the encrypted print
   until they're deleted. `DatabaseBackupJob` uploads `pg_dump`s to S3 and
-  expires nothing itself. Any retention would be an S3 lifecycle rule I can't
-  see from here. **Precondition for opening the C gate:** Daniel confirms
-  (or sets) a backup retention period, and the "What this means" text states
-  it as a number of days. "Until backups age out" isn't stated anywhere
-  unless they actually do.
+  expires nothing itself, and the bucket has no lifecycle rule (checked
+  2026-10-19). There is no retention precondition: Daniel dropped it that
+  day. The "What this means" text says backups may keep a forgotten print for
+  an indeterminate time, and that forgetting removes the print from the
+  active recognition database without promising erasure of every copy.
 
 **Restoring a database resets biometric state.** A same-database forget log
 would be rolled back by the very restore it was meant to survive, so there
@@ -943,8 +943,8 @@ setup steps in §2 are listed in each PR that needs them.
   claim that sent requests can be recalled.
 - C6: the forget log is dropped. A restore resets all biometric state before
   recognition resumes, and the house flag is an env var so a restored
-  database can't switch it on. A confirmed backup retention period is a
-  precondition for opening C.
+  database can't switch it on. (A confirmed backup retention period was a
+  precondition for opening C until 2026-10-19; Daniel dropped it.)
 - §14 answers taken: 70% is computed on non-overlapping speech and stays
   experimental. A1 is split into A1a and A1b. The attestation checkbox is
   stated as not settling the consent basis.
