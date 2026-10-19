@@ -25,14 +25,18 @@ class FieldVoiceprintsTest < ActiveSupport::TestCase
   test "both gates must be open, and the house gate needs pyannote" do
     assert_not FieldVoiceprints.enabled_for?(@account)
     with_recognition(@account) { assert FieldVoiceprints.enabled_for?(@account) }
-
-    with_recognition(@account) do
-      PyannoteClient.stub(:api_key, nil) { assert_not FieldVoiceprints.house_enabled?, "no pyannote, no recognition" }
-    end
     with_recognition(@account) do
       @account.update!(recognise_voices: false)
       assert_not FieldVoiceprints.enabled_for?(@account)
     end
+
+    # Not inside with_recognition: nesting a stub of the same method leaves
+    # api_key undefined afterwards. Flag on, no key: no recognition.
+    previous = ENV["SOULSHOUSE_FIELD_VOICEPRINTS"]
+    ENV["SOULSHOUSE_FIELD_VOICEPRINTS"] = "on"
+    PyannoteClient.stub(:api_key, nil) { assert_not FieldVoiceprints.house_enabled?, "no pyannote, no recognition" }
+  ensure
+    ENV["SOULSHOUSE_FIELD_VOICEPRINTS"] = previous
   end
 
   test "the sample is clean turns only, at least 8 s, at most 30 s" do
