@@ -16,7 +16,7 @@ class FieldVoiceprint < ApplicationRecord
   validates :print, :generation, :profile, :sample_digest, presence: true
 
   after_save :refresh_presentation, if: -> {
-    (saved_changes.keys & %w[id field_voice_id generation sample_count recording_count speech_ms validated validated_digest]).any?
+    (saved_changes.keys & %w[id field_voice_id generation sample_count recording_count speech_ms sample_digest validated validated_digest]).any?
   }
   before_destroy { refresh_presentation(destroying: true) }
 

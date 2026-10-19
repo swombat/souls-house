@@ -43,6 +43,7 @@ module FieldRecordingHelpers
   # learning may start.
   def with_recognition(account)
     previous = ENV.to_h.slice("VOICE_EMBEDDING_URL", "VOICE_EMBEDDING_TOKEN")
+    cutover = Setting.instance.field_naming_cutover_at
     ENV["VOICE_EMBEDDING_URL"] = "http://souls-house-voice-embeddings:8000"
     ENV["VOICE_EMBEDDING_TOKEN"] = "t" * 32
     account.update!(recognise_voices: true)
@@ -50,6 +51,7 @@ module FieldRecordingHelpers
     yield
   ensure
     %w[VOICE_EMBEDDING_URL VOICE_EMBEDDING_TOKEN].each { |key| ENV[key] = previous[key] }
+    Setting.instance.update_columns(field_naming_cutover_at: cutover) if previous
   end
 
   # A recording where speaker_0 talks alone for long enough to remember.
