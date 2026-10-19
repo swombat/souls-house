@@ -318,50 +318,6 @@ test('one voice heard as two speakers shows as one card, with its parts', async 
   await page.screenshot({ path: 'tmp/field-recording-merged-voice.png', fullPage: true });
 });
 
-test('a merged card keeps a voice sample waiting on a part that does not stand for it', async ({ mount, page }) => {
-  const part = (id, label, position, extra) => ({
-    id,
-    label,
-    position,
-    default_name: `Speaker ${position + 1}`,
-    name: 'Sam',
-    named: true,
-    voice_id: 'v1',
-    naming_source: 'human',
-    can_remember: true,
-    remembered: false,
-    remembering: false,
-    pending_enrolment: null,
-    ...extra,
-  });
-  await mount(RecordingPage, {
-    props: {
-      recording,
-      speakers: [
-        part('s1', 'speaker_0', 0, {
-          talk_ms: 60_000,
-          pending_enrolment: { id: 'e9', sample_ms: 12_000, sample_url: '/rails/active_storage/blobs/z/sample.wav' },
-        }),
-        part('s2', 'speaker_1', 1, { talk_ms: 600_000, clip_start_ms: 6400, clip_end_ms: 7000 }),
-      ],
-      voices: [{ id: 'v1', name: 'Sam' }],
-      members_without_voice: [],
-      my_voice_id: null,
-      recognition_enabled: true,
-      account,
-    },
-  });
-
-  const sam = page.getByTestId('speaker-card');
-  await expect(sam).toHaveCount(1);
-  const own = sam.getByTestId('speaker-part-enrolment');
-  await expect(own).toContainText('From Speaker 1');
-  await expect(own.getByTestId('voice-preview')).toContainText('12 s of clear speech');
-  await expect(own.getByRole('button', { name: 'Use it' })).toBeVisible();
-  await expect(own.getByRole('button', { name: 'Not them' })).toBeVisible();
-  await expect(sam.getByTestId('remember-voice')).toHaveCount(1);
-});
-
 const fieldProps = (recordings) => ({
   items: recordings,
   field_empty: recordings.length === 0,
@@ -1004,7 +960,7 @@ const recognitionProps = (enabled) => ({
   account,
 });
 
-test('with recognition on, speakers get the recognition chip, the remember offer and the preview', async ({
+test('with recognition on, an undecided speaker gets the recognition chip and nothing asks to remember a voice', async ({
   mount,
   page,
 }) => {
@@ -1016,34 +972,13 @@ test('with recognition on, speakers get the recognition chip, the remember offer
   await expect(chip).toContainText('(82)');
   await expect(chip.getByRole('button', { name: "That's Tomás" })).toBeVisible();
 
-  await expect(page.getByTestId('remember-voice')).toHaveText("Remember Priya's voice…");
-  await expect(page.getByTestId('voice-preview')).toContainText('This is what will be remembered as Ana.');
-  await expect(page.getByTestId('voice-preview')).toContainText('14 s of clear speech');
-  await expect(page.getByTestId('voice-preview').getByRole('button', { name: 'Use it' })).toBeVisible();
-  await expect(component).toContainText('This Field remembers your voice');
+  // Voices are learned from namings now: no consent panel, no sample preview.
+  await expect(page.getByTestId('remember-voice')).toHaveCount(0);
+  await expect(page.getByTestId('voice-preview')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Voices this Field knows' })).toBeVisible();
   await expect(component).not.toContainText('thinks');
   await expect(component).not.toContainText('voice print');
   await page.screenshot({ path: 'tmp/field-recognition-show.png', fullPage: true });
-
-  await page.getByTestId('remember-voice').click();
-  const panel = page.getByTestId('remember-voice-panel');
-  await expect(panel).toContainText(
-    "Remember Priya's voice so this Field can suggest them in later recordings. Only tick this if Priya has agreed."
-  );
-  await expect(page.getByTestId('remember-voice-consent')).not.toBeChecked();
-  await expect(page.getByTestId('remember-voice-continue')).toBeDisabled();
-  await panel.getByText('What this means').click();
-  await expect(page.getByTestId('voice-meaning')).toContainText('voice print');
-  await expect(page.getByTestId('voice-meaning')).toContainText('indeterminate time');
-  await page.getByTestId('remember-voice-consent').check();
-  await expect(page.getByTestId('remember-voice-continue')).toBeEnabled();
-  await page.screenshot({ path: 'tmp/field-recognition-remember.png', fullPage: true });
-
-  // Closing and reopening starts unticked again.
-  await page.getByRole('button', { name: 'Cancel' }).click();
-  await page.getByTestId('remember-voice').click();
-  await expect(page.getByTestId('remember-voice-consent')).not.toBeChecked();
 });
 
 test('with recognition off, the transcript page has no recognition, remember offer or preview', async ({
@@ -1066,20 +1001,24 @@ const voices = [
     name: 'Sam',
     member: true,
     used_in: 4,
+    remember: true,
     remembered: true,
+    recordings: 3,
     sample_seconds: 22,
-    remembered_at: '2026-10-08T08:00:00Z',
-    remembered_by: 'Sam Rivers',
+    guessing: true,
+    learned_at: '2026-10-08T08:00:00Z',
   },
   {
     id: 'v2',
     name: 'Priya',
     member: false,
     used_in: 1,
+    remember: false,
     remembered: false,
+    recordings: 0,
     sample_seconds: null,
-    remembered_at: null,
-    remembered_by: null,
+    guessing: false,
+    learned_at: null,
   },
 ];
 
@@ -1096,12 +1035,14 @@ test('the Voices page, house gate on: the switch, Forget and the backups line', 
   await expect(component).toContainText('Voices this Field knows');
   await expect(page.getByTestId('voices-switch')).toBeVisible();
   await expect(page.getByTestId('voices-switch')).toBeEnabled();
-  await expect(component).toContainText("Suggest who's speaking from voices this Field remembers");
-  await expect(component).toContainText('Remembered voices are kept but not used while this is off.');
+  await expect(component).toContainText("Learn voices from the names people give, and suggest who's speaking");
+  await expect(component).toContainText('Learned voices are kept but not used while this is off.');
   await expect(page.getByTestId('voices-forget-all')).toBeVisible();
   await expect(page.getByTestId('voice-forget')).toHaveCount(1);
-  await expect(page.getByTestId('voice-row').first()).toContainText('Voice remembered (22 s sample, by Sam Rivers');
-  await expect(page.getByTestId('voice-row').nth(1)).toContainText('Name only');
+  await expect(page.getByTestId('voice-remember')).toHaveCount(1);
+  await expect(page.getByTestId('voice-row').first()).toContainText('Voice learned from 3 recordings, 22 s · suggesting');
+  await expect(page.getByTestId('voice-row').nth(1)).toContainText('Voice forgotten, not learning');
+  await expect(page.getByTestId('voice-meaning')).toContainText('speaker nobody has named yet');
   await expect(page.getByTestId('voice-meaning-backups')).toContainText('indeterminate time');
   await expect(component).not.toContainText('thinks');
   await page.screenshot({ path: 'tmp/field-voices-on.png', fullPage: true });
@@ -1120,7 +1061,7 @@ test('the Voices page, house gate off: no switch, but a remembered voice can sti
       account,
     },
   });
-  await expect(component).toContainText("Voice recognition isn't available in this house yet.");
+  await expect(component).toContainText("Voice recognition isn't running in this house right now.");
   await expect(page.getByTestId('voices-switch')).toHaveCount(0);
   await expect(page.getByTestId('voice-forget')).toHaveCount(1);
   await expect(page.getByTestId('voices-forget-all')).toBeVisible();
