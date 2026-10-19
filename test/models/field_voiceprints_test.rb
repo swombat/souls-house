@@ -186,9 +186,11 @@ class FieldVoiceprintsTest < ActiveSupport::TestCase
     assert_empty client.calls, "nobody undecided had enough speech to embed"
   end
 
+  # A guess as Identification writes it: stamped with the live cohort key.
   def guess!(speaker, generation: @voice.reload.print_generation)
     speaker.update!(recognised_voice: @voice, recognition_confidence: 80, recognition_print_generation: generation,
-      recognition_decision_generation: speaker.decision_generation)
+      recognition_decision_generation: speaker.decision_generation,
+      recognition_cohort: FieldVoiceprints::Cohort.active(@account).last)
     speaker.reload.recognition_token
   end
 

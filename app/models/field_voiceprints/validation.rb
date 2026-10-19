@@ -53,7 +53,7 @@ module FieldVoiceprints::Validation
 
   def clear_stale_guesses!(account, key)
     stale = FieldRecordingSpeaker.joins(:field_recording).where(field_recordings: { account_id: account.id })
-      .where.not(recognised_voice_id: nil).where("recognition_cohort IS DISTINCT FROM ?", key)
+      .where.not(recognised_voice_id: nil).where("field_recording_speakers.recognition_cohort IS DISTINCT FROM ?", key)
     recording_ids = stale.distinct.pluck(:field_recording_id)
     return if recording_ids.empty?
 
