@@ -17,6 +17,7 @@
     GoogleLogo,
     Circle,
     Plugs,
+    Receipt,
   } from 'phosphor-svelte';
   import { agentIconFor } from '$lib/agent-icons';
   import { editAccountAgentPath } from '@/routes';
@@ -30,6 +31,7 @@
     dropbox: DropboxLogo,
     google_workspace: GoogleLogo,
     oura: Circle,
+    xero: Receipt,
   };
   function diskSize(bytes) {
     if (bytes == null) return '—';

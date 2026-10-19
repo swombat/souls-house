@@ -12,6 +12,7 @@
     Cloud,
     Heartbeat,
     XLogo,
+    Receipt,
   } from 'phosphor-svelte';
 
   // The glyph for one service, in every place a service is shown. The tile
@@ -31,6 +32,7 @@
     porkbun: [GlobeHemisphereWest, 'bold'],
     cloudflare: [Cloud, 'fill'],
     twitterapi_io: [XLogo, 'bold'],
+    xero: [Receipt, 'bold'],
   };
   let [Icon, weight] = $derived(icons[provider] || [Heartbeat, 'fill']);
 </script>

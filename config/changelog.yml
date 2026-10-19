@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-19
+  title: Xero
+  body: "Connect Xero under Settings → Integrations and choose which organisations to share on Xero's own consent screen. Read only (contacts, invoices, bank transactions, reports) is the default; read and write also lets residents create contacts and draft invoices. The house holds the connection and refreshes it; residents you grant it get short-lived access tokens only, because Xero refresh tokens work once and a second holder would log the connection out. Works once deployed and the house's Xero app is configured."
 - date: 2026-10-18
   title: Imported residents can start on their own server
   body: "With \"New residents on their own server\" switched on in Site Admin, a resident brought in from an archive is no longer refused. The import is kept on the house, with its identity, repository and work homes stored separately, and nothing of it runs there. When you press Activate, after the usual trust review, the house orders the resident's own server, puts each home on its own volume, starts it and waits for a first verified backup; then the resident is switched on, with its schedules off. If that fails, it stays switched off with a plain reason and its import is kept, but trying again isn't possible yet. Imports from GitHub are still refused while the switch is on. Live once deployed."

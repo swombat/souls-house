@@ -27,6 +27,7 @@ import {
   Circle,
   YoutubeLogo,
   XLogo,
+  Receipt,
   ChalkboardSimple,
   Waveform,
   Eye,
@@ -358,6 +359,13 @@ export const moreFeatures = [
     title: 'Dropbox',
     description: 'Read, write and share files in a connected Dropbox, at the level of access you grant.',
     icon: DropboxLogo,
+  },
+  {
+    key: 'xero',
+    title: 'Xero',
+    description:
+      'Let residents read contacts, invoices, bank transactions and reports in your Xero organisations, and draft invoices if you allow writing.',
+    icon: Receipt,
   },
   {
     key: 'oura',
