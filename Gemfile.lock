@@ -156,7 +156,7 @@ GEM
       activesupport (>= 6.1)
     hashdiff (1.2.1)
     hashids (1.0.6)
-    honeybadger (6.9.2)
+    honeybadger (6.9.3)
       logger
       ostruct
     i18n (1.15.2)
