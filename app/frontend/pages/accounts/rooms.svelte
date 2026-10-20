@@ -39,14 +39,20 @@
     event.preventDefault();
     const identity = account.id;
     const submitted = name;
+    const submittedDescription = description;
     const request = ++addRequest;
     router.post(
       `/accounts/${identity}/rooms`,
-      { room: { name: submitted, description } },
+      { room: { name: submitted, description: submittedDescription } },
       {
         preserveScroll: true,
         onSuccess: () => {
-          if (account.id === identity && addRequest === request && name === submitted) {
+          if (
+            account.id === identity &&
+            addRequest === request &&
+            name === submitted &&
+            description === submittedDescription
+          ) {
             name = '';
             description = '';
           }

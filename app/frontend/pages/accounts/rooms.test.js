@@ -49,3 +49,13 @@ test('a new room is sent with what it is for, and rooms show it', async () => {
   await fireEvent.submit(screen.getByLabelText('New room name').closest('form'));
   expect(router.post.mock.calls.at(-1)[1]).toEqual({ room: { name: 'Life', description: 'home things' } });
 });
+
+test('a description typed while the add is pending survives its success', async () => {
+  render(Rooms, props);
+  await fireEvent.input(screen.getByLabelText('New room name'), { target: { value: 'Build' } });
+  await fireEvent.submit(screen.getByLabelText('New room name').closest('form'));
+  const pending = router.post.mock.calls.at(-1)[2];
+  await fireEvent.input(screen.getByLabelText('New room: use this room when'), { target: { value: 'newer text' } });
+  pending.onSuccess();
+  expect(screen.getByLabelText('New room: use this room when')).toHaveValue('newer text');
+});

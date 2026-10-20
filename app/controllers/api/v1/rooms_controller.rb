@@ -32,8 +32,13 @@ module Api
 
       private
 
+      # A resident key reaches its home and the accounts it is seated in as a
+      # guest (requested_account). A person's key is rechecked against their
+      # current, confirmed membership of an enabled account on every request,
+      # reads included, so a removed member's key stops at once (Mira, #475).
       def set_account
         @account = requested_account
+        human_account!(@account) unless current_api_agent
       end
 
     end

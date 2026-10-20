@@ -82,6 +82,41 @@ module Api
         assert_includes response.parsed_body["rooms"].map { |room| room["name"] }, "From Key"
       end
 
+      test "a person's key stops when they leave the account, reads included" do
+        membership = memberships(:team_member)
+        headers = { "Authorization" => "Bearer #{ApiKey.generate_for(membership.user, name: "Member", account: @nexus).raw_token}" }
+        get api_v1_rooms_url, headers: headers
+        assert_response :success
+
+        membership.destroy!
+
+        get api_v1_rooms_url, headers: headers
+        assert_response :not_found
+        post api_v1_rooms_url, params: { name: "After leaving" }, headers: headers, as: :json
+        assert_response :not_found
+        assert_not @nexus.rooms.exists?(name: "After leaving")
+      end
+
+      test "a person's key stops when their membership is unconfirmed" do
+        memberships(:daniel_personal).update_columns(confirmed_at: nil)
+
+        get api_v1_rooms_url, headers: @account_headers
+        assert_response :not_found
+        post api_v1_rooms_url, params: { name: "Unconfirmed" }, headers: @account_headers, as: :json
+        assert_response :not_found
+        assert_not @home.rooms.exists?(name: "Unconfirmed")
+      end
+
+      test "a disabled account's key is not found, for reads and writes" do
+        @home.update_columns(disabled_at: Time.current)
+
+        get api_v1_rooms_url, headers: @account_headers
+        assert_response :not_found
+        post api_v1_rooms_url, params: { name: "Closed" }, headers: @account_headers, as: :json
+        assert_response :not_found
+        assert_not @home.rooms.exists?(name: "Closed")
+      end
+
     end
   end
 end
