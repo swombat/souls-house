@@ -55,7 +55,13 @@ test('room navigation stays live on a non-chat page, catches up and preserves dr
     const second = await mutate('create', { name: 'Second live room' });
     await mutate('move', { room: second.id, direction: -1 });
     await roomMenu.click();
-    await expect(page.getByRole('menuitem')).toHaveText(['Main', 'Second live room', 'First live room', 'All chats']);
+    await expect(page.getByRole('menuitem')).toHaveText([
+      'Main',
+      'Second live room',
+      'First live room',
+      'All chats',
+      'Manage rooms…',
+    ]);
     await page.keyboard.press('Escape');
 
     // The rename notification is lost: reconnect alone must refresh metadata.
