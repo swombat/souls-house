@@ -30,30 +30,11 @@ module Agents
       end
     end
 
-    test "stages private unique files beside each destination before ordered atomic replacement" do
-      script = manifest_script
-      assert_match(/\Aexec >\/dev\/null 2>&1\nset -eu\numask 077\n/, script)
-      assert_includes script, 'source_stage=$(mktemp /run/.helixkit-source.yml.XXXXXX)'
-      assert_includes script, 'live_stage=$(mktemp /run/helixkit/.services.yml.XXXXXX)'
-      assert_includes script, 'trap \'rm -f -- "$source_stage"\' EXIT'
-      assert_includes script, "trap 'exit 1' HUP INT TERM"
-      assert_includes script, 'cat > "$source_stage"'
-      assert_includes script, 'cat > "$live_stage"'
-      assert_includes script, "' < /run/helixkit-source.yml"
-      source_replace = script.index('mv -fT -- "$source_stage" /run/helixkit-source.yml')
-      live_replace = script.index('mv -fT -- "$live_stage" /run/helixkit/services.yml')
-      assert source_replace
-      assert live_replace
-      privilege_drop = script.index("gosu agent sh -c")
-      assert_operator source_replace, :<, privilege_drop
-      assert_operator privilege_drop, :<, script.index('live_stage=$(mktemp')
-      assert_operator source_replace, :<, live_replace
-      assert_not_includes script, "chmod"
-      assert_not_includes script, "chown"
-      assert_not_includes script, "echo"
-    end
-
     test "local shell replaces both files privately without modifying their old inodes" do
+      script = manifest_script
+      assert_includes script, "umask 077" # backstop: mktemp already creates 0600, so no run test sees this
+      %w[chmod chown echo].each { |command| assert_not_includes script, command }
+
       exercise_script do |root, source, live, output, errors, status|
         assert status.success?
         assert_empty output
