@@ -252,4 +252,20 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
     end
   end
 
+
+  test "a print learned before the check and left unchecked by it still matches the account's recordings again, once" do
+    with_recognition(@account) do
+      store_print!(@voice, vector: voice_vector(3), active: false)
+      unchanged = ->(_account) { {} } # the check runs and leaves every verdict as it was
+      FieldVoiceprints::Validation.stub(:run!, unchanged) do
+        assert_enqueued_with(job: FieldRecordings::IdentifyJob, args: [ @recording.id ]) do
+          FieldVoices::ValidatePrintsJob.perform_now(@account.id)
+        end
+        assert_no_enqueued_jobs(only: FieldRecordings::IdentifyJob) do
+          FieldVoices::ValidatePrintsJob.perform_now(@account.id)
+        end
+      end
+    end
+  end
+
 end
