@@ -1,5 +1,5 @@
 <script>
-  import { inertia } from '@inertiajs/svelte';
+  import { router } from '@inertiajs/svelte';
   import { Check } from 'phosphor-svelte';
   import { accountChatsPath } from '@/routes';
   import ReplyAttentionBadge from './ReplyAttentionBadge.svelte';
@@ -38,6 +38,15 @@
     open = false;
   }
 
+  // Plain anchors so middle-click and cmd-click still open a new tab; an ordinary
+  // click goes through the router like the rest of the navbar.
+  function visit(event, href) {
+    closeNow();
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    router.visit(href);
+  }
+
   $effect(() => () => clearTimeout(closeTimer));
 </script>
 
@@ -57,11 +66,9 @@
         <div class="px-2 py-1.5 text-xs text-muted-foreground">Switch account</div>
         {#each accounts as account (account.id)}
           {@const current = account.id === currentAccount?.id}
-          <!-- A plain anchor with the inertia action: the legacy Link component drops aria-current and onclick. -->
           <a
             href={accountChatsPath(account.id)}
-            use:inertia
-            onclick={closeNow}
+            onclick={(event) => visit(event, accountChatsPath(account.id))}
             aria-current={current ? 'page' : undefined}
             class="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent {current
               ? 'font-semibold'
