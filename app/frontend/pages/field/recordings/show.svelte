@@ -24,7 +24,7 @@
 
   let {
     recording,
-    words = [],
+    transcript = { revision: null, words: [] },
     speakers = [],
     voices = [],
     members_without_voice = [],
@@ -35,30 +35,28 @@
     account,
   } = $props();
 
+  // The transcript's words travel in their own prop, `transcript`, with the
+  // revision they belong to, so the recording's refreshes never resend them (a
+  // long meeting is tens of thousands of words: 2.2 MB on 2026-10-20). While
+  // the recording reports a revision the page doesn't hold the words for (it
+  // finished transcribing, or someone corrected a line), the page asks for
+  // them once straight away, and every recording refresh until they arrive
+  // carries them too: a request lost to a disconnect is retried by the
+  // reconnect's catch-up. A full visit brings both at once.
+  const transcriptPending = $derived((recording.transcript_revision ?? null) !== (transcript?.revision ?? null));
+  const words = $derived(transcript?.words ?? []);
+
   const updateSync = createDynamicSync();
   $effect(() => {
     updateSync({
-      [`FieldRecording:${recording.id}`]: ['recording', 'speakers'],
+      [`FieldRecording:${recording.id}`]: transcriptPending
+        ? ['recording', 'speakers', 'transcript']
+        : ['recording', 'speakers'],
       [`FieldVoiceActivity:${account.id}`]: ['voices', 'members_without_voice', 'my_voice_id', 'recognition_enabled'],
     });
   });
-
-  // The transcript's words are a separate prop, so the refreshes above never
-  // resend them (a long meeting is tens of thousands of words). They are asked
-  // for only when the recording says its transcript changed: it finished
-  // transcribing, or someone corrected a line. A full visit brings both at
-  // once, which counts as already loaded.
-  let wordsSeen = words;
-  let wordsRevision = recording.transcript_revision;
   $effect(() => {
-    const revision = recording.transcript_revision;
-    if (words !== wordsSeen) {
-      wordsSeen = words;
-      wordsRevision = revision;
-    } else if (revision !== wordsRevision) {
-      wordsRevision = revision;
-      reloadProps(['words']);
-    }
+    if (transcriptPending) reloadProps(['transcript']);
   });
 
   const ready = $derived(recording.status === 'ready');
@@ -359,7 +357,7 @@
             onSave={saveLine}
             onReassign={reassignLine}
             choices={speakerChoices}
-            revision={recording.transcript_revision} />
+            revision={transcript.revision} />
         </Card.Content>
       </Card.Root>
     {:else}

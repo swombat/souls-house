@@ -89,7 +89,7 @@ test('the transcript page shows names, unnamed speakers and turns', async ({ mou
   const component = await mount(RecordingPage, {
     props: {
       recording,
-      words,
+      transcript: { revision: 'rev1', words },
       speakers,
       voices: [
         { id: 'v1', name: 'Sam', member: true },
@@ -169,7 +169,7 @@ test('an unnamed speaker can be dismissed as noise or kept anonymous, switched, 
   });
   const props = {
     recording,
-    words,
+    transcript: { revision: 'rev1', words },
     voices: [],
     members_without_voice: [],
     my_voice_id: null,
@@ -227,7 +227,7 @@ test('the "is one of these you?" hint shows when asked for', async ({ mount, pag
   const component = await mount(RecordingPage, {
     props: {
       recording,
-      words,
+      transcript: { revision: 'rev1', words },
       speakers,
       voices: [],
       members_without_voice: [],
@@ -245,7 +245,7 @@ test('with more than ten people to choose from, the speaker picker can be filter
   await mount(RecordingPage, {
     props: {
       recording,
-      words,
+      transcript: { revision: 'rev1', words },
       speakers,
       voices: [{ id: 'v1', name: 'Sam' }, ...names.map((name, i) => ({ id: `p${i}`, name }))],
       members_without_voice: [],
@@ -273,7 +273,7 @@ test('a short speaker list has no filter box', async ({ mount, page }) => {
   await mount(RecordingPage, {
     props: {
       recording,
-      words,
+      transcript: { revision: 'rev1', words },
       speakers,
       voices: [
         { id: 'v1', name: 'Sam' },
@@ -311,7 +311,7 @@ test('one voice heard as two speakers shows as one card, with its parts', async 
   const component = await mount(RecordingPage, {
     props: {
       recording,
-      words: [...words, { s: 7100, e: 7600, t: 'Agreed.', k: 'w', spk: 'speaker_2' }],
+      transcript: { revision: 'rev1', words: [...words, { s: 7100, e: 7600, t: 'Agreed.', k: 'w', spk: 'speaker_2' }] },
       speakers: twice,
       voices: [{ id: 'v1', name: 'Sam' }],
       members_without_voice: [],
@@ -621,7 +621,7 @@ async function mountPlayer(mount, page) {
   const component = await mount(RecordingPage, {
     props: {
       recording: playable,
-      words,
+      transcript: { revision: 'rev1', words },
       speakers,
       voices: [],
       members_without_voice: [],
@@ -963,7 +963,7 @@ const recognitionSpeakers = [
 
 const recognitionProps = (enabled) => ({
   recording,
-  words,
+  transcript: { revision: 'rev1', words },
   speakers: recognitionSpeakers,
   voices: [
     { id: 'v1', name: 'Sam', member: true },

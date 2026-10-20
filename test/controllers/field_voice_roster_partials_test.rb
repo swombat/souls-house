@@ -39,16 +39,17 @@ class FieldVoiceRosterPartialsTest < ActionDispatch::IntegrationTest
     end
     props = response.parsed_body.fetch("props")
     assert_not props.fetch("recording").key?("words"), "a recording refresh never resends the transcript"
-    assert_not props.key?("words")
+    assert_not props.key?("transcript")
     assert_equal 2, props.fetch("speakers").size
     assert_not props.key?("voices")
   end
 
-  test "the words partial carries the transcript alone" do
-    get account_field_recording_path(@account, @recording), headers: partial("words")
+  test "the transcript partial carries the words with their revision, alone" do
+    get account_field_recording_path(@account, @recording), headers: partial("transcript")
     assert_response :success
     props = response.parsed_body.fetch("props")
-    assert props.fetch("words").any?
+    assert props.dig("transcript", "words").any?
+    assert_equal @recording.transcript_revision, props.dig("transcript", "revision")
     assert_not props.key?("recording")
     assert_not props.key?("speakers")
   end

@@ -254,7 +254,7 @@ class FieldRecordingSpeakersControllerTest < ActionDispatch::IntegrationTest
     props = inertia_props["props"]
 
     assert_equal "field/recordings/show", inertia_props["component"]
-    assert_equal 3, props["words"].size, "two words and the spacing between them"
+    assert_equal 3, props.dig("transcript", "words").size, "two words and the spacing between them"
     assert_equal [ "Speaker 1", "Speaker 2" ], props["speakers"].map { |s| s["name"] }
     assert_equal [ "Tomás" ], props["voices"].map { |v| v["name"] }
     assert_not_includes props["members_without_voice"].map { |m| m["user_id"] }, @user.id, "you are offered as 'You', not by name"

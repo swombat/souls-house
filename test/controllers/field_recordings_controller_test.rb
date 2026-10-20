@@ -151,7 +151,7 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     get account_field_recording_path(@account, recording)
     props = inertia_props["props"]
     assert_equal [ "supplied", [], %w[Anna Daniel Anna] ],
-      [ props.dig("recording", "transcript_source"), props["words"],
+      [ props.dig("recording", "transcript_source"), props.dig("transcript", "words"),
         props.dig("recording", "turns").map { |turn| turn["spk"] } ]
     assert_equal "media/a.md", props.dig("recording", "source_path")
     assert_equal [ nil, nil ], props["speakers"].map { |speaker| speaker["talk_ms"] }
@@ -369,7 +369,7 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
       end
     end
     assert_match "Only Daniel and Peter are checked enough to guess yet, so only those voices can be found.", flash[:notice]
-    assert_match "speakers that already have one keep it", flash[:notice]
+    assert_match "Speakers someone has named keep their names; a guess nobody has confirmed yet can change.", flash[:notice]
   end
 
   test "another account's recording can't be looked at again" do

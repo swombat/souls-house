@@ -6,12 +6,13 @@ class FieldRecordingsController < ApplicationController
   before_action :set_field_recording, only: %i[show update destroy retry correct_line reassign_line resummarize identify_again]
 
   # The transcript page (spec §7). Words are sent whole: the page renders turns
-  # from them, and clicking a word seeks the audio. They are their own prop so
-  # that the page's background refreshes (a reconnect, a speaker named, a
-  # summary landing) can reload `recording` without resending the transcript:
-  # a long meeting is tens of thousands of words, and on 2026-10-20 a busy
-  # server made one open page fetch them again on every reconnect. The page
-  # asks for `words` itself when the transcript revision changes.
+  # from them, and clicking a word seeks the audio. They are their own prop,
+  # `transcript`, with the revision they belong to, so that the page's
+  # background refreshes (a reconnect, a speaker named, a summary landing) can
+  # reload `recording` without resending them: a long meeting is tens of
+  # thousands of words, and on 2026-10-20 a busy server made one open page
+  # fetch them again on every reconnect. The page asks for `transcript` itself
+  # while the recording's revision differs from the one it holds.
   def show
     recording = @field_recording
     recognition = FieldVoiceprints.enabled_for?(current_account)
@@ -23,7 +24,9 @@ class FieldRecordingsController < ApplicationController
         transcript_revision: (recording.transcript_revision if recording.ready?),
         ready_at: recording.ready_at&.iso8601
       ) },
-      words: -> { recording.ready? ? recording.transcript_words : [] },
+      transcript: -> {
+        recording.ready? ? { revision: recording.transcript_revision, words: recording.transcript_words } : { revision: nil, words: [] }
+      },
       speakers: -> { recording.speakers.includes(:field_voice, :recognised_voice).map { |speaker| FieldItems.speaker_json(speaker) } },
       recognition_enabled: recognition,
       voices: -> { FieldItems.voices_json(current_account) },
@@ -188,7 +191,7 @@ class FieldRecordingsController < ApplicationController
       "Only #{names.to_sentence} #{names.one? ? 'is' : 'are'} checked enough to guess yet, so only #{names.one? ? 'that voice' : 'those voices'} can be found."
     end
     tail = passes.include?(:names) ? " Names from what's said are being looked at too." : ""
-    "Looking again. #{voices}#{tail} New guesses appear on the speaker cards for you to confirm; speakers that already have one keep it."
+    "Looking again. #{voices}#{tail} New guesses appear on the speaker cards for you to confirm. Speakers someone has named keep their names; a guess nobody has confirmed yet can change."
   end
 
   def set_field_recording
