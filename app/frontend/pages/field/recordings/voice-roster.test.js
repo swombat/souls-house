@@ -1,7 +1,7 @@
 import { render, fireEvent, screen, waitFor } from '@testing-library/svelte';
 import { vi } from 'vitest';
-vi.mock('$lib/cable', () => ({ subscribeToModel: vi.fn(() => vi.fn()) }));
-import { subscribeToModel } from '$lib/cable';
+vi.mock('$lib/cable', () => ({ subscribeToModel: vi.fn(() => vi.fn()), reloadProps: vi.fn() }));
+import { reloadProps, subscribeToModel } from '$lib/cable';
 import Recording from './show.svelte';
 
 const props = {
@@ -37,4 +37,22 @@ test('an open name picker adopts roster changes without losing its typed name', 
   expect(screen.queryByRole('button', { name: 'Alice', exact: true })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Bob', exact: true })).toBeInTheDocument();
   expect(draft).toHaveValue('Unfinished new name');
+});
+
+test('a refresh never asks for the transcript, a changed transcript revision does once, and a full visit counts as loaded', async () => {
+  reloadProps.mockClear();
+  const component = render(Recording, props);
+  await component.rerender({ ...props, voices: [{ id: 'alice', name: 'Alicia' }] });
+  expect(reloadProps).not.toHaveBeenCalled();
+
+  await component.rerender({ ...props, recording: { ...props.recording, transcript_revision: 2 } });
+  await waitFor(() => expect(reloadProps).toHaveBeenCalledWith(['words']));
+  expect(reloadProps).toHaveBeenCalledTimes(1);
+
+  await component.rerender({
+    ...props,
+    recording: { ...props.recording, transcript_revision: 3 },
+    words: [{ s: 0, e: 100, t: 'Hi', k: 'w', spk: 'speaker_0' }],
+  });
+  expect(reloadProps).toHaveBeenCalledTimes(1);
 });

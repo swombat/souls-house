@@ -45,7 +45,6 @@ const recording = {
   show_url: '/accounts/acct1/field/recordings/r1',
   created_at: '2026-10-08T07:00:00Z',
   audio_url: '/rails/active_storage/blobs/x/board-call.m4a',
-  words,
   language_code: 'eng',
   transcript_revision: 'rev1',
   ready_at: '2026-10-08T07:04:00Z',
@@ -90,6 +89,7 @@ test('the transcript page shows names, unnamed speakers and turns', async ({ mou
   const component = await mount(RecordingPage, {
     props: {
       recording,
+      words,
       speakers,
       voices: [
         { id: 'v1', name: 'Sam', member: true },
@@ -158,13 +158,24 @@ test('a transcript brought with its audio shows turns, times only where given, a
   await page.screenshot({ path: 'tmp/field-recording-supplied.png', fullPage: true });
 });
 
-test('an unnamed speaker can be dismissed as noise or kept anonymous, switched, and undone', async ({ mount, page }) => {
+test('an unnamed speaker can be dismissed as noise or kept anonymous, switched, and undone', async ({
+  mount,
+  page,
+}) => {
   const sent = [];
   await page.route('**/accounts/acct1/field/recordings/r1/speakers/*', async (route) => {
     sent.push({ url: route.request().url(), method: route.request().method(), body: route.request().postDataJSON() });
     await route.fulfill({ json: {} });
   });
-  const props = { recording, voices: [], members_without_voice: [], my_voice_id: null, show_you_hint: false, account };
+  const props = {
+    recording,
+    words,
+    voices: [],
+    members_without_voice: [],
+    my_voice_id: null,
+    show_you_hint: false,
+    account,
+  };
   let component = await mount(RecordingPage, { props: { ...props, speakers } });
 
   const cards = page.getByTestId('speaker-card');
@@ -216,6 +227,7 @@ test('the "is one of these you?" hint shows when asked for', async ({ mount, pag
   const component = await mount(RecordingPage, {
     props: {
       recording,
+      words,
       speakers,
       voices: [],
       members_without_voice: [],
@@ -233,6 +245,7 @@ test('with more than ten people to choose from, the speaker picker can be filter
   await mount(RecordingPage, {
     props: {
       recording,
+      words,
       speakers,
       voices: [{ id: 'v1', name: 'Sam' }, ...names.map((name, i) => ({ id: `p${i}`, name }))],
       members_without_voice: [],
@@ -260,6 +273,7 @@ test('a short speaker list has no filter box', async ({ mount, page }) => {
   await mount(RecordingPage, {
     props: {
       recording,
+      words,
       speakers,
       voices: [
         { id: 'v1', name: 'Sam' },
@@ -296,7 +310,8 @@ test('one voice heard as two speakers shows as one card, with its parts', async 
   ];
   const component = await mount(RecordingPage, {
     props: {
-      recording: { ...recording, words: [...words, { s: 7100, e: 7600, t: 'Agreed.', k: 'w', spk: 'speaker_2' }] },
+      recording,
+      words: [...words, { s: 7100, e: 7600, t: 'Agreed.', k: 'w', spk: 'speaker_2' }],
       speakers: twice,
       voices: [{ id: 'v1', name: 'Sam' }],
       members_without_voice: [],
@@ -606,6 +621,7 @@ async function mountPlayer(mount, page) {
   const component = await mount(RecordingPage, {
     props: {
       recording: playable,
+      words,
       speakers,
       voices: [],
       members_without_voice: [],
@@ -947,6 +963,7 @@ const recognitionSpeakers = [
 
 const recognitionProps = (enabled) => ({
   recording,
+  words,
   speakers: recognitionSpeakers,
   voices: [
     { id: 'v1', name: 'Sam', member: true },
@@ -1040,7 +1057,9 @@ test('the Voices page, house gate on: the switch, Forget and the backups line', 
   await expect(page.getByTestId('voices-forget-all')).toBeVisible();
   await expect(page.getByTestId('voice-forget')).toHaveCount(1);
   await expect(page.getByTestId('voice-remember')).toHaveCount(1);
-  await expect(page.getByTestId('voice-row').first()).toContainText('Voice learned from 3 recordings, 22 s · suggesting');
+  await expect(page.getByTestId('voice-row').first()).toContainText(
+    'Voice learned from 3 recordings, 22 s · suggesting'
+  );
   await expect(page.getByTestId('voice-row').nth(1)).toContainText('Voice forgotten, not learning');
   await expect(page.getByTestId('voice-meaning')).toContainText('speaker nobody has named yet');
   await expect(page.getByTestId('voice-meaning-backups')).toContainText('indeterminate time');

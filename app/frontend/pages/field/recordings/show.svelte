@@ -1,6 +1,7 @@
 <script>
   import { Link, page, router } from '@inertiajs/svelte';
   import { createDynamicSync } from '$lib/use-sync';
+  import { reloadProps } from '$lib/cable';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import SpeakerCard from '$lib/components/field/SpeakerCard.svelte';
@@ -23,6 +24,7 @@
 
   let {
     recording,
+    words = [],
     speakers = [],
     voices = [],
     members_without_voice = [],
@@ -41,14 +43,30 @@
     });
   });
 
+  // The transcript's words are a separate prop, so the refreshes above never
+  // resend them (a long meeting is tens of thousands of words). They are asked
+  // for only when the recording says its transcript changed: it finished
+  // transcribing, or someone corrected a line. A full visit brings both at
+  // once, which counts as already loaded.
+  let wordsSeen = words;
+  let wordsRevision = recording.transcript_revision;
+  $effect(() => {
+    const revision = recording.transcript_revision;
+    if (words !== wordsSeen) {
+      wordsSeen = words;
+      wordsRevision = revision;
+    } else if (revision !== wordsRevision) {
+      wordsRevision = revision;
+      reloadProps(['words']);
+    }
+  });
+
   const ready = $derived(recording.status === 'ready');
   const troubled = $derived(recording.status === 'rejected' || recording.status === 'failed');
   // Supplied transcripts (brought in with the audio) have turns, not timed
   // words: no word highlighting, talk time, clips or voice samples.
   const supplied = $derived(recording.transcript_source === 'supplied');
-  const turns = $derived(
-    supplied ? suppliedTurns(recording.turns) : buildTurns(recording.words, speakerKeys(speakers))
-  );
+  const turns = $derived(supplied ? suppliedTurns(recording.turns) : buildTurns(words, speakerKeys(speakers)));
   // One card per person: diarized speakers linked to one voice share a card.
   const groups = $derived(groupSpeakers(speakers));
   const speakerUrl = (speaker) => `/accounts/${account.id}/field/recordings/${recording.id}/speakers/${speaker.id}`;

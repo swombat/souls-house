@@ -6,19 +6,24 @@ class FieldRecordingsController < ApplicationController
   before_action :set_field_recording, only: %i[show update destroy retry correct_line reassign_line resummarize identify_again]
 
   # The transcript page (spec §7). Words are sent whole: the page renders turns
-  # from them, and clicking a word seeks the audio.
+  # from them, and clicking a word seeks the audio. They are their own prop so
+  # that the page's background refreshes (a reconnect, a speaker named, a
+  # summary landing) can reload `recording` without resending the transcript:
+  # a long meeting is tens of thousands of words, and on 2026-10-20 a busy
+  # server made one open page fetch them again on every reconnect. The page
+  # asks for `words` itself when the transcript revision changes.
   def show
     recording = @field_recording
     recognition = FieldVoiceprints.enabled_for?(current_account)
     render inertia: "field/recordings/show", props: {
       recording: -> { FieldItems.recording_json(recording).merge(
         audio_url: (rails_blob_path(recording.audio, disposition: :inline) if recording.audio.attached?),
-        words: recording.ready? ? recording.transcript_words : [],
         turns: (recording.transcript_turns if recording.ready? && recording.supplied?),
         language_code: recording.language_code,
         transcript_revision: (recording.transcript_revision if recording.ready?),
         ready_at: recording.ready_at&.iso8601
       ) },
+      words: -> { recording.ready? ? recording.transcript_words : [] },
       speakers: -> { recording.speakers.includes(:field_voice, :recognised_voice).map { |speaker| FieldItems.speaker_json(speaker) } },
       recognition_enabled: recognition,
       voices: -> { FieldItems.voices_json(current_account) },
@@ -100,12 +105,7 @@ class FieldRecordingsController < ApplicationController
   def identify_again
     recording = @field_recording
     passes = FieldRecording::IdentifyAgain.queue!(recording)
-    notice = if passes.any?
-      "Looking again. New guesses appear on the speaker cards for you to confirm."
-    else
-      "Nothing to look for again here."
-    end
-    redirect_to account_field_recording_path(current_account, recording), notice:
+    redirect_to account_field_recording_path(current_account, recording), notice: identify_again_notice(passes)
   end
 
   # One line of the transcript corrected by hand ("Dan", not "Dad").
@@ -172,6 +172,24 @@ class FieldRecordingsController < ApplicationController
   end
 
   private
+
+  # What "Look for known voices again" can actually do, said up front: the
+  # voices pass only compares against prints that passed their held-out check,
+  # and a press that quietly finds nothing reads as broken (Daniel, 2026-10-20).
+  def identify_again_notice(passes)
+    return "Nothing to look for again here." if passes.empty?
+    return "Looking again. New guesses appear on the speaker cards for you to confirm." unless passes.include?(:voices)
+
+    names = FieldVoiceprints::Identification.active_prints(current_account).map { |print| print.field_voice.name }.sort
+    voices = if names.empty?
+      "No voice is checked enough to guess yet: a voice needs naming in two recordings, and to pass a check against " \
+        "the recordings it wasn't learned from."
+    else
+      "Only #{names.to_sentence} #{names.one? ? 'is' : 'are'} checked enough to guess yet, so only #{names.one? ? 'that voice' : 'those voices'} can be found."
+    end
+    tail = passes.include?(:names) ? " Names from what's said are being looked at too." : ""
+    "Looking again. #{voices}#{tail} New guesses appear on the speaker cards for you to confirm; speakers that already have one keep it."
+  end
 
   def set_field_recording
     @field_recording = current_account.field_recordings.kept.find(params[:id])

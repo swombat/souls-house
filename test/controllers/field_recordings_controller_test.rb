@@ -151,7 +151,7 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     get account_field_recording_path(@account, recording)
     props = inertia_props["props"]
     assert_equal [ "supplied", [], %w[Anna Daniel Anna] ],
-      [ props.dig("recording", "transcript_source"), props.dig("recording", "words"),
+      [ props.dig("recording", "transcript_source"), props["words"],
         props.dig("recording", "turns").map { |turn| turn["spk"] } ]
     assert_equal "media/a.md", props.dig("recording", "source_path")
     assert_equal [ nil, nil ], props["speakers"].map { |speaker| speaker["talk_ms"] }
@@ -354,9 +354,22 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     end
     assert_redirected_to account_field_recording_path(@account, recording)
     assert_match "Looking again", flash[:notice]
+    assert_match "No voice is checked enough to guess yet", flash[:notice], "no print has passed its check in this fixture"
 
     post identify_again_account_field_recording_path(@account, recording)
     assert_equal "Nothing to look for again here.", flash[:notice], "recognition off: nothing queued, and it says so"
+  end
+
+  test "looking again names the only voices that may guess, so a press that finds nothing isn't a mystery" do
+    recording = long_ready_recording(account: @account, user: @user)
+    prints = %w[Peter Daniel].map { |name| Struct.new(:field_voice).new(Struct.new(:name).new(name)) }
+    with_recognition(@account) do
+      FieldVoiceprints::Identification.stub :active_prints, prints do
+        post identify_again_account_field_recording_path(@account, recording)
+      end
+    end
+    assert_match "Only Daniel and Peter are checked enough to guess yet, so only those voices can be found.", flash[:notice]
+    assert_match "speakers that already have one keep it", flash[:notice]
   end
 
   test "another account's recording can't be looked at again" do

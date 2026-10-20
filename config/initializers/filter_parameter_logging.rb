@@ -64,3 +64,9 @@ Rails.application.config.filter_parameters += [ /\A(?:phone_number|pairing_phone
 Rails.application.config.filter_parameters += [
   /\A(?:device_credential|credential_digest|previous_credential_digest|body_base64|argv|stdin|stdin_base64)\z/
 ]
+
+# A transcription webhook carries the whole transcript: its text and every
+# timed word (about 1.6 MB for a 50-minute meeting). Logged in full, eight
+# arriving together pushed everything else out of the web container's 10 MB
+# log (2026-10-20), and a transcript is as private as a message.
+Rails.application.config.filter_parameters += [ /\A(?:words|text)\z/ ]
