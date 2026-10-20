@@ -360,6 +360,16 @@ test.describe('browser contracts', () => {
     await expect(page).toHaveURL(`/accounts/${switchedAccountId}/chats`);
     await page.locator('nav').getByTestId('nav-home-logo').click();
     await expect(page).toHaveURL(/\/$/);
+
+    // On a computer, resting the mouse on the account name lists the other accounts; no click needed.
+    await page.goto(`/accounts/${setup.empty_account_id}/chats`);
+    const switcher = page.getByTestId('nav-account-switcher-panel');
+    await expect(switcher).toBeHidden();
+    await page.locator('nav').getByTestId('nav-account-name').hover();
+    await expect(switcher).toBeVisible();
+    await switcher.getByRole('link', { name: `E2E ${setup.run_id} Team` }).click();
+    await expect(page).toHaveURL(`/accounts/${switchedAccountId}/chats`);
+    await expect(page.locator('nav').getByTestId('nav-account-name')).toHaveText(`E2E ${setup.run_id} Team`);
   });
 
   test('user can commit a new resident without an inline promotion step', async ({ page }) => {
