@@ -13,12 +13,14 @@
   let { account, rooms = [], room_counts = {}, main_count = 0, resident_room_id = null, can_manage = false } = $props();
 
   let name = $state('');
+  let description = $state('');
   let editingAccount = account.id;
   let addRequest = 0;
   $effect(() => {
     if (editingAccount !== account.id) {
       editingAccount = account.id;
       name = '';
+      description = '';
       addRequest += 1;
     }
   });
@@ -40,11 +42,14 @@
     const request = ++addRequest;
     router.post(
       `/accounts/${identity}/rooms`,
-      { room: { name: submitted } },
+      { room: { name: submitted, description } },
       {
         preserveScroll: true,
         onSuccess: () => {
-          if (account.id === identity && addRequest === request && name === submitted) name = '';
+          if (account.id === identity && addRequest === request && name === submitted) {
+            name = '';
+            description = '';
+          }
         },
       }
     );
@@ -73,7 +78,7 @@
     <p class="text-sm text-muted-foreground">
       Conversations live in Main until you move them. Once you add a room, the Chats menu and the conversation list let
       you switch between rooms or view all chats at once. Removing a room moves its conversations back to Main; none are
-      deleted.
+      deleted. Say what each room is for, and residents will read it when they choose where a conversation goes.
     </p>
     <ul class="divide-y divide-border rounded-lg border border-border">
       <li class="flex items-center gap-3 px-4 py-3">
@@ -94,21 +99,40 @@
     {#if errors.name}
       <p role="alert" class="text-sm text-destructive">Name {errors.name}</p>
     {/if}
+    {#if errors.description}
+      <p role="alert" class="text-sm text-destructive">Description {errors.description}</p>
+    {/if}
     {#if can_manage}
-      <form class="flex max-w-md items-center gap-2" onsubmit={addRoom}>
-        <Input bind:value={name} maxlength={40} placeholder="New room, e.g. Life or Dev" aria-label="New room name" />
+      <form class="flex max-w-2xl flex-col gap-2 sm:flex-row sm:items-center" onsubmit={addRoom}>
+        <Input
+          bind:value={name}
+          maxlength={40}
+          placeholder="New room, e.g. Build"
+          aria-label="New room name"
+          class="sm:w-48" />
+        <Input
+          bind:value={description}
+          maxlength={280}
+          placeholder="Use this room when… (optional)"
+          aria-label="New room: use this room when"
+          class="flex-1" />
         <Button type="submit" disabled={!name.trim()}><Plus size={16} class="mr-1" />Add room</Button>
       </form>
     {/if}
   </section>
 
-  {#if rooms.length > 0}
-    <section class="mt-10 space-y-3" aria-labelledby="resident-room-heading">
-      <h2 id="resident-room-heading" class="text-xl font-semibold">Conversations residents start</h2>
-      <p class="text-sm text-muted-foreground">
-        Where a conversation lands when a resident starts it without choosing a room. A resident can still choose any
-        room, and you can move any conversation afterwards.
+  <section class="mt-10 space-y-3" aria-labelledby="resident-room-heading">
+    <h2 id="resident-room-heading" class="text-xl font-semibold">Default room for residents</h2>
+    <p class="text-sm text-muted-foreground">
+      Where a conversation lands when a resident starts it without choosing a room. Residents can still choose any room,
+      including Main, and anyone can move a conversation afterwards. This doesn't change where you arrive: the Chats
+      menu remembers the room you last opened.
+    </p>
+    {#if rooms.length === 0}
+      <p class="text-sm text-muted-foreground" data-testid="resident-room-empty">
+        Resident-started conversations go to Main. Add a room above to send them somewhere else.
       </p>
+    {:else}
       <Select.Root type="single" value={residentRoom} onValueChange={setResidentRoom} disabled={!can_manage}>
         <Select.Trigger class="w-56" aria-label="Default room for resident-started conversations">
           {roomName(residentRoom, rooms)}
@@ -119,6 +143,6 @@
           {/each}
         </Select.Content>
       </Select.Root>
-    </section>
-  {/if}
+    {/if}
+  </section>
 </AccountSettingsLayout>

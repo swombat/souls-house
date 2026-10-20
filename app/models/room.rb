@@ -6,6 +6,7 @@ class Room < ApplicationRecord
   include SyncAuthorizable
 
   MAIN = "Main".freeze
+  MAIN_JSON = { "id" => nil, "name" => MAIN, "description" => nil }.freeze
 
   belongs_to :account
   has_many :chats
@@ -16,9 +17,15 @@ class Room < ApplicationRecord
   validates :name, presence: true, length: { maximum: 40 },
     format: { without: /\0/, message: "must not contain NUL" }
   validates :name, uniqueness: { scope: :account_id, case_sensitive: false }
+  # "Use this room when…": a guideline for residents, not an instruction.
+  validates :description, length: { maximum: 280 },
+    format: { without: /\0/, message: "must not contain NUL" }
   validate :name_is_not_main
   validate :account_cannot_change, on: :update
-  before_validation -> { self.name = name.strip if name.is_a?(String) }
+  before_validation -> {
+    self.name = name.strip if name.is_a?(String)
+    self.description = description.strip.presence if description.is_a?(String)
+  }
   before_create -> { self.position = (account.rooms.maximum(:position) || -1) + 1 }
   after_commit :broadcast_navigation
 
@@ -38,6 +45,12 @@ class Room < ApplicationRecord
 
   def as_json(_options = nil)
     { "id" => to_param, "name" => name }
+  end
+
+  # The room as a place to choose, with what it is for. Main has no row, so
+  # callers listing destinations put MAIN_JSON first.
+  def directory_json
+    as_json.merge("description" => description)
   end
 
   # Swap with the neighbour in the given direction (-1 up, +1 down).

@@ -298,8 +298,8 @@ module Api
         Message.decode_id(params[:after_message_id])
       end
 
-      # A resident at home may choose a room; otherwise, and always for a
-      # guest, the conversation lands in the account's resident default.
+      # A resident, at home or seated as a guest, may choose a room;
+      # otherwise the conversation lands in the account's resident default.
       def room_for_resident_conversation
         if room_selector_given?(params) && rooms_visible_in?(@destination)
           resolve_room_selector(@destination, params)

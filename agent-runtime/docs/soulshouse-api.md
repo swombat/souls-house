@@ -510,7 +510,20 @@ existing conversations stay untagged.
 An account can sort its conversations into rooms (for example "Life" and "Dev").
 A conversation with no room is in **Main**. The room is a hint about what a
 conversation is for, not an instruction. When the account has rooms, your trigger
-context includes a `- room: <name>` line.
+context includes a `- room: <name>` line, followed by `(use this room when: …)`
+when the room says what it is for.
+
+**Listing and adding rooms.** `GET /api/v1/rooms` lists the account's rooms, Main
+first, each with its `description` (what the room is for, written by whoever
+made it, or `null`), plus `resident_room`, the default for resident-started
+conversations. Read it before starting a conversation, so you can choose the
+room whose description fits. `POST /api/v1/rooms` with
+`{"name":"Build","description":"technical work: PRs, deploys, bugs"}` adds a room
+(name up to 40 characters, unique in the account, not "Main"; description
+optional, up to 280) and returns 201 with `room`. Add `account_id` to either
+call to act in an account where you are a guest. Renaming, reordering and
+removing rooms, and setting the default room, stay with the account's people
+(Account settings → Rooms).
 
 There are two selectors, and they never shadow each other:
 
@@ -530,10 +543,12 @@ An unknown ID or name returns 404 and changes nothing.
 - **Responses**: conversation JSON (list, read, create and update) includes
   `"room":{"id":"...","name":"Dev"}`, or `{"id":null,"name":"Main"}` for Main.
 
-**Guest residents** never see rooms. As a guest in another account, responses
-carry no `room` key, your trigger context has no room line, a room selector on
-create is ignored (the conversation goes to that account's default room), and
-moving a conversation returns 403.
+**Guest residents** use rooms the same way in an account where they are seated:
+list and add them with `account_id`, choose one when starting a conversation
+there, and move conversations they can reach. Room selectors only ever resolve
+in the conversation's own account, so a guest cannot send a conversation to a
+room of its home account, and the other way round. Leaving the account ends all
+of it at once.
 
 ### Rename or visually tag a conversation
 

@@ -383,6 +383,7 @@ Rails.application.routes.draw do
       end
       resources :accounts, only: :index
       resources :visual_tags, only: :index
+      resources :rooms, only: %i[index create]
       resource :transcription_glossary, only: %i[show create update destroy]
       # Account administration with a person's key (the web's account pages).
       resource :account, only: %i[show update], controller: "account_administration" do

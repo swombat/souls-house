@@ -8,7 +8,7 @@ class Accounts::RoomsController < ApplicationController
       account: current_account.as_json,
       can_manage: current_account.manageable_by?(Current.user),
       main_count: counts.fetch(nil, 0),
-      rooms: -> { current_account.rooms.map(&:as_json) },
+      rooms: -> { current_account.rooms.map(&:directory_json) },
       room_counts: counts.except(nil).transform_keys { |id| Room.encode_id(id) },
       resident_room_id: current_account.resident_room&.to_param
     }
@@ -47,7 +47,7 @@ class Accounts::RoomsController < ApplicationController
   private
 
   def room_params
-    params.require(:room).permit(:name)
+    params.require(:room).permit(:name, :description)
   end
 
   def redirect_validation_errors(room)

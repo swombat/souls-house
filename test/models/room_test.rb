@@ -44,6 +44,19 @@ class RoomTest < ActiveSupport::TestCase
     assert_equal "Spaced out", room.name
   end
 
+  test "description says what the room is for: optional, stripped, bounded, never NUL" do
+    room = @account.rooms.create!(name: "Build", description: "  technical work  ")
+    assert_equal "technical work", room.description
+    assert_equal({ "id" => room.to_param, "name" => "Build", "description" => "technical work" }, room.directory_json)
+    assert_equal({ "id" => room.to_param, "name" => "Build" }, room.as_json, "conversation JSON keeps its shape")
+
+    room.update!(description: "   ")
+    assert_nil room.description
+
+    assert_not @account.rooms.new(name: "Long", description: "x" * 281).valid?
+    assert_not @account.rooms.new(name: "Nul", description: "a\0b").valid?
+  end
+
   test "position auto-increments per account starting at zero" do
     first = @account.rooms.create!(name: "First")
     second = @account.rooms.create!(name: "Second")

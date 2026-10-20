@@ -3,7 +3,7 @@ import RoomsHarness from '../RoomsHarness.svelte';
 
 const account = { id: 'acc', name: 'Daniel, Lume and Mira' };
 const rooms = [
-  { id: 'lifeRm', name: 'Life', conversation_count: 4 },
+  { id: 'lifeRm', name: 'Life', conversation_count: 4, description: 'home, family and anything personal' },
   { id: 'devRm', name: 'Dev', conversation_count: 30 },
 ];
 
@@ -15,6 +15,7 @@ test('rooms settings list Main first and offer the resident default', async ({ m
   await expect(component.getByRole('button', { name: 'Move Life up' })).toBeDisabled();
   await expect(component.getByRole('button', { name: 'Move Dev down' })).toBeDisabled();
   await expect(component.getByLabel('Default room for resident-started conversations')).toHaveText('Dev');
+  await expect(component.getByTestId('room-description')).toHaveText('home, family and anything personal');
   await page.screenshot({ path: 'tmp/rooms-settings.png', fullPage: true });
 });
 
@@ -61,5 +62,6 @@ test('the navbar Chats menu shows the same spinner', async ({ mount, page }) => 
   const dev = page.getByRole('menuitem', { name: /Dev/ });
   await expect(dev.getByTestId('room-working')).toHaveAttribute('data-colour', 'violet');
   await expect(page.getByRole('menuitem', { name: /Main/ }).getByTestId('room-working')).toHaveCount(0);
+  await expect(page.getByTestId('manage-rooms')).toHaveText('Manage rooms…');
   await page.screenshot({ path: 'tmp/rooms-nav-working.png' });
 });

@@ -1,5 +1,5 @@
 <script>
-  import { page } from '@inertiajs/svelte';
+  import { page, router } from '@inertiajs/svelte';
   import { CaretDown } from 'phosphor-svelte';
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
   import { buttonVariants } from '$lib/components/shadcn/button/index.js';
@@ -43,5 +43,12 @@
         </span>
       </DropdownMenu.Item>
     {/each}
+    <DropdownMenu.Separator />
+    <DropdownMenu.Item
+      onclick={() => router.visit(`/accounts/${accountId}/rooms`)}
+      class="text-muted-foreground"
+      data-testid="manage-rooms">
+      Manage rooms…
+    </DropdownMenu.Item>
   </DropdownMenu.Content>
 </DropdownMenu.Root>

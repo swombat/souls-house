@@ -43,10 +43,13 @@ module Api
         reachable.find(params[:account_id])
       end
 
-      # Room names and ids are private to an account's own people and
-      # residents: a guest resident never sees them.
+      # Room names and ids belong to an account's own people and residents,
+      # and to residents seated there as guests. A guest who leaves loses
+      # them with its membership.
       def rooms_visible_in?(account)
-        current_api_agent.nil? || current_api_agent.account_id == account.id
+        return true if current_api_agent.nil? || current_api_agent.account_id == account.id
+
+        current_api_agent.guest_memberships.exists?(account_id: account.id)
       end
 
       class RoomSelectorError < StandardError; end

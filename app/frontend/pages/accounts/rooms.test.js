@@ -31,3 +31,21 @@ test('Rooms maps account presentation and permissions without replacing its draf
   await view.rerender({ ...props, account: { id: 'second', name: 'Second' }, can_manage: false });
   expect(screen.queryByLabelText('New room name')).not.toBeInTheDocument();
 });
+
+test('the resident default is explained even before any room exists', () => {
+  render(Rooms, { ...props, rooms: [] });
+  expect(screen.getByRole('heading', { name: 'Default room for residents' })).toBeInTheDocument();
+  expect(screen.getByTestId('resident-room-empty')).toHaveTextContent('Resident-started conversations go to Main.');
+});
+
+test('a new room is sent with what it is for, and rooms show it', async () => {
+  render(Rooms, {
+    ...props,
+    rooms: [{ id: 'buildRm', name: 'Build', description: 'technical work, PRs and deploys' }],
+  });
+  expect(screen.getByTestId('room-description')).toHaveTextContent('technical work, PRs and deploys');
+  await fireEvent.input(screen.getByLabelText('New room name'), { target: { value: 'Life' } });
+  await fireEvent.input(screen.getByLabelText('New room: use this room when'), { target: { value: 'home things' } });
+  await fireEvent.submit(screen.getByLabelText('New room name').closest('form'));
+  expect(router.post.mock.calls.at(-1)[1]).toEqual({ room: { name: 'Life', description: 'home things' } });
+});

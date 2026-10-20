@@ -764,16 +764,37 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     refute_includes metadata, "- room:"
   end
 
-  test "conversation metadata has no room line for a guest resident, even where the account has rooms" do
+  test "conversation metadata names the room for a seated guest resident too" do
     agent = agents(:research_assistant)
     guest_account = accounts(:team_account)
-    guest_account.rooms.create!(name: "Life")
+    build = guest_account.rooms.create!(name: "Build")
     guest_account.guest_memberships.create!(agent: agent, added_by: users(:user_1))
-    chat = guest_account.chats.create!(model_id: "openrouter/auto", title: "Guest room", agents: [ agent ])
+    chat = guest_account.chats.create!(model_id: "openrouter/auto", title: "Guest room", agents: [ agent ], room: build)
+
+    metadata = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:conversation_metadata)
+
+    assert_includes metadata, "- room: Build"
+  end
+
+  test "conversation metadata has no room line in an account the resident is not a guest of" do
+    agent = agents(:research_assistant)
+    other_account = accounts(:team_account)
+    other_account.rooms.create!(name: "Build")
+    chat = other_account.chats.create!(model_id: "openrouter/auto", title: "Former guest room")
 
     metadata = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:conversation_metadata)
 
     refute_includes metadata, "- room:"
+  end
+
+  test "the room line carries the room's use-this-room-when, on one line" do
+    agent = agents(:research_assistant)
+    build = agent.account.rooms.create!(name: "Build", description: "technical work:\nPRs, deploys, bugs")
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Roomed", room: build)
+
+    metadata = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:conversation_metadata)
+
+    assert_includes metadata, "- room: Build (use this room when: technical work: PRs, deploys, bugs)"
   end
 
 end

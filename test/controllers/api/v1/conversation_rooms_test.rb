@@ -71,20 +71,45 @@ module Api
         assert_equal({ "id" => nil, "name" => "Main" }, response.parsed_body.dig("conversation", "room"))
       end
 
-      test "a guest resident's create ignores room and the JSON carries no room key" do
+      test "a seated guest resident may choose a room when it starts a conversation there" do
+        @nexus.guest_memberships.create!(agent: @agent, added_by: @daniel)
+        build = @nexus.rooms.create!(name: "Build")
+        @nexus.update!(resident_room: @nexus.rooms.create!(name: "Default"))
+
+        post api_v1_conversations_url,
+          params: { account_id: @nexus.to_param, room: "Build", agent_ids: [ @local.to_param ] },
+          headers: { "Authorization" => "Bearer #{@agent_token}" }, as: :json
+        assert_response :created
+
+        json = response.parsed_body.fetch("conversation")
+        assert_equal build, Chat.find(json["id"]).room
+        assert_equal({ "id" => build.to_param, "name" => "Build" }, json["room"])
+      end
+
+      test "a guest's room selector never reaches a room of its home account" do
+        @nexus.guest_memberships.create!(agent: @agent, added_by: @daniel)
+
+        assert_no_difference -> { Chat.count } do
+          post api_v1_conversations_url,
+            params: { account_id: @nexus.to_param, room_id: @life.to_param, agent_ids: [ @local.to_param ] },
+            headers: { "Authorization" => "Bearer #{@agent_token}" }, as: :json
+        end
+        assert_response :not_found
+      end
+
+      test "a guest resident without a room lands in the account's resident default" do
         @nexus.guest_memberships.create!(agent: @agent, added_by: @daniel)
         guest_default = @nexus.rooms.create!(name: "Guest Room")
         @nexus.update!(resident_room: guest_default)
 
         post api_v1_conversations_url,
-          params: { account_id: @nexus.to_param, room: "Anything", agent_ids: [ @local.to_param ] },
+          params: { account_id: @nexus.to_param, agent_ids: [ @local.to_param ] },
           headers: { "Authorization" => "Bearer #{@agent_token}" }, as: :json
         assert_response :created
 
         json = response.parsed_body.fetch("conversation")
-        chat = Chat.find(json["id"])
-        assert_equal guest_default, chat.room, "the guest's room param is ignored; the account's resident default wins"
-        assert_not json.key?("room")
+        assert_equal guest_default, Chat.find(json["id"]).room
+        assert_equal({ "id" => guest_default.to_param, "name" => "Guest Room" }, json["room"])
       end
 
       test "conversation JSON includes room id and name for a home caller, even an account key" do
@@ -137,13 +162,32 @@ module Api
         assert_nil chat.reload.room
       end
 
-      test "a guest resident cannot move a conversation between rooms" do
+      test "a seated guest resident moves a conversation between the account's rooms" do
         @nexus.guest_memberships.create!(agent: @agent, added_by: @daniel)
+        build = @nexus.rooms.create!(name: "Build")
         room_chat = @nexus.chats.create!(model_id: "openrouter/auto", manual_responses: true, agents: [ @local, @agent ])
 
-        patch api_v1_conversation_url(room_chat), params: { room: "Anything" }, as: :json,
+        patch api_v1_conversation_url(room_chat), params: { room: "Build" }, as: :json,
           headers: { "Authorization" => "Bearer #{@agent_token}" }
-        assert_response :forbidden
+        assert_response :success
+        assert_equal build, room_chat.reload.room
+        assert_equal({ "id" => build.to_param, "name" => "Build" }, response.parsed_body.dig("conversation", "room"))
+
+        patch api_v1_conversation_url(room_chat), params: { room_id: @life.to_param }, as: :json,
+          headers: { "Authorization" => "Bearer #{@agent_token}" }
+        assert_response :not_found, "the guest's home rooms are not destinations in the guest account"
+        assert_equal build, room_chat.reload.room
+      end
+
+      test "a guest that has left can no longer move the conversation" do
+        membership = @nexus.guest_memberships.create!(agent: @agent, added_by: @daniel)
+        @nexus.rooms.create!(name: "Build")
+        room_chat = @nexus.chats.create!(model_id: "openrouter/auto", manual_responses: true, agents: [ @local, @agent ])
+        membership.destroy!
+
+        patch api_v1_conversation_url(room_chat), params: { room: "Build" }, as: :json,
+          headers: { "Authorization" => "Bearer #{@agent_token}" }
+        assert_includes [ 403, 404 ], response.status
         assert_nil room_chat.reload.room
       end
 

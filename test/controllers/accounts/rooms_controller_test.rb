@@ -26,7 +26,7 @@ class Accounts::RoomsControllerTest < ActionDispatch::IntegrationTest
     assert_equal life.to_param, inertia_shared_props["resident_room_id"]
 
     rows = inertia_shared_props.fetch("rooms")
-    assert_equal [ life.as_json, work.as_json ], rows
+    assert_equal [ life.directory_json, work.directory_json ], rows
     assert_equal({ life.to_param => 2 }, inertia_shared_props.fetch("room_counts"))
   end
 
@@ -68,7 +68,7 @@ class Accounts::RoomsControllerTest < ActionDispatch::IntegrationTest
     get account_rooms_path(@account), headers: headers.merge("X-Inertia-Partial-Data" => "rooms,current_room")
     assert_response :success
     props = response.parsed_body.fetch("props")
-    assert_equal [ life.as_json, work.as_json ], props.fetch("rooms")
+    assert_equal [ life.directory_json, work.directory_json ], props.fetch("rooms")
     assert_equal "main", props.fetch("current_room")
     assert_not props.key?("room_counts")
     assert_not props.key?("main_count")
@@ -108,6 +108,10 @@ class Accounts::RoomsControllerTest < ActionDispatch::IntegrationTest
     patch account_room_path(@account, room), params: { room: { name: "Renamed" } }
     assert_redirected_to account_rooms_path(@account)
     assert_equal "Renamed", room.reload.name
+
+    patch account_room_path(@account, room), params: { room: { name: "Renamed", description: "home things" } }
+    assert_redirected_to account_rooms_path(@account)
+    assert_equal "home things", room.reload.description
 
     patch account_room_path(@account, room), params: { room: { name: "Main" } }
     follow_redirect!
