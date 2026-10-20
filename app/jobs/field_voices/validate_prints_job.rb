@@ -31,10 +31,12 @@ module FieldVoices
       key = FieldVoiceprints::Cohort.active(account).last
       return if account.field_matched_cohort == key
 
-      account.update_columns(field_matched_cohort: key)
       FieldVoiceprints::Identification.recordings_to_match(account).find_each do |recording|
         FieldRecordings::IdentifyJob.perform_later(recording.id)
       end
+      # Saved only once every recording is scheduled: if scheduling fails part
+      # way, the retry still sees an unmatched snapshot.
+      account.update_columns(field_matched_cohort: key)
     end
 
   end

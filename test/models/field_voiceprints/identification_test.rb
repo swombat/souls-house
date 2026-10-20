@@ -268,4 +268,21 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
     end
   end
 
+
+  test "if scheduling the rematch fails, the snapshot isn't recorded, so the retry schedules it" do
+    with_recognition(@account) do
+      store_print!(@voice, vector: voice_vector(3), active: false)
+      FieldVoiceprints::Validation.stub(:run!, ->(_account) { {} }) do
+        FieldRecordings::IdentifyJob.stub(:perform_later, ->(*) { raise ActiveJob::EnqueueError, "queue down" }) do
+          assert_raises(ActiveJob::EnqueueError) { FieldVoices::ValidatePrintsJob.perform_now(@account.id) }
+        end
+        assert_nil @account.reload.field_matched_cohort
+        assert_enqueued_with(job: FieldRecordings::IdentifyJob, args: [ @recording.id ]) do
+          FieldVoices::ValidatePrintsJob.perform_now(@account.id)
+        end
+        assert_equal FieldVoiceprints::Cohort.active(@account).last, @account.reload.field_matched_cohort
+      end
+    end
+  end
+
 end
