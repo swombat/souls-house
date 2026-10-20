@@ -273,8 +273,13 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
     with_recognition(@account) do
       store_print!(@voice, vector: voice_vector(3), active: false)
       FieldVoiceprints::Validation.stub(:run!, ->(_account) { {} }) do
-        FieldRecordings::IdentifyJob.stub(:perform_later, ->(*) { raise ActiveJob::EnqueueError, "queue down" }) do
-          assert_raises(ActiveJob::EnqueueError) { FieldVoices::ValidatePrintsJob.perform_now(@account.id) }
+        # A real enqueue failure: the adapter raises EnqueueError, Active Job
+        # rescues it, and perform_later returns false.
+        failing = ActiveJob::QueueAdapters::AbstractAdapter.new
+        def failing.enqueue(*) = raise(ActiveJob::EnqueueError, "queue down")
+        FieldRecordings::IdentifyJob.stub(:queue_adapter, failing) do
+          assert_equal false, FieldRecordings::IdentifyJob.perform_later(@recording.id), "the contract this relies on"
+          FieldVoices::ValidatePrintsJob.perform_now(@account.id)
         end
         assert_nil @account.reload.field_matched_cohort
         assert_enqueued_with(job: FieldRecordings::IdentifyJob, args: [ @recording.id ]) do

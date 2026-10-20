@@ -31,12 +31,15 @@ module FieldVoices
       key = FieldVoiceprints::Cohort.active(account).last
       return if account.field_matched_cohort == key
 
-      FieldVoiceprints::Identification.recordings_to_match(account).find_each do |recording|
-        FieldRecordings::IdentifyJob.perform_later(recording.id)
-      end
       # Saved only once every recording is scheduled: if scheduling fails part
-      # way, the retry still sees an unmatched snapshot.
-      account.update_columns(field_matched_cohort: key)
+      # way, the next check still sees an unmatched snapshot. perform_later
+      # reports a failed enqueue by returning false (Active Job rescues the
+      # adapter's EnqueueError), so the return value is the witness.
+      scheduled = true
+      FieldVoiceprints::Identification.recordings_to_match(account).find_each do |recording|
+        scheduled = false unless FieldRecordings::IdentifyJob.perform_later(recording.id)
+      end
+      account.update_columns(field_matched_cohort: key) if scheduled
     end
 
   end
