@@ -7,6 +7,14 @@
 # compared with the account's active prints (FieldVoiceprints::Cohort). A
 # guess is a chip; a person confirms it.
 #
+# A speaker no active print claims is then matched against every print in the
+# cohort, under the same rules (threshold, margin, split). If the winner is a
+# print that hasn't passed its check yet, the speaker gets an unchecked hint
+# ("maybe Anna?", recognition_checked false): weaker, said as such, and
+# confirmed the same way, which is how such a print earns its second
+# recording (Daniel, 2026-10-20, KJkkdJ). An active print never loses a
+# speaker it claims to an unchecked one.
+#
 # Embedding happens outside any lock. The write happens under account →
 # recording → every voice in the cohort, with fresh rows, and only if
 # nothing the guesses were computed from has moved: recognition still on, the
@@ -27,10 +35,11 @@ module FieldVoiceprints::Identification
     return nil unless FieldVoiceprints.enabled_for?(account) && recording.kept? && recording.ready? && !recording.supplied?
 
     prints, key = FieldVoiceprints::Cohort.active(account)
-    return nil if prints.empty?
+    cohort = FieldVoiceprints::Cohort.prints(account)
+    return nil if cohort.empty?
 
     probe_generation = account.field_probe_generation
-    profile = prints.first.profile
+    profile = cohort.first.profile
     candidates = recording.speakers.select { |speaker| undecided?(speaker) }
     return nil if candidates.empty?
 
@@ -47,8 +56,9 @@ module FieldVoiceprints::Identification
       end
     end
     snapshot = candidates.to_h { |speaker| [ speaker.id, speaker.decision_generation ] }
-    generations = prints.to_h { |print| [ print.field_voice_id, print.generation ] }
+    generations = cohort.to_h { |print| [ print.field_voice_id, print.generation ] }
     guesses = FieldVoiceprints::Matching.guesses(probes, prints.to_h { |print| [ print.field_voice_id, print.vector ] })
+    hints = unchecked_hints(probes.except(*guesses.keys), cohort, prints)
 
     voices = FieldVoice.where(account:).to_a
     FieldVoiceprints::Locks.with(account:, recording:, voices:) do |live_account, live_recording, _voices|
@@ -61,11 +71,12 @@ module FieldVoiceprints::Identification
         next unless snapshot.key?(speaker.id) && speaker.decision_generation == snapshot[speaker.id] && undecided?(speaker)
 
         speaker.update!(probe_embedding: JSON.generate(fresh[speaker.id]), probe_profile: profile) if fresh[speaker.id]
-        voice_id, score = guesses[speaker.id]
+        checked = guesses.key?(speaker.id)
+        voice_id, score = guesses[speaker.id] || hints[speaker.id]
         if voice_id
           speaker.update!(recognised_voice_id: voice_id, recognition_confidence: (score * 100).round,
             recognition_print_generation: generations[voice_id], recognition_decision_generation: speaker.decision_generation,
-            recognition_cohort: key)
+            recognition_cohort: key, recognition_checked: checked)
           written += 1
         elsif speaker.recognised_voice_id
           speaker.update!(**FieldRecordingSpeaker::RECOGNITION_FIELDS, recognition_decision_generation: nil)
@@ -77,6 +88,17 @@ module FieldVoiceprints::Identification
 
   # The prints that may guess now (validated in the current cohort).
   def active_prints(account) = FieldVoiceprints::Cohort.active(account).first
+
+  # {probe key => [voice_id, score]} for probes whose best match in the whole
+  # cohort is a print that isn't active. Matching against every print keeps
+  # the margin honest: an unchecked hint must beat the checked voices too.
+  def unchecked_hints(probes, cohort, active)
+    return {} if probes.empty?
+
+    active_ids = active.map(&:field_voice_id)
+    FieldVoiceprints::Matching.guesses(probes, cohort.to_h { |print| [ print.field_voice_id, print.vector ] })
+      .reject { |_, (voice_id, _)| active_ids.include?(voice_id) }
+  end
 
   def undecided?(speaker)
     speaker.decision_generation.zero? && !speaker.field_voice&.kept? && !speaker.ignored?

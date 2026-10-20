@@ -185,10 +185,9 @@ class FieldRecordingsController < ApplicationController
 
     names = FieldVoiceprints::Identification.active_prints(current_account).map { |print| print.field_voice.name }.sort
     voices = if names.empty?
-      "No voice is checked enough to guess yet: a voice needs naming in two recordings, and to pass a check against " \
-        "the recordings it wasn't learned from."
+      "No voice is checked enough to guess with confidence yet, so anything found is a \"maybe\" hint."
     else
-      "Only #{names.to_sentence} #{names.one? ? 'is' : 'are'} checked enough to guess yet, so only #{names.one? ? 'that voice' : 'those voices'} can be found."
+      "Only #{names.to_sentence} #{names.one? ? 'is' : 'are'} checked enough to guess with confidence; other voices this Field knows can show as \"maybe\" hints."
     end
     tail = passes.include?(:names) ? " Names from what's said are being looked at too." : ""
     "Looking again. #{voices}#{tail} New guesses appear on the speaker cards for you to confirm. Speakers someone has named keep their names; a guess nobody has confirmed yet can change."

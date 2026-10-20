@@ -47,10 +47,44 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
     end
   end
 
-  test "an unvalidated print never guesses" do
+  test "an unvalidated print only hints, said as unchecked, and confirming the hint names the speaker and teaches it" do
     with_recognition(@account) do
       store_print!(@voice, vector: voice_vector(3), active: false)
-      assert_nil run_identify(FakeVoiceEmbeddings.new({ default: voice_vector(3) }))
+      assert_equal 1, run_identify(FakeVoiceEmbeddings.new({ default: voice_vector(3) }))
+      @speaker.reload
+      assert_equal [ @voice.id, false ], [ @speaker.recognised_voice_id, @speaker.recognition_checked ]
+      assert_equal false, FieldItems.speaker_json(@speaker).dig(:recognition, :checked)
+
+      assert_enqueued_with(job: FieldVoices::LearnSampleJob) do
+        assert @speaker.confirm_recognition!(by: @user, shown: @speaker.recognition_token)
+      end
+      assert_equal [ @voice.id, "confirmed_recognition" ], [ @speaker.reload.field_voice_id, @speaker.naming_source ]
+      assert_nil @speaker.recognition_checked
+    end
+  end
+
+  test "an active print's guess is checked, and an unchecked print never takes a speaker an active one claims" do
+    with_recognition(@account) do
+      store_print!(@voice, vector: voice_vector(3))
+      store_print!(@other_voice, vector: voice_vector(7), active: false)
+      assert_equal 1, run_identify(FakeVoiceEmbeddings.new({ default: voice_vector(3, noise: 0.05) }))
+      @speaker.reload
+      assert_equal [ @voice.id, true ], [ @speaker.recognised_voice_id, @speaker.recognition_checked ]
+      assert_equal true, FieldItems.speaker_json(@speaker).dig(:recognition, :checked)
+    end
+  end
+
+  test "a speaker no active print claims gets the unchecked print's hint, under the same match rules" do
+    with_recognition(@account) do
+      store_print!(@voice, vector: voice_vector(3))
+      store_print!(@other_voice, vector: voice_vector(7), active: false)
+      assert_equal 1, run_identify(FakeVoiceEmbeddings.new({ default: voice_vector(7, noise: 0.05) }))
+      @speaker.reload
+      assert_equal [ @other_voice.id, false ], [ @speaker.recognised_voice_id, @speaker.recognition_checked ]
+
+      # Sounding like no one stays unguessed, checked or not.
+      @speaker.update!(**FieldRecordingSpeaker::RECOGNITION_FIELDS, probe_embedding: nil, probe_profile: nil)
+      assert_equal 0, run_identify(FakeVoiceEmbeddings.new({ default: voice_vector(11) }))
       assert_nil @speaker.reload.recognised_voice_id
     end
   end

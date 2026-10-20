@@ -64,7 +64,7 @@ module FieldVoiceprints
     FieldRecordingSpeaker.where.not(probe_embedding: nil).update_all(probe_embedding: nil, probe_profile: nil)
     FieldRecordingSpeaker.where.not(recognised_voice_id: nil)
       .update_all(recognised_voice_id: nil, recognition_confidence: nil, recognition_print_generation: nil,
-        recognition_cohort: nil)
+        recognition_cohort: nil, recognition_checked: nil)
     counts
   end
 

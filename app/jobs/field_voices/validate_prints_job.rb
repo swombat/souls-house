@@ -23,7 +23,8 @@ module FieldVoices
 
       after = active(account)
       return if after == before || !FieldVoiceprints.enabled_for?(account)
-      return if FieldVoiceprints::Identification.active_prints(account).empty?
+      # Unchecked prints give "maybe" hints, so any print is reason to match.
+      return if FieldVoiceprints::Cohort.prints(account).empty?
 
       FieldVoiceprints::Identification.recordings_to_match(account).find_each do |recording|
         FieldRecordings::IdentifyJob.perform_later(recording.id)

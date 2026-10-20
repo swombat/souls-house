@@ -117,7 +117,7 @@ class FieldVoice < ApplicationRecord
     FieldVoices::ValidatePrintsJob.queue!(account)
     FieldRecordingSpeaker.where(recognised_voice_id: id)
       .update_all(recognised_voice_id: nil, recognition_confidence: nil, recognition_print_generation: nil,
-        recognition_decision_generation: nil, recognition_cohort: nil)
+        recognition_decision_generation: nil, recognition_cohort: nil, recognition_checked: nil)
     FieldRecordingActivity.refresh!(recognised_recording_ids)
   end
 

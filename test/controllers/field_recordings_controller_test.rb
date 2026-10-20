@@ -354,13 +354,13 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
     end
     assert_redirected_to account_field_recording_path(@account, recording)
     assert_match "Looking again", flash[:notice]
-    assert_match "No voice is checked enough to guess yet", flash[:notice], "no print has passed its check in this fixture"
+    assert_match "No voice is checked enough to guess with confidence yet", flash[:notice], "no print has passed its check in this fixture"
 
     post identify_again_account_field_recording_path(@account, recording)
     assert_equal "Nothing to look for again here.", flash[:notice], "recognition off: nothing queued, and it says so"
   end
 
-  test "looking again names the only voices that may guess, so a press that finds nothing isn't a mystery" do
+  test "looking again names the voices checked enough to guess with confidence, and says others can hint" do
     recording = long_ready_recording(account: @account, user: @user)
     prints = %w[Peter Daniel].map { |name| Struct.new(:field_voice).new(Struct.new(:name).new(name)) }
     with_recognition(@account) do
@@ -368,7 +368,7 @@ class FieldRecordingsControllerTest < ActionDispatch::IntegrationTest
         post identify_again_account_field_recording_path(@account, recording)
       end
     end
-    assert_match "Only Daniel and Peter are checked enough to guess yet, so only those voices can be found.", flash[:notice]
+    assert_match "Only Daniel and Peter are checked enough to guess with confidence; other voices this Field knows can show as \"maybe\" hints.", flash[:notice]
     assert_match "Speakers someone has named keep their names; a guess nobody has confirmed yet can change.", flash[:notice]
   end
 

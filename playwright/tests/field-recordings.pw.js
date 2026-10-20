@@ -998,6 +998,25 @@ test('with recognition on, an undecided speaker gets the recognition chip and no
   await page.screenshot({ path: 'tmp/field-recognition-show.png', fullPage: true });
 });
 
+test('a voice not checked yet shows only as a hint: "Maybe Tomás?", said as unchecked, still confirmable', async ({
+  mount,
+  page,
+}) => {
+  const props = recognitionProps(true);
+  const hinted = props.speakers.map((speaker) =>
+    speaker.recognition ? { ...speaker, recognition: { ...speaker.recognition, checked: false } } : speaker
+  );
+  await mount(RecordingPage, { props: { ...props, speakers: hinted } });
+
+  const chip = page.getByTestId('speaker-recognition');
+  await expect(chip).toHaveAttribute('data-checked', 'false');
+  await expect(chip).toContainText('Maybe Tomás?');
+  await expect(chip).toContainText("hasn't been checked against other recordings yet");
+  await expect(chip).not.toContainText('sounds like the Tomás this Field remembers');
+  await expect(chip.getByRole('button', { name: "That's Tomás" })).toBeVisible();
+  await page.screenshot({ path: 'tmp/field-recognition-hint.png', fullPage: true });
+});
+
 test('with recognition off, the transcript page has no recognition, remember offer or preview', async ({
   mount,
   page,

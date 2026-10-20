@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-20
+  title: '"Maybe Anna?" hints from voices not checked yet'
+  body: "A voice the Field has learned but not yet checked against recordings it wasn't learned from can now suggest too, as a weaker hint: an unnamed speaker's card says \"Maybe Anna?\" and that this voice hasn't been checked yet. A checked voice's guess always comes first, and a hint has to pass the same match score and lead over every other voice. Confirming a hint names the speaker and teaches that voice, which is how it gets the second recording its check needs. Look for known voices again says which voices guess with confidence and that others can hint. Works once deployed."
+- date: 2026-10-20
   title: Long transcripts stay responsive, and Look again says what it can find
   body: "A recording's transcript page no longer downloads its whole transcript again each time something else updates it, such as a reconnection, a speaker being named or a summary arriving. On a 50-minute meeting that was over 2 MB each time, and while the server was busy with new uploads the page could freeze. The words now load once, and again only when the transcript itself changes. Look for known voices again now says which voices are checked enough to guess (or that none are yet), so a press that finds nothing isn't a mystery: speakers someone has named keep their names, and an unconfirmed guess can change. Works once deployed."
 - date: 2026-10-19

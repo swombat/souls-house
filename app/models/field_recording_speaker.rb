@@ -40,7 +40,7 @@ class FieldRecordingSpeaker < ApplicationRecord
                         suggestion_quote_ms: nil, suggestion_source: nil, suggested_at: nil,
                         suggestion_generation: nil }.freeze
   RECOGNITION_FIELDS = { recognised_voice: nil, recognition_confidence: nil, recognition_print_generation: nil,
-                         recognition_cohort: nil }.freeze
+                         recognition_cohort: nil, recognition_checked: nil }.freeze
   NOT_IGNORED = { ignored_at: nil, ignored_by: nil }.freeze
 
   # Fields read by FieldItems.speaker_json (including the displayed decision
@@ -50,6 +50,7 @@ class FieldRecordingSpeaker < ApplicationRecord
     talk_ms clip_start_ms clip_end_ms
     suggested_name suggestion_quote suggestion_quote_ms suggestion_generation
     recognised_voice_id recognition_confidence recognition_print_generation recognition_decision_generation
+    recognition_checked
   ].freeze
 
   validates :label, presence: true
@@ -201,10 +202,13 @@ class FieldRecordingSpeaker < ApplicationRecord
     # and Forget and validation take voice locks.
     with_recognition_locks(shown, all_voices: true) do |account, voice|
       active, key = FieldVoiceprints::Cohort.active(account)
+      # A checked guess needs its print still active; an unchecked hint
+      # ("maybe Anna?") only needs its print still current in the cohort.
+      eligible = recognition_checked == false ? FieldVoiceprints::Cohort.prints(account) : active
       next false unless FieldVoiceprints.enabled_for?(account) && voice&.kept? &&
                         recognition_print_generation == voice.print_generation &&
                         recognition_cohort.present? && recognition_cohort == key &&
-                        active.any? { |print| print.field_voice_id == voice.id && print.generation == voice.print_generation }
+                        eligible.any? { |print| print.field_voice_id == voice.id && print.generation == voice.print_generation }
 
       name_as!(voice, by:, source: "confirmed_recognition")
       true
