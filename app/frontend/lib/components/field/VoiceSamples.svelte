@@ -122,6 +122,9 @@
             </audio>
           {/if}
           {#if sample.unavailable}<p class="text-sm text-muted-foreground">{sample.unavailable}</p>{/if}
+          {#if sample.has_sample && !sample.included && !sample.source_current}
+            <p class="text-xs text-muted-foreground">Rebuild, then listen and approve to include this sample again.</p>
+          {/if}
           {#if sample.status === 'pending'}
             <p class="text-sm">Rebuild pending. Refresh status after processing.</p>
           {/if}

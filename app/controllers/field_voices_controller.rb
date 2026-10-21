@@ -15,7 +15,10 @@ class FieldVoicesController < ApplicationController
         rows = samples.fetch(voice.id, [])
         FieldItems.voice_page_json(voice, used.fetch(voice.id, 0), active_ids).merge(
           included_samples: rows.count { |sample| sample.eligible? && !sample.field_recording_speaker.sample_excluded? },
-          unconfirmed_samples: rows.count { |sample| !sample.manually_confirmed? })
+          unconfirmed_samples: rows.count { |sample|
+            sample.eligible? && !sample.field_recording_speaker.sample_excluded? &&
+              !sample.manually_confirmed?(speaker: sample.field_recording_speaker)
+          })
       },
       recognise_voices: current_account.recognise_voices,
       house_recognition: FieldVoiceprints.house_enabled?,

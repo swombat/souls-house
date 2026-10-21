@@ -160,39 +160,73 @@ class FieldVoiceprints::SampleReviewTest < ActiveSupport::TestCase
     end
   end
 
-  test "excluded speakers stay excluded through drop rename line edits and backfill" do
+  test "same voice stays excluded through drop attribution correction line edits and backfill" do
     with_recognition(@account) do
       sample = enrolled_sample
       assert review(sample, included: false)
       @recording.reload.send(:invalidate_speaker_evidence!, [ @speaker.label ])
       assert @speaker.reload.sample_excluded?
       assert_empty @speaker.voice_samples
-      other_voice = @account.field_voices.create!(name: "Another")
-      assert_no_enqueued_jobs(only: FieldVoices::LearnSampleJob) { @speaker.name_as!(other_voice, by: @user) }
+      assert_no_enqueued_jobs(only: FieldVoices::LearnSampleJob) { @speaker.name_as!(@voice, by: @user) }
       assert_equal 0, FieldVoiceprints::Learning.queue_account!(@account)
       assert @speaker.reload.sample_excluded?
       assert_nil FieldVoiceprints::Learning.snapshot_for(@speaker)
     end
   end
 
-  test "source evidence changes invalidate confirmation and in flight writes" do
+  test "correcting attribution to a different voice clears the previous voice exclusion" do
+    with_recognition(@account) do
+      sample = enrolled_sample
+      assert review(sample, included: false)
+      old_snapshot = FieldVoiceprints::Learning.snapshot_for(@speaker.reload, allow_excluded: true)
+      other_voice = @account.field_voices.create!(name: "Another")
+
+      assert_enqueued_with(job: FieldVoices::LearnSampleJob) { @speaker.name_as!(other_voice, by: @user) }
+      assert_not @speaker.reload.sample_excluded?
+      assert_equal :stale, learn(old_snapshot)
+      snapshot = FieldVoiceprints::Learning.snapshot_for(@speaker)
+      assert snapshot
+      assert_equal other_voice.id, snapshot["voice_id"]
+      assert_equal :learned, learn(snapshot)
+      assert_equal other_voice.id, @speaker.voice_samples.sole.field_voice_id
+      assert @speaker.voice_samples.sole.eligible?
+      assert_equal 1, other_voice.reload.voiceprint.sample_count
+      assert_nil @voice.reload.voiceprint
+    end
+  end
+
+  test "text only correction preserves confirmation of the exact heard audio" do
+    with_recognition(@account) do
+      sample = enrolled_sample
+      assert review(sample, included: true)
+      digest = sample.source_digest
+      segments = sample.source_segments.deep_dup
+      blob_id = @recording.audio.blob.id
+      generation = @speaker.reload.decision_generation
+      line = @recording.reload.transcript_lines.first
+
+      @recording.correct_line!(line[:locator], text: "first corrected", was: line[:text],
+        revision: @recording.transcript_revision)
+
+      assert_includes @recording.reload.transcript_text, "first corrected"
+      assert_equal generation, @speaker.reload.decision_generation
+      assert_equal blob_id, @recording.audio.blob.id
+      assert_equal digest, sample.reload.source_digest
+      assert_equal segments, sample.source_segments
+      assert sample.source_current?
+      assert sample.manually_confirmed?
+    end
+  end
+
+  test "source evidence generation changes invalidate confirmation and in flight writes" do
     with_recognition(@account) do
       sample = enrolled_sample
       assert review(sample, included: true)
       snapshot = FieldVoiceprints::Learning.snapshot_for(@speaker.reload)
-      original_words = @recording.reload.transcript_words.deep_dup
-      changed = original_words.deep_dup
-      changed.first["t"] = "edited word"
-      @recording.update!(transcript_words: changed)
+      @speaker.increment!(:decision_generation)
       assert_not sample.source_current?
       assert_not sample.manually_confirmed?
       assert_not review(sample, included: true)
-      assert_equal :stale, learn(snapshot)
-
-      @recording.update!(transcript_words: original_words)
-      assert sample.source_current?
-      @speaker.increment!(:decision_generation)
-      assert_not sample.source_current?
       assert_equal :stale, learn(snapshot)
     end
   end
@@ -213,9 +247,7 @@ class FieldVoiceprints::SampleReviewTest < ActiveSupport::TestCase
       result = FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: voice_vector(3), profile: "ecapa-test")
       client = Object.new
       change = -> {
-        words = @recording.reload.transcript_words.deep_dup
-        words.first["t"] = "changed during embedding"
-        @recording.update!(transcript_words: words)
+        @speaker.increment!(:decision_generation)
       }
       client.define_singleton_method(:embed) { |_wav| change.call; result }
       assert_equal :stale, learn(snapshot, client:)

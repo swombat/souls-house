@@ -92,7 +92,9 @@ class FieldVoiceSamplesControllerTest < ActionDispatch::IntegrationTest
 
   test "authenticated audio serves inline wav and single byte ranges only" do
     bytes = "RIFF" + ("synthetic audio" * 100)
+    cuts = 0
     cut = ->(_recording, segments, &block) {
+      cuts += 1
       assert_equal @sample.source_segments, segments
       Tempfile.create([ "synthetic-review", ".wav" ]) do |file|
         file.binmode
@@ -102,20 +104,27 @@ class FieldVoiceSamplesControllerTest < ActionDispatch::IntegrationTest
       end
     }
     url = audio_account_field_voice_sample_path(@account, @voice, @speaker, digest: @sample.source_digest)
-    FieldVoiceprints::Sample.stub(:cut, cut) do
-      get url
-      assert_response :success
-      assert_equal bytes, response.body
-      assert_match(/inline/, response.headers["Content-Disposition"])
-      assert_equal "audio/wav", response.media_type
-      assert_match(/private.*no-store/, response.headers["Cache-Control"])
-      assert_equal "bytes", response.headers["Accept-Ranges"]
-      get url, headers: { "Range" => "bytes=0-3" }
-      assert_response :partial_content
-      assert_equal "RIFF", response.body
-      assert_equal "bytes 0-3/#{bytes.bytesize}", response.headers["Content-Range"]
-      get url, headers: { "Range" => "bytes=9999999-" }
-      assert_response :range_not_satisfiable
+    Rails.stub(:cache, ActiveSupport::Cache::MemoryStore.new) do
+      FieldVoiceprints::Sample.stub(:cut, cut) do
+        get url
+        assert_response :success
+        assert_equal bytes, response.body
+        assert_match(/inline/, response.headers["Content-Disposition"])
+        assert_equal "audio/wav", response.media_type
+        assert_match(/private.*no-store/, response.headers["Cache-Control"])
+        assert_equal "bytes", response.headers["Accept-Ranges"]
+        get url, headers: { "Range" => "bytes=0-3" }
+        assert_response :partial_content
+        assert_equal "RIFF", response.body
+        assert_equal "bytes 0-3/#{bytes.bytesize}", response.headers["Content-Range"]
+        get url, headers: { "Range" => "bytes=9999999-" }
+        assert_response :range_not_satisfiable
+        assert_equal 1, cuts, "Safari's probes and chunks reuse the same private cut"
+        @speaker.increment!(:decision_generation)
+        get url, headers: { "Range" => "bytes=0-3" }
+        assert_response :conflict, "a cached cut does not bypass source checks"
+        assert_equal 1, cuts
+      end
     end
     get audio_account_field_voice_sample_path(@account, @voice, @speaker, digest: "stale")
     assert_response :conflict
@@ -125,7 +134,7 @@ class FieldVoiceSamplesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "missing audio is presented honestly and stale evidence cannot be streamed" do
-    @recording.update!(transcript_words: [])
+    @speaker.increment!(:decision_generation)
     get audio_account_field_voice_sample_path(@account, @voice, @speaker, digest: @sample.source_digest)
     assert_response :conflict
     get account_field_voice_samples_path(@account, @voice)

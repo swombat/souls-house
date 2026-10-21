@@ -144,6 +144,7 @@ class FieldRecordingSpeaker < ApplicationRecord
 
       reload
       update!(field_voice: target, naming_source: source, named_by: by, named_at: Time.current,
+        sample_excluded: field_voice_id == target.id ? sample_excluded? : false,
         decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **RECOGNITION_FIELDS, **NOT_IGNORED, **NO_PROBE)
       FieldVoiceprints::Learning.drop_samples!([ id ])
       recording.update!(transcript_text: recording.render_transcript_text)

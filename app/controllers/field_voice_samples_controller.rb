@@ -42,7 +42,13 @@ class FieldVoiceSamplesController < ApplicationController
     return head(:conflict) unless params[:digest].present? && params[:digest] == sample.source_digest && sample.source_current?
     return head(:not_found) unless @speaker.field_recording.audio.attached?
 
-    bytes = FieldVoiceprints::Sample.cut(@speaker.field_recording, sample.source_segments) { |path| File.binread(path) }
+    # Authorise and source-check every range, but reuse this exact private cut
+    # for Safari's probe/chunk requests rather than downloading the source again.
+    bytes = Rails.cache.fetch(
+      [ "field-voice-sample-audio-v1", current_account.id, sample.id, sample.source_digest ], expires_in: 10.minutes
+    ) do
+      FieldVoiceprints::Sample.cut(@speaker.field_recording, sample.source_segments) { |path| File.binread(path) }
+    end
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["Accept-Ranges"] = "bytes"
     if request.headers["Range"].present?
@@ -77,7 +83,8 @@ class FieldVoiceSamplesController < ApplicationController
     sample = speaker.voice_samples.find { |row| row.field_voice_id == @voice.id }
     recording = speaker.field_recording
     current = sample&.source_current? || false
-    confirmed = current && sample.manually_confirmed?
+    confirmed = current && speaker.sample_confirmed_digest == sample.source_digest &&
+      speaker.sample_confirmed_by_id.present? && speaker.sample_confirmed_at.present?
     {
       id: speaker.to_param, recording_title: recording.title, recorded_at: recording.created_at.iso8601,
       source_url: account_field_recording_path(current_account, recording),
