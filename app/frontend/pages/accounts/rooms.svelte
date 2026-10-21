@@ -10,7 +10,16 @@
   import { destinations, roomName, MAIN } from '$lib/rooms';
   import { createDynamicSync } from '$lib/use-sync';
 
-  let { account, rooms = [], room_counts = {}, main_count = 0, resident_room_id = null, can_manage = false } = $props();
+  let {
+    account,
+    rooms = [],
+    room_counts = {},
+    main_count = 0,
+    resident_room_id = null,
+    can_manage = false,
+    model_residents = [],
+    room_model_defaults = [],
+  } = $props();
 
   let name = $state('');
   let description = $state('');
@@ -58,6 +67,30 @@
           }
         },
       }
+    );
+  }
+
+  const DEFAULT = 'default';
+
+  function roomDefault(roomKey, resident) {
+    return room_model_defaults.find((entry) => entry.room_id === roomKey && entry.agent_id === resident.id);
+  }
+
+  function modelValue(roomKey, resident) {
+    return roomDefault(roomKey, resident)?.model_id || DEFAULT;
+  }
+
+  function modelLabel(roomKey, resident) {
+    const entry = roomDefault(roomKey, resident);
+    if (!entry) return `${resident.default_label} (default)`;
+    return entry.label;
+  }
+
+  function setRoomModel(roomKey, resident, modelId) {
+    router.patch(
+      `/accounts/${account.id}/room_model_default`,
+      { room_id: roomKey, agent_id: resident.id, model_id: modelId },
+      { preserveScroll: true }
     );
   }
 
@@ -151,4 +184,62 @@
       </Select.Root>
     {/if}
   </section>
+
+  {#if model_residents.length > 0}
+    <section class="mt-10 space-y-3" aria-labelledby="room-models-heading" data-testid="room-models">
+      <h2 id="room-models-heading" class="text-xl font-semibold">Models by room</h2>
+      <p class="text-sm text-muted-foreground">
+        The model each resident starts on in a new conversation in this room. Anyone in the conversation can still
+        change it from the resident's button. Changing it here doesn't touch existing conversations, and a conversation
+        moved into a room keeps the model it had. Only residents with more than one model for conversations are listed.
+      </p>
+      {#if errors.room_model}
+        <p role="alert" class="text-sm text-destructive">{errors.room_model}</p>
+      {/if}
+      <div class="overflow-x-auto rounded-lg border border-border">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-border text-left">
+              <th class="px-4 py-2 font-medium">Room</th>
+              {#each model_residents as resident (resident.id)}
+                <th class="px-4 py-2 font-medium">{resident.name}</th>
+              {/each}
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border">
+            {#each destinations(rooms) as option (option.id)}
+              <tr>
+                <td class="px-4 py-2 font-medium">{option.name}</td>
+                {#each model_residents as resident (resident.id)}
+                  {@const entry = roomDefault(option.id, resident)}
+                  <td class="px-4 py-2">
+                    <Select.Root
+                      type="single"
+                      value={modelValue(option.id, resident)}
+                      onValueChange={(value) => setRoomModel(option.id, resident, value)}
+                      disabled={!can_manage}>
+                      <Select.Trigger class="w-52" aria-label={`${resident.name}'s model in ${option.name}`}>
+                        {modelLabel(option.id, resident)}
+                      </Select.Trigger>
+                      <Select.Content sideOffset={4}>
+                        <Select.Item value={DEFAULT} label={`${resident.default_label} (default)`}>
+                          {resident.default_label} (default)
+                        </Select.Item>
+                        {#each resident.choices.slice(1) as choice (choice.model_id)}
+                          <Select.Item value={choice.model_id} label={choice.label}>{choice.label}</Select.Item>
+                        {/each}
+                      </Select.Content>
+                    </Select.Root>
+                    {#if entry?.problem}
+                      <p class="mt-1 text-xs text-destructive">{entry.problem}; new conversations use the default.</p>
+                    {/if}
+                  </td>
+                {/each}
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {/if}
 </AccountSettingsLayout>

@@ -50,6 +50,7 @@ class Account < ApplicationRecord
   has_many :chats, dependent: :destroy
   has_many :visual_tags, dependent: :destroy
   has_many :rooms, -> { ordered }, dependent: :destroy
+  has_many :room_model_defaults, dependent: :delete_all
   # Where conversations residents start land unless they choose; nil is Main.
   belongs_to :resident_room, class_name: "Room", optional: true
   has_one :pin_tag, -> { pinned }, class_name: "VisualTag"

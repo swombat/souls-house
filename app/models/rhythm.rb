@@ -333,9 +333,11 @@ class Rhythm < ApplicationRecord
   # Each resident's rhythm model becomes its seat model before anyone is
   # woken, so the first turn already runs on it. Agents::ModelSelection reads
   # the seat when the turn starts and reports a selection that has stopped
-  # being valid rather than quietly using the default.
+  # being valid rather than quietly using the default. A rhythm seat with no
+  # model means the resident's own default, so it also clears a model the
+  # room's default seeded (RoomModelDefault): the rhythm's choice wins.
   def apply_seat_models(chat)
-    rhythm_agents.where.not(model_id: nil).find_each do |seat|
+    rhythm_agents.find_each do |seat|
       chat.chat_agents.where(agent_id: seat.agent_id).update_all(model_id: seat.model_id)
     end
   end
