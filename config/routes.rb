@@ -264,10 +264,12 @@ Rails.application.routes.draw do
       resources :samples, only: [ :index, :update ], controller: "field_voice_samples" do
         get :audio, on: :member
         post :relearn, on: :member
+        post :prepare, on: :collection
       end
       delete :forget, on: :member, path: "print"
       post :remember, on: :member
       delete :forget_all, on: :collection, path: "prints"
+      post :prepare_samples, on: :collection
       patch :recognition, on: :collection
     end
     resources :whiteboards, only: [ :index, :create, :update, :destroy ] do

@@ -202,4 +202,24 @@ module FieldVoiceprints::Learning
     end
   end
 
+  # Samples a person can't hear yet: learned before spans were recorded, or
+  # their source changed since. Rebuilding one through the usual relearn path
+  # gives it real spans; it keeps its inclusion and starts unconfirmed.
+  # Returns how many rebuilds were queued.
+  def prepare_for_review!(voice)
+    return 0 unless voice.kept? && voice.remember?
+
+    FieldVoiceSample.where(field_voice: voice).includes(field_recording_speaker: :field_recording).to_a.count do |sample|
+      speaker = sample.field_recording_speaker
+      next false unless speaker.field_voice_id == voice.id && speaker.field_recording.kept?
+      next false if speaker.sample_learning_status == "pending" || sample.source_current?(speaker:)
+
+      speaker.relearn_sample! == true
+    end
+  end
+
+  def prepare_account_for_review!(account)
+    account.field_voices.kept.where(remember: true).to_a.sum { |voice| prepare_for_review!(voice) }
+  end
+
 end

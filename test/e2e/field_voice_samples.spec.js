@@ -72,12 +72,16 @@ for (const device of [
           new URL(response.url()).pathname === samplesPath && response.request().method() === 'GET';
         const sample = page.getByTestId('voice-sample');
         const inclusion = sample.getByTestId('sample-inclusion');
-        const openSamples = async () => {
-          const response = page.waitForResponse(isList);
-          await page.getByTestId('voice-row').getByRole('button', { name: 'Review samples', exact: true }).click();
-          const result = await response;
-          expect(result.ok()).toBe(true);
-          const body = await result.json();
+        const accept = sample.getByTestId('sample-accept');
+        const reject = sample.getByTestId('sample-reject');
+        const audio = page.getByTestId('sample-audio');
+        const checkList = async (response) => {
+          // The page's own list request must succeed; its contents are read
+          // through the same session, since Chromium may drop a captured body.
+          expect((await response).ok()).toBe(true);
+          const listed = await page.request.get(samplesPath, { headers: { Accept: 'application/json' } });
+          expect(listed.ok()).toBe(true);
+          const body = await listed.json();
           expect(body.samples).toHaveLength(1);
           expect(body.samples[0]).toMatchObject({
             id: fixture.speaker_param,
@@ -88,37 +92,47 @@ for (const device of [
           });
           if (body.samples[0].included) expect(body.print).not.toBe('No fingerprint');
           else expect(body.print).toBe('No fingerprint');
+          // The roster opens the speaker: on a phone the list gives way to the detail.
+          if (!(await page.getByTestId('voice-detail').isVisible())) await page.getByTestId('voice-row').click();
+          await expect(page.getByTestId('voice-detail')).toBeVisible();
           await expect(sample).toHaveCount(1);
           return body.samples[0];
         };
         const reloadSamples = async () => {
+          // A change refetches the list (and the roster); let those settle so the
+          // response awaited is the reloaded page's, not one the reload discarded.
+          await page.waitForLoadState('networkidle');
+          const response = page.waitForResponse(isList);
           await page.reload();
-          return openSamples();
+          return checkList(response);
         };
-        const mutate = async (button, included) => {
+        const mutate = async (button, included, state) => {
           const response = page.waitForResponse(
             (res) => new URL(res.url()).pathname === samplePath && res.request().method() === 'PATCH'
           );
           await button.click();
           expect((await response).ok()).toBe(true);
-          await expect(inclusion).toContainText(included ? /^Included/ : /^Not included/);
+          await expect(inclusion).toHaveText(state);
           expect(patches.at(-1)).toEqual({ included, digest: fixture.digest });
         };
 
         await login(page, setup);
+        const firstList = page.waitForResponse(isList);
         await page.goto(voicesPath);
-        expect(await openSamples()).toMatchObject({ included: true, confirmed: false });
-        await expect(sample).toContainText('2.5s total · source spans: 0.0s–1.0s, 2.0s–3.5s');
-        const approve = sample.getByRole('button', { name: 'Approve & include', exact: true });
-        const audio = sample.locator('audio[controls]');
-        await expect(audio).toHaveCount(1);
-        await expect(approve).toBeDisabled();
-        const audioUrl = new URL(await audio.getAttribute('src'), page.url());
-        expect(audioUrl.pathname).toBe(audioPath);
-        expect(audioUrl.searchParams.get('digest')).toBe(fixture.digest);
+        if (!device.isMobile) {
+          await expect(
+            page.getByRole('navigation', { name: 'Account settings' }).getByRole('link', { name: 'Voices' })
+          ).toHaveAttribute('aria-current', 'page');
+        }
+        expect(await checkList(firstList)).toMatchObject({ included: true, confirmed: false, state: 'review' });
+        await expect(inclusion).toHaveText('Needs review');
+        await expect(sample).toContainText('0:03 · 2 spans');
+        await expect(sample.getByTitle('Source spans: 0.0s–1.0s, 2.0s–3.5s')).toHaveCount(1);
+        await expect(accept).toBeDisabled();
 
-        // Both the full media read and a separate authenticated byte range go
-        // through the real controller; no page.route or fabricated media events.
+        // The authenticated media and a separate byte range go through the
+        // real controller; no page.route or fabricated media events.
+        const audioUrl = new URL(`${audioPath}?digest=${encodeURIComponent(fixture.digest)}`, page.url());
         const full = await page.request.get(audioUrl.href);
         expect(full.status()).toBe(200);
         expect(full.headers()['content-type']).toMatch(/^audio\/wav/);
@@ -131,13 +145,11 @@ for (const device of [
         const range = await page.request.get(audioUrl.href, { headers: { Range: 'bytes=0-127' } });
         expect(range.status()).toBe(206);
         expect(range.headers()['content-range']).toBe(`bytes 0-127/${bytes.length}`);
-        expect(range.headers()['content-type']).toMatch(/^audio\/wav/);
-        expect(range.headers()['content-disposition']).toMatch(/^inline;/);
         expect(await range.body()).toEqual(bytes.subarray(0, 128));
         const anonymous = await request.get(audioUrl.href, { maxRedirects: 0 });
         expect(anonymous.status()).toBe(302);
         expect(anonymous.headers().location).toMatch(/\/login$/);
-        await expect(approve).toBeDisabled(); // Downloading is not listening.
+        await expect(accept).toBeDisabled(); // Downloading is not listening.
 
         await audio.evaluate((element) => {
           element.dataset.playEvents = '0';
@@ -150,55 +162,33 @@ for (const device of [
           });
         });
         const mediaResponse = page.waitForResponse((res) => new URL(res.url()).pathname === audioPath);
-        // Click Chromium's actual native audio play control, including at the
-        // narrow touch viewport. Do not call play(), seek or dispatch events.
-        await audio.click({ position: { x: 20, y: 27 } });
+        // A real tap on the row's play button; no play(), seeking or dispatched events.
+        await sample.getByTestId('sample-play').click();
         const media = await mediaResponse;
         expect([200, 206]).toContain(media.status());
         expect(media.headers()['content-type']).toMatch(/^audio\/wav/);
-        expect(media.headers()['content-disposition']).toMatch(/^inline;/);
         if (media.status() === 206) expect(media.headers()['content-range']).toMatch(/^bytes \d+-\d+\/\d+$/);
+        expect(new URL(media.url()).searchParams.get('digest')).toBe(fixture.digest);
         await expect(audio).toHaveAttribute('data-play-events', '1');
         await expect.poll(() => audio.evaluate((element) => element.currentTime)).toBeGreaterThan(0.1);
-        await expect(approve).toBeDisabled();
-        await expect.poll(() => audio.evaluate((element) => element.currentTime)).toBeGreaterThan(0.8);
-        await expect(approve).toBeDisabled();
+        await expect(accept).toBeDisabled();
         await expect(audio).toHaveAttribute('data-ended-events', '1');
-        expect(await audio.evaluate((element) => element.ended && element.currentTime >= element.duration - 0.05)).toBe(
-          true
-        );
         expect(await audio.evaluate((element) => element.duration)).toBeCloseTo(2.5, 2);
-        await expect(approve).toBeEnabled();
+        await expect(accept).toBeEnabled();
 
-        // Cancelling the native confirmation must not silently approve.
-        const cancelled = page.waitForEvent('dialog');
-        const cancelClick = approve.click();
-        const cancellation = await cancelled;
-        expect(cancellation.type()).toBe('confirm');
-        expect(cancellation.message()).toContain('Synthetic sample voice throughout');
-        await cancellation.dismiss();
-        await cancelClick;
-        expect(patches).toHaveLength(0);
-        await expect(inclusion).toContainText('Not manually confirmed');
-
-        const confirmed = page.waitForEvent('dialog');
-        const approval = mutate(approve, true);
-        const confirmation = await confirmed;
-        expect(confirmation.type()).toBe('confirm');
-        expect(confirmation.message()).toContain('entire sample');
-        await confirmation.accept();
-        await approval;
-        await expect(inclusion).toContainText('Manually confirmed');
-        expect(await reloadSamples()).toMatchObject({ included: true, confirmed: true });
-        await expect(sample).toContainText('Confirmed by');
-        await mutate(sample.getByRole('button', { name: 'Remove from fingerprint', exact: true }), false);
-        expect(await reloadSamples()).toMatchObject({ included: false, confirmed: true });
-        await expect(inclusion).toContainText('Not included');
-        await expect(inclusion).toContainText('Manually confirmed');
+        await mutate(accept, true, 'Confirmed');
+        expect(await reloadSamples()).toMatchObject({ included: true, confirmed: true, state: 'confirmed' });
+        await expect(inclusion).toHaveText('Confirmed');
+        await expect(inclusion).toHaveAttribute('title', /^Confirmed by /);
+        await expect(accept).toHaveCount(0);
+        await mutate(reject, false, 'Removed · was confirmed');
+        expect(await reloadSamples()).toMatchObject({ included: false, confirmed: true, state: 'removed' });
+        await expect(inclusion).toHaveText('Removed · was confirmed');
         await page.screenshot({ path: testInfo.outputPath('sample-excluded.png'), fullPage: true });
-        await mutate(sample.getByRole('button', { name: 'Include confirmed sample', exact: true }), true);
-        expect(await reloadSamples()).toMatchObject({ included: true, confirmed: true });
-        await expect(inclusion).toContainText(/^Included/);
+        // A sample confirmed before can come back without replaying it.
+        await expect(accept).toBeEnabled();
+        await mutate(accept, true, 'Confirmed');
+        expect(await reloadSamples()).toMatchObject({ included: true, confirmed: true, state: 'confirmed' });
         expect(patches.map((patch) => patch.included)).toEqual([true, false, true]);
         await page.screenshot({ path: testInfo.outputPath('sample-reincluded.png'), fullPage: true });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

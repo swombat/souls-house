@@ -8,19 +8,34 @@ class FieldVoiceSamplesController < ApplicationController
 
   require_feature_enabled :agents
   before_action :set_voice
-  before_action :set_speaker, except: :index
+  before_action :set_speaker, except: %i[index prepare]
+
+  # A voice can be named in hundreds of speakers; only a few have a sample.
+  # The review list is the samples; the rest are a count, listed on request.
+  MAX_SAMPLES = 200
+  OTHER_PAGE = 15
+  STATE_ORDER = %w[review preparing not_ready removed confirmed].freeze
 
   def index
-    speakers = @voice.speakers.joins(:field_recording).merge(FieldRecording.kept)
-      .includes(:field_recording, :voice_samples, :sample_confirmed_by).order(id: :desc)
-    page = [ params[:page].to_i, 1 ].max
-    total = speakers.count
+    return render(json: other_namings_json) if params[:scope] == "other"
+
+    speakers = kept_speakers.where(id: sampled_speaker_ids)
+      .includes(:field_recording, :voice_samples, :sample_confirmed_by).order(id: :desc).limit(MAX_SAMPLES)
+    rows = speakers.map { |speaker| sample_json(speaker) }.each_with_index
+      .sort_by { |row, index| [ STATE_ORDER.index(row[:state]) || STATE_ORDER.size, index ] }.map(&:first)
     render json: {
-      samples: speakers.limit(15).offset((page - 1) * 15).map { |speaker| sample_json(speaker) },
-      page:, pages: [ (total / 15.0).ceil, 1 ].max, total:,
+      samples: rows,
+      other_namings: kept_speakers.where.not(id: sampled_speaker_ids).count,
+      preparable: rows.count { |row| row[:state] == "not_ready" && row[:can_relearn] },
       learning: learning_state,
       print: print_state
     }
+  end
+
+  # Rebuild, in the background, every sample of this voice that can't be
+  # heard yet (no recorded spans, or its source changed), so it can be played.
+  def prepare
+    render json: { queued: FieldVoiceprints::Learning.prepare_for_review!(@voice) }
   end
 
   def update
@@ -80,8 +95,32 @@ class FieldVoiceSamplesController < ApplicationController
   end
 
   def set_speaker
-    @speaker = @voice.speakers.joins(:field_recording).merge(FieldRecording.kept)
-      .find_by!(id: FieldRecordingSpeaker.decode_id(params[:id]))
+    @speaker = kept_speakers.find_by!(id: FieldRecordingSpeaker.decode_id(params[:id]))
+  end
+
+  def kept_speakers
+    @voice.speakers.joins(:field_recording).merge(FieldRecording.kept)
+  end
+
+  def sampled_speaker_ids
+    FieldVoiceSample.where(field_voice: @voice).select(:field_recording_speaker_id)
+  end
+
+  # Namings with no stored sample, and why, a page at a time (the reason reads
+  # the transcript, so it is never computed for the whole list).
+  def other_namings_json
+    speakers = kept_speakers.where.not(id: sampled_speaker_ids).includes(:field_recording).order(id: :desc)
+    page = [ params[:page].to_i, 1 ].max
+    total = speakers.count
+    {
+      namings: speakers.limit(OTHER_PAGE).offset((page - 1) * OTHER_PAGE).map { |speaker|
+        recording = speaker.field_recording
+        { id: speaker.to_param, recording_title: recording.title, recorded_at: recording.created_at.iso8601,
+          source_url: account_field_recording_path(current_account, recording), label: speaker.default_name,
+          reason: unavailable_reason(speaker, nil, false), status: speaker.sample_learning_status }
+      },
+      page:, pages: [ (total / OTHER_PAGE.to_f).ceil, 1 ].max, total:
+    }
   end
 
   def sample_json(speaker)
@@ -90,12 +129,15 @@ class FieldVoiceSamplesController < ApplicationController
     current = sample&.source_current? || false
     confirmed = current && speaker.sample_confirmed_digest == sample.source_digest &&
       speaker.sample_confirmed_by_id.present? && speaker.sample_confirmed_at.present?
+    included = sample&.eligible? == true && !speaker.sample_excluded?
+    status = (speaker.sample_learning_status if learning_state == "Learning enabled" && speaker.training_label?)
     {
       id: speaker.to_param, recording_title: recording.title, recorded_at: recording.created_at.iso8601,
       source_url: account_field_recording_path(current_account, recording),
       label: speaker.default_name, naming_source: sample&.label_origin || speaker.naming_source,
-      included: sample&.eligible? == true && !speaker.sample_excluded?,
-      contributing: sample&.eligible? == true && !speaker.sample_excluded? && sample.profile == @voice.voiceprint&.profile,
+      state: sample_state(included:, confirmed:, current:, status:),
+      included:,
+      contributing: included && sample.profile == @voice.voiceprint&.profile,
       confirmed:,
       confirmed_by: (speaker.sample_confirmed_by&.full_name if confirmed),
       confirmed_at: (speaker.sample_confirmed_at&.iso8601 if confirmed),
@@ -103,10 +145,19 @@ class FieldVoiceSamplesController < ApplicationController
       has_sample: sample.present?, source_current: current,
       audio_url: (audio_account_field_voice_sample_path(current_account, @voice, speaker, digest: sample.source_digest) if current && recording.audio.attached?),
       unavailable: unavailable_reason(speaker, sample, current),
-      status: (speaker.sample_learning_status if learning_state == "Learning enabled" && speaker.training_label?),
+      status:,
       error: speaker.sample_learning_error,
       can_relearn: speaker.training_label? && learning_state == "Learning enabled"
     }
+  end
+
+  # One word per row for the review list: what, if anything, a person does next.
+  def sample_state(included:, confirmed:, current:, status:)
+    return "preparing" if status == "pending"
+    return "removed" unless included
+    return "not_ready" unless current
+
+    confirmed ? "confirmed" : "review"
   end
 
   def unavailable_reason(speaker, sample, current)
@@ -122,12 +173,12 @@ class FieldVoiceSamplesController < ApplicationController
   end
 
   def learning_state
-    return "Learning is off for this speaker" unless @voice.remember?
-    return "Learning is off for this account" unless current_account.recognise_voices?
-    return "Voice service is unavailable" unless FieldVoiceprints.house_enabled?
-    return "Learning is waiting for naming provenance setup" unless FieldVoiceprints.learning_ready?
-
-    "Learning enabled"
+    @learning_state ||= if !@voice.remember? then "Learning is off for this speaker"
+    elsif !current_account.recognise_voices? then "Learning is off for this account"
+    elsif !FieldVoiceprints.house_enabled? then "Voice service is unavailable"
+    elsif !FieldVoiceprints.learning_ready? then "Learning is waiting for naming provenance setup"
+    else "Learning enabled"
+    end
   end
 
   def print_state

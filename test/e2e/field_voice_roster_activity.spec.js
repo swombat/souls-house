@@ -64,7 +64,8 @@ test('remembered lifecycle and missed socket events preserve roster and recordin
     await loginLifecycle(page, setup);
     await page.goto(`${base}/voices`);
     await expect.poll(() => rosterSocket.confirmations).toContain('FieldVoiceActivity');
-    const row = page.getByTestId('voice-row');
+    // The selected speaker's detail carries what was learned and the rename control.
+    const row = page.getByTestId('voice-detail');
     await expect(row).toContainText('Name only');
     await row.getByRole('button', { name: 'Rename', exact: true }).click();
     const rename = page.getByRole('textbox', { name: 'Name', exact: true });

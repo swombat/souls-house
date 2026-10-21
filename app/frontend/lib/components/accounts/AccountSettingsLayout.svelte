@@ -12,6 +12,7 @@
     Palette,
     BookOpenText,
     DoorOpen,
+    UserSound,
   } from 'phosphor-svelte';
   import { siteName } from '$lib/branding';
   import {
@@ -35,6 +36,7 @@
     { id: 'integrations', label: 'Integrations', icon: Plugs, href: `/accounts/${account.id}/integrations` },
     { id: 'notices', label: 'Notices', icon: Megaphone, href: accountNoticesPath(account.id) },
     { id: 'glossary', label: 'Glossary', icon: BookOpenText, href: `/accounts/${account.id}/glossary` },
+    { id: 'voices', label: 'Voices', icon: UserSound, href: `/accounts/${account.id}/field/voices` },
     { id: 'costs', label: 'Costs', icon: CurrencyDollar, href: accountCostsPath(account.id) },
     { id: 'billing', label: 'Billing', icon: CreditCard, href: `/accounts/${account.id}/billing` },
   ]);

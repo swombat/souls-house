@@ -12,13 +12,8 @@ class FieldVoicesController < ApplicationController
     samples = FieldVoiceSample.where(field_voice_id: voices.map(&:id)).includes(:field_recording_speaker).group_by(&:field_voice_id)
     render inertia: "field/voices", props: {
       voices: voices.map { |voice|
-        rows = samples.fetch(voice.id, [])
-        FieldItems.voice_page_json(voice, used.fetch(voice.id, 0), active_ids).merge(
-          included_samples: rows.count { |sample| sample.eligible? && !sample.field_recording_speaker.sample_excluded? },
-          unconfirmed_samples: rows.count { |sample|
-            sample.eligible? && !sample.field_recording_speaker.sample_excluded? &&
-              !sample.manually_confirmed?(speaker: sample.field_recording_speaker)
-          })
+        FieldItems.voice_page_json(voice, used.fetch(voice.id, 0), active_ids)
+          .merge(sample_counts(samples.fetch(voice.id, [])))
       },
       recognise_voices: current_account.recognise_voices,
       house_recognition: FieldVoiceprints.house_enabled?,
@@ -61,6 +56,13 @@ class FieldVoicesController < ApplicationController
     redirect_to account_field_voices_path(current_account), notice: "This Field has forgotten every voice it remembered."
   end
 
+  # One click for the whole roster: queue a rebuild of every sample that
+  # can't be heard yet, so it gets recorded spans and a play button.
+  def prepare_samples
+    queued = FieldVoiceprints::Learning.prepare_account_for_review!(current_account)
+    render json: { queued: }
+  end
+
   # Turning recognition on or off for the account. Takes the account lock, the
   # same lock learning and matching write under, so a change can't slip
   # between their check and their write. Off keeps what was learned, unused;
@@ -74,6 +76,24 @@ class FieldVoicesController < ApplicationController
   end
 
   private
+
+  # Roster counts from stored columns only: no transcript, blob or source
+  # check per sample. The samples list is the authority on each row.
+  def sample_counts(rows)
+    included = rows.select { |sample| sample.eligible? && !sample.field_recording_speaker.sample_excluded? }
+    confirmed = included.select do |sample|
+      speaker = sample.field_recording_speaker
+      sample.source_digest.present? && speaker.sample_confirmed_digest == sample.source_digest &&
+        speaker.sample_confirmed_by_id.present?
+    end
+    {
+      samples: rows.size,
+      included_samples: included.size,
+      confirmed_samples: confirmed.size,
+      unconfirmed_samples: included.size - confirmed.size,
+      unprepared_samples: rows.count { |sample| sample.source_digest.blank? }
+    }
+  end
 
   def find_voice
     current_account.field_voices.kept.find_by!(id: FieldVoice.decode_id(params[:id]))

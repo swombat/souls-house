@@ -1,57 +1,119 @@
 <script>
+  // A voice's fingerprint samples as a compact review list: play, accept,
+  // reject. Each sample is the exact montage that was embedded (several source
+  // spans joined), so Accept stays off until it has been played to the end.
+  // Namings with no usable sample are a count, listed only on request.
+  import { untrack } from 'svelte';
   import { Button } from '$lib/components/shadcn/button/index.js';
+  import VoiceSampleRow from './VoiceSampleRow.svelte';
+  import OtherNamings from './OtherNamings.svelte';
+  import { STATES } from './voice-sample-format.js';
 
-  let { base, name, onChanged = () => {} } = $props();
-  let opened = $state(false);
+  let { base, name, version = '', onChanged = () => {} } = $props();
+
+  let result = $state(null);
   let loading = $state(false);
   let busy = $state(null);
   let error = $state('');
-  let result = $state(null);
   let heard = $state({});
+  let loadedFor = $state(null);
 
-  async function load(page = 1) {
+  let audio = $state(null);
+  let playingId = $state(null);
+  let paused = $state(true);
+  let progress = $state({});
+
+  const headers = () => ({
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
+  });
+
+  async function load() {
+    const url = base;
     loading = true;
     error = '';
     try {
-      const response = await fetch(`${base}/samples?page=${page}`, { headers: { Accept: 'application/json' } });
+      const response = await fetch(`${url}/samples`, { headers: { Accept: 'application/json' } });
       if (!response.ok) throw new Error('Samples could not be loaded. Please try again.');
-      result = await response.json();
+      const body = await response.json();
+      if (url === base) result = body;
     } catch (failure) {
-      error = failure.message;
+      if (url === base) error = failure.message;
     } finally {
-      loading = false;
+      if (url === base) loading = false;
     }
   }
 
-  async function toggle() {
-    opened = !opened;
-    if (opened && !result) await load();
+  // A different voice, or a roster change that touched this one: start again.
+  $effect(() => {
+    const key = `${base}|${version}`;
+    untrack(() => {
+      if (key === loadedFor) return;
+      const sameVoice = loadedFor?.split('|')[0] === base;
+      loadedFor = key;
+      if (!sameVoice) {
+        result = null;
+        heard = {};
+        progress = {};
+        stop();
+      }
+      load();
+    });
+  });
+
+  // Rebuilds run in the background; check again while any is pending.
+  $effect(() => {
+    if (!result?.samples?.some((sample) => sample.state === 'preparing')) return;
+    const timer = setTimeout(() => untrack(load), 4000);
+    return () => clearTimeout(timer);
+  });
+
+  function stop() {
+    if (playingId) audio?.pause();
+    playingId = null;
+    paused = true;
   }
 
-  async function act(sample, action) {
-    if (action === 'include' && !sample.confirmed) {
-      if (
-        !confirm(`I listened to this entire sample and confirm that it is ${name} throughout, without another speaker.`)
-      )
-        return;
+  function toggle(sample) {
+    if (!audio || !sample.audio_url) return;
+    if (playingId === sample.id) {
+      if (audio.paused) audio.play();
+      else audio.pause();
+      return;
     }
-    busy = sample.id;
+    playingId = sample.id;
+    audio.src = sample.audio_url;
+    audio.currentTime = 0;
+    audio.play().catch(() => {
+      error = 'This audio could not be played. Check the source recording, then try again.';
+    });
+  }
+
+  function tick() {
+    if (!playingId || !audio?.duration) return;
+    progress = { ...progress, [playingId]: audio.currentTime / audio.duration };
+  }
+
+  function ended() {
+    const sample = result?.samples.find((row) => row.id === playingId);
+    if (sample) {
+      heard = { ...heard, [sample.id]: sample.digest };
+      progress = { ...progress, [sample.id]: 1 };
+    }
+    paused = true;
+  }
+
+  async function send(sample, path, method, body) {
+    busy = sample?.id ?? 'all';
     error = '';
     try {
-      const response = await fetch(`${base}/samples/${sample.id}${action === 'relearn' ? '/relearn' : ''}`, {
-        method: action === 'relearn' ? 'POST' : 'PATCH',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
-        },
-        body: JSON.stringify({ included: action === 'include', digest: sample.digest }),
-      });
+      const response = await fetch(path, { method, headers: headers(), body: body && JSON.stringify(body) });
       if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || 'That change could not be saved. Refresh and try again.');
+        const reply = await response.json().catch(() => ({}));
+        throw new Error(reply.error || 'That change could not be saved. Refresh and try again.');
       }
-      await load(result.page);
+      await load();
       onChanged();
     } catch (failure) {
       error = failure.message;
@@ -60,114 +122,86 @@
     }
   }
 
-  function time(ms) {
-    return `${(ms / 1000).toFixed(1)}s`;
-  }
+  const review = (sample, included) =>
+    send(sample, `${base}/samples/${sample.id}`, 'PATCH', { included, digest: sample.digest });
+  const prepareAll = () => send(null, `${base}/samples/prepare`, 'POST');
+
+  const heardIt = (sample) => heard[sample.id] === sample.digest;
+  // Accepting says "I heard all of this and it is only them". A sample
+  // confirmed earlier and later removed can come back without replaying.
+  const canAccept = (sample) =>
+    sample.source_current &&
+    (sample.state === 'review' || sample.state === 'removed') &&
+    (heardIt(sample) || (sample.state === 'removed' && sample.confirmed));
+
+  const counts = $derived(
+    (result?.samples || []).reduce(
+      (tally, sample) => ({ ...tally, [sample.state]: (tally[sample.state] || 0) + 1 }),
+      {}
+    )
+  );
 </script>
 
-<div class="space-y-3" data-testid="voice-samples">
-  <Button size="sm" variant="outline" onclick={toggle} aria-expanded={opened}>
-    {opened ? 'Hide samples' : 'Review samples'}
-  </Button>
-  {#if opened}
-    {#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
-    {#if loading}<p class="text-sm text-muted-foreground">Loading samples…</p>{/if}
-    {#if result}
-      <div class="text-sm space-y-1">
-        <p>{result.print}</p>
-        <p class="text-muted-foreground">{result.learning}</p>
-        <p class="text-xs text-muted-foreground">
-          Listen to the entire sample before approving. A sample may join several source spans. Wrong person or mixed
-          voices? Remove it here, then correct the speaker or lines in the recording.
-        </p>
+<!-- One shared player: only one sample sounds at a time. -->
+<audio
+  bind:this={audio}
+  preload="none"
+  class="hidden"
+  data-testid="sample-audio"
+  onplay={() => (paused = false)}
+  onpause={() => (paused = true)}
+  ontimeupdate={tick}
+  onended={ended}
+  onerror={() => {
+    if (playingId) error = 'This audio could not be played. Check the source recording, then try again.';
+  }}></audio>
+
+<section class="space-y-3" data-testid="voice-samples">
+  {#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
+  {#if !result && loading}<p class="text-sm text-muted-foreground">Loading samples…</p>{/if}
+
+  {#if result}
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="text-sm">
+        <p data-testid="voice-print-state">{result.print}</p>
+        {#if result.learning !== 'Learning enabled'}<p class="text-muted-foreground">{result.learning}</p>{/if}
       </div>
-      <Button size="sm" variant="ghost" onclick={() => load(result.page)} disabled={loading}>Refresh status</Button>
-      {#if result.samples.length === 0}
-        <p class="text-sm text-muted-foreground">No samples or assigned recordings yet.</p>
+      {#if result.preparable > 0}
+        <Button size="sm" disabled={busy != null} onclick={prepareAll} data-testid="voice-prepare">
+          Prepare {result.preparable}
+          {result.preparable === 1 ? 'sample' : 'samples'} for listening
+        </Button>
       {/if}
-      {#each result.samples as sample (sample.id)}
-        <article class="rounded-md border p-3 space-y-2 min-w-0" data-testid="voice-sample">
-          <a href={sample.source_url} class="font-medium underline break-words"
-            >{sample.recording_title || 'Untitled recording'}</a>
-          <p class="text-xs text-muted-foreground">
-            {new Date(sample.recorded_at).toLocaleDateString()} · {sample.label} · attribution: {sample.naming_source ||
-              'unknown'}
-          </p>
-          <p class="text-sm" data-testid="sample-inclusion">
-            {sample.included ? 'Included' : 'Not included'}
-            {#if sample.included && !sample.contributing}
-              · not in the current fingerprint (different profile or no print){/if}
-            · {sample.confirmed ? 'Manually confirmed' : 'Not manually confirmed'}
-          </p>
-          {#if sample.confirmed}
-            <p class="text-xs text-muted-foreground">
-              Confirmed by {sample.confirmed_by || 'a member'} on {new Date(sample.confirmed_at).toLocaleString()}.
-            </p>
-          {/if}
-          {#if sample.segments?.length}
-            <p class="text-xs text-muted-foreground">
-              {time(sample.duration_ms)} total · source spans:
-              {sample.segments.map(([from, to]) => `${time(from)}–${time(to)}`).join(', ')}
-            </p>
-          {/if}
-          {#if sample.audio_url}
-            <audio
-              controls
-              preload="none"
-              class="w-full max-w-full"
-              aria-label={`Sample of ${name} from ${sample.recording_title || 'recording'}`}
-              src={sample.audio_url}
-              onended={() => (heard = { ...heard, [sample.id]: sample.digest })}
-              onerror={() => (error = 'This audio could not be played. Refresh status or check the source recording.')}>
-            </audio>
-          {/if}
-          {#if sample.unavailable}<p class="text-sm text-muted-foreground">{sample.unavailable}</p>{/if}
-          {#if sample.has_sample && !sample.included && !sample.source_current}
-            <p class="text-xs text-muted-foreground">Rebuild, then listen and approve to include this sample again.</p>
-          {/if}
-          {#if sample.status === 'pending'}
-            <p class="text-sm">Rebuild pending. Refresh status after processing.</p>
-          {/if}
-          {#if sample.error}<p class="text-sm text-destructive">{sample.error}</p>{/if}
-          <div class="flex flex-wrap gap-2">
-            {#if sample.source_current && (!sample.included || !sample.confirmed)}
-              <Button
-                size="sm"
-                disabled={busy != null || (!sample.confirmed && heard[sample.id] !== sample.digest)}
-                onclick={() => act(sample, 'include')}>
-                {sample.confirmed ? 'Include confirmed sample' : 'Approve & include'}
-              </Button>
-            {/if}
-            {#if sample.included}
-              <Button size="sm" variant="outline" disabled={busy != null} onclick={() => act(sample, 'exclude')}>
-                Remove from fingerprint
-              </Button>
-            {/if}
-            {#if sample.can_relearn}
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy != null || sample.status === 'pending'}
-                onclick={() => act(sample, 'relearn')}>
-                {sample.status === 'error' ? 'Retry rebuild' : 'Rebuild sample'}
-              </Button>
-            {/if}
-          </div>
-          {#if sample.source_current && !sample.confirmed && heard[sample.id] !== sample.digest}
-            <p class="text-xs text-muted-foreground">Play the entire sample to enable approval.</p>
-          {/if}
-        </article>
-      {/each}
-      <div class="flex flex-wrap items-center gap-2 text-sm">
-        <Button size="sm" variant="outline" disabled={loading || result.page <= 1} onclick={() => load(result.page - 1)}
-          >Previous</Button>
-        <span>Page {result.page} of {result.pages} · {result.total} assigned speakers</span>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={loading || result.page >= result.pages}
-          onclick={() => load(result.page + 1)}>Next</Button>
-      </div>
+    </div>
+
+    {#if result.samples.length === 0}
+      <p class="text-sm text-muted-foreground">No fingerprint samples yet.</p>
+    {:else}
+      <p class="text-xs text-muted-foreground">
+        {result.samples.length}
+        {result.samples.length === 1 ? 'sample' : 'samples'}
+        {#each Object.keys(STATES) as state (state)}
+          {#if counts[state]}<span> · {counts[state]} {STATES[state].label.toLowerCase()}</span>{/if}
+        {/each}. Accept after playing a sample to the end, if it is only {name} throughout. Wrong person or mixed voices:
+        reject it, then correct the speaker in the recording.
+      </p>
+      <ul class="divide-y rounded-md border" data-testid="voice-sample-list">
+        {#each result.samples as sample (sample.id)}
+          <VoiceSampleRow
+            {sample}
+            {name}
+            playing={playingId === sample.id && !paused}
+            progress={progress[sample.id] ?? null}
+            busy={busy != null}
+            acceptable={canAccept(sample)}
+            onToggle={() => toggle(sample)}
+            onReview={(included) => review(sample, included)} />
+        {/each}
+      </ul>
+    {/if}
+
+    {#if result.other_namings > 0}
+      {#key base}<OtherNamings {base} count={result.other_namings} />{/key}
     {/if}
   {/if}
-</div>
+</section>

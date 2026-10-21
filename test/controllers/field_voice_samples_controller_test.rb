@@ -3,6 +3,7 @@ require "support/field_recording_helpers"
 
 class FieldVoiceSamplesControllerTest < ActionDispatch::IntegrationTest
 
+  include ActiveJob::TestHelper
   include FieldRecordingHelpers
 
   setup do
@@ -31,9 +32,88 @@ class FieldVoiceSamplesControllerTest < ActionDispatch::IntegrationTest
     assert row["included"]
     assert_not row["confirmed"]
     assert row["audio_url"].present?
+    assert_equal "review", row["state"]
     assert_not response.body.include?("embedding")
     assert_not response.body.include?("ecapa-test")
-    assert_equal 1, body["pages"]
+    assert_equal 0, body["other_namings"]
+    assert_equal 0, body["preparable"]
+  end
+
+  test "the review list holds only samples; other namings are a count, listed with reasons on request" do
+    others = 3.times.map do |index|
+      recording = long_ready_recording(account: @account, user: @user, title: "Synthetic other #{index}")
+      recording.speakers.find_by!(label: "speaker_1").tap { |speaker| speaker.name_as!(@voice, by: @user) }
+    end
+    get account_field_voice_samples_path(@account, @voice)
+    body = response.parsed_body
+    assert_equal [ @speaker.to_param ], body["samples"].map { |row| row["id"] }
+    assert_equal 3, body["other_namings"]
+
+    get account_field_voice_samples_path(@account, @voice, scope: "other")
+    body = response.parsed_body
+    assert_equal others.map(&:to_param).sort, body["namings"].map { |row| row["id"] }.sort
+    assert_equal 3, body["total"]
+    assert body["namings"].all? { |row| row["reason"].present? }
+    assert_not response.body.include?("embedding")
+  end
+
+  test "rows needing review come before confirmed and removed ones" do
+    recording = long_ready_recording(account: @account, user: @user, title: "Synthetic second")
+    second = recording.speakers.find_by!(label: "speaker_0")
+    second.name_as!(@voice, by: @user)
+    sample = @voice.samples.new(account: @account, field_recording_speaker: second, field_recording_id: recording.id,
+      speech_ms: 17_000, profile: "ecapa-test", label_origin: "human", eligible: true, source_segments: [ [ 0, 12_000 ] ])
+    sample.source_digest = FieldVoiceSample.source_digest_for(second.reload, sample.source_segments)
+    sample.vector = voice_vector(2)
+    sample.save!
+    patch account_field_voice_sample_path(@account, @voice, @speaker),
+      params: { included: true, digest: @sample.source_digest }, as: :json
+    assert_response :success
+
+    get account_field_voice_samples_path(@account, @voice)
+    assert_equal [ [ second.to_param, "review" ], [ @speaker.to_param, "confirmed" ] ],
+      response.parsed_body["samples"].map { |row| [ row["id"], row["state"] ] }
+  end
+
+  test "prepare rebuilds only samples that can't be heard yet, for this voice or the whole account" do
+    with_recognition(@account) do
+      post prepare_account_field_voice_samples_path(@account, @voice), as: :json
+      assert_response :success
+      assert_equal 0, response.parsed_body["queued"], "a current sample is left alone"
+
+      @sample.update!(source_segments: nil, source_digest: nil)
+      get account_field_voice_samples_path(@account, @voice)
+      assert_equal [ "not_ready", 1 ], [ response.parsed_body["samples"].first["state"], response.parsed_body["preparable"] ]
+
+      assert_enqueued_with(job: FieldVoices::LearnSampleJob) do
+        post prepare_account_field_voice_samples_path(@account, @voice), as: :json
+      end
+      assert_equal 1, response.parsed_body["queued"]
+      assert @sample.reload.eligible?, "preparing keeps the sample in the fingerprint"
+      get account_field_voice_samples_path(@account, @voice)
+      assert_equal "preparing", response.parsed_body["samples"].first["state"]
+
+      post prepare_account_field_voice_samples_path(@account, @voice), as: :json
+      assert_equal 0, response.parsed_body["queued"], "a pending rebuild is not queued twice"
+
+      @speaker.update_columns(sample_learning_status: nil)
+      post prepare_samples_account_field_voices_path(@account), as: :json
+      assert_response :success
+      assert_equal 1, response.parsed_body["queued"]
+    end
+  end
+
+  test "prepare is account scoped and refuses when learning is off" do
+    other = accounts(:another_team).field_voices.create!(name: "Another Person")
+    post prepare_account_field_voice_samples_path(@account, other), as: :json
+    assert_response :not_found
+    @sample.update!(source_segments: nil, source_digest: nil)
+    @account.update!(recognise_voices: false)
+    post prepare_account_field_voice_samples_path(@account, @voice), as: :json
+    assert_equal 0, response.parsed_body["queued"]
+    assert_no_enqueued_jobs(only: FieldVoices::LearnSampleJob) do
+      post prepare_samples_account_field_voices_path(@account), as: :json
+    end
   end
 
   test "approve excludes and includes persist without naming another cluster" do
