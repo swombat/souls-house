@@ -95,3 +95,28 @@ test('the navbar Chats menu shows the same spinner', async ({ mount, page }) => 
   await expect(page.getByTestId('manage-rooms')).toHaveText('Manage rooms…');
   await page.screenshot({ path: 'tmp/rooms-nav-working.png' });
 });
+
+test.describe('touch', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test('on a phone, tapping the room name opens the select (no hover list) and tapping a room goes there', async ({
+    mount,
+    page,
+  }) => {
+    const visited = [];
+    await page.route('**/accounts/acc/chats?room=*', (route) => {
+      visited.push(new URL(route.request().url()).search);
+      route.fulfill({ status: 204, body: '' });
+    });
+    const component = await mount(RoomsHarness, {
+      props: { account, rooms, current_room: 'devRm', waiting: { lifeRm: 2 } },
+    });
+    await component.getByTestId('room-switcher').tap();
+    const life = page.getByRole('option', { name: /Life/ });
+    await expect(life).toBeVisible();
+    await expect(life).toContainText('2');
+    await expect(component.getByTestId('room-hover-switcher-panel')).toHaveCount(0);
+    await life.tap();
+    await expect.poll(() => visited).toEqual(['?room=lifeRm']);
+  });
+});
