@@ -82,3 +82,39 @@ test('samples without spans offer one prepare button, not a play button', async 
     expect(globalThis.fetch).toHaveBeenCalledWith('/v/samples/prepare', expect.objectContaining({ method: 'POST' }))
   );
 });
+
+test('a row replaced while it plays is not marked heard by the old audio ending', async () => {
+  const listing = (digest) => ({
+    samples: [sample({ digest, audio_url: `/a/1?digest=${digest}` })],
+    total: 1,
+    page: 1,
+    pages: 1,
+    state_counts: { review: 1 },
+    other_namings: 0,
+    preparable: 0,
+    learning: 'Learning enabled',
+    print: 'Waiting for validation',
+  });
+  serve(listing('d1'));
+  const { container, rerender } = render(VoiceSamples, { base: '/v', name: 'Ann', version: 'one' });
+  let row = await screen.findByTestId('voice-sample');
+  const audio = container.querySelector('audio');
+  audio.play = vi.fn(() => Promise.resolve());
+  audio.pause = vi.fn();
+  await fireEvent.click(within(row).getByTestId('sample-play'));
+  expect(audio.getAttribute('src')).toBe('/a/1?digest=d1');
+
+  // A same-speaker rebuild lands mid-play: the row now carries D2.
+  serve(listing('d2'));
+  await rerender({ base: '/v', name: 'Ann', version: 'two' });
+  await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+  row = await screen.findByTestId('voice-sample');
+  await waitFor(() => expect(audio.pause).toHaveBeenCalled());
+  await fireEvent.ended(audio); // D1 finishing must not count for D2.
+  expect(within(row).getByRole('button', { name: 'Accept' })).toBeDisabled();
+
+  await fireEvent.click(within(row).getByTestId('sample-play'));
+  expect(audio.getAttribute('src')).toBe('/a/1?digest=d2');
+  await fireEvent.ended(audio);
+  await waitFor(() => expect(within(row).getByRole('button', { name: 'Accept' })).toBeEnabled());
+});

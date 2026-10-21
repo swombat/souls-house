@@ -19,7 +19,12 @@
   let loadedFor = $state(null);
 
   let audio = $state(null);
-  let playingId = $state(null);
+  // What the player actually loaded: the row and the exact digest. A row can
+  // be replaced by a refresh while it plays; completion counts only for the
+  // digest that was heard (Mira's review of #488).
+  let playing = $state(null);
+  const playingId = $derived(playing?.id ?? null);
+  let page = $state(1);
   let paused = $state(true);
   let progress = $state({});
 
@@ -29,15 +34,26 @@
     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
   });
 
-  async function load() {
+  async function load(nextPage = page) {
     const url = base;
     loading = true;
     error = '';
     try {
-      const response = await fetch(`${url}/samples`, { headers: { Accept: 'application/json' } });
+      const response = await fetch(`${url}/samples?page=${nextPage}`, { headers: { Accept: 'application/json' } });
       if (!response.ok) throw new Error('Samples could not be loaded. Please try again.');
       const body = await response.json();
-      if (url === base) result = body;
+      if (url !== base) return;
+      result = body;
+      page = body.page || 1;
+      // The playing row changed under the player (rebuilt, or gone): stop,
+      // and forget its progress, so nothing heard before carries over.
+      const row = playing && body.samples.find((sample) => sample.id === playing.id);
+      if (playing && (!row || row.digest !== playing.digest || row.audio_url !== playing.url)) {
+        const { id } = playing;
+        stop();
+        const { [id]: _dropped, ...rest } = progress;
+        progress = rest;
+      }
     } catch (failure) {
       if (url === base) error = failure.message;
     } finally {
@@ -56,6 +72,7 @@
         result = null;
         heard = {};
         progress = {};
+        page = 1;
         stop();
       }
       load();
@@ -70,19 +87,19 @@
   });
 
   function stop() {
-    if (playingId) audio?.pause();
-    playingId = null;
+    if (playing) audio?.pause();
+    playing = null;
     paused = true;
   }
 
   function toggle(sample) {
     if (!audio || !sample.audio_url) return;
-    if (playingId === sample.id) {
+    if (playing?.id === sample.id && playing.digest === sample.digest && playing.url === sample.audio_url) {
       if (audio.paused) audio.play();
       else audio.pause();
       return;
     }
-    playingId = sample.id;
+    playing = { id: sample.id, digest: sample.digest, url: sample.audio_url };
     audio.src = sample.audio_url;
     audio.currentTime = 0;
     audio.play().catch(() => {
@@ -96,10 +113,9 @@
   }
 
   function ended() {
-    const sample = result?.samples.find((row) => row.id === playingId);
-    if (sample) {
-      heard = { ...heard, [sample.id]: sample.digest };
-      progress = { ...progress, [sample.id]: 1 };
+    if (playing) {
+      heard = { ...heard, [playing.id]: playing.digest };
+      progress = { ...progress, [playing.id]: 1 };
     }
     paused = true;
   }
@@ -134,12 +150,7 @@
     (sample.state === 'review' || sample.state === 'removed') &&
     (heardIt(sample) || (sample.state === 'removed' && sample.confirmed));
 
-  const counts = $derived(
-    (result?.samples || []).reduce(
-      (tally, sample) => ({ ...tally, [sample.state]: (tally[sample.state] || 0) + 1 }),
-      {}
-    )
-  );
+  const counts = $derived(result?.state_counts || {});
 </script>
 
 <!-- One shared player: only one sample sounds at a time. -->
@@ -178,8 +189,8 @@
       <p class="text-sm text-muted-foreground">No fingerprint samples yet.</p>
     {:else}
       <p class="text-xs text-muted-foreground">
-        {result.samples.length}
-        {result.samples.length === 1 ? 'sample' : 'samples'}
+        {result.total}
+        {result.total === 1 ? 'sample' : 'samples'}
         {#each Object.keys(STATES) as state (state)}
           {#if counts[state]}<span> · {counts[state]} {STATES[state].label.toLowerCase()}</span>{/if}
         {/each}. Accept after playing a sample to the end, if it is only {name} throughout. Wrong person or mixed voices:
@@ -190,7 +201,7 @@
           <VoiceSampleRow
             {sample}
             {name}
-            playing={playingId === sample.id && !paused}
+            playing={playingId === sample.id && playing.digest === sample.digest && !paused}
             progress={progress[sample.id] ?? null}
             busy={busy != null}
             acceptable={canAccept(sample)}
@@ -198,6 +209,15 @@
             onReview={(included) => review(sample, included)} />
         {/each}
       </ul>
+      {#if result.pages > 1}
+        <div class="flex items-center gap-2 text-xs" data-testid="voice-sample-pages">
+          <Button size="sm" variant="ghost" disabled={loading || page <= 1} onclick={() => load(page - 1)}
+            >Previous</Button>
+          <span>Page {page} of {result.pages}</span>
+          <Button size="sm" variant="ghost" disabled={loading || page >= result.pages} onclick={() => load(page + 1)}
+            >Next</Button>
+        </div>
+      {/if}
     {/if}
 
     {#if result.other_namings > 0}

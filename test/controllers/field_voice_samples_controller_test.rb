@@ -57,6 +57,46 @@ class FieldVoiceSamplesControllerTest < ActionDispatch::IntegrationTest
     assert_not response.body.include?("embedding")
   end
 
+  test "every sample stays reachable: review order is decided over all of them before paging" do
+    stub_const = FieldVoiceSamplesController::SAMPLES_PAGE
+    FieldVoiceSamplesController.send(:remove_const, :SAMPLES_PAGE)
+    FieldVoiceSamplesController.const_set(:SAMPLES_PAGE, 2)
+    extra = 3.times.map do |index|
+      recording = long_ready_recording(account: @account, user: @user, title: "Synthetic page #{index}")
+      speaker = recording.speakers.find_by!(label: "speaker_0")
+      speaker.name_as!(@voice, by: @user)
+      sample = @voice.samples.new(account: @account, field_recording_speaker: speaker, field_recording_id: recording.id,
+        speech_ms: 12_000, profile: "ecapa-test", label_origin: "human", eligible: true, source_segments: [ [ 0, 12_000 ] ])
+      sample.source_digest = FieldVoiceSample.source_digest_for(speaker.reload, sample.source_segments)
+      sample.vector = voice_vector(index + 2)
+      sample.save!
+      speaker
+    end
+    # The oldest sample is the only one needing review: it must lead page 1,
+    # not fall off the end of a newest-first cap.
+    extra.each do |speaker|
+      sample = speaker.voice_samples.first
+      speaker.update!(sample_confirmed_digest: sample.source_digest, sample_confirmed_by: @user, sample_confirmed_at: Time.current)
+    end
+
+    get account_field_voice_samples_path(@account, @voice)
+    body = response.parsed_body
+    assert_equal [ 1, 2, 4 ], [ body["page"], body["pages"], body["total"] ]
+    assert_equal({ "review" => 1, "confirmed" => 3 }, body["state_counts"])
+    assert_equal [ @speaker.to_param, "review" ], [ body["samples"].first["id"], body["samples"].first["state"] ]
+
+    seen = (1..2).flat_map do |page|
+      get account_field_voice_samples_path(@account, @voice, page:)
+      response.parsed_body["samples"].map { |row| row["id"] }
+    end
+    assert_equal ([ @speaker ] + extra).map(&:to_param).sort, seen.sort
+    get account_field_voice_samples_path(@account, @voice, page: 99)
+    assert_equal 2, response.parsed_body["page"], "an out-of-range page clamps to the last"
+  ensure
+    FieldVoiceSamplesController.send(:remove_const, :SAMPLES_PAGE)
+    FieldVoiceSamplesController.const_set(:SAMPLES_PAGE, stub_const)
+  end
+
   test "rows needing review come before confirmed and removed ones" do
     recording = long_ready_recording(account: @account, user: @user, title: "Synthetic second")
     second = recording.speakers.find_by!(label: "speaker_0")

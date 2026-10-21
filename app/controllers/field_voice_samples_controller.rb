@@ -12,19 +12,25 @@ class FieldVoiceSamplesController < ApplicationController
 
   # A voice can be named in hundreds of speakers; only a few have a sample.
   # The review list is the samples; the rest are a count, listed on request.
-  MAX_SAMPLES = 200
+  SAMPLES_PAGE = 50
   OTHER_PAGE = 15
   STATE_ORDER = %w[review preparing not_ready removed confirmed].freeze
 
   def index
     return render(json: other_namings_json) if params[:scope] == "other"
 
+    # Every sample is ordered before paging, so none in the fingerprint is
+    # out of reach however many there are (Mira's review of #488).
     speakers = kept_speakers.where(id: sampled_speaker_ids)
-      .includes(:field_recording, :voice_samples, :sample_confirmed_by).order(id: :desc).limit(MAX_SAMPLES)
+      .includes(:field_recording, :voice_samples, :sample_confirmed_by).order(id: :desc)
     rows = speakers.map { |speaker| sample_json(speaker) }.each_with_index
       .sort_by { |row, index| [ STATE_ORDER.index(row[:state]) || STATE_ORDER.size, index ] }.map(&:first)
+    pages = [ (rows.size / SAMPLES_PAGE.to_f).ceil, 1 ].max
+    page = params[:page].to_i.clamp(1, pages)
     render json: {
-      samples: rows,
+      samples: rows.slice((page - 1) * SAMPLES_PAGE, SAMPLES_PAGE) || [],
+      page:, pages:, total: rows.size,
+      state_counts: rows.map { |row| row[:state] }.tally,
       other_namings: kept_speakers.where.not(id: sampled_speaker_ids).count,
       preparable: rows.count { |row| row[:state] == "not_ready" && row[:can_relearn] },
       learning: learning_state,
