@@ -9,8 +9,14 @@ class FieldVoicesController < ApplicationController
     voices = current_account.field_voices.kept.includes(:user, :voiceprint).order(Arel.sql("lower(name)"))
     used = FieldRecordingSpeaker.where(field_voice_id: voices.map(&:id)).group(:field_voice_id).count
     active_ids = FieldVoiceprints::Identification.active_prints(current_account).map(&:id)
+    samples = FieldVoiceSample.where(field_voice_id: voices.map(&:id)).includes(:field_recording_speaker).group_by(&:field_voice_id)
     render inertia: "field/voices", props: {
-      voices: voices.map { |voice| FieldItems.voice_page_json(voice, used.fetch(voice.id, 0), active_ids) },
+      voices: voices.map { |voice|
+        rows = samples.fetch(voice.id, [])
+        FieldItems.voice_page_json(voice, used.fetch(voice.id, 0), active_ids).merge(
+          included_samples: rows.count { |sample| sample.eligible? && !sample.field_recording_speaker.sample_excluded? },
+          unconfirmed_samples: rows.count { |sample| !sample.manually_confirmed? })
+      },
       recognise_voices: current_account.recognise_voices,
       house_recognition: FieldVoiceprints.house_enabled?,
       can_change_setting: current_account.manageable_by?(Current.user),

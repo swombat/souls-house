@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-21
+  title: Review speaker fingerprint samples
+  body: "The Field's speaker list now lets you play the exact samples used for a speaker's fingerprint, see whether someone manually confirmed them, and approve or remove contributions. Older samples without recorded source spans are clearly marked and can be rebuilt before review; removing a sample preserves its confirmation and the recording."
+- date: 2026-10-21
   title: Switch rooms from the room name
   body: "On a computer, resting the mouse on the room name at the top of the chat list now lists your rooms and All chats, the current one ticked, each with the same waiting counts and working spinners as before. Click one to go there; cmd-click opens it in a new tab. On a phone or tablet nothing changes: tap the room name to choose a room. From the keyboard, the room name still opens the same list with Enter."
 - date: 2026-10-21

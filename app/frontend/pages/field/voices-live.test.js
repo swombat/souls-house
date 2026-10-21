@@ -36,10 +36,10 @@ test('remote rename and count refresh preserve draft; removal closes invalid for
   const component = render(Voices, props);
   await begin();
   await component.rerender({ ...props, voices: [{ ...voice, name: 'Remote', used_in: 2 }] });
-  expect(screen.getByRole('textbox')).toHaveValue('Unfinished');
+  expect(screen.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('Unfinished');
   expect(screen.getByText('named in 2 speakers · Name only so far')).toBeInTheDocument();
   await component.rerender({ ...props, voices: [] });
-  await waitFor(() => expect(screen.queryByRole('textbox')).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Name', exact: true })).not.toBeInTheDocument());
 });
 
 test('account switch resets rename; late response cannot close a new account draft', async () => {
@@ -48,11 +48,11 @@ test('account switch resets rename; late response cannot close a new account dra
   await fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
   const callbacks = router.patch.mock.calls.at(-1)[2];
   await component.rerender({ ...props, account: { id: 'next' } });
-  await waitFor(() => expect(screen.queryByRole('textbox')).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Name', exact: true })).not.toBeInTheDocument());
   await begin();
   callbacks.onSuccess();
   callbacks.onFinish();
-  expect(screen.getByRole('textbox')).toHaveValue('Unfinished');
+  expect(screen.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('Unfinished');
 });
 
 test('save acknowledgement does not discard a newer edit made during request', async () => {
@@ -60,9 +60,11 @@ test('save acknowledgement does not discard a newer edit made during request', a
   await begin();
   await fireEvent.click(screen.getByRole('button', { name: 'Save', exact: true }));
   const callbacks = router.patch.mock.calls.at(-1)[2];
-  await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Newer edit' } });
+  await fireEvent.input(screen.getByRole('textbox', { name: 'Name', exact: true }), {
+    target: { value: 'Newer edit' },
+  });
   callbacks.onSuccess();
   callbacks.onFinish();
-  expect(screen.getByRole('textbox')).toHaveValue('Newer edit');
+  expect(screen.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('Newer edit');
   await waitFor(() => expect(screen.getByRole('button', { name: 'Save', exact: true })).not.toBeDisabled());
 });

@@ -9,6 +9,7 @@ module FieldVoices
     retry_on FieldVoiceprints::VoiceEmbeddings::Unavailable, wait: :polynomially_longer, attempts: 6
 
     def perform(snapshot)
+      FieldVoiceprints::Learning.set_status!(snapshot, "pending")
       FieldVoiceprints::Learning.learn!(snapshot)
     end
 

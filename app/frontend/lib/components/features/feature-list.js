@@ -434,6 +434,13 @@ export const moreFeatures = [
     icon: ChalkboardSimple,
   },
   {
+    key: 'speaker-sample-review',
+    title: 'Review speaker fingerprints',
+    description:
+      "Search the Field's speakers, listen to the exact samples used for their fingerprints, and approve or remove contributions. Manual listening confirmation is separate from inclusion. Older samples without recorded source spans are marked honestly and can be rebuilt before review.",
+    icon: Waveform,
+  },
+  {
     key: 'conversation-song-cards',
     title: 'Songs in conversation',
     description:

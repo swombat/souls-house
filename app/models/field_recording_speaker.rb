@@ -4,6 +4,7 @@
 class FieldRecordingSpeaker < ApplicationRecord
 
   include ObfuscatesId
+  include FieldRecordingSpeakerSampleReview
 
   # human: a person in the browser or the native app. machine: a write through
   # an API key (scripts, residents, the Mac's voice matcher), whatever the
@@ -51,6 +52,8 @@ class FieldRecordingSpeaker < ApplicationRecord
     suggested_name suggestion_quote suggestion_quote_ms suggestion_generation
     recognised_voice_id recognition_confidence recognition_print_generation recognition_decision_generation
     recognition_checked
+    sample_excluded sample_review_generation sample_confirmed_digest sample_confirmed_by_id sample_confirmed_at
+    sample_learning_status sample_learning_error
   ].freeze
 
   validates :label, presence: true

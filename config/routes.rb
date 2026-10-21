@@ -18,6 +18,7 @@ Rails.application.routes.draw do
         post :song_card_fixture, to: "/test_support/e2e#song_card_fixture"
         post :field_recording_fixture, to: "/test_support/e2e#field_recording_fixture"
         post :field_voice_lifecycle_fixture, to: "/test_support/e2e#field_voice_lifecycle_fixture"
+        post :field_voice_sample_fixture, to: "/test_support/e2e#field_voice_sample_fixture"
         post :field_activity_fixture, to: "/test_support/e2e#field_activity_fixture"
         post :tweet_stream_fixture, to: "/test_support/e2e#tweet_stream_fixture"
         post :guest_directory_fixture, to: "/test_support/e2e#guest_directory_fixture"
@@ -260,6 +261,10 @@ Rails.application.routes.draw do
       resources :shares, only: [ :create, :destroy ], controller: "field_recording_shares"
     end
     resources :field_voices, path: "field/voices", only: [ :index, :update, :destroy ] do
+      resources :samples, only: [ :index, :update ], controller: "field_voice_samples" do
+        get :audio, on: :member
+        post :relearn, on: :member
+      end
       delete :forget, on: :member, path: "print"
       post :remember, on: :member
       delete :forget_all, on: :collection, path: "prints"

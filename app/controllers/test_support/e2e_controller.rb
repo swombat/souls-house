@@ -1,6 +1,8 @@
 module TestSupport
   class E2eController < ApplicationController
 
+    include TestSupport::E2e::FieldVoiceSampleFixtures
+
     allow_unauthenticated_access
     skip_forgery_protection
 

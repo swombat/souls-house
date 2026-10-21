@@ -17,23 +17,34 @@ module FieldVoiceprints::Learning
   def queue!(speaker)
     ActiveRecord.after_all_transactions_commit do
       snapshot = snapshot_for(speaker.reload)
-      FieldVoices::LearnSampleJob.perform_later(snapshot) if snapshot
+      enqueue!(snapshot) if snapshot
     rescue ActiveRecord::RecordNotFound
       nil
     end
   end
 
   # nil when there's nothing to learn from this speaker as it stands.
-  def snapshot_for(speaker)
+  def snapshot_for(speaker, allow_excluded: false)
     voice = speaker.field_voice
     recording = speaker.field_recording
-    return nil unless speaker.training_label? && voice.remember? && recording.kept? && recording.ready? &&
-                      !recording.supplied? && FieldVoiceprints.enabled_for?(recording.account) &&
+    return nil unless (!speaker.sample_excluded? || allow_excluded) &&
+                      speaker.training_label? && voice.remember? && recording.kept? && recording.ready? &&
+                      !recording.supplied? && recording.audio.attached? && FieldVoiceprints.enabled_for?(recording.account) &&
                       FieldVoiceprints.learning_ready?
 
     { "speaker_id" => speaker.id, "decision_generation" => speaker.decision_generation, "voice_id" => voice.id,
       "naming_source" => speaker.naming_source, "learning_generation" => voice.learning_generation,
-      "recording_id" => recording.id }
+      "recording_id" => recording.id, "review_generation" => speaker.sample_review_generation,
+      "excluded" => speaker.sample_excluded?, "allow_excluded" => allow_excluded,
+      "source_revision" => FieldVoiceSample.source_revision_for(speaker) }
+  end
+
+  def enqueue!(snapshot)
+    speaker = FieldRecordingSpeaker.find_by(id: snapshot["speaker_id"])
+    return unless speaker
+
+    set_status!(snapshot, "pending")
+    FieldVoices::LearnSampleJob.perform_later(snapshot)
   end
 
   # Returns :learned, :stale, :no_sample or :gone.
@@ -46,6 +57,7 @@ module FieldVoiceprints::Learning
     return :stale unless voice && holds?(snapshot, recording.account, recording, voice, speaker)
 
     segments = FieldVoiceprints::Sample.segments_for(speaker)
+    source_digest = FieldVoiceSample.source_digest_for(speaker, segments)
     result = FieldVoiceprints::Sample.cut(recording, segments) { |path| client.embed(File.binread(path)) }
     speech_ms = segments.sum { |from, to| to - from }
 
@@ -55,13 +67,22 @@ module FieldVoiceprints::Learning
 
       sample = FieldVoiceSample.find_or_initialize_by(field_voice: live_voice, field_recording_speaker: speaker)
       sample.assign_attributes(account:, field_recording_id: live_recording.id, speech_ms:, profile: result.profile,
-        label_origin: speaker.naming_source, eligible: true)
+        label_origin: speaker.naming_source, eligible: !speaker.sample_excluded?,
+        source_segments: segments, source_digest:)
       sample.vector = result.embedding
       sample.save!
+      speaker.update!(sample_learning_status: "learned", sample_learning_error: nil)
       rebuild!(live_voice)
       :learned
     end
   rescue FieldVoiceprints::Sample::Refused
+    set_status!(snapshot, "no_sample")
+    :no_sample
+  rescue FieldVoiceprints::VoiceEmbeddings::Unavailable
+    set_status!(snapshot, "error", error: "The voice service is unavailable. Please try again.")
+    raise FieldVoiceprints::VoiceEmbeddings::Unavailable, "The voice service is unavailable.", cause: nil
+  rescue ActiveStorage::FileNotFoundError
+    set_status!(snapshot, "error", error: "The source audio is unavailable. Check the recording before retrying.")
     :no_sample
   end
 
@@ -70,8 +91,26 @@ module FieldVoiceprints::Learning
     recording.kept? && recording.ready? && recording.id == snapshot["recording_id"] &&
       FieldVoiceprints.enabled_for?(account) && FieldVoiceprints.learning_ready? &&
       speaker.decision_generation == snapshot["decision_generation"] &&
+      speaker.sample_review_generation == snapshot["review_generation"] &&
+      speaker.sample_excluded? == snapshot["excluded"] &&
+      (!speaker.sample_excluded? || snapshot["allow_excluded"] == true) &&
+      FieldVoiceSample.source_revision_for(speaker) == snapshot["source_revision"] &&
       speaker.field_voice_id == snapshot["voice_id"] && speaker.training_label? &&
       voice.kept? && voice.remember? && voice.learning_generation == snapshot["learning_generation"]
+  end
+
+  # A late failure must not overwrite a newer person's decision or retry.
+  def set_status!(snapshot, status, error: nil)
+    speaker = FieldRecordingSpeaker.find_by(id: snapshot["speaker_id"])
+    voice = FieldVoice.find_by(id: snapshot["voice_id"])
+    return unless speaker && voice
+
+    recording = speaker.field_recording
+    FieldVoiceprints::Locks.with(account: recording.account, recording:, voices: [ voice ]) do |account, live_recording, voices|
+      next unless voices.first && holds?(snapshot, account, live_recording, voices.first, speaker.reload)
+
+      speaker.update!(sample_learning_status: status, sample_learning_error: error)
+    end
   end
 
   # Rebuild a voice's print from all its current eligible samples. The caller
@@ -121,6 +160,8 @@ module FieldVoiceprints::Learning
   # removed). Destroys them and rebuilds each affected print. The caller holds
   # the locks of every voice in voice_ids (FieldVoiceprints::Locks).
   def drop_samples!(speaker_ids)
+    FieldRecordingSpeaker.where(id: speaker_ids).update_all(
+      "sample_review_generation = sample_review_generation + 1, sample_learning_status = NULL, sample_learning_error = NULL")
     samples = FieldVoiceSample.where(field_recording_speaker_id: speaker_ids).to_a
     return if samples.empty?
 
@@ -156,7 +197,7 @@ module FieldVoiceprints::Learning
       next false if learned.include?(speaker.id)
 
       snapshot = snapshot_for(speaker)
-      FieldVoices::LearnSampleJob.perform_later(snapshot) if snapshot
+      enqueue!(snapshot) if snapshot
       snapshot.present?
     end
   end

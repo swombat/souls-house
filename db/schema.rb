@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_21_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_21_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1062,11 +1062,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_140000) do
     t.string "probe_profile"
     t.string "recognition_cohort"
     t.boolean "recognition_checked"
+    t.boolean "sample_excluded", default: false, null: false
+    t.integer "sample_review_generation", default: 0, null: false
+    t.string "sample_confirmed_digest"
+    t.bigint "sample_confirmed_by_id"
+    t.datetime "sample_confirmed_at"
+    t.string "sample_learning_status"
+    t.string "sample_learning_error"
     t.index ["field_recording_id", "label"], name: "index_field_recording_speakers_on_field_recording_id_and_label", unique: true
     t.index ["field_recording_id"], name: "index_field_recording_speakers_on_field_recording_id"
     t.index ["field_voice_id"], name: "index_field_recording_speakers_on_field_voice_id"
     t.index ["named_by_type", "named_by_id"], name: "index_field_recording_speakers_on_named_by"
     t.index ["recognised_voice_id"], name: "index_field_recording_speakers_on_recognised_voice_id"
+    t.index ["sample_confirmed_by_id"], name: "index_field_recording_speakers_on_sample_confirmed_by_id"
     t.index ["suggested_voice_id"], name: "index_field_recording_speakers_on_suggested_voice_id"
   end
 
@@ -1355,6 +1363,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_140000) do
     t.boolean "eligible", default: false, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "source_segments"
+    t.string "source_digest"
     t.index ["account_id"], name: "index_field_voice_samples_on_account_id"
     t.index ["field_recording_id"], name: "index_field_voice_samples_on_field_recording_id"
     t.index ["field_recording_speaker_id"], name: "index_field_voice_samples_on_field_recording_speaker_id"
@@ -2692,6 +2702,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_140000) do
   add_foreign_key "field_recording_speakers", "field_voices"
   add_foreign_key "field_recording_speakers", "field_voices", column: "recognised_voice_id", on_delete: :nullify
   add_foreign_key "field_recording_speakers", "field_voices", column: "suggested_voice_id", on_delete: :nullify
+  add_foreign_key "field_recording_speakers", "users", column: "sample_confirmed_by_id", on_delete: :nullify
   add_foreign_key "field_recordings", "accounts"
   add_foreign_key "field_recordings", "field_recordings", column: "retried_from_id", on_delete: :nullify
   add_foreign_key "field_songs", "accounts"

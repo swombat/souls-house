@@ -10,6 +10,7 @@
   import { Input } from '$lib/components/shadcn/input/index.js';
   import { Switch } from '$lib/components/shadcn/switch';
   import VoiceMeaning from '$lib/components/field/VoiceMeaning.svelte';
+  import VoiceSamples from '$lib/components/field/VoiceSamples.svelte';
   import { ArrowLeft } from 'phosphor-svelte';
 
   let {
@@ -27,6 +28,10 @@
 
   const base = $derived(`/accounts/${account.id}/field/voices`);
   const anyRemembered = $derived(voices.some((voice) => voice.remembered));
+  let search = $state('');
+  const matchingVoices = $derived(
+    voices.filter((voice) => voice.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
+  );
 
   let switching = $state(null);
   const recognitionOn = $derived(switching ?? recognise_voices);
@@ -198,12 +203,13 @@
   </Card.Root>
 
   <section class="space-y-2">
+    <Input bind:value={search} aria-label="Search speakers" placeholder="Search speakers…" />
     {#if voices.length === 0}
       <p class="text-muted-foreground">No voices yet. Name a speaker on a transcript and they'll appear here.</p>
     {:else}
       <Card.Root>
         <Card.Content class="p-0 divide-y">
-          {#each voices as voice (voice.id)}
+          {#each matchingVoices as voice (voice.id)}
             <div class="p-4 space-y-2" data-testid="voice-row">
               {#if editingId === voice.id}
                 <form class="flex gap-2" onsubmit={(event) => saveRename(event, voice)}>
@@ -221,14 +227,24 @@
               <p class="text-sm text-muted-foreground">
                 {usedLine(voice.used_in)} · {learnedLine(voice)}
               </p>
+              <p class="text-xs text-muted-foreground">
+                {voice.included_samples || 0} included samples · {voice.unconfirmed_samples || 0} need manual review
+              </p>
+              <VoiceSamples
+                base={`${base}/${voice.id}`}
+                name={voice.name}
+                onChanged={() => router.reload({ only: ['voices'], preserveScroll: true })} />
               {#if editingId !== voice.id}
                 <div class="flex flex-wrap gap-1">
                   {#if voice.remembered || voice.remember}
                     <Button size="sm" variant="outline" onclick={() => forget(voice)} data-testid="voice-forget"
                       >Forget voice</Button>
                   {:else}
-                    <Button size="sm" variant="outline" onclick={() => rememberAgain(voice)} data-testid="voice-remember"
-                      >Remember again</Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onclick={() => rememberAgain(voice)}
+                      data-testid="voice-remember">Remember again</Button>
                   {/if}
                   <Button size="sm" variant="ghost" onclick={() => startRename(voice)}>Rename</Button>
                   <Button size="sm" variant="ghost" class="text-destructive" onclick={() => deleteName(voice)}
@@ -239,6 +255,7 @@
           {/each}
         </Card.Content>
       </Card.Root>
+      {#if matchingVoices.length === 0}<p class="text-sm text-muted-foreground">No matching speakers.</p>{/if}
       <p class="text-xs text-muted-foreground">
         Forgetting a voice doesn't change transcripts. Names stay where someone gave them; to remove one, rename or
         un-name that speaker.
