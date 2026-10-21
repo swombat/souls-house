@@ -12,6 +12,8 @@
   let { transcript = null, expired = false } = $props();
 
   const lines = $derived(transcript ? transcriptLines(transcript.text) : []);
+  // An untimed (supplied) transcript has no clock column at all.
+  const timed = $derived(lines.some((line) => line.clock));
   const when = $derived(
     transcript
       ? new Date(transcript.recorded_at).toLocaleDateString(undefined, {
@@ -64,8 +66,10 @@
         {#if lines.length}
           <ol class="space-y-3" data-testid="shared-transcript-lines">
             {#each lines as line, index (index)}
-              <li class="grid grid-cols-[auto_1fr] gap-x-3">
-                <span class="text-xs text-muted-foreground tabular-nums pt-1 w-14">{line.clock ?? ''}</span>
+              <li class={timed ? 'grid grid-cols-[auto_1fr] gap-x-3' : ''}>
+                {#if timed}
+                  <span class="text-xs text-muted-foreground tabular-nums pt-1 w-14">{line.clock ?? ''}</span>
+                {/if}
                 <p class="min-w-0 break-words">
                   {#if line.speaker}<span class="font-semibold">{line.speaker}:</span>{/if}
                   {line.text}

@@ -61,7 +61,10 @@
     router.delete(`${sharesUrl}/${share.id}`, { preserveScroll: true, preserveState: true, only: ['shares', 'flash'] });
   }
 
+  // Opening the menu fetches the live links again: another member may have
+  // made or revoked one, and view counts move while the page sits open.
   function openChanged(value) {
+    if (value) router.reload({ only: ['shares'] });
     if (!value) {
       created = null;
       error = null;
