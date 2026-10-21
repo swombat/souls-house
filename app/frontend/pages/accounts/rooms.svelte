@@ -204,7 +204,7 @@
               {#each model_residents as resident (resident.id)}
                 {@const entry = roomDefault(option.id, resident)}
                 <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-                  <span class="text-sm text-muted-foreground sm:w-32 sm:shrink-0 sm:truncate">{resident.name}</span>
+                  <span class="text-sm text-muted-foreground sm:w-32 sm:shrink-0 break-words">{resident.name}</span>
                   <div class="min-w-0 flex-1 sm:max-w-xs">
                     <Select.Root
                       type="single"
@@ -212,7 +212,7 @@
                       onValueChange={(value) => setRoomModel(option.id, resident, value)}
                       disabled={!can_manage}>
                       <Select.Trigger class="w-full" aria-label={`${resident.name}'s model in ${option.name}`}>
-                        {modelLabel(option.id, resident)}
+                        <span class="min-w-0 truncate">{modelLabel(option.id, resident)}</span>
                       </Select.Trigger>
                       <Select.Content sideOffset={4}>
                         <Select.Item value={DEFAULT} label={`${resident.default_label} (default)`}>
