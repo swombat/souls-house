@@ -42,6 +42,7 @@ class Rhythm < ApplicationRecord
   validate :resident_models_valid, if: -> { @pending_resident_models }
   validate :room_choice_valid
 
+  before_validation :resolve_room_public_id
   before_validation :clear_room_unless_named
   before_validation :reset_next_run, if: :schedule_changed?
   after_save :hold_empty_selection
@@ -101,21 +102,16 @@ class Rhythm < ApplicationRecord
 
   def resident_ids = agent_ids
 
-  # The named room by its public id, as the form and the API send it. A value
-  # that is not a room id is kept as an error rather than dropped, and a room
-  # of another account is refused by validation: neither is ever saved.
+  # The named room by its public id, as the form and the API send it. It is
+  # looked up only among this rhythm's account's rooms, so another account's
+  # room is never loaded (nor its name echoed back in a refused form): it is
+  # simply not found. A value that is not a room id of this account is kept
+  # as an error rather than dropped. Resolution waits for the account when
+  # attributes are assigned before it.
   def room_public_id=(value)
-    @room_public_id_invalid = false
-    if value.blank?
-      self.room = nil
-    elsif value.is_a?(String) && value.match?(/\A[a-zA-Z]+\z/) &&
-        (decoded = Room.hashids.decode(value)).one? && Room.encode_id(decoded.first) == value
-      self.room = Room.find_by(id: decoded.first)
-      @room_public_id_invalid = room.nil?
-    else
-      self.room = nil
-      @room_public_id_invalid = true
-    end
+    @room_public_id_value = value
+    @room_public_id_pending = true
+    resolve_room_public_id if account
   end
 
   def room_public_id = room&.to_param
@@ -376,6 +372,24 @@ class Rhythm < ApplicationRecord
       errors.add(:creator, "must be either a human or a resident, not both")
     elsif new_record? && !creator && !creator_agent
       errors.add(:creator, "must be present")
+    end
+  end
+
+  def resolve_room_public_id
+    return unless @room_public_id_pending
+
+    @room_public_id_pending = false
+    value = @room_public_id_value
+    @room_public_id_invalid = false
+    if value.blank?
+      self.room = nil
+    elsif account && value.is_a?(String) && value.match?(/\A[a-zA-Z]+\z/) &&
+        (decoded = Room.hashids.decode(value)).one? && Room.encode_id(decoded.first) == value
+      self.room = account.rooms.find_by(id: decoded.first)
+      @room_public_id_invalid = room.nil?
+    else
+      self.room = nil
+      @room_public_id_invalid = true
     end
   end
 

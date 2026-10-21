@@ -213,6 +213,27 @@ class RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "anthropic/claude-fable-5.1", rhythm.reload.resident_models[@resident.id]
   end
 
+
+  test "the form refuses another account's room without saving it or showing its name" do
+    foreign = Account.where.not(id: @account.id).first!.rooms.create!(name: "Their secret room")
+    assert_no_difference "Rhythm.count" do
+      post account_rhythms_path(@account), params: { rhythm: @attributes.merge(room_choice: "room", room_id: foreign.to_param) }
+    end
+    assert_response :unprocessable_entity
+    assert_not_includes response.body, "Their secret room"
+    assert_includes response.body, "must be a room of this account"
+
+    own = @account.rooms.create!(name: "Build")
+    post account_rhythms_path(@account), params: { rhythm: @attributes.merge(room_choice: "room", room_id: own.to_param) }
+    rhythm = Rhythm.order(:id).last
+    assert_equal own, rhythm.room
+
+    patch account_rhythm_path(@account, rhythm), params: { rhythm: { room_choice: "room", room_id: foreign.to_param } }
+    assert_response :unprocessable_entity
+    assert_not_includes response.body, "Their secret room"
+    assert_equal own, rhythm.reload.room
+  end
+
   private
 
   def make_rhythm

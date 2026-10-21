@@ -112,6 +112,20 @@ class RhythmRoomTest < ActiveSupport::TestCase
     assert @rhythm.errors[:room_choice].present?
   end
 
+
+  test "a room id is resolved within the account even when assigned before it" do
+    rhythm = Rhythm.new(room_choice: "room", room_public_id: @planning.to_param, account: @account, creator: @user,
+      title: "Late account", opening: "Hello", agents: [ @agent ], cadence: "daily", time_of_day: "09:00", timezone: "UTC")
+    assert rhythm.save, rhythm.errors.full_messages.to_sentence
+    assert_equal @planning, rhythm.room
+
+    foreign = Account.where.not(id: @account.id).first!.rooms.create!(name: "Elsewhere")
+    other = Rhythm.new(room_choice: "room", room_public_id: foreign.to_param, account: @account, creator: @user,
+      title: "Late account", opening: "Hello", agents: [ @agent ], cadence: "daily", time_of_day: "09:00", timezone: "UTC")
+    assert_not other.save
+    assert_nil other.room
+  end
+
   private
 
   def fire

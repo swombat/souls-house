@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-21
+  title: Rhythms open in a room
+  body: "A rhythm now chooses where its conversations open: the account's default room for resident conversations, Main, or a room you name. Following the account's default is what new rhythms do, and what every existing rhythm does from now on, so in an account with a default room, existing rhythms start opening there instead of Main. To keep one in Main, edit it and choose Main. If a named room is removed, the rhythm opens in the account's default room and its page says so. Conversations that already opened stay where they are. The rhythms API takes and shows the same choice. Works once deployed."
+- date: 2026-10-21
   title: Bark 3.0 added to the transcription decision
   body: "The voice-transcription decision now includes a four-recording Bark 3.0 CPU pilot, its timing and reference-quality limits, and the difference between download size and working memory. ElevenLabs remains in place; no transcription backend changed."
 - date: 2026-10-20

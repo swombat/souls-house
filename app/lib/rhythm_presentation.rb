@@ -32,8 +32,8 @@ class RhythmPresentation
       # Main on purpose, room is the named room. opens_in is where the next
       # occurrence opens; room_removed says a named room has gone and the
       # rhythm is falling back to the account default.
-      room_choice: @rhythm.room_choice, room_id: @rhythm.room_public_id,
-      room_name: @rhythm.room&.name, room_removed: @rhythm.room_removed?,
+      room_choice: @rhythm.room_choice, room_id: own_room&.to_param,
+      room_name: own_room&.name, room_removed: @rhythm.room_removed?,
       opens_in: room_json(@rhythm.occurrence_room),
       creator: {
         id: (@rhythm.creator_agent || @rhythm.creator)&.to_param,
@@ -69,6 +69,12 @@ class RhythmPresentation
   end
 
   private
+
+  # Never show a room of another account, even one an invalid edit named.
+  def own_room
+    room = @rhythm.room
+    room if room && room.account_id == @rhythm.account_id
+  end
 
   def room_json(room)
     room ? room.as_json : Room::MAIN_JSON.slice("id", "name")
