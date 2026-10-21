@@ -131,6 +131,17 @@ test("a failed recording's meeting notes can still be opened, read whole and edi
     await expect(viewer.getByTestId('open-transcript')).toHaveCount(0);
     await shot('notes-1-viewer');
 
+    // Double-clicking the title opens the same form as Edit, title ready to type over.
+    await viewer.getByTestId('field-recording-title').dblclick();
+    const titleInput = page.locator('#recording-edit-title');
+    await expect(titleInput).toBeFocused();
+    await expect(titleInput).toHaveValue('Failed standup');
+    await expect(page.locator('#recording-edit-note')).toBeVisible();
+    await page.keyboard.type('Failed standup, renamed');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(viewer.getByTestId('field-recording-title')).toHaveText('Failed standup, renamed');
+    await shot('notes-1b-renamed');
+
     await viewer.getByTestId('open-recording-notes').click();
     await expect(page).toHaveURL(new RegExp(`/field/recordings/${recordingParam}$`));
     const notes = page.getByTestId('recording-notes');
@@ -153,9 +164,73 @@ test("a failed recording's meeting notes can still be opened, read whole and edi
     await page.getByTestId('delete-recording').click();
     await expect(page).toHaveURL(new RegExp(`${base}/field\\?tab=recordings`));
     await expect(page.getByText('Deleted from the Field.')).toBeVisible();
-    await expect(page.getByText('Failed standup')).toHaveCount(0);
+    await expect(page.getByText('Failed standup, renamed')).toHaveCount(0);
     await shot('notes-4-deleted');
   } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
+  }
+});
+
+test("on a touch screen, pressing and holding a recording's title opens its edit form", async ({
+  browser,
+  request,
+}, testInfo) => {
+  const runId = `field-title-hold-${Date.now()}`;
+  const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });
+  expect(response.ok()).toBe(true);
+  const setup = await response.json();
+  const context = await browser.newContext({
+    baseURL: testInfo.project.use.baseURL,
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  const shot = (name) => page.screenshot({ path: testInfo.outputPath(`${name}.png`), fullPage: true });
+
+  try {
+    const fixture = await request.post('/test/e2e/field_recording_fixture', {
+      data: { account_id: setup.account_id, title: 'Held standup', notes: 'Some notes' },
+    });
+    expect(fixture.ok()).toBe(true);
+    const { recording_param: recordingParam } = await fixture.json();
+
+    await page.goto('/login');
+    await page.getByLabel(/email/i).fill(setup.primary_user.email);
+    await page.getByLabel(/password/i).fill(setup.password);
+    await page.getByRole('button', { name: /log in/i }).click();
+    await expect(page).toHaveURL(/\/$/);
+
+    await page.goto(`/accounts/${setup.account_param}/field?tab=recordings&item=recording-${recordingParam}`);
+    const title = page.getByTestId('field-recording-title');
+    await expect(title).toHaveText('Held standup');
+    const box = await title.boundingBox();
+    const at = { pointerType: 'touch', isPrimary: true, clientX: box.x + 10, clientY: box.y + 5 };
+
+    // A tap is not a hold.
+    await title.dispatchEvent('pointerdown', at);
+    await title.dispatchEvent('pointerup', at);
+    await page.waitForTimeout(700);
+    await expect(page.locator('#recording-edit-title')).toHaveCount(0);
+
+    // A press that turns into a scroll is not a hold either.
+    await title.dispatchEvent('pointerdown', at);
+    await title.dispatchEvent('pointermove', { ...at, clientY: at.clientY + 40 });
+    await page.waitForTimeout(700);
+    await expect(page.locator('#recording-edit-title')).toHaveCount(0);
+
+    await title.dispatchEvent('pointerdown', at);
+    await expect(page.locator('#recording-edit-title')).toBeVisible();
+    await expect(page.locator('#recording-edit-title')).toHaveValue('Held standup');
+    await expect(page.locator('#recording-edit-note')).toBeVisible();
+    await expect(page.locator('#recording-edit-recorded-on')).toBeVisible();
+    await shot('title-hold-form');
+
+    await page.locator('#recording-edit-title').fill('Held and renamed');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByTestId('field-recording-title')).toHaveText('Held and renamed');
+  } finally {
+    await context.close();
     await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
   }
 });
