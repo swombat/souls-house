@@ -257,6 +257,7 @@ Rails.application.routes.draw do
       patch :line_speaker, on: :member, action: :reassign_line
       post :dismiss_you_hint, on: :collection
       resources :speakers, only: [ :update ], controller: "field_recording_speakers"
+      resources :shares, only: [ :create, :destroy ], controller: "field_recording_shares"
     end
     resources :field_voices, path: "field/voices", only: [ :index, :update, :destroy ] do
       delete :forget, on: :member, path: "print"
@@ -591,6 +592,8 @@ Rails.application.routes.draw do
   get "self-host/technical" => "pages#self_host_technical", as: :self_host_technical
   get "terms" => "pages#terms", as: :terms
   get "safeguard-responses" => "pages#safeguard_responses", as: :safeguard_responses
+  # A transcript shared by link (FieldRecordingShare): no account needed.
+  get "shared/transcripts/:token" => "shared_transcripts#show", as: :shared_transcript
   get "decisions" => "decisions#index", as: :decisions
   get "decisions/:slug" => "decisions#show", as: :decision
   get "create_flash" => "pages#create_flash"

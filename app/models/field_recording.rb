@@ -50,6 +50,7 @@ class FieldRecording < ApplicationRecord
   has_many :retries, class_name: "FieldRecording", foreign_key: :retried_from_id,
     inverse_of: :retried_from, dependent: :nullify
   has_one :reservation, class_name: "FieldRecordingReservation", dependent: :destroy
+  has_many :shares, class_name: "FieldRecordingShare", dependent: :destroy
 
   has_one_attached :audio
 

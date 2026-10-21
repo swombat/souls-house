@@ -7,6 +7,8 @@
   import SpeakerCard from '$lib/components/field/SpeakerCard.svelte';
   import RecordingNotes from '$lib/components/field/RecordingNotes.svelte';
   import TranscriptTurns from '$lib/components/field/TranscriptTurns.svelte';
+  import ShareTranscript from '$lib/components/field/ShareTranscript.svelte';
+  import { transcriptPlainText } from '$lib/transcript-share';
   import { formatWhen } from '$lib/field';
   import {
     activeWordIndex,
@@ -26,6 +28,7 @@
     recording,
     transcript = { revision: null, words: [] },
     speakers = [],
+    shares = [],
     voices = [],
     members_without_voice = [],
     my_voice_id = null,
@@ -70,6 +73,8 @@
   const speakerUrl = (speaker) => `/accounts/${account.id}/field/recordings/${recording.id}/speakers/${speaker.id}`;
   const wordList = $derived(supplied ? [] : timedWords(turns));
   const names = $derived(speakerNames(speakers));
+  // What "Copy transcript" copies: the lines as shown, with today's names.
+  const plainText = $derived(transcriptPlainText(turns, names));
   const totalTalkMs = $derived(speakers.reduce((sum, speaker) => sum + (speaker.talk_ms || 0), 0));
   const me = $derived($page.props?.user);
   const myName = $derived(me?.full_name || me?.first_name || '');
@@ -349,6 +354,10 @@
     {#if turns.length}
       <Card.Root>
         <Card.Content class="p-6">
+          <div class="flex items-center justify-between gap-3 mb-4">
+            <h2 class="text-lg font-semibold">Transcript</h2>
+            <ShareTranscript text={plainText} sharesUrl={`${recording.show_url}/shares`} {shares} />
+          </div>
           <TranscriptTurns
             {turns}
             {names}

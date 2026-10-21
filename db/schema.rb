@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_21_110000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_21_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1009,6 +1009,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_110000) do
     t.index ["account_id", "state", "consumed_at"], name: "index_field_recording_reservations_for_usage"
     t.index ["account_id"], name: "index_field_recording_reservations_on_account_id"
     t.index ["field_recording_id"], name: "index_field_recording_reservations_on_field_recording_id", unique: true
+  end
+
+  create_table "field_recording_shares", force: :cascade do |t|
+    t.bigint "field_recording_id", null: false
+    t.bigint "account_id", null: false
+    t.bigint "created_by_id"
+    t.string "token_digest", limit: 64, null: false
+    t.datetime "expires_at"
+    t.datetime "revoked_at"
+    t.datetime "last_viewed_at"
+    t.integer "view_count", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_field_recording_shares_on_account_id"
+    t.index ["created_by_id"], name: "index_field_recording_shares_on_created_by_id"
+    t.index ["field_recording_id"], name: "index_field_recording_shares_on_field_recording_id"
+    t.index ["token_digest"], name: "index_field_recording_shares_on_token_digest", unique: true
   end
 
   create_table "field_recording_speakers", force: :cascade do |t|
@@ -2668,6 +2685,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_110000) do
   add_foreign_key "field_recording_dispatches", "field_recordings"
   add_foreign_key "field_recording_reservations", "accounts"
   add_foreign_key "field_recording_reservations", "field_recordings"
+  add_foreign_key "field_recording_shares", "accounts", on_delete: :cascade
+  add_foreign_key "field_recording_shares", "field_recordings", on_delete: :cascade
+  add_foreign_key "field_recording_shares", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "field_recording_speakers", "field_recordings"
   add_foreign_key "field_recording_speakers", "field_voices"
   add_foreign_key "field_recording_speakers", "field_voices", column: "recognised_voice_id", on_delete: :nullify
