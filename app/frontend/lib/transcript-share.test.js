@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expiryLine, transcriptLines, transcriptPlainText } from './transcript-share';
+import { expiryLine, shareTokenFromHash, transcriptPlainText } from './transcript-share';
 
 describe('transcriptPlainText', () => {
   it('writes one line per turn with its clock and speaker', () => {
@@ -14,26 +14,29 @@ describe('transcriptPlainText', () => {
     );
   });
 
-  it('leaves out empty turns and the clock of an untimed one', () => {
+  it('leaves out empty turns', () => {
+    expect(transcriptPlainText([{ spk: 'B', start: 1000, text: '   ' }], {})).toBe('');
+  });
+
+  it('keeps a supplied turn as written: its line breaks, and no speaker it was not given', () => {
     const turns = [
-      { spk: 'A', start: null, text: 'No time here' },
-      { spk: 'B', start: 1000, text: '   ' },
+      { spk: 'A', start: null, index: 0, text: 'Agenda:\n- one\n- two' },
+      { spk: null, start: 5000, index: 1, text: 'We agreed on the following: Ship tomorrow.' },
+      { spk: null, start: null, index: 2, text: 'A paragraph with nobody named.' },
     ];
-    expect(transcriptPlainText(turns, {})).toBe('A: No time here');
+    expect(transcriptPlainText(turns, { A: 'Anna' })).toBe(
+      'Anna: Agenda:\n- one\n- two\n[00:05] We agreed on the following: Ship tomorrow.\nA paragraph with nobody named.'
+    );
   });
 });
 
-describe('transcriptLines', () => {
-  it('reads the server text back into clock, speaker and words', () => {
-    expect(transcriptLines('[00:03] Daniel: Hello: world\nloose line\n\n[1:02:03] Anna: Bye')).toEqual([
-      { clock: '00:03', speaker: 'Daniel', text: 'Hello: world' },
-      { clock: null, speaker: null, text: 'loose line' },
-      { clock: '1:02:03', speaker: 'Anna', text: 'Bye' },
-    ]);
-  });
-
-  it('reads a line with a speaker but no clock', () => {
-    expect(transcriptLines('Daniel: hi')).toEqual([{ clock: null, speaker: 'Daniel', text: 'hi' }]);
+describe('shareTokenFromHash', () => {
+  it('takes only a token-shaped fragment', () => {
+    const token = `sht_${'a'.repeat(43)}`;
+    expect(shareTokenFromHash(`#${token}`)).toBe(token);
+    expect(shareTokenFromHash('')).toBeNull();
+    expect(shareTokenFromHash('#sht_short')).toBeNull();
+    expect(shareTokenFromHash(`#${token}x`)).toBeNull();
   });
 });
 

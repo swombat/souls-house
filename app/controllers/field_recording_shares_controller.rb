@@ -9,7 +9,7 @@ class FieldRecordingSharesController < ApplicationController
 
   def create
     share = FieldRecordingShare.issue!(recording: @field_recording, user: Current.user, expiry: params[:expiry].to_s)
-    render json: { share: share.as_list_json.merge(url: shared_transcript_url(share.token)) }, status: :created
+    render json: { share: share.as_list_json.merge(url: shared_transcripts_url(anchor: share.token)) }, status: :created
   rescue FieldRecordingShare::Invalid => e
     render json: { error: e.message }, status: :unprocessable_entity
   end

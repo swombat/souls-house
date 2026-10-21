@@ -40,7 +40,7 @@ test('a member shares a transcript by link and revokes it', async ({ page, brows
     await menu.getByTestId('share-expiry-1w').click();
     await menu.getByTestId('create-share-link').click();
     const url = await menu.getByTestId('share-url').inputValue();
-    expect(url).toMatch(/\/shared\/transcripts\/sht_/);
+    expect(url).toMatch(/\/shared\/transcripts#sht_/);
     await expect(menu.getByTestId('share-created')).toContainText('Expires in 7 days');
     await expect(menu.getByTestId('share-list')).toContainText('Not opened yet');
     await shot(page, '1-share-menu');

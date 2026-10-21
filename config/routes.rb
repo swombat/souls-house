@@ -592,8 +592,11 @@ Rails.application.routes.draw do
   get "self-host/technical" => "pages#self_host_technical", as: :self_host_technical
   get "terms" => "pages#terms", as: :terms
   get "safeguard-responses" => "pages#safeguard_responses", as: :safeguard_responses
-  # A transcript shared by link (FieldRecordingShare): no account needed.
-  get "shared/transcripts/:token" => "shared_transcripts#show", as: :shared_transcript
+  # A transcript shared by link (FieldRecordingShare): no account needed. The
+  # token travels in the URL's fragment, which no server or proxy ever sees,
+  # and the page posts it back as a (log-filtered) parameter.
+  get "shared/transcripts" => "shared_transcripts#show", as: :shared_transcripts
+  post "shared/transcripts" => "shared_transcripts#reveal"
   get "decisions" => "decisions#index", as: :decisions
   get "decisions/:slug" => "decisions#show", as: :decision
   get "create_flash" => "pages#create_flash"

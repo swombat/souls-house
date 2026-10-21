@@ -1,5 +1,5 @@
 // Sharing a recording's transcript: the plain text that "Copy transcript"
-// puts on the clipboard, the lines the shared page shows, and how a link's
+// puts on the clipboard, the token in a shared link, and how a link's
 // expiry reads. Kept free of Svelte so they can be unit tested.
 import { formatClock, turnSpeakerName } from '$lib/field-recordings';
 
@@ -12,36 +12,32 @@ export const SHARE_EXPIRIES = [
 export const DEFAULT_SHARE_EXPIRY = '1d';
 
 // The turns as the page shows them, one per line: "[mm:ss] Name: words", the
-// same shape the server keeps as the recording's plain text. A turn with no
-// time (a supplied transcript without timings) has no clock.
+// same shape the server keeps as the recording's plain text. A supplied turn
+// keeps its own line breaks, and has a clock or a speaker only where the
+// transcript gave one; a timed turn nobody is attributed to reads
+// "Unattributed", as on the server.
 export function transcriptPlainText(turns = [], names = {}) {
   return (turns || [])
     .map((turn) => {
-      const text = String(turn.text ?? '')
-        .replace(/\s+/g, ' ')
-        .trim();
+      const supplied = turn.index != null;
+      const text = supplied
+        ? String(turn.text ?? '').trim()
+        : String(turn.text ?? '')
+            .replace(/\s+/g, ' ')
+            .trim();
       if (!text) return null;
       const clock = turn.start != null ? `[${formatClock(turn.start)}] ` : '';
-      return `${clock}${turnSpeakerName(turn, names)}: ${text}`;
+      const speaker = turn.spk || !supplied ? `${turnSpeakerName(turn, names)}: ` : '';
+      return `${clock}${speaker}${text}`;
     })
     .filter(Boolean)
     .join('\n');
 }
 
-const LINE = /^(?:\[(\d{1,2}(?::\d{2}){1,2})\]\s+)?([^:\n]{1,80}):\s(.*)$/;
-
-// The shared page's lines, from the server's plain text. A line that doesn't
-// read "[clock] Name: words" is kept whole as words with no speaker, so
-// nothing in the transcript is ever dropped.
-export function transcriptLines(text = '') {
-  return String(text || '')
-    .split('\n')
-    .filter((line) => line.trim() !== '')
-    .map((line) => {
-      const match = line.match(LINE);
-      if (!match) return { clock: null, speaker: null, text: line };
-      return { clock: match[1] ?? null, speaker: match[2], text: match[3] };
-    });
+// The token from a shared link's fragment ("#sht_…"), or null.
+export function shareTokenFromHash(hash = '') {
+  const token = String(hash || '').replace(/^#/, '');
+  return /^sht_[A-Za-z0-9_-]{43}$/.test(token) ? token : null;
 }
 
 // "Expires in 23 hours", "Expires in 6 days", "Never expires", "Expired".

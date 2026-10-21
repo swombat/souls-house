@@ -123,6 +123,19 @@ module FieldRecording::Transcription
     end
   end
 
+  # The transcript as the lines render_transcript_text writes, structured:
+  # [{clock:, speaker:, text:}], speaker nil where none was given. For the
+  # shared page, which must never guess a speaker from the text.
+  def transcript_display_lines
+    list = speakers.includes(:field_voice).to_a
+    names = list.to_h { |speaker| [ speaker.label, speaker.display_name ] }
+    if supplied?
+      FieldRecording::SuppliedTranscript.lines(transcript_turns || [], names)
+    else
+      FieldRecording::Transcript.lines(transcript_words || [], names, list.to_h { |speaker| [ speaker.label, speaker.identity ] })
+    end
+  end
+
   private
 
   def current_attempt?(dispatch)

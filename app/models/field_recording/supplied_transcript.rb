@@ -69,11 +69,21 @@ module FieldRecording::SuppliedTranscript
   # "[mm:ss] Name: text" where a time and a name were given; just the text
   # otherwise. Names come from the caller, keyed by label.
   def render(turns, names)
-    Array(turns).map do |turn|
-      prefix = turn["s"] ? "[#{FieldRecording::Transcript.timestamp(turn['s'])}] " : ""
-      speaker = turn["spk"] ? "#{names.fetch(turn['spk'], turn['spk'])}: " : ""
-      "#{prefix}#{speaker}#{turn['t']}"
+    lines(turns, names).map do |line|
+      "#{"[#{line[:clock]}] " if line[:clock]}#{"#{line[:speaker]}: " if line[:speaker]}#{line[:text]}"
     end.join("\n")
+  end
+
+  # The turns as {clock:, speaker:, text:}: clock and speaker only where the
+  # transcript gave them, and the text as written, paragraphs and all.
+  def lines(turns, names)
+    Array(turns).map do |turn|
+      {
+        clock: (FieldRecording::Transcript.timestamp(turn["s"]) if turn["s"]),
+        speaker: (names.fetch(turn["spk"], turn["spk"]) if turn["spk"]),
+        text: turn["t"]
+      }
+    end
   end
 
   # [{label:, position:}] in order of first appearance. No talk time and no
