@@ -1068,18 +1068,25 @@ test('the Voices page, house gate on: the switch, Forget and the backups line', 
       account,
     },
   });
-  await expect(component).toContainText('Voices this Field knows');
+  await expect(component).toContainText('Account settings');
+  await expect(page.getByRole('heading', { name: 'Voices', exact: true })).toBeVisible();
   await expect(page.getByTestId('voices-switch')).toBeVisible();
   await expect(page.getByTestId('voices-switch')).toBeEnabled();
   await expect(component).toContainText("Learn voices from the names people give, and suggest who's speaking");
   await expect(component).toContainText('Learned voices are kept but not used while this is off.');
   await expect(page.getByTestId('voices-forget-all')).toBeVisible();
+  // The roster is compact; what was learned, and Forget or Remember, are on
+  // the selected speaker's detail (the first listed until one is picked).
+  await expect(page.getByTestId('voice-row').first()).toContainText('Recognising');
+  await expect(page.getByTestId('voice-row').nth(1)).toContainText('Forgotten');
+  const detail = page.getByTestId('voice-detail');
+  await expect(detail).toContainText('Voice learned from 3 recordings, 22 s · suggesting');
   await expect(page.getByTestId('voice-forget')).toHaveCount(1);
+  await expect(page.getByTestId('voice-remember')).toHaveCount(0);
+  await page.getByTestId('voice-row').nth(1).click();
+  await expect(detail).toContainText('Voice forgotten, not learning');
   await expect(page.getByTestId('voice-remember')).toHaveCount(1);
-  await expect(page.getByTestId('voice-row').first()).toContainText(
-    'Voice learned from 3 recordings, 22 s · suggesting'
-  );
-  await expect(page.getByTestId('voice-row').nth(1)).toContainText('Voice forgotten, not learning');
+  await expect(page.getByTestId('voice-forget')).toHaveCount(0);
   await expect(page.getByTestId('voice-meaning')).toContainText('speaker nobody has named yet');
   await expect(page.getByTestId('voice-meaning-backups')).toContainText('indeterminate time');
   await expect(component).not.toContainText('thinks');
