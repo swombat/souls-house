@@ -2,6 +2,10 @@
 # short preview. Every read (including each media range) is account scoped.
 class FieldVoiceSamplesController < ApplicationController
 
+  # Never use Rails.cache here: production stores it in the cache database.
+  # This bounded, process-local store cannot persist audio to disk or backups.
+  AUDIO_CACHE = ActiveSupport::Cache::MemoryStore.new(size: 16.megabytes, expires_in: 10.minutes)
+
   require_feature_enabled :agents
   before_action :set_voice
   before_action :set_speaker, except: :index
@@ -44,8 +48,9 @@ class FieldVoiceSamplesController < ApplicationController
 
     # Authorise and source-check every range, but reuse this exact private cut
     # for Safari's probe/chunk requests rather than downloading the source again.
-    bytes = Rails.cache.fetch(
-      [ "field-voice-sample-audio-v1", current_account.id, sample.id, sample.source_digest ], expires_in: 10.minutes
+    AUDIO_CACHE.cleanup
+    bytes = AUDIO_CACHE.fetch(
+      [ "field-voice-sample-audio-v1", current_account.id, sample.id, sample.source_digest ]
     ) do
       FieldVoiceprints::Sample.cut(@speaker.field_recording, sample.source_segments) { |path| File.binread(path) }
     end

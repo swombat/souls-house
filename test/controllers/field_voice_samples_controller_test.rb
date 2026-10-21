@@ -104,7 +104,8 @@ class FieldVoiceSamplesControllerTest < ActionDispatch::IntegrationTest
       end
     }
     url = audio_account_field_voice_sample_path(@account, @voice, @speaker, digest: @sample.source_digest)
-    Rails.stub(:cache, ActiveSupport::Cache::MemoryStore.new) do
+    FieldVoiceSamplesController::AUDIO_CACHE.clear
+    Rails.stub(:cache, -> { flunk "Private sample audio must never use the persistent Rails cache" }) do
       FieldVoiceprints::Sample.stub(:cut, cut) do
         get url
         assert_response :success
@@ -120,10 +121,15 @@ class FieldVoiceSamplesControllerTest < ActionDispatch::IntegrationTest
         get url, headers: { "Range" => "bytes=9999999-" }
         assert_response :range_not_satisfiable
         assert_equal 1, cuts, "Safari's probes and chunks reuse the same private cut"
+        travel 11.minutes do
+          get url, headers: { "Range" => "bytes=0-3" }
+          assert_response :partial_content
+          assert_equal 2, cuts, "expired process-local audio is cut again"
+        end
         @speaker.increment!(:decision_generation)
         get url, headers: { "Range" => "bytes=0-3" }
         assert_response :conflict, "a cached cut does not bypass source checks"
-        assert_equal 1, cuts
+        assert_equal 2, cuts
       end
     end
     get audio_account_field_voice_sample_path(@account, @voice, @speaker, digest: "stale")
