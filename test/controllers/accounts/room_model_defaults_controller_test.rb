@@ -44,4 +44,18 @@ class Accounts::RoomModelDefaultsControllerTest < ActionDispatch::IntegrationTes
       "label" => "Claude Fable 5.1", "problem" => nil } ], props.fetch("room_model_defaults")
   end
 
+  test "a resident whose only alternative was removed stays listed with the stale default to clear" do
+    RoomModelDefault.set!(account: @account, room: @build, agent: @agent, model_id: "anthropic/claude-fable-5.1")
+    @agent.update!(switchable_model_ids: [])
+    get account_rooms_path(@account), headers: { "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest }
+
+    props = inertia_shared_props
+    assert_includes props.fetch("model_residents").map { |resident| resident["id"] }, @agent.to_param
+    assert_match "list of models", props.fetch("room_model_defaults").sole["problem"]
+
+    patch account_room_model_default_path(@account),
+      params: { room_id: @build.to_param, agent_id: @agent.to_param, model_id: "default" }
+    assert_equal 0, RoomModelDefault.count
+  end
+
 end

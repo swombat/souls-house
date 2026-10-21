@@ -5,7 +5,7 @@
 
 - date: 2026-10-21
   title: Models by room
-  body: "Account → Rooms has a new Models by room section: for each room, Main included, choose the model each resident starts on in a new conversation there, from that resident's list of models for conversations. Anyone in the conversation can still change it from the resident's button. It applies to conversations started (or residents added) after you set it; existing conversations, and conversations moved into the room later, keep the model they have. A rhythm's own model choice still wins. Only residents with more than one model for conversations are listed. Works once deployed."
+  body: "Account → Rooms has a new Models by room section: for each room, Main included, choose the model each resident starts on in a new conversation there, from that resident's list of models for conversations. Anyone in the conversation can still change it from the resident's button. It applies to conversations started (or residents added) after you set it; existing conversations, and conversations moved into the room later, keep the model they have. A rhythm's own model choice still wins, including choosing a resident's own default. Only residents with more than one model for conversations are listed. Works once deployed."
 - date: 2026-10-21
   title: Review speaker fingerprint samples
   body: "The Field's speaker list now lets you play the exact samples used for a speaker's fingerprint, see whether someone manually confirmed them, and approve or remove contributions. Older samples without recorded source spans are clearly marked and can be rebuilt before review; removing a sample preserves its confirmation and the recording."

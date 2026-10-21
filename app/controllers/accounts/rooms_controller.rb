@@ -49,9 +49,15 @@ class Accounts::RoomsController < ApplicationController
   private
 
   # Residents of this account that can run on more than one model in a
-  # conversation: the ones a room can start on something else.
+  # conversation: the ones a room can start on something else. A resident with
+  # a stored room default stays listed after losing its alternatives, so the
+  # stale default is shown and can be cleared rather than silently returning
+  # if the model is listed again.
   def model_residents
-    current_account.agents.active.by_name.select(&:model_switching_available?).map do |agent|
+    with_defaults = current_account.room_model_defaults.distinct.pluck(:agent_id)
+    current_account.agents.by_name.select do |agent|
+      (agent.active? && agent.model_switching_available?) || with_defaults.include?(agent.id)
+    end.map do |agent|
       { id: agent.to_param, name: agent.name, colour: agent.colour, default_label: agent.model_label,
         choices: agent.model_choices }
     end
