@@ -89,6 +89,11 @@ test('models by room show each resident’s room model, its default, and a defau
   expect(screen.getByLabelText("Lume's model in Main")).toHaveTextContent('Claude Fable 5.1');
   expect(screen.getByLabelText("Lume's model in Build")).toHaveTextContent('Old');
   expect(screen.getByTestId('room-models')).toHaveTextContent('new conversations use the default');
+  expect(screen.getByTestId('room-models').querySelector('table')).toBeNull();
+  expect(screen.getAllByTestId('room-models-room').map((room) => room.querySelector('h3').textContent)).toEqual([
+    'Main',
+    'Build',
+  ]);
 });
 
 test('models by room are hidden when no resident has a model list', () => {

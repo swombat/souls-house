@@ -196,29 +196,22 @@
       {#if errors.room_model}
         <p role="alert" class="text-sm text-destructive">{errors.room_model}</p>
       {/if}
-      <div class="overflow-x-auto rounded-lg border border-border">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="border-b border-border text-left">
-              <th class="px-4 py-2 font-medium">Room</th>
+      <ul class="divide-y divide-border rounded-lg border border-border">
+        {#each destinations(rooms) as option (option.id)}
+          <li class="space-y-2 px-4 py-3" data-testid="room-models-room">
+            <h3 class="font-medium">{option.name}</h3>
+            <div class="space-y-3 sm:space-y-2">
               {#each model_residents as resident (resident.id)}
-                <th class="px-4 py-2 font-medium">{resident.name}</th>
-              {/each}
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            {#each destinations(rooms) as option (option.id)}
-              <tr>
-                <td class="px-4 py-2 font-medium">{option.name}</td>
-                {#each model_residents as resident (resident.id)}
-                  {@const entry = roomDefault(option.id, resident)}
-                  <td class="px-4 py-2">
+                {@const entry = roomDefault(option.id, resident)}
+                <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                  <span class="text-sm text-muted-foreground sm:w-32 sm:shrink-0 sm:truncate">{resident.name}</span>
+                  <div class="min-w-0 flex-1 sm:max-w-xs">
                     <Select.Root
                       type="single"
                       value={modelValue(option.id, resident)}
                       onValueChange={(value) => setRoomModel(option.id, resident, value)}
                       disabled={!can_manage}>
-                      <Select.Trigger class="w-52" aria-label={`${resident.name}'s model in ${option.name}`}>
+                      <Select.Trigger class="w-full" aria-label={`${resident.name}'s model in ${option.name}`}>
                         {modelLabel(option.id, resident)}
                       </Select.Trigger>
                       <Select.Content sideOffset={4}>
@@ -233,13 +226,13 @@
                     {#if entry?.problem}
                       <p class="mt-1 text-xs text-destructive">{entry.problem}; new conversations use the default.</p>
                     {/if}
-                  </td>
-                {/each}
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </li>
+        {/each}
+      </ul>
     </section>
   {/if}
 </AccountSettingsLayout>

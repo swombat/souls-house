@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-21
+  title: Models by room fits a phone
+  body: "Account → Rooms → Models by room is no longer a table you scroll sideways. Each room is its own block listing its residents, each with a model picker: stacked, full width, on a phone, side by side on a wider screen. However many residents there are, nothing scrolls sideways."
+- date: 2026-10-21
   title: Voices moves to Account settings, built for many speakers
   body: "Voices is now a tab in Account settings. Speakers are a compact list you can search or filter (Needs review, With samples, Name only, All), with a count of samples waiting for review on each. Pick one to see their fingerprint samples, one line each with play, accept and reject; Accept unlocks once you've heard the sample to the end. Namings that never produced a usable sample are folded into one line you can open. Samples learned before their source spans were recorded can't be played yet; one Prepare button, for a speaker or the whole account, rebuilds them from their recordings in the background, and they stay in the fingerprint, unconfirmed, until you review them. Works once deployed."
 - date: 2026-10-21
