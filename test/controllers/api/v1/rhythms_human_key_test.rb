@@ -325,6 +325,38 @@ class Api::V1::RhythmsHumanKeyTest < ActionDispatch::IntegrationTest
     assert_equal "anthropic/claude-fable-5.1", Rhythm.order(:id).last.resident_models[@resident.id]
   end
 
+
+  test "a person chooses where a rhythm opens, sees it, and cannot name another account's room" do
+    build = @account.rooms.create!(name: "Build")
+    post api_v1_rhythms_path, params: { rhythm: @attributes.merge(room_choice: "room", room_id: build.to_param) },
+      headers: @headers, as: :json
+    assert_response :created
+    body = response.parsed_body["rhythm"]
+    assert_equal "room", body["room_choice"]
+    assert_equal build.to_param, body["room_id"]
+    assert_equal({ "id" => build.to_param, "name" => "Build" }, body["opens_in"])
+    rhythm = Rhythm.order(:id).last
+    assert_equal build, rhythm.room
+
+    foreign = Account.where.not(id: @account.id).first!.rooms.create!(name: "Elsewhere")
+    patch api_v1_rhythm_path(rhythm), params: { rhythm: { room_choice: "room", room_id: foreign.to_param } },
+      headers: @headers, as: :json
+    assert_response :unprocessable_entity
+    assert_equal build, rhythm.reload.room
+
+    patch api_v1_rhythm_path(rhythm), params: { rhythm: { room_choice: "main" } }, headers: @headers, as: :json
+    assert_response :ok
+    assert_equal "main", response.parsed_body.dig("rhythm", "room_choice")
+    assert_nil response.parsed_body.dig("rhythm", "room_id")
+    assert_equal "Main", response.parsed_body.dig("rhythm", "opens_in", "name")
+  end
+
+  test "a new rhythm follows the account's default room unless told otherwise" do
+    post api_v1_rhythms_path, params: { rhythm: @attributes }, headers: @headers, as: :json
+    assert_response :created
+    assert_equal "resident_default", response.parsed_body.dig("rhythm", "room_choice")
+  end
+
   private
 
   def human_headers(user, account)

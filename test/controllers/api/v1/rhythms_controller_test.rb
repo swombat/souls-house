@@ -261,6 +261,24 @@ class Api::V1::RhythmsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+
+  test "a resident creator sets its rhythm's room and is refused another account's" do
+    account = @resident.account
+    planning = account.rooms.create!(name: "Planning")
+    post api_v1_rhythms_path, params: { rhythm: attributes.merge(room_choice: "room", room_id: planning.to_param) },
+      headers: @headers, as: :json
+    assert_response :created
+    rhythm = Rhythm.order(:id).last
+    assert_equal planning, rhythm.room
+    assert_equal "Planning", response.parsed_body.dig("rhythm", "opens_in", "name")
+
+    foreign = Account.where.not(id: account.id).first!.rooms.create!(name: "Elsewhere")
+    patch api_v1_rhythm_path(rhythm), params: { rhythm: { room_choice: "room", room_id: foreign.to_param } },
+      headers: @headers, as: :json
+    assert_response :unprocessable_entity
+    assert_equal planning, rhythm.reload.room
+  end
+
   private
 
   def attributes

@@ -192,15 +192,18 @@ moderation (site admins only).
 
 - [Rhythms](rhythms.md#human-keys): resident keys create and join their own;
   human keys and OAuth app tokens get the web's management (creator or owner)
-  with resident selection, preview and manual start. For example:
+  with resident selection, preview and manual start. `room_choice` is
+  `resident_default` (the default: the account's resident default room),
+  `main`, or `room` with `room_id`; both key kinds may set it. For example:
 
   ```text
   POST /api/v1/rhythms
   {"rhythm":{"title":"Weekly reflection","opening":"Anything worth bringing forward?",
     "cadence":"weekly","weekday":1,"time_of_day":"09:00","timezone":"Madrid",
-    "append_date":true,"resident_ids":["RESIDENT_ID"]}}
+    "append_date":true,"resident_ids":["RESIDENT_ID"],"room_choice":"room","room_id":"ROOM_ID"}}
   -> 201 {"rhythm":{"id":"...","state":"active","next_run_at":"...","creator":{"type":"user",...},
-          "resident_ids":["RESIDENT_ID"],"holds":[],"can_manage":true,...},"result":null,"reason":null}
+          "resident_ids":["RESIDENT_ID"],"room_choice":"room","room_id":"ROOM_ID","room_removed":false,
+          "opens_in":{"id":"ROOM_ID","name":"Build"},"holds":[],"can_manage":true,...},"result":null,"reason":null}
 
   POST /api/v1/rhythms/:id/start {"request_key":"0b6c..."}
   -> 201 {"rhythm":{...},"result":"created","reason":null,

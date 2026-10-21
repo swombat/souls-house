@@ -28,6 +28,13 @@ class RhythmPresentation
       next_run_at: at&.iso8601,
       preview_title: at ? @rhythm.preview_title(at: at) : @rhythm.title,
       schedule_description: schedule_description, state: holds.empty? ? "active" : "paused",
+      # resident_default follows the account's resident default room, main is
+      # Main on purpose, room is the named room. opens_in is where the next
+      # occurrence opens; room_removed says a named room has gone and the
+      # rhythm is falling back to the account default.
+      room_choice: @rhythm.room_choice, room_id: @rhythm.room_public_id,
+      room_name: @rhythm.room&.name, room_removed: @rhythm.room_removed?,
+      opens_in: room_json(@rhythm.occurrence_room),
       creator: {
         id: (@rhythm.creator_agent || @rhythm.creator)&.to_param,
         name: @rhythm.creator_agent&.name || display_name(@rhythm.creator),
@@ -62,6 +69,10 @@ class RhythmPresentation
   end
 
   private
+
+  def room_json(room)
+    room ? room.as_json : Room::MAIN_JSON.slice("id", "name")
+  end
 
   def resident_payload(resident, model_id)
     {

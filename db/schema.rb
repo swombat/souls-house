@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_20_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_21_110000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2089,11 +2089,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_190000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.bigint "creator_agent_id"
+    t.string "room_choice", default: "resident_default", null: false
+    t.bigint "room_id"
     t.index ["account_id"], name: "index_rhythms_on_account_id"
     t.index ["creator_agent_id"], name: "index_rhythms_on_creator_agent_id"
     t.index ["creator_id"], name: "index_rhythms_on_creator_id"
     t.index ["next_run_at"], name: "index_rhythms_on_next_run_at"
+    t.index ["room_id"], name: "index_rhythms_on_room_id"
     t.check_constraint "creator_id IS NULL OR creator_agent_id IS NULL", name: "rhythms_one_creator"
+    t.check_constraint "room_choice::text = ANY (ARRAY['resident_default'::character varying, 'main'::character varying, 'room'::character varying]::text[])", name: "rhythms_room_choice_known"
   end
 
   create_table "rooms", force: :cascade do |t|
@@ -2783,6 +2787,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_190000) do
   add_foreign_key "rhythm_occurrences", "users", column: "creator_id", on_delete: :nullify
   add_foreign_key "rhythms", "accounts", on_delete: :cascade
   add_foreign_key "rhythms", "agents", column: "creator_agent_id", on_delete: :nullify
+  add_foreign_key "rhythms", "rooms", on_delete: :nullify
   add_foreign_key "rhythms", "users", column: "creator_id", on_delete: :nullify
   add_foreign_key "rooms", "accounts"
   add_foreign_key "runner_commands", "agent_placements"

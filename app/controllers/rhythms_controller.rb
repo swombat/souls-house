@@ -95,12 +95,12 @@ class RhythmsController < ApplicationController
 
   def rhythm_params
     permitted = params.require(:rhythm).permit(:title, :opening, :append_date, :cadence, :time_of_day,
-      :weekday, :month_day, :month, :timezone, resident_ids: [], resident_models: {})
+      :weekday, :month_day, :month, :timezone, :room_choice, :room_id, resident_ids: [], resident_models: {})
     if permitted.key?(:resident_ids)
       permitted[:resident_ids] = Rhythm.selectable_resident_ids(current_account, permitted.delete(:resident_ids))
     end
     models = permitted.delete(:resident_models)
-    attributes = permitted.to_h.symbolize_keys
+    attributes = Rhythm.public_room_attributes(permitted.to_h.symbolize_keys)
     attributes[:resident_models] = Rhythm.decode_resident_models(models) if models
     attributes
   end
@@ -132,6 +132,7 @@ class RhythmsController < ApplicationController
     {
       account: current_account.as_json,
       residents: -> { resident_options },
+      room_options: -> { room_options },
       timezones: -> { ActiveSupport::TimeZone.all.map { |zone| { value: zone.name, label: zone.to_s, identifier: zone.tzinfo.identifier } } }
     }
   end
@@ -144,6 +145,15 @@ class RhythmsController < ApplicationController
         paused: agent.paused?, unavailable: !eligible.include?(agent),
         default_model_label: agent.model_label, model_choices: agent.model_choices }
     end
+  end
+
+  # The rooms a rhythm may open in, with the account's default named so the
+  # form can say what "the account's default room" currently is.
+  def room_options
+    {
+      rooms: current_account.rooms.ordered.map(&:as_json),
+      default_room: current_account.resident_room&.as_json || Room::MAIN_JSON.slice("id", "name")
+    }
   end
 
 end

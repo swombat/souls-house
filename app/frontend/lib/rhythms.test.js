@@ -6,11 +6,29 @@ import {
   needsShortMonthNote,
   previewQuery,
   rhythmActionPath,
+  roomChoiceFromSelect,
+  roomSelectValue,
   zoneIdentifier,
   submittableValues,
 } from './rhythms.js';
 
 describe('rhythms helpers', () => {
+  it('follows the account default room unless told otherwise, and sends a room only when one is named', () => {
+    const values = formValues({});
+    expect(values).toMatchObject({ room_choice: 'resident_default', room_id: '' });
+    expect(roomSelectValue(values)).toBe('resident_default');
+    expect(submittableValues(values).room_id).toBeNull();
+
+    const named = { ...values, ...roomChoiceFromSelect('room:abcXYZ') };
+    expect(named).toMatchObject({ room_choice: 'room', room_id: 'abcXYZ' });
+    expect(roomSelectValue(named)).toBe('room:abcXYZ');
+    expect(submittableValues(named).room_id).toBe('abcXYZ');
+
+    const main = { ...named, ...roomChoiceFromSelect('main') };
+    expect(main).toMatchObject({ room_choice: 'main', room_id: '' });
+    expect(submittableValues(main).room_id).toBeNull();
+  });
+
   it('defaults a new rhythm to a weekly morning with the date appended', () => {
     const values = formValues({}, 'Europe/Madrid');
     expect(values).toMatchObject({ cadence: 'weekly', append_date: true, timezone: 'Europe/Madrid', resident_ids: [] });

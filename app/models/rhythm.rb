@@ -9,8 +9,12 @@ class Rhythm < ApplicationRecord
   end
 
   SCHEDULE_FIELDS = %w[cadence time_of_day weekday month_day month timezone].freeze
+  # Where an occurrence opens: the account's resident default room, Main on
+  # purpose, or the named room.
+  ROOM_CHOICES = %w[resident_default main room].freeze
 
   belongs_to :account
+  belongs_to :room, optional: true
   belongs_to :creator, class_name: "User", optional: true
   belongs_to :creator_agent, class_name: "Agent", optional: true
   has_many :rhythm_agents, dependent: :destroy
@@ -20,6 +24,7 @@ class Rhythm < ApplicationRecord
   has_many :occurrences, class_name: "RhythmOccurrence", dependent: :nullify
 
   enum :cadence, %w[daily weekly monthly yearly].index_with(&:itself), validate: true
+  enum :room_choice, ROOM_CHOICES.index_with(&:itself), prefix: :room_choice, validate: true
 
   validates :title, :time_of_day, :timezone, :next_run_at, presence: true
   validates :opening, presence: true, unless: -> { validation_context == :preview }
@@ -35,7 +40,9 @@ class Rhythm < ApplicationRecord
   validate :one_creator
   validate :residents_present_in_account, if: :new_record?
   validate :resident_models_valid, if: -> { @pending_resident_models }
+  validate :room_choice_valid
 
+  before_validation :clear_room_unless_named
   before_validation :reset_next_run, if: :schedule_changed?
   after_save :hold_empty_selection
   after_save :apply_resident_models, if: -> { @pending_resident_models }
@@ -69,6 +76,17 @@ class Rhythm < ApplicationRecord
   end
   private_class_method :decode_resident_id
 
+  # Form and API attributes carry the named room as its public id under
+  # room_id; the model takes it as room_public_id, so a raw database id is
+  # never accepted.
+  def self.public_room_attributes(attributes)
+    return attributes unless attributes.key?(:room_id)
+
+    attributes = attributes.dup
+    attributes[:room_public_id] = attributes.delete(:room_id)
+    attributes
+  end
+
   # A model per selected resident, as { resident id => model id or "default" }.
   # Keys decode like selectable_resident_ids and fail closed the same way.
   def self.decode_resident_models(models)
@@ -82,6 +100,41 @@ class Rhythm < ApplicationRecord
   end
 
   def resident_ids = agent_ids
+
+  # The named room by its public id, as the form and the API send it. A value
+  # that is not a room id is kept as an error rather than dropped, and a room
+  # of another account is refused by validation: neither is ever saved.
+  def room_public_id=(value)
+    @room_public_id_invalid = false
+    if value.blank?
+      self.room = nil
+    elsif value.is_a?(String) && value.match?(/\A[a-zA-Z]+\z/) &&
+        (decoded = Room.hashids.decode(value)).one? && Room.encode_id(decoded.first) == value
+      self.room = Room.find_by(id: decoded.first)
+      @room_public_id_invalid = room.nil?
+    else
+      self.room = nil
+      @room_public_id_invalid = true
+    end
+  end
+
+  def room_public_id = room&.to_param
+
+  # The room the next occurrence opens in; nil is Main. A named room that has
+  # been removed falls back to the account's default room.
+  def occurrence_room
+    chosen = case room_choice
+    when "main" then nil
+    when "room" then room || account.resident_room
+    else account.resident_room
+    end
+    chosen if chosen.nil? || chosen.account_id == account_id
+  end
+
+  # The rhythm chose a named room that no longer exists.
+  def room_removed?
+    room_choice_room? && room_id.nil?
+  end
 
   def resident_ids=(ids)
     self.agent_ids = ids
@@ -196,7 +249,7 @@ class Rhythm < ApplicationRecord
 
       occurrence_title = preview_title(at: scheduled_for)
       chat = account.chats.create_with_message!(
-        { title: occurrence_title, manual_responses: true },
+        { title: occurrence_title, manual_responses: true, room: occurrence_room },
         message_content: creator_agent ? nil : opening, user: creator, agent_ids: agents.order(:id).ids,
         automatic_response: false
       )
@@ -323,6 +376,24 @@ class Rhythm < ApplicationRecord
       errors.add(:creator, "must be either a human or a resident, not both")
     elsif new_record? && !creator && !creator_agent
       errors.add(:creator, "must be present")
+    end
+  end
+
+  def clear_room_unless_named
+    self.room = nil unless room_choice_room?
+  end
+
+  # Checked when the choice or the room is being set, so a rhythm whose room
+  # was removed still saves other edits (and keeps falling back).
+  def room_choice_valid
+    return unless room_choice_room?
+    return unless new_record? || @room_public_id_invalid ||
+      will_save_change_to_room_choice? || will_save_change_to_room_id?
+
+    if @room_public_id_invalid || (room && room.account_id != account_id)
+      errors.add(:room, "must be a room of this account")
+    elsif room.nil?
+      errors.add(:room, "must be chosen")
     end
   end
 

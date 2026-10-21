@@ -373,3 +373,37 @@ describe('a saved model pin can always be seen and reset', () => {
     expect(data.rhythm.resident_models).toEqual({ lume: 'default' });
   });
 });
+
+test('the show page says where the rhythm opens, and when its room has been removed', () => {
+  const { unmount } = render(RhythmShow, {
+    account,
+    rhythm: rhythmFixture({ room_choice: 'resident_default', opens_in: { id: 'b', name: 'Build' } }),
+  });
+  expect(screen.getByTestId('rhythm-opens-in')).toHaveTextContent("Build (the account's default room)");
+  unmount();
+
+  render(RhythmShow, {
+    account,
+    rhythm: rhythmFixture({ room_choice: 'room', room_removed: true, opens_in: { id: 'b', name: 'Build' } }),
+  });
+  expect(screen.getByTestId('rhythm-opens-in')).toHaveTextContent('Build');
+  expect(screen.getByText(/has been removed, so it opens in the account's default room/)).toBeInTheDocument();
+});
+
+test('the form offers the account default, Main and each room, and a room can be chosen', async () => {
+  render(RhythmForm, {
+    account,
+    residents,
+    timezones: [{ value: 'Madrid', label: 'Madrid', identifier: 'Europe/Madrid' }],
+    room_options: { rooms: [{ id: 'pl', name: 'Planning' }], default_room: { id: 'b', name: 'Build' } },
+  });
+  const select = screen.getByLabelText('Opens in');
+  expect(
+    within(select)
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+  ).toEqual(["The account's default room (now Build)", 'Main', 'Planning']);
+  expect(select.value).toBe('resident_default');
+  await fireEvent.change(select, { target: { value: 'room:pl' } });
+  expect(select.value).toBe('room:pl');
+});

@@ -91,6 +91,20 @@
       <div class="space-y-1 text-sm">
         <div class="text-muted-foreground">With</div>
         <RhythmResidentChips residents={rhythm.residents} />
+        <div class="pt-2 text-muted-foreground">Opens in</div>
+        <div class="font-medium" data-testid="rhythm-opens-in">
+          {rhythm.opens_in?.name ?? 'Main'}
+          {#if rhythm.room_choice === 'resident_default'}
+            <span class="font-normal text-muted-foreground">(the account's default room)</span>
+          {/if}
+        </div>
+        {#if rhythm.room_removed}
+          <p class="text-xs text-destructive">
+            The room this rhythm was set to open in has been removed, so it opens in the account's default room instead.{rhythm.can_manage
+              ? ' Edit the rhythm to choose another.'
+              : ''}
+          </p>
+        {/if}
       </div>
       <div class="space-y-1 text-sm sm:text-right">
         <div class="text-muted-foreground">Next</div>
