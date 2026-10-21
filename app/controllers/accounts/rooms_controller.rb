@@ -10,7 +10,9 @@ class Accounts::RoomsController < ApplicationController
       main_count: counts.fetch(nil, 0),
       rooms: -> { current_account.rooms.map(&:directory_json) },
       room_counts: counts.except(nil).transform_keys { |id| Room.encode_id(id) },
-      resident_room_id: current_account.resident_room&.to_param
+      resident_room_id: current_account.resident_room&.to_param,
+      model_residents: -> { model_residents },
+      room_model_defaults: -> { current_account.room_model_defaults.includes(:room, :agent).map(&:as_json) }
     }
   end
 
@@ -45,6 +47,15 @@ class Accounts::RoomsController < ApplicationController
   end
 
   private
+
+  # Residents of this account that can run on more than one model in a
+  # conversation: the ones a room can start on something else.
+  def model_residents
+    current_account.agents.active.by_name.select(&:model_switching_available?).map do |agent|
+      { id: agent.to_param, name: agent.name, colour: agent.colour, default_label: agent.model_label,
+        choices: agent.model_choices }
+    end
+  end
 
   def room_params
     params.require(:room).permit(:name, :description)

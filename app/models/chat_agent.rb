@@ -10,6 +10,8 @@ class ChatAgent < ApplicationRecord
 
   validates :agent_id, uniqueness: { scope: :chat_id }
   validate :agent_takes_part_in_account, on: :create
+  # A new seat starts on the room's model for this resident, if it has one.
+  before_create :seed_model_from_room
 
   # A second seat ends a quiet rhythm run's solitude (Chat::QuietRhythmRun).
   after_create_commit -> { chat.announce_listing_change }
@@ -62,6 +64,13 @@ class ChatAgent < ApplicationRecord
   end
 
   private
+
+  def seed_model_from_room
+    return if model_id.present? || chat.nil? || agent.nil?
+    return unless agent.account_id == chat.account_id
+
+    self.model_id = RoomModelDefault.model_for(account_id: chat.account_id, room_id: chat.room_id, agent: agent)
+  end
 
   # A seat needs a resident hosted in the room's account, or a guest there.
   # The guest check share-locks the membership row until this seat commits;

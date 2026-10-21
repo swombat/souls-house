@@ -59,3 +59,39 @@ test('a description typed while the add is pending survives its success', async 
   pending.onSuccess();
   expect(screen.getByLabelText('New room: use this room when')).toHaveValue('newer text');
 });
+
+test('models by room show each resident’s room model, its default, and a default that stopped working', () => {
+  const lume = {
+    id: 'lumeId',
+    name: 'Lume',
+    default_label: 'Claude Opus 5.5',
+    choices: [
+      { model_id: 'anthropic/opus', label: 'Claude Opus 5.5' },
+      { model_id: 'anthropic/fable', label: 'Claude Fable 5.1' },
+    ],
+  };
+  render(Rooms, {
+    ...props,
+    rooms: [{ id: 'buildRm', name: 'Build' }],
+    model_residents: [lume],
+    room_model_defaults: [
+      { room_id: 'main', agent_id: 'lumeId', model_id: 'anthropic/fable', label: 'Claude Fable 5.1', problem: null },
+      {
+        room_id: 'buildRm',
+        agent_id: 'lumeId',
+        model_id: 'anthropic/old',
+        label: 'Old',
+        problem: 'Old is not on Lume’s list of models for conversations',
+      },
+    ],
+  });
+  expect(screen.getByRole('heading', { name: 'Models by room' })).toBeInTheDocument();
+  expect(screen.getByLabelText("Lume's model in Main")).toHaveTextContent('Claude Fable 5.1');
+  expect(screen.getByLabelText("Lume's model in Build")).toHaveTextContent('Old');
+  expect(screen.getByTestId('room-models')).toHaveTextContent('new conversations use the default');
+});
+
+test('models by room are hidden when no resident has a model list', () => {
+  render(Rooms, { ...props, model_residents: [] });
+  expect(screen.queryByTestId('room-models')).not.toBeInTheDocument();
+});

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_21_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_21_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2127,6 +2127,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_160000) do
     t.check_constraint "room_choice::text = ANY (ARRAY['resident_default'::character varying, 'main'::character varying, 'room'::character varying]::text[])", name: "rhythms_room_choice_known"
   end
 
+  create_table "room_model_defaults", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "room_id"
+    t.bigint "agent_id", null: false
+    t.string "model_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "agent_id"], name: "index_room_model_defaults_unique_in_main", unique: true, where: "(room_id IS NULL)"
+    t.index ["account_id", "room_id", "agent_id"], name: "index_room_model_defaults_unique_in_room", unique: true, where: "(room_id IS NOT NULL)"
+    t.index ["account_id"], name: "index_room_model_defaults_on_account_id"
+    t.index ["agent_id"], name: "index_room_model_defaults_on_agent_id"
+    t.index ["room_id"], name: "index_room_model_defaults_on_room_id"
+  end
+
   create_table "rooms", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "name", limit: 40, null: false
@@ -2820,6 +2834,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_160000) do
   add_foreign_key "rhythms", "agents", column: "creator_agent_id", on_delete: :nullify
   add_foreign_key "rhythms", "rooms", on_delete: :nullify
   add_foreign_key "rhythms", "users", column: "creator_id", on_delete: :nullify
+  add_foreign_key "room_model_defaults", "accounts", on_delete: :cascade
+  add_foreign_key "room_model_defaults", "agents", on_delete: :cascade
+  add_foreign_key "room_model_defaults", "rooms", on_delete: :cascade
   add_foreign_key "rooms", "accounts"
   add_foreign_key "runner_commands", "agent_placements"
   add_foreign_key "runner_commands", "resident_turns"
