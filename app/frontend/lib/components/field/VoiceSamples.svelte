@@ -37,6 +37,7 @@
   let pending = $state({});
   let loadSeq = 0;
   let appliedSeq = 0;
+  // The list request in flight, for one voice: { base, promise }.
   let inFlight = null;
   let again = null;
 
@@ -46,13 +47,19 @@
     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
   });
 
-  // One list request at a time; asks made meanwhile become one more after it.
+  // One list request at a time per voice; asks made meanwhile become one more
+  // after it. Another voice's request never holds this one up: it is simply
+  // superseded, and its completion touches nothing (Mira's review of #497).
   function load(nextPage = page) {
-    if (inFlight) {
+    if (inFlight?.base === base) {
       again = nextPage;
-      return inFlight;
+      return inFlight.promise;
     }
-    inFlight = fetchList(nextPage).finally(() => {
+    const request = { base };
+    again = null;
+    inFlight = request;
+    request.promise = fetchList(nextPage).finally(() => {
+      if (inFlight !== request) return;
       inFlight = null;
       if (again != null) {
         const next = again;
@@ -60,7 +67,7 @@
         load(next);
       }
     });
-    return inFlight;
+    return request.promise;
   }
 
   async function fetchList(nextPage) {

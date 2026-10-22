@@ -197,3 +197,26 @@ test('a refused accept puts the row back with the reason', async () => {
   expect(within(after[0]).getByText('Synthetic meeting')).toBeInTheDocument();
   expect(within(after[0]).getByTestId('sample-inclusion')).toHaveTextContent('Needs review');
 });
+
+test('another voice loads at once, not behind a slow request for the previous one', async () => {
+  let releaseA;
+  const heldA = new Promise((resolve) => (releaseA = resolve));
+  globalThis.fetch = vi.fn(async (url) => {
+    if (url.startsWith('/a/')) await heldA;
+    const id = url.startsWith('/a/') ? 'a1' : 'b1';
+    return { ok: true, json: async () => listing([sample({ id, recording_title: `Voice ${id}` })]) };
+  });
+  const { rerender } = render(VoiceSamples, { base: '/a', name: 'Ann' });
+  await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledWith('/a/samples?page=1', expect.anything()));
+
+  await rerender({ base: '/b', name: 'Bea' });
+  await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledWith('/b/samples?page=1', expect.anything()));
+  expect(await screen.findByText('Voice b1')).toBeInTheDocument();
+
+  // A answering late changes nothing for B.
+  releaseA();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(screen.getByText('Voice b1')).toBeInTheDocument();
+  expect(screen.queryByText('Voice a1')).not.toBeInTheDocument();
+  expect(screen.queryByText('Loading samples…')).not.toBeInTheDocument();
+});
