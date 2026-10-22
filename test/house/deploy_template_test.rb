@@ -224,6 +224,8 @@ class DeployTemplateTest < ActiveSupport::TestCase
       config = YAML.safe_load(render_deploy_yml)
       accessory = config.fetch("accessories").fetch("voice-embeddings")
       assert_equal "registry.example/voice@#{DUMMY_DIGEST}", accessory.fetch("image")
+      assert_equal "2g", accessory.fetch("options").fetch("memory")
+      assert_equal 2, accessory.fetch("options").fetch("cpus")
       assert_equal [ "VOICE_EMBEDDING_TOKEN" ], accessory.fetch("env").fetch("secret")
       assert_equal true, accessory.fetch("options").fetch("read-only")
       assert_equal "core=0", accessory.fetch("options").fetch("ulimit")

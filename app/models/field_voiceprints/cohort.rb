@@ -6,9 +6,8 @@
 # cohort is still exactly that one. Any rebuild, Forget, deletion or Remember
 # again anywhere in the account changes the digest.
 #
-# The cohort uses one service profile: the profile of the newest eligible
-# sample, which is stable provenance (validating doesn't change it). Prints
-# made with another profile take no part until they are learned again.
+# The cohort uses the explicit active account profile. Neither a conversion
+# checkpoint nor a new sample can silently select another embedding space.
 #
 # A guess is stamped with the key: the cohort digest and which prints were
 # active in it. It stands, and can be confirmed, only while the key is the
@@ -17,13 +16,9 @@ module FieldVoiceprints::Cohort
 
   module_function
 
-  # Rows only ever gain higher ids, and validating writes no sample, so this
-  # doesn't move unless something is learned.
+  # Only the account activation transaction changes this choice.
   def profile(account)
-    FieldVoiceSample.eligible.joins(:field_voice).merge(FieldVoice.kept)
-      .where(account:, field_voices: { remember: true }).order(id: :desc).with_confirmation_sources
-      .detect(&:preloaded_manually_confirmed?)&.profile ||
-      FieldVoiceprint.where(account:).order(id: :desc).pick(:profile)
+    FieldVoiceprints::Profiles.active(account)
   end
 
   def prints(account)
@@ -36,7 +31,7 @@ module FieldVoiceprints::Cohort
       .to_a.group_by(&:field_voice_id)
     candidates.select { |print|
       confirmed = FieldVoiceprints::Limits.confirmed_samples(print.field_voice, samples: eligible.fetch(print.field_voice_id, []))
-        .select { |sample| sample.profile == print.profile }
+        .select { |sample| sample.vector_for(print.profile) }
       print.generation == print.field_voice.print_generation &&
         confirmed.size >= FieldVoiceprints::Limits::MIN_CONFIRMED &&
         print.sample_digest == FieldVoiceprints::Learning.digest(confirmed)
@@ -54,7 +49,11 @@ module FieldVoiceprints::Cohort
   def active(account)
     all = prints(account)
     digest = digest(all)
-    active = all.select { |print| print.validated && print.validated_digest == digest }
+    active = if FieldVoiceprints::Conversion.ready?(account)
+      all.select { |print| print.validated && print.validated_digest == digest }
+    else
+      []
+    end
     [ active, key(digest, active) ]
   end
 

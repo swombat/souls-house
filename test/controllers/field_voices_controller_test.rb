@@ -24,6 +24,20 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
     inertia_props["props"]
   end
 
+  test "a manager sees paused conversion and can explicitly retry it" do
+    Setting.instance.update!(voice_embedding_profile: FieldVoiceprints::Profiles::WESPEAKER)
+    @account.update!(voice_conversion_status: "blocked", voice_conversion_error: "Retained audio is unavailable.")
+    get account_field_voices_path(@account)
+    assert_equal "blocked", props.dig("voice_conversion", "state")
+    assert_equal "Retained audio is unavailable.", props.dig("voice_conversion", "message")
+    assert_enqueued_with(job: FieldVoices::ConvertProfileJob, args: [ @account.id ]) do
+      post retry_conversion_account_field_voices_path(@account)
+    end
+    assert_redirected_to account_field_voices_path(@account)
+    post retry_conversion_account_field_voices_path(accounts(:another_team))
+    assert_response :not_found
+  end
+
   test "forgetting works with recognition off, and so does forgetting everything" do
     @account.update!(recognise_voices: false)
     store_print!(@voice)

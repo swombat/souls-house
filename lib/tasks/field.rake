@@ -1,4 +1,48 @@
 namespace :field do
+  desc "Select voice service profile and queue exact-audio conversion (ENGINE=wespeaker or ecapa)"
+  task convert_voice_engine: :environment do
+    profiles = { "ecapa" => FieldVoiceprints::Profiles::ECAPA, "wespeaker" => FieldVoiceprints::Profiles::WESPEAKER }
+    profile = profiles.fetch(ENV.fetch("ENGINE")) { abort "ENGINE must be ecapa or wespeaker." }
+    abort "Voice service is not configured." unless FieldVoiceprints::VoiceEmbeddings.configured?
+    # Service may have been replaced already; validate its exact target
+    # contract before publishing the configuration switch.
+    begin
+      FieldVoiceprints::VoiceEmbeddings.health(profile:)
+    rescue FieldVoiceprints::VoiceEmbeddings::Unavailable
+      abort "Target voice service is not ready; profile was not switched."
+    end
+    FieldVoiceprints::Conversion.configure!(profile)
+    puts "Selected #{profiles.key(profile)}; conversion queued. Check field:voice_conversion_status for activation."
+  end
+
+  desc "Report aggregate voice-conversion readiness (ACCOUNT=<id> to limit)"
+  task voice_conversion_status: :environment do
+    accounts = ENV["ACCOUNT"] ? Account.where(id: ENV["ACCOUNT"]) : Account.all
+    counts = Hash.new(0)
+    accounts.find_each { |account| counts[FieldVoiceprints::Conversion.presentation(account)[:state]] += 1 }
+    puts counts.sort.map { |state, count| "#{state}=#{count}" }.join(" ")
+  end
+
+  desc "Retry exact-audio voice conversion (ACCOUNT=<id> required)"
+  task retry_voice_conversion: :environment do
+    FieldVoiceprints::Conversion.queue!(Account.find(ENV.fetch("ACCOUNT")))
+    puts "Conversion queued."
+  end
+
+  desc "Retire rollback biometrics after acceptance (CONFIRM=retire required)"
+  task retire_voice_rollback: :environment do
+    abort "Set CONFIRM=retire only after the engine switch is accepted." unless ENV["CONFIRM"] == "retire"
+    abort "Some accounts are not ready." unless Account.find_each.all? { |account| FieldVoiceprints::Conversion.ready?(account) }
+    Account.find_each do |account|
+      account.with_lock do
+        account.field_voices.order(:id).lock.to_a
+        abort "An account changed; retry after conversion." unless FieldVoiceprints::Conversion.ready?(account)
+        FieldVoiceSample.where(account:).update_all(rollback_embedding: nil, rollback_profile: nil)
+      end
+    end
+    puts "Rollback vectors retired. A follow-up schema migration can now drop the two empty rollback columns."
+  end
+
   # Run after restoring a database backup, before jobs resume (spec §9,
   # "Restoring a database resets biometric state"). A backup taken before
   # someone forgot a voice still holds that voice's samples and print; a forget

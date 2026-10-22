@@ -36,6 +36,7 @@ module Api
             my_voice_id: account.field_voices.kept.find_by(user: current_api_user)&.to_param,
             recognise_voices: account.recognise_voices,
             house_recognition: FieldVoiceprints.house_enabled?,
+            voice_conversion: FieldVoiceprints::Conversion.presentation(account),
             can_change_setting: account.manageable_by?(current_api_user)
           }
         end

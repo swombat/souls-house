@@ -17,6 +17,7 @@ class FieldVoicesController < ApplicationController
       },
       recognise_voices: current_account.recognise_voices,
       house_recognition: FieldVoiceprints.house_enabled?,
+      voice_conversion: FieldVoiceprints::Conversion.presentation(current_account),
       can_change_setting: current_account.manageable_by?(Current.user),
       account: current_account.as_json
     }
@@ -88,6 +89,13 @@ class FieldVoicesController < ApplicationController
     enabled = ActiveModel::Type::Boolean.new.cast(params.require(:recognise_voices))
     current_account.with_lock { current_account.update!(recognise_voices: enabled) }
     redirect_to account_field_voices_path(current_account)
+  end
+
+  def retry_conversion
+    return head(:forbidden) unless current_account.manageable_by?(Current.user)
+
+    FieldVoiceprints::Conversion.queue!(current_account)
+    redirect_to account_field_voices_path(current_account), notice: "Voice conversion queued for another attempt."
   end
 
   private

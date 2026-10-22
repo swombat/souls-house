@@ -71,7 +71,7 @@ module FieldRecordingHelpers
   # A unit vector pointing mostly along `axis`, for synthetic voices.
   def voice_vector(axis, noise: 0.0, seed: 0)
     random = Random.new(seed)
-    vector = Array.new(FieldVoiceprints::VoiceEmbeddings::DIMENSIONS) { noise * (random.rand - 0.5) }
+    vector = Array.new(192) { noise * (random.rand - 0.5) }
     vector[axis] += 1.0
     norm = Math.sqrt(vector.sum { |value| value * value })
     vector.map { |value| value / norm }
@@ -82,7 +82,7 @@ module FieldRecordingHelpers
   # restamped as the cohort grows (as a real validation run would). Its fixture
   # testimony is real persisted, audio-backed, exact-digest confirmation, not
   # sample_count metadata that could bypass the production confirmed-set gate.
-  def store_print!(voice, vector: voice_vector(voice.id % 100), active: true, profile: "ecapa-test")
+  def store_print!(voice, vector: voice_vector(voice.id % 100), active: true, profile: FieldVoiceprints::Profiles::ECAPA)
     samples = 2.times.map do |index|
       sample = voice.samples.find_or_initialize_by(source_identifier: "synthetic-print-fixture-#{index}")
       sample.assign_attributes(account: voice.account, source_session: "synthetic-print-#{voice.id}-#{index}",
@@ -119,7 +119,7 @@ module FieldRecordingHelpers
 
   # Synthetic extraction fixture, but confirmation goes through the real review
   # operation with the current persisted source digest and an attributed user.
-  def confirmed_recording_sample!(voice, recording:, vector:, profile: "ecapa-test", speech_ms: 5_000)
+  def confirmed_recording_sample!(voice, recording:, vector:, profile: FieldVoiceprints::Profiles::ECAPA, speech_ms: 5_000)
     holder = FieldRecordingSpeaker.create!(field_recording: recording, field_voice: voice, naming_source: "human",
       label: "sample-#{SecureRandom.hex(4)}", position: 50 + recording.speakers.count)
     segments = [ [ 0, speech_ms ] ]
@@ -142,7 +142,7 @@ module FieldRecordingHelpers
 
     attr_reader :calls
 
-    def initialize(vectors = {}, profile: "ecapa-test", fail_with: nil)
+    def initialize(vectors = {}, profile: FieldVoiceprints::Profiles::ECAPA, fail_with: nil)
       @vectors = vectors
       @profile = profile
       @fail_with = fail_with

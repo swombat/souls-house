@@ -21,6 +21,7 @@ test('empty roster subscribes, stable refresh keeps subscription, account switch
       'voices',
       'recognise_voices',
       'can_change_setting',
+      'voice_conversion',
     ])
   );
   const cleanup = subscribeToModel.mock.results.at(-1).value;
@@ -30,6 +31,25 @@ test('empty roster subscribes, stable refresh keeps subscription, account switch
   await component.rerender({ ...props, account: { id: 'next' } });
   await waitFor(() => expect(subscribeToModel).toHaveBeenCalledWith('FieldVoiceActivity', 'next', expect.anything()));
   expect(cleanup).toHaveBeenCalledOnce();
+});
+
+test('blocked conversion is visible, retry is manager-only and a live ready refresh clears it', async () => {
+  const component = render(Voices, {
+    ...props,
+    can_change_setting: true,
+    voice_conversion: { state: 'blocked', remaining: 1, message: 'One retained sample is unavailable.' },
+  });
+  expect(screen.getByTestId('voices-conversion')).toHaveTextContent('One retained sample is unavailable.');
+  await fireEvent.click(screen.getByRole('button', { name: 'Retry voice conversion' }));
+  expect(router.post).toHaveBeenCalledWith('/accounts/home/field/voices/retry_conversion');
+  await component.rerender({
+    ...props,
+    can_change_setting: false,
+    voice_conversion: { state: 'blocked', remaining: 1, message: 'One retained sample is unavailable.' },
+  });
+  expect(screen.queryByRole('button', { name: 'Retry voice conversion' })).not.toBeInTheDocument();
+  await component.rerender({ ...props, voice_conversion: { state: 'ready', remaining: 0 } });
+  expect(screen.queryByTestId('voices-conversion')).not.toBeInTheDocument();
 });
 
 test('remote rename and count refresh preserve draft; removal closes invalid form', async () => {

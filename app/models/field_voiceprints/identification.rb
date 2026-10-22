@@ -33,6 +33,7 @@ module FieldVoiceprints::Identification
   def run!(recording, client: FieldVoiceprints::VoiceEmbeddings)
     account = recording.account
     return nil unless FieldVoiceprints.enabled_for?(account) && recording.kept? && recording.ready? && !recording.supplied?
+    return :converting unless FieldVoiceprints::Conversion.ready?(account)
 
     prints, key = FieldVoiceprints::Cohort.active(account)
     cohort = FieldVoiceprints::Cohort.prints(account)
@@ -46,8 +47,8 @@ module FieldVoiceprints::Identification
     probes = {}
     fresh = {}
     candidates.each do |speaker|
-      if speaker.probe_profile == profile && speaker.probe_embedding.present?
-        probes[speaker.id] = JSON.parse(speaker.probe_embedding)
+      if (cached = cached_probe(speaker, profile))
+        probes[speaker.id] = cached
       else
         vector = embed(speaker, recording, client, profile)
         next unless vector
@@ -57,13 +58,14 @@ module FieldVoiceprints::Identification
     end
     snapshot = candidates.to_h { |speaker| [ speaker.id, speaker.decision_generation ] }
     generations = cohort.to_h { |print| [ print.field_voice_id, print.generation ] }
-    guesses = FieldVoiceprints::Matching.guesses(probes, prints.to_h { |print| [ print.field_voice_id, print.vector ] })
+    guesses = FieldVoiceprints::Matching.guesses(probes, prints.to_h { |print| [ print.field_voice_id, print.vector ] }, profile:)
     hints = unchecked_hints(probes.except(*guesses.keys), cohort, prints)
 
     voices = FieldVoice.where(account:).to_a
     FieldVoiceprints::Locks.with(account:, recording:, voices:) do |live_account, live_recording, _voices|
       next nil unless FieldVoiceprints.enabled_for?(live_account) && live_recording.kept? && live_recording.ready?
       next nil unless live_account.field_probe_generation == probe_generation
+      next :changed unless FieldVoiceprints::Conversion.ready?(live_account)
       next :changed unless FieldVoiceprints::Cohort.active(live_account).last == key
 
       written = 0
@@ -96,7 +98,8 @@ module FieldVoiceprints::Identification
     return {} if probes.empty?
 
     active_ids = active.map(&:field_voice_id)
-    FieldVoiceprints::Matching.guesses(probes, cohort.to_h { |print| [ print.field_voice_id, print.vector ] })
+    FieldVoiceprints::Matching.guesses(probes, cohort.to_h { |print| [ print.field_voice_id, print.vector ] },
+      profile: cohort.first.profile)
       .reject { |_, (voice_id, _)| active_ids.include?(voice_id) }
   end
 
@@ -107,8 +110,17 @@ module FieldVoiceprints::Identification
   def embed(speaker, recording, client, profile)
     segments = FieldVoiceprints::Sample.segments_for(speaker)
     result = FieldVoiceprints::Sample.cut(recording, segments) { |path| client.embed(File.binread(path)) }
-    result.profile == profile ? result.embedding : nil
+    result.profile == profile && FieldVoiceprints::Profiles.valid_vector?(result.embedding, profile) ? result.embedding : nil
   rescue FieldVoiceprints::Sample::Refused
+    nil
+  end
+
+  def cached_probe(speaker, profile)
+    return unless speaker.probe_profile == profile && speaker.probe_embedding.present?
+
+    vector = JSON.parse(speaker.probe_embedding)
+    vector if FieldVoiceprints::Profiles.valid_vector?(vector, profile)
+  rescue JSON::ParserError
     nil
   end
 

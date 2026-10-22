@@ -24,7 +24,7 @@ class FieldVoiceprints::MatchingValidationTest < ActiveSupport::TestCase
   end
 
   def unit(**axes)
-    vector = Array.new(FieldVoiceprints::VoiceEmbeddings::DIMENSIONS, 0.0)
+    vector = Array.new(192, 0.0)
     axes.each { |axis, value| vector[axis.to_s.delete("e").to_i] = value }
     norm = Math.sqrt(vector.sum { |value| value * value })
     vector.map { |value| value / norm }
@@ -141,7 +141,8 @@ class FieldVoiceprints::MatchingValidationTest < ActiveSupport::TestCase
     first = active_voice_ids(account).sort
     FieldVoiceprints::Validation.run!(account)
     assert_equal first, active_voice_ids(account).sort
-    assert_equal current_voices.map(&:id).sort, first
+    assert_empty first, "eligible confirmed samples outside the active recipe pause matching until conversion or removal"
+    assert_equal FieldVoiceprints::Profiles::ECAPA, FieldVoiceprints::Cohort.profile(account)
   end
 
   # Six voices, each named in three recordings: every print is checked

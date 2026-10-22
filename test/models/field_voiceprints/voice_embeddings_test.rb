@@ -89,4 +89,30 @@ class FieldVoiceprints::VoiceEmbeddingsTest < ActiveSupport::TestCase
     end
   end
 
+  test "the configured WeSpeaker contract accepts exactly its 256-dimensional recipe" do
+    configure
+    profile = FieldVoiceprints::Profiles::WESPEAKER
+    Setting.instance.update!(voice_embedding_profile: profile)
+    values = [ 1.0 ] + [ 0.0 ] * 255
+    endpoint = stub_request(:post, "http://souls-house-voice-embeddings:8080/embed")
+      .to_return(body: { embedding: values, profile: }.to_json)
+    assert_equal values, FieldVoiceprints::VoiceEmbeddings.embed("RIFFsynthetic").embedding
+    [
+      { embedding: vector, profile: PROFILE },
+      { embedding: vector, profile: },
+      { embedding: values, profile: "#{profile}-different" },
+      { embedding: Array.new(256, 0.0), profile: }
+    ].each do |payload|
+      endpoint.to_return(body: payload.to_json)
+      assert_raises(FieldVoiceprints::VoiceEmbeddings::Unavailable) { FieldVoiceprints::VoiceEmbeddings.embed("RIFFsynthetic") }
+    end
+    health = stub_request(:get, "http://souls-house-voice-embeddings:8080/health")
+      .to_return(body: { ready: true, dimensions: 256, profile: }.to_json)
+    assert_equal profile, FieldVoiceprints::VoiceEmbeddings.health.profile
+    health.to_return(body: { ready: true, dimensions: 192, profile: }.to_json)
+    assert_raises(FieldVoiceprints::VoiceEmbeddings::Unavailable) { FieldVoiceprints::VoiceEmbeddings.health }
+    assert_not FieldVoiceprints::Profiles.valid_vector?([ Float::NAN ] * 256, profile)
+    assert_not FieldVoiceprints::Profiles.valid_vector?([ Float::INFINITY ] * 256, profile)
+  end
+
 end
