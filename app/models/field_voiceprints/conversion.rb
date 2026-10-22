@@ -32,9 +32,11 @@ module FieldVoiceprints::Conversion
       end
   end
 
+  # Runtime gate: stale references fall out of their own prints normally.
+  # Strict all-source/vector completeness is checked only at activation.
   def ready?(account, profile: FieldVoiceprints::Profiles.configured)
     FieldVoiceprints::Profiles.active(account) == profile &&
-      candidates(account).all? { |sample| sample.preloaded_manually_confirmed? && sample.vector_for(profile) }
+      !%w[converting blocked].include?(account.voice_conversion_status)
   end
 
   def presentation(account)

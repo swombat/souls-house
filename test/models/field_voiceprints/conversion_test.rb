@@ -58,6 +58,54 @@ class FieldVoiceprints::ConversionTest < ActiveSupport::TestCase
     assert sample.manually_confirmed?
   end
 
+  test "runtime readiness reads persisted conversion state without inspecting samples" do
+    @account.update!(voice_embedding_profile: NEW, voice_conversion_status: "ready")
+    FieldVoiceprints::Conversion.stub(:candidates, ->(*) { flunk "runtime gate must not inspect biometrics" }) do
+      assert FieldVoiceprints::Conversion.ready?(@account)
+      assert_equal "ready", FieldVoiceprints::Conversion.presentation(@account)[:state]
+      %w[converting blocked].each do |state|
+        @account.update!(voice_conversion_status: state)
+        assert_not FieldVoiceprints::Conversion.ready?(@account)
+      end
+      @account.update!(voice_conversion_status: nil)
+      assert FieldVoiceprints::Conversion.ready?(@account), "accounts need not have run a conversion already"
+      @account.update!(voice_embedding_profile: OLD)
+      assert_not FieldVoiceprints::Conversion.ready?(@account)
+    end
+  end
+
+  test "a source discarded after activation drops its own reference without pausing the account" do
+    recording = long_ready_recording(account: @account, user: @user)
+    sample = @samples.first
+    sample.update!(field_recording: recording)
+    digest = FieldVoiceSamples::Uploads.source_digest(sample)
+    sample.update!(source_digest: digest, confirmed_digest: digest)
+    other = @account.field_voices.create!(name: "Unaffected synthetic voice")
+    store_print!(other)
+    assert_equal :activated, FieldVoiceprints::Conversion.run!(@account, client: client)
+    other.voiceprint.update!(validated: true)
+    restamp_cohort!(@account)
+    assert_includes FieldVoiceprints::Cohort.active(@account).first.map(&:field_voice_id), other.id
+
+    assert recording.discard_and_settle!
+    assert_not sample.reload.manually_confirmed?
+    assert FieldVoiceprints::Conversion.ready?(@account.reload)
+    assert_equal "ready", FieldVoiceprints::Conversion.presentation(@account)[:state]
+    # The ordinary cohort stamp still changes when a print loses a reference;
+    # stand in for its normal revalidation, not an engine conversion.
+    restamp_cohort!(@account)
+    assert_includes FieldVoiceprints::Cohort.active(@account).first.map(&:field_voice_id), other.id
+    assert_not_includes FieldVoiceprints::Cohort.prints(@account).map(&:field_voice_id), @voice.id
+    assert_no_enqueued_jobs(only: FieldVoices::ConvertProfileJob) do
+      @voice.with_lock { FieldVoiceprints::Learning.rebuild!(@voice) }
+    end
+    assert_nil @voice.reload.voiceprint
+    with_recognition(@account) do
+      probe = long_ready_recording(account: @account, user: @user)
+      assert_kind_of Integer, FieldVoiceprints::Identification.run!(probe, client: client)
+    end
+  end
+
   test "interruption resumes without redoing converted rows and preserves old print until atomic activation" do
     print = @voice.voiceprint
     before = print.attributes

@@ -34,7 +34,10 @@ Its normal per-account held-out gates still apply; every suggestion still needs
 a person's confirmation.
 
 Recognition is paused while the account is not ready. A lost/changed confirmed
-source blocks activation instead of silently shrinking the reference set. The
+source blocks activation instead of silently shrinking the reference set.
+After activation, runtime readiness checks only the persisted profile and
+conversion state: a later stale source falls out of its own print under the
+ordinary cohort/validation rules, rather than pausing the whole account. The
 Voices page shows the paused state and a retry button. A person can exclude or
 remove the unavailable sample through normal sample review, then retry. No
 biometric reset or repeat listening confirmation is required for unchanged audio.
