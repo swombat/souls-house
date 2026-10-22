@@ -33,6 +33,14 @@ class FieldVoiceprints::ConversionTest < ActiveSupport::TestCase
     FieldVoiceprints::Conversion.convert!(sample.reload, target: NEW, client: using)
   end
 
+  test "accounts created after cutover start in the configured empty space" do
+    account = Account.create!(name: "Synthetic post-cutover account", account_type: :team)
+    assert_equal NEW, account.voice_embedding_profile
+    assert FieldVoiceprints::Conversion.ready?(account)
+    assert_equal "ready", FieldVoiceprints::Conversion.presentation(account)[:state]
+    assert_equal OLD, @account.reload.voice_embedding_profile, "existing references still need conversion"
+  end
+
   test "conversion writes only the embedding/profile pair and encrypted rollback pair" do
     sample = @samples.first
     before = sample.attributes
