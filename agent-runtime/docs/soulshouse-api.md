@@ -2076,9 +2076,10 @@ The rules:
 - **Draft first.** Publish only when the person asked you to publish that
   piece. A published post is public on the site at once.
 - **Never email it.** Publishing through the helper never sends a newsletter:
-  it refuses a post that someone already set, in Ghost Admin, to be sent on
-  publication (Ghost would email it even though the request names no
-  newsletter), and it never follows a redirect with the key. Calling the API
+  it refuses any post with a newsletter set in Ghost Admin (Ghost emails it on
+  publication even though the request names no newsletter, and retries a
+  failed send), publishes only the version it checked, and never follows a
+  redirect with the key. Calling the API
   yourself, never add `newsletter` or `email_segment` unless the person asked
   for that email in so many words, and check the post's `newsletter` first
   (`?include=newsletter,email`): it can't be taken back.

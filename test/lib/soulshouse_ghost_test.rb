@@ -20,7 +20,12 @@ class SoulshouseGhostTest < ActiveSupport::TestCase
              # Scheduled in Ghost Admin to publish *and send*: Ghost emails it on publication.
              "p3": {"id": "p3", "title": "Letter", "status": "scheduled", "url": "https://blog.example.com/p/p3/",
                     "updated_at": "2026-10-22T10:00:00.000Z", "newsletter_id": "n1",
-                    "newsletter": {"id": "n1", "name": "Weekly letter"}, "email": None}}
+                    "newsletter": {"id": "n1", "name": "Weekly letter"}, "email": None},
+             # Sent once and failed: Ghost retries a failed email on publication.
+             "p4": {"id": "p4", "title": "Retry", "status": "draft", "url": "https://blog.example.com/p/p4/",
+                    "updated_at": "2026-10-22T10:00:00.000Z", "newsletter_id": "n1",
+                    "newsletter": {"id": "n1", "name": "Weekly letter"}, "email": {"id": "e1", "status": "failed"}}}
+
     def shown(post, path):
         # Like Ghost: relations appear only when asked for with include=.
         post = dict(post)
@@ -73,6 +78,12 @@ class SoulshouseGhostTest < ActiveSupport::TestCase
                 if pid not in posts:
                     return self.answer(404, {"errors": [{"message": "Post not found."}]})
                 if self.command == "GET":
+                    if pid == "p1" and "include=" in self.path and posts[pid].get("title") == "race" and not posts[pid].get("newsletter"):
+                        # Someone sets a newsletter right after the safety check.
+                        answer = shown(posts[pid], self.path)
+                        posts[pid].update(newsletter_id="n1", newsletter={"id": "n1", "name": "Weekly letter"},
+                                          updated_at="2026-10-22T10:30:00.000Z")
+                        return self.answer(200, {"posts": [answer]})
                     return self.answer(200, {"posts": [shown(posts[pid], self.path)]})
                 change = json.loads(body)["posts"][0]
                 if change.get("updated_at") != posts[pid]["updated_at"]:
@@ -159,9 +170,8 @@ class SoulshouseGhostTest < ActiveSupport::TestCase
 
     assert status.success?, err
     assert_match "Published (public now; not emailed)", out
-    check, get, put = requests.last(3)
+    check, put = requests.last(2)
     assert_equal "/ghost/api/admin/posts/p1/?include=newsletter,email", check["path"]
-    assert_equal "GET", get["method"]
     assert_equal "PUT", put["method"]
     assert_equal "/ghost/api/admin/posts/p1/", put["path"]
     assert_no_match(/newsletter|email_segment/, put["path"] + put["body"])
@@ -174,6 +184,27 @@ class SoulshouseGhostTest < ActiveSupport::TestCase
     assert_not status.success?
     assert_match "set to be sent to Weekly letter", err
     assert_equal [ "GET" ], requests.map { |request| request["method"] }.uniq
+  end
+
+  test "refuses a newsletter post even when its email exists (a failed one is retried)" do
+    _out, err, status = ghost("publish", "p4")
+
+    assert_not status.success?
+    assert_match "set to be sent to Weekly letter", err
+    assert_equal [ "GET" ], requests.map { |request| request["method"] }.uniq
+  end
+
+  test "publishes with the checked snapshot, so a newsletter set after the check stops it" do
+    _out, err, status = ghost("update", "p1", "--title", "race")
+    assert status.success?, err
+
+    _out, err, status = ghost("publish", "p1")
+
+    assert_not status.success?
+    assert_match "HTTP 409", err
+    put = requests.last
+    assert_equal "PUT", put["method"]
+    assert_equal "2026-10-22T12:00:00.000Z", JSON.parse(put["body"])["posts"].first["updated_at"]
   end
 
   test "never follows a redirect with the signed token" do
