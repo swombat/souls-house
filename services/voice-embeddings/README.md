@@ -151,15 +151,17 @@ VOICE_EMBEDDINGS_PUBLIC_TEST_MODEL_DIR=/tmp/public-wespeaker \
 
 ## Deployment / rollback boundaries
 
-No Rails cache migration, threshold calibration, production settings, resident
-data, or deployment changes are part of this service slice. ADR 0006 requires
-profile-separated caches, retained-audio re-embedding and print rebuilding,
-stale-probe/guess/validation invalidation and WeSpeaker-specific validation.
+The Rails integration and operational sequence are documented in
+[`docs/operations/voice-engine-rollout.md`](../../docs/operations/voice-engine-rollout.md).
+ADR 0006 requires profile-separated caches, retained-audio re-embedding and
+print rebuilding, stale-probe/guess/validation invalidation and
+WeSpeaker-specific validation.
 Never compare a 192-D ECAPA vector with this engine's 256-D output.
 
 After those gates and the memory/image gate above, the existing image release /
 accessory boot process still applies (`HOUSE_VOICE_EMBEDDINGS_IMAGE`,
 `bin/house release-voice-embeddings`, private `VOICE_EMBEDDING_TOKEN`, then
-`bin/kamal accessory boot voice-embeddings`). Daniel's release approval is
-separate from scope approval. Preserve the old ECAPA image/profile for rollback;
-rollback needs compatible caches/calibration or recognition must stay disabled.
+`bin/kamal accessory reboot voice-embeddings`). Daniel authorized this reviewed
+implementation and deployment; the test/review gates still apply. Preserve the
+old ECAPA image/profile for rollback, using the new Rails profile-switch task
+rather than reverting code over converted data.
