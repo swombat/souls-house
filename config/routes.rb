@@ -269,6 +269,7 @@ Rails.application.routes.draw do
       end
       delete :forget, on: :member, path: "print"
       post :remember, on: :member
+      post :merge, on: :member
       delete :forget_all, on: :collection, path: "prints"
       post :prepare_samples, on: :collection
       patch :recognition, on: :collection

@@ -38,6 +38,21 @@ class FieldVoicesController < ApplicationController
     redirect_to account_field_voices_path(current_account), notice: "#{voice.name} is no longer a voice in this Field."
   end
 
+  # "Merge with other speaker": this voice goes into the chosen one, which
+  # keeps whichever of the two names was picked.
+  def merge
+    voice = find_voice
+    other = current_account.field_voices.kept.find_by(id: FieldVoice.decode_id(params[:into]))
+    return redirect_back_or_to(account_field_voices_path(current_account),
+      inertia: { errors: { merge: "Choose another speaker to merge with." } }) unless other
+
+    kept = voice.merge_into!(other, name: params[:name])
+    redirect_to account_field_voices_path(current_account, voice: kept.to_param),
+      notice: "#{voice.name} and #{other.name} are now one speaker: #{kept.name}."
+  rescue FieldVoice::Merge::Refused => error
+    redirect_back_or_to account_field_voices_path(current_account), inertia: { errors: { merge: error.message } }
+  end
+
   def forget
     voice = find_voice
     voice.forget!

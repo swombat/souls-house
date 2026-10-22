@@ -104,6 +104,12 @@ class FieldVoice < ApplicationRecord
     end
   end
 
+  # Merge this voice into another that is the same person (FieldVoice::Merge).
+  # The other voice is kept, under whichever of the two names is chosen.
+  def merge_into!(other, name: nil)
+    FieldVoice::Merge.call(source: self, into: other, name:)
+  end
+
   private
 
   def forget_locked!

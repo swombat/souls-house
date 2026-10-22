@@ -156,4 +156,26 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
     assert_not @voice.remembered?, "the forgotten print doesn't come back"
   end
 
+  test "merging one speaker into another keeps the chosen name and opens the kept speaker" do
+    other = @account.field_voices.create!(name: "Tomás Ruiz")
+    post merge_account_field_voice_path(@account, @voice), params: { into: other.to_param, name: "Tomás Ruiz" }
+    assert_redirected_to account_field_voices_path(@account, voice: other.to_param)
+    assert @voice.reload.discarded?
+    assert_equal other, @speaker.reload.field_voice
+  end
+
+  test "a refused merge comes back as an error, and another account's voice is not found" do
+    other = @account.field_voices.create!(name: "Priya")
+    post merge_account_field_voice_path(@account, @voice), params: { into: other.to_param, name: "Someone else" }
+    assert_response :redirect
+    assert @voice.reload.kept?
+
+    theirs = accounts(:another_team).field_voices.create!(name: "Them")
+    post merge_account_field_voice_path(@account, @voice), params: { into: theirs.to_param }
+    assert @voice.reload.kept?
+    assert theirs.reload.kept?
+    post merge_account_field_voice_path(@account, theirs), params: { into: @voice.to_param }
+    assert_response :not_found
+  end
+
 end
