@@ -120,8 +120,8 @@ class FieldVoiceprints::MatchingValidationTest < ActiveSupport::TestCase
     assert FieldVoiceprint.where(account:).none?(&:validated)
   end
 
-  # Mira's second review, finding 2: the profile comes from the samples, so
-  # publishing verdicts can't change which profile the next check uses.
+  # Publishing verdicts cannot change the explicit account profile.
+  # Incompatible references do not disable otherwise valid steady-state prints.
   test "validating twice in a mixed-profile account gives the same verdicts" do
     account = accounts(:personal_account)
     user = users(:user_1)
@@ -141,7 +141,8 @@ class FieldVoiceprints::MatchingValidationTest < ActiveSupport::TestCase
     first = active_voice_ids(account).sort
     FieldVoiceprints::Validation.run!(account)
     assert_equal first, active_voice_ids(account).sort
-    assert_empty first, "eligible confirmed samples outside the active recipe pause matching until conversion or removal"
+    assert_equal current_voices.map(&:id).sort, first
+    assert_empty FieldVoiceprints::Cohort.prints(account).map(&:field_voice_id) & old_voices.map(&:id)
     assert_equal FieldVoiceprints::Profiles::ECAPA, FieldVoiceprints::Cohort.profile(account)
   end
 
