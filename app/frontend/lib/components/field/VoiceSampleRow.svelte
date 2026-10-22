@@ -72,7 +72,9 @@
     title={sample.confirmed
       ? `Confirmed by ${sample.confirmed_by || 'a member'} on ${new Date(sample.confirmed_at).toLocaleString()}`
       : undefined}>
-    {look.label}{sample.state === 'removed' && sample.confirmed ? ' · was confirmed' : ''}
+    {look.label}{sample.state === 'removed' && sample.confirmed ? ' · was confirmed' : ''}{sample.saving
+      ? ' · saving…'
+      : ''}
   </span>
 
   <div class="ml-auto flex shrink-0 gap-1">

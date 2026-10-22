@@ -118,3 +118,82 @@ test('a row replaced while it plays is not marked heard by the old audio ending'
   await fireEvent.ended(audio);
   await waitFor(() => expect(within(row).getByRole('button', { name: 'Accept' })).toBeEnabled());
 });
+
+const listing = (samples) => ({
+  samples,
+  total: samples.length,
+  page: 1,
+  pages: 1,
+  state_counts: { review: samples.length },
+  other_namings: 0,
+  preparable: 0,
+  learning: 'Learning enabled',
+  print: 'Waiting for validation',
+});
+
+// Fetch stub whose PATCH waits until the test settles it.
+function serveSlowSave(body) {
+  let settle;
+  const saved = new Promise((resolve) => (settle = resolve));
+  globalThis.fetch = vi.fn(async (url, options = {}) => {
+    if (!options.method) return { ok: true, json: async () => body };
+    const ok = await saved;
+    return { ok, json: async () => (ok ? { saved: true } : { error: 'This sample changed. Reload, listen again and retry.' }) };
+  });
+  return settle;
+}
+
+async function hearAndAccept(container, row) {
+  const audio = container.querySelector('audio');
+  audio.play = vi.fn(() => Promise.resolve());
+  audio.pause = vi.fn();
+  await fireEvent.click(within(row).getByTestId('sample-play'));
+  await fireEvent.ended(audio);
+  const accept = within(row).getByRole('button', { name: 'Accept' });
+  await waitFor(() => expect(accept).toBeEnabled());
+  await fireEvent.click(accept);
+}
+
+test('accept shows at once, moves the row to the end and leaves the next one playable', async () => {
+  const settle = serveSlowSave(
+    listing([sample(), sample({ id: 's2', digest: 'd2', audio_url: '/a/2', recording_title: 'Second' })])
+  );
+  const onChanged = vi.fn();
+  const { container } = render(VoiceSamples, { base: '/v', name: 'Ann', onChanged });
+  let rows = await screen.findAllByTestId('voice-sample');
+  await hearAndAccept(container, rows[0]);
+
+  // Before the server answers: s1 is last, shown confirmed and saving; s2 is free.
+  rows = screen.getAllByTestId('voice-sample');
+  expect(within(rows[0]).getByText('Second')).toBeInTheDocument();
+  expect(within(rows[1]).getByTestId('sample-inclusion')).toHaveTextContent('Confirmed · saving…');
+  expect(within(rows[1]).getByRole('button', { name: 'Reject' })).toBeDisabled();
+  expect(within(rows[0]).getByTestId('sample-play')).toBeEnabled();
+  expect(within(rows[0]).getByRole('button', { name: 'Reject' })).toBeEnabled();
+  const audio = container.querySelector('audio');
+  await fireEvent.click(within(rows[0]).getByTestId('sample-play'));
+  expect(audio.getAttribute('src')).toBe('/a/2');
+  expect(onChanged).not.toHaveBeenCalled();
+
+  settle(true);
+  await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  await waitFor(() =>
+    expect(within(screen.getAllByTestId('voice-sample')[1]).getByTestId('sample-inclusion')).not.toHaveTextContent(
+      'saving'
+    )
+  );
+});
+
+test('a refused accept puts the row back with the reason', async () => {
+  const settle = serveSlowSave(listing([sample(), sample({ id: 's2', digest: 'd2', recording_title: 'Second' })]));
+  const { container } = render(VoiceSamples, { base: '/v', name: 'Ann' });
+  const rows = await screen.findAllByTestId('voice-sample');
+  await hearAndAccept(container, rows[0]);
+  expect(within(screen.getAllByTestId('voice-sample')[1]).getByTestId('sample-inclusion')).toHaveTextContent('saving');
+
+  settle(false);
+  expect(await screen.findByRole('alert')).toHaveTextContent('This sample changed');
+  const after = screen.getAllByTestId('voice-sample');
+  expect(within(after[0]).getByText('Synthetic meeting')).toBeInTheDocument();
+  expect(within(after[0]).getByTestId('sample-inclusion')).toHaveTextContent('Needs review');
+});
