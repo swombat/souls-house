@@ -45,6 +45,21 @@ class GhostError(Exception):
     pass
 
 
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the request carries a signed Admin token,
+    and urllib would hand it to whatever origin the Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        raise GhostError(
+            f"The Ghost site answered with a redirect ({code}) to {target}; not following it with the key. "
+            "Ask for the connection to be updated with the site's current API URL."
+        )
+
+
+OPENER = urllib.request.build_opener(RefuseRedirects)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="soulshouse-ghost",
@@ -158,7 +173,7 @@ def call(api_base, key, method, path, payload=None, body=None, content_type=None
         headers["Content-Type"] = content_type
     request = urllib.request.Request(f"{api_base}{path}", data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with OPENER.open(request, timeout=60) as response:
             raw = response.read()
     except urllib.error.HTTPError as error:
         raise GhostError(f"Ghost answered HTTP {error.code}: {ghost_error_message(error.read())}")
@@ -234,6 +249,27 @@ def save_post(api_base, key, post_id, fields, html):
     return call(api_base, key, "PUT", f"/posts/{urllib.parse.quote(post_id)}/{query}", {"posts": [fields]})["posts"][0]
 
 
+def refuse_if_publishing_would_email(api_base, key, post_id):
+    """Ghost keeps a post's newsletter association (set when someone scheduled
+    it to publish *and send* in Ghost Admin) and emails it on publication even
+    when the request names no newsletter. So read that state first, and refuse
+    if it is set, or if Ghost doesn't say."""
+    post = call(api_base, key, "GET", f"/posts/{urllib.parse.quote(post_id)}/?include=newsletter,email")["posts"][0]
+    if "newsletter" not in post or "email" not in post:
+        raise GhostError(
+            "Ghost didn't say whether this post is set to be emailed, so it was not published. "
+            "Ask the person to publish it in Ghost Admin."
+        )
+    if post.get("email_only"):
+        raise GhostError("This post is email-only; publishing it means sending it. Not published.")
+    if post.get("newsletter") and not post.get("email"):
+        name = (post["newsletter"] or {}).get("name") or "a newsletter"
+        raise GhostError(
+            f"This post is set to be sent to {name} when it publishes, so publishing it would email members. "
+            "Not published. Ask the person to publish it in Ghost Admin, or to remove the newsletter first."
+        )
+
+
 def describe(post):
     when = post.get("published_at") if post.get("status") == "published" else post.get("updated_at")
     return f"{post['id']}  {post.get('status', '?'):9}  {when or ''}  {post.get('title') or '(untitled)'}\n    {post.get('url') or ''}"
@@ -291,7 +327,9 @@ def run(args):
         text = f"Updated.\n{describe(post)}"
     elif args.command in ("publish", "unpublish"):
         status = "published" if args.command == "publish" else "draft"
-        # No newsletter parameter: publishing never emails members.
+        if status == "published":
+            refuse_if_publishing_would_email(api_base, key, args.post_id)
+        # No newsletter parameter: this request never asks Ghost to email.
         post = save_post(api_base, key, args.post_id, {"status": status}, False)
         result = {"posts": [post]}
         text = ("Published (public now; not emailed).\n" if status == "published" else "Back to draft.\n") + describe(post)

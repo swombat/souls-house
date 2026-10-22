@@ -16,7 +16,20 @@ class SoulshouseGhostTest < ActiveSupport::TestCase
     from http.server import BaseHTTPRequestHandler, HTTPServer
     KID, SECRET, LOG = sys.argv[1], bytes.fromhex(sys.argv[2]), sys.argv[3]
     posts = {"p1": {"id": "p1", "title": "Old", "status": "draft", "url": "https://blog.example.com/p/p1/",
-                    "updated_at": "2026-10-22T10:00:00.000Z"}}
+                    "updated_at": "2026-10-22T10:00:00.000Z"},
+             # Scheduled in Ghost Admin to publish *and send*: Ghost emails it on publication.
+             "p3": {"id": "p3", "title": "Letter", "status": "scheduled", "url": "https://blog.example.com/p/p3/",
+                    "updated_at": "2026-10-22T10:00:00.000Z", "newsletter_id": "n1",
+                    "newsletter": {"id": "n1", "name": "Weekly letter"}, "email": None}}
+    def shown(post, path):
+        # Like Ghost: relations appear only when asked for with include=.
+        post = dict(post)
+        for relation in ("newsletter", "email"):
+            if relation not in path.split("include=")[-1] or "include=" not in path:
+                post.pop(relation, None)
+            else:
+                post.setdefault(relation, None)
+        return post
     def unb64(s): return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a): pass
@@ -43,6 +56,9 @@ class SoulshouseGhostTest < ActiveSupport::TestCase
             if not ok:
                 return self.answer(401, {"errors": [{"message": "Invalid token"}]})
             path = self.path.split("?")[0]
+            if path == "/ghost/api/admin/posts/moved/":
+                self.send_response(302); self.send_header("Location", "http://127.0.0.1:%d/elsewhere/" % self.server.server_port)
+                self.send_header("Content-Length", "0"); self.end_headers(); return
             if path == "/ghost/api/admin/site/":
                 return self.answer(200, {"site": {"title": "Lume writes", "url": "https://blog.example.com/", "version": "5.101"}})
             if path == "/ghost/api/admin/posts/" and self.command == "GET":
@@ -57,7 +73,7 @@ class SoulshouseGhostTest < ActiveSupport::TestCase
                 if pid not in posts:
                     return self.answer(404, {"errors": [{"message": "Post not found."}]})
                 if self.command == "GET":
-                    return self.answer(200, {"posts": [posts[pid]]})
+                    return self.answer(200, {"posts": [shown(posts[pid], self.path)]})
                 change = json.loads(body)["posts"][0]
                 if change.get("updated_at") != posts[pid]["updated_at"]:
                     return self.answer(409, {"errors": [{"message": "Saving failed! Someone else is editing this post."}]})
@@ -143,12 +159,30 @@ class SoulshouseGhostTest < ActiveSupport::TestCase
 
     assert status.success?, err
     assert_match "Published (public now; not emailed)", out
-    get, put = requests.last(2)
+    check, get, put = requests.last(3)
+    assert_equal "/ghost/api/admin/posts/p1/?include=newsletter,email", check["path"]
     assert_equal "GET", get["method"]
     assert_equal "PUT", put["method"]
     assert_equal "/ghost/api/admin/posts/p1/", put["path"]
     assert_no_match(/newsletter|email_segment/, put["path"] + put["body"])
     assert_equal({ "status" => "published", "updated_at" => "2026-10-22T10:00:00.000Z" }, JSON.parse(put["body"])["posts"].first)
+  end
+
+  test "refuses to publish a post Ghost would email on publication" do
+    _out, err, status = ghost("publish", "p3")
+
+    assert_not status.success?
+    assert_match "set to be sent to Weekly letter", err
+    assert_equal [ "GET" ], requests.map { |request| request["method"] }.uniq
+  end
+
+  test "never follows a redirect with the signed token" do
+    _out, err, status = ghost("publish", "moved")
+
+    assert_not status.success?
+    assert_match "redirect (302)", err
+    assert_empty requests.select { |request| request["path"].start_with?("/elsewhere") }
+    assert_equal 1, requests.size
   end
 
   test "update keeps the post's status and refuses an empty change" do

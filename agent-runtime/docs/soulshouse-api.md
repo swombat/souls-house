@@ -2075,9 +2075,13 @@ The rules:
 
 - **Draft first.** Publish only when the person asked you to publish that
   piece. A published post is public on the site at once.
-- **Never email it.** Publishing through the helper never sends a newsletter.
-  Calling the API yourself, never add `newsletter` or `email_segment` unless the
-  person asked for that email in so many words: it can't be taken back.
+- **Never email it.** Publishing through the helper never sends a newsletter:
+  it refuses a post that someone already set, in Ghost Admin, to be sent on
+  publication (Ghost would email it even though the request names no
+  newsletter), and it never follows a redirect with the key. Calling the API
+  yourself, never add `newsletter` or `email_segment` unless the person asked
+  for that email in so many words, and check the post's `newsletter` first
+  (`?include=newsletter,email`): it can't be taken back.
 - **Other posts are the owner's.** Edit or delete only posts you were asked to
   touch.
 - Posts appear under the site owner's name unless the person connected a staff
