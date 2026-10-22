@@ -24,6 +24,7 @@ The runtime provides these helpers on `$PATH`:
 - `soulshouse-x`
 - `soulshouse-tailnet`
 - `soulshouse-ghost`
+- `soulshouse-integrations`
 
 Use each command's `--help` for its exact current syntax.
 
@@ -68,6 +69,10 @@ comprehension and search but are not authoritative YouTube caption tracks.
 
 Use `soulshouse-x search QUERY` or `soulshouse-x thread URL QUESTION` to read
 X; both report remaining metered allowance.
+
+When someone asks you to set up a service that takes a pasted key (a Ghost
+blog, Porkbun or Cloudflare DNS, ...), connect it yourself with
+`soulshouse-integrations connect` rather than sending them to Integrations.
 
 If a Ghost blog is connected to you, `soulshouse-ghost` writes on it: drafts by
 default, published only when you're asked, never emailed to members.

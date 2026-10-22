@@ -9,6 +9,10 @@ class ServiceConnection < ApplicationRecord
 
   belongs_to :account
   belongs_to :connected_by_user, class_name: "User"
+  # Set when a resident connected it itself (issue #500): the resident that
+  # acted. connected_by_user is then the person it acted for. Only these
+  # connections can be managed with that resident's key.
+  belongs_to :connected_by_agent, class_name: "Agent", optional: true
   belongs_to :legacy_oura_integration, class_name: "OuraIntegration", optional: true
   has_many :agent_service_accesses, dependent: :destroy
   has_many :agents, through: :agent_service_accesses
@@ -59,7 +63,7 @@ class ServiceConnection < ApplicationRecord
 
   INTEGRATION_STATUS_COLUMNS = %w[
     account_id provider status label external_identity management_scope
-    connected_by_user_id enabled_for_new_agents freely_provisionable
+    connected_by_user_id connected_by_agent_id enabled_for_new_agents freely_provisionable
   ].freeze
   # as_connection_json's authority/strategy methods, ConnectionGoogleAuthority,
   # AgentIntegrationsPanel and ConnectionTelegramStatus. Do not compare the
@@ -79,6 +83,19 @@ class ServiceConnection < ApplicationRecord
 
   def display_label
     label.presence || external_identity.presence || definition.name
+  end
+
+  # "Daniel", or "Lume for Daniel" when a resident set it up.
+  def connected_by_name
+    person = connected_by_user.display_name
+    connected_by_agent ? "#{connected_by_agent.name} for #{person}" : person
+  end
+
+  # Connections a resident may manage with its own key: ones it set up
+  # itself, from pasted credentials, in its home account.
+  def resident_managed_by?(agent)
+    agent.present? && connected_by_agent_id == agent.id && account_id == agent.account_id &&
+      definition.connection_method == "credentials"
   end
 
   def granted_scopes
@@ -499,7 +516,7 @@ class ServiceConnection < ApplicationRecord
   # with the provider first; the caller has already checked the person may
   # own a connection at this management scope. Raises Services::AdapterError
   # for anything the provider or the house refuses.
-  def self.connect_with_credentials!(account:, user:, definition:, management_scope:, credentials:)
+  def self.connect_with_credentials!(account:, user:, definition:, management_scope:, credentials:, agent: nil)
     raise Services::AdapterError, "#{definition.name} connects through its own sign-in, not pasted credentials" unless definition.connection_method.in?(%w[credentials pairing])
     raise Services::AdapterError, "#{definition.name} is not available on this house" unless definition.available?
     raise Services::AdapterError, "#{definition.name} can't be connected as #{management_scope}" unless definition.supports_management_scope?(management_scope)
@@ -510,6 +527,7 @@ class ServiceConnection < ApplicationRecord
 
     connection = account.service_connections.new(
       connected_by_user: user,
+      connected_by_agent: agent,
       provider: definition.key,
       external_subject_id: result.fetch(:external_subject_id),
       external_identity: result[:external_identity],
@@ -544,7 +562,8 @@ class ServiceConnection < ApplicationRecord
       enabled_for_new_agents: enabled_for_new_agents?,
       freely_provisionable: freely_provisionable?,
       connected_by_user_id: connected_by_user_id,
-      connected_by_name: connected_by_user.display_name,
+      connected_by_name: connected_by_name,
+      connected_by_resident_id: connected_by_agent&.to_param,
       can_manage: manageable_by?(current_user),
       can_provision: provisionable_by?(current_user)
     }

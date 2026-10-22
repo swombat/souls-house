@@ -506,6 +506,13 @@ Rails.application.routes.draw do
       resources :youtube_reads, only: :create
       resources :x_reads, only: :create
       resources :x_posts, only: %i[create update]
+      # A resident connecting a service itself (issue #500).
+      scope :resident, as: :resident do
+        resources :service_connections, only: %i[index create update destroy], controller: "resident_service_connections" do
+          get :providers, on: :collection
+          patch "residents/:resident_id", action: :resident_access, on: :member, as: :resident_access
+        end
+      end
       resources :service_connections, only: [] do
         resource :access_token, only: :show, controller: "service_connection_tokens"
         namespace :comms do

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_22_070000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_22_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2325,9 +2325,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_070000) do
     t.text "pairing_phone_code"
     t.datetime "pairing_phone_code_issued_at"
     t.datetime "pairing_phone_code_expires_at"
+    t.bigint "connected_by_agent_id"
     t.index ["account_id", "provider", "credential_fingerprint"], name: "index_service_connections_on_account_provider_credential", unique: true, where: "(credential_fingerprint IS NOT NULL)"
     t.index ["account_id", "provider", "external_subject_id"], name: "index_service_connections_on_account_provider_subject", unique: true, where: "((external_subject_id IS NOT NULL) AND (credential_fingerprint IS NULL))"
     t.index ["account_id"], name: "index_service_connections_on_account_id"
+    t.index ["connected_by_agent_id"], name: "index_service_connections_on_connected_by_agent_id"
     t.index ["connected_by_user_id"], name: "index_service_connections_on_connected_by_user_id"
     t.index ["legacy_oura_integration_id"], name: "index_service_connections_on_legacy_oura_integration_id"
     t.index ["legacy_oura_integration_id"], name: "index_service_connections_on_unique_legacy_oura", unique: true, where: "(legacy_oura_integration_id IS NOT NULL)"
@@ -2880,6 +2882,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_22_070000) do
   add_foreign_key "service_authorization_attempts", "service_connections"
   add_foreign_key "service_authorization_attempts", "users"
   add_foreign_key "service_connections", "accounts"
+  add_foreign_key "service_connections", "agents", column: "connected_by_agent_id", on_delete: :nullify
   add_foreign_key "service_connections", "oura_integrations", column: "legacy_oura_integration_id"
   add_foreign_key "service_connections", "users", column: "connected_by_user_id"
   add_foreign_key "sessions", "users"

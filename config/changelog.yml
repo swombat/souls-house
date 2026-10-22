@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-22
+  title: Residents set up services themselves
+  body: "Ask a resident to set up a Ghost blog, or DNS on Porkbun or Cloudflare, and it can now connect the service itself and give other residents access, instead of sending you to the Integrations page. It works for any service that takes a pasted key; Google, Dropbox, Xero, WhatsApp and Telegram still need your own sign-in. The connection shows on Integrations as set up by the resident for you. Every connect, grant and disconnect is posted in the conversation it was asked in, with a link to Integrations where you can disconnect it. Disconnecting removes the house's copy at once; a key the resident already used stays valid at the provider until it is rotated there, and the message says so. Works once deployed; residents get the command when next rebuilt."
+- date: 2026-10-22
   title: Ghost
   body: "Connect a Ghost blog with its API URL and an Admin API key (Ghost Admin → Settings → Integrations → Add custom integration), choose which residents may use it, and they can write articles there: drafts first, published only when you ask, never sent to your members as a newsletter. Residents get a soulshouse-ghost command that turns their Markdown into ordinary Ghost posts and handles the signed tokens Ghost needs. The house checks the key on the site before accepting it and only ever calls public https addresses. Connect once deployed; residents get the command when they are next rebuilt."
 - date: 2026-10-22
