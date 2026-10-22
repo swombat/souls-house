@@ -11,6 +11,7 @@
   import VoiceSampleRow from './VoiceSampleRow.svelte';
   import OtherNamings from './OtherNamings.svelte';
   import { STATES } from './voice-sample-format.js';
+  import { orderedRows, shownCounts, stillPending } from './voice-sample-pending.js';
 
   let { base, name, version = '', onChanged = () => {} } = $props();
 
@@ -31,9 +32,7 @@
   let paused = $state(true);
   let progress = $state({});
 
-  // Reviews shown before the server has answered: { [id]: { included, settled } }.
-  // `settled` is the load sequence when the save returned; a list loaded
-  // after that is the server's own answer and replaces the overlay.
+  // Reviews shown before the server has answered (voice-sample-pending.js).
   let pending = $state({});
   let loadSeq = 0;
   let appliedSeq = 0;
@@ -82,9 +81,7 @@
       appliedSeq = seq;
       result = body;
       page = body.page || 1;
-      pending = Object.fromEntries(
-        Object.entries(pending).filter(([, review]) => review.settled == null || review.settled >= seq)
-      );
+      pending = stillPending(pending, seq);
       // The playing row changed under the player (rebuilt, or gone): stop,
       // and forget its progress, so nothing heard before carries over.
       const row = playing && body.samples.find((sample) => sample.id === playing.id);
@@ -203,22 +200,7 @@
     }
   }
 
-  // A reviewed row as it will be once saved, placed after the rest.
-  const shown = (sample) => {
-    const review = pending[sample.id];
-    if (!review) return sample;
-    return {
-      ...sample,
-      state: review.included ? 'confirmed' : 'removed',
-      included: review.included,
-      confirmed: review.included || sample.confirmed,
-      saving: review.settled == null,
-    };
-  };
-  const rows = $derived.by(() => {
-    const samples = (result?.samples || []).map(shown);
-    return [...samples.filter((row) => !pending[row.id]), ...samples.filter((row) => pending[row.id])];
-  });
+  const rows = $derived(orderedRows(result?.samples, pending));
 
   const heardIt = (sample) => heard[sample.id] === sample.digest;
   // Accepting says "I heard all of this and it is only them". A sample
@@ -228,16 +210,7 @@
     (sample.state === 'review' || sample.state === 'removed') &&
     (heardIt(sample) || (sample.state === 'removed' && sample.confirmed));
 
-  const counts = $derived.by(() => {
-    const tally = { ...(result?.state_counts || {}) };
-    for (const sample of result?.samples || []) {
-      const next = shown(sample).state;
-      if (next === sample.state) continue;
-      tally[sample.state] = Math.max((tally[sample.state] || 0) - 1, 0);
-      tally[next] = (tally[next] || 0) + 1;
-    }
-    return tally;
-  });
+  const counts = $derived(shownCounts(result, pending));
 </script>
 
 <!-- One shared player: only one sample sounds at a time. -->
