@@ -54,7 +54,9 @@ class FieldVoice::Merge
       source.update_columns(print_generation: source.print_generation + 1,
         learning_generation: source.learning_generation + 1, remember: false, updated_at: Time.current)
       source.discard!
+      old_names = [ source.name, target.name ].map(&:downcase)
       target.update!(name:, user_id:)
+      point_suggestions!(account, [ source.id, target.id ], old_names, target)
       if target.remember?
         FieldVoiceprints::Learning.rebuild!(target)
       else
@@ -74,6 +76,20 @@ class FieldVoice::Merge
   end
 
   private
+
+  # Accepting a suggestion resolves it by its name, so every suggestion must
+  # say the kept name: one still reading the merged-away name would make that
+  # voice again. Suggestions of either voice point at the kept one. A name-only
+  # suggestion is relabelled but not linked: never by name equality.
+  def point_suggestions!(account, voice_ids, old_names, target)
+    FieldRecordingSpeaker.where(suggested_voice_id: voice_ids)
+      .update_all(suggested_voice_id: target.id, suggested_name: target.name)
+    named = FieldRecordingSpeaker.joins(:field_recording).where(field_recordings: { account_id: account.id })
+      .where(suggested_voice_id: nil).where("lower(field_recording_speakers.suggested_name) IN (?)", old_names)
+    recording_ids = named.distinct.pluck(:field_recording_id)
+    named.update_all(suggested_name: target.name)
+    FieldRecordingActivity.refresh!(recording_ids)
+  end
 
   def move!(source, target)
     speakers = FieldRecordingSpeaker.where(field_voice_id: source.id).to_a
@@ -117,8 +133,6 @@ class FieldVoice::Merge
       end
     end
 
-    FieldRecordingSpeaker.where(suggested_voice_id: source.id)
-      .update_all(suggested_voice_id: target.id, suggested_name: target.name)
     FieldRecordingSpeaker.where(recognised_voice_id: [ source.id, target.id ])
       .update_all(recognised_voice_id: nil, recognition_confidence: nil, recognition_print_generation: nil,
         recognition_decision_generation: nil, recognition_cohort: nil, recognition_checked: nil)

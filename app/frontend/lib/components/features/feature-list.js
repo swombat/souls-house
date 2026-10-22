@@ -437,7 +437,7 @@ export const moreFeatures = [
     key: 'speaker-sample-review',
     title: 'Review speaker fingerprints',
     description:
-      "Search the Field's speakers, listen to exact fingerprint samples, and approve or remove contributions. Upload retained samples without a transcript through the API or souls CLI, keeping their source and session provenance. New candidates enter recognition only after human confirmation; at least two confirmed samples are needed. Each speaker has room for twenty included samples and twenty waiting candidates, with no silent eviction. Older evidence is kept for review.",
+      "Search the Field's speakers, listen to exact fingerprint samples, and approve or remove contributions. Merge two speakers who turn out to be one person, keeping either name and the confirmations already given. Upload retained samples without a transcript through the API or souls CLI, keeping their source and session provenance. New candidates enter recognition only after human confirmation; at least two confirmed samples are needed. Each speaker has room for twenty included samples and twenty waiting candidates, with no silent eviction. Older evidence is kept for review.",
     icon: Waveform,
   },
   {

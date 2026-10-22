@@ -248,6 +248,28 @@ class FieldRecordingSpeakersControllerTest < ActionDispatch::IntegrationTest
     assert_equal priya, @second.reload.field_voice
   end
 
+  test "after a merge keeping the merged-away name, accepting a suggestion links the kept voice and makes no duplicate" do
+    hiron = @account.field_voices.create!(name: "Ant Hiron")
+    ants = @account.field_voices.create!(name: "Ants")
+    suggest!(@second, "Ant Hiron")
+    @second.update!(suggested_voice: hiron)
+    other = long_ready_recording(account: @account, user: @user)
+    name_only = other.speakers.first
+    suggest!(name_only, "ant hiron")
+
+    ants.merge_into!(hiron, name: "Ants") # the merged-away voice's name is kept
+    assert ants.reload.discarded?
+    assert_equal [ hiron, "Ants" ], [ @second.reload.suggested_voice, @second.suggested_name ]
+    assert_equal "Ants", name_only.reload.suggested_name
+
+    name_speaker(@second, confirm_suggestion: true, link_existing: true, suggestion_generation: 0)
+    name_speaker(name_only, recording: other, confirm_suggestion: true, link_existing: true, suggestion_generation: 0)
+    assert_equal hiron, @second.reload.field_voice
+    assert_equal hiron, name_only.reload.field_voice
+    assert_equal 1, @account.field_voices.kept.named_like("Ant Hiron").count +
+      @account.field_voices.kept.named_like("Ants").count
+  end
+
   test "the transcript page carries words, speakers and voices, and the 'you' hint once" do
     @account.field_voices.create!(name: "Tomás")
     get account_field_recording_path(@account, @recording)

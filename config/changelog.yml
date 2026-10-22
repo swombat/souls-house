@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-22
+  title: Merge two speakers who are one person
+  body: "In Account settings → Voices, a speaker has Merge with other speaker: search for the other name (Ants and Ant Hiron, say), choose which name to keep, and they become one speaker. Every transcript naming either shows the kept name, suggestions use it, and their samples are pooled into one fingerprint, keeping the confirmations you already gave. Two different account members can't be merged. Works once deployed."
+- date: 2026-10-22
   title: Add speaker samples through the API and CLI
   body: "Upload retained voice samples without a transcript, with source and session provenance, and manage them through the API and souls CLI. Candidates stay out of recognition until a person confirms the exact audio in Voices; at least two confirmed samples are needed, with twenty included samples and twenty waiting candidates per speaker. Existing evidence is kept, never silently evicted. Works once deployed."
 - date: 2026-10-21

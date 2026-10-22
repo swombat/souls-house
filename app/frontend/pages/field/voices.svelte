@@ -10,6 +10,7 @@
   import { Switch } from '$lib/components/shadcn/switch';
   import VoiceMeaning from '$lib/components/field/VoiceMeaning.svelte';
   import VoiceSamples from '$lib/components/field/VoiceSamples.svelte';
+  import VoiceMerge from '$lib/components/field/VoiceMerge.svelte';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import { CaretLeft, MagnifyingGlass } from 'phosphor-svelte';
 
@@ -202,73 +203,15 @@
     );
   }
 
-  // "Merge with other speaker": one person written down under two names.
-  // Pick the other speaker by search, then which of the two names to keep.
+  // "Merge with other speaker" (VoiceMerge): which speaker's panel is open.
   let mergingId = $state(null);
-  let mergeSearch = $state('');
-  let mergeTarget = $state(null);
-  let mergeName = $state('');
-  let mergeError = $state('');
-  let merging = $state(false);
-
-  const mergeCandidates = $derived.by(() => {
-    if (!mergingId) return [];
-    const query = mergeSearch.trim().toLocaleLowerCase();
-    return voices
-      .filter((voice) => voice.id !== mergingId && voice.name.toLocaleLowerCase().includes(query))
-      .slice(0, 8);
-  });
-
   $effect(() => {
-    if (mergingId != null && !voices.some((voice) => voice.id === mergingId)) cancelMerge();
+    if (mergingId != null && !voices.some((voice) => voice.id === mergingId)) mergingId = null;
   });
 
   function startMerge(voice) {
     editingId = null;
     mergingId = voice.id;
-    mergeSearch = '';
-    mergeTarget = null;
-    mergeName = '';
-    mergeError = '';
-    merging = false;
-  }
-
-  function cancelMerge() {
-    mergingId = null;
-    mergeTarget = null;
-    mergeError = '';
-  }
-
-  function chooseMergeTarget(voice, other) {
-    mergeTarget = other;
-    // A member's name usually wins; otherwise the longer, fuller name.
-    if (voice.member !== other.member) mergeName = voice.member ? voice.name : other.name;
-    else mergeName = other.name.length >= voice.name.length ? other.name : voice.name;
-    mergeError = '';
-  }
-
-  function saveMerge(voice) {
-    if (!mergeTarget) return;
-    merging = true;
-    mergeError = '';
-    router.post(
-      `${base}/${voice.id}/merge`,
-      { into: mergeTarget.id, name: mergeName },
-      {
-        preserveScroll: true,
-        onSuccess: () => {
-          pickedId = mergeTarget?.id ?? null;
-          mergingId = null;
-          mergeTarget = null;
-        },
-        onError: (errors) => {
-          mergeError = errors.merge || 'Those speakers could not be merged. Please try again.';
-        },
-        onFinish: () => {
-          merging = false;
-        },
-      }
-    );
   }
 
   function usedLine(count) {
@@ -456,62 +399,15 @@
             {/if}
           </div>
           {#if mergingId === voice.id}
-            <div class="rounded-md border p-3 space-y-2 text-sm" data-testid="voice-merge-panel">
-              {#if !mergeTarget}
-                <p class="font-medium">Merge {voice.name} with…</p>
-                <div class="relative">
-                  <MagnifyingGlass class="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                  <Input
-                    bind:value={mergeSearch}
-                    aria-label="Search for the other speaker"
-                    placeholder="Search speakers…"
-                    class="pl-8 h-8 text-sm" />
-                </div>
-                <ul class="rounded-md border divide-y max-h-60 overflow-y-auto">
-                  {#each mergeCandidates as other (other.id)}
-                    <li>
-                      <button
-                        type="button"
-                        class="w-full text-left px-3 py-1.5 hover:bg-muted/50"
-                        data-testid="voice-merge-candidate"
-                        onclick={() => chooseMergeTarget(voice, other)}>
-                        <span class="font-medium">{other.name}</span>
-                        {#if other.member}<span class="ml-1 text-xs text-muted-foreground">member</span>{/if}
-                        <span class="block text-xs text-muted-foreground">{usedLine(other.used_in)}</span>
-                      </button>
-                    </li>
-                  {:else}
-                    <li class="px-3 py-1.5 text-muted-foreground">No matching speakers.</li>
-                  {/each}
-                </ul>
-                <Button size="sm" variant="ghost" onclick={cancelMerge}>Cancel</Button>
-              {:else}
-                <p>
-                  <span class="font-medium">{voice.name}</span> and <span class="font-medium">{mergeTarget.name}</span>
-                  become one speaker. Every transcript naming either shows the kept name, and their samples are pooled into
-                  one voice.
-                </p>
-                <fieldset class="space-y-1">
-                  <legend class="text-xs text-muted-foreground">Keep the name</legend>
-                  {#each [mergeTarget.name, voice.name] as option (option)}
-                    <label class="flex items-center gap-2">
-                      <input type="radio" name="merge-name" value={option} bind:group={mergeName} />
-                      {option}
-                    </label>
-                  {/each}
-                </fieldset>
-                {#if mergeError}<p class="text-xs text-destructive" role="alert">{mergeError}</p>{/if}
-                <div class="flex gap-2">
-                  <Button
-                    size="sm"
-                    disabled={merging || !mergeName}
-                    onclick={() => saveMerge(voice)}
-                    data-testid="voice-merge-confirm">Merge</Button>
-                  <Button size="sm" variant="ghost" onclick={() => (mergeTarget = null)}>Back</Button>
-                  <Button size="sm" variant="ghost" onclick={cancelMerge}>Cancel</Button>
-                </div>
-              {/if}
-            </div>
+            <VoiceMerge
+              {voice}
+              {voices}
+              {base}
+              onMerged={(keptId) => {
+                pickedId = keptId;
+                mergingId = null;
+              }}
+              onCancel={() => (mergingId = null)} />
           {/if}
           <VoiceSamples
             base={`${base}/${voice.id}`}
