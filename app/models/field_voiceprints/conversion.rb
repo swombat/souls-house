@@ -51,7 +51,7 @@ module FieldVoiceprints::Conversion
 
   def run!(account, client: FieldVoiceprints::VoiceEmbeddings)
     target = FieldVoiceprints::Profiles.configured
-    return :ready if ready?(account, profile: target) && account.voice_conversion_status == "ready"
+    return :ready if ready?(account, profile: target)
 
     account.update!(voice_conversion_status: "converting", voice_conversion_error: nil)
     candidates(account).each do |sample|

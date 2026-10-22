@@ -100,6 +100,11 @@ class FieldVoiceprints::ConversionTest < ActiveSupport::TestCase
       @voice.with_lock { FieldVoiceprints::Learning.rebuild!(@voice) }
     end
     assert_nil @voice.reload.voiceprint
+    @account.update!(voice_conversion_status: nil)
+    FieldVoiceprints::Conversion.stub(:candidates, ->(*) { flunk "an active legacy account must not restart conversion" }) do
+      assert_equal :ready, FieldVoiceprints::Conversion.run!(@account, client: client)
+    end
+    assert_nil @account.reload.voice_conversion_status
     with_recognition(@account) do
       probe = long_ready_recording(account: @account, user: @user)
       assert_kind_of Integer, FieldVoiceprints::Identification.run!(probe, client: client)
