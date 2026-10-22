@@ -31,6 +31,20 @@ import urllib.request
 BASE = "/api/v1/resident/service_connections"
 
 
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: every request carries this resident's bearer
+    token (and connect carries the service's secrets), and urllib would send
+    them on to whatever origin the Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        raise SystemExit(f"soulshouse-integrations: souls.house answered with a redirect ({code}) to {target}; "
+                         "not following it with your key. Check SOULSHOUSE_APP_URL.")
+
+
+OPENER = urllib.request.build_opener(RefuseRedirects)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(prog="soulshouse-integrations", description=__doc__.split("\n\n")[0],
                                      epilog="Full manual: /usr/local/share/helixkit-agent/soulshouse-api.md")
@@ -93,7 +107,7 @@ def call(method, path, payload=None):
         "Authorization": f"Bearer {token}", "Accept": "application/json", "Content-Type": "application/json",
     })
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with OPENER.open(request, timeout=60) as response:
             return json.load(response)
     except urllib.error.HTTPError as error:
         try:

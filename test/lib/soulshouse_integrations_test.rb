@@ -22,6 +22,10 @@ class SoulshouseIntegrationsTest < ActiveSupport::TestCase
             body = self.rfile.read(n).decode() if n else ""
             open(LOG, "a").write(json.dumps({"method": self.command, "path": self.path, "body": body,
                                              "auth": self.headers.get("Authorization")}) + "\\n")
+            if self.path.startswith("/moved"):
+                self.send_response(int(self.path.split("/")[2]))
+                self.send_header("Location", "http://127.0.0.1:%d/elsewhere/" % self.server.server_port)
+                self.send_header("Content-Length", "0"); self.end_headers(); return
             if self.command == "DELETE":
                 out = {"disconnected": {"id": "svc_1"}, "provider_side": "The key is still valid at Ghost until it is rotated or deleted there."}
             else:
@@ -50,8 +54,8 @@ class SoulshouseIntegrationsTest < ActiveSupport::TestCase
     FileUtils.remove_entry(@dir)
   end
 
-  def run_helper(*args, stdin: "")
-    env = { "SOULSHOUSE_APP_URL" => "http://127.0.0.1:#{@port}", "SOULSHOUSE_BEARER_TOKEN" => "resident-token" }
+  def run_helper(*args, stdin: "", app_url: "http://127.0.0.1:#{@port}")
+    env = { "SOULSHOUSE_APP_URL" => app_url, "SOULSHOUSE_BEARER_TOKEN" => "resident-token" }
     Open3.capture3(env, "python3", SCRIPT.to_s, *args, stdin_data: stdin, chdir: @dir)
   end
 
@@ -79,6 +83,20 @@ class SoulshouseIntegrationsTest < ActiveSupport::TestCase
     out, err, status = run_helper("connect", "ghost", "--conversation", "c1", "--field", SECRET)
     assert_not status.success?
     assert_not_includes out + err, SECRET
+  end
+
+  test "never follows a redirect with the bearer token or the secrets" do
+    [ 301, 302, 303, 307, 308 ].each do |code|
+      File.delete(@log) if File.exist?(@log)
+      out, err, status = run_helper("connect", "ghost", "--conversation", "c1", "--json", "-",
+                                    stdin: { admin_api_key: SECRET }.to_json, app_url: "http://127.0.0.1:#{@port}/moved/#{code}")
+
+      assert_not status.success?, code
+      assert_match "redirect (#{code})", err
+      assert_equal 1, requests.size, code
+      assert_empty requests.select { |request| request["path"].start_with?("/elsewhere") }, code
+      assert_not_includes out + err, SECRET
+    end
   end
 
   test "grant, revoke and disconnect carry the conversation; disconnect says the key still works at the provider" do

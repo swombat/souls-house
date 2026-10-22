@@ -46,20 +46,25 @@ module Api
         end
         chat = notice_chat!
 
-        connection = ServiceConnection.connect_with_credentials!(
-          account: @account,
-          user: current_api_user,
-          agent: current_api_agent,
-          definition: definition,
-          management_scope: "personal",
-          credentials: credential_params(definition)
-        )
-        connection.update!(label: params[:label]) if params[:label].present?
-        current_api_agent.set_service_access!(connection, enabled: true)
-        audit(:connect_service, connection, provider: connection.provider, external_identity: connection.external_identity,
-                                            authority_summary: connection.credential_metadata["authority_summary"])
-        post_notice(chat, "#{current_api_agent.name} connected #{describe(connection)} for #{current_api_user.display_name}. " \
-                                      "#{access_sentence(connection)} #{UNDO_SENTENCE % { provider: connection.definition.name }}")
+        # The connection, its grant, the audit row and the notice commit
+        # together: no connection without the line that tells people.
+        connection = ServiceConnection.transaction do
+          connection = ServiceConnection.connect_with_credentials!(
+            account: @account,
+            user: current_api_user,
+            agent: current_api_agent,
+            definition: definition,
+            management_scope: "personal",
+            credentials: credential_params(definition)
+          )
+          connection.update!(label: params[:label]) if params[:label].present?
+          current_api_agent.set_service_access!(connection, enabled: true)
+          audit(:connect_service, connection, provider: connection.provider, external_identity: connection.external_identity,
+                                              authority_summary: connection.credential_metadata["authority_summary"])
+          post_notice(chat, "#{current_api_agent.name} connected #{describe(connection)} for #{current_api_user.display_name}. " \
+                            "#{access_sentence(connection)} #{UNDO_SENTENCE % { provider: connection.definition.name }}")
+          connection
+        end
         render json: { service_connection: connection_json(connection) }, status: :created
       rescue Services::Definition::UnknownProvider => error
         render json: { error: error.message }, status: :not_found
@@ -83,12 +88,14 @@ module Api
         chat = notice_chat!
         description = describe(@connection)
         provider = @connection.definition.name
-        @connection.disconnect!
-        audit(:disconnect_service, @connection, provider: @connection.provider)
-        @connection.destroy! unless @connection.retained_after_disconnect?
-        post_notice(chat, "#{current_api_agent.name} disconnected #{description}. Residents no longer get its key from the house, " \
-                               "but a copy they already had stays valid at #{provider} until it is rotated or deleted there, " \
-                               "and anything already done with it stays done.")
+        ServiceConnection.transaction do
+          @connection.disconnect!
+          audit(:disconnect_service, @connection, provider: @connection.provider)
+          @connection.destroy! unless @connection.retained_after_disconnect?
+          post_notice(chat, "#{current_api_agent.name} disconnected #{description}. Residents no longer get its key from the house, " \
+                            "but a copy they already had stays valid at #{provider} until it is rotated or deleted there, " \
+                            "and anything already done with it stays done.")
+        end
         render json: { disconnected: { id: @connection.public_id, provider: @connection.provider },
                        provider_side: "The key is still valid at #{provider} until it is rotated or deleted there." }
       rescue ActionController::ParameterMissing => error
@@ -105,11 +112,13 @@ module Api
         end
         chat = notice_chat!
 
-        resident.set_service_access!(@connection, enabled: enabled)
-        audit(enabled ? :enable_resident_service : :disable_resident_service, @connection,
-              provider: @connection.provider, resident_id: resident.to_param)
-        verb = enabled ? "gave #{resident.name} access to" : "removed #{resident.name}'s access to"
-        post_notice(chat, "#{current_api_agent.name} #{verb} #{describe(@connection)}. #{access_sentence(@connection)}")
+        ServiceConnection.transaction do
+          resident.set_service_access!(@connection, enabled: enabled)
+          audit(enabled ? :enable_resident_service : :disable_resident_service, @connection,
+                provider: @connection.provider, resident_id: resident.to_param)
+          verb = enabled ? "gave #{resident.name} access to" : "removed #{resident.name}'s access to"
+          post_notice(chat, "#{current_api_agent.name} #{verb} #{describe(@connection)}. #{access_sentence(@connection)}")
+        end
         render json: { service_connection: connection_json(@connection) }
       rescue ActionController::ParameterMissing => error
         render json: { error: error.message }, status: :unprocessable_entity
@@ -157,11 +166,7 @@ module Api
       end
 
       def post_notice(chat, content)
-        chat.messages.create!(
-          role: "system",
-          content: content,
-          notice_link: { label: "Integrations", path: Rails.application.routes.url_helpers.account_integrations_path(@account) }
-        )
+        ResidentConnectionNotice.post!(chat, content, account: @account)
       end
 
       def describe(connection)

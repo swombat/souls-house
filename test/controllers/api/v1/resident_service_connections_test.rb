@@ -53,7 +53,7 @@ module Api
                          credentials: { api_url: "https://blog.example.com", admin_api_key: KEY } }.merge(extra),
                headers: headers, as: :json
         end
-        response.parsed_body.dig("service_connection", "id")
+        response.media_type == "application/json" ? response.parsed_body.dig("service_connection", "id") : nil
       end
 
       def notices = @chat.messages.where(role: "system").order(:id)
@@ -78,6 +78,30 @@ module Api
 
         log = AuditLog.find_by!(action: "connect_service", auditable: connection)
         assert_equal [ @lume.id, "resident" ], [ log.data["agent_id"], log.data["actor"] ]
+      end
+
+      test "if the notice can't be written, nothing is connected, granted or disconnected" do
+        failing = ->(*) { raise ActiveRecord::RecordNotSaved, "notice failed" }
+
+        ResidentConnectionNotice.stub(:post!, failing) { connect }
+        assert_not response.successful?, response.status.to_s
+        assert_equal 0, ServiceConnection.where(connected_by_agent: @lume).count
+        assert_equal 0, AgentServiceAccess.where(agent: @lume).count
+        assert_not AuditLog.exists?(action: "connect_service")
+
+        id = connect
+        ResidentConnectionNotice.stub(:post!, failing) do
+          patch resident_access_api_v1_resident_service_connection_path(id, resident_id: @mira.to_param),
+                params: { enabled: true, conversation_id: @chat.to_param }, headers: @lume_headers, as: :json
+          assert_not response.successful?, response.status.to_s
+          @ghost.stub(:adapter, fake_adapter) do
+            delete api_v1_resident_service_connection_path(id), params: { conversation_id: @chat.to_param }, headers: @lume_headers, as: :json
+          end
+          assert_not response.successful?, response.status.to_s
+        end
+        connection = ServiceConnection.find_by_public_id!(id)
+        assert_equal "connected", connection.status
+        assert_not connection.agent_service_accesses.exists?(agent: @mira)
       end
 
       test "grants another home resident, withdraws, and both appear in the room" do
