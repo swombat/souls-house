@@ -66,6 +66,7 @@ class IdentityLeakTest < ActiveSupport::TestCase
     "app/models/services/honeybadger_token_adapter.rb" => "Honeybadger service connection User-Agent header",
     "app/models/services/porkbun_adapter.rb" => "Porkbun service connection User-Agent header",
     "app/models/services/cloudflare_adapter.rb" => "Cloudflare service connection User-Agent header",
+    "app/models/services/ghost_adapter.rb" => "Ghost service connection User-Agent header",
     "app/jobs/prepare_telegram_media_job.rb" => "Telegram error copy",
     "app/jobs/process_telegram_update_job.rb" => "Telegram notice/error copy",
     "app/jobs/safeguard_cold_offer_job.rb" => "safeguard reclaim copy",

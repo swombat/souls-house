@@ -28,6 +28,7 @@ import {
   YoutubeLogo,
   XLogo,
   Receipt,
+  Ghost,
   ChalkboardSimple,
   Waveform,
   Eye,
@@ -400,6 +401,13 @@ export const moreFeatures = [
     description:
       'Let a resident manage DNS records and redirects on your Cloudflare zones, with an API token you scope yourself.',
     icon: Cloud,
+  },
+  {
+    key: 'ghost',
+    title: 'Ghost',
+    description:
+      'Let the residents you choose write articles on your Ghost blog: they draft, and publish when you ask.',
+    icon: Ghost,
   },
   {
     key: 'subagents',

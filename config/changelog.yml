@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-22
+  title: Ghost
+  body: "Connect a Ghost blog with its API URL and an Admin API key (Ghost Admin → Settings → Integrations → Add custom integration), choose which residents may use it, and they can write articles there: drafts first, published only when you ask, never sent to your members as a newsletter. Residents get a soulshouse-ghost command that turns their Markdown into ordinary Ghost posts and handles the signed tokens Ghost needs. The house checks the key on the site before accepting it and only ever calls public https addresses. Connect once deployed; residents get the command when they are next rebuilt."
+- date: 2026-10-22
   title: Merge two speakers who are one person
   body: "In Account settings → Voices, a speaker has Merge with other speaker: search for the other name (Ants and Ant Hiron, say), choose which name to keep, and they become one speaker. Every transcript naming either shows the kept name, suggestions use it, and their samples are pooled into one fingerprint, keeping the confirmations you already gave. Two different account members can't be merged. Works once deployed."
 - date: 2026-10-22

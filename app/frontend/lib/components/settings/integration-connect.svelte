@@ -174,6 +174,16 @@
           Global API Key.
         </div>
       {/if}
+      {#if focusedService.key === 'ghost'}
+        <div class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+          Residents with this connection can write on your Ghost site. An Admin API key can do anything to its content:
+          create, edit, publish and delete posts and pages, and send posts to your members as newsletters. Residents are
+          told to write drafts, publish only when you ask, and never send a newsletter unless you ask for that email. In
+          Ghost Admin open Settings → Integrations → Add custom integration, then copy its API URL and Admin API key.
+          Posts appear under the site owner's name; a staff access token (your profile → Staff access token) makes them
+          appear under that staff user instead.
+        </div>
+      {/if}
       {#if focusedService.key === 'twitterapi_io'}
         <div class="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
           This key pays for the account's tweet streams in the Field: each check costs a little of your TwitterAPI.io

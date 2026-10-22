@@ -94,6 +94,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 \
         python3-flask \
         python3-yaml \
+        python3-markdown \
         git \
         curl \
         tini \
@@ -237,6 +238,7 @@ COPY soulshouse-x /usr/local/bin/soulshouse-x
 COPY soulshouse-gws /usr/local/bin/soulshouse-gws
 COPY soulshouse-comms /usr/local/bin/soulshouse-comms
 COPY soulshouse-tailnet /usr/local/bin/soulshouse-tailnet
+COPY soulshouse-ghost /usr/local/bin/soulshouse-ghost
 COPY antigravity-browser-open /usr/local/libexec/helixkit-antigravity-login/xdg-open
 # Imported Git homes use repo-scoped SSH deploy keys.
 RUN apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*
@@ -245,7 +247,7 @@ COPY github_import_approval.py github_import_credential.py /home/agent/
 COPY --chmod=0755 github-import-trust-setup /usr/local/bin/github-import-trust-setup
 COPY runtime_settings.py runtime_hooks.py /usr/local/share/helixkit-agent/
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/soulshouse-post-message /usr/local/bin/soulshouse-send-telegram /usr/local/bin/soulshouse-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/soulshouse-youtube /usr/local/bin/soulshouse-x /usr/local/bin/soulshouse-gws /usr/local/bin/soulshouse-comms /usr/local/bin/soulshouse-tailnet \
+RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/soulshouse-post-message /usr/local/bin/soulshouse-send-telegram /usr/local/bin/soulshouse-append-journal /usr/local/bin/soulshouse-usage /usr/local/bin/soulshouse-youtube /usr/local/bin/soulshouse-x /usr/local/bin/soulshouse-gws /usr/local/bin/soulshouse-comms /usr/local/bin/soulshouse-tailnet /usr/local/bin/soulshouse-ghost \
     /usr/local/libexec/helixkit-antigravity-login/xdg-open \
     && chmod 0644 /usr/local/share/helixkit-agent/*.md /usr/local/share/helixkit-agent/stop_journal_reflex.py
 

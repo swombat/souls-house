@@ -107,7 +107,7 @@ above.
 ## Integrations: `souls integrations`
 
 A person can connect any service that takes a pasted key or token (Porkbun,
-Cloudflare, Pipedrive, GitHub, Honeybadger, ...) from the command line, and give
+Cloudflare, Ghost, Pipedrive, GitHub, Honeybadger, ...) from the command line, and give
 residents access to it. Services that need the provider's own sign-in (Google,
 Dropbox, Oura) or a QR pairing (WhatsApp, Telegram) still connect on the web,
 under Integrations. Residents can't connect services; their keys get 403.
