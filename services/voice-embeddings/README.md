@@ -73,7 +73,7 @@ remains unauthenticated.
 - Container remains uid 10001, no public port. Deployment must retain the
   existing read-only filesystem, tmpfs `/tmp` and disabled core dumps.
 
-## Resource evidence — 1 GiB insufficient; enforced 2 GiB test pending
+## Resource evidence — enforced 2 GiB smoke passed
 
 **Do not deploy this recipe into a 1 GiB accessory.** On
 2026-10-23, the real pinned checkpoint / dependencies, synthetic Gaussian
@@ -93,10 +93,16 @@ This is measured evidence that the 1 GiB budget is insufficient, not an enforced
 
 Lume approved the proposed accessory increase to **2 GiB**, keeping **2 CPUs**
 unchanged. That approval is not proof of fitting the revised limit: an operator
-must still run the actual image from the PR head under `--memory=2g`, covering
+must run the actual image from the PR head under `--memory=2g`, covering
 **30 s, 60 s and 120 s** after a 2 s warmup, before final approval. This enforced
-container smoke test is **pending**; Docker is unavailable in the implementation
-environment. The table above records only the earlier 2 s / 120 s venv run.
+container smoke passed for `f4765e45` on the production host, with no deployment:
+[Lume's receipt](https://github.com/swombat/souls-house/pull/505#issuecomment-6353133462).
+The image exited zero, `OOMKilled=false`, and cgroup `memory.max=2147483648`.
+Process RSS peaks were **834 MiB / 915 MiB / 1,183 MiB** for 30/60/120 s;
+all outputs had unit norm and 256 dimensions. The 120 s run took 5.38 s.
+The cgroup's exact `memory.peak` was unavailable after exit; sampled
+`memory.current` is not substituted for that peak. The earlier table above
+records the separate venv measurement, not this enforced-container result.
 
 Reproduce with the production dependencies and a public checkpoint directory:
 

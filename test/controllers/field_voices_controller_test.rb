@@ -34,8 +34,12 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
       post retry_conversion_account_field_voices_path(@account)
     end
     assert_redirected_to account_field_voices_path(@account)
-    post retry_conversion_account_field_voices_path(accounts(:another_team))
-    assert_response :not_found
+    foreign = Account.create!(name: "Unrelated conversion fixture", account_type: :team)
+    assert_not foreign.accessible_by?(@user)
+    assert_no_enqueued_jobs(only: FieldVoices::ConvertProfileJob) do
+      post retry_conversion_account_field_voices_path(foreign)
+      assert_response :not_found
+    end
   end
 
   test "forgetting works with recognition off, and so does forgetting everything" do
