@@ -34,9 +34,12 @@ module FieldVoiceprints::Limits
     end
   end
 
-  def confirmed_samples(voice)
-    voice.samples.where(eligible: true).to_a.select { |sample|
-      (!sample.respond_to?(:removed_at) || sample.removed_at.nil?) && sample.manually_confirmed?
+  # `samples:` is this voice's eligible rows, already loaded
+  # with_confirmation_sources (Cohort loads every voice's at once).
+  def confirmed_samples(voice, samples: nil)
+    samples ||= FieldVoiceSample.with_confirmation_sources.where(field_voice_id: voice.id, eligible: true).to_a
+    samples.select { |sample|
+      (!sample.respond_to?(:removed_at) || sample.removed_at.nil?) && sample.preloaded_manually_confirmed?
     }
   end
 

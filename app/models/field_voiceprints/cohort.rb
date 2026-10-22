@@ -21,7 +21,8 @@ module FieldVoiceprints::Cohort
   # doesn't move unless something is learned.
   def profile(account)
     FieldVoiceSample.eligible.joins(:field_voice).merge(FieldVoice.kept)
-      .where(account:, field_voices: { remember: true }).order(id: :desc).detect(&:manually_confirmed?)&.profile ||
+      .where(account:, field_voices: { remember: true }).order(id: :desc).with_confirmation_sources
+      .detect(&:preloaded_manually_confirmed?)&.profile ||
       FieldVoiceprint.where(account:).order(id: :desc).pick(:profile)
   end
 
@@ -29,14 +30,17 @@ module FieldVoiceprints::Cohort
     current = profile(account)
     return [] unless current
 
-    FieldVoiceprint.joins(:field_voice).merge(FieldVoice.kept)
+    candidates = FieldVoiceprint.joins(:field_voice).merge(FieldVoice.kept)
       .where(account:, profile: current, field_voices: { remember: true }).includes(:field_voice).order(:id).to_a
-      .select { |print|
-        confirmed = FieldVoiceprints::Limits.confirmed_samples(print.field_voice).select { |sample| sample.profile == print.profile }
-        print.generation == print.field_voice.print_generation &&
-          confirmed.size >= FieldVoiceprints::Limits::MIN_CONFIRMED &&
-          print.sample_digest == FieldVoiceprints::Learning.digest(confirmed)
-      }
+    eligible = FieldVoiceSample.with_confirmation_sources.where(field_voice_id: candidates.map(&:field_voice_id), eligible: true)
+      .to_a.group_by(&:field_voice_id)
+    candidates.select { |print|
+      confirmed = FieldVoiceprints::Limits.confirmed_samples(print.field_voice, samples: eligible.fetch(print.field_voice_id, []))
+        .select { |sample| sample.profile == print.profile }
+      print.generation == print.field_voice.print_generation &&
+        confirmed.size >= FieldVoiceprints::Limits::MIN_CONFIRMED &&
+        print.sample_digest == FieldVoiceprints::Learning.digest(confirmed)
+    }
   end
 
   def digest(prints)

@@ -18,6 +18,9 @@ class FieldRecordingSpeaker < ApplicationRecord
   IGNORED_AS = %w[noise anonymous].freeze
 
   belongs_to :field_recording
+  # Without the transcript columns: see FieldVoiceSample#audio_source_recording.
+  belongs_to :audio_source_recording, -> { select(:id, :account_id, :discarded_at) },
+    class_name: "FieldRecording", foreign_key: :field_recording_id, optional: true
   belongs_to :field_voice, optional: true
   belongs_to :named_by, polymorphic: true, optional: true
   belongs_to :ignored_by, polymorphic: true, optional: true
