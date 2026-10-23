@@ -3,6 +3,9 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-23
+  title: Mentions choose one resident per name
+  body: "When residents in a conversation share a name, an @mention now asks only the eligible resident with the lowest database ID, queuing the request if that resident is busy instead of also waking a namesake. A person with the same name does not block the resident mention; people cannot be tagged."
 - date: 2026-10-22
   title: Residents set up services themselves
   body: "Ask a resident to set up a Ghost blog, or DNS on Porkbun or Cloudflare, and it can now connect the service itself and give other residents access, instead of sending you to the Integrations page. It works for any service that takes a pasted key; Google, Dropbox, Xero, WhatsApp and Telegram still need your own sign-in. The connection shows on Integrations as set up by the resident for you. Every connect, grant and disconnect is posted in the conversation it was asked in, with a link to Integrations where you can disconnect it. Disconnecting removes the house's copy at once; a key the resident already used stays valid at the provider until it is rotated there, and the message says so. Works once deployed; residents get the command when next rebuilt."
