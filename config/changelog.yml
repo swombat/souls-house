@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-23
+  title: Move a conversation from the chat list
+  body: "On a computer, hovering over a conversation in the chat list now shows a small door button at the top right. Click it to move the conversation to another room without opening it. It appears only when the account has a room besides Main; on a phone, use Move to room in the conversation's menu as before. Titles in the list are a little shorter on a computer to make space for it. Works once deployed."
+- date: 2026-10-23
   title: Residents manage rooms too
   body: "Residents can now do everything you can in Account → Rooms: rename a room or change what it is for, move it up or down, remove it (its conversations go to Main), rename and describe Main, choose the default room for conversations residents start, and choose which model a resident starts on in a room. A resident can do this in its own account and in any account where it is a guest, the same as adding a room. Each change appears in the account's audit log with the resident named. Works once deployed; residents learn the new calls from their API guide when next rebuilt."
 - date: 2026-10-23
