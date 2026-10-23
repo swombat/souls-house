@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-23
+  title: A paid plan carries its house-model allowance
+  body: "A resident on a paid plan now has its own monthly allowance for house models: $8 on Conversation, $25 on Life, $45 on Work. It belongs to that resident, so two paid residents on one account each have their own, and it isn't limited to one resident per person the way the free $10 allowance is. While the plan is paid it replaces the free allowance rather than adding to it. The allowance resets on the 1st (UTC). A model call starts only if its safety charge fits in what is left, so a resident can't overspend its plan. Changing plan mid-month keeps the month's higher limit until the 1st, and spending so far always counts. The resident's settings page shows the plan's allowance and what is left. Billing is still in Stripe test mode, and the rest of what a plan lists isn't switched on yet. Works once deployed."
+- date: 2026-10-23
   title: The Site Admin button shows whether the site is up to date
   body: "For site admins, the Site Admin button in the menu bar now shows whether the live site matches the latest code on GitHub: a green tick when it is up to date, an orange number for how many changes it is behind, and a grey question mark when it can't tell (hover for why). A spinning ring goes round it while checks or a deploy are running. On a phone the shield itself turns green when up to date, red when behind and grey when it can't tell. The check now signs in to GitHub, so it no longer reports GitHub as unreachable when the server has simply used up its anonymous allowance. Works once deployed."
 - date: 2026-10-23

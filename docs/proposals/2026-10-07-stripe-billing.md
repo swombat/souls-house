@@ -305,9 +305,21 @@ dies on the final attempt is escalated by the sweeper. The Billing tab is
 labelled a preview: plan benefits are shown as proposed, a lapse as recorded
 only, with the 30-day guarantee.
 
+**Phase 1b: the paid allowance.** House calls are charged to exactly one
+ledger (the legacy grant or the resident's entitlement, DB-checked) and record
+the resident they were made for. A paid entitlement's limit is the highest
+allowance paid during the UTC month (`allowance_month`/`allowance_limit_usd`,
+counting the outgoing tier at each change), so downgrades, lapses and
+replacement checkouts never refill a month. Admission is strict, with in-flight
+calls counted at their reservation, and several calls may run at once (unlike
+the grant's one-at-a-time rule). Paid calls are left out of the free house-wide
+ceiling. There is no separate paid ceiling: strict per-resident admission
+already bounds paid spend by the sum of paid allowances. A paid resident
+doesn't claim the user's one free grant, and a grant attached to it is refused
+while the plan is paid.
+
 **Not yet, in order:** the hold boundary (turn admission, reservations,
-rhythms, queued-turn cancel, drain, container stop and restart); the paid
-ledger and strict admission; owner and resident notices; plan-gated resident
+rhythms, queued-turn cancel, drain, container stop and restart); owner and resident notices; plan-gated resident
 creation; refunds for the 30-day guarantee (manual in Stripe for now);
 nightly reconcile and admin complimentary controls; duplicate-subscription
 auto-cancel (today it fails the event and alerts). Until the hold boundary

@@ -15,10 +15,8 @@ module HouseInference
         raise Error.new('Only the resident’s selected house model is allowed.', status: 403)
       end
       raise Error.new('House inference has not been configured by the operator.') unless Offering.configured?
-      grant = HouseInferenceGrant.find_by(agent: @agent)
-      raise Error.new('This resident has no house allowance.', status: 403) unless grant
       body = Request.build(@input, offering)
-      call = grant.reserve!(offering, @input['model'], agent_id: @agent.id)
+      call = reserve!(offering)
       buffer = +''
       usage = nil
       upstream_id = nil
@@ -90,6 +88,20 @@ module HouseInference
       raise Error.new('House inference was interrupted. The call’s safety charge is retained pending reconciliation.', status: 502)
     ensure
       call&.settle!(nil, upstream_id: upstream_id)
+    end
+
+    private
+
+    # A paid plan's allowance first (paid replaces the free grant, never
+    # stacks); otherwise the user's free grant. Each ledger re-checks under
+    # the lock, so a plan that lapses in between is refused, not misbilled.
+    def reserve!(offering)
+      entitlement = ResidentEntitlement.find_by(agent: @agent)
+      return entitlement.reserve_house_call!(offering, @input['model'], agent_id: @agent.id) if entitlement&.paid?
+
+      grant = HouseInferenceGrant.find_by(agent: @agent)
+      raise Error.new('This resident has no house allowance.', status: 403) unless grant
+      grant.reserve!(offering, @input['model'], agent_id: @agent.id)
     end
 
     ROUTING_REFUSAL = /\ANo endpoints found that (?:can handle|support) the requested parameters/

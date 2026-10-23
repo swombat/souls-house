@@ -36,6 +36,21 @@ class HouseInference::GatewayTest < ActiveSupport::TestCase
     assert_equal BigDecimal('0.005'), @grant.spent
   end
 
+  test 'a resident on a paid plan is charged to its plan, not the attached free grant' do
+    sub = ResidentSubscription.create!(agent: @agent, account: @agent.account, stripe_subscription_id: 'sub_gateway',
+      tier: 'conversation', stripe_status: 'active')
+    entitlement = ResidentEntitlement.for_agent!(@agent)
+    entitlement.apply_subscription!(sub)
+    @input['stream'] = false
+    upstream([ JSON.generate({ 'id' => 'gen-paid', 'choices' => [ { 'message' => { 'role' => 'assistant', 'content' => 'hi' } } ], 'usage' => { 'cost' => 0.004 } }) ]) do
+      HouseInference::Gateway.new(agent: @agent, input: @input).call
+    end
+    assert_equal BigDecimal('0'), @grant.spent
+    assert_equal BigDecimal('0.004'), entitlement.reload.allowance_spent
+    call = entitlement.house_inference_calls.sole
+    assert_equal [ @agent.id, nil, 'settled' ], [ call.agent_id, call.house_inference_grant_id, call.status ]
+  end
+
   test 'streams split SSE tool and usage frames and settles actual cost' do
     chunks = [ "data: {\"id\":\"gen-1\",\"model\":\"deepseek/deepseek-v4.1-flash\",\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n",
       "data: {\"usage\":{\"cost\":0.", "002}}\n\ndata: [DONE]\n\n" ]

@@ -72,7 +72,7 @@ class AgentsController < ApplicationController
     render inertia: "agents/edit", props: {
       portability: -> { portability_props },
       agent: -> { @agent.as_json },
-      house_allowance: -> { HouseInferenceGrant.find_by(agent: @agent)&.presentation },
+      house_allowance: -> { HouseInference::Allowance.presentation(@agent) },
       subagent_catalog: -> { load_catalog.call.options },
       subagent_providers: -> { load_catalog.call.providers },
       subagent_catalog_empty_reason: -> { load_catalog.call.empty_reason },

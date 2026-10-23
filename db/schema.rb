@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_23_170100) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_23_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1507,19 +1507,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_170100) do
   end
 
   create_table "house_inference_calls", force: :cascade do |t|
+    t.bigint "agent_id"
     t.decimal "charge_usd", precision: 14, scale: 8, null: false
     t.datetime "created_at", null: false
-    t.bigint "house_inference_grant_id", null: false
+    t.bigint "house_inference_grant_id"
     t.string "model_id", null: false
     t.date "month", null: false
     t.string "provider_route", null: false
+    t.bigint "resident_entitlement_id"
     t.string "status", default: "pending", null: false
     t.datetime "updated_at", null: false
     t.string "upstream_id"
+    t.index ["agent_id"], name: "index_house_inference_calls_on_agent_id"
     t.index ["house_inference_grant_id", "month"], name: "index_house_calls_on_grant_month"
     t.index ["house_inference_grant_id"], name: "index_house_inference_calls_on_house_inference_grant_id"
     t.index ["month"], name: "index_house_inference_calls_on_month"
+    t.index ["resident_entitlement_id", "month"], name: "index_house_calls_on_entitlement_month"
     t.check_constraint "charge_usd >= 0::numeric", name: "house_calls_nonnegative_charge"
+    t.check_constraint "num_nonnulls(house_inference_grant_id, resident_entitlement_id) = 1", name: "house_calls_one_ledger"
   end
 
   create_table "house_inference_grants", force: :cascade do |t|
@@ -2059,6 +2064,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_170100) do
     t.string "checkout_session_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.date "allowance_month"
+    t.decimal "allowance_limit_usd", precision: 14, scale: 8
     t.index ["account_id"], name: "index_resident_entitlements_on_account_id"
     t.index ["agent_id"], name: "index_resident_entitlements_on_agent_id", unique: true
     t.index ["current_subscription_id"], name: "index_resident_entitlements_on_current_subscription_id"
@@ -2816,7 +2823,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_170100) do
   add_foreign_key "guest_memberships", "accounts", on_delete: :cascade
   add_foreign_key "guest_memberships", "agents", on_delete: :cascade
   add_foreign_key "guest_memberships", "users", column: "added_by_id", on_delete: :nullify
+  add_foreign_key "house_inference_calls", "agents"
   add_foreign_key "house_inference_calls", "house_inference_grants"
+  add_foreign_key "house_inference_calls", "resident_entitlements"
   add_foreign_key "house_inference_grants", "agents"
   add_foreign_key "house_inference_grants", "users"
   add_foreign_key "house_samples", "agents", on_delete: :cascade
