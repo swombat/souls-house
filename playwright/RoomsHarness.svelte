@@ -11,6 +11,7 @@
     waiting = {},
     working = { rooms: {}, all: [] },
     resident_room_id = null,
+    main_room = { id: null, name: 'Main', description: null },
   } = $props();
 
   page.set({
@@ -18,6 +19,7 @@
       account,
       rooms: rooms.map(({ id, name }) => ({ id, name })),
       current_room,
+      main_room_name: main_room.name,
       reply_attention: { rooms: waiting },
       room_activity: working,
       flash: {},
@@ -36,5 +38,6 @@
   {rooms}
   room_counts={Object.fromEntries(rooms.map((room) => [room.id, room.conversation_count || 0]))}
   main_count={12}
+  {main_room}
   {resident_room_id}
   can_manage={true} />

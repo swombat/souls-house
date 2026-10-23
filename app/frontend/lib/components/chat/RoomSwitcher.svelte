@@ -13,6 +13,7 @@
   let { accountId } = $props();
 
   const rooms = $derived($page.props.rooms || []);
+  const mainName = $derived($page.props.main_room_name);
   const current = $derived($page.props.current_room || 'main');
   const attention = $derived($page.props.reply_attention);
   const activity = $derived($page.props.room_activity);
@@ -86,10 +87,10 @@
       data-testid="room-switcher"
       aria-label="Room"
       class="h-8 w-auto max-w-56 gap-2 border-0 bg-transparent px-1 text-lg font-semibold shadow-none">
-      <span class="truncate">{roomName(current, rooms)}</span>
+      <span class="truncate">{roomName(current, rooms, mainName)}</span>
     </Select.Trigger>
     <Select.Content sideOffset={4}>
-      {#each views(rooms) as option (option.id)}
+      {#each views(rooms, mainName) as option (option.id)}
         <Select.Item value={option.id} label={option.name}>
           <span class="flex w-full items-center justify-between gap-3">
             <span class="truncate">{option.name}</span>
@@ -103,7 +104,7 @@
     <!-- pt-1 bridges the gap under the name so the pointer can travel into the list without it closing. -->
     <div class="absolute left-0 top-full z-50 pt-1" data-testid="room-hover-switcher-panel">
       <div class="w-56 max-w-[80vw] rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-        {#each views(rooms) as option (option.id)}
+        {#each views(rooms, mainName) as option (option.id)}
           {@const selected = option.id === current}
           <a
             href={roomsPath(accountId, option.id)}

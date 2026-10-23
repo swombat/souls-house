@@ -10,8 +10,8 @@ module Api
       before_action :set_account
 
       def index
-        render json: { rooms: [ Room::MAIN_JSON, *@account.rooms.ordered.map(&:directory_json) ],
-                       resident_room: @account.resident_room&.as_json || { "id" => nil, "name" => Room::MAIN } }
+        render json: { rooms: [ @account.main_room_json, *@account.rooms.ordered.map(&:directory_json) ],
+                       resident_room: @account.resident_room&.as_json || { "id" => nil, "name" => @account.main_room_label } }
       end
 
       def create

@@ -1,12 +1,12 @@
 # A place an account's conversations live. Conversations without a room are in
-# Main, which is not a row: it cannot be renamed, removed or emptied by mistake.
+# Main, which is not a row: it cannot be removed or emptied by mistake. Its name
+# and description are account settings (Account#main_room_label).
 class Room < ApplicationRecord
 
   include Broadcastable
   include SyncAuthorizable
 
   MAIN = "Main".freeze
-  MAIN_JSON = { "id" => nil, "name" => MAIN, "description" => nil }.freeze
 
   belongs_to :account
   has_many :chats
@@ -48,7 +48,7 @@ class Room < ApplicationRecord
   end
 
   # The room as a place to choose, with what it is for. Main has no row, so
-  # callers listing destinations put MAIN_JSON first.
+  # callers listing destinations put Account#main_room_json first.
   def directory_json
     as_json.merge("description" => description)
   end
@@ -84,7 +84,9 @@ class Room < ApplicationRecord
   end
 
   def name_is_not_main
-    errors.add(:name, "#{MAIN} is the default room") if name.to_s.casecmp?(MAIN)
+    return unless name.to_s.casecmp?(MAIN) || (account && name.to_s.casecmp?(account.main_room_label))
+
+    errors.add(:name, "#{account&.main_room_label || MAIN} is the default room")
   end
 
   def account_cannot_change

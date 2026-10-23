@@ -162,6 +162,17 @@ module Api
         assert_nil chat.reload.room
       end
 
+      test "room by the account's own name for Main clears the selection too" do
+        @home.update!(main_room_name: "General")
+        chat = @home.chats.create!(model_id: "openrouter/auto", manual_responses: true, agents: [ @agent ], room: @life)
+
+        patch api_v1_conversation_url(chat), params: { room: "general" }, as: :json,
+          headers: { "Authorization" => "Bearer #{@agent_token}" }
+        assert_response :success
+        assert_nil chat.reload.room
+        assert_equal({ "id" => nil, "name" => "General" }, response.parsed_body.dig("conversation", "room"))
+      end
+
       test "a seated guest resident moves a conversation between the account's rooms" do
         @nexus.guest_memberships.create!(agent: @agent, added_by: @daniel)
         build = @nexus.rooms.create!(name: "Build")

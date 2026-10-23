@@ -73,7 +73,7 @@ module Api
         else
           name = source["room"]
           raise RoomSelectorError, "room must be a room name" unless name.is_a?(String) && name.strip.present?
-          return nil if name.strip.casecmp?(Room::MAIN)
+          return nil if account.main_room_named?(name)
 
           account.rooms.find_by!("lower(name) = ?", name.strip.downcase)
         end

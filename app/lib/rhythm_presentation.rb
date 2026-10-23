@@ -77,7 +77,7 @@ class RhythmPresentation
   end
 
   def room_json(room)
-    room ? room.as_json : Room::MAIN_JSON.slice("id", "name")
+    room ? room.as_json : @rhythm.account.main_room_json.slice("id", "name")
   end
 
   def resident_payload(resident, model_id)

@@ -152,7 +152,7 @@ class RhythmsController < ApplicationController
   def room_options
     {
       rooms: current_account.rooms.ordered.map(&:as_json),
-      default_room: current_account.resident_room&.as_json || Room::MAIN_JSON.slice("id", "name")
+      default_room: current_account.resident_room&.as_json || current_account.main_room_json.slice("id", "name")
     }
   end
 

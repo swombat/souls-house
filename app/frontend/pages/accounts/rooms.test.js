@@ -16,7 +16,12 @@ test('Rooms maps account presentation and permissions without replacing its draf
     'account',
     'can_manage',
   ]);
-  expect(subscribe).toHaveBeenCalledWith('RoomNavigation', 'first', ['rooms', 'current_room']);
+  expect(subscribe).toHaveBeenCalledWith('RoomNavigation', 'first', [
+    'rooms',
+    'current_room',
+    'main_room',
+    'main_room_name',
+  ]);
   await fireEvent.input(screen.getByLabelText('New room name'), { target: { value: 'Unfinished room' } });
   await view.rerender({ ...props, account: { ...props.account, name: 'Remote' }, main_count: 3 });
   expect(screen.getByLabelText('New room name')).toHaveValue('Unfinished room');
@@ -30,6 +35,31 @@ test('Rooms maps account presentation and permissions without replacing its draf
   expect(screen.getByLabelText('New room name')).toHaveValue('Second draft');
   await view.rerender({ ...props, account: { id: 'second', name: 'Second' }, can_manage: false });
   expect(screen.queryByLabelText('New room name')).not.toBeInTheDocument();
+});
+
+test('Main can be renamed and described, but not moved or removed', async () => {
+  render(Rooms, {
+    ...props,
+    main_count: 4,
+    main_room: { id: null, name: 'General', description: 'anything without a better home' },
+    rooms: [{ id: 'buildRm', name: 'Build' }],
+  });
+  const main = screen.getByTestId('main-room-row');
+  expect(main).toHaveTextContent('General');
+  expect(main).toHaveTextContent('anything without a better home');
+  expect(main).toHaveTextContent('4 conversations · default');
+  expect(screen.queryByLabelText('Remove General')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Move General up')).not.toBeInTheDocument();
+  expect(screen.getByText(/Conversations live in General, the default room/)).toBeInTheDocument();
+
+  await fireEvent.click(screen.getByLabelText('Edit General'));
+  await fireEvent.input(screen.getByLabelText('Room name'), { target: { value: 'Everything' } });
+  await fireEvent.submit(screen.getByLabelText('Room name').closest('form'));
+  expect(router.patch).toHaveBeenLastCalledWith(
+    '/accounts/first/main_room',
+    { main_room: { name: 'Everything', description: 'anything without a better home' } },
+    expect.objectContaining({ preserveScroll: true })
+  );
 });
 
 test('the resident default is explained even before any room exists', () => {

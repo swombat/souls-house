@@ -8,6 +8,7 @@ class Accounts::RoomsController < ApplicationController
       account: current_account.as_json,
       can_manage: current_account.manageable_by?(Current.user),
       main_count: counts.fetch(nil, 0),
+      main_room: -> { current_account.main_room_json },
       rooms: -> { current_account.rooms.map(&:directory_json) },
       room_counts: counts.except(nil).transform_keys { |id| Room.encode_id(id) },
       resident_room_id: current_account.resident_room&.to_param,
@@ -43,7 +44,7 @@ class Accounts::RoomsController < ApplicationController
     room.destroy!
     audit(:destroy_room, room)
     redirect_to account_rooms_path(current_account),
-      notice: "#{room.name} removed; #{helpers.pluralize(moved, 'conversation')} moved to #{Room::MAIN}"
+      notice: "#{room.name} removed; #{helpers.pluralize(moved, 'conversation')} moved to #{current_account.main_room_label}"
   end
 
   private

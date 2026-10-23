@@ -26,6 +26,16 @@ module Api
         assert_equal({ "id" => life.to_param, "name" => "Life" }, response.parsed_body["resident_room"])
       end
 
+      test "a renamed Main is listed under its name, with its description" do
+        @home.update!(main_room_name: "General", main_room_description: "anything without a better home")
+
+        get api_v1_rooms_url, headers: @agent_headers
+        assert_response :success
+        assert_equal({ "id" => nil, "name" => "General", "description" => "anything without a better home" },
+          response.parsed_body["rooms"].first)
+        assert_equal({ "id" => nil, "name" => "General" }, response.parsed_body["resident_room"])
+      end
+
       test "a resident adds a room at home" do
         assert_difference -> { @home.rooms.count } do
           post api_v1_rooms_url, params: { name: "Build", description: "technical work" }, headers: @agent_headers, as: :json

@@ -19,6 +19,7 @@ class ApplicationController < ActionController::Base
         account: current_account&.as_json,
         visual_tags: -> { current_account ? VisualTag.palette_with_usage_for(current_account) : [] },
         rooms: -> { current_account ? current_account.rooms.map(&:as_json) : [] },
+        main_room_name: -> { current_account&.main_room_label || Room::MAIN },
         current_room: -> { current_account ? selected_room_key : RoomSelection::MAIN },
         accounts: -> { Current.user.confirmed_accounts.map(&:as_json) },
         reply_attention: -> { ReplyExpectation.summary_for(Current.user, account: current_account, chat: @chat) },

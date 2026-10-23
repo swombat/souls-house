@@ -139,6 +139,7 @@ Rails.application.routes.draw do
     resources :visual_tags, only: [ :create, :update, :destroy ], module: :accounts
     resources :rooms, only: [ :index, :create, :update, :destroy ], module: :accounts
     resource :resident_room, only: :update, module: :accounts
+    resource :main_room, only: :update, module: :accounts
     resource :room_model_default, only: :update, module: :accounts
     resources :service_authorizations, only: :create
     resources :service_connections, only: [ :create, :update, :destroy ], module: :accounts do

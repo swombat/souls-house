@@ -25,7 +25,7 @@ module ApiConversationJson
   def conversation_room_json(chat)
     return {} unless rooms_visible_in?(chat.account)
 
-    { room: chat.room ? chat.room.as_json : { "id" => nil, "name" => Room::MAIN } }
+    { room: chat.room ? chat.room.as_json : { "id" => nil, "name" => chat.account.main_room_label } }
   end
 
 end

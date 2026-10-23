@@ -91,11 +91,22 @@ class Account < ApplicationRecord
   validates :logo_colour, inclusion: { in: ->(_) { LOGO_COLOURS } }, allow_nil: true
   validate :resident_handoff_cap_in_range
   validate :resident_room_belongs_to_account
+  validates :main_room_name, length: { maximum: 40 }, format: { without: /\0/, message: "must not contain NUL" }
+  validates :main_room_description, length: { maximum: 280 }, format: { without: /\0/, message: "must not contain NUL" }
+  validate :main_room_name_is_free
   validate :enforce_site_account_limit, on: :create
   validate :enforce_personal_account_limit, if: :personal?
   validate :can_invite_members, if: -> { memberships.any?(&:invitation?) }
 
   # Callbacks
+  # Blank or the default spelling stores nil, so "Main" stays the default.
+  before_validation lambda {
+    if main_room_name.is_a?(String)
+      stripped = main_room_name.strip
+      self.main_room_name = stripped == Room::MAIN ? nil : stripped.presence
+    end
+    self.main_room_description = main_room_description.strip.presence if main_room_description.is_a?(String)
+  }
   before_validation :set_default_name, on: :create
   before_validation :generate_slug, on: :create
   after_create :create_default_visual_tags
@@ -216,6 +227,21 @@ class Account < ApplicationRecord
 
   def disabled?
     disabled_at.present?
+  end
+
+  # What this account calls Main, the place conversations without a room live.
+  def main_room_label
+    main_room_name.presence || Room::MAIN
+  end
+
+  # Main as a destination, shaped like Room#directory_json (id nil).
+  def main_room_json
+    { "id" => nil, "name" => main_room_label, "description" => main_room_description }
+  end
+
+  # Main or this account's name for it, any case.
+  def main_room_named?(name)
+    name.to_s.strip.casecmp?(Room::MAIN) || name.to_s.strip.casecmp?(main_room_label)
   end
 
   def resident_handoff_cap
@@ -482,6 +508,12 @@ class Account < ApplicationRecord
     return if value.nil? || (value.is_a?(Integer) && RESIDENT_HANDOFF_CAP_RANGE.cover?(value))
 
     errors.add(:resident_handoff_cap, "must be a whole number from #{RESIDENT_HANDOFF_CAP_RANGE.min} to #{RESIDENT_HANDOFF_CAP_RANGE.max}")
+  end
+
+  def main_room_name_is_free
+    return if main_room_name.blank?
+
+    errors.add(:main_room_name, "is already a room") if rooms.where("lower(name) = ?", main_room_name.downcase).exists?
   end
 
   def resident_room_belongs_to_account

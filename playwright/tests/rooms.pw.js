@@ -119,4 +119,50 @@ test.describe('touch', () => {
     await life.tap();
     await expect.poll(() => visited).toEqual(['?room=lifeRm']);
   });
+
+  test('on a phone, each room keeps its name and description full width, with its controls on a line below', async ({
+    mount,
+    page,
+  }) => {
+    const longRooms = [
+      {
+        id: 'planRm',
+        name: 'Planning',
+        conversation_count: 32,
+        description: 'Planning work, usually in Fable/Astra mode',
+      },
+      {
+        id: 'convRm',
+        name: 'Conversations',
+        conversation_count: 14,
+        description: 'Having conversations about complex topics, usually in Fable/Astra mode',
+      },
+    ];
+    const component = await mount(RoomsHarness, {
+      props: {
+        account,
+        rooms: longRooms,
+        main_room: { id: null, name: 'General', description: 'Builds and anything without a better home' },
+      },
+    });
+    const row = component.getByTestId('room-row').nth(1);
+    const name = row.getByText('Conversations', { exact: true });
+    const description = row.getByTestId('room-description');
+    const edit = row.getByRole('button', { name: 'Edit Conversations' });
+    const nameBox = await name.boundingBox();
+    const descriptionBox = await description.boundingBox();
+    const editBox = await edit.boundingBox();
+    expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect(descriptionBox.width).toBeGreaterThan(250);
+    expect(descriptionBox.height).toBeLessThan(60);
+    expect(editBox.y).toBeGreaterThanOrEqual(descriptionBox.y + descriptionBox.height - 1);
+    expect(nameBox.y).toBeLessThan(descriptionBox.y);
+
+    const main = component.getByTestId('main-room-row');
+    await expect(main).toContainText('General');
+    await expect(main).toContainText('Builds and anything without a better home');
+    await expect(main.getByRole('button', { name: 'Edit General' })).toBeVisible();
+    await expect(main.getByRole('button', { name: 'Remove General' })).toHaveCount(0);
+    await page.screenshot({ path: 'tmp/rooms-settings-phone.png', fullPage: true });
+  });
 });

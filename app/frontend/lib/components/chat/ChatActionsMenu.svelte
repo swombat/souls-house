@@ -14,6 +14,7 @@
     EyeSlash,
     DoorOpen,
   } from 'phosphor-svelte';
+  import { page } from '@inertiajs/svelte';
   import { destinations, MAIN } from '$lib/rooms';
 
   let {
@@ -102,7 +103,7 @@
             Move to room…
           </DropdownMenu.SubTrigger>
           <DropdownMenu.SubContent class="w-44">
-            {#each destinations(rooms) as option (option.id)}
+            {#each destinations(rooms, $page.props.main_room_name) as option (option.id)}
               {@const here = (chat.room_id || MAIN) === option.id}
               <DropdownMenu.Item disabled={here} onclick={() => onMoveToRoom(option.id)}>
                 {option.name}{here ? ' (here)' : ''}

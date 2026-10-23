@@ -15,6 +15,7 @@
     rooms = [],
     room_counts = {},
     main_count = 0,
+    main_room = { id: null, name: 'Main', description: null },
     resident_room_id = null,
     can_manage = false,
     model_residents = [],
@@ -35,11 +36,12 @@
   });
   const errors = $derived($page.props.errors || {});
   const residentRoom = $derived(resident_room_id || MAIN);
+  const mainName = $derived(main_room?.name || 'Main');
 
   const updateSync = createDynamicSync();
   $effect(() => {
     updateSync({
-      [`RoomNavigation:${account.id}`]: ['rooms', 'current_room'],
+      [`RoomNavigation:${account.id}`]: ['rooms', 'current_room', 'main_room', 'main_room_name'],
       [`Account:${account.id}`]: ['room_counts', 'main_count', 'resident_room_id', 'account', 'can_manage'],
     });
   });
@@ -115,23 +117,24 @@
   <section class="space-y-3" aria-labelledby="rooms-heading">
     <h2 id="rooms-heading" class="text-xl font-semibold">Rooms</h2>
     <p class="text-sm text-muted-foreground">
-      Conversations live in Main until you move them. Once you add a room, the Chats menu and the conversation list let
-      you switch between rooms or view all chats at once. Removing a room moves its conversations back to Main; none are
-      deleted. Say what each room is for, and residents will read it when they choose where a conversation goes.
+      Conversations live in {mainName}, the default room, until you move them. Once you add a room, the Chats menu and
+      the conversation list let you switch between rooms or view all chats at once. Removing a room moves its
+      conversations back to {mainName}; none are deleted. Say what each room is for, and residents will read it when
+      they choose where a conversation goes.
     </p>
     <ul class="divide-y divide-border rounded-lg border border-border">
-      <li class="flex items-center gap-3 px-4 py-3">
-        <span class="flex-1 font-medium">Main</span>
-        <span class="text-xs text-muted-foreground">
-          {main_count} conversation{main_count === 1 ? '' : 's'} · default
-        </span>
-      </li>
+      <RoomRow
+        accountId={account.id}
+        room={{ ...main_room, conversation_count: main_count }}
+        main
+        canManage={can_manage} />
       {#each rooms as room, index (room.id)}
         <RoomRow
           accountId={account.id}
           room={{ ...room, conversation_count: room_counts[room.id] || 0 }}
           first={index === 0}
           last={index === rooms.length - 1}
+          {mainName}
           canManage={can_manage} />
       {/each}
     </ul>
@@ -140,6 +143,12 @@
     {/if}
     {#if errors.description}
       <p role="alert" class="text-sm text-destructive">Description {errors.description}</p>
+    {/if}
+    {#if errors.main_room_name}
+      <p role="alert" class="text-sm text-destructive">Name {errors.main_room_name}</p>
+    {/if}
+    {#if errors.main_room_description}
+      <p role="alert" class="text-sm text-destructive">Description {errors.main_room_description}</p>
     {/if}
     {#if can_manage}
       <form class="flex max-w-2xl flex-col gap-2 sm:flex-row sm:items-center" onsubmit={addRoom}>
@@ -164,20 +173,20 @@
     <h2 id="resident-room-heading" class="text-xl font-semibold">Default room for residents</h2>
     <p class="text-sm text-muted-foreground">
       Where a conversation lands when a resident starts it without choosing a room. Residents can still choose any room,
-      including Main, and anyone can move a conversation afterwards. This doesn't change where you arrive: the Chats
-      menu remembers the room you last opened.
+      including {mainName}, and anyone can move a conversation afterwards. This doesn't change where you arrive: the
+      Chats menu remembers the room you last opened.
     </p>
     {#if rooms.length === 0}
       <p class="text-sm text-muted-foreground" data-testid="resident-room-empty">
-        Resident-started conversations go to Main. Add a room above to send them somewhere else.
+        Resident-started conversations go to {mainName}. Add a room above to send them somewhere else.
       </p>
     {:else}
       <Select.Root type="single" value={residentRoom} onValueChange={setResidentRoom} disabled={!can_manage}>
         <Select.Trigger class="w-56" aria-label="Default room for resident-started conversations">
-          {roomName(residentRoom, rooms)}
+          {roomName(residentRoom, rooms, mainName)}
         </Select.Trigger>
         <Select.Content sideOffset={4}>
-          {#each destinations(rooms) as option (option.id)}
+          {#each destinations(rooms, mainName) as option (option.id)}
             <Select.Item value={option.id} label={option.name}>{option.name}</Select.Item>
           {/each}
         </Select.Content>
@@ -197,7 +206,7 @@
         <p role="alert" class="text-sm text-destructive">{errors.room_model}</p>
       {/if}
       <ul class="divide-y divide-border rounded-lg border border-border">
-        {#each destinations(rooms) as option (option.id)}
+        {#each destinations(rooms, mainName) as option (option.id)}
           <li class="space-y-2 px-4 py-3" data-testid="room-models-room">
             <h3 class="font-medium">{option.name}</h3>
             <div class="space-y-3 sm:space-y-2">

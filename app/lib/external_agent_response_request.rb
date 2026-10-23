@@ -365,8 +365,9 @@ class ExternalAgentResponseRequest
     return "" unless chat.account.rooms.exists?
     return "" unless chat.account_id == agent.account_id || agent.guest_memberships.exists?(account_id: chat.account_id)
 
-    line = "\n- room: #{chat.room&.name || Room::MAIN}"
-    line += " (use this room when: #{chat.room.description.squish})" if chat.room&.description.present?
+    line = "\n- room: #{chat.room&.name || chat.account.main_room_label}"
+    description = chat.room ? chat.room.description : chat.account.main_room_description
+    line += " (use this room when: #{description.squish})" if description.present?
     line
   end
 

@@ -129,6 +129,29 @@ class Accounts::RoomsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Renamed", room.reload.name
   end
 
+  test "a manager renames and describes Main; members cannot; clashes are reported" do
+    @account.rooms.create!(name: "Life")
+
+    patch account_main_room_path(@account), params: { main_room: { name: "General", description: "builds go here" } }
+    assert_redirected_to account_rooms_path(@account)
+    @account.reload
+    assert_equal "General", @account.main_room_label
+    assert_equal "builds go here", @account.main_room_description
+    assert AuditLog.exists?(action: "update_main_room", account: @account)
+
+    patch account_main_room_path(@account), params: { main_room: { name: "life" } }
+    follow_redirect!
+    assert inertia_shared_props.fetch("errors").fetch("main_room_name").present?
+    assert_equal "General", @account.reload.main_room_label
+    assert_equal({ "id" => nil, "name" => "General", "description" => "builds go here" }, inertia_shared_props["main_room"])
+    assert_equal "General", inertia_shared_props["main_room_name"]
+
+    memberships(:team_member).update_columns(confirmed_at: nil)
+    patch account_main_room_path(@account), params: { main_room: { name: "Nope" } }
+    assert_response :not_found
+    assert_equal "General", @account.reload.main_room_label
+  end
+
   test "reorder moves a room up or down among its siblings" do
     a = @account.rooms.create!(name: "A")
     b = @account.rooms.create!(name: "B")

@@ -21,6 +21,13 @@ describe('rooms', () => {
     expect(roomName('gone', rooms)).toBe('Main');
   });
 
+  it('uses the account name for Main when it has one', () => {
+    expect(destinations(rooms, 'General')[0]).toEqual({ id: MAIN, name: 'General' });
+    expect(views(rooms, 'General')[0].name).toBe('General');
+    expect(roomName(MAIN, rooms, 'General')).toBe('General');
+    expect(roomName(MAIN, rooms, null)).toBe('Main');
+  });
+
   it('reads waiting counts from reply attention', () => {
     expect(waitingIn('abc', { rooms: { abc: 2 } })).toBe(2);
     expect(waitingIn('def', { rooms: {} })).toBe(0);
