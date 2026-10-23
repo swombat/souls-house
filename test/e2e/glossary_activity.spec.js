@@ -131,6 +131,7 @@ test('two open glossaries follow terms and built-in names while preserving draft
       'room_activity',
       'rooms',
       'current_room',
+      'main_room_name',
     ];
     for (const props of partials) expect(props.every((prop) => allowed.includes(prop))).toBe(true);
     expect(confirmed.has('Agent')).toBe(false);

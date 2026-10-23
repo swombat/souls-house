@@ -118,6 +118,7 @@ test('connector chat counts follow real events and reconnect without replacing d
           'current_room',
           'expired_subscriptions',
           'is_account_admin',
+          'main_room_name',
           'reply_attention',
           'room_activity',
           'rooms'
