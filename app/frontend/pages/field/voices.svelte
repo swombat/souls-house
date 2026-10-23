@@ -2,7 +2,10 @@
   // The voices this Field knows (spec §7, §9; learning in the house, spec
   // 2026-10-19). Names live here whatever the recognition setting says.
   // Forgetting is never gated: "Forget voice" and "Forget all voices" show
-  // whenever something is remembered, even with recognition off.
+  // whenever something is remembered, even with recognition off. Every action
+  // that throws away prints and reviewed samples goes through
+  // ForgetVoiceDialog, and "Forget all voices" lives at the foot of the page,
+  // folded away, not beside the switch.
   import { router } from '@inertiajs/svelte';
   import { createDynamicSync } from '$lib/use-sync';
   import { Button } from '$lib/components/shadcn/button/index.js';
@@ -11,6 +14,9 @@
   import VoiceMeaning from '$lib/components/field/VoiceMeaning.svelte';
   import VoiceSamples from '$lib/components/field/VoiceSamples.svelte';
   import VoiceMerge from '$lib/components/field/VoiceMerge.svelte';
+  import ForgetVoiceDialog from '$lib/components/field/ForgetVoiceDialog.svelte';
+  import VoiceDangerZone from '$lib/components/field/VoiceDangerZone.svelte';
+  import { forgetAllRequest, forgetVoiceRequest, deleteNameRequest } from '$lib/voice-forgetting.js';
   import AccountSettingsLayout from '$lib/components/accounts/AccountSettingsLayout.svelte';
   import { CaretLeft, MagnifyingGlass } from 'phosphor-svelte';
 
@@ -138,6 +144,15 @@
     );
   }
 
+  const totalSamples = $derived(voices.reduce((sum, voice) => sum + (voice.samples || 0), 0));
+
+  let forgetting = $state(null);
+  let forgetOpen = $state(false);
+  function ask(request) {
+    forgetting = request;
+    forgetOpen = true;
+  }
+
   // Naming on a clear match: the same endpoint, the other setting. Only
   // meaningful while recognition is on, so the switch rests when it's off.
   let switchingNaming = $state(null);
@@ -159,25 +174,8 @@
     );
   }
 
-  function forgetAll() {
-    if (!confirm("Forget every voice this Field remembers? They're deleted now. Names on transcripts stay.")) return;
-    router.delete(`${base}/prints`);
-  }
-
-  function forget(voice) {
-    const message = `Forget ${voice.name}'s voice? The print is deleted now and stops learning. Names on transcripts stay.`;
-    if (!confirm(message)) return;
-    router.delete(`${base}/${voice.id}/print`);
-  }
-
   function rememberAgain(voice) {
     router.post(`${base}/${voice.id}/remember`, {}, { preserveScroll: true });
-  }
-
-  function deleteName(voice) {
-    const message = `Delete ${voice.name}? Speakers named ${voice.name} go back to 'Speaker N' everywhere, and any remembered voice is forgotten.`;
-    if (!confirm(message)) return;
-    router.delete(`${base}/${voice.id}`);
   }
 
   let editingId = $state(null);
@@ -326,18 +324,12 @@
     {:else if anyRemembered && !recognitionOn}
       <p class="text-muted-foreground">Learned voices are kept but not used while this is off.</p>
     {/if}
-    {#if anyRemembered || unprepared > 0}
+    {#if unprepared > 0}
       <div class="flex flex-wrap items-center gap-2">
-        {#if unprepared > 0}
-          <Button size="sm" disabled={preparing} onclick={prepareAll} data-testid="voices-prepare-all">
-            Prepare {unprepared}
-            {unprepared === 1 ? 'sample' : 'samples'} for listening
-          </Button>
-        {/if}
-        {#if anyRemembered}
-          <Button variant="ghost" size="sm" onclick={forgetAll} data-testid="voices-forget-all"
-            >Forget all voices</Button>
-        {/if}
+        <Button size="sm" disabled={preparing} onclick={prepareAll} data-testid="voices-prepare-all">
+          Prepare {unprepared}
+          {unprepared === 1 ? 'sample' : 'samples'} for listening
+        </Button>
       </div>
       {#if unprepared > 0 && !prepareNote}
         <p class="text-xs text-muted-foreground">
@@ -446,13 +438,13 @@
                     >Merge with other speaker</Button>
                 {/if}
                 {#if voice.remembered || voice.remember}
-                  <Button size="sm" variant="ghost" onclick={() => forget(voice)} data-testid="voice-forget"
+                  <Button size="sm" variant="ghost" onclick={() => ask(forgetVoiceRequest(voice, base))} data-testid="voice-forget"
                     >Forget voice</Button>
                 {:else}
                   <Button size="sm" variant="ghost" onclick={() => rememberAgain(voice)} data-testid="voice-remember"
                     >Remember again</Button>
                 {/if}
-                <Button size="sm" variant="ghost" class="text-destructive" onclick={() => deleteName(voice)}
+                <Button size="sm" variant="ghost" class="text-destructive" onclick={() => ask(deleteNameRequest(voice, base))}
                   >Delete name</Button>
               </div>
             {/if}
@@ -486,4 +478,17 @@
     <summary class="cursor-pointer font-medium">What this means</summary>
     <div class="mt-2"><VoiceMeaning onVoicesPage /></div>
   </details>
+
+  {#if anyRemembered || totalSamples > 0}
+    <VoiceDangerZone onforget={() => ask(forgetAllRequest(voices, base))} />
+  {/if}
+
+  <ForgetVoiceDialog
+    bind:open={forgetOpen}
+    title={forgetting?.title}
+    losses={forgetting?.losses || []}
+    keeps={forgetting?.keeps || ''}
+    requireWord={forgetting?.requireWord || false}
+    confirmLabel={forgetting?.confirmLabel}
+    onconfirm={() => forgetting && router.delete(forgetting.url)} />
 </AccountSettingsLayout>

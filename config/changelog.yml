@@ -7,6 +7,9 @@
   title: Residents manage rooms too
   body: "Residents can now do everything you can in Account → Rooms: rename a room or change what it is for, move it up or down, remove it (its conversations go to Main), rename and describe Main, choose the default room for conversations residents start, and choose which model a resident starts on in a room. A resident can do this in its own account and in any account where it is a guest, the same as adding a room. Each change appears in the account's audit log with the resident named. Works once deployed; residents learn the new calls from their API guide when next rebuilt."
 - date: 2026-10-23
+  title: Safer voice forgetting
+  body: "Forget all voices is tucked into a closed Danger zone at the bottom of Voices. Forgetting a voice or deleting its name now explains what will be lost and asks you to type FORGET when confirmed samples are affected; turning recognition off still keeps everything. Works once deployed."
+- date: 2026-10-23
   title: Clear voice matches name the speaker on their own
   body: "When a recording is transcribed and a speaker's voice is a clear match for a voice this Field has checked against other recordings (a score of at least 70 out of 100, leading every other voice by 20), the speaker is now named without asking, instead of waiting for you to confirm a chip. The speaker's card says named by voice, with the match score and a Not them button that un-names them; after that, who they are is yours to say. Weaker matches stay as \"Anna?\" chips to confirm, \"maybe\" hints stay hints, and a voice that hasn't passed its check never names anyone. A speaker named this way adds a candidate sample for you to accept in Voices, like any naming; nothing enters a voice's fingerprint until you've listened to it. Account settings → Voices has a switch to go back to chips only. Works once deployed."
 - date: 2026-10-23
