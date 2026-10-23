@@ -181,6 +181,8 @@ class ResidentEntitlement < ApplicationRecord
   # Remembers the highest allowance paid for in this UTC month, including the
   # outgoing tier (in force until now), so a downgrade, or a lapse and
   # repayment, can't refill the month. The lower limit starts on the 1st.
+  # Called on every activation and when a paid plan ends (new_tier nil), so a
+  # plan carried over from last month still marks this month before it lapses.
   def record_allowance(new_tier, now)
     month = now.utc.to_date.beginning_of_month
     limits = [ self.class.tier_allowance(new_tier) ]
@@ -203,6 +205,7 @@ class ResidentEntitlement < ApplicationRecord
   # A paid plan ended. Free hosting the house granted comes back; otherwise
   # the resident is held. Nothing is deleted.
   def end_paid_plan(now)
+    record_allowance(nil, now)
     self.grace_started_at = nil
     self.grace_deadline = nil
     if complimentary_granted_at.present?

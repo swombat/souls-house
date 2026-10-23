@@ -186,4 +186,55 @@ class PaidHouseAllowanceTest < ActiveSupport::TestCase
     assert_equal BigDecimal("13"), entitlement.allowance_remaining
   end
 
+  test "a plan carried into a new month marks that month before it lapses, so a cheaper replacement doesn't lower it" do
+    @agent.update!(model_id: @model)
+    entitlement, sub = pay!(@agent, "life")
+    travel_to Time.utc(2026, 11, 10)
+    configured { spend!(entitlement, @agent, 20) }
+    sub.update!(stripe_status: "canceled")
+    entitlement.apply_subscription!(sub, now: Time.current)
+    assert entitlement.reload.held?
+
+    travel_to Time.utc(2026, 11, 11)
+    replacement, = pay!(@agent, "conversation", id: "sub_replacement")
+    assert_equal BigDecimal("25"), replacement.allowance_limit
+    assert_equal BigDecimal("5"), replacement.allowance_remaining
+
+    travel_to Time.utc(2026, 12, 1)
+    assert_equal BigDecimal("8"), replacement.allowance_limit
+  end
+
+  test "grace expiry in a new month also marks the month before the plan ends" do
+    @agent.update!(model_id: @model)
+    entitlement, sub = pay!(@agent, "life")
+    travel_to Time.utc(2026, 11, 3)
+    sub.update!(stripe_status: "past_due")
+    entitlement.apply_subscription!(sub, now: Time.current)
+    assert entitlement.reload.grace?
+    travel_to Time.utc(2026, 11, 17)
+    assert entitlement.expire_grace!(now: Time.current)
+    sub.update!(stripe_status: "unpaid") # Stripe gives up later; only then can a replacement be live
+
+    replacement, = pay!(@agent, "conversation", id: "sub_replacement")
+    assert_equal BigDecimal("25"), replacement.allowance_limit
+  end
+
+  test "a member without credential rights can still edit a paid resident on a house model" do
+    @agent.update!(model_id: @model)
+    pay!(@agent, "conversation")
+    @agent.account.stub(:ai_credentials_manageable_by?, false) do
+      assert_nil HouseInferenceGrant.assign!(@agent, @user)
+      @agent.update_settings!({ name: "Renamed" }, by: @user)
+    end
+    assert_equal "Renamed", @agent.reload.name
+    assert_nil HouseInferenceGrant.find_by(agent: @agent)
+  end
+
+  test "without a paid plan the credential check still guards claiming the free grant" do
+    @agent.update!(model_id: @model)
+    @agent.account.stub(:ai_credentials_manageable_by?, false) do
+      assert_raises(ActiveRecord::RecordInvalid) { HouseInferenceGrant.assign!(@agent, @user) }
+    end
+  end
+
 end

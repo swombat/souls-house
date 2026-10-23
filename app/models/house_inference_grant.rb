@@ -21,13 +21,14 @@ class HouseInferenceGrant < ApplicationRecord
       grant = find_by(agent: agent)
       if HouseInference::Offering.find(agent.model_id)
         return grant if grant
+        # A resident on a paid plan is funded by its plan; it doesn't claim
+        # (or need) the user's one free grant, so editing it needs no
+        # permission over the account's credentials.
+        return nil if ResidentEntitlement.paid_for?(agent)
         unless agent.account.ai_credentials_manageable_by?(user)
           agent.errors.add(:model_id, 'requires permission to manage account credentials')
           raise ActiveRecord::RecordInvalid, agent
         end
-        # A resident on a paid plan is funded by its plan; it doesn't claim
-        # (or need) the user's one free grant.
-        return nil if ResidentEntitlement.paid_for?(agent)
         grant ||= find_or_initialize_by(user: user)
         if grant.agent_id && grant.agent_id != agent.id
           agent.errors.add(:model_id, 'only one on-the-house resident is allowed per user across all accounts; switch the other resident to personal funding first')
