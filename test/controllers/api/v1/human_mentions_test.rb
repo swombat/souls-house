@@ -203,8 +203,8 @@ class Api::V1::HumanMentionsTest < ActionDispatch::IntegrationTest
   end
 
   test "duplicate-name matching stays identical to direct shared human acceptance" do
-    # Account names are case-sensitive, while the established human mention
-    # matcher is not. Do not silently replace it with the resident tag parser.
+    # Account names are case-sensitive, while human mentions are not.
+    # Both entry points select the lowest-ID namesake and project one receipt.
     duplicate = @account.agents.create!(name: "MIRA", system_prompt: "Test", runtime: "external")
     @chat.agents << duplicate
     direct = nil
@@ -213,10 +213,11 @@ class Api::V1::HumanMentionsTest < ActionDispatch::IntegrationTest
       send_message("@Mira API")
     end
     assert_response :created
-    expected = [ @mira.id, duplicate.id ].sort
+    assert_operator @mira.id, :<, duplicate.id
+    expected = [ @mira.id ]
     assert_equal expected, direct.message.message_dispatch.target_agent_ids.sort
     assert_equal direct.message.message_dispatch.target_agent_ids.sort, @chat.messages.last.message_dispatch.target_agent_ids.sort
-    assert_equal [ @mira.to_param, duplicate.to_param ].sort, response.parsed_body["handoffs"].map { |r| r["recipient_id"] }.sort
+    assert_equal [ @mira.to_param ], response.parsed_body["handoffs"].map { |r| r["recipient_id"] }
   end
 
   test "receipt projection uses the acceptance roster decision after seats change" do
