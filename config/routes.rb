@@ -482,8 +482,10 @@ Rails.application.routes.draw do
         resource :reply_dismissal, only: :create
         get :changes, to: "conversation_changes#index"
         get :activity, to: "conversation_changes#activity"
+        get :who, to: "who#show"
       end
       resource :session, only: [ :show, :destroy ]
+      get "who", to: "who#index"
       resource :cable_ticket, only: :create
       resources :invitations, only: :index do
         post :accept, on: :member
