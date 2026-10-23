@@ -41,7 +41,7 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
       assert_equal @voice.reload.print_generation, @speaker.recognition_print_generation
       assert_operator @speaker.recognition_confidence, :>=, 55
       assert @speaker.recognition?
-      assert_equal "ecapa-test", @speaker.probe_profile
+      assert_equal FieldVoiceprints::Profiles::ECAPA, @speaker.probe_profile
       assert_not_includes @speaker.as_json.keys, "probe_embedding", "a kept embedding is never serialised"
       assert_not_includes @speaker.to_json, "probe"
 
@@ -109,7 +109,7 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
       store_print!(@voice, vector: voice_vector(3))
       account = @account
       helper = self
-      between = Array.new(FieldVoiceprints::VoiceEmbeddings::DIMENSIONS, 0.0)
+      between = Array.new(192, 0.0)
       between[3] = 0.75
       between[7] = Math.sqrt(1 - (0.75**2)) # 0.75 to Tomás, 0.66 to Priya: a margin of 0.09
       client = FakeVoiceEmbeddings.new({ default: between })

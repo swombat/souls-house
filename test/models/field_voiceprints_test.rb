@@ -30,7 +30,7 @@ class FieldVoiceprintsTest < ActiveSupport::TestCase
     client = Object.new
     client.define_singleton_method(:embed) do |_wav|
       during.call
-      FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: vector, profile: "ecapa-test")
+      FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: vector, profile: FieldVoiceprints::Profiles::ECAPA)
     end
     client
   end

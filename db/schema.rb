@@ -44,6 +44,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_070000) do
     t.boolean "stalled_sweep_enabled", default: false, null: false
     t.bigint "field_probe_generation", default: 0, null: false
     t.string "field_matched_cohort"
+    t.string "voice_embedding_profile", default: "ecapa-voxceleb-0f99f2d0ebe8-speechbrain-1.1.2-torch-2.14.1-v1", null: false
+    t.string "voice_conversion_status"
+    t.string "voice_conversion_error"
     t.string "main_room_name"
     t.text "main_room_description"
     t.index ["account_type"], name: "index_accounts_on_account_type"
@@ -1386,6 +1389,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_070000) do
     t.string "learning_status"
     t.string "learning_error"
     t.boolean "excluded", default: false, null: false
+    t.text "rollback_embedding"
+    t.string "rollback_profile"
     t.index ["account_id", "content_sha256"], name: "index_voice_samples_on_account_content", unique: true, where: "((content_sha256 IS NOT NULL) AND (removed_at IS NULL))"
     t.index ["account_id", "idempotency_key"], name: "index_voice_samples_on_account_idempotency", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "source_sha256"], name: "index_field_voice_samples_on_account_id_and_source_sha256"
@@ -2375,6 +2380,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_070000) do
     t.integer "stalled_sweep_minutes", default: 0, null: false
     t.integer "stalled_sweep_cursor", default: 0, null: false
     t.boolean "stalled_sweep_wake", default: false, null: false
+    t.string "voice_embedding_profile", default: "ecapa-voxceleb-0f99f2d0ebe8-speechbrain-1.1.2-torch-2.14.1-v1", null: false
   end
 
   create_table "stalled_thread_sweeps", force: :cascade do |t|
