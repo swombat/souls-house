@@ -63,6 +63,25 @@ class Admin::SettingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal BigDecimal("2.5"), Setting.instance.reload.field_ocr_daily_usd_ceiling
   end
 
+  test "a site admin sets the reflexes scope to one of three states" do
+    sign_in @admin
+    %w[enabled account_choice disabled].each do |scope|
+      patch admin_settings_path, params: { setting: { reflexes_scope: scope } }
+      assert_redirected_to admin_settings_path
+      assert_equal scope, Setting.instance.reload.reflexes_scope
+    end
+
+    patch admin_settings_path, params: { setting: { reflexes_scope: "selected" } }
+    assert_equal "disabled", Setting.instance.reload.reflexes_scope
+  end
+
+  test "non-admins cannot change the reflexes scope" do
+    sign_in @user
+    patch admin_settings_path, params: { setting: { reflexes_scope: "enabled" } }
+    assert_redirected_to root_path
+    assert_equal "disabled", Setting.instance.reload.reflexes_scope
+  end
+
   test "non-admins cannot turn on scanned-page transcription" do
     sign_in @user
     patch admin_settings_path, params: { setting: { field_ocr_enabled: true } }

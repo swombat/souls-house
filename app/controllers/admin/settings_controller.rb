@@ -28,13 +28,12 @@ class Admin::SettingsController < ApplicationController
     saved = Setting.transaction do
       setting.update(setting_params).tap do |ok|
         update_follow_through_residents if ok && params[:setting]&.key?(:follow_through_resident_ids)
-        update_reflexes_residents if ok && params[:setting]&.key?(:reflexes_resident_ids)
         update_stalled_sweep_accounts if ok && params[:setting]&.key?(:stalled_sweep_account_ids)
       end
     end
 
     if saved
-      audit_with_changes("update_settings", setting, **@follow_through_changes.to_h, **@reflexes_changes.to_h, **@stalled_sweep_changes.to_h)
+      audit_with_changes("update_settings", setting, **@follow_through_changes.to_h, **@stalled_sweep_changes.to_h)
       redirect_to admin_settings_path, notice: "Settings updated"
     else
       redirect_to admin_settings_path, inertia: { errors: setting.errors.to_hash }
@@ -80,8 +79,7 @@ class Admin::SettingsController < ApplicationController
         icon: agent.icon,
         colour: agent.colour,
         paused: agent.paused?,
-        follow_through: agent.follow_through?,
-        reflexes_chosen: agent.reflexes_chosen?
+        follow_through: agent.follow_through?
       }
     end
   end
@@ -100,24 +98,6 @@ class Admin::SettingsController < ApplicationController
     @follow_through_changes = {
       follow_through_on: Agent.where(id: turned_on).map(&:to_param),
       follow_through_off: Agent.where(id: turned_off).map(&:to_param)
-    }.compact_blank
-  end
-
-  # Residents whose posts the reflex check covers when reflexes_scope is
-  # "selected". Same shape as the follow-through list: the full list is sent.
-  def update_reflexes_residents
-    picked = Array(params[:setting][:reflexes_resident_ids]).compact_blank.filter_map do |param|
-      Agent.find_by_obfuscated_id(param)&.id
-    rescue StandardError
-      nil
-    end
-    turned_on = Agent.active.where(id: picked, reflexes_chosen: false).pluck(:id)
-    turned_off = Agent.active.where(reflexes_chosen: true).where.not(id: picked).pluck(:id)
-    Agent.where(id: turned_on).update_all(reflexes_chosen: true, updated_at: Time.current)
-    Agent.where(id: turned_off).update_all(reflexes_chosen: false, updated_at: Time.current)
-    @reflexes_changes = {
-      reflexes_on: Agent.where(id: turned_on).map(&:to_param),
-      reflexes_off: Agent.where(id: turned_off).map(&:to_param)
     }.compact_blank
   end
 

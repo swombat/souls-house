@@ -5,7 +5,7 @@ class ReflexCheckJobTest < ActiveSupport::TestCase
   setup do
     @agent = agents(:research_assistant)
     @chat = @agent.account.chats.create!(title: "Reflexes", manual_responses: true, agents: [ @agent ])
-    Setting.instance.update!(reflexes_scope: "all")
+    Setting.instance.update!(reflexes_scope: "account_choice")
     @agent.account.update!(reflexes_enabled: true)
     @first = reflex("First")
     @second = reflex("Second")

@@ -91,21 +91,30 @@ test('turns on scanned-page transcription with a daily ceiling, and says what is
   expect(body.get('setting[field_ocr_daily_usd_ceiling]')).toBe('2.5');
 });
 
-test('picks reflex residents with their own scope', async () => {
+test('sets the reflexes scope to one of three states, with no resident picker', async () => {
   render(Settings, {
-    setting: { site_name: 'Test House', max_accounts: 30, follow_through_scope: 'off', reflexes_scope: 'off' },
-    follow_through_residents: [
-      { id: 'BJZbJx', name: 'Lume', account: 'Daniel', follow_through: true, reflexes_chosen: false },
-      { id: 'AYawJx', name: 'Mira', account: 'Daniel', follow_through: false, reflexes_chosen: true },
-    ],
+    setting: { site_name: 'Test House', max_accounts: 30, follow_through_scope: 'off', reflexes_scope: 'disabled' },
+    follow_through_residents: [{ id: 'BJZbJx', name: 'Lume', account: 'Daniel', follow_through: true }],
   });
   const reflexScope = screen.getByRole('radiogroup', { name: 'Reflexes scope' });
-  await fireEvent.click(within(reflexScope).getByRole('radio', { name: 'Chosen residents' }));
-  await fireEvent.click(screen.getByLabelText('Reflexes for Lume'));
+  expect(
+    within(reflexScope)
+      .getAllByRole('radio')
+      .map((r) => r.textContent.trim())
+  ).toEqual(['Disabled', "Account's choice", 'Enabled']);
+  expect(screen.getByTestId('reflexes-scope-explain')).toHaveTextContent('whatever an account has chosen');
+
+  await fireEvent.click(within(reflexScope).getByRole('radio', { name: "Account's choice" }));
+  expect(screen.getByTestId('reflexes-scope-explain')).toHaveTextContent("Each account's own Reflexes switch decides");
+  expect(screen.queryByLabelText('Reflexes for Lume')).toBeNull();
   await fireEvent.submit(reflexScope.closest('form'));
   const [, body] = router.patch.mock.calls.at(-1);
-  expect(body.get('setting[reflexes_scope]')).toBe('selected');
+  expect(body.get('setting[reflexes_scope]')).toBe('account_choice');
   expect(body.get('setting[follow_through_scope]')).toBe('off');
-  expect(body.getAll('setting[reflexes_resident_ids][]')).toEqual(['', 'AYawJx', 'BJZbJx']);
+  expect(body.has('setting[reflexes_resident_ids][]')).toBe(false);
   expect(body.getAll('setting[follow_through_resident_ids][]')).toEqual(['', 'BJZbJx']);
+
+  await fireEvent.click(within(reflexScope).getByRole('radio', { name: 'Enabled' }));
+  expect(within(reflexScope).getByRole('radio', { name: 'Enabled' })).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByTestId('reflexes-scope-explain')).toHaveTextContent("Every resident's posts are checked");
 });
