@@ -86,13 +86,21 @@ namespace :field do
 
       entry.each { |key, value| totals[key] += value }
       verdict = passing.include?(print.field_voice_id) ? "suggests" : "not yet checked"
-      puts format("%-28s %2d rec  queries %2d  correct %2d  rejected %2d  wrong %2d  false accepts into %2d  negatives %3d  %s",
+      puts format("%-28s %2d rec  queries %2d  correct %2d  rejected %2d  wrong %2d  false accepts into %2d  negatives %3d  " \
+                  "would name %2d  wrongly as this voice %2d  %s",
         print.field_voice.name.truncate(28), print.recording_count, entry["queries"], entry["correct"], entry["rejected"],
-        entry["wrong"], entry["false_accepts_into"], entry["negatives"], verdict)
+        entry["wrong"], entry["false_accepts_into"], entry["negatives"], entry["named"].to_i,
+        entry["named_false_accepts_into"].to_i, verdict)
     end
     voices = stats.count { |_, entry| entry["queries"].positive? }
     puts "Total: #{totals['queries']} queries over #{voices} voices, #{totals['correct']} correct, " \
          "#{totals['rejected']} rejected, #{totals['wrong']} wrong."
+    if prints.any?
+      recipe = FieldVoiceprints::Profiles.recipe(prints.first.profile)
+      puts "At the naming line (score ≥ #{recipe[:name_threshold]}, lead ≥ #{recipe[:name_margin]}): " \
+           "#{totals['named']} of the #{totals['correct']} correct would have been named on their own, " \
+           "#{totals['named_false_accepts_into']} wrongly."
+    end
     puts "Insufficient evidence (fewer than 30 queries across 5 voices)." if totals["queries"] < 30 || voices < 5
   end
 

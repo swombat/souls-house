@@ -50,6 +50,82 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
     end
   end
 
+  test "a sure match from an active print names the speaker on its own, marked, with a candidate sample queued, and Not them undoes it" do
+    with_recognition(@account, naming: true) do
+      store_print!(@voice, vector: voice_vector(3))
+      store_print!(@other_voice, vector: voice_vector(7))
+      client = FakeVoiceEmbeddings.new({ default: voice_vector(3, noise: 0.05) })
+
+      assert_enqueued_with(job: FieldVoices::LearnSampleJob) do
+        assert_enqueued_with(job: FieldItems::RefreshSummaryJob) do
+          assert_equal 1, run_identify(client)
+        end
+      end
+      @speaker.reload
+      assert_equal [ @voice.id, "auto_recognition", nil ], [ @speaker.field_voice_id, @speaker.naming_source, @speaker.named_by ]
+      assert @speaker.auto_named?
+      assert @speaker.training_label?, "a candidate sample, for a person to accept"
+      assert_operator @speaker.auto_named_confidence, :>=, 70
+      assert_nil @speaker.recognised_voice_id, "a naming is not a chip"
+      assert_nil @speaker.probe_embedding
+      assert_includes @recording.reload.transcript_text, "Tomás"
+
+      json = FieldItems.speaker_json(@speaker)
+      assert json[:named]
+      assert_equal @speaker.auto_named_confidence, json.dig(:auto_named, :confidence)
+      assert_nil json[:recognition]
+
+      # "Not them" is a person's decision: back to "Speaker N", and nothing
+      # guesses at this speaker again.
+      @speaker.unname!
+      @speaker.reload
+      assert_nil @speaker.field_voice_id
+      assert_nil @speaker.auto_named_confidence
+      assert_nil FieldItems.speaker_json(@speaker)[:auto_named]
+      assert_equal 0, run_identify(client)
+      assert_nil @speaker.reload.recognised_voice_id
+
+      # A person's own naming afterwards carries no match score.
+      @speaker.name_as!(@other_voice, by: @user)
+      assert_nil @speaker.reload.auto_named_confidence
+      assert_not @speaker.auto_named?
+    end
+  end
+
+  test "a sure match only suggests while naming is off, and a guess under the naming line stays a chip" do
+    with_recognition(@account) do
+      store_print!(@voice, vector: voice_vector(3))
+      store_print!(@other_voice, vector: voice_vector(7))
+      assert_equal 1, run_identify(FakeVoiceEmbeddings.new({ default: voice_vector(3, noise: 0.05) }))
+      @speaker.reload
+      assert_nil @speaker.field_voice_id
+      assert_equal [ @voice.id, true ], [ @speaker.recognised_voice_id, @speaker.recognition_checked ]
+
+      @account.update!(auto_name_voices: true)
+      @speaker.update!(**FieldRecordingSpeaker::RECOGNITION_FIELDS, probe_embedding: nil, probe_profile: nil)
+      # 0.62 to Tomás and 0.30 to Priya: a guess (≥ 0.55, lead 0.32), but
+      # under the 0.70 naming line.
+      between = Array.new(192, 0.0)
+      between[3] = 0.62
+      between[7] = 0.30
+      between[11] = Math.sqrt(1 - (0.62**2) - (0.30**2))
+      assert_equal 1, run_identify(FakeVoiceEmbeddings.new({ default: between }))
+      @speaker.reload
+      assert_nil @speaker.field_voice_id
+      assert_equal [ @voice.id, true, 62 ], [ @speaker.recognised_voice_id, @speaker.recognition_checked, @speaker.recognition_confidence ]
+    end
+  end
+
+  test "an unchecked print's hint never names a speaker, however close" do
+    with_recognition(@account, naming: true) do
+      store_print!(@voice, vector: voice_vector(3), active: false)
+      assert_equal 1, run_identify(FakeVoiceEmbeddings.new({ default: voice_vector(3) }))
+      @speaker.reload
+      assert_nil @speaker.field_voice_id
+      assert_equal [ @voice.id, false ], [ @speaker.recognised_voice_id, @speaker.recognition_checked ]
+    end
+  end
+
   test "an unvalidated print only hints, said as unchecked, and confirming the hint names the speaker and teaches it" do
     with_recognition(@account) do
       store_print!(@voice, vector: voice_vector(3), active: false)

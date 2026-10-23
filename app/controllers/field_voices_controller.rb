@@ -16,6 +16,7 @@ class FieldVoicesController < ApplicationController
           .merge(sample_counts(samples.fetch(voice.id, [])))
       },
       recognise_voices: current_account.recognise_voices,
+      auto_name_voices: current_account.auto_name_voices,
       house_recognition: FieldVoiceprints.house_enabled?,
       voice_conversion: FieldVoiceprints::Conversion.presentation(current_account),
       can_change_setting: current_account.manageable_by?(Current.user),
@@ -79,15 +80,20 @@ class FieldVoicesController < ApplicationController
     render json: { queued: }
   end
 
-  # Turning recognition on or off for the account. Takes the account lock, the
-  # same lock learning and matching write under, so a change can't slip
-  # between their check and their write. Off keeps what was learned, unused;
-  # "Forget all voices" sits beside it.
+  # Turning recognition, or naming on a clear match, on or off for the
+  # account. Takes the account lock, the same lock learning and matching
+  # write under, so a change can't slip between their check and their write.
+  # Recognition off keeps what was learned, unused; "Forget all voices" sits
+  # beside it. Naming off keeps every match a chip.
   def recognition
     return head(:forbidden) unless current_account.manageable_by?(Current.user)
 
-    enabled = ActiveModel::Type::Boolean.new.cast(params.require(:recognise_voices))
-    current_account.with_lock { current_account.update!(recognise_voices: enabled) }
+    changes = %w[recognise_voices auto_name_voices].each_with_object({}) do |setting, named|
+      named[setting] = ActiveModel::Type::Boolean.new.cast(params[setting]) if params.key?(setting)
+    end
+    raise ActionController::ParameterMissing, :recognise_voices if changes.empty?
+
+    current_account.with_lock { current_account.update!(changes) }
     redirect_to account_field_voices_path(current_account)
   end
 

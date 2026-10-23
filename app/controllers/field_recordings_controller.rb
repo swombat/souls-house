@@ -192,6 +192,9 @@ class FieldRecordingsController < ApplicationController
     else
       "Only #{names.to_sentence} #{names.one? ? 'is' : 'are'} checked enough to guess with confidence; other voices this Field knows can show as \"maybe\" hints."
     end
+    if names.any? && FieldVoiceprints.auto_naming_for?(current_account)
+      voices += " A clear match for one of them names the speaker on its own, marked as named by voice."
+    end
     tail = passes.include?(:names) ? " Names from what's said are being looked at too." : ""
     "Looking again. #{voices}#{tail} New guesses appear on the speaker cards for you to confirm. Speakers someone has named keep their names; a guess nobody has confirmed yet can change."
   end

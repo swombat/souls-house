@@ -116,7 +116,7 @@ test('remembered lifecycle and missed socket events preserve roster and recordin
     await detail.waitForLoadState('networkidle');
     expect(rosterSocket.reloads).toHaveLength(1);
     expect(rosterSocket.reloads[0].sort()).toEqual(
-      ['voices', 'recognise_voices', 'can_change_setting', 'voice_conversion'].sort()
+      ['voices', 'recognise_voices', 'auto_name_voices', 'can_change_setting', 'voice_conversion'].sort()
     );
     // A print is roster state now: speaker cards don't show it, so the
     // transcript page reloads only its roster props.

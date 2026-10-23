@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_23_071000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_23_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -49,6 +49,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_071000) do
     t.string "voice_conversion_error"
     t.string "main_room_name"
     t.text "main_room_description"
+    t.boolean "auto_name_voices", default: true, null: false
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
@@ -1076,6 +1077,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_071000) do
     t.datetime "sample_confirmed_at"
     t.string "sample_learning_status"
     t.string "sample_learning_error"
+    t.integer "auto_named_confidence"
     t.index ["field_recording_id", "label"], name: "index_field_recording_speakers_on_field_recording_id_and_label", unique: true
     t.index ["field_recording_id"], name: "index_field_recording_speakers_on_field_recording_id"
     t.index ["field_voice_id"], name: "index_field_recording_speakers_on_field_voice_id"

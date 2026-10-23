@@ -69,7 +69,10 @@ module FieldVoiceprints::Validation
   end
 
   # [{voice_id => stats}, Set of voice ids that pass]. Stats are each print's
-  # from the last round it was a candidate in.
+  # from the last round it was a candidate in. `named` counts its correct
+  # queries that cleared the naming line, and `named_false_accepts_into` the
+  # wrong ones that would have named someone as this voice: what automatic
+  # naming would have done on the held-out set (field:voiceprint_report).
   def measure(account, prints)
     return [ {}, Set.new ] if prints.empty?
 
@@ -94,7 +97,7 @@ module FieldVoiceprints::Validation
   def evaluate(samples, vectors, candidates, profile: FieldVoiceprints::Profiles.configured)
     stats = candidates.to_h do |voice_id|
       [ voice_id, { "queries" => 0, "correct" => 0, "rejected" => 0, "wrong" => 0, "false_accepts_into" => 0,
-                    "negatives" => 0 } ]
+                    "negatives" => 0, "named" => 0, "named_false_accepts_into" => 0 } ]
     end
     samples.group_by(&:source_group_key).each do |group, queries|
       held_out = samples.reject { |sample| sample.source_group_key == group }
@@ -107,6 +110,7 @@ module FieldVoiceprints::Validation
       queries.each do |query|
         held_out.each_key { |voice_id| stats[voice_id]["negatives"] += 1 unless voice_id == query.field_voice_id }
         guess = guesses[query.id]&.first
+        sure = FieldVoiceprints::Matching.sure?(guesses[query.id], profile:)
         if held_out.key?(query.field_voice_id)
           entry = stats[query.field_voice_id]
           entry["queries"] += 1
@@ -114,12 +118,15 @@ module FieldVoiceprints::Validation
             entry["rejected"] += 1
           elsif guess == query.field_voice_id
             entry["correct"] += 1
+            entry["named"] += 1 if sure
           else
             entry["wrong"] += 1
             stats[guess]["false_accepts_into"] += 1
+            stats[guess]["named_false_accepts_into"] += 1 if sure
           end
         elsif guess
           stats[guess]["false_accepts_into"] += 1
+          stats[guess]["named_false_accepts_into"] += 1 if sure
         end
       end
     end

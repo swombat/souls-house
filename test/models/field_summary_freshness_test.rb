@@ -157,7 +157,7 @@ class FieldSummaryFreshnessTest < ActiveJob::TestCase
     end
   end
 
-  test "explicit per-recording naming and un-naming schedule; automatic naming does not" do
+  test "explicit per-recording naming, un-naming and the house's clear-match naming schedule; a machine write with no confirmer does not" do
     summarize
     voice = @account.field_voices.create!(name: "Priya")
     speaker = @recording.speakers.first
@@ -173,6 +173,17 @@ class FieldSummaryFreshnessTest < ActiveJob::TestCase
     end
     assert_equal "stale", @recording.reload.summary_freshness
     assert_nil @recording.summary_refresh_due_at
+
+    # A clear voice match naming the speaker changes who the summary says
+    # spoke, so it is refreshed like a person's naming.
+    run_commit_callbacks { assert_enqueued_with(job: FieldItems::RefreshSummaryJob) { speaker.unname! } }
+    @recording.update_columns(summary_refresh_due_at: nil)
+    run_commit_callbacks do
+      assert_enqueued_with(job: FieldItems::RefreshSummaryJob) do
+        speaker.name_as!(voice, by: nil, source: "auto_recognition", confidence: 84)
+      end
+    end
+    assert_equal 84, speaker.reload.auto_named_confidence
   end
 
   test "explicit line reassignment schedules" do

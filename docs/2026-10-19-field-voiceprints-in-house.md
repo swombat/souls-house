@@ -243,10 +243,14 @@ is transcribed (and on "Look for known voices again", #459):
 - the guess is the existing recognition chip. Confirm → `confirmed_recognition`
   (trains), dismiss → nothing learned.
 
-**Question for Daniel:** should a very confident match from a **validated**
-print be applied as a name without a tap, as the Mac does today? If yes, it's
-recorded as `machine` and never trains. Unvalidated prints never auto-apply.
-Chips are the default either way.
+**Answered 2026-10-23 (Daniel, MYnpDj):** yes. A guess from a **validated**
+print that clears the recipe's naming line (`name_threshold`/`name_margin` in
+`FieldVoiceprints::Profiles`, 0.70/0.20 for ECAPA from the Grove held-out set
+that day) names the speaker without a tap, as `auto_recognition`, named by
+nobody, shown as "named by voice" with "Not them" beside it. It trains only
+as a candidate: the sample waits for a person's Accept like any other.
+Unvalidated prints and hints never auto-apply; below the line a guess stays a
+chip; a Field can turn naming off on its Voices page (`auto_name_voices`).
 
 Retiring the Mac script: on the comparison set, the house must have
 **correct ≥ the Mac's and wrong ≤ the Mac's** on the identical queries, and

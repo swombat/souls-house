@@ -20,6 +20,7 @@ test('empty roster subscribes, stable refresh keeps subscription, account switch
     expect(subscribeToModel).toHaveBeenCalledWith('FieldVoiceActivity', 'home', [
       'voices',
       'recognise_voices',
+      'auto_name_voices',
       'can_change_setting',
       'voice_conversion',
     ])

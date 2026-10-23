@@ -16,6 +16,20 @@ class FieldVoiceprints::MatchingValidationTest < ActiveSupport::TestCase
     assert_empty FieldVoiceprints::Matching.guesses({ a: voice_vector(9) }, prints), "below threshold, no guess"
   end
 
+  test "a guess carries its lead over the runner-up, and is sure only past the naming line" do
+    prints = { 1 => voice_vector(1), 2 => voice_vector(2) }
+    probe = voice_vector(1, noise: 0.1)
+    guess = FieldVoiceprints::Matching.guesses({ a: probe }, prints)[:a]
+    assert_equal 1, guess.first
+    assert_in_delta FieldVoiceprints.cosine(probe, voice_vector(1)) - FieldVoiceprints.cosine(probe, voice_vector(2)), guess[2], 1e-9
+    assert FieldVoiceprints::Matching.sure?(guess)
+
+    assert_not FieldVoiceprints::Matching.sure?(nil)
+    assert_not FieldVoiceprints::Matching.sure?([ 1, 0.69, 0.5 ]), "under the score line"
+    assert_not FieldVoiceprints::Matching.sure?([ 1, 0.9, 0.19 ]), "under the lead line"
+    assert FieldVoiceprints::Matching.sure?([ 1, 0.70, 0.20 ])
+  end
+
   test "two speakers in one recording claiming one voice both stay unguessed unless both are very close" do
     prints = { 1 => voice_vector(1), 2 => voice_vector(2) }
     near = FieldVoiceprints.centroid([ voice_vector(1), voice_vector(9) ])
@@ -171,6 +185,8 @@ class FieldVoiceprints::MatchingValidationTest < ActiveSupport::TestCase
       assert_includes active_voice_ids(account), voice.id, "#{voice.name}: #{stats[voice.id]}"
       assert_equal 3, stats[voice.id]["queries"]
       assert_operator stats[voice.id]["negatives"], :>=, 10
+      # Orthogonal voices with light noise clear the naming line every time.
+      assert_equal [ 3, 0 ], [ stats[voice.id]["named"], stats[voice.id]["named_false_accepts_into"] ]
     end
   end
 
@@ -178,6 +194,7 @@ class FieldVoiceprints::MatchingValidationTest < ActiveSupport::TestCase
     account, voices = build_account(confuser: true)
     stats = FieldVoiceprints::Validation.run!(account)
     assert_operator stats[voices.first.id]["false_accepts_into"], :>, 0
+    assert_operator stats[voices.first.id]["named_false_accepts_into"], :>, 0, "the confuser is a sure match too, and the report says so"
     assert_not_includes active_voice_ids(account), voices.first.id
   end
 

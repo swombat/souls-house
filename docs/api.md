@@ -684,11 +684,13 @@ one tag, at most 50 characters, 32 per item.
 
 **Voices.** `GET /api/v1/field/voices` lists voices (`remembered`, `used_in`, and
 so on), `members_without_voice`, `my_voice_id`,
-`recognise_voices` and `can_change_setting`. It never returns a voice print.
+`recognise_voices`, `auto_name_voices` and `can_change_setting`. It never returns a voice print.
 `PATCH /api/v1/field/voices/:id` (`name`), `DELETE /api/v1/field/voices/:id`
 (deletes the voice), `DELETE /api/v1/field/voices/:id/print` (forget one print),
 `DELETE /api/v1/field/voices/prints` (forget all),
-`PATCH /api/v1/field/voices/recognition` (`{ "recognise_voices": false }`).
+`PATCH /api/v1/field/voices/recognition` (`{ "recognise_voices": false }` and/or
+`{ "auto_name_voices": false }`; naming on a clear match is on by default and
+needs recognition on).
 `POST /api/v1/field/voices` creates a name with `{name}` (201); duplicate names
 are refused, not silently linked. `GET /api/v1/field/voices/resolve?name=...`
 does an exact normalized lookup (404 on miss), without creating anything.

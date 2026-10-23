@@ -43,12 +43,15 @@ module FieldRecordingHelpers
   # Both recognition gates open for the block: the voice service
   # "configured", the account setting on, and the writer cutover recorded so
   # learning may start.
-  def with_recognition(account)
+  # Recognition on, with the house's voice service "configured". Naming on a
+  # clear match is off unless asked for (naming: true), so tests of the chip
+  # path keep their chips; production defaults it on.
+  def with_recognition(account, naming: false)
     previous = ENV.to_h.slice("VOICE_EMBEDDING_URL", "VOICE_EMBEDDING_TOKEN")
     cutover = Setting.instance.field_naming_cutover_at
     ENV["VOICE_EMBEDDING_URL"] = "http://souls-house-voice-embeddings:8000"
     ENV["VOICE_EMBEDDING_TOKEN"] = "t" * 32
-    account.update!(recognise_voices: true)
+    account.update!(recognise_voices: true, auto_name_voices: naming)
     Setting.instance.update!(field_naming_cutover_at: 1.day.ago)
     yield
   ensure

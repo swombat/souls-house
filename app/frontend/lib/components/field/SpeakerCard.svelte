@@ -53,6 +53,20 @@
       { preserveScroll: true, preserveState: true, onFinish: () => (settingAside = false) }
     );
   }
+
+  // "Not them" on a speaker the house named by voice: un-names it, which
+  // counts as a person's decision, so nothing guesses at it again. Any part
+  // of a merged card goes with it, as the chip's own un-name does.
+  let unnaming = $state(false);
+  function notThem() {
+    unnaming = true;
+    const companions = chip.with || [];
+    router.patch(
+      chip.url,
+      { speaker: companions.length ? { unname: true, with: companions } : { unname: true } },
+      { preserveScroll: true, preserveState: true, onFinish: () => (unnaming = false) }
+    );
+  }
 </script>
 
 <Card.Root
@@ -62,6 +76,17 @@
   <Card.Content class="p-3 space-y-2">
     <div>
       <p class="font-semibold truncate">{speaker.name || speaker.default_name}</p>
+      {#if speaker.named && speaker.auto_named}
+        <p class="text-xs text-muted-foreground" data-testid="speaker-auto-named">
+          Named by voice{speaker.auto_named.confidence != null ? ` · match ${speaker.auto_named.confidence}` : ''}
+          ·
+          <button
+            class="underline-offset-2 hover:underline hover:text-foreground disabled:opacity-50"
+            disabled={unnaming}
+            onclick={notThem}
+            data-testid="speaker-auto-unname">Not {speaker.name}</button>
+        </p>
+      {/if}
       {#if speaker.ignored && !anonymous}
         <p class="text-xs text-muted-foreground">Dismissed as noise</p>
       {:else if speaker.talk_ms != null || anonymous}
