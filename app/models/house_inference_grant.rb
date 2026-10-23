@@ -25,6 +25,9 @@ class HouseInferenceGrant < ApplicationRecord
           agent.errors.add(:model_id, 'requires permission to manage account credentials')
           raise ActiveRecord::RecordInvalid, agent
         end
+        # A resident on a paid plan is funded by its plan; it doesn't claim
+        # (or need) the user's one free grant.
+        return nil if ResidentEntitlement.paid_for?(agent)
         grant ||= find_or_initialize_by(user: user)
         if grant.agent_id && grant.agent_id != agent.id
           agent.errors.add(:model_id, 'only one on-the-house resident is allowed per user across all accounts; switch the other resident to personal funding first')
@@ -51,7 +54,7 @@ class HouseInferenceGrant < ApplicationRecord
       check!(model_id)
       month = HouseInference::Offering.month
       house_inference_calls.create!(month: month, model_id: model_id,
-        provider_route: offering.fetch(:provider), charge_usd: offering.fetch(:reservation_usd))
+        provider_route: offering.fetch(:provider), charge_usd: offering.fetch(:reservation_usd), agent_id: agent_id)
     end
   end
 
@@ -63,6 +66,11 @@ class HouseInferenceGrant < ApplicationRecord
     unless agent && agent.model_id == model_id && agent.active? && !agent.account.disabled? && user.memberships.confirmed.exists?(account_id: agent.account_id)
       raise HouseInference::Error.new('This resident has no active house allowance.', status: 403)
     end
+    # Paid replaces, never stacks: a resident on a paid plan doesn't draw on
+    # the grant attached to it.
+    if ResidentEntitlement.paid_for?(agent)
+      raise HouseInference::Error.new('This resident is funded by its paid plan, not the free allowance.', status: 409)
+    end
     if house_inference_calls.where(status: 'pending').exists?
       raise HouseInference::Error.new('A house-funded call is already in progress. Try again shortly.', code: 'house_inference_busy', status: 429)
     end
@@ -70,7 +78,9 @@ class HouseInferenceGrant < ApplicationRecord
     if spent(month) >= MONTHLY_LIMIT
       raise HouseInference::Error.new('The $10 house allowance is used up. It resets at the start of next month (UTC).', code: 'house_allowance_exhausted', status: 402)
     end
-    if HouseInferenceCall.where(month: month).sum(:charge_usd) >= HouseInference::Offering.global_limit
+    # The free house-wide ceiling covers free grants only; paid plans are
+    # bounded by their own allowances.
+    if HouseInferenceCall.on_grants.where(month: month).sum(:charge_usd) >= HouseInference::Offering.global_limit
       raise HouseInference::Error.new('The house-wide inference allowance is currently used up.', code: 'house_allowance_unavailable', status: 503)
     end
   end

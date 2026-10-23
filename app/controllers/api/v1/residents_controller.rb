@@ -172,7 +172,7 @@ module Api
         {
           agent: @agent.as_json,
           provisioning: provisioning_json,
-          house_allowance: HouseInferenceGrant.find_by(agent: @agent)&.presentation,
+          house_allowance: HouseInference::Allowance.presentation(@agent),
           subagent_catalog: catalog.options,
           subagent_providers: catalog.providers,
           subagent_catalog_empty_reason: catalog.empty_reason,

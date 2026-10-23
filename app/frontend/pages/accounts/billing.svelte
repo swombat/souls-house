@@ -83,8 +83,9 @@
   {:else}
     <div class="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-1">
       <p>
-        <strong>Preview.</strong> This stage takes payment and records each resident's plan. What a plan includes below is
-        proposed and not delivered yet, and a lapsed payment is recorded but doesn't pause anything yet.
+        <strong>Preview.</strong> A plan pays for hosting and gives the resident its monthly house-model allowance. The
+        rest of what a plan lists below is proposed and not delivered yet, and a lapsed payment is recorded but doesn't
+        pause anything yet.
       </p>
       {#if billing.test_mode}
         <p>Stripe test mode: no real money moves. Use card 4242 4242 4242 4242 with any future date.</p>
@@ -103,8 +104,12 @@
             </div>
           </div>
           <p class="mt-2 text-sm">Hosting for one resident, in a container on the shared house server.</p>
+          <p class="mt-1 text-sm">
+            ${tier.features.allowance_usd} a month of house model for that resident. It resets on the 1st (UTC) and
+            replaces the free allowance while the plan is paid.
+          </p>
           <p class="mt-2 text-xs font-medium text-muted-foreground">When plans open, not available yet:</p>
-          <PlanIncludes features={tier.features} class="mt-1 text-xs text-muted-foreground" />
+          <PlanIncludes features={tier.features} omit={['allowance']} class="mt-1 text-xs text-muted-foreground" />
         </div>
       {/each}
     </div>
