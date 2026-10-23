@@ -18,8 +18,13 @@ class AccessDirectory
 
   READS_ALL = "every conversation in this account".freeze
   READS_SEATED = "only the conversations it has a seat in".freeze
-  READS_ANY = "can technically open any conversation in any account, as anyone who administers a site can; souls.house admins do not look into accounts that are not theirs without permission".freeze
   NOT_COVERED = "Telegram conversations are separate from house conversations and are not covered here.".freeze
+
+  # The site's own name comes from settings, not a literal (identity_leak_test).
+  def self.reads_any
+    "can technically open any conversation in any account, as anyone who administers a site can; " \
+      "#{Setting.instance.site_name} admins do not look into accounts that are not theirs without permission"
+  end
 
   def initialize(account)
     @account = account
@@ -30,7 +35,7 @@ class AccessDirectory
       account: { id: @account.to_param, name: @account.name },
       people: memberships.map { |membership| person_json(membership) },
       residents: residents.map { |agent| resident_json(agent) },
-      site_admins: outside_site_admins.map { |user| { name: name_of(user), reads: READS_ANY } },
+      site_admins: outside_site_admins.map { |user| { name: name_of(user), reads: self.class.reads_any } },
       not_covered: NOT_COVERED
     }
   end
@@ -42,7 +47,7 @@ class AccessDirectory
         why: "member of #{@account.name} (#{membership.role})", site_admin: site_admin_ids.include?(membership.user_id) }
     end
     readers += outside_site_admins.map do |user|
-      { name: name_of(user), kind: "site_admin", why: "site admin: #{READS_ANY}" }
+      { name: name_of(user), kind: "site_admin", why: "site admin: #{self.class.reads_any}" }
     end
     readers += chat.chat_agents.includes(:agent).sort_by { |seat| seat.agent.name.to_s.downcase }.map do |seat|
       guest = seat.agent.account_id != @account.id
