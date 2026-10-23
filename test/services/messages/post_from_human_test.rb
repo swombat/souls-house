@@ -37,6 +37,37 @@ class Messages::PostFromHumanTest < ActiveSupport::TestCase
     end
   end
 
+  test "a busy lowest-ID namesake gets the held wake without dispatching its free namesake" do
+    duplicate = @account.agents.create!(name: "grok", system_prompt: "Test", runtime: "external")
+    @group_chat.agents << duplicate
+    AgentRuntimeInteraction.reserve!(agent: @agent, chat: @group_chat)
+
+    assert_no_difference "MessageDispatch.count" do
+      assert_difference "PendingWake.count", 1 do
+        assert post("Hey @Grok").created?
+      end
+    end
+    wake = PendingWake.open.find_by!(chat: @group_chat)
+    assert_equal @agent, wake.agent
+    assert_equal [ "message", @user.id ], wake.sources.sole.values_at("kind", "user_id")
+    assert_equal @group_chat.messages.last, wake.sources.sole.message
+  end
+
+  test "a free lowest-ID namesake is dispatched without queueing its busy namesake" do
+    duplicate = @account.agents.create!(name: "grok", system_prompt: "Test", runtime: "external")
+    @group_chat.agents << duplicate
+    AgentRuntimeInteraction.reserve!(agent: duplicate, chat: @group_chat)
+
+    result = nil
+    assert_no_difference "PendingWake.count" do
+      assert_enqueued_jobs 1, only: MessageDispatchJob do
+        result = post("Hey @Grok")
+      end
+    end
+    assert result.created?
+    assert_equal [ @agent.id ], result.message.message_dispatch.target_agent_ids
+  end
+
   test "an immediate repeat is a duplicate and wakes no one" do
     post("Hey @Grok")
 

@@ -410,11 +410,7 @@ class Chat < ApplicationRecord
   # Mentioned residents who are eligible but already responding: the ones
   # mentioned_agent_ids skips, and a mention queues instead.
   def busy_mentioned_agents(content)
-    return [] if content.blank? || !manual_responses?
-
-    agents.select { |agent|
-      content.match?(/@#{Regexp.escape(agent.name)}\b/i) && agent.eligible_for_conversation? && agent_response_active?(agent)
-    }
+    mentioned_agents(content).select { |agent| agent_response_active?(agent) }
   end
 
   # Queue a wake for each of these residents. They were busy when the message
@@ -430,26 +426,35 @@ class Chat < ApplicationRecord
     end
   end
 
-  # The residents a human message asks for, in mention order: eligible and not
-  # already responding. Resolved once, when the message is accepted (#94 B,
-  # step 4b-ii); an edit never re-resolves them.
   # The room's only resident, or nil when it has none or several.
   def sole_resident
     residents = agents.limit(2).to_a
     residents.one? ? residents.first : nil
   end
 
+  # The residents a human message asks for, in mention order: eligible and not
+  # already responding. Resolved once, when the message is accepted (#94 B,
+  # step 4b-ii); an edit never re-resolves them.
   def mentioned_agent_ids(content)
+    mentioned_agents(content).reject { |agent| agent_response_active?(agent) }.map(&:id)
+  end
+
+  # Resolve duplicate names before deciding whether to wake now or queue.
+  # Humans are not mention targets; only eligible residents in this chat count.
+  # Keep the existing mention syntax and order, choosing the lowest database ID
+  # for each case-insensitive name regardless of when it was created.
+  def mentioned_agents(content)
     return [] if content.blank? || !manual_responses?
 
-    agents.select { |agent|
-      content.match?(/@#{Regexp.escape(agent.name)}\b/i)
-    }.reject { |agent|
-      !agent.eligible_for_conversation? || agent_response_active?(agent)
+    agents.sort_by(&:id).select { |agent|
+      agent.eligible_for_conversation? && content.match?(/@#{Regexp.escape(agent.name)}\b/i)
+    }.uniq { |agent|
+      agent.name.downcase
     }.sort_by { |agent|
       content.index(/@#{Regexp.escape(agent.name)}\b/i)
-    }.map(&:id)
+    }
   end
+  private :mentioned_agents
 
   # The conversation's recent runtime interactions, oldest first, with
   # in-flight live runs reconciled first so a lost run doesn't show as

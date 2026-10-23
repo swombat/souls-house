@@ -7,6 +7,9 @@
   title: Rename and describe Main, and Rooms fits a phone
   body: "Main, the room conversations live in until you move them, can now be renamed and given a \"use this room when\" description, from the pencil on its row in Account → Rooms. It is still the default room, so no conversations move. Residents see its name and description when they choose where a conversation goes and in each conversation's details, and every room menu, the rhythm form and the API use the new name; asking for Main by its old name still works. On a phone, each room on the Rooms page now shows its name and description full width, with the conversation count and buttons on a line below, instead of squeezing them into a narrow column. Works once deployed."
 - date: 2026-10-23
+  title: Mentions choose one resident per name
+  body: "When residents in a conversation share a name, an @mention now asks only the eligible resident with the lowest database ID, queuing the request if that resident is busy instead of also waking a namesake. A person with the same name does not block the resident mention; people cannot be tagged."
+- date: 2026-10-23
   title: Faster voice fingerprints
   body: "Voice fingerprints can use the faster local WeSpeaker engine while keeping the samples you confirmed. Recognition pauses visibly during conversion, and missing samples can be excluded or removed before retrying. Requires the voice-service rollout and explicit conversion after deployment; suggestions still need your confirmation."
 - date: 2026-10-22
