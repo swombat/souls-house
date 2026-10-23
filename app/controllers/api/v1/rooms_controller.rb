@@ -24,8 +24,13 @@ module Api
         render json: { error: "Name has already been taken" }, status: :unprocessable_entity
       end
 
+      # The rooms, the default room, and what the model-default PATCH
+      # changes: each resident that can start on another model, with its
+      # choices, and the current per-room choices (room_id "main" for Main;
+      # problem set when a stored model is no longer available).
       def index
-        render json: directory
+        render json: directory.merge(model_residents: @account.model_residents_json,
+          room_model_defaults: room_model_defaults_json)
       end
 
       def create
@@ -95,8 +100,7 @@ module Api
         record = RoomModelDefault.set!(account: @account, room: room, agent: agent, model_id: params[:model_id])
         audit_room_action(:update_room_model_default, room || @account,
           room: room&.name || @account.main_room_label, agent: agent.name, model_id: record&.model_id)
-        render json: { room_model_default: record&.as_json,
-                       room_model_defaults: @account.room_model_defaults.includes(:room, :agent).map(&:as_json) }
+        render json: directory.merge(room_model_default: record&.as_json, room_model_defaults: room_model_defaults_json)
       end
 
       private
@@ -121,6 +125,10 @@ module Api
       def directory
         { rooms: [ @account.main_room_json, *@account.rooms.ordered.map(&:directory_json) ],
           resident_room: @account.resident_room&.as_json || { "id" => nil, "name" => @account.main_room_label } }
+      end
+
+      def room_model_defaults_json
+        @account.room_model_defaults.includes(:room, :agent).map(&:as_json)
       end
 
       # The key's person, as everywhere in the API's audit trail, with the

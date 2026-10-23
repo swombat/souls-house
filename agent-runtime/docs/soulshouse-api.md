@@ -525,8 +525,14 @@ call to act in an account where you are a guest.
 
 **Managing rooms.** You can do everything Account settings → Rooms does, at
 home and in any account where you are a guest (`account_id` on each call). Each
-change is audited with you named, and returns the updated `rooms` and
-`resident_room`.
+change is audited with you named. Every `PATCH` and `DELETE` below returns
+the updated `rooms` and `resident_room` (adding a room returns just `room`).
+
+`GET /api/v1/rooms` also returns what the model setting changes:
+`model_residents` (each resident there that can start on another model, with
+its `default_label` and `choices`) and `room_model_defaults` (`room_id`,
+`"main"` for Main; `agent_id`; `model_id`; `label`; and `problem` when the
+stored model is no longer available). Read it before changing a model.
 
 - `PATCH /api/v1/rooms/:id` with `name` and/or `description` renames or
   re-describes a room (same limits as adding). With `{"direction":"up"}` or
@@ -542,7 +548,8 @@ change is audited with you named, and returns the updated `rooms` and
 - `PATCH /api/v1/rooms/model_default` with `room_id` (`"main"` for Main),
   `agent_id` and `model_id` sets the model that resident starts on in new
   conversations in that room. `model_id: "default"` clears it. A model the
-  resident can't run is 422.
+  resident can't run is 422. The response adds `room_model_default` (or `null`
+  when cleared) and the current `room_model_defaults`.
 
 Removing a room and changing the default affect everyone in the account; say in
 the conversation what you changed and why.

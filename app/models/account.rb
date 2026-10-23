@@ -242,6 +242,21 @@ class Account < ApplicationRecord
     { "id" => nil, "name" => main_room_label, "description" => main_room_description }
   end
 
+  # Residents of this account that can run on more than one model in a
+  # conversation: the ones a room can start on something else. A resident with
+  # a stored room default stays listed after losing its alternatives, so the
+  # stale default is shown and can be cleared rather than silently returning
+  # if the model is listed again. Shared by the Rooms page and GET /api/v1/rooms.
+  def model_residents_json
+    with_defaults = room_model_defaults.distinct.pluck(:agent_id)
+    agents.by_name.select do |agent|
+      (agent.active? && agent.model_switching_available?) || with_defaults.include?(agent.id)
+    end.map do |agent|
+      { id: agent.to_param, name: agent.name, colour: agent.colour, default_label: agent.model_label,
+        choices: agent.model_choices }
+    end
+  end
+
   # Main or this account's name for it, any case.
   def main_room_named?(name)
     name.to_s.strip.casecmp?(Room::MAIN) || name.to_s.strip.casecmp?(main_room_label)

@@ -12,7 +12,7 @@ class Accounts::RoomsController < ApplicationController
       rooms: -> { current_account.rooms.map(&:directory_json) },
       room_counts: counts.except(nil).transform_keys { |id| Room.encode_id(id) },
       resident_room_id: current_account.resident_room&.to_param,
-      model_residents: -> { model_residents },
+      model_residents: -> { current_account.model_residents_json },
       room_model_defaults: -> { current_account.room_model_defaults.includes(:room, :agent).map(&:as_json) }
     }
   end
@@ -48,21 +48,6 @@ class Accounts::RoomsController < ApplicationController
   end
 
   private
-
-  # Residents of this account that can run on more than one model in a
-  # conversation: the ones a room can start on something else. A resident with
-  # a stored room default stays listed after losing its alternatives, so the
-  # stale default is shown and can be cleared rather than silently returning
-  # if the model is listed again.
-  def model_residents
-    with_defaults = current_account.room_model_defaults.distinct.pluck(:agent_id)
-    current_account.agents.by_name.select do |agent|
-      (agent.active? && agent.model_switching_available?) || with_defaults.include?(agent.id)
-    end.map do |agent|
-      { id: agent.to_param, name: agent.name, colour: agent.colour, default_label: agent.model_label,
-        choices: agent.model_choices }
-    end
-  end
 
   def room_params
     params.require(:room).permit(:name, :description)

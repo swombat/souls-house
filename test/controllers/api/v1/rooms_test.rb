@@ -222,6 +222,8 @@ module Api
           headers: @agent_headers, as: :json
         assert_response :success
         assert_equal "anthropic/claude-fable-5.1", response.parsed_body.dig("room_model_default", "model_id")
+        assert_equal %w[Main Build], response.parsed_body["rooms"].map { |r| r["name"] }
+        assert_equal 1, response.parsed_body["room_model_defaults"].size
         assert_equal "anthropic/claude-fable-5.1", RoomModelDefault.find_by!(room: build, agent: @agent).model_id
 
         patch model_default_api_v1_rooms_url,
@@ -297,6 +299,32 @@ module Api
         delete api_v1_room_url(nexus_room), headers: headers, as: :json
         assert_response :not_found
         assert Room.exists?(nexus_room.id)
+      end
+
+      test "GET shows the residents a room can start on another model, their choices, and the current room choices" do
+        @agent.update!(model_id: "anthropic/claude-opus-5.5", switchable_model_ids: [ "anthropic/claude-fable-5.1" ])
+        build = @home.rooms.create!(name: "Build")
+        RoomModelDefault.set!(account: @home, room: build, agent: @agent, model_id: "anthropic/claude-fable-5.1")
+
+        get api_v1_rooms_url, headers: @agent_headers
+        assert_response :success
+        resident = response.parsed_body["model_residents"].find { |r| r["id"] == @agent.to_param }
+        assert resident, "the switchable resident is listed"
+        assert_equal @agent.model_label, resident["default_label"]
+        assert resident["choices"].any?, "with its choices"
+        assert_equal [ { "room_id" => build.to_param, "agent_id" => @agent.to_param, "model_id" => "anthropic/claude-fable-5.1" } ],
+          response.parsed_body["room_model_defaults"].map { |d| d.slice("room_id", "agent_id", "model_id") }
+      end
+
+      test "a guest reads the guest account's model settings, not its home's" do
+        @agent.update!(model_id: "anthropic/claude-opus-5.5", switchable_model_ids: [ "anthropic/claude-fable-5.1" ])
+        RoomModelDefault.set!(account: @home, room: nil, agent: @agent, model_id: "anthropic/claude-fable-5.1")
+        @nexus.guest_memberships.create!(agent: @agent, added_by: @daniel)
+
+        get api_v1_rooms_url, params: { account_id: @nexus.to_param }, headers: @agent_headers
+        assert_response :success
+        assert_equal [], response.parsed_body["room_model_defaults"]
+        assert_not_includes response.parsed_body["model_residents"].map { |r| r["id"] }, @agent.to_param
       end
 
     end
