@@ -519,6 +519,17 @@ test.describe('browser contracts', () => {
       await expect(page.getByRole('heading', { name: control, exact: true })).toBeVisible();
       currentModel = label;
     }
+
+    await page.getByRole('button', { name: currentModel, exact: true }).click();
+    const filter = page.getByRole('combobox', { name: 'Find a model' });
+    await expect(filter).toBeFocused();
+    await filter.fill('no such model anywhere');
+    await expect(page.getByTestId('model-filter-empty')).toBeVisible();
+    await filter.fill('anthropic opus 5.5');
+    await expect(page.getByRole('option').first()).toHaveText('Claude Opus 5.5');
+    await expect(page.getByRole('option', { name: 'GPT-6 Astra', exact: true })).toHaveCount(0);
+    await filter.press('Enter');
+    await expect(page.getByRole('button', { name: 'Claude Opus 5.5', exact: true })).toBeVisible();
   });
 
   test('agent settings can be edited and saved', async ({ page, request }) => {
