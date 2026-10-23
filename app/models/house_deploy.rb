@@ -101,21 +101,27 @@ class HouseDeploy
   # CI on master counts: a merge waits on it before the automatic deploy runs.
   CI_FILE = "ci.yml"
 
+  # Statuses GitHub gives a run that hasn't finished. Asked for by status, so a
+  # long deploy can't drop off a page of newer, finished runs.
+  ACTIVE_STATUSES = %w[in_progress queued waiting].freeze
+
   # Whether master's pipeline is moving right now: CI on master or any deploy
   # workflow, manual or automatic, queued or running. true, false, or nil when
-  # it can't be told (no token, GitHub unreachable). One listing call, cached
-  # briefly, because the site-admin badge asks on every page.
+  # it can't be told (no token, GitHub unreachable). One listing per active
+  # status, stopping at the first hit, cached briefly because the site-admin
+  # badge asks on every page.
   def self.deploying?
     return nil unless configured?
 
     files = (WORKFLOWS.values.map { |config| config[:file] } + [ AUTOMATIC[:file], CI_FILE ]).map { |file| ".github/workflows/#{file}" }
     Rails.cache.fetch("house_deploy/deploying:#{repo}", expires_in: DEPLOYING_TTL, skip_nil: true) do
-      status, _headers, body = transport.call(:get, "/repos/#{repo}/actions/runs?branch=#{REF}&per_page=30", nil)
-      next nil unless status == 200 && body.is_a?(Hash)
-
-      Array(body["workflow_runs"]).any? { |run|
-        files.include?(run["path"].to_s.split("@").first) && run["status"].present? && run["status"] != "completed"
-      }
+      ACTIVE_STATUSES.each_with_object([]) { |run_status, answers|
+        status, _headers, body = transport.call(:get, "/repos/#{repo}/actions/runs?branch=#{REF}&status=#{run_status}&per_page=100", nil)
+        answers << (status == 200 && body.is_a?(Hash) ? Array(body["workflow_runs"]).any? { |run|
+          files.include?(run["path"].to_s.split("@").first) && run["status"] != "completed"
+        } : nil)
+        break answers if answers.last
+      }.then { |answers| answers.include?(true) ? true : (answers.include?(nil) ? nil : false) }
     end
   rescue StandardError => e
     Rails.logger.warn("[HouseDeploy] deploying?: #{e.class}: #{e.message}")

@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-23
+  title: The Site Admin button shows whether the site is up to date
+  body: "For site admins, the Site Admin button in the menu bar now shows whether the live site matches the latest code on GitHub: a green tick when it is up to date, an orange number for how many changes it is behind, and a grey question mark when it can't tell (hover for why). A spinning ring goes round it while checks or a deploy are running. On a phone the shield itself turns green when up to date, red when behind and grey when it can't tell. The check now signs in to GitHub, so it no longer reports GitHub as unreachable when the server has simply used up its anonymous allowance. Works once deployed."
+- date: 2026-10-23
   title: Subscription left shows for guest residents too
   body: "The \"% left\" beside a resident's name in a conversation, which shows how much of its weekly subscription remains, now appears for guest residents as well as your own. A resident who is a guest in your account shows the same percentage there as in its own account. Works once deployed."
 - date: 2026-10-23

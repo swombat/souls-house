@@ -226,7 +226,36 @@ class HouseDeployTest < ActiveSupport::TestCase
     ] } ]
 
     assert_equal true, HouseDeploy.deploying?
-    assert_equal [ [ :get, "/repos/swombat/souls-house/actions/runs?branch=master&per_page=30", nil ] ], @calls
+    assert_equal [ [ :get, "/repos/swombat/souls-house/actions/runs?branch=master&status=in_progress&per_page=100", nil ] ], @calls
+  end
+
+  test "deploying asks GitHub for active runs only, so a long deploy behind newer finished runs still counts" do
+    Rails.cache.clear
+    # The unfiltered listing would be 30+ finished runs with this deploy past
+    # the end; filtered by status, GitHub returns just the waiting deploy.
+    replies = {
+      "in_progress" => [ 200, {}, { "workflow_runs" => [] } ],
+      "queued" => [ 200, {}, { "workflow_runs" => [] } ],
+      "waiting" => [ 200, {}, { "workflow_runs" => [ { "path" => ".github/workflows/deploy-both.yml", "status" => "waiting" } ] } ]
+    }
+    calls = @calls
+    HouseDeploy.transport = ->(method, path, body) { calls << [ method, path, body ]; replies.fetch(path[/status=(\w+)/, 1]) }
+
+    assert_equal true, HouseDeploy.deploying?
+    assert_equal %w[in_progress queued waiting], @calls.map { |call| call[1][/status=(\w+)/, 1] }
+    assert(@calls.all? { |call| call[1].include?("branch=master") && call[1].include?("per_page=100") })
+  end
+
+  test "deploying is unknown when one active listing fails and none found a run" do
+    Rails.cache.clear
+    calls = @calls
+    HouseDeploy.transport = ->(method, path, body) {
+      calls << [ method, path, body ]
+      path.include?("status=queued") ? [ 502, {}, nil ] : [ 200, {}, { "workflow_runs" => [] } ]
+    }
+
+    assert_nil HouseDeploy.deploying?
+    assert_equal 3, @calls.size
   end
 
   test "deploying is true while CI runs on master, before any deploy starts" do
