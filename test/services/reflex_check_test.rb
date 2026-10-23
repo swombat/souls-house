@@ -6,7 +6,7 @@ class ReflexCheckTest < ActiveSupport::TestCase
     @agent = agents(:research_assistant)
     @other = agents(:code_reviewer)
     @chat = @agent.account.chats.create!(title: "Reflexes", manual_responses: true, agents: [ @agent, @other ])
-    switches(scope: "all", account: true)
+    switches(scope: "account_choice", account: true)
     @live = reflex("Live", live: true)
     @shadow = reflex("Shadow")
   end
@@ -155,36 +155,41 @@ class ReflexCheckTest < ActiveSupport::TestCase
     end
   end
 
-  test "the site scope and the account switch must both allow the check" do
+  test "the site scope decides, and under account_choice the account switch does" do
     message = say("Post")
-    blocked = [
-      [ "off", true, false ], [ "off", true, true ],
-      [ "selected", true, false ],
-      [ "all", false, false ], [ "selected", false, true ]
-    ]
-    allowed = [ [ "all", true, false ], [ "selected", true, true ] ]
+    blocked = [ [ "disabled", false ], [ "disabled", true ], [ "account_choice", false ] ]
+    allowed = [ [ "account_choice", true ], [ "enabled", false ], [ "enabled", true ] ]
 
     UtilityInference.stub :decide, ->(questions:, **) { questions.keys.index_with(0.9) } do
-      blocked.each do |scope, account, chosen|
-        switches(scope: scope, account: account, chosen: chosen)
-        assert_not ReflexCheck.enabled_for?(@agent), [ scope, account, chosen ].inspect
-        assert_equal [], ReflexCheck.after_post(message.reload), [ scope, account, chosen ].inspect
+      blocked.each do |scope, account|
+        switches(scope: scope, account: account)
+        assert_not ReflexCheck.enabled_for?(@agent), [ scope, account ].inspect
+        assert_equal [], ReflexCheck.after_post(message.reload), [ scope, account ].inspect
       end
       assert_equal 0, Reflex::Judgment.count
 
-      allowed.each do |scope, account, chosen|
-        switches(scope: scope, account: account, chosen: chosen)
-        assert ReflexCheck.enabled_for?(@agent), [ scope, account, chosen ].inspect
-        assert_equal [ @live.to_param ], ReflexCheck.after_post(message.reload).map(&:id), [ scope, account, chosen ].inspect
+      allowed.each do |scope, account|
+        switches(scope: scope, account: account)
+        assert ReflexCheck.enabled_for?(@agent), [ scope, account ].inspect
+        assert_equal [ @live.to_param ], ReflexCheck.after_post(message.reload).map(&:id), [ scope, account ].inspect
       end
     end
   end
 
-  test "selected scope only checks the chosen resident" do
-    switches(scope: "selected", account: true, chosen: false)
-    Agent.where(id: @other.id).update_all(reflexes_chosen: true)
-    assert_not ReflexCheck.enabled_for?(@agent)
-    assert ReflexCheck.enabled_for?(@other.reload)
+  test "an account's own switch survives a site override" do
+    switches(scope: "enabled", account: false)
+    assert ReflexCheck.enabled_for?(@agent)
+    Setting.instance.update!(reflexes_scope: "account_choice")
+    assert_not ReflexCheck.enabled_for?(@agent.reload)
+    assert_not @agent.account.reload.reflexes_enabled?
+  end
+
+  test "the site scope only takes its three states" do
+    setting = Setting.instance
+    %w[off selected all].each do |old|
+      setting.reflexes_scope = old
+      assert_not setting.valid?, old
+    end
   end
 
   test "any unexpected error in after_post answers no cues" do
@@ -218,10 +223,9 @@ class ReflexCheckTest < ActiveSupport::TestCase
     @agent.reflexes.create!(name: name, shape: "Does the post match #{name}?", reminder: "Reminder for #{name}", live: live)
   end
 
-  def switches(scope:, account:, chosen: false)
+  def switches(scope:, account:)
     Setting.instance.update!(reflexes_scope: scope)
     @agent.account.update!(reflexes_enabled: account)
-    Agent.where(id: @agent.id).update_all(reflexes_chosen: chosen)
     @agent.reload
   end
 

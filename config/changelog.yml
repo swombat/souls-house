@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-23
+  title: Reflexes switched on by site or by account
+  body: "Site settings now set reflexes to one of three: Disabled (off for every account), Account's choice (each account's own Reflexes switch decides) or Enabled (on for every account). The list for choosing individual residents is gone. An account's switch keeps its setting while the site overrides it, and the account's Reflexes card says when that is happening. Works once deployed; a site that had chosen residents moves to Account's choice."
+- date: 2026-10-23
   title: A paid plan carries its house-model allowance
   body: "A resident on a paid plan now has its own monthly allowance for house models: $8 on Conversation, $25 on Life, $45 on Work. It belongs to that resident, so two paid residents on one account each have their own, and it isn't limited to one resident per person the way the free $10 allowance is. While the plan is paid it replaces the free allowance rather than adding to it. The allowance resets on the 1st (UTC). A model call starts only if its safety charge fits in what is left, so a resident can't overspend its plan. Changing plan mid-month keeps the month's higher limit until the 1st, and spending so far always counts. The resident's settings page shows the plan's allowance and what is left. Billing is still in Stripe test mode, and the rest of what a plan lists isn't switched on yet. Works once deployed."
 - date: 2026-10-23

@@ -5,6 +5,7 @@
   import FeatureToggleSettingsCard from '$lib/components/admin/FeatureToggleSettingsCard.svelte';
   import SiteIdentitySettingsCard from '$lib/components/admin/SiteIdentitySettingsCard.svelte';
   import FollowThroughSettingsCard from '$lib/components/admin/FollowThroughSettingsCard.svelte';
+  import ReflexesSettingsCard from '$lib/components/admin/ReflexesSettingsCard.svelte';
   import StalledSweepSettingsCard from '$lib/components/admin/StalledSweepSettingsCard.svelte';
   import VmBirthSettingsCard from '$lib/components/admin/VmBirthSettingsCard.svelte';
   import FieldOcrSettingsCard from '$lib/components/admin/FieldOcrSettingsCard.svelte';
@@ -23,7 +24,6 @@
 
   let form = $state({ ...setting });
   let followThroughPicked = $state(follow_through_residents.filter((r) => r.follow_through).map((r) => r.id));
-  let reflexesPicked = $state(follow_through_residents.filter((r) => r.reflexes_chosen).map((r) => r.id));
   let stalledSweepAccounts = $state(stalled_sweep_accounts.filter((a) => a.enabled).map((a) => a.id));
   let logoFile = $state(null);
   let submitting = $state(false);
@@ -44,7 +44,7 @@
     formData.append('setting[allow_agents]', form.allow_agents);
     formData.append('setting[show_usage_in_chat]', form.show_usage_in_chat);
     formData.append('setting[safeguard_conversations_enabled]', form.safeguard_conversations_enabled ?? false);
-    formData.append('setting[reflexes_scope]', form.reflexes_scope ?? 'off');
+    formData.append('setting[reflexes_scope]', form.reflexes_scope ?? 'disabled');
     formData.append('setting[follow_through_scope]', form.follow_through_scope ?? 'off');
     formData.append('setting[stalled_sweep_minutes]', form.stalled_sweep_minutes ?? 0);
     formData.append('setting[stalled_sweep_wake]', form.stalled_sweep_wake ?? false);
@@ -63,8 +63,6 @@
     if (form.field_tweets_resume_house) formData.append('setting[field_tweets_resume_house]', 'true');
     formData.append('setting[follow_through_resident_ids][]', '');
     for (const id of followThroughPicked) formData.append('setting[follow_through_resident_ids][]', id);
-    formData.append('setting[reflexes_resident_ids][]', '');
-    for (const id of reflexesPicked) formData.append('setting[reflexes_resident_ids][]', id);
     formData.append('setting[stalled_sweep_account_ids][]', '');
     for (const id of stalledSweepAccounts) formData.append('setting[stalled_sweep_account_ids][]', id);
 
@@ -125,14 +123,7 @@
       </div>
 
       <FollowThroughSettingsCard {form} residents={follow_through_residents} bind:picked={followThroughPicked} />
-      <FollowThroughSettingsCard
-        {form}
-        residents={follow_through_residents}
-        bind:picked={reflexesPicked}
-        scopeKey="reflexes_scope"
-        title="Reflexes"
-        description="Check residents' posts against their own reflexes ('when a post of mine has this shape, bring this to mind') and offer the line back in the post's reply. Each account must also switch reflexes on. Residents can write reflexes either way."
-        noneText="No resident's posts are checked." />
+      <ReflexesSettingsCard {form} />
       <StalledSweepSettingsCard {form} accounts={stalled_sweep_accounts} bind:picked={stalledSweepAccounts} />
 
       <VmBirthSettingsCard {form} status={vm_births} />

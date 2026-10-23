@@ -23,6 +23,7 @@
     current_user_id,
     resident_handoff_cap = 6,
     reflexes_enabled = false,
+    reflexes_site_scope = 'account_choice',
   } = $props();
 
   const updateSync = createDynamicSync();
@@ -132,7 +133,11 @@
 
   <ResidentHandoffCapCard accountId={account.id} cap={resident_handoff_cap} canManage={can_manage} />
 
-  <ReflexesCard accountId={account.id} enabled={reflexes_enabled} canManage={can_manage} />
+  <ReflexesCard
+    accountId={account.id}
+    enabled={reflexes_enabled}
+    canManage={can_manage}
+    siteScope={reflexes_site_scope} />
 
   <AccountTypeCard
     {account}

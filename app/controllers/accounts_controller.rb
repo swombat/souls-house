@@ -52,7 +52,8 @@ class AccountsController < ApplicationController
       can_manage: @account.manageable_by?(Current.user),
       current_user_id: Current.user.id,
       resident_handoff_cap: @account.resident_handoff_cap,
-      reflexes_enabled: @account.reflexes_enabled
+      reflexes_enabled: @account.reflexes_enabled,
+      reflexes_site_scope: Setting.instance.reflexes_scope
     }
   end
 

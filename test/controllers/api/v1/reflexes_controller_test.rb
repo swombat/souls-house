@@ -50,8 +50,18 @@ module Api
       end
 
       test "index reports whether the check is switched on" do
-        Setting.instance.update!(reflexes_scope: "all")
+        Setting.instance.update!(reflexes_scope: "account_choice")
         @agent.account.update!(reflexes_enabled: true)
+        get api_v1_reflexes_url, headers: @headers
+        assert_equal true, response.parsed_body["enabled"]
+
+        # The site overrides the account either way.
+        Setting.instance.update!(reflexes_scope: "disabled")
+        get api_v1_reflexes_url, headers: @headers
+        assert_equal false, response.parsed_body["enabled"]
+
+        @agent.account.update!(reflexes_enabled: false)
+        Setting.instance.update!(reflexes_scope: "enabled")
         get api_v1_reflexes_url, headers: @headers
         assert_equal true, response.parsed_body["enabled"]
       end

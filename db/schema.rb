@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_23_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_23_203000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -462,7 +462,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_200000) do
     t.datetime "subagents_policy_changed_at"
     t.bigint "github_resident_import_id"
     t.boolean "follow_through", default: false, null: false
-    t.boolean "reflexes_chosen", default: false, null: false
     t.jsonb "switchable_model_ids", default: [], null: false
     t.boolean "resident_may_switch_model", default: false, null: false
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
@@ -2400,7 +2399,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_200000) do
     t.datetime "updated_at", null: false
     t.datetime "field_naming_cutover_at"
     t.string "follow_through_scope", default: "off", null: false
-    t.string "reflexes_scope", default: "off", null: false
+    t.string "reflexes_scope", default: "disabled", null: false
     t.boolean "safeguard_conversations_enabled", default: false, null: false
     t.boolean "new_residents_on_vm", default: false, null: false
     t.integer "vm_resident_limit", default: 0, null: false
