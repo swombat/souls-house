@@ -97,6 +97,29 @@ class HouseDeploy
     { configured: true, runs: runs, token_expires_at: expires_at, error: nil, partial_error: partial_error }
   end
 
+  DEPLOYING_TTL = 15.seconds
+
+  # Whether any deploy workflow, manual or automatic, is queued or running on
+  # master right now: true, false, or nil when it can't be told (no token,
+  # GitHub unreachable). One listing call, cached briefly, because the
+  # site-admin badge asks on every page.
+  def self.deploying?
+    return nil unless configured?
+
+    files = (WORKFLOWS.values.map { |config| config[:file] } + [ AUTOMATIC[:file] ]).map { |file| ".github/workflows/#{file}" }
+    Rails.cache.fetch("house_deploy/deploying:#{repo}", expires_in: DEPLOYING_TTL, skip_nil: true) do
+      status, _headers, body = transport.call(:get, "/repos/#{repo}/actions/runs?branch=#{REF}&per_page=30", nil)
+      next nil unless status == 200 && body.is_a?(Hash)
+
+      Array(body["workflow_runs"]).any? { |run|
+        files.include?(run["path"].to_s.split("@").first) && run["status"].present? && run["status"] != "completed"
+      }
+    end
+  rescue StandardError => e
+    Rails.logger.warn("[HouseDeploy] deploying?: #{e.class}: #{e.message}")
+    nil
+  end
+
   def self.deploy_runs(body)
     files = WORKFLOWS.to_h { |key, config| [ ".github/workflows/#{config[:file]}", key ] }
     files[".github/workflows/#{AUTOMATIC[:file]}"] = AUTOMATIC[:key]

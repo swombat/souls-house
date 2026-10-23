@@ -118,7 +118,11 @@ class CommitBadges
     {
       repo: summary[:repo].to_s,
       revision: CommitStatus.revision(summary),
-      build: ->(confirm) { CommitStatus.new(summary, confirm_full: confirm) }
+      # The deploy token keeps house lookups off the host's anonymous quota.
+      build: ->(confirm) {
+        token = HouseDeploy.token
+        CommitStatus.new(summary, fetcher: ->(path) { CommitStatus.fetcher.call(path, token:) }, confirm_full: confirm)
+      }
     }
   end
 

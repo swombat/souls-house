@@ -217,4 +217,37 @@ class HouseDeployTest < ActiveSupport::TestCase
     assert_equal [ 2 ], status[:runs].map { |run| run[:id] }
   end
 
+  test "deploying is true while a deploy workflow runs on master, ignoring CI" do
+    Rails.cache.clear
+    @reply = [ 200, {}, { "workflow_runs" => [
+      { "path" => ".github/workflows/ci.yml", "status" => "in_progress" },
+      { "path" => ".github/workflows/deploy-rails-on-green.yml", "status" => "queued" },
+      { "path" => ".github/workflows/deploy-rails.yml", "status" => "completed" }
+    ] } ]
+
+    assert_equal true, HouseDeploy.deploying?
+    assert_equal [ [ :get, "/repos/swombat/souls-house/actions/runs?branch=master&per_page=30", nil ] ], @calls
+  end
+
+  test "deploying is false when only CI or finished runs are listed" do
+    Rails.cache.clear
+    @reply = [ 200, {}, { "workflow_runs" => [
+      { "path" => ".github/workflows/ci.yml", "status" => "in_progress" },
+      { "path" => ".github/workflows/deploy-both.yml@refs/heads/master", "status" => "completed" }
+    ] } ]
+
+    assert_equal false, HouseDeploy.deploying?
+  end
+
+  test "deploying is unknown without a token or when GitHub fails" do
+    Rails.cache.clear
+    @reply = [ nil, {}, nil ]
+    assert_nil HouseDeploy.deploying?
+
+    HouseDeploy.token_source = -> { nil }
+    @calls.clear
+    assert_nil HouseDeploy.deploying?
+    assert_empty @calls
+  end
+
 end

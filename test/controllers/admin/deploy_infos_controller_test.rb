@@ -22,6 +22,7 @@ class Admin::DeployInfosControllerTest < ActionDispatch::IntegrationTest
     assert_nil body["master"]
     assert_equal %w[rails runtime chaos both], body["workflows"].map { |w| w["key"] }
     assert body.key?("alarm")
+    assert body.key?("deploying")
   end
 
   test "the summary carries the deploy alarm" do

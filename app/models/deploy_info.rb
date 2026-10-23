@@ -7,6 +7,10 @@ require "json"
 # KAMAL_VERSION to the git sha the image was built from. GitHub is only
 # asked about master, so a slow or failed GitHub call can make the menu
 # say "unknown", but can never make it claim something is live.
+#
+# The reads carry the deploy token when there is one. Anonymous calls share
+# 60 an hour with everything else on the host's IP, and running out of them
+# made the menu report GitHub as unreachable when it was only rate limited.
 class DeployInfo
 
   SHA = /\A(\h{7,40})(_.+)?\z/
@@ -33,6 +37,8 @@ class DeployInfo
     request = Net::HTTP::Get.new(uri)
     request["Accept"] = "application/vnd.github+json"
     request["X-GitHub-Api-Version"] = "2022-11-28"
+    token = HouseDeploy.token
+    request["Authorization"] = "Bearer #{token}" if token
     response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: TIMEOUT, read_timeout: TIMEOUT) do |http|
       http.request(request)
     end

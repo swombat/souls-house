@@ -1,6 +1,6 @@
 <script>
   import { router } from '@inertiajs/svelte';
-  import { tick } from 'svelte';
+  import { tick, onMount } from 'svelte';
   import {
     ShieldWarning,
     Buildings,
@@ -14,12 +14,14 @@
     ChartLine,
     ArrowLeft,
     CaretRight,
+    Check,
+    Question,
   } from 'phosphor-svelte';
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
   import { buttonVariants } from '$lib/components/shadcn/button/index.js';
   import { cn } from '$lib/utils.js';
   import { adminNoticesPath } from '@/routes';
-  import { deployLines } from './deployInfo.js';
+  import { deployLines, deployBadge } from './deployInfo.js';
 
   let deployInfo = $state(null);
   let deployInfoFailed = $state(false);
@@ -34,7 +36,9 @@
     content?.querySelector('[role="menuitem"]')?.focus();
   }
 
-  // Fetched when the menu opens, so an ordinary page load never waits on GitHub.
+  // Fetched after the page has loaded (so it never waits on GitHub), again
+  // when the menu opens, and every minute after that: every 15 seconds while
+  // a deploy is running, so the spinner stops soon after it finishes.
   async function loadDeployInfo() {
     if (loading) return;
     loading = true;
@@ -50,6 +54,22 @@
     }
   }
 
+  onMount(() => {
+    let timer;
+    const schedule = () => {
+      timer = setTimeout(
+        async () => {
+          if (!document.hidden) await loadDeployInfo();
+          schedule();
+        },
+        deployInfo?.deploying ? 15_000 : 60_000
+      );
+    };
+    loadDeployInfo().then(schedule);
+    return () => clearTimeout(timer);
+  });
+
+  const badge = $derived(deployBadge(deployInfo, { failed: deployInfoFailed }));
   const lines = $derived(deployLines(deployInfo, { failed: deployInfoFailed }));
   const workflows = $derived(deployInfo?.workflows || []);
 
@@ -71,6 +91,36 @@
     class={cn(buttonVariants({ variant: 'outline' }), 'rounded-full px-2.5 gap-1')}>
     <ShieldWarning class="text-red-500" />
     <span class="text-xs font-normal text-muted-foreground text-red-500 hidden md:inline"> Site Admin </span>
+    {#if badge}
+      <span
+        class="relative inline-flex shrink-0"
+        title={badge.title}
+        aria-label={badge.title}
+        data-testid="deploy-badge"
+        data-kind={badge.kind}
+        data-deploying={badge.deploying}>
+        {#if badge.kind === 'current'}
+          <span class="inline-flex size-5 items-center justify-center rounded-full bg-green-600 text-white">
+            <Check weight="bold" class="size-3" />
+          </span>
+        {:else if badge.kind === 'behind'}
+          <span
+            class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-orange-500 px-1 text-xs font-semibold text-white">
+            {badge.count > 99 ? '99+' : badge.count}
+          </span>
+        {:else}
+          <span
+            class="inline-flex size-5 items-center justify-center rounded-full bg-neutral-400 text-white dark:bg-neutral-600">
+            <Question weight="bold" class="size-3" />
+          </span>
+        {/if}
+        {#if badge.deploying}
+          <span
+            class="pointer-events-none absolute -inset-[3px] animate-spin rounded-full border-2 border-sky-500 border-t-transparent border-l-transparent"
+            aria-hidden="true"></span>
+        {/if}
+      </span>
+    {/if}
   </DropdownMenu.Trigger>
   <DropdownMenu.Content
     bind:ref={content}
