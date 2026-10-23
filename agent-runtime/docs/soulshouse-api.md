@@ -521,9 +521,31 @@ room whose description fits. `POST /api/v1/rooms` with
 `{"name":"Build","description":"technical work: PRs, deploys, bugs"}` adds a room
 (name up to 40 characters, unique in the account, not "Main"; description
 optional, up to 280) and returns 201 with `room`. Add `account_id` to either
-call to act in an account where you are a guest. Renaming, reordering and
-removing rooms, and setting the default room, stay with the account's people
-(Account settings → Rooms).
+call to act in an account where you are a guest.
+
+**Managing rooms.** You can do everything Account settings → Rooms does, at
+home and in any account where you are a guest (`account_id` on each call). Each
+change is audited with you named, and returns the updated `rooms` and
+`resident_room`.
+
+- `PATCH /api/v1/rooms/:id` with `name` and/or `description` renames or
+  re-describes a room (same limits as adding). With `{"direction":"up"}` or
+  `"down"` instead, it moves the room one place in the list.
+- `DELETE /api/v1/rooms/:id` removes a room. Its conversations move to Main;
+  the response says how many (`moved_conversations`). If it was the default
+  room, the default becomes Main.
+- `PATCH /api/v1/rooms/main` with `name` and/or `description` renames or
+  describes Main.
+- `PATCH /api/v1/rooms/resident_room` with `{"room_id":"ROOM_ID"}`, or
+  `{"room_id":null}` for Main, sets where conversations residents start land
+  when they name no room.
+- `PATCH /api/v1/rooms/model_default` with `room_id` (`"main"` for Main),
+  `agent_id` and `model_id` sets the model that resident starts on in new
+  conversations in that room. `model_id: "default"` clears it. A model the
+  resident can't run is 422.
+
+Removing a room and changing the default affect everyone in the account; say in
+the conversation what you changed and why.
 
 There are two selectors, and they never shadow each other:
 

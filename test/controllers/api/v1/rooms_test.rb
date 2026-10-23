@@ -127,6 +127,178 @@ module Api
         assert_not @home.rooms.exists?(name: "Closed")
       end
 
+      test "a resident renames and describes a room at home, audited with the resident named" do
+        room = @home.rooms.create!(name: "Build", description: "old")
+
+        patch api_v1_room_url(room), params: { name: "Dev", description: "technical work" }, headers: @agent_headers, as: :json
+        assert_response :success
+        assert_equal({ "id" => room.to_param, "name" => "Dev", "description" => "technical work" }, response.parsed_body["room"])
+        assert_equal %w[Main Dev], response.parsed_body["rooms"].map { |r| r["name"] }
+        log = AuditLog.find_by!(action: "update_room", auditable: room)
+        assert_equal @agent.to_param, log.data["agent_id"]
+        assert_equal [ "Build", "Dev" ], log.data["name"]
+
+        patch api_v1_room_url(room), params: { description: "only this" }, headers: @agent_headers, as: :json
+        assert_response :success
+        assert_equal [ "Dev", "only this" ], [ room.reload.name, room.description ]
+      end
+
+      test "a resident moves a room up and down" do
+        a = @home.rooms.create!(name: "A")
+        b = @home.rooms.create!(name: "B")
+
+        patch api_v1_room_url(b), params: { direction: "up" }, headers: @agent_headers, as: :json
+        assert_response :success
+        assert_equal %w[Main B A], response.parsed_body["rooms"].map { |r| r["name"] }
+
+        patch api_v1_room_url(b), params: { direction: "down" }, headers: @agent_headers, as: :json
+        assert_equal %w[Main A B], response.parsed_body["rooms"].map { |r| r["name"] }
+
+        patch api_v1_room_url(a), params: { direction: "sideways" }, headers: @agent_headers, as: :json
+        assert_response :unprocessable_entity
+      end
+
+      test "renaming to a taken name or Main is 422 and changes nothing" do
+        @home.rooms.create!(name: "Build")
+        room = @home.rooms.create!(name: "Life")
+
+        [ "build", "Main", "" ].each do |name|
+          patch api_v1_room_url(room), params: { name: name }, headers: @agent_headers, as: :json
+          assert_response :unprocessable_entity, name.inspect
+        end
+        assert_equal "Life", room.reload.name
+      end
+
+      test "a resident removes a room; its conversations move to Main and the default falls back to Main" do
+        room = @home.rooms.create!(name: "Life")
+        chats = 2.times.map { |i| @home.chats.create!(title: "In Life #{i}", model_id: "openrouter/auto", room: room) }
+        @home.update!(resident_room: room)
+
+        assert_difference -> { @home.rooms.count }, -1 do
+          delete api_v1_room_url(room), headers: @agent_headers, as: :json
+        end
+        assert_response :success
+        assert_equal 2, response.parsed_body["moved_conversations"]
+        assert_equal "Main", response.parsed_body["moved_to"]
+        assert_equal "Life", response.parsed_body.dig("removed", "name")
+        assert_equal({ "id" => nil, "name" => "Main" }, response.parsed_body["resident_room"])
+        chats.each { |chat| assert_nil chat.reload.room_id }
+        assert_nil @home.reload.resident_room_id
+        assert AuditLog.exists?(action: "destroy_room", account: @home)
+      end
+
+      test "a resident renames and describes Main" do
+        patch main_api_v1_rooms_url, params: { name: "General", description: "anything else" }, headers: @agent_headers, as: :json
+        assert_response :success
+        assert_equal({ "id" => nil, "name" => "General", "description" => "anything else" }, response.parsed_body["room"])
+        assert_equal "General", @home.reload.main_room_label
+        assert AuditLog.exists?(action: "update_main_room", account: @home)
+      end
+
+      test "a resident sets the default room for resident-started conversations, and back to Main" do
+        life = @home.rooms.create!(name: "Life")
+
+        patch resident_room_api_v1_rooms_url, params: { room_id: life.to_param }, headers: @agent_headers, as: :json
+        assert_response :success
+        assert_equal({ "id" => life.to_param, "name" => "Life" }, response.parsed_body["resident_room"])
+        assert_equal life, @home.reload.resident_room
+
+        patch resident_room_api_v1_rooms_url, params: { room_id: nil }, headers: @agent_headers, as: :json
+        assert_response :success
+        assert_nil @home.reload.resident_room
+
+        patch resident_room_api_v1_rooms_url, params: {}, headers: @agent_headers, as: :json
+        assert_response :unprocessable_entity
+        patch resident_room_api_v1_rooms_url, params: { room_id: "nope" }, headers: @agent_headers, as: :json
+        assert_response :not_found
+      end
+
+      test "a resident sets and clears a room's starting model for a resident" do
+        @agent.update!(model_id: "anthropic/claude-opus-5.5", switchable_model_ids: [ "anthropic/claude-fable-5.1" ])
+        build = @home.rooms.create!(name: "Build")
+
+        patch model_default_api_v1_rooms_url,
+          params: { room_id: build.to_param, agent_id: @agent.to_param, model_id: "anthropic/claude-fable-5.1" },
+          headers: @agent_headers, as: :json
+        assert_response :success
+        assert_equal "anthropic/claude-fable-5.1", response.parsed_body.dig("room_model_default", "model_id")
+        assert_equal "anthropic/claude-fable-5.1", RoomModelDefault.find_by!(room: build, agent: @agent).model_id
+
+        patch model_default_api_v1_rooms_url,
+          params: { room_id: "main", agent_id: @agent.to_param, model_id: "anthropic/claude-haiku-5.5" },
+          headers: @agent_headers, as: :json
+        assert_response :unprocessable_entity
+
+        patch model_default_api_v1_rooms_url,
+          params: { room_id: build.to_param, agent_id: @agent.to_param, model_id: "default" },
+          headers: @agent_headers, as: :json
+        assert_response :success
+        assert_nil response.parsed_body["room_model_default"]
+        assert_not RoomModelDefault.exists?(room: build)
+      end
+
+      test "a seated guest manages the guest account's rooms, and not its home's through that account" do
+        @nexus.guest_memberships.create!(agent: @agent, added_by: @daniel)
+        room = @nexus.rooms.create!(name: "Build")
+        home_room = @home.rooms.create!(name: "Home Only")
+
+        patch api_v1_room_url(room), params: { account_id: @nexus.to_param, name: "Dev" }, headers: @agent_headers, as: :json
+        assert_response :success
+        assert_equal "Dev", room.reload.name
+
+        patch api_v1_room_url(home_room), params: { account_id: @nexus.to_param, name: "Moved" }, headers: @agent_headers, as: :json
+        assert_response :not_found
+
+        patch resident_room_api_v1_rooms_url, params: { account_id: @nexus.to_param, room_id: room.to_param },
+          headers: @agent_headers, as: :json
+        assert_response :success
+        assert_equal room, @nexus.reload.resident_room
+
+        patch main_api_v1_rooms_url, params: { account_id: @nexus.to_param, name: "Lobby" }, headers: @agent_headers, as: :json
+        assert_response :success
+        assert_equal "Lobby", @nexus.reload.main_room_label
+
+        delete api_v1_room_url(room), params: { account_id: @nexus.to_param }, headers: @agent_headers, as: :json
+        assert_response :success
+        assert_not Room.exists?(room.id)
+      end
+
+      test "a resident with no seat in the account changes nothing there" do
+        room = @nexus.rooms.create!(name: "Build")
+
+        patch api_v1_room_url(room), params: { account_id: @nexus.to_param, name: "Mine" }, headers: @agent_headers, as: :json
+        assert_response :not_found
+        delete api_v1_room_url(room), params: { account_id: @nexus.to_param }, headers: @agent_headers, as: :json
+        assert_response :not_found
+        patch main_api_v1_rooms_url, params: { account_id: @nexus.to_param, name: "Mine" }, headers: @agent_headers, as: :json
+        assert_response :not_found
+        patch resident_room_api_v1_rooms_url, params: { account_id: @nexus.to_param, room_id: room.to_param },
+          headers: @agent_headers, as: :json
+        assert_response :not_found
+
+        patch api_v1_room_url(room), params: { name: "Mine" }, headers: @agent_headers, as: :json
+        assert_response :not_found, "a room in another account is not reachable from home either"
+        assert_equal "Build", room.reload.name
+      end
+
+      test "an account key changes rooms in its own account; a former member's key changes nothing" do
+        room = @home.rooms.create!(name: "Build")
+        patch api_v1_room_url(room), params: { name: "Dev" }, headers: @account_headers, as: :json
+        assert_response :success
+        delete api_v1_room_url(room), headers: @account_headers, as: :json
+        assert_response :success
+
+        membership = memberships(:team_member)
+        headers = { "Authorization" => "Bearer #{ApiKey.generate_for(membership.user, name: "Member", account: @nexus).raw_token}" }
+        nexus_room = @nexus.rooms.create!(name: "Kept")
+        membership.destroy!
+        patch api_v1_room_url(nexus_room), params: { name: "Gone" }, headers: headers, as: :json
+        assert_response :not_found
+        delete api_v1_room_url(nexus_room), headers: headers, as: :json
+        assert_response :not_found
+        assert Room.exists?(nexus_room.id)
+      end
+
     end
   end
 end
