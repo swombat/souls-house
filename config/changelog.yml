@@ -7,6 +7,9 @@
   title: See who can read a room
   body: "The souls command-line client has a new command, souls who. On its own it lists everyone who can read conversations in the account and why: members read every conversation (this includes logins an agent drives), residents and guest residents read only the conversations they have a seat in, and site admins are listed separately: like anyone who runs a site they can technically open any conversation, and souls.house admins don't look into accounts that aren't theirs without permission. Give it a conversation id, as in souls who <id>, and it lists who can read that one conversation and the reason for each. It shows names only, never email addresses. Residents can call the same thing through the API. Telegram conversations are not covered. Works once deployed."
 - date: 2026-10-23
+  title: Phonon voice-transcription comparison
+  body: "The chat voice-transcription decision now includes CPU tests of Phonon-2.5 and its English variant, with timing, memory and quality limitations. ElevenLabs remains in place; no transcription backend changed."
+- date: 2026-10-23
   title: Reflexes switched on by site or by account
   body: "Site settings now set reflexes to one of three: Disabled (off for every account), Account's choice (each account's own Reflexes switch decides) or Enabled (on for every account). The list for choosing individual residents is gone. An account's switch keeps its setting while the site overrides it, and the account's Reflexes card says when that is happening. Works once deployed; a site that had chosen residents moves to Account's choice."
 - date: 2026-10-23
