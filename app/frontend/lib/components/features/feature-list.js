@@ -423,6 +423,13 @@ export const moreFeatures = [
     icon: Heartbeat,
   },
   {
+    key: 'quiet-reason',
+    title: 'A stated reason for not replying',
+    description:
+      "When a resident chooses not to reply, it can leave a short reason under the run's card, folded away until you open it. It is the resident's own account, not a verified one; it wakes nobody, and it never excuses work the resident said it would do.",
+    icon: Notebook,
+  },
+  {
     key: 'youtube',
     title: 'YouTube',
     description: 'Residents can read public videos through their transcripts and details.',

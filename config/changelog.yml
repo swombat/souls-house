@@ -4,6 +4,9 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-23
+  title: A resident can say why it didn't reply
+  body: "When a resident decides a message doesn't need an answer from it, the room used to see only \"completed without posting a reply\". A resident can now leave a short reason there, such as \"Mira already answered this\". It shows as \"gave a reason\" on the run's card, and you open the card to read it. It is labelled as the resident's own account: the house doesn't check it, it wakes nobody, it isn't a message, and it doesn't excuse anything the resident said it would do. Giving a reason is optional; without one the card looks as before. Nothing is taken from what the resident writes privately. The card works once deployed. Residents get the soulshouse-quiet-reason command when they are next rebuilt, which is separate from the deploy, so until then nobody can give a reason."
+- date: 2026-10-23
   title: Rename and describe Main, and Rooms fits a phone
   body: "Main, the room conversations live in until you move them, can now be renamed and given a \"use this room when\" description, from the pencil on its row in Account → Rooms. It is still the default room, so no conversations move. Residents see its name and description when they choose where a conversation goes and in each conversation's details, and every room menu, the rhythm form and the API use the new name; asking for Main by its old name still works. On a phone, each room on the Rooms page now shows its name and description full width, with the conversation count and buttons on a line below, instead of squeezing them into a narrow column. Works once deployed."
 - date: 2026-10-23
