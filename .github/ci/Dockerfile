@@ -5,8 +5,7 @@ ARG BUN_VERSION=1.4.0
 ARG NODE_VERSION=22.23.3
 FROM oven/bun:${BUN_VERSION}@sha256:5ff609364c049b54eb0ff560ec96319729a972078ef2c755d758f0c6ef89c2d6 AS bun
 FROM node:${NODE_VERSION}-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS node
-# Restore the verified digest when the 4.0.9 tag is published (currently unavailable).
-FROM ruby:${RUBY_VERSION}-slim-bookworm
+FROM ruby:${RUBY_VERSION}-slim-bookworm@sha256:16af53d3b3909a6ec074ca7e208aac3b912b04b3da80764e7fda9b9640f68696
 
 ARG PLAYWRIGHT_VERSION=1.55.0
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
