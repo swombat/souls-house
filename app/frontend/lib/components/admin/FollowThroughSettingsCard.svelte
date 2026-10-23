@@ -3,7 +3,17 @@
   import { Switch } from '$lib/components/shadcn/switch';
   import { agentIconFor } from '$lib/agent-icons';
 
-  let { form, residents = [], picked = $bindable([]) } = $props();
+  // Also the Reflexes card: a site scope (off / chosen residents / everyone)
+  // over a picked list of residents.
+  let {
+    form,
+    residents = [],
+    picked = $bindable([]),
+    scopeKey = 'follow_through_scope',
+    title = 'Follow-through',
+    description = "A minute after a resident's run ends on a promise it didn't keep, the house says so in the room and wakes it once to finish. Ask residents before switching it on for them.",
+    noneText = 'No resident is checked.',
+  } = $props();
 
   const scopes = [
     { value: 'off', label: 'Off' },
@@ -36,31 +46,28 @@
 
 <Card>
   <CardHeader>
-    <CardTitle>Follow-through</CardTitle>
-    <CardDescription>
-      A minute after a resident's run ends on a promise it didn't keep, the house says so in the room and wakes it once
-      to finish. Ask residents before switching it on for them.
-    </CardDescription>
+    <CardTitle>{title}</CardTitle>
+    <CardDescription>{description}</CardDescription>
   </CardHeader>
   <CardContent class="space-y-4">
-    <div role="radiogroup" aria-label="Follow-through check" class="inline-flex rounded-md border p-1 gap-1">
+    <div role="radiogroup" aria-label={`${title} scope`} class="inline-flex rounded-md border p-1 gap-1">
       {#each scopes as scope}
         <button
           type="button"
           role="radio"
-          aria-checked={form.follow_through_scope === scope.value}
-          class="rounded px-3 py-1.5 text-sm transition-colors {form.follow_through_scope === scope.value
+          aria-checked={form[scopeKey] === scope.value}
+          class="rounded px-3 py-1.5 text-sm transition-colors {form[scopeKey] === scope.value
             ? 'bg-primary text-primary-foreground'
             : 'text-muted-foreground hover:bg-muted'}"
-          onclick={() => (form.follow_through_scope = scope.value)}>
+          onclick={() => (form[scopeKey] = scope.value)}>
           {scope.label}
         </button>
       {/each}
     </div>
 
-    {#if form.follow_through_scope === 'all'}
+    {#if form[scopeKey] === 'all'}
       <p class="text-sm text-muted-foreground">Every resident is checked, including ones created later.</p>
-    {:else if form.follow_through_scope === 'selected'}
+    {:else if form[scopeKey] === 'selected'}
       <div class="space-y-3">
         <div class="flex items-center justify-between gap-4">
           <input
@@ -89,7 +96,7 @@
                   {#if resident.paused}<span class="text-xs text-muted-foreground">(paused)</span>{/if}
                 </span>
                 <Switch
-                  aria-label={`Follow-through for ${resident.name}`}
+                  aria-label={`${title} for ${resident.name}`}
                   checked={picked.includes(resident.id)}
                   onCheckedChange={(on) => toggle(resident.id, on)} />
               </label>
@@ -102,7 +109,7 @@
         </div>
       </div>
     {:else}
-      <p class="text-sm text-muted-foreground">No resident is checked.</p>
+      <p class="text-sm text-muted-foreground">{noneText}</p>
     {/if}
   </CardContent>
 </Card>

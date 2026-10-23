@@ -84,12 +84,15 @@ module Api
           return render json: { errors: message.errors.full_messages }, status: :unprocessable_entity
         end
 
-        render json: {
+        body = {
           message: message.as_json,
           draft: draft&.as_json,
           ai_response_triggered: !!message.single_resident_response_triggered,
           handoffs: current_api_agent ? message.handoff_receipts : Messages::HumanMentionReceipts.new(message, sole_resident: result.sole_resident).call
-        }, status: :created
+        }
+        # A resident's own reflexes, judged after the post committed (docs/reflexes.md).
+        body[:reflexes] = ReflexCheck.after_post(message).map(&:as_json) if current_api_agent
+        render json: body, status: :created
       rescue ConversationDraft::Conflict => error
         render json: { errors: [ error.message ], draft: error.draft.as_json }, status: :conflict
       end

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   commitStatus,
   requestCommitStatus,
+  setCommitStatusAccount,
   watchCommitStatus,
   resetCommitStatusesForTest,
 } from './commit-status.svelte.js';
@@ -22,6 +23,7 @@ function answering(responses) {
 describe('commit status store', () => {
   beforeEach(() => {
     resetCommitStatusesForTest();
+    setCommitStatusAccount('acct1');
     vi.useFakeTimers();
   });
 
@@ -44,7 +46,9 @@ describe('commit status store', () => {
     await vi.advanceTimersByTimeAsync(100);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe('/admin/commit_statuses?shas=51625a7%2C783ab2e%2Cabcdef1%2C9c8b7a6');
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/accounts/acct1/commit_statuses?refs=51625a7%2C783ab2e%2Cabcdef1%2C9c8b7a6'
+    );
     expect(commitStatus('51625a7')).toBe('deployed');
     expect(commitStatus('783ab2e')).toBe('merged');
     expect(commitStatus('abcdef1')).toBeNull();
@@ -80,10 +84,7 @@ describe('commit status store', () => {
   });
 
   it('a failed refresh of a mounted badge clears it instead of keeping the old answer', async () => {
-    vi.stubGlobal(
-      'fetch',
-      answering([{ statuses: { '51625a7': 'deployed' }, revision: REV_A }, 'fail'])
-    );
+    vi.stubGlobal('fetch', answering([{ statuses: { '51625a7': 'deployed' }, revision: REV_A }, 'fail']));
 
     const stop = watchCommitStatus('51625a7');
     await vi.advanceTimersByTimeAsync(100);
@@ -156,5 +157,25 @@ describe('commit status store', () => {
     stop();
     await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('another account on screen drops every answer and asks its own endpoint', async () => {
+    const fetchMock = answering([
+      { statuses: { '51625a7': 'merged' }, revision: REV_A },
+      { statuses: { '51625a7': null }, revision: 'acme/web=fff' },
+    ]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const stop = watchCommitStatus('51625a7');
+    await vi.advanceTimersByTimeAsync(100);
+    expect(commitStatus('51625a7')).toBe('merged');
+
+    setCommitStatusAccount('acct2');
+    expect(commitStatus('51625a7')).toBeNull();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toBe('/accounts/acct2/commit_statuses?refs=51625a7');
+    expect(commitStatus('51625a7')).toBeNull();
+    stop();
   });
 });

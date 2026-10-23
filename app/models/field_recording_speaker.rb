@@ -9,9 +9,13 @@ class FieldRecordingSpeaker < ApplicationRecord
   # human: a person in the browser or the native app. machine: a write through
   # an API key (scripts, residents, the Mac's voice matcher), whatever the
   # client claims. unknown: a naming made before provenance was recorded
-  # (spec 2026-10-19 §5). Only a person's decision may teach a voice print.
-  NAMING_SOURCES = %w[human confirmed_suggestion confirmed_recognition machine unknown].freeze
-  TRAINING_SOURCES = %w[human confirmed_suggestion confirmed_recognition].freeze
+  # (spec 2026-10-19 §5). auto_recognition: a clear match from a validated
+  # print, named by nobody (FieldVoiceprints::Identification). A print learns
+  # from a person's decision, and from an automatic naming only as a
+  # candidate: the sample waits for a person's Accept like any other, and a
+  # print is built from confirmed samples alone (FieldVoiceprints::Learning).
+  NAMING_SOURCES = %w[human confirmed_suggestion confirmed_recognition auto_recognition machine unknown].freeze
+  TRAINING_SOURCES = %w[human confirmed_suggestion confirmed_recognition auto_recognition].freeze
   # Why a person stopped asking for a name: noise (not a person at all) or
   # anonymous (a person whose identity doesn't matter here). Either way the
   # speaker stops waiting; only the reason differs.
@@ -50,7 +54,7 @@ class FieldRecordingSpeaker < ApplicationRecord
   # Fields read by FieldItems.speaker_json (including the displayed decision
   # tokens). Bookkeeping such as decision_generation alone is not a refresh.
   PRESENTATION_FIELDS = %w[
-    label position field_voice_id naming_source ignored_at ignored_as
+    label position field_voice_id naming_source auto_named_confidence ignored_at ignored_as
     talk_ms clip_start_ms clip_end_ms
     suggested_name suggestion_quote suggestion_quote_ms suggestion_generation
     recognised_voice_id recognition_confidence recognition_print_generation recognition_decision_generation
@@ -90,9 +94,14 @@ class FieldRecordingSpeaker < ApplicationRecord
 
   def display_name = field_voice&.kept? ? field_voice.name : default_name
 
-  # A person's decision that this speaker is this voice: the only kind of
-  # label a voice print may learn from. Fails closed on anything else.
+  # A label a voice print may learn from: a person's decision, or an
+  # automatic naming whose sample a person still has to accept. Fails closed
+  # on anything else.
   def training_label? = field_voice&.kept? == true && TRAINING_SOURCES.include?(naming_source)
+
+  # Named by a clear voice match, nobody having tapped. Shown as such, with
+  # the match score it was named on, until a person un-names or renames it.
+  def auto_named? = field_voice&.kept? == true && naming_source == "auto_recognition"
 
   # The writer cutover (spec 2026-10-19 §11, slice A): namings recorded as
   # "human" before every old writer was gone may have come from an API key, so
@@ -135,7 +144,9 @@ class FieldRecordingSpeaker < ApplicationRecord
   # serialized with delete-name (which holds the account lock while it gathers
   # and clears every linked recording). The voice must still be kept once
   # locked: a request that resolved it before a delete can't link it after.
-  def name_as!(voice, by:, source: "human")
+  # `confidence`: the match score (0–100) an automatic naming was made on;
+  # nil for every other source.
+  def name_as!(voice, by:, source: "human", confidence: nil)
     raise ArgumentError, "voice from another account" unless voice.account_id == field_recording.account_id
 
     # The voice this speaker was linked to before, and any voice holding a
@@ -147,13 +158,14 @@ class FieldRecordingSpeaker < ApplicationRecord
 
       reload
       update!(field_voice: target, naming_source: source, named_by: by, named_at: Time.current,
-        sample_excluded: field_voice_id == target.id ? sample_excluded? : false,
+        auto_named_confidence: confidence, sample_excluded: field_voice_id == target.id ? sample_excluded? : false,
         decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **RECOGNITION_FIELDS, **NOT_IGNORED, **NO_PROBE)
       FieldVoiceprints::Learning.drop_samples!([ id ])
       recording.update!(transcript_text: recording.render_transcript_text)
-      # The explicit naming API and attributed confirmations are deliberate
-      # edits. An automatic write with no confirmer must not queue inference.
-      if (source == "human" || by.present?) && recording.saved_change_to_transcript_text?
+      # The explicit naming API, attributed confirmations and the house's own
+      # clear-match namings are deliberate edits. A machine write with no
+      # confirmer (an API key's claim) must not queue inference.
+      if (source == "human" || source == "auto_recognition" || by.present?) && recording.saved_change_to_transcript_text?
         recording.schedule_summary_refresh
       end
       FieldVoiceprints::Learning.queue!(self) if training_label?
@@ -259,7 +271,7 @@ class FieldRecordingSpeaker < ApplicationRecord
       raise ActiveRecord::RecordNotFound unless recording.kept? && recording.ready?
 
       reload
-      update!(field_voice: nil, naming_source: nil, named_by: nil, named_at: nil,
+      update!(field_voice: nil, naming_source: nil, named_by: nil, named_at: nil, auto_named_confidence: nil,
         decision_generation: decision_generation + 1, **SUGGESTION_FIELDS, **NOT_IGNORED, **NO_PROBE)
       FieldVoiceprints::Learning.drop_samples!([ id ])
       recording.update!(transcript_text: recording.render_transcript_text)

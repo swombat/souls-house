@@ -5,6 +5,6 @@
   export { className as class };
 </script>
 
-<a {href} class={className} data-method={method} on:click>
+<a {href} class={className} data-method={method} {...$$restProps} on:click>
   <slot />
 </a>

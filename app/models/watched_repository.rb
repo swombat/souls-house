@@ -135,6 +135,7 @@ class WatchedRepository < ApplicationRecord
       hook_error: hook_error,
       last_delivery_at: last_delivery_at&.utc&.iso8601,
       last_delivery_result: last_delivery_result,
+      commit_badges: commit_badges,
       armed_watches: repository_watches.armed.count,
       connected_by: connected_by_json
     }.tap do |json|

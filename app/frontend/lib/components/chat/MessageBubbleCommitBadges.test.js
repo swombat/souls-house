@@ -5,7 +5,15 @@ import { resetCommitStatusesForTest } from '$lib/commit-status.svelte.js';
 
 const { pageStore } = await vi.hoisted(async () => {
   const { writable } = await import('svelte/store');
-  return { pageStore: writable({ props: { user: { site_admin: true } } }) };
+  return {
+    pageStore: writable({
+      props: {
+        user: { site_admin: true },
+        account: { id: 'acct1' },
+        commit_badges: { house_repo: 'swombat/souls-house', repos: [] },
+      },
+    }),
+  };
 });
 vi.mock('@inertiajs/svelte', async (importOriginal) => ({ ...(await importOriginal()), page: pageStore }));
 
@@ -23,7 +31,13 @@ let fetchMock;
 
 beforeEach(() => {
   resetCommitStatusesForTest();
-  pageStore.set({ props: { user: { site_admin: true } } });
+  pageStore.set({
+    props: {
+      user: { site_admin: true },
+      account: { id: 'acct1' },
+      commit_badges: { house_repo: 'swombat/souls-house', repos: [] },
+    },
+  });
   fetchMock = vi.fn(async () => ({
     ok: true,
     json: async () => ({
@@ -50,7 +64,9 @@ for (const role of ['user', 'assistant']) {
 
     await waitFor(() => expect(badges(container)).toEqual(['deployed', 'merged', 'unmerged']));
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe('/admin/commit_statuses?shas=51625a7%2C783ab2e%2C9c8b7a6%2Cabcdef1');
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/accounts/acct1/commit_statuses?refs=51625a7%2C783ab2e%2C9c8b7a6%2Cabcdef1'
+    );
 
     // The text itself is unchanged: badges are icons, not characters.
     expect(container.textContent.replace(/\s+/g, ' ')).toContain(
@@ -77,8 +93,10 @@ test('no lookups while a message is still streaming', async () => {
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-test('people who are not site admins get no lookups and no badges', async () => {
-  pageStore.set({ props: { user: { site_admin: false } } });
+test('readers with no badge repositories get no lookups and no badges', async () => {
+  pageStore.set({
+    props: { user: { site_admin: false }, account: { id: 'acct1' }, commit_badges: { house_repo: null, repos: [] } },
+  });
   const { container } = render(MessageBubble, {
     message: {
       id: 3,
@@ -92,4 +110,42 @@ test('people who are not site admins get no lookups and no badges', async () => 
   expect(fetchMock).not.toHaveBeenCalled();
   expect(badges(container)).toEqual([]);
   expect(container.textContent).toContain('Merged as 51625a7');
+});
+
+test("an account's own repository badges its commit URLs, and other repositories' URLs stay plain", async () => {
+  pageStore.set({
+    props: {
+      user: { site_admin: false },
+      account: { id: 'acct1' },
+      commit_badges: { house_repo: null, repos: ['Acme/Web'] },
+    },
+  });
+  fetchMock = vi.fn(async () => ({
+    ok: true,
+    json: async () => ({ statuses: { 'acme/web@783ab2e': 'on_default' }, revision: 'acme/web=fff' }),
+  }));
+  vi.stubGlobal('fetch', fetchMock);
+
+  const { container } = render(MessageBubble, {
+    message: {
+      id: 4,
+      role: 'user',
+      content: 'See https://github.com/Acme/Web/commit/783ab2e and https://github.com/swombat/chaos/commit/51625a7',
+      streaming: false,
+      created_at: '2026-10-04T12:00:00Z',
+    },
+  });
+
+  await waitFor(() => expect(badges(container)).toEqual(['on_default']));
+  // An account's repository is measured against its own default branch: no
+  // "master", no deployment.
+  const badge = container.querySelector('[data-commit-status]');
+  expect(badge.getAttribute('title')).toBe('On the default branch');
+  expect(badge.getAttribute('aria-label')).toBe('On the default branch');
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock.mock.calls[0][0]).toBe('/accounts/acct1/commit_statuses?refs=acme%2Fweb%40783ab2e');
+  expect([...container.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual([
+    'https://github.com/Acme/Web/commit/783ab2e',
+    'https://github.com/swombat/chaos/commit/51625a7',
+  ]);
 });

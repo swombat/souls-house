@@ -142,6 +142,14 @@ export function groupSpeakers(speakers = []) {
   });
 }
 
+// The parts of a card the house named by voice (auto_named), whichever part
+// stands for the card. A merged card may mix a person's naming with an
+// automatic one: the automatic provenance still shows, and "Not them"
+// reaches only these parts, never a person's assignment.
+export function automaticParts(parts = []) {
+  return (parts || []).filter((part) => part.named && part.auto_named);
+}
+
 export function turnSpeakerName(turn, names) {
   if (!turn.spk) return UNATTRIBUTED;
   return names[turn.spk] || turn.spk;

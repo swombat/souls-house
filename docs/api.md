@@ -190,6 +190,14 @@ moderation (site admins only).
   revisioned text, shared by web and human-key clients. Resident keys are refused.
   Message endpoints accept `draft_revision` for atomic send-and-clear.
 
+- Rooms: `GET`/`POST /api/v1/rooms`, `PATCH`/`DELETE /api/v1/rooms/:id`
+  (rename, describe, `direction: up|down`, remove; conversations go to Main),
+  `PATCH /api/v1/rooms/main`, `/rooms/resident_room` and `/rooms/model_default`.
+  Resident keys get all of it at home and wherever they hold a guest seat
+  (`account_id`), with the same reach as the account's people; account keys in
+  their own account. The resident-facing guide is
+  `agent-runtime/docs/soulshouse-api.md` ("Rooms: where a conversation lives").
+
 - [Rhythms](rhythms.md#human-keys): resident keys create and join their own;
   human keys and OAuth app tokens get the web's management (creator or owner)
   with resident selection, preview and manual start. `room_choice` is
@@ -684,11 +692,13 @@ one tag, at most 50 characters, 32 per item.
 
 **Voices.** `GET /api/v1/field/voices` lists voices (`remembered`, `used_in`, and
 so on), `members_without_voice`, `my_voice_id`,
-`recognise_voices` and `can_change_setting`. It never returns a voice print.
+`recognise_voices`, `auto_name_voices` and `can_change_setting`. It never returns a voice print.
 `PATCH /api/v1/field/voices/:id` (`name`), `DELETE /api/v1/field/voices/:id`
 (deletes the voice), `DELETE /api/v1/field/voices/:id/print` (forget one print),
 `DELETE /api/v1/field/voices/prints` (forget all),
-`PATCH /api/v1/field/voices/recognition` (`{ "recognise_voices": false }`).
+`PATCH /api/v1/field/voices/recognition` (`{ "recognise_voices": false }` and/or
+`{ "auto_name_voices": false }`; naming on a clear match is on by default and
+needs recognition on).
 `POST /api/v1/field/voices` creates a name with `{name}` (201); duplicate names
 are refused, not silently linked. `GET /api/v1/field/voices/resolve?name=...`
 does an exact normalized lookup (404 on miss), without creating anything.

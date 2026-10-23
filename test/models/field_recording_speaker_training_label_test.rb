@@ -16,7 +16,7 @@ class FieldRecordingSpeakerTrainingLabelTest < ActiveSupport::TestCase
 
   {
     "human" => true, "confirmed_suggestion" => true, "confirmed_recognition" => true,
-    "machine" => false, "unknown" => false, nil => false
+    "auto_recognition" => true, "machine" => false, "unknown" => false, nil => false
   }.each do |source, expected|
     test "a kept voice named by #{source.inspect} #{expected ? 'is' : 'is not'} a training label" do
       @speaker.update_columns(field_voice_id: @voice.id, naming_source: source)

@@ -29,6 +29,8 @@ class ApplicationController < ActionController::Base
         site_settings: shared_site_settings,
         is_account_admin: current_account&.manageable_by?(Current.user) || false,
         token_thresholds: { amber: 100_000, red: 150_000, critical: 200_000 },
+        # Which repositories chat commit badges are measured against (CommitBadges).
+        commit_badges: -> { CommitBadges.config_for(current_account, Current.user) },
         # Site Admin pages only: whether production still follows master.
         deploy_alarm: -> { site_admin_page? ? DeployAlarm.payload : nil }
       }

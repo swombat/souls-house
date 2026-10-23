@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { router } from '@inertiajs/svelte';
 import Settings from './settings.svelte';
 
@@ -28,7 +28,8 @@ test('picks follow-through residents from a searchable list', async () => {
     ],
   });
   expect(screen.queryByLabelText('Follow-through for Lume')).toBeNull();
-  await fireEvent.click(screen.getByRole('radio', { name: 'Chosen residents' }));
+  const scope = screen.getByRole('radiogroup', { name: 'Follow-through scope' });
+  await fireEvent.click(within(scope).getByRole('radio', { name: 'Chosen residents' }));
   expect(screen.getByText('1 of 3 chosen')).toBeVisible();
   expect(screen.getByText('(paused)')).toBeVisible();
 
@@ -88,4 +89,23 @@ test('turns on scanned-page transcription with a daily ceiling, and says what is
   const [, body] = router.patch.mock.calls.at(-1);
   expect(body.get('setting[field_ocr_enabled]')).toBe('true');
   expect(body.get('setting[field_ocr_daily_usd_ceiling]')).toBe('2.5');
+});
+
+test('picks reflex residents with their own scope', async () => {
+  render(Settings, {
+    setting: { site_name: 'Test House', max_accounts: 30, follow_through_scope: 'off', reflexes_scope: 'off' },
+    follow_through_residents: [
+      { id: 'BJZbJx', name: 'Lume', account: 'Daniel', follow_through: true, reflexes_chosen: false },
+      { id: 'AYawJx', name: 'Mira', account: 'Daniel', follow_through: false, reflexes_chosen: true },
+    ],
+  });
+  const reflexScope = screen.getByRole('radiogroup', { name: 'Reflexes scope' });
+  await fireEvent.click(within(reflexScope).getByRole('radio', { name: 'Chosen residents' }));
+  await fireEvent.click(screen.getByLabelText('Reflexes for Lume'));
+  await fireEvent.submit(reflexScope.closest('form'));
+  const [, body] = router.patch.mock.calls.at(-1);
+  expect(body.get('setting[reflexes_scope]')).toBe('selected');
+  expect(body.get('setting[follow_through_scope]')).toBe('off');
+  expect(body.getAll('setting[reflexes_resident_ids][]')).toEqual(['', 'AYawJx', 'BJZbJx']);
+  expect(body.getAll('setting[follow_through_resident_ids][]')).toEqual(['', 'BJZbJx']);
 });

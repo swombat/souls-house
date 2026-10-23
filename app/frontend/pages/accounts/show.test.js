@@ -13,6 +13,7 @@ const props = {
   can_be_personal: true,
   current_user_id: 1,
   resident_handoff_cap: 6,
+  reflexes_enabled: false,
 };
 const name = () => screen.getByLabelText('Account name');
 const cap = () => screen.getByTestId('resident-handoff-cap');
@@ -30,6 +31,7 @@ test('General follows pristine baselines, updates derived permissions and keeps 
     'can_be_personal',
     'can_manage',
     'resident_handoff_cap',
+    'reflexes_enabled',
   ]);
   const cleanup = subscribe.mock.results[0].value;
   await view.rerender({
@@ -209,4 +211,15 @@ test('invitation draft survives same-account updates and closes deliberately on 
   expect(screen.getByLabelText('Email Address')).toHaveValue('unfinished@example.com');
   await view.rerender({ ...props, account: { ...props.account, id: 'second', name: 'Second' } });
   expect(screen.queryByLabelText('Email Address')).not.toBeInTheDocument();
+});
+
+test('reflexes switch saves immediately and the readonly text reflects the account setting', async () => {
+  const view = render(General, props);
+  await fireEvent.click(screen.getByTestId('reflexes-enabled'));
+  const [path, data] = router.put.mock.calls.at(-1);
+  expect(path).toBe('/accounts/first');
+  expect(data).toEqual({ account: { reflexes_enabled: true } });
+
+  await view.rerender({ ...props, can_manage: false, reflexes_enabled: true });
+  expect(screen.getByTestId('reflexes-enabled-readonly')).toHaveTextContent('Reflexes are on for this account.');
 });

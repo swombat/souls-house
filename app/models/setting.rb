@@ -3,6 +3,7 @@ class Setting < ApplicationRecord
   include Broadcastable
 
   FOLLOW_THROUGH_SCOPES = %w[off selected all].freeze
+  REFLEXES_SCOPES = %w[off selected all].freeze
   TWEET_STREAM_COLUMNS = %w[
     field_tweets_enabled field_tweets_daily_import_cap
     field_tweets_account_monthly_usd_ceiling field_tweets_poll_minutes
@@ -26,6 +27,7 @@ class Setting < ApplicationRecord
   validates :field_tweets_poll_minutes, numericality: { only_integer: true, greater_than_or_equal_to: 5, less_than_or_equal_to: 1_440 }
   validates :vm_resident_limit, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 1_000 }
   validates :follow_through_scope, inclusion: { in: FOLLOW_THROUGH_SCOPES }
+  validates :reflexes_scope, inclusion: { in: REFLEXES_SCOPES }
   validates :stalled_sweep_minutes, inclusion: { in: StalledThreadSweeper::INTERVALS }
   validates :site_name, presence: true, length: { maximum: 100 }
   validates :safeguard_owner_notice_threshold,
@@ -47,6 +49,18 @@ class Setting < ApplicationRecord
     case follow_through_scope
     when "all" then true
     when "selected" then agent.follow_through?
+    else false
+    end
+  end
+
+  # Reflex checks (ReflexCheck) run only where both switches allow: the site
+  # scope here (off, residents an admin picked via agents.reflexes_chosen,
+  # or all) and the resident's account (accounts.reflexes_enabled).
+  def reflexes_enabled_for?(agent)
+    return false if agent.nil? || !agent.account&.reflexes_enabled?
+    case reflexes_scope
+    when "all" then true
+    when "selected" then agent.reflexes_chosen?
     else false
     end
   end

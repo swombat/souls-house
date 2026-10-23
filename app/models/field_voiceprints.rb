@@ -31,6 +31,13 @@ module FieldVoiceprints
     house_enabled? && account.recognise_voices?
   end
 
+  # A clear match from a validated print may name a speaker without a tap
+  # (Daniel, 2026-10-23, MYnpDj). On by default; a Field that wants every
+  # match as a chip turns it off on its Voices page. Never without recognition.
+  def auto_naming_for?(account)
+    enabled_for?(account) && account.auto_name_voices?
+  end
+
   # Learning reads only namings a person made or confirmed, and only once the
   # slice A writer cutover is recorded (spec §11): before it, a "human" naming
   # may have come from an API key.

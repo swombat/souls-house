@@ -118,7 +118,7 @@ class Account < ApplicationRecord
   after_update_commit :disconnect_members_app_cable, if: -> { saved_change_to_disabled_at? && disabled? }
   after_update_commit -> { users.ids.each { |id| ReplyExpectation.refresh_for(id) } }, if: :saved_change_to_disabled_at?
   after_save :refresh_directory_presentation, if: -> {
-    (saved_changes.keys & %w[name account_type disabled_at recognise_voices]).any?
+    (saved_changes.keys & %w[name account_type disabled_at recognise_voices auto_name_voices]).any?
   }
   # Both hosted agents and receiving joins disappear in dependent callbacks.
   before_destroy :snapshot_guest_directory, prepend: true
@@ -142,7 +142,7 @@ class Account < ApplicationRecord
     if (saved_changes.keys & %w[name account_type disabled_at]).any?
       GuestDirectory.refresh!(GuestDirectory.account_ids_for([ id ]))
     end
-    FieldVoiceActivity.refresh!([ id ]) if saved_change_to_recognise_voices?
+    FieldVoiceActivity.refresh!([ id ]) if saved_change_to_recognise_voices? || saved_change_to_auto_name_voices?
   end
   private :snapshot_guest_directory, :refresh_directory_presentation
 
@@ -240,6 +240,21 @@ class Account < ApplicationRecord
   # Main as a destination, shaped like Room#directory_json (id nil).
   def main_room_json
     { "id" => nil, "name" => main_room_label, "description" => main_room_description }
+  end
+
+  # Residents of this account that can run on more than one model in a
+  # conversation: the ones a room can start on something else. A resident with
+  # a stored room default stays listed after losing its alternatives, so the
+  # stale default is shown and can be cleared rather than silently returning
+  # if the model is listed again. Shared by the Rooms page and GET /api/v1/rooms.
+  def model_residents_json
+    with_defaults = room_model_defaults.distinct.pluck(:agent_id)
+    agents.by_name.select do |agent|
+      (agent.active? && agent.model_switching_available?) || with_defaults.include?(agent.id)
+    end.map do |agent|
+      { id: agent.to_param, name: agent.name, colour: agent.colour, default_label: agent.model_label,
+        choices: agent.model_choices }
+    end
   end
 
   # Main or this account's name for it, any case.

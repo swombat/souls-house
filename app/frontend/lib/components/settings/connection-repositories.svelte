@@ -1,6 +1,7 @@
 <script>
   import { router } from '@inertiajs/svelte';
   import { Button } from '$lib/components/shadcn/button';
+  import { Switch } from '$lib/components/shadcn/switch';
 
   // The GitHub card's Repositories section: repositories connected for
   // watches, and under each the watches residents or people armed on it.
@@ -29,6 +30,10 @@
         ? `Disconnect ${repository.full_name}? Its ${armed} armed ${armed === 1 ? 'watch is' : 'watches are'} cancelled and the house removes its hook on GitHub.`
         : `Disconnect ${repository.full_name}? The house removes its hook on GitHub.`;
     if (confirm(warning)) router.delete(repository.url, { preserveScroll: true });
+  }
+
+  function setCommitBadges(repository, enabled) {
+    router.patch(repository.url, { commit_badges: enabled }, { preserveScroll: true });
   }
 
   function cancelWatch(watch) {
@@ -135,6 +140,23 @@
               Disconnect
             </Button>
           {/if}
+        </div>
+
+        <div class="flex items-center justify-between gap-4 rounded-md bg-muted/40 px-3 py-2">
+          <div class="min-w-0">
+            <label class="block text-sm font-medium" for={`commit-badges-${repository.id}`}
+              >Commit badges in chat</label>
+            <p class="text-xs text-muted-foreground">
+              Commits from {repository.full_name} mentioned in this account's conversations show whether they're on the default
+              branch.
+            </p>
+          </div>
+          <Switch
+            id={`commit-badges-${repository.id}`}
+            checked={Boolean(repository.commit_badges)}
+            disabled={!canManage}
+            onCheckedChange={(enabled) => setCommitBadges(repository, enabled)}
+            aria-label={`Commit badges for ${repository.full_name}`} />
         </div>
 
         {#if repository.setup && repository.hook_status !== 'installing'}

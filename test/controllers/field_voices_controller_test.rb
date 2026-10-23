@@ -77,6 +77,19 @@ class FieldVoicesControllerTest < ActionDispatch::IntegrationTest
     assert @account.reload.recognise_voices
   end
 
+  test "naming on a clear match is on by default, and a manager turns it off and on, with or without recognition" do
+    assert @account.auto_name_voices, "on by default"
+    patch recognition_account_field_voices_path(@account), params: { auto_name_voices: false }
+    assert_equal [ true, false ], [ @account.reload.recognise_voices, @account.auto_name_voices ]
+    patch recognition_account_field_voices_path(@account), params: { recognise_voices: false, auto_name_voices: true }
+    assert_equal [ false, true ], [ @account.reload.recognise_voices, @account.auto_name_voices ]
+    patch recognition_account_field_voices_path(@account), params: {}
+    assert_response :bad_request
+
+    get account_field_voices_path(@account)
+    assert_equal true, props["auto_name_voices"]
+  end
+
   test "the Voices page lists names and what is remembered" do
     store_print!(@voice)
     with_recognition(@account) { get account_field_voices_path(@account) }

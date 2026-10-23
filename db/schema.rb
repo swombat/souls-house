@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_23_071000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_23_170100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -37,6 +37,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_071000) do
     t.text "zai_api_key"
     t.bigint "recording_ms_weekly_limit", default: 72000000, null: false
     t.boolean "recognise_voices", default: true, null: false
+    t.boolean "reflexes_enabled", default: false, null: false
     t.boolean "founding", default: false, null: false
     t.bigint "resident_room_id"
     t.boolean "field_swarm_enabled", default: false, null: false
@@ -49,6 +50,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_071000) do
     t.string "voice_conversion_error"
     t.string "main_room_name"
     t.text "main_room_description"
+    t.boolean "auto_name_voices", default: true, null: false
     t.index ["account_type"], name: "index_accounts_on_account_type"
     t.index ["disabled_at"], name: "index_accounts_on_disabled_at"
     t.index ["resident_room_id"], name: "index_accounts_on_resident_room_id"
@@ -460,6 +462,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_071000) do
     t.datetime "subagents_policy_changed_at"
     t.bigint "github_resident_import_id"
     t.boolean "follow_through", default: false, null: false
+    t.boolean "reflexes_chosen", default: false, null: false
     t.jsonb "switchable_model_ids", default: [], null: false
     t.boolean "resident_may_switch_model", default: false, null: false
     t.index ["account_id", "active"], name: "index_agents_on_account_id_and_active"
@@ -1076,6 +1079,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_071000) do
     t.datetime "sample_confirmed_at"
     t.string "sample_learning_status"
     t.string "sample_learning_error"
+    t.integer "auto_named_confidence"
     t.index ["field_recording_id", "label"], name: "index_field_recording_speakers_on_field_recording_id_and_label", unique: true
     t.index ["field_recording_id"], name: "index_field_recording_speakers_on_field_recording_id"
     t.index ["field_voice_id"], name: "index_field_recording_speakers_on_field_voice_id"
@@ -1924,6 +1928,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_071000) do
     t.index ["prompt_key"], name: "index_prompt_outputs_on_prompt_key"
   end
 
+  create_table "reflex_judgments", force: :cascade do |t|
+    t.bigint "reflex_id", null: false
+    t.bigint "message_id", null: false
+    t.float "score"
+    t.boolean "offered", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["message_id"], name: "index_reflex_judgments_on_message_id"
+    t.index ["reflex_id", "message_id"], name: "index_reflex_judgments_on_reflex_id_and_message_id", unique: true
+  end
+
+  create_table "reflexes", force: :cascade do |t|
+    t.bigint "agent_id", null: false
+    t.string "name", null: false
+    t.text "shape", null: false
+    t.text "reminder", null: false
+    t.boolean "live", default: false, null: false
+    t.datetime "discarded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "discarded_at"], name: "index_reflexes_on_agent_id_and_discarded_at"
+  end
+
   create_table "reply_dismissals", force: :cascade do |t|
     t.bigint "chat_id", null: false
     t.bigint "user_id", null: false
@@ -2366,6 +2393,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_071000) do
     t.datetime "updated_at", null: false
     t.datetime "field_naming_cutover_at"
     t.string "follow_through_scope", default: "off", null: false
+    t.string "reflexes_scope", default: "off", null: false
     t.boolean "safeguard_conversations_enabled", default: false, null: false
     t.boolean "new_residents_on_vm", default: false, null: false
     t.integer "vm_resident_limit", default: 0, null: false
@@ -2627,6 +2655,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_071000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.bigint "created_by_agent_id"
+    t.boolean "commit_badges", default: false, null: false
     t.index ["account_id", "provider", "full_name"], name: "index_watched_repositories_on_live_full_name", unique: true, where: "(removed_at IS NULL)"
     t.index ["account_id"], name: "index_watched_repositories_on_account_id"
     t.index ["created_by_agent_id"], name: "index_watched_repositories_on_created_by_agent_id"
@@ -2839,6 +2868,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_071000) do
   add_foreign_key "pending_wakes", "chats", on_delete: :cascade
   add_foreign_key "profiles", "users"
   add_foreign_key "prompt_outputs", "accounts"
+  add_foreign_key "reflex_judgments", "messages", on_delete: :cascade
+  add_foreign_key "reflex_judgments", "reflexes", on_delete: :cascade
+  add_foreign_key "reflexes", "agents", on_delete: :cascade
   add_foreign_key "reply_dismissals", "chats", on_delete: :cascade
   add_foreign_key "reply_dismissals", "users", on_delete: :cascade
   add_foreign_key "reply_expectations", "messages", column: "answered_by_message_id", on_delete: :nullify

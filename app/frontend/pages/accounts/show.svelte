@@ -10,6 +10,7 @@
   import PendingInvitationsCard from '$lib/components/accounts/PendingInvitationsCard.svelte';
   import TeamMembersCard from '$lib/components/accounts/TeamMembersCard.svelte';
   import ResidentHandoffCapCard from '$lib/components/accounts/ResidentHandoffCapCard.svelte';
+  import ReflexesCard from '$lib/components/accounts/ReflexesCard.svelte';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
   import { createDynamicSync } from '$lib/use-sync';
   import { createAccountSettingDraft } from '$lib/account-setting-draft.svelte.js';
@@ -21,12 +22,20 @@
     can_manage = false,
     current_user_id,
     resident_handoff_cap = 6,
+    reflexes_enabled = false,
   } = $props();
 
   const updateSync = createDynamicSync();
   $effect(() => {
     updateSync({
-      [`Account:${account.id}`]: ['account', 'members', 'can_be_personal', 'can_manage', 'resident_handoff_cap'],
+      [`Account:${account.id}`]: [
+        'account',
+        'members',
+        'can_be_personal',
+        'can_manage',
+        'resident_handoff_cap',
+        'reflexes_enabled',
+      ],
     });
   });
 
@@ -122,6 +131,8 @@
   </Card.Root>
 
   <ResidentHandoffCapCard accountId={account.id} cap={resident_handoff_cap} canManage={can_manage} />
+
+  <ReflexesCard accountId={account.id} enabled={reflexes_enabled} canManage={can_manage} />
 
   <AccountTypeCard
     {account}

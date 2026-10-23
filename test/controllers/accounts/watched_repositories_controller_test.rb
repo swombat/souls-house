@@ -105,6 +105,30 @@ class Accounts::WatchedRepositoriesControllerTest < ActionDispatch::IntegrationT
     assert_equal "You cannot disconnect this repository", flash[:alert]
   end
 
+  test "a member who can manage the connection switches a repository's commit badges on and off" do
+    repository = watched_repository
+    sign_in @owner
+
+    patch account_watched_repository_path(@account, repository), params: { commit_badges: "true" }
+
+    assert repository.reload.commit_badges?
+    assert_equal "Commit badges on for swombat/site", flash[:notice]
+    assert AuditLog.exists?(action: "repository.commit_badges", auditable: repository)
+
+    patch account_watched_repository_path(@account, repository), params: { commit_badges: "false" }
+    assert_not repository.reload.commit_badges?
+  end
+
+  test "a member who cannot manage the connection cannot switch commit badges" do
+    repository = watched_repository
+    sign_in @member
+
+    patch account_watched_repository_path(@account, repository), params: { commit_badges: "true" }
+
+    assert_not repository.reload.commit_badges?
+    assert_equal "You cannot change this repository", flash[:alert]
+  end
+
   test "an outsider cannot reach another account's repository" do
     repository = watched_repository
     sign_in users(:existing_user)

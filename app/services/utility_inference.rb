@@ -31,8 +31,9 @@ class UtilityInference
     )
   end
 
-  # Jev is a typed decision model, not a chat-completion model.
-  def self.decide(state:, questions:)
+  # Jev is a typed decision model, not a chat-completion model. `timeout`
+  # bounds each socket wait; a caller on a request path passes a short one.
+  def self.decide(state:, questions:, timeout: REQUEST_TIMEOUT)
     payload = { model: "typesafe/jev-1.13", state: state, questions: questions }.to_json
     validate_input!(payload)
     key = Account.system_ai_api_key(:openrouter)
@@ -41,8 +42,8 @@ class UtilityInference
     response = Faraday.post("https://openrouter.ai/api/alpha/decisions") do |request|
       request.headers["Authorization"] = "Bearer #{key}"
       request.headers["Content-Type"] = "application/json"
-      request.options.timeout = REQUEST_TIMEOUT
-      request.options.open_timeout = REQUEST_TIMEOUT
+      request.options.timeout = timeout
+      request.options.open_timeout = timeout
       request.body = payload
     end
     raise InvalidResponse, "Decision provider returned HTTP #{response.status}" unless response.success?

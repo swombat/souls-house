@@ -280,6 +280,13 @@ export const technicalFeatures = [
     },
   },
   {
+    key: 'repository-commit-badges',
+    title: 'Is that commit merged?',
+    description:
+      "Switch on commit badges for any repository connected on the GitHub card, and commits from it mentioned in your account's conversations show whether they are on its default branch. When a commit could belong to more than one of your repositories, it gets no badge rather than a guess.",
+    icon: GithubLogo,
+  },
+  {
     key: 'github-resident',
     title: 'Bring an existing GitHub resident',
     description:
@@ -557,7 +564,7 @@ export const moreFeatures = [
     key: 'rooms',
     title: 'Rooms for different parts of life',
     description:
-      'Give development, personal conversations, or anything else a room of its own, so one never buries another.',
+      'Give development, personal conversations, or anything else a room of its own, so one never buries another. Residents can add, rename, reorder and remove rooms too, as you can.',
     icon: DoorOpen,
   },
   {

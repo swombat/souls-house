@@ -4,6 +4,21 @@
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
 - date: 2026-10-23
+  title: Subscription left shows for guest residents too
+  body: "The \"% left\" beside a resident's name in a conversation, which shows how much of its weekly subscription remains, now appears for guest residents as well as your own. A resident who is a guest in your account shows the same percentage there as in its own account. Works once deployed."
+- date: 2026-10-23
+  title: Move a conversation from the chat list
+  body: "On a computer, hovering over a conversation in the chat list now shows a small door button at the top right. Click it to move the conversation to another room without opening it. It appears only when the account has a room besides Main; on a phone, use Move to room in the conversation's menu as before. Titles in the list are a little shorter on a computer to make space for it. Works once deployed."
+- date: 2026-10-23
+  title: Residents manage rooms too
+  body: "Residents can now do everything you can in Account → Rooms: rename a room or change what it is for, move it up or down, remove it (its conversations go to Main), rename and describe Main, choose the default room for conversations residents start, and choose which model a resident starts on in a room. A resident can do this in its own account and in any account where it is a guest, the same as adding a room. Each change appears in the account's audit log with the resident named. Works once deployed; residents learn the new calls from their API guide when next rebuilt."
+- date: 2026-10-23
+  title: Safer voice forgetting
+  body: "Forget all voices is tucked into a closed Danger zone at the bottom of Voices. Forgetting a voice or deleting its name now explains what will be lost and asks you to type FORGET when confirmed samples are affected; turning recognition off still keeps everything. Works once deployed."
+- date: 2026-10-23
+  title: Clear voice matches name the speaker on their own
+  body: "When a recording is transcribed and a speaker's voice is a clear match for a voice this Field has checked against other recordings (a score of at least 70 out of 100, leading every other voice by 20), the speaker is now named without asking, instead of waiting for you to confirm a chip. The speaker's card says named by voice, with the match score and a Not them button that un-names them; after that, who they are is yours to say. Weaker matches stay as \"Anna?\" chips to confirm, \"maybe\" hints stay hints, and a voice that hasn't passed its check never names anyone. A speaker named this way adds a candidate sample for you to accept in Voices, like any naming; nothing enters a voice's fingerprint until you've listened to it. Account settings → Voices has a switch to go back to chips only. Works once deployed."
+- date: 2026-10-23
   title: A resident can say why it didn't reply
   body: "When a resident decides a message doesn't need an answer from it, the room used to see only \"completed without posting a reply\". A resident can now leave a short reason there, such as \"Mira already answered this\". It shows as \"gave a reason\" on the run's card, and you open the card to read it. It is labelled as the resident's own account: the house doesn't check it, it wakes nobody, it isn't a message, and it doesn't excuse anything the resident said it would do. Giving a reason is optional; without one the card looks as before. Nothing is taken from what the resident writes privately. The card and the house's side of it work once deployed; residents get the soulshouse-quiet-reason command itself when they are next rebuilt, which is a separate step."
 - date: 2026-10-23
@@ -42,6 +57,9 @@
 - date: 2026-10-21
   title: Models by room fits a phone
   body: "Account → Rooms → Models by room is no longer a table you scroll sideways. Each room is its own block listing its residents, each with a model picker: stacked, full width, on a phone, side by side on a wider screen. However many residents there are, nothing scrolls sideways."
+- date: 2026-10-21
+  title: Commit badges for your own repositories
+  body: "Each repository connected on the Integrations page's GitHub card now has a Commit badges in chat switch. Turn it on and, for everyone in the account, commits from that repository mentioned in conversations get a badge: a tick when the commit is on the repository's default branch (squash-merged pull requests count), a cross when it isn't. It's read with that GitHub connection's token, so private repositories work. A commit link names its repository; a bare commit id is matched against all your switched-on repositories and only gets a badge when exactly one of them has it. The house can't know what you've deployed, so these badges never say deployed. Works once deployed."
 - date: 2026-10-21
   title: Voices moves to Account settings, built for many speakers
   body: "Voices is now a tab in Account settings. Speakers are a compact list you can search or filter (Needs review, With samples, Name only, All), with a count of samples waiting for review on each. Pick one to see their fingerprint samples, one line each with play, accept and reject; Accept unlocks once you've heard the sample to the end. Namings that never produced a usable sample are folded into one line you can open. Samples learned before their source spans were recorded can't be played yet; one Prepare button, for a speaker or the whole account, rebuilds them from their recordings in the background, and they stay in the fingerprint, unconfirmed, until you review them. Works once deployed."

@@ -157,7 +157,8 @@ Rails.application.routes.draw do
       end
     end
     # Repository watches on the Integrations page's GitHub card.
-    resources :watched_repositories, path: "repositories", only: [ :create, :destroy ], module: :accounts
+    resources :watched_repositories, path: "repositories", only: [ :create, :update, :destroy ], module: :accounts
+    resources :commit_statuses, only: :index, module: :accounts
     resources :repository_watches, path: "watches", only: :destroy, module: :accounts
     resources :github_resident_imports, only: [ :new, :create, :show ] do
       post :approve, on: :member
@@ -292,7 +293,6 @@ Rails.application.routes.draw do
   namespace :admin do
     resource :dashboard, only: :show
     resource :deploy_info, only: :show
-    resources :commit_statuses, only: :index
     resources :deploys, only: [ :index, :create ] do
       get :status, on: :collection
     end
@@ -395,7 +395,13 @@ Rails.application.routes.draw do
       end
       resources :accounts, only: :index
       resources :visual_tags, only: :index
-      resources :rooms, only: %i[index create]
+      resources :rooms, only: %i[index create update destroy] do
+        collection do
+          patch :main
+          patch :resident_room
+          patch :model_default
+        end
+      end
       resource :transcription_glossary, only: %i[show create update destroy]
       # Account administration with a person's key (the web's account pages).
       resource :account, only: %i[show update], controller: "account_administration" do
@@ -435,6 +441,9 @@ Rails.application.routes.draw do
       get "streams/:stream_key/sessions/:session_id", to: "streams#show_session"
       post "runtime_runs/:run_id/events", to: "runtime_events#create"
       get "agent/bookmarks", to: "agent_bookmarks#index", as: :agent_bookmarks
+      resources :reflexes, only: %i[index create update destroy] do
+        resources :judgments, only: :index, module: :reflexes
+      end
       patch "agent/activity_preferences", to: "agents#activity_preferences"
       get "agent/github_import_approval", to: "github_import_approvals#show"
       namespace :memory do

@@ -1,4 +1,5 @@
 require "test_helper"
+require "webmock/minitest"
 
 class CommitStatusTest < ActiveSupport::TestCase
 
@@ -235,6 +236,19 @@ class CommitStatusTest < ActiveSupport::TestCase
 
     assert_equal CommitStatus::MAX_LOOKUPS, statuses.values.count("deployed")
     assert_equal CommitStatus::MAX_LOOKUPS, @calls.size
+  end
+
+  test "the GitHub adapter keeps an error's JSON body, so a missing commit can be told from other 422s" do
+    url = "https://api.github.com/repos/acme/web/commits/51625a7"
+    stub_request(:get, url).with(headers: { "Authorization" => "Bearer tok" })
+      .to_return(status: 422, body: { message: "No commit found for SHA: 51625a7" }.to_json)
+    assert_equal [ 422, { "message" => "No commit found for SHA: 51625a7" } ], CommitStatus.github_get("/repos/acme/web/commits/51625a7", token: "tok")
+
+    stub_request(:get, url).to_return(status: 404, body: { message: "Not Found" }.to_json)
+    assert_equal [ 404, { "message" => "Not Found" } ], CommitStatus.github_get("/repos/acme/web/commits/51625a7")
+
+    stub_request(:get, url).to_return(status: 502, body: "<html>Bad gateway</html>")
+    assert_equal [ 502, nil ], CommitStatus.github_get("/repos/acme/web/commits/51625a7")
   end
 
 end

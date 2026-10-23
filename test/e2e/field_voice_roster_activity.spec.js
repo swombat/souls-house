@@ -1,5 +1,18 @@
 import { expect, test } from '@playwright/test';
 
+// The forget/delete guard: an in-page dialog, with the word typed when
+// confirmed samples would be lost.
+async function confirmForget(page) {
+  const dialog = page.getByTestId('forget-voice-dialog');
+  await expect(dialog).toBeVisible();
+  const word = dialog.getByTestId('forget-voice-word');
+  if (await word.count()) {
+    await expect(dialog.getByTestId('forget-voice-confirm')).toBeDisabled();
+    await word.fill('FORGET');
+  }
+  await dialog.getByTestId('forget-voice-confirm').click();
+}
+
 // Observe/drop actual server frames, never manufacture refreshes or page props.
 async function observeLifecycle(page) {
   const state = { socket: null, drop: false, frames: [], dropped: [], confirmations: [], reloads: [] };
@@ -116,7 +129,7 @@ test('remembered lifecycle and missed socket events preserve roster and recordin
     await detail.waitForLoadState('networkidle');
     expect(rosterSocket.reloads).toHaveLength(1);
     expect(rosterSocket.reloads[0].sort()).toEqual(
-      ['voices', 'recognise_voices', 'can_change_setting', 'voice_conversion'].sort()
+      ['voices', 'recognise_voices', 'auto_name_voices', 'can_change_setting', 'voice_conversion'].sort()
     );
     // A print is roster state now: speaker cards don't show it, so the
     // transcript page reloads only its roster props.
@@ -132,8 +145,8 @@ test('remembered lifecycle and missed socket events preserve roster and recordin
     await draftsSurvive();
 
     refreshed = detailRefresh();
-    editor.once('dialog', (dialog) => dialog.accept());
     await editor.getByTestId('voice-forget').click();
+    await confirmForget(editor);
     expect((await refreshed).ok()).toBe(true);
     await expect(row).toContainText('Voice forgotten, not learning');
     await expect(editor.getByTestId('voice-forget')).toHaveCount(0);
@@ -272,6 +285,7 @@ test('voice roster and open speaker picker catch changes without replacing draft
       [
         'voices',
         'recognise_voices',
+        'auto_name_voices',
         'can_change_setting',
         'voice_conversion',
         'account',
@@ -293,16 +307,16 @@ test('voice roster and open speaker picker catch changes without replacing draft
     await page.waitForLoadState('networkidle');
     // Reconnect also catches up the layout's room/account/attention lanes.
     expect(reloads.at(-1)).toEqual(
-      expect.arrayContaining(['voices', 'recognise_voices', 'can_change_setting', 'voice_conversion'])
+      expect.arrayContaining(['voices', 'recognise_voices', 'auto_name_voices', 'can_change_setting', 'voice_conversion'])
     );
     page.on('dialog', (dialog) => dialog.accept());
     await editor.getByRole('button', { name: 'Rename', exact: true }).click();
     await page.getByRole('button', { name: 'Rename', exact: true }).click();
     await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Deleted draft');
-    editor.once('dialog', (dialog) => dialog.accept());
     // Leave the editor's own rename mode so its delete control is visible.
     await editor.getByRole('button', { name: 'Cancel', exact: true }).click();
     await editor.getByRole('button', { name: 'Delete name', exact: true }).click();
+    await confirmForget(editor);
     await expect(page.getByText(/No voices yet/)).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Name', exact: true })).toHaveCount(0);
     await expect(notes).toHaveValue('Unfinished meeting notes');

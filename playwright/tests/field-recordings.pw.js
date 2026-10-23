@@ -1074,6 +1074,8 @@ test('the Voices page, house gate on: the switch, Forget and the backups line', 
   await expect(page.getByTestId('voices-switch')).toBeEnabled();
   await expect(component).toContainText("Learn voices from the names people give, and suggest who's speaking");
   await expect(component).toContainText('Learned voices are kept but not used while this is off.');
+  await expect(page.getByTestId('voices-forget-all')).toBeHidden();
+  await page.getByTestId('voices-danger-zone').locator('summary').click();
   await expect(page.getByTestId('voices-forget-all')).toBeVisible();
   // The roster is compact; what was learned, and Forget or Remember, are on
   // the selected speaker's detail (the first listed until one is picked).
@@ -1109,6 +1111,8 @@ test('the Voices page, house gate off: no switch, but a remembered voice can sti
   await expect(component).toContainText("Voice recognition isn't running in this house right now.");
   await expect(page.getByTestId('voices-switch')).toHaveCount(0);
   await expect(page.getByTestId('voice-forget')).toHaveCount(1);
+  await expect(page.getByTestId('voices-forget-all')).toBeHidden();
+  await page.getByTestId('voices-danger-zone').locator('summary').click();
   await expect(page.getByTestId('voices-forget-all')).toBeVisible();
   await expect(page.getByTestId('voice-meaning-backups')).toContainText('indeterminate time');
   await page.screenshot({ path: 'tmp/field-voices-house-off.png', fullPage: true });
