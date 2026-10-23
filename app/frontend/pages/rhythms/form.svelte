@@ -34,6 +34,7 @@
   } = $props();
 
   const defaultRoomName = $derived(room_options?.default_room?.name ?? 'Main');
+  const mainRoomName = $derived(room_options?.main_room?.name ?? 'Main');
   // A named room that was removed: the select shows it as gone until another
   // choice is made, and the rhythm falls back to the account default.
   const removedRoom = $derived(rhythm?.room_removed ? true : false);
@@ -215,7 +216,7 @@
         value={roomSelectValue($form.rhythm)}
         onchange={(event) => ($form.rhythm = { ...$form.rhythm, ...roomChoiceFromSelect(event.currentTarget.value) })}>
         <option value="resident_default">The account's default room (now {defaultRoomName})</option>
-        <option value="main">Main</option>
+        <option value="main">{mainRoomName}</option>
         {#each room_options?.rooms ?? [] as room (room.id)}
           <option value={`room:${room.id}`}>{room.name}</option>
         {/each}

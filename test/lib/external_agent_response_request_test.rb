@@ -766,6 +766,17 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     assert_includes metadata, "- room: General (use this room when: builds and everything else)"
   end
 
+  test "a configured Main is named in metadata even when it is the account's only room" do
+    agent = agents(:research_assistant)
+    agent.account.rooms.destroy_all
+    agent.account.update!(main_room_name: "Build", main_room_description: "technical work")
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Only Main")
+
+    metadata = ExternalAgentResponseRequest.new(agent: agent, chat: chat).send(:conversation_metadata)
+
+    assert_includes metadata, "- room: Build (use this room when: technical work)"
+  end
+
   test "conversation metadata has no room line while the account has no rooms at all" do
     agent = agents(:research_assistant)
     chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "No rooms yet")

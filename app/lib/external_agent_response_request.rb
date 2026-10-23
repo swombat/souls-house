@@ -359,10 +359,11 @@ class ExternalAgentResponseRequest
   end
 
   # The room is a hint about what the conversation is for, not an instruction.
-  # Residents at home and seated guests see it, once the account has rooms,
-  # with the room's own "use this room when" if it has one.
+  # Residents at home and seated guests see it, once the account has rooms or
+  # has named or described Main, with the room's "use this room when" if any.
   def room_line
-    return "" unless chat.account.rooms.exists?
+    account = chat.account
+    return "" unless account.rooms.exists? || account.main_room_name.present? || account.main_room_description.present?
     return "" unless chat.account_id == agent.account_id || agent.guest_memberships.exists?(account_id: chat.account_id)
 
     line = "\n- room: #{chat.room&.name || chat.account.main_room_label}"

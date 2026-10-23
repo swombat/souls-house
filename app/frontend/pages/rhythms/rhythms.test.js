@@ -407,3 +407,22 @@ test('the form offers the account default, Main and each room, and a room can be
   await fireEvent.change(select, { target: { value: 'room:pl' } });
   expect(select.value).toBe('room:pl');
 });
+
+test('the rhythm room picker uses the account name for Main', () => {
+  render(RhythmForm, {
+    account,
+    residents,
+    timezones: [{ value: 'Madrid', label: 'Madrid', identifier: 'Europe/Madrid' }],
+    room_options: {
+      rooms: [{ id: 'pl', name: 'Planning' }],
+      main_room: { id: null, name: 'General' },
+      default_room: { id: null, name: 'General' },
+    },
+  });
+  const select = screen.getByLabelText('Opens in');
+  expect(
+    within(select)
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+  ).toEqual(["The account's default room (now General)", 'General', 'Planning']);
+});
