@@ -67,7 +67,12 @@
     {:else}
       <nav>
         {#each chats as chat (chat.id)}
-          <ChatSidebarItem {chat} {accountId} {activeChatId} visualTags={$page.props.visual_tags || []} />
+          <ChatSidebarItem
+            {chat}
+            {accountId}
+            {activeChatId}
+            visualTags={$page.props.visual_tags || []}
+            rooms={$page.props.rooms || []} />
         {/each}
       </nav>
     {/if}
