@@ -68,6 +68,7 @@ module FieldVoiceprints::Identification
     generations = cohort.to_h { |print| [ print.field_voice_id, print.generation ] }
     guesses = FieldVoiceprints::Matching.guesses(probes, prints.to_h { |print| [ print.field_voice_id, print.vector ] }, profile:)
     hints = unchecked_hints(probes.except(*guesses.keys), cohort, prints)
+    sure = sure_guesses(probes, guesses, cohort, profile)
 
     voices = FieldVoice.where(account:).to_a
     FieldVoiceprints::Locks.with(account:, recording:, voices:) do |live_account, live_recording, locked_voices|
@@ -85,7 +86,7 @@ module FieldVoiceprints::Identification
         guess = guesses[speaker.id] || hints[speaker.id]
         voice_id, score = guess
         voice = locked_voices.find { |candidate| candidate.id == voice_id } if voice_id
-        if checked && naming && voice&.kept? && FieldVoiceprints::Matching.sure?(guess, profile:)
+        if checked && naming && voice&.kept? && sure.key?(speaker.id)
           # The naming takes the same locks again, already held by this
           # transaction, and clears the probe as any decision does.
           speaker.name_as!(voice, by: nil, source: "auto_recognition", confidence: (score * 100).round)
@@ -109,6 +110,18 @@ module FieldVoiceprints::Identification
 
   # The prints that may guess now (validated in the current cohort).
   def active_prints(account) = FieldVoiceprints::Cohort.active(account).first
+
+  # The guesses that may name: made again against every print in the cohort,
+  # unchecked ones included, the same print must win and clear the naming
+  # line. An unchecked print can't name a speaker, but its likeness can keep
+  # a checked one from doing so (Mira's review of #509).
+  def sure_guesses(probes, guesses, cohort, profile)
+    return {} if guesses.empty?
+
+    FieldVoiceprints::Matching.guesses(probes.slice(*guesses.keys), cohort.to_h { |print| [ print.field_voice_id, print.vector ] },
+      profile:)
+      .select { |key, guess| guess.first == guesses[key].first && FieldVoiceprints::Matching.sure?(guess, profile:) }
+  end
 
   # {probe key => [voice_id, score]} for probes whose best match in the whole
   # cohort is a print that isn't active. Matching against every print keeps

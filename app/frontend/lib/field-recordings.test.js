@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   groupSpeakers,
+  automaticParts,
   speakerKeys,
   activeWordIndex,
   allowanceLine,
@@ -232,6 +233,46 @@ describe('one voice heard as two speakers', () => {
       { id: 'b', label: 'B', position: 1, voice_id: 'v1', talk_ms: null },
     ]);
     expect(groups[0].speaker.talk_ms).toBeNull();
+  });
+
+  it('a merged card keeps its automatic parts whichever part stands for it', () => {
+    const human = {
+      id: 'h',
+      label: 'H',
+      position: 0,
+      voice_id: 'v1',
+      named: true,
+      auto_named: null,
+      talk_ms: 9000,
+      clip_start_ms: 0,
+      clip_end_ms: 9000,
+    };
+    const automatic = {
+      id: 'm',
+      label: 'M',
+      position: 1,
+      voice_id: 'v1',
+      named: true,
+      auto_named: { confidence: 84 },
+      talk_ms: 1000,
+      clip_start_ms: 0,
+      clip_end_ms: 1000,
+    };
+
+    const humanFirst = groupSpeakers([human, automatic])[0];
+    expect(humanFirst.speaker.id).toBe('h');
+    expect(humanFirst.speaker.auto_named).toBeNull();
+    expect(automaticParts(humanFirst.parts).map((part) => part.id)).toEqual(['m']);
+
+    const automaticFirst = groupSpeakers([
+      { ...automatic, talk_ms: 9000, clip_end_ms: 9000 },
+      { ...human, talk_ms: 1000, clip_end_ms: 1000 },
+    ])[0];
+    expect(automaticFirst.speaker.id).toBe('m');
+    expect(automaticParts(automaticFirst.parts).map((part) => part.id)).toEqual(['m']);
+
+    expect(automaticParts([{ ...automatic, named: false }])).toEqual([]);
+    expect(automaticParts(undefined)).toEqual([]);
   });
 
   it('joins consecutive turns of one voice, not of different people', () => {

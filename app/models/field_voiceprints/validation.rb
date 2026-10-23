@@ -73,6 +73,8 @@ module FieldVoiceprints::Validation
   # queries that cleared the naming line, and `named_false_accepts_into` the
   # wrong ones that would have named someone as this voice: what automatic
   # naming would have done on the held-out set (field:voiceprint_report).
+  # As in Identification, the naming line is measured against every print
+  # in the cohort, not only the round's candidates.
   def measure(account, prints)
     return [ {}, Set.new ] if prints.empty?
 
@@ -105,12 +107,19 @@ module FieldVoiceprints::Validation
         .group_by(&:field_voice_id)
         .to_h { |voice_id, own| [ voice_id, FieldVoiceprints.centroid(own.map { |sample| vectors[sample.id] }) ] }
         .compact
-      guesses = FieldVoiceprints::Matching.guesses(queries.to_h { |sample| [ sample.id, vectors[sample.id] ] }, held_out, profile:)
+      everyone = samples.reject { |sample| sample.source_group_key == group }
+        .group_by(&:field_voice_id)
+        .to_h { |voice_id, own| [ voice_id, FieldVoiceprints.centroid(own.map { |sample| vectors[sample.id] }) ] }
+        .compact
+      probes = queries.to_h { |sample| [ sample.id, vectors[sample.id] ] }
+      guesses = FieldVoiceprints::Matching.guesses(probes, held_out, profile:)
+      against_everyone = FieldVoiceprints::Matching.guesses(probes, everyone, profile:)
 
       queries.each do |query|
         held_out.each_key { |voice_id| stats[voice_id]["negatives"] += 1 unless voice_id == query.field_voice_id }
         guess = guesses[query.id]&.first
-        sure = FieldVoiceprints::Matching.sure?(guesses[query.id], profile:)
+        whole = against_everyone[query.id]
+        sure = guess && whole&.first == guess && FieldVoiceprints::Matching.sure?(whole, profile:)
         if held_out.key?(query.field_voice_id)
           entry = stats[query.field_voice_id]
           entry["queries"] += 1

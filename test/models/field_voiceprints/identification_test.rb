@@ -126,6 +126,27 @@ class FieldVoiceprints::IdentificationTest < ActiveSupport::TestCase
     end
   end
 
+  test "a sure match needs the lead over unchecked voices too: a close unchecked competitor keeps it a chip" do
+    with_recognition(@account, naming: true) do
+      store_print!(@voice, vector: voice_vector(3))
+      store_print!(@other_voice, vector: voice_vector(7), active: false)
+      # 0.76 to Tomás (checked) and 0.66 to Priya (unchecked): sure against
+      # the checked voices alone, not against every voice this Field knows.
+      between = Array.new(192, 0.0)
+      between[3] = 0.75
+      between[7] = 0.65
+      norm = Math.sqrt((0.75**2) + (0.65**2))
+      between = between.map { |value| value / norm }
+      assert_equal 1, run_identify(FakeVoiceEmbeddings.new({ default: between }))
+      @speaker.reload
+      assert_nil @speaker.field_voice_id, "named nobody"
+      assert_equal [ @voice.id, true ], [ @speaker.recognised_voice_id, @speaker.recognition_checked ]
+      # Against the checked voices alone the same guess would have cleared
+      # the line; the competitor is what keeps it a chip.
+      assert FieldVoiceprints::Matching.sure?([ @voice.id, 0.756, 0.756 ])
+    end
+  end
+
   test "an unvalidated print only hints, said as unchecked, and confirming the hint names the speaker and teaches it" do
     with_recognition(@account) do
       store_print!(@voice, vector: voice_vector(3), active: false)

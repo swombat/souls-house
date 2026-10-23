@@ -198,6 +198,27 @@ class FieldVoiceprints::MatchingValidationTest < ActiveSupport::TestCase
     assert_not_includes active_voice_ids(account), voices.first.id
   end
 
+  test "the held-out report names only with a lead over every voice, unchecked ones included" do
+    account, voices = build_account
+    user = users(:user_1)
+    # A seventh voice named in one recording only, so it can never pass its
+    # check, and a fourth sample of Voice 1 that sits between Voice 1 and it:
+    # still Voice 1's (lead ≥ 0.15), but not clearly enough to name (< 0.20).
+    seventh = account.field_voices.create!(name: "Seventh")
+    once = long_ready_recording(account:, user:)
+    2.times { add_sample(account, seventh, once, unit(e9: 1.0)) }
+    fourth = long_ready_recording(account:, user:)
+    add_sample(account, voices.first, fourth, unit(e0: 1.0, e9: 0.78))
+    rebuild_all([ seventh, voices.first ])
+
+    stats = FieldVoiceprints::Validation.run!(account)
+    assert_includes active_voice_ids(account), voices.first.id
+    assert_not_includes active_voice_ids(account), seventh.id
+    entry = stats[voices.first.id]
+    assert_equal [ 4, 4, 3 ], [ entry["queries"], entry["correct"], entry["named"] ],
+      "the between sample is recognised but would not have been named: #{entry}"
+  end
+
   test "a print from one recording is never validated, and a rebuilt print waits for the check again" do
     account, voices = build_account
     FieldVoiceSample.where(field_voice: voices.last).where.not(field_recording_id: FieldVoiceSample.where(field_voice: voices.last).minimum(:field_recording_id)).delete_all

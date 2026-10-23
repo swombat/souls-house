@@ -195,6 +195,7 @@
       renameError = '';
       renaming = false;
       switching = null;
+      switchingNaming = null;
       renameRequest += 1;
     }
   });

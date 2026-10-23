@@ -7,7 +7,7 @@
   import SpeakerChip from '$lib/components/field/SpeakerChip.svelte';
   import SuggestionChip from '$lib/components/field/SuggestionChip.svelte';
   import RecognitionChip from '$lib/components/field/RecognitionChip.svelte';
-  import { formatDuration } from '$lib/field-recordings';
+  import { formatDuration, automaticParts } from '$lib/field-recordings';
 
   let {
     speaker,
@@ -54,15 +54,27 @@
     );
   }
 
-  // "Not them" on a speaker the house named by voice: un-names it, which
-  // counts as a person's decision, so nothing guesses at it again. Any part
-  // of a merged card goes with it, as the chip's own un-name does.
+  // The parts of this card the house named by voice, whichever part stands
+  // for the card: a merged card can mix a person's naming with an automatic
+  // one, and the automatic provenance still shows. "Not them" un-names only
+  // those parts, which counts as a person's decision, so nothing guesses at
+  // them again; a part a person named stays named.
+  const automatic = $derived(automaticParts(parts.length ? parts : [speaker]));
+  const autoNamed = $derived(automatic.find((part) => part.id === speaker.id) || automatic[0]);
+  const provenance = $derived.by(() => {
+    if (!autoNamed) return '';
+    const label = automatic.length < parts.length ? 'Partly named by voice' : 'Named by voice';
+    const score = autoNamed.auto_named?.confidence;
+    return score != null ? `${label} · match ${score}` : label;
+  });
   let unnaming = $state(false);
   function notThem() {
+    if (!automatic.length) return;
     unnaming = true;
-    const companions = chip.with || [];
+    const [first, ...rest] = automatic;
+    const companions = rest.map((part) => part.id);
     router.patch(
-      chip.url,
+      speakerUrl ? speakerUrl(first) : chip.url,
       { speaker: companions.length ? { unname: true, with: companions } : { unname: true } },
       { preserveScroll: true, preserveState: true, onFinish: () => (unnaming = false) }
     );
@@ -76,9 +88,9 @@
   <Card.Content class="p-3 space-y-2">
     <div>
       <p class="font-semibold truncate">{speaker.name || speaker.default_name}</p>
-      {#if speaker.named && speaker.auto_named}
+      {#if speaker.named && autoNamed}
         <p class="text-xs text-muted-foreground" data-testid="speaker-auto-named">
-          Named by voice{speaker.auto_named.confidence != null ? ` · match ${speaker.auto_named.confidence}` : ''}
+          {provenance}
           ·
           <button
             class="underline-offset-2 hover:underline hover:text-foreground disabled:opacity-50"
