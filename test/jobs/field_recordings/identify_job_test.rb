@@ -15,7 +15,7 @@ class FieldRecordings::IdentifyJobTest < ActiveJob::TestCase
 
   # The job uses the real client; the voice service and the cut are faked.
   def with_voice_service(vector: voice_vector(@voice.id % 100), &)
-    embed = ->(_wav) { FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: vector, profile: "ecapa-test") }
+    embed = ->(_wav) { FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: vector, profile: FieldVoiceprints::Profiles::ECAPA) }
     cut = ->(_recording, _segments, &block) { Tempfile.create([ "s", ".wav" ]) { |file| block.call(file.path) } }
     FieldVoiceprints::VoiceEmbeddings.stub(:embed, embed) { FieldVoiceprints::Sample.stub(:cut, cut, &) }
   end
