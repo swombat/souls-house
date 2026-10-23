@@ -294,3 +294,41 @@ test('helper activity stays compact and narration opt-out hides all helper UI', 
   expect(container.textContent).not.toContain('Donny');
   expect(container.textContent).not.toContain('+4 more');
 });
+
+test('a stated quiet reason sits collapsed under a finished card, labelled as the resident\'s own account', async () => {
+  const finished = {
+    ...base,
+    active: false,
+    status: 'completed',
+    status_label: 'finished',
+    reply_label: 'No linked reply',
+    narration_shared: false,
+    quiet_reason: { text: 'Mira already answered; nothing to add.', at: '2026-09-06T10:01:00Z' },
+  };
+  const { container } = render(AgentRuntimeActivityCard, { interaction: finished });
+  const details = container.querySelector('details');
+  expect(details.open).toBe(false);
+  expect(screen.getByTestId('quiet-reason-hint')).toHaveTextContent('gave a reason');
+  expect(screen.getByTestId('quiet-reason')).not.toBeVisible();
+  await fireEvent.click(container.querySelector('summary'));
+  expect(screen.getByTestId('quiet-reason')).toBeVisible();
+  expect(screen.getByTestId('quiet-reason')).toHaveTextContent("Resident's own account, not verified");
+  expect(screen.getByTestId('quiet-reason')).toHaveTextContent('Mira already answered; nothing to add.');
+  // The narration gate is unchanged: the reason is not narration.
+  expect(screen.getByText("Working narration isn't shared.")).toBeInTheDocument();
+});
+
+test('without a stated reason the finished card stays neutral', () => {
+  render(AgentRuntimeActivityCard, {
+    interaction: { ...base, active: false, status: 'completed', status_label: 'finished', quiet_reason: null },
+  });
+  expect(screen.queryByTestId('quiet-reason-hint')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('quiet-reason')).not.toBeInTheDocument();
+});
+
+test('a running card does not show a reason yet', () => {
+  render(AgentRuntimeActivityCard, {
+    interaction: { ...base, quiet_reason: { text: 'Not needed here.', at: '2026-09-06T10:01:00Z' } },
+  });
+  expect(screen.queryByTestId('quiet-reason')).not.toBeInTheDocument();
+});

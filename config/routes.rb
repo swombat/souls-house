@@ -463,6 +463,7 @@ Rails.application.routes.draw do
           resource :safeguard_reset, only: :create
         end
         resource :agent_trigger, only: :create
+        resource :quiet_reason, only: :create
         resource :model, only: [ :show, :create ], controller: "conversation_models"
         resources :participants, only: :create
         resource :archive, only: [ :create, :destroy ], controller: "conversation_archives"

@@ -230,6 +230,7 @@ COPY docs/memory-quick-reference.md /usr/local/share/helixkit-agent/memory-quick
 COPY soulshouse-post-message /usr/local/bin/soulshouse-post-message
 COPY --chmod=0755 soulshouse-stone /usr/local/bin/soulshouse-stone
 COPY --chmod=0755 soulshouse-model /usr/local/bin/soulshouse-model
+COPY --chmod=0755 soulshouse-quiet-reason /usr/local/bin/soulshouse-quiet-reason
 COPY soulshouse-send-telegram /usr/local/bin/soulshouse-send-telegram
 COPY soulshouse-append-journal /usr/local/bin/soulshouse-append-journal
 COPY soulshouse-usage /usr/local/bin/soulshouse-usage

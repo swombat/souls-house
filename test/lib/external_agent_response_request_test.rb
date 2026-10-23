@@ -110,6 +110,25 @@ class ExternalAgentResponseRequestTest < ActiveSupport::TestCase
     refute_includes text, "decide and act now"
     refute_includes text, "Do not ask for a second confirmation"
     refute_includes text, "asking you to act"
+    # No live run, no run id for the helper: the optional quiet reason isn't offered.
+    refute_includes text, "soulshouse-quiet-reason"
+  end
+
+  test "a live run is offered the optional, public quiet reason" do
+    agent = agents(:research_assistant)
+    chat = agent.account.chats.create!(model_id: "openrouter/auto", title: "Quiet offer")
+    chat.messages.create!(role: "user", content: "Anyone?")
+    run = chat.agent_runtime_interactions.create!(agent: agent, trigger_kind: "conversation",
+      started_at: Time.current, run_id: SecureRandom.uuid, execution_state: "queued")
+    text = ExternalAgentResponseRequest.new(agent: agent, chat: chat, interaction: run).send(:request_text)
+
+    assert_includes text, "soulshouse-quiet-reason #{chat.to_param}"
+    assert_includes text, "It is public"
+    assert_includes text, "not a verified explanation"
+    assert_includes text, "wakes nobody"
+    assert_includes text, "does not excuse work you have said you will do"
+    assert_includes text, "nothing is taken from stdout"
+    assert_includes text, "explain your reason briefly on stdout"
   end
 
   test "request text includes the sub-agent policy section only when enabled" do
