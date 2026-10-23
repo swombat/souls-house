@@ -35,6 +35,7 @@ module Api
             members_without_voice: FieldItems.members_without_voice_json(account, except: current_api_user),
             my_voice_id: account.field_voices.kept.find_by(user: current_api_user)&.to_param,
             recognise_voices: account.recognise_voices,
+            auto_name_voices: account.auto_name_voices,
             house_recognition: FieldVoiceprints.house_enabled?,
             voice_conversion: FieldVoiceprints::Conversion.presentation(account),
             can_change_setting: account.manageable_by?(current_api_user)
@@ -90,19 +91,22 @@ module Api
         end
 
         # Same lock as the page: the account row, which learning and matching
-        # also take. Off keeps what was learned, unused.
+        # also take. Recognition off keeps what was learned, unused; naming
+        # off keeps every match a chip.
         def recognition
           account = human_request_account!
           unless account.manageable_by?(current_api_user)
             return render json: { error: "You don't have permission to manage this account" }, status: :forbidden
           end
-          unless params.key?(:recognise_voices)
-            return render json: { error: "Provide recognise_voices: true or false" }, status: :unprocessable_entity
+          changes = %w[recognise_voices auto_name_voices].each_with_object({}) do |setting, named|
+            named[setting] = ActiveModel::Type::Boolean.new.cast(params[setting]) if params.key?(setting)
+          end
+          if changes.empty?
+            return render json: { error: "Provide recognise_voices or auto_name_voices: true or false" }, status: :unprocessable_entity
           end
 
-          enabled = ActiveModel::Type::Boolean.new.cast(params[:recognise_voices])
-          account.with_lock { account.update!(recognise_voices: enabled) }
-          render json: { recognise_voices: account.recognise_voices }
+          account.with_lock { account.update!(changes) }
+          render json: { recognise_voices: account.recognise_voices, auto_name_voices: account.auto_name_voices }
         end
 
         private

@@ -118,7 +118,7 @@ class Account < ApplicationRecord
   after_update_commit :disconnect_members_app_cable, if: -> { saved_change_to_disabled_at? && disabled? }
   after_update_commit -> { users.ids.each { |id| ReplyExpectation.refresh_for(id) } }, if: :saved_change_to_disabled_at?
   after_save :refresh_directory_presentation, if: -> {
-    (saved_changes.keys & %w[name account_type disabled_at recognise_voices]).any?
+    (saved_changes.keys & %w[name account_type disabled_at recognise_voices auto_name_voices]).any?
   }
   # Both hosted agents and receiving joins disappear in dependent callbacks.
   before_destroy :snapshot_guest_directory, prepend: true
@@ -142,7 +142,7 @@ class Account < ApplicationRecord
     if (saved_changes.keys & %w[name account_type disabled_at]).any?
       GuestDirectory.refresh!(GuestDirectory.account_ids_for([ id ]))
     end
-    FieldVoiceActivity.refresh!([ id ]) if saved_change_to_recognise_voices?
+    FieldVoiceActivity.refresh!([ id ]) if saved_change_to_recognise_voices? || saved_change_to_auto_name_voices?
   end
   private :snapshot_guest_directory, :refresh_directory_presentation
 

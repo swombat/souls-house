@@ -15,6 +15,14 @@
 # recording (Daniel, 2026-10-20, KJkkdJ). An active print never loses a
 # speaker it claims to an unchecked one.
 #
+# A guess from an active print that clears the recipe's naming line
+# (FieldVoiceprints::Matching.sure?) names the speaker without a tap when the
+# account allows it (Daniel, 2026-10-23, MYnpDj): the naming is a person's
+# decision in every respect but authorship (source auto_recognition, named by
+# nobody), shown as "named by voice" with "Not them" beside it, and it queues
+# a candidate sample that only a person's Accept lets into the print. Hints
+# never name, and neither does a guess below the line.
+#
 # Embedding happens outside any lock. The write happens under account →
 # recording → every voice in the cohort, with fresh rows, and only if
 # nothing the guesses were computed from has moved: recognition still on, the
@@ -28,8 +36,8 @@ module FieldVoiceprints::Identification
 
   module_function
 
-  # Returns the number of guesses written; nil when nothing could run;
-  # :changed when the cohort moved while embedding (nothing was written).
+  # Returns the number of guesses and namings written; nil when nothing could
+  # run; :changed when the cohort moved while embedding (nothing was written).
   def run!(recording, client: FieldVoiceprints::VoiceEmbeddings)
     account = recording.account
     return nil unless FieldVoiceprints.enabled_for?(account) && recording.kept? && recording.ready? && !recording.supplied?
@@ -60,21 +68,33 @@ module FieldVoiceprints::Identification
     generations = cohort.to_h { |print| [ print.field_voice_id, print.generation ] }
     guesses = FieldVoiceprints::Matching.guesses(probes, prints.to_h { |print| [ print.field_voice_id, print.vector ] }, profile:)
     hints = unchecked_hints(probes.except(*guesses.keys), cohort, prints)
+    sure = sure_guesses(probes, guesses, cohort, profile)
 
     voices = FieldVoice.where(account:).to_a
-    FieldVoiceprints::Locks.with(account:, recording:, voices:) do |live_account, live_recording, _voices|
+    FieldVoiceprints::Locks.with(account:, recording:, voices:) do |live_account, live_recording, locked_voices|
       next nil unless FieldVoiceprints.enabled_for?(live_account) && live_recording.kept? && live_recording.ready?
       next nil unless live_account.field_probe_generation == probe_generation
       next :changed unless FieldVoiceprints::Conversion.ready?(live_account)
       next :changed unless FieldVoiceprints::Cohort.active(live_account).last == key
 
+      naming = FieldVoiceprints.auto_naming_for?(live_account)
       written = 0
       live_recording.speakers.each do |speaker|
         next unless snapshot.key?(speaker.id) && speaker.decision_generation == snapshot[speaker.id] && undecided?(speaker)
 
-        speaker.update!(probe_embedding: JSON.generate(fresh[speaker.id]), probe_profile: profile) if fresh[speaker.id]
         checked = guesses.key?(speaker.id)
-        voice_id, score = guesses[speaker.id] || hints[speaker.id]
+        guess = guesses[speaker.id] || hints[speaker.id]
+        voice_id, score = guess
+        voice = locked_voices.find { |candidate| candidate.id == voice_id } if voice_id
+        if checked && naming && voice&.kept? && sure.key?(speaker.id)
+          # The naming takes the same locks again, already held by this
+          # transaction, and clears the probe as any decision does.
+          speaker.name_as!(voice, by: nil, source: "auto_recognition", confidence: (score * 100).round)
+          written += 1
+          next
+        end
+
+        speaker.update!(probe_embedding: JSON.generate(fresh[speaker.id]), probe_profile: profile) if fresh[speaker.id]
         if voice_id
           speaker.update!(recognised_voice_id: voice_id, recognition_confidence: (score * 100).round,
             recognition_print_generation: generations[voice_id], recognition_decision_generation: speaker.decision_generation,
@@ -90,6 +110,18 @@ module FieldVoiceprints::Identification
 
   # The prints that may guess now (validated in the current cohort).
   def active_prints(account) = FieldVoiceprints::Cohort.active(account).first
+
+  # The guesses that may name: made again against every print in the cohort,
+  # unchecked ones included, the same print must win and clear the naming
+  # line. An unchecked print can't name a speaker, but its likeness can keep
+  # a checked one from doing so (Mira's review of #509).
+  def sure_guesses(probes, guesses, cohort, profile)
+    return {} if guesses.empty?
+
+    FieldVoiceprints::Matching.guesses(probes.slice(*guesses.keys), cohort.to_h { |print| [ print.field_voice_id, print.vector ] },
+      profile:)
+      .select { |key, guess| guess.first == guesses[key].first && FieldVoiceprints::Matching.sure?(guess, profile:) }
+  end
 
   # {probe key => [voice_id, score]} for probes whose best match in the whole
   # cohort is a print that isn't active. Matching against every print keeps

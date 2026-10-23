@@ -255,6 +255,7 @@ module FieldItems
       ignored_as: speaker.ignored? ? speaker.ignored_as : nil,
       voice_id: speaker.field_voice&.kept? ? speaker.field_voice.to_param : nil,
       naming_source: speaker.naming_source,
+      auto_named: (speaker.auto_named? ? { confidence: speaker.auto_named_confidence } : nil),
       talk_ms: speaker.known_talk_ms,
       clip_start_ms: speaker.clip_start_ms,
       clip_end_ms: speaker.clip_end_ms,

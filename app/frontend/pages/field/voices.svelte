@@ -17,6 +17,7 @@
   let {
     voices = [],
     recognise_voices = true,
+    auto_name_voices = true,
     house_recognition = false,
     voice_conversion = { state: 'ready', remaining: 0 },
     can_change_setting = false,
@@ -26,7 +27,13 @@
   const updateSync = createDynamicSync();
   $effect(() => {
     updateSync({
-      [`FieldVoiceActivity:${account.id}`]: ['voices', 'recognise_voices', 'can_change_setting', 'voice_conversion'],
+      [`FieldVoiceActivity:${account.id}`]: [
+        'voices',
+        'recognise_voices',
+        'auto_name_voices',
+        'can_change_setting',
+        'voice_conversion',
+      ],
     });
   });
 
@@ -131,6 +138,27 @@
     );
   }
 
+  // Naming on a clear match: the same endpoint, the other setting. Only
+  // meaningful while recognition is on, so the switch rests when it's off.
+  let switchingNaming = $state(null);
+  const namingOn = $derived(switchingNaming ?? auto_name_voices);
+
+  function setNaming(on) {
+    if (!can_change_setting) return;
+    const identity = account.id;
+    switchingNaming = on;
+    router.patch(
+      `${base}/recognition`,
+      { auto_name_voices: on },
+      {
+        preserveScroll: true,
+        onFinish: () => {
+          if (account.id === identity) switchingNaming = null;
+        },
+      }
+    );
+  }
+
   function forgetAll() {
     if (!confirm("Forget every voice this Field remembers? They're deleted now. Names on transcripts stay.")) return;
     router.delete(`${base}/prints`);
@@ -167,6 +195,7 @@
       renameError = '';
       renaming = false;
       switching = null;
+      switchingNaming = null;
       renameRequest += 1;
     }
   });
@@ -271,6 +300,23 @@
             A suggestion only: someone still confirms who it is before a name goes on a transcript. Off keeps what was
             learned, unused, and stops learning.
             {#if !can_change_setting}Only people who manage this account can change this.{/if}
+          </p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3 pt-2">
+        <Switch
+          id="auto_name_voices"
+          checked={namingOn && recognitionOn}
+          disabled={!can_change_setting || !recognitionOn || switchingNaming != null}
+          onCheckedChange={setNaming}
+          data-testid="voices-naming-switch" />
+        <div class="min-w-0 space-y-0.5">
+          <label for="auto_name_voices" class="font-medium"
+            >Name a speaker without asking when the match is clear</label>
+          <p class="text-xs text-muted-foreground">
+            Only a voice that has passed its check against other recordings, and only when the match scores at least 70
+            and leads every other voice by 20. The speaker's card says named by voice, with Not them beside it. Off
+            keeps every match a suggestion to confirm.
           </p>
         </div>
       </div>

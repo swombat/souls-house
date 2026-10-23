@@ -20,6 +20,7 @@ test('empty roster subscribes, stable refresh keeps subscription, account switch
     expect(subscribeToModel).toHaveBeenCalledWith('FieldVoiceActivity', 'home', [
       'voices',
       'recognise_voices',
+      'auto_name_voices',
       'can_change_setting',
       'voice_conversion',
     ])
@@ -31,6 +32,25 @@ test('empty roster subscribes, stable refresh keeps subscription, account switch
   await component.rerender({ ...props, account: { id: 'next' } });
   await waitFor(() => expect(subscribeToModel).toHaveBeenCalledWith('FieldVoiceActivity', 'next', expect.anything()));
   expect(cleanup).toHaveBeenCalledOnce();
+});
+
+test('a naming-switch request in flight is forgotten when the account changes', async () => {
+  const settings = { ...props, house_recognition: true, can_change_setting: true, recognise_voices: true };
+  const component = render(Voices, settings);
+  const naming = () => screen.getByTestId('voices-naming-switch');
+  expect(naming()).not.toBeDisabled();
+  await fireEvent.click(naming());
+  expect(router.patch).toHaveBeenCalledWith(
+    '/accounts/home/field/voices/recognition',
+    { auto_name_voices: false },
+    expect.anything()
+  );
+  expect(naming()).toBeDisabled();
+
+  // The request never finished here; the next account must not inherit it.
+  await component.rerender({ ...settings, account: { id: 'next' } });
+  await waitFor(() => expect(naming()).not.toBeDisabled());
+  expect(naming()).toHaveAttribute('data-state', 'checked');
 });
 
 test('blocked conversion is visible, retry is manager-only and a live ready refresh clears it', async () => {

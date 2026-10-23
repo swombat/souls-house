@@ -83,6 +83,20 @@ class Api::V1::Field::VoicesControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  test "naming on a clear match can be turned off and on, alone or with recognition" do
+    patch recognition_api_v1_field_voices_path, params: { recognise_voices: true }, headers: @headers, as: :json
+    patch recognition_api_v1_field_voices_path, params: { auto_name_voices: false }, headers: @headers, as: :json
+    assert_response :success
+    assert_equal [ true, false ], [ @account.reload.recognise_voices, @account.auto_name_voices ]
+    assert_equal false, response.parsed_body["auto_name_voices"]
+
+    patch recognition_api_v1_field_voices_path, params: { recognise_voices: false, auto_name_voices: true }, headers: @headers, as: :json
+    assert_equal [ false, true ], [ @account.reload.recognise_voices, @account.auto_name_voices ]
+
+    get api_v1_field_voices_path, headers: @headers
+    assert_equal true, response.parsed_body["auto_name_voices"]
+  end
+
   test "resident keys list and resolve home voices only; lifecycle stays a person's; other accounts' voices are 404" do
     resident = resident_headers(@user, agents(:research_assistant))
     accounts(:team_account).field_voices.create!(name: "Team only")
