@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1.7  # keep this at the very top of the Dockerfile
 
 ########################
-# BASE (from ruby:4.0.6-slim)
+# BASE (from ruby:4.0.9-slim)
 ########################
 
 # Keep these runtime versions in sync with mise.toml and .ruby-version.
-ARG RUBY_VERSION=4.0.6
+ARG RUBY_VERSION=4.0.9
 ARG BUN_VERSION=1.4.0
 
 FROM registry.docker.com/oven/bun:$BUN_VERSION AS bun
