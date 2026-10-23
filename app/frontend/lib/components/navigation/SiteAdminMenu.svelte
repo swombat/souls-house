@@ -21,7 +21,7 @@
   import { buttonVariants } from '$lib/components/shadcn/button/index.js';
   import { cn } from '$lib/utils.js';
   import { adminNoticesPath } from '@/routes';
-  import { deployLines, deployBadge } from './deployInfo.js';
+  import { deployLines, deployBadge, startPolling } from './deployInfo.js';
 
   let deployInfo = $state(null);
   let deployInfoFailed = $state(false);
@@ -38,7 +38,7 @@
 
   // Fetched after the page has loaded (so it never waits on GitHub), again
   // when the menu opens, and every minute after that: every 15 seconds while
-  // a deploy is running, so the spinner stops soon after it finishes.
+  // CI or a deploy is running on master, so the spinner stops soon after it finishes.
   async function loadDeployInfo() {
     if (loading) return;
     loading = true;
@@ -54,20 +54,12 @@
     }
   }
 
-  onMount(() => {
-    let timer;
-    const schedule = () => {
-      timer = setTimeout(
-        async () => {
-          if (!document.hidden) await loadDeployInfo();
-          schedule();
-        },
-        deployInfo?.deploying ? 15_000 : 60_000
-      );
-    };
-    loadDeployInfo().then(schedule);
-    return () => clearTimeout(timer);
-  });
+  onMount(() =>
+    startPolling(
+      () => (document.hidden ? Promise.resolve() : loadDeployInfo()),
+      () => (deployInfo?.deploying ? 15_000 : 60_000)
+    )
+  );
 
   const badge = $derived(deployBadge(deployInfo, { failed: deployInfoFailed }));
   const lines = $derived(deployLines(deployInfo, { failed: deployInfoFailed }));

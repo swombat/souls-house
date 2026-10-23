@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { deployLines, deployBadge } from './deployInfo.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { deployLines, deployBadge, startPolling } from './deployInfo.js';
 
 const deployed = { sha: 'a'.repeat(40), short: 'aaaaaaa', dirty: false, booted_at: '2026-10-04T12:00:00Z' };
 const master = { sha: 'b'.repeat(40), short: 'bbbbbbb', committed_at: '2026-10-04T14:24:30Z', message: 'Merge #150' };
@@ -76,7 +76,37 @@ describe('deployBadge', () => {
     expect(deployBadge(null)).toBeNull();
     const badge = deployBadge({ deployed, master, behind_by: 2, deploying: true });
     expect(badge.deploying).toBe(true);
-    expect(badge.title).toBe('2 commits behind master · a deploy is running');
+    expect(badge.title).toBe('2 commits behind master · CI or a deploy is running');
     expect(deployBadge({ deployed, master, behind_by: 0, deploying: null }).deploying).toBe(false);
+  });
+});
+
+describe('startPolling', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('polls after each load settles', async () => {
+    vi.useFakeTimers();
+    const load = vi.fn().mockResolvedValue();
+    const stop = startPolling(load, () => 1000);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(load).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(load).toHaveBeenCalledTimes(2);
+    stop();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('schedules nothing when stopped while a load is still in flight', async () => {
+    vi.useFakeTimers();
+    let finish;
+    const load = vi.fn(() => new Promise((resolve) => (finish = resolve)));
+    const stop = startPolling(load, () => 1000);
+    expect(load).toHaveBeenCalledTimes(1);
+    stop(); // unmount mid-fetch
+    finish();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -98,15 +98,17 @@ class HouseDeploy
   end
 
   DEPLOYING_TTL = 15.seconds
+  # CI on master counts: a merge waits on it before the automatic deploy runs.
+  CI_FILE = "ci.yml"
 
-  # Whether any deploy workflow, manual or automatic, is queued or running on
-  # master right now: true, false, or nil when it can't be told (no token,
-  # GitHub unreachable). One listing call, cached briefly, because the
-  # site-admin badge asks on every page.
+  # Whether master's pipeline is moving right now: CI on master or any deploy
+  # workflow, manual or automatic, queued or running. true, false, or nil when
+  # it can't be told (no token, GitHub unreachable). One listing call, cached
+  # briefly, because the site-admin badge asks on every page.
   def self.deploying?
     return nil unless configured?
 
-    files = (WORKFLOWS.values.map { |config| config[:file] } + [ AUTOMATIC[:file] ]).map { |file| ".github/workflows/#{file}" }
+    files = (WORKFLOWS.values.map { |config| config[:file] } + [ AUTOMATIC[:file], CI_FILE ]).map { |file| ".github/workflows/#{file}" }
     Rails.cache.fetch("house_deploy/deploying:#{repo}", expires_in: DEPLOYING_TTL, skip_nil: true) do
       status, _headers, body = transport.call(:get, "/repos/#{repo}/actions/runs?branch=#{REF}&per_page=30", nil)
       next nil unless status == 200 && body.is_a?(Hash)
