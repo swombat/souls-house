@@ -272,6 +272,7 @@ test('voice roster and open speaker picker catch changes without replacing draft
       [
         'voices',
         'recognise_voices',
+        'auto_name_voices',
         'can_change_setting',
         'voice_conversion',
         'account',
@@ -293,7 +294,7 @@ test('voice roster and open speaker picker catch changes without replacing draft
     await page.waitForLoadState('networkidle');
     // Reconnect also catches up the layout's room/account/attention lanes.
     expect(reloads.at(-1)).toEqual(
-      expect.arrayContaining(['voices', 'recognise_voices', 'can_change_setting', 'voice_conversion'])
+      expect.arrayContaining(['voices', 'recognise_voices', 'auto_name_voices', 'can_change_setting', 'voice_conversion'])
     );
     page.on('dialog', (dialog) => dialog.accept());
     await editor.getByRole('button', { name: 'Rename', exact: true }).click();
