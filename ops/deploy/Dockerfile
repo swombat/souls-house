@@ -1,4 +1,4 @@
-FROM ruby:4.0.6-slim-trixie
+FROM ruby:4.0.9-slim-trixie
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl git openssh-client docker-cli docker-buildx build-essential \
     && rm -rf /var/lib/apt/lists/* \
