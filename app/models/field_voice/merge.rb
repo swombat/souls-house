@@ -117,6 +117,7 @@ class FieldVoice::Merge
       end
 
       sample.field_voice = target
+      sample.assign_attributes(rollback_embedding: nil, rollback_profile: nil)
       if sample.standalone?
         sample.source_digest = FieldVoiceSamples::Uploads.source_digest(sample)
         sample.confirmed_digest = sample.source_digest if standing[sample.id]

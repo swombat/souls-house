@@ -66,7 +66,7 @@ class FieldRecordingIdentifyAgainTest < ActiveSupport::TestCase
     embedded = 0
     embed = ->(_wav) do
       embedded += 1
-      FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: voice_vector(voice.id % 100), profile: "ecapa-test")
+      FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: voice_vector(voice.id % 100), profile: FieldVoiceprints::Profiles::ECAPA)
     end
     cut = ->(_recording, _segments, &block) { Tempfile.create([ "s", ".wav" ]) { |file| block.call(file.path) } }
     with_recognition(@account) do

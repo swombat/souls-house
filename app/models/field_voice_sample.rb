@@ -18,6 +18,7 @@ class FieldVoiceSample < ApplicationRecord
   has_one_attached :audio
 
   encrypts :embedding
+  encrypts :rollback_embedding
 
   validates :speech_ms, :label_origin, presence: true
   validates :embedding, :profile, presence: true, unless: :standalone?
@@ -45,6 +46,18 @@ class FieldVoiceSample < ApplicationRecord
 
   def vector=(values)
     self.embedding = JSON.generate(values)
+  end
+
+  def vector_for(wanted)
+    raw = if profile == wanted
+      embedding
+    elsif rollback_profile == wanted
+      rollback_embedding
+    end
+    values = JSON.parse(raw) if raw.present?
+    values if FieldVoiceprints::Profiles.valid_vector?(values, wanted)
+  rescue JSON::ParserError
+    nil
   end
 
   # These are the exact persisted montage spans, not a newly selected preview.

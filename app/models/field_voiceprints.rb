@@ -1,6 +1,6 @@
 # Voice recognition in the house (docs/2026-10-19-field-voiceprints-in-house.md).
 #
-# Prints are learned here, from people's namings, by the house's own ECAPA
+# Prints are learned here, from people's namings, by the house's local voice
 # service (services/voice-embeddings), and matched here. Audio never leaves
 # the house.
 #
@@ -20,11 +20,8 @@ module FieldVoiceprints
   MAX_SAMPLE_MS = 30_000
   ISOLATION_MS = 1_000
 
-  # Matching (spec §8). Starting points from the Mac's identify.py; the
-  # held-out report (field:voiceprint_report) is where they get checked.
-  MATCH_THRESHOLD = 0.55
-  MATCH_MARGIN = 0.15
-  SPLIT_THRESHOLD = 0.75
+  # Matching recipes are versioned in Profiles; the held-out account check
+  # (field:voiceprint_report) uses exactly the same matcher as production.
 
   module_function
 
@@ -75,12 +72,15 @@ module FieldVoiceprints
 
   # Cosine similarity of two unit vectors.
   def cosine(a, b)
+    raise ArgumentError, "incompatible voice vectors" unless a.size == b.size
+
     a.each_with_index.sum { |value, index| value * b[index] }
   end
 
   # The L2-normalised mean of unit vectors, or nil for none.
   def centroid(vectors)
     return nil if vectors.empty?
+    return nil unless vectors.all? { |vector| vector.size == vectors.first.size }
 
     sum = Array.new(vectors.first.length, 0.0)
     vectors.each { |vector| vector.each_with_index { |value, index| sum[index] += value } }

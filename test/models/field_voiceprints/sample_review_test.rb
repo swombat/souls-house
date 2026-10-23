@@ -163,7 +163,7 @@ class FieldVoiceprints::SampleReviewTest < ActiveSupport::TestCase
       client = Object.new
       client.define_singleton_method(:embed) do |_wav|
         @review.call
-        FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: @vector, profile: "ecapa-test")
+        FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: @vector, profile: FieldVoiceprints::Profiles::ECAPA)
       end
       client.instance_variable_set(:@review, -> { assert review(nil, included: false) })
       client.instance_variable_set(:@vector, voice_vector(3))
@@ -262,7 +262,7 @@ class FieldVoiceprints::SampleReviewTest < ActiveSupport::TestCase
     with_recognition(@account) do
       @speaker.name_as!(@voice, by: @user)
       snapshot = FieldVoiceprints::Learning.snapshot_for(@speaker.reload)
-      result = FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: voice_vector(3), profile: "ecapa-test")
+      result = FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: voice_vector(3), profile: FieldVoiceprints::Profiles::ECAPA)
       client = Object.new
       change = -> {
         @speaker.increment!(:decision_generation)
@@ -274,31 +274,34 @@ class FieldVoiceprints::SampleReviewTest < ActiveSupport::TestCase
     end
   end
 
-  test "reviewing an older profile does not make it the newest extraction" do
+  test "new extractions and reviews cannot select the account profile" do
     with_recognition(@account) do
       sample = enrolled_sample
-      sample.update!(profile: "ecapa-old", updated_at: 1.day.ago)
+      sample.update!(updated_at: 1.day.ago)
       confirmed_recording_sample!(@voice,
-        recording: long_ready_recording(account: @account, user: @user), vector: voice_vector(3), profile: "ecapa-old")
+        recording: long_ready_recording(account: @account, user: @user), vector: voice_vector(3))
       assert review(sample, included: true)
-      assert_equal "ecapa-old", @voice.reload.voiceprint.profile
+      assert_equal FieldVoiceprints::Profiles::ECAPA, @voice.reload.voiceprint.profile
       other = long_ready_recording(account: @account, user: @user).speakers.find_by!(label: "speaker_0")
       other.name_as!(@voice, by: @user)
       snapshot = FieldVoiceprints::Learning.snapshot_for(other.reload)
       assert_equal :learned, learn(snapshot)
-      assert_equal "ecapa-old", @voice.reload.voiceprint.profile, "pending extractions do not supersede confirmed evidence"
+      assert_equal FieldVoiceprints::Profiles::ECAPA, @voice.reload.voiceprint.profile
       current = other.voice_samples.sole
+      current.update_columns(profile: FieldVoiceprints::Profiles::WESPEAKER,
+        embedding: JSON.generate([ 1.0 ] + [ 0.0 ] * 255))
       assert other.review_sample!(sample: current, digest: current.source_digest, by: @user, included: true)
-      assert_nil @voice.reload.voiceprint, "the newest confirmed profile still needs two samples"
+      assert_equal FieldVoiceprints::Profiles::ECAPA, @voice.reload.voiceprint.profile,
+        "confirming a different engine does not destroy or flip the old active print"
       confirmed_recording_sample!(@voice,
         recording: long_ready_recording(account: @account, user: @user), vector: voice_vector(3))
-      assert_equal "ecapa-test", @voice.reload.voiceprint.profile
+      assert_equal FieldVoiceprints::Profiles::ECAPA, @voice.reload.voiceprint.profile
 
       extracted_at = sample.reload.updated_at
       assert review(sample, included: true)
       assert_equal extracted_at, sample.reload.updated_at
-      assert_equal "ecapa-test", @voice.reload.voiceprint.profile
-      assert_equal 2, @voice.voiceprint.sample_count
+      assert_equal FieldVoiceprints::Profiles::ECAPA, @voice.reload.voiceprint.profile
+      assert_equal 3, @voice.voiceprint.sample_count
     end
   end
 
@@ -351,7 +354,7 @@ class FieldVoiceprints::SampleReviewTest < ActiveSupport::TestCase
           end
         end
         assert_equal "error", @speaker.reload.sample_learning_status
-        result = FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: voice_vector(3), profile: "ecapa-test")
+        result = FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: voice_vector(3), profile: FieldVoiceprints::Profiles::ECAPA)
         FieldVoiceprints::VoiceEmbeddings.stub(:embed, ->(_) { result }) do
           FieldVoices::LearnSampleJob.perform_now(snapshot)
         end

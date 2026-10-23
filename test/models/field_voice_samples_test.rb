@@ -28,7 +28,7 @@ class FieldVoiceSamplesTest < ActiveSupport::TestCase
     Object.new.tap do |client|
       client.define_singleton_method(:embed) do |_bytes|
         during&.call
-        FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: [ 1.0 ] + [ 0.0 ] * 191, profile: "ecapa-test")
+        FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: [ 1.0 ] + [ 0.0 ] * 191, profile: FieldVoiceprints::Profiles::ECAPA)
       end
     end
   end
@@ -207,7 +207,7 @@ class FieldVoiceSamplesTest < ActiveSupport::TestCase
     client = embedding_client
     client.define_singleton_method(:embed) do |actual|
       raise "audio changed" unless actual == bytes
-      FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: [ 1.0 ] + [ 0.0 ] * 191, profile: "ecapa-test")
+      FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: [ 1.0 ] + [ 0.0 ] * 191, profile: FieldVoiceprints::Profiles::ECAPA)
     end
     assert_equal :learned, FieldVoiceSamples::Uploads.learn!(sample, client:)
     sample.reload
@@ -354,7 +354,7 @@ class FieldVoiceSamplesConcurrencyTest < ActiveSupport::TestCase
   def prepared(seed, confirmed: false)
     sample = upload(seed)
     sample.vector = [ 1.0 ] + [ 0.0 ] * 191
-    sample.assign_attributes(profile: "ecapa-test", learning_status: "learned")
+    sample.assign_attributes(profile: FieldVoiceprints::Profiles::ECAPA, learning_status: "learned")
     if confirmed
       sample.assign_attributes(eligible: true, confirmed_digest: sample.source_digest,
         confirmed_by: @user, confirmed_at: Time.current)

@@ -17,6 +17,7 @@ class Setting < ApplicationRecord
   after_save :refresh_glossaries, if: :saved_change_to_site_name?
 
   validates :max_accounts, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :voice_embedding_profile, inclusion: { in: FieldVoiceprints::Profiles::RECIPES.keys }
   validates :resident_turn_limit, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 1_000 }
   validates :field_ocr_daily_usd_ceiling, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
   validates :field_tweets_site_monthly_usd_ceiling, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 1_000 }

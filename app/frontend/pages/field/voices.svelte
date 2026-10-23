@@ -18,13 +18,16 @@
     voices = [],
     recognise_voices = true,
     house_recognition = false,
+    voice_conversion = { state: 'ready', remaining: 0 },
     can_change_setting = false,
     account,
   } = $props();
 
   const updateSync = createDynamicSync();
   $effect(() => {
-    updateSync({ [`FieldVoiceActivity:${account.id}`]: ['voices', 'recognise_voices', 'can_change_setting'] });
+    updateSync({
+      [`FieldVoiceActivity:${account.id}`]: ['voices', 'recognise_voices', 'can_change_setting', 'voice_conversion'],
+    });
   });
 
   const base = $derived(`/accounts/${account.id}/field/voices`);
@@ -237,6 +240,16 @@
   active="voices"
   title="Voices"
   description="The people named in this Field's recordings, and the samples their voice fingerprints are built from.">
+  {#if voice_conversion.state !== 'ready'}
+    <div class="rounded-lg border p-3 text-sm space-y-2" role="status" data-testid="voices-conversion">
+      <p>{voice_conversion.message} ({voice_conversion.remaining} samples remaining.)</p>
+      {#if can_change_setting}
+        <Button size="sm" variant="outline" onclick={() => router.post(`${base}/retry_conversion`)}>
+          Retry voice conversion
+        </Button>
+      {/if}
+    </div>
+  {/if}
   <div class="rounded-lg border p-3 space-y-2 text-sm" data-testid="voices-setting">
     {#if !house_recognition}
       <p data-testid="voices-house-off">

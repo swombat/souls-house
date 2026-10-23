@@ -40,6 +40,7 @@ module FieldVoiceSamples
         Uploads.ensure_pending_capacity!(target)
         previous = voices.find { |row| row.id == live.field_voice_id }
         live.assign_attributes(field_voice: target, eligible: false, excluded: false, confirmed_digest: nil,
+          rollback_embedding: nil, rollback_profile: nil,
           confirmed_by: nil, confirmed_at: nil, review_generation: live.review_generation + 1,
           learning_status: live.embedding.present? ? "learned" : "pending",
           label_origin: Uploads.human?(by) ? "human" : "machine")
@@ -55,6 +56,7 @@ module FieldVoiceSamples
         check!(live, digest, current: false)
         unconfirmed!(live) if unconfirmed_only
         live.update!(removed_at: Time.current, eligible: false, confirmed_digest: nil,
+          rollback_embedding: nil, rollback_profile: nil,
           confirmed_by: nil, confirmed_at: nil, review_generation: live.review_generation + 1)
         FieldVoiceprints::Learning.rebuild!(live.field_voice)
         live

@@ -273,6 +273,7 @@ Rails.application.routes.draw do
       delete :forget_all, on: :collection, path: "prints"
       post :prepare_samples, on: :collection
       patch :recognition, on: :collection
+      post :retry_conversion, on: :collection
     end
     resources :whiteboards, only: [ :index, :create, :update, :destroy ] do
       resources :versions, only: [ :index, :show ], controller: "whiteboard_versions"

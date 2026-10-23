@@ -127,7 +127,7 @@ class Api::V1::Field::VoiceSamplesControllerTest < ActionDispatch::IntegrationTe
     heard = nil
     client.define_singleton_method(:embed) do |wav|
       heard = wav
-      FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: [ 1.0 ] + [ 0.0 ] * 191, profile: "ecapa-test")
+      FieldVoiceprints::VoiceEmbeddings::Result.new(embedding: [ 1.0 ] + [ 0.0 ] * 191, profile: FieldVoiceprints::Profiles::ECAPA)
     end
     assert_equal :learned, FieldVoiceSamples::Uploads.learn!(sample, client:)
     assert_equal bytes, heard
@@ -256,7 +256,7 @@ class Api::V1::Field::VoiceSamplesControllerTest < ActionDispatch::IntegrationTe
     upload
     assert_response :created
     sample = @voice.samples.first!
-    sample.update!(embedding: JSON.generate([ 1.0 ] + [ 0.0 ] * 191), profile: "ecapa-test", learning_status: "learned")
+    sample.update!(embedding: JSON.generate([ 1.0 ] + [ 0.0 ] * 191), profile: FieldVoiceprints::Profiles::ECAPA, learning_status: "learned")
     resident = resident_headers(@user, agents(:research_assistant))
     patch api_v1_field_sample_path(sample), params: { included: true, digest: sample.source_digest }, headers: resident, as: :json
     assert_response :forbidden
@@ -372,7 +372,7 @@ class Api::V1::Field::VoiceSamplesControllerTest < ActionDispatch::IntegrationTe
     upload
     assert_response :created
     sample = @voice.samples.first!
-    sample.update!(embedding: JSON.generate([ 1.0 ] + [ 0.0 ] * 191), profile: "ecapa-test", learning_status: "learned")
+    sample.update!(embedding: JSON.generate([ 1.0 ] + [ 0.0 ] * 191), profile: FieldVoiceprints::Profiles::ECAPA, learning_status: "learned")
     @client = create_app_client
     tokens = sign_in_device
     patch api_v1_field_sample_path(sample), params: { included: true, digest: sample.source_digest },

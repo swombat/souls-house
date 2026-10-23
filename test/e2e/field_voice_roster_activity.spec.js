@@ -115,7 +115,9 @@ test('remembered lifecycle and missed socket events preserve roster and recordin
     await page.waitForLoadState('networkidle');
     await detail.waitForLoadState('networkidle');
     expect(rosterSocket.reloads).toHaveLength(1);
-    expect(rosterSocket.reloads[0].sort()).toEqual(['voices', 'recognise_voices', 'can_change_setting'].sort());
+    expect(rosterSocket.reloads[0].sort()).toEqual(
+      ['voices', 'recognise_voices', 'can_change_setting', 'voice_conversion'].sort()
+    );
     // A print is roster state now: speaker cards don't show it, so the
     // transcript page reloads only its roster props.
     expect(detailSocket.reloads).toHaveLength(1);
@@ -271,6 +273,7 @@ test('voice roster and open speaker picker catch changes without replacing draft
         'voices',
         'recognise_voices',
         'can_change_setting',
+        'voice_conversion',
         'account',
         'accounts',
         'expired_subscriptions',
@@ -289,7 +292,9 @@ test('voice roster and open speaker picker catch changes without replacing draft
     await expect(page.getByTestId('voice-row')).toContainText('After reconnect', { timeout: 20_000 });
     await page.waitForLoadState('networkidle');
     // Reconnect also catches up the layout's room/account/attention lanes.
-    expect(reloads.at(-1)).toEqual(expect.arrayContaining(['voices', 'recognise_voices', 'can_change_setting']));
+    expect(reloads.at(-1)).toEqual(
+      expect.arrayContaining(['voices', 'recognise_voices', 'can_change_setting', 'voice_conversion'])
+    );
     page.on('dialog', (dialog) => dialog.accept());
     await editor.getByRole('button', { name: 'Rename', exact: true }).click();
     await page.getByRole('button', { name: 'Rename', exact: true }).click();

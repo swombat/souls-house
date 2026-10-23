@@ -247,7 +247,7 @@ accessories:
   voice-embeddings:
     # Built from services/voice-embeddings by bin/house release-voice-embeddings,
     # reviewed, pinned by digest. Boot it with `bin/kamal accessory boot
-    # voice-embeddings`; it survives web deploys. Speaker embeddings (ECAPA)
+    # voice-embeddings`; it survives web deploys. Speaker embeddings (WeSpeaker)
     # for Field voiceprints, computed in the house: audio never leaves it.
     image: <%= voice_embeddings_image %>@<%= voice_embeddings_digest %>
     host: <%= house_host %>
@@ -256,7 +256,7 @@ accessories:
         - VOICE_EMBEDDING_TOKEN
     options:
       ulimit: core=0 # No core may hold resident audio.
-      memory: 1g
+      memory: 2g
       cpus: 2
       read-only: true
       tmpfs: /tmp

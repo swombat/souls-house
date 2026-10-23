@@ -72,6 +72,10 @@ module FieldVoiceprints::Learning
     segments = FieldVoiceprints::Sample.segments_for(speaker)
     source_digest = FieldVoiceSample.source_digest_for(speaker, segments)
     result = FieldVoiceprints::Sample.cut(recording, segments) { |path| client.embed(File.binread(path)) }
+    unless FieldVoiceprints::Profiles.valid_vector?(result.embedding, result.profile) &&
+        result.profile == FieldVoiceprints::Profiles.configured
+      raise FieldVoiceprints::VoiceEmbeddings::Unavailable
+    end
     speech_ms = segments.sum { |from, to| to - from }
 
     FieldVoiceprints::Locks.with(account: recording.account, recording:, voices: [ voice ]) do |account, live_recording, voices|
@@ -79,12 +83,25 @@ module FieldVoiceprints::Learning
       next :stale unless live_voice && holds?(snapshot, account, live_recording, live_voice, speaker.reload)
 
       sample = FieldVoiceSample.find_or_initialize_by(field_voice: live_voice, field_recording_speaker: speaker)
+      # An ordinary retry must not replace a confirmed old-engine reference
+      # without its rollback copy. Engine conversion has its own writer.
+      if sample.persisted? && sample.manually_confirmed?(speaker:) &&
+          sample.source_digest == source_digest && sample.profile != result.profile
+        FieldVoiceprints::Conversion.queue!(account)
+        speaker.update!(sample_learning_status: "learned", sample_learning_error: nil)
+        next :stale
+      end
+      next :stale unless result.profile == FieldVoiceprints::Profiles.configured
+
       # A naming is a candidate, not testimony that someone heard this cut.
       # A retry of an unchanged, already confirmed cut may keep its inclusion.
       included = sample.persisted? && sample.eligible? && sample.source_digest == source_digest &&
         sample.manually_confirmed?(speaker:)
       FieldVoiceprints::Limits.active!(live_voice, except: sample) if included
       FieldVoiceprints::Limits.pending!(live_voice, except_sample: sample, except_speaker: speaker) unless included
+      if sample.source_digest != source_digest
+        sample.assign_attributes(rollback_embedding: nil, rollback_profile: nil)
+      end
       sample.assign_attributes(account:, field_recording_id: live_recording.id, speech_ms:, profile: result.profile,
         label_origin: speaker.naming_source, eligible: included && !speaker.sample_excluded?,
         source_segments: segments, source_digest:)
@@ -143,15 +160,14 @@ module FieldVoiceprints::Learning
   end
 
   # Rebuild a voice's print from all its current eligible samples. The caller
-  # holds the voice lock. The print uses one profile, the newest sample's;
-  # samples on another profile wait to be learned again (field:learn_voices).
+  # holds the voice lock. Only the explicit account profile is used, reading
+  # compatible retained rollback pairs while conversion is in progress.
   # Every rebuild moves the generation on, clears guesses made from the old
   # print and leaves the new one unvalidated until Validation runs.
-  def rebuild!(voice)
+  def rebuild!(voice, profile: FieldVoiceprints::Profiles.active(voice.account))
     samples = FieldVoiceprints::Limits.confirmed_samples(voice).sort_by { |sample| [ sample.updated_at, sample.id ] }
-    profile = samples.last&.profile
-    used = samples.select { |sample| sample.profile == profile }
-    vector = FieldVoiceprints.centroid(used.map(&:vector)) if used.size >= FieldVoiceprints::Limits::MIN_CONFIRMED
+    used = samples.select { |sample| sample.vector_for(profile) }
+    vector = FieldVoiceprints.centroid(used.map { |sample| sample.vector_for(profile) }) if used.size >= FieldVoiceprints::Limits::MIN_CONFIRMED
 
     generation = voice.print_generation + 1
     voice.update_columns(print_generation: generation, updated_at: Time.current)
@@ -160,13 +176,17 @@ module FieldVoiceprints::Learning
     if vector
       print = FieldVoiceprint.find_or_initialize_by(field_voice: voice)
       print.assign_attributes(account: voice.account, print: JSON.generate(vector), generation:, profile:,
-        engine: "ecapa", sample_count: used.size, recording_count: used.map(&:source_group_key).uniq.size,
+        engine: FieldVoiceprints::Profiles.recipe(profile).fetch(:engine),
+        sample_count: used.size, recording_count: used.map(&:source_group_key).uniq.size,
         speech_ms: used.sum(&:speech_ms), sample_digest: digest(used), validated: false)
       print.save!
     else
       FieldVoiceprint.where(field_voice: voice).destroy_all
     end
     FieldVoices::ValidatePrintsJob.queue!(voice.account)
+    unless FieldVoiceprints::Conversion.ready?(voice.account)
+      FieldVoiceprints::Conversion.queue!(voice.account)
+    end
   end
 
   # Which samples a print is built from, so a validation computed on another

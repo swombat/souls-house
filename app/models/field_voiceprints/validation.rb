@@ -74,14 +74,15 @@ module FieldVoiceprints::Validation
     return [ {}, Set.new ] if prints.empty?
 
     by_voice = prints.index_by(&:field_voice_id)
-    samples = FieldVoiceSample.eligible.where(account:, field_voice_id: by_voice.keys, profile: prints.first.profile).to_a
-      .select(&:manually_confirmed?)
-    vectors = samples.to_h { |sample| [ sample.id, sample.vector ] }
+    profile = prints.first.profile
+    samples = FieldVoiceSample.eligible.where(account:, field_voice_id: by_voice.keys).to_a
+      .select { |sample| sample.manually_confirmed? && sample.vector_for(profile) }
+    vectors = samples.to_h { |sample| [ sample.id, sample.vector_for(profile) ] }
     candidates = by_voice.keys.to_set
     final = {}
 
     loop do
-      stats = evaluate(samples, vectors, candidates)
+      stats = evaluate(samples, vectors, candidates, profile:)
       final.merge!(stats)
       passing = candidates.select { |voice_id| passes?(stats.fetch(voice_id), by_voice.fetch(voice_id)) }.to_set
       return [ final, passing ] if passing == candidates
@@ -90,7 +91,7 @@ module FieldVoiceprints::Validation
     end
   end
 
-  def evaluate(samples, vectors, candidates)
+  def evaluate(samples, vectors, candidates, profile: FieldVoiceprints::Profiles.configured)
     stats = candidates.to_h do |voice_id|
       [ voice_id, { "queries" => 0, "correct" => 0, "rejected" => 0, "wrong" => 0, "false_accepts_into" => 0,
                     "negatives" => 0 } ]
@@ -101,7 +102,7 @@ module FieldVoiceprints::Validation
         .group_by(&:field_voice_id)
         .to_h { |voice_id, own| [ voice_id, FieldVoiceprints.centroid(own.map { |sample| vectors[sample.id] }) ] }
         .compact
-      guesses = FieldVoiceprints::Matching.guesses(queries.to_h { |sample| [ sample.id, vectors[sample.id] ] }, held_out)
+      guesses = FieldVoiceprints::Matching.guesses(queries.to_h { |sample| [ sample.id, vectors[sample.id] ] }, held_out, profile:)
 
       queries.each do |query|
         held_out.each_key { |voice_id| stats[voice_id]["negatives"] += 1 unless voice_id == query.field_voice_id }
