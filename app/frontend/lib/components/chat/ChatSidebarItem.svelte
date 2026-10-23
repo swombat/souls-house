@@ -30,6 +30,7 @@
   {:else}
     <Link
       href={accountChatPath(accountId, chat.id) + ($page.props.current_room === 'all' ? '?room=all' : '')}
+      aria-current={activeChatId === chat.id ? 'page' : undefined}
       class="block p-3 pr-10 hover:bg-muted/50 transition-colors border-b border-border
          {activeChatId === chat.id ? 'bg-primary/10 border-l-4 border-l-primary' : ''}
          {chat.archived ? 'opacity-50' : ''}">

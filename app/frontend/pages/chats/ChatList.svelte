@@ -5,6 +5,7 @@
   import ChatSidebarEmptyState from '$lib/components/chat/ChatSidebarEmptyState.svelte';
   import ChatSidebarHeader from '$lib/components/chat/ChatSidebarHeader.svelte';
   import ChatSidebarItem from '$lib/components/chat/ChatSidebarItem.svelte';
+  import { keepSidebarScroll } from '$lib/sidebar-scroll';
 
   let { chats = [], activeChatId = null, accountId, isOpen = false, onClose = () => {} } = $props();
 
@@ -12,6 +13,8 @@
   $effect(() => {
     updateSync({ [`Account:${accountId}`]: ['chats', 'visual_tags', 'rooms', 'current_room'] });
   });
+
+  const scrollKey = $derived(`${accountId}:${$page.props.current_room || ''}`);
 
   const hasRooms = $derived(($page.props.rooms || []).length > 0);
 
@@ -58,7 +61,7 @@
     {onClose}
     onToggleDeleted={toggleShowDeleted} />
 
-  <div class="flex-1 overflow-y-auto">
+  <div class="flex-1 overflow-y-auto" data-chat-sidebar-scroller use:keepSidebarScroll={scrollKey}>
     {#if chats.length === 0}
       <ChatSidebarEmptyState />
     {:else}
