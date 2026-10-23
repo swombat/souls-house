@@ -103,6 +103,34 @@ module Api
         assert_response :not_found
       end
 
+      test "a key whose owner has left the account gets nothing for a conversation" do
+        chat = @home.chats.create!(title: "After leaving", model_id: "openrouter/auto")
+        @home.memberships.where(user: @daniel).delete_all
+
+        get api_v1_conversation_who_url(chat), headers: @account_headers
+        assert_response :not_found
+      end
+
+      test "a key for a disabled account gets nothing for a conversation" do
+        chat = @home.chats.create!(title: "Disabled", model_id: "openrouter/auto")
+        @home.update_columns(disabled_at: Time.current)
+
+        get api_v1_conversation_who_url(chat), headers: @account_headers
+        assert_response :not_found
+      end
+
+      test "an inactive resident is still listed, because a seat and a key still read" do
+        @agent.update_columns(active: false)
+        @home.chats.create!(title: "Still seated", model_id: "openrouter/auto", agents: [ @agent ])
+
+        get api_v1_who_url, headers: @account_headers
+        assert_response :success
+        mine = response.parsed_body["residents"].find { |r| r["id"] == @agent.to_param }
+        assert mine, "inactive resident missing from the directory"
+        assert_equal false, mine["active"]
+        assert_operator mine["seats"], :>=, 1
+      end
+
       test "a member's key can ask about any conversation in the account" do
         chat = @home.chats.create!(title: "Anyone's", model_id: "openrouter/auto")
 

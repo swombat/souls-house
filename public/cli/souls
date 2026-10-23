@@ -631,6 +631,8 @@ def cmd_who(client, args):
         for resident in data.get("residents") or []:
             kind = "guest resident" if resident.get("kind") == "guest_resident" else "resident"
             paused = " · paused" if resident.get("paused") else ""
+            if resident.get("active") is False:
+                paused += " · inactive"
             print(f"- {resident.get('name')} ({kind}): {resident.get('reads')} ({resident.get('seats', 0)} seats){paused}")
         admins = data.get("site_admins") or []
         if admins:

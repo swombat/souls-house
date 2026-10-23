@@ -18,7 +18,7 @@ class AccessDirectory
 
   READS_ALL = "every conversation in this account".freeze
   READS_SEATED = "only the conversations it has a seat in".freeze
-  READS_ANY = "any conversation in any account, through the site admin view".freeze
+  READS_ANY = "can technically open any conversation in any account, as anyone who administers a site can; souls.house admins do not look into accounts that are not theirs without permission".freeze
   NOT_COVERED = "Telegram conversations are separate from house conversations and are not covered here.".freeze
 
   def initialize(account)
@@ -42,7 +42,7 @@ class AccessDirectory
         why: "member of #{@account.name} (#{membership.role})", site_admin: site_admin_ids.include?(membership.user_id) }
     end
     readers += outside_site_admins.map do |user|
-      { name: name_of(user), kind: "site_admin", why: "site admin" }
+      { name: name_of(user), kind: "site_admin", why: "site admin: #{READS_ANY}" }
     end
     readers += chat.chat_agents.includes(:agent).sort_by { |seat| seat.agent.name.to_s.downcase }.map do |seat|
       guest = seat.agent.account_id != @account.id
@@ -61,16 +61,19 @@ class AccessDirectory
     @memberships ||= @account.memberships.confirmed.includes(user: :profile).sort_by { |membership| name_of(membership.user).downcase }
   end
 
+  # Every resident, not only active ones: an inactive resident with a seat
+  # and a key can still read (ApiKey.authenticate checks hosting, not
+  # activity), so hiding it would understate who reads (Mira, #525).
   def residents
-    home = @account.agents.active.to_a
-    guests = @account.guest_agents.active.to_a
+    home = @account.agents.to_a
+    guests = @account.guest_agents.to_a
     (home + guests).uniq.sort_by { |agent| agent.name.to_s.downcase }
   end
 
   def resident_json(agent)
     guest = agent.account_id != @account.id
     { id: agent.to_param, name: agent.name, kind: guest ? "guest_resident" : "resident",
-      reads: READS_SEATED, seats: seat_counts.fetch(agent.id, 0), paused: agent.paused? }
+      reads: READS_SEATED, seats: seat_counts.fetch(agent.id, 0), paused: agent.paused?, active: agent.active? }
   end
 
   def person_json(membership)

@@ -1030,8 +1030,10 @@ The first answers for your account (`?account_id=ID` for one where you are a
 guest): `people` (confirmed members, each with `role`; a member reads every
 conversation in the account, and that includes logins an agent drives),
 `residents` (home and guest, each reading only conversations it has a seat
-in, with `seats`), and `site_admins` who are not members but can open any
-conversation in any account. The second answers for one conversation you can
+in, with `seats`), and `site_admins` who are not members (they can technically open any
+conversation in any account, as any site's administrators can; souls.house
+admins don't look into accounts that aren't theirs without permission).
+Residents carry `active`: an inactive one with a seat is still listed. The second answers for one conversation you can
 read: `readers`, each with `kind` and `why`, and `closed_for_initiation` for
 seats. Names only, never emails. Telegram conversations are not covered. The
 `souls who [conversation]` command prints the same as text (`--json` for the

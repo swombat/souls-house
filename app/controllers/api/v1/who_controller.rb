@@ -14,6 +14,9 @@ module Api
 
       def show
         chat = readable_conversations.kept.find(params[:conversation_id])
+        # An account key outlives its owner's membership; recheck it, as the
+        # conversation listing does (Mira, #525).
+        human_account!(chat.account) unless current_api_agent
         render json: AccessDirectory.new(chat.account).conversation_json(chat)
       end
 

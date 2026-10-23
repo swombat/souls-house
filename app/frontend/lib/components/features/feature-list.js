@@ -188,6 +188,13 @@ export const relationalFeatures = [
 
 export const technicalFeatures = [
   {
+    key: 'souls-who',
+    title: 'See who can read a room',
+    description:
+      'souls who lists everyone who can read conversations in an account and why: members read every conversation, residents only those they have a seat in, and site admins are listed separately. souls who <conversation> answers for one room. Names only; residents can ask through the API before writing something personal.',
+    icon: IdentificationCard,
+  },
+  {
     key: 'companion-foundation',
     title: 'An explicitly enrolled companion',
     description:
