@@ -17,7 +17,25 @@ class ElevenLabsScribe
   Submission = Struct.new(:request_id, :transcription_id, keyword_init: true)
 
   # Starts an async transcription. Exactly one of source_url / file.
-  def submit(metadata:, source_url: nil, file: nil, num_speakers: nil)
+  # `keyterms`: the account glossary's bias list (TranscriptionGlossary),
+  # sent as one repeated form field per term. Empty sends nothing. If Scribe
+  # refuses a request carrying keyterms (ElevenLabsStt::KEYTERM_REFUSAL_CODES),
+  # it is sent once more without them.
+  def submit(metadata:, source_url: nil, file: nil, num_speakers: nil, keyterms: [])
+    keyterms = Array(keyterms)
+    refused_with = nil
+    begin
+      send_submission(metadata:, source_url:, file:, num_speakers:, keyterms:) { |code| refused_with = code }
+    rescue PermanentError
+      raise unless keyterms.any? && ElevenLabsStt::KEYTERM_REFUSAL_CODES.include?(refused_with)
+
+      Rails.logger.warn("Scribe refused a submission with #{keyterms.size} keyterms (#{refused_with}); retrying without them")
+      file.rewind if file.respond_to?(:rewind)
+      send_submission(metadata:, source_url:, file:, num_speakers:, keyterms: [])
+    end
+  end
+
+  def send_submission(metadata:, source_url:, file:, num_speakers:, keyterms:, &)
     form = [
       [ "model_id", MODEL_ID ],
       [ "diarize", "true" ],
@@ -28,6 +46,7 @@ class ElevenLabsScribe
     ]
     form << [ "webhook_id", self.class.webhook_id ]
     form << [ "num_speakers", num_speakers.to_s ] if num_speakers
+    keyterms.each { |term| form << [ "keyterms", term ] }
     if source_url
       form << [ "cloud_storage_url", source_url ]
     else
@@ -36,7 +55,7 @@ class ElevenLabsScribe
 
     request = Net::HTTP::Post.new(URI("#{BASE_URL}/v1/speech-to-text"))
     request.set_form(form, "multipart/form-data")
-    body = perform(request, expect: [ 200, 202 ])
+    body = perform(request, expect: [ 200, 202 ], &)
     Submission.new(request_id: body["request_id"].presence, transcription_id: body["transcription_id"].presence)
   end
 

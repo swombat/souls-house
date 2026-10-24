@@ -1,0 +1,18 @@
+# Pinned to what the tests ran against (Python 3.13). The Docker build installs
+# exactly these with --no-deps, so nothing unpinned slips in.
+Telethon==1.41.2
+pyaes==1.6.1
+rsa==4.9.1
+pyasn1==0.6.4
+cryptography==50.0.2
+cffi==2.1.1
+pycparser==3.11
+aiohttp==3.14.5
+aiohappyeyeballs==2.7.1
+aiosignal==1.4.0
+attrs==26.1.0
+frozenlist==1.8.0
+multidict==7.1.0
+propcache==0.5.4
+yarl==1.25.1
+idna==3.20

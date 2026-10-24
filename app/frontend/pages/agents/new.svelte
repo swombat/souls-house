@@ -23,6 +23,7 @@
     account,
     resident_import_url: residentImportUrl = null,
     github_resident_import_url: githubResidentImportUrl = null,
+    vm_birth_refusal: vmBirthRefusal = null,
   } = $props();
 
   const draftKey = `helixkit:agent-birth-draft:${account.id}`;
@@ -30,6 +31,9 @@
 
   let step = $state(0);
   let selectedModel = $state(default_model_id);
+  let houseOffered = $derived(
+    (grouped_models['On the house'] || []).some((model) => model.model_id === default_model_id)
+  );
   let openBeginning = $state(false);
   let acknowledged = $state(false);
   let draftReady = $state(false);
@@ -191,6 +195,13 @@
     </ol>
   </nav>
 
+  {#if vmBirthRefusal && !$form.errors.base}
+    <Alert class="mb-6" data-testid="vm-birth-refusal">
+      <AlertTitle>New residents can't be created right now</AlertTitle>
+      <AlertDescription>{vmBirthRefusal}</AlertDescription>
+    </Alert>
+  {/if}
+
   {#if $form.errors.base}
     <Alert variant="destructive" class="mb-6">
       <AlertTitle>Could not create the resident</AlertTitle>
@@ -209,7 +220,7 @@
         {:else if step === 2}
           <SoulSeedStep {form} bind:openBeginning />
         {:else if step === 3}
-          <RuntimeStep {form} {grouped_models} bind:selectedModel />
+          <RuntimeStep {form} {grouped_models} {houseOffered} bind:selectedModel />
         {:else}
           <ReviewStep
             {form}

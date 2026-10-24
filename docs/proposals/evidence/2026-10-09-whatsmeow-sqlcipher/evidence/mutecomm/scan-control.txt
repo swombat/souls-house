@@ -1,0 +1,3 @@
+20685 needles total, 1032 without the CANARY token searched individually
+HIT control/plaintext-control.db (91516928 bytes): 1029 binary-needle hits; tokens: ['ascii-token@11979', 'ascii-token-short@11979', 'plain-sqlite-header@0']
+scanned 1 files, 1032 needles, 1032 hits

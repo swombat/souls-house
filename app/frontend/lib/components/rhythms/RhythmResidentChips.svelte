@@ -14,6 +14,7 @@
         : 'border-border text-muted-foreground'}">
       <Icon size={12} weight="duotone" />
       {resident.name}
+      {#if resident.model_selected}<span class="opacity-70">· {resident.model_label}</span>{/if}
     </span>
   {/each}
 </span>

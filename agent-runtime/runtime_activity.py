@@ -20,6 +20,14 @@ import importlib.util
 _preview_spec = importlib.util.spec_from_file_location("command_preview", Path(__file__).with_name("command_preview.py"))
 _preview_module = importlib.util.module_from_spec(_preview_spec)
 _preview_spec.loader.exec_module(_preview_module)
+_silence_spec = importlib.util.spec_from_file_location("silence_nudge", Path(__file__).with_name("silence_nudge.py"))
+silence_nudge = importlib.util.module_from_spec(_silence_spec)
+_silence_spec.loader.exec_module(silence_nudge)
+
+
+# The ack carries up to ten room messages (see silence_nudge); Rails bounds
+# each one, and this bounds what the shim will read.
+ACK_MAX_BYTES = 262_144
 
 
 def command_preview(command, extra_secrets=()):
@@ -69,6 +77,7 @@ class Reporter:
         self.closed = False
         self.disabled = False
         self.dropped = 0
+        self.silence = None
         self.thread = threading.Thread(target=self._send_loop, daemon=True)
         self.thread.start()
 
@@ -200,6 +209,7 @@ class Reporter:
             if "ACTIVITY_TOKEN" in key:
                 env.pop(key)
         timeout = max(0.1, min(timeout, self.deadline - time.time()))
+        args = self._arm_silence_clock(args, env)
         proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, env=env, start_new_session=True)
         retained = collections.deque()
@@ -271,8 +281,10 @@ class Reporter:
                 cancel = getattr(self, "cancel_event", None)
                 if remaining <= 0 or (cancel is not None and cancel.is_set()):
                     raise subprocess.TimeoutExpired(args, timeout)
+                if self.silence and self.silence.tick(time.time()):
+                    logging.getLogger(__name__).info("silence notice written run_id=%s", self.run_id)
                 try:
-                    proc.wait(timeout=min(.5 if cancel is not None else 10, remaining))
+                    proc.wait(timeout=min(.5 if cancel is not None else 5, remaining))
                 except subprocess.TimeoutExpired:
                     if time.monotonic() - last_heartbeat >= 10:
                         self.emit("heartbeat")
@@ -306,6 +318,9 @@ class Reporter:
         outcome = "timed_out" if status == 504 else ("failed" if status >= 400 else "completed")
         if not self.attempt_id:
             self.begin_attempt()
+        if self.silence:
+            logging.getLogger(__name__).info("silence clock run_id=%s %s", self.run_id,
+                                             self.silence.finish(time.time()))
         with self.lock:
             self.operations = {}
         self.emit("supervisor.finished", {
@@ -317,6 +332,24 @@ class Reporter:
         self.wake.set()
         self.thread.join(timeout=2)
         self.disabled = True
+
+    def _arm_silence_clock(self, args, env):
+        """Start the silence clock on the first attempt and hand chaos its steer file.
+
+        Only conversation wakes have someone waiting to hear from the resident.
+        An older chaos without `--steer-file` still gets the clock (for the
+        measurement) but no flag it would reject."""
+        conversation_id = getattr(self, "conversation_id", None)
+        if not conversation_id:
+            return args
+        if self.silence is None:
+            self.silence = silence_nudge.SilenceClock(
+                self.run_id, conversation_id, time.time(),
+                first_after=silence_nudge.FIRST_AFTER_SECS, repeat=silence_nudge.REPEAT_SECS)
+        if not silence_nudge.supports_steer_file(args[0]):
+            return args
+        env["SOULSHOUSE_STEER_FILE"] = str(self.silence.path)
+        return silence_nudge.with_steer_file(args, self.silence.path)
 
     @staticmethod
     def _safe_telemetry(source):
@@ -383,7 +416,9 @@ class Reporter:
                 req = urllib.request.Request(self.url, data=encoded, method="POST",
                     headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.token}"})
                 with opener.open(req, timeout=5) as response:
-                    ack = json.loads(response.read(8192))
+                    ack = json.loads(response.read(ACK_MAX_BYTES))
+                if self.silence and isinstance(ack, dict):
+                    self.silence.observe_ack(ack, time.time())
                 if ack.get("share_narration") is False:
                     self.share = False
                     with self.lock:

@@ -21,6 +21,9 @@ class Chat < ApplicationRecord
   belongs_to :account
   belongs_to :visual_tag, optional: true
   validate :visual_tag_belongs_to_account
+  # No room means Main (see Room).
+  belongs_to :room, optional: true
+  validate :room_belongs_to_account
   belongs_to :active_whiteboard, class_name: "Whiteboard", optional: true
 
   has_many :chat_agents, dependent: :destroy
@@ -37,6 +40,7 @@ class Chat < ApplicationRecord
                   :participants_json, :archived_at, :discarded_at, :archived, :discarded, :respondable, :summary do |hash, options|
     hash["visual_tag"] = visual_tag&.as_json
     hash.delete("visual_tag_id")
+    hash["room_id"] = room_id && Room.encode_id(room_id)
     # For sidebar format, only include attributes used by the chat list UI.
     if options&.dig(:as) == :sidebar_json
       hash.slice!(
@@ -51,6 +55,7 @@ class Chat < ApplicationRecord
         "manual_responses",
         "participants_json",
         "visual_tag",
+        "room_id",
         "archived",
         "discarded"
       )
@@ -78,6 +83,21 @@ class Chat < ApplicationRecord
 
   broadcasts_to :account
 
+  before_destroy :capture_rhythm_activity_account, prepend: true
+  after_update :refresh_rhythm_metadata, if: -> { saved_change_to_title? || saved_change_to_discarded_at? }
+  after_destroy_commit -> { RhythmActivity.broadcast_for(@rhythm_activity_account) }
+
+  def capture_rhythm_activity_account
+    @rhythm_activity_account = account if rhythm_run?
+  end
+
+  def refresh_rhythm_metadata
+    return unless rhythm_run?
+
+    activity_account = account
+    ActiveRecord.after_all_transactions_commit { RhythmActivity.broadcast_for(activity_account) }
+  end
+
   # Historical model references and string-only selections are both supported.
   validate :model_must_be_present
 
@@ -85,8 +105,15 @@ class Chat < ApplicationRecord
   after_initialize :configure_defaults
 
   after_create_commit -> { GenerateTitleJob.perform_later(self) }, unless: :title?
-  after_update_commit :refresh_reply_attention, if: :saved_change_to_discarded_at?
+  # A room move changes which room's "waiting on you" count a flag belongs to.
+  after_update_commit :refresh_reply_attention, if: -> { saved_change_to_discarded_at? || saved_change_to_room_id? }
+  # ...and which room a working resident's spinner turns in. A rhythm run's
+  # update may also be a listing change (a person's reply, or one discarded,
+  # touches it; Chat::QuietRhythmRun), and only listed conversations spin.
+  after_update_commit :refresh_room_activity, if: -> { saved_change_to_discarded_at? || saved_change_to_room_id? || rhythm_run? }
 
+  # nil is Main; :all is every room.
+  scope :in_room, ->(room) { room == :all ? all : where(room_id: room&.id) }
   scope :latest, -> { order(Arel.sql("COALESCE(chats.last_message_at, chats.created_at) DESC"), id: :desc) }
   # Pinned conversations lead; chain before `latest` so each group keeps recency order.
   scope :pinned_first, -> { left_joins(:visual_tag).order(Arel.sql("visual_tags.pinned IS TRUE DESC")) }
@@ -96,6 +123,10 @@ class Chat < ApplicationRecord
 
   def activity_at
     last_message_at || created_at
+  end
+
+  def refresh_room_activity
+    RoomActivity.refresh_for(account) if agent_runtime_interactions.working.exists?
   end
 
   def refresh_reply_attention
@@ -128,11 +159,13 @@ class Chat < ApplicationRecord
         })
         message.attachments.attach(files) if files.present? && files.any?
         if audio_signed_id.present?
-          begin
-            message.audio_recording.attach(audio_signed_id)
+          # Locked until commit, as in Messages::PostFromHuman: a recording
+          # discarded or swept first leaves the opening message its text.
+          if (audio = VoiceNote.lock_for_send(audio_signed_id))
+            message.audio_recording.attach(audio)
             message.update!(audio_source: true)
-          rescue ActiveSupport::MessageVerifier::InvalidSignature
-            Rails.logger.warn "Invalid audio_signed_id for initial message in chat #{chat.id}"
+          else
+            Rails.logger.warn "Invalid or removed audio_signed_id for initial message in chat #{chat.id}"
           end
         end
         chat.send(:accept_opening_mention_dispatch, message) if automatic_response
@@ -200,9 +233,8 @@ class Chat < ApplicationRecord
   # Run state must not be cached with chat content or touch/reorder the chat.
   def self.sidebar_json_for(chats)
     chats = chats.to_a
-    working = AgentRuntimeInteraction.active
+    working = AgentRuntimeInteraction.working
       .where(chat_id: chats.map(&:id))
-      .where("execution_state IS NULL OR execution_state NOT IN (?)", AgentRuntimeInteraction::TERMINAL_STATES)
       .distinct.pluck(:chat_id, :agent_id).group_by(&:first)
 
     cached_json_for(chats, as: :sidebar_json).zip(chats).map do |json, chat|
@@ -231,7 +263,7 @@ class Chat < ApplicationRecord
   # Uses cursor-based pagination with before_id for efficient loading of older messages
   # Returns the most recent N messages that are older than before_id, in ascending order for display
   def messages_page(before_id: nil, limit: 30)
-    scope = messages.kept.includes(:user, :agent, :runtime_interaction).with_attached_attachments.with_attached_audio_recording
+    scope = messages.kept.includes(:user, :agent, :runtime_interaction, handoffs: :recipient_agent).with_attached_attachments.with_attached_audio_recording
     scope = scope.where("messages.id < ?", Message.decode_id(before_id)) if before_id.present?
     # Use reorder to replace the association ordering,
     # get the most recent messages by ordering by ID DESC, limit, then reverse for display
@@ -299,7 +331,7 @@ class Chat < ApplicationRecord
   # API tells it apart as a 409 (#94 B, step 4b-iii).
   class AlreadyResponding < ArgumentError; end
 
-  def trigger_agent_response!(agent)
+  def trigger_agent_response!(agent, wake_source_kinds: [])
     raise ArgumentError, "Resident not in this conversation" unless agents.include?(agent)
     agent.require_conversation_runtime!
     raise ArgumentError, "This chat does not support manual responses" unless manual_responses?
@@ -307,9 +339,9 @@ class Chat < ApplicationRecord
     raise AlreadyResponding, "#{agent.name} is already responding" if agent_response_active?(agent)
 
     if AgentRuntimeInteraction.live_activity_enabled?
-      AgentRuntimeInteraction.reserve!(agent: agent, chat: self, enqueue: true)
+      AgentRuntimeInteraction.reserve!(agent: agent, chat: self, enqueue: true, wake_source_kinds: wake_source_kinds)
     else
-      ManualAgentResponseJob.perform_later(self, agent)
+      ManualAgentResponseJob.perform_later(self, agent, wake_source_kinds: wake_source_kinds)
     end
   end
 
@@ -332,26 +364,97 @@ class Chat < ApplicationRecord
     AllAgentsResponseJob.perform_later(self, agent_ids)
   end
 
-  # The residents a human message asks for, in mention order: eligible and not
-  # already responding. Resolved once, when the message is accepted (#94 B,
-  # step 4b-ii); an edit never re-resolves them.
+  # The trigger entry points (the agent button, a resident's agent_trigger
+  # knock) use these. A resident who is already responding here is not
+  # refused: the request becomes a PendingWake, released as one run when the
+  # busy run finishes. Everything else trigger_agent_response! refuses is
+  # still refused. Returns :triggered or :queued.
+  def request_agent_response!(agent, requested_by:, user: nil, requester_agent: nil, wake_source_kinds: nil)
+    wake_source_kinds ||= WakeProvenance.for(user: user, requester_agent: requester_agent)
+    with_lock do
+      trigger_agent_response!(agent, wake_source_kinds: wake_source_kinds)
+      :triggered
+    rescue AlreadyResponding
+      PendingWake.queue!(chat: self, agent: agent, requested_by: requested_by, user: user, requester_agent: requester_agent,
+        wake_source_kinds: wake_source_kinds)
+      :queued
+    end
+  end
+
+  # Ask all, with the same rule per resident: the free ones are woken now, the
+  # busy ones are queued. Returns { triggered: [agents], queued: [agents] }.
+  # except_agent_ids: residents left out, because the asking resident's post
+  # already handed off to them (MessageHandoff).
+  def request_all_agents_response!(requested_by:, user: nil, requester_agent: nil, except_agent_ids: [])
+    raise ArgumentError, "This chat does not support manual responses" unless manual_responses?
+    raise ArgumentError, "No residents in this conversation" if agents.empty?
+    raise ArgumentError, "This conversation is archived or deleted" unless respondable?
+
+    with_lock do
+      ordered_agents = agents.where.not(id: except_agent_ids).order(:id).to_a
+      unless ordered_agents.any?(&:eligible_for_conversation?)
+        raise Agent::RuntimeAvailability::Unavailable.new("No available residents in this conversation", code: "no_available_agents")
+      end
+      busy, free = ordered_agents.partition { |agent| agent.eligible_for_conversation? && agent_response_active?(agent) }
+      busy.each do |agent|
+        PendingWake.queue!(chat: self, agent: agent, requested_by: requested_by, user: user, requester_agent: requester_agent)
+      end
+      if free.any?
+        AllAgentsResponseJob.perform_later(self, free.map(&:id),
+          wake_source_kinds: WakeProvenance.for(user: user, requester_agent: requester_agent))
+      end
+      { triggered: free, queued: busy }
+    end
+  end
+
+  # Mentioned residents who are eligible but already responding: the ones
+  # mentioned_agent_ids skips, and a mention queues instead.
+  def busy_mentioned_agents(content)
+    mentioned_agents(content).select { |agent| agent_response_active?(agent) }
+  end
+
+  # Queue a wake for each of these residents. They were busy when the message
+  # was read; a run that has finished since is covered by queue!'s own
+  # after-commit release. Returns the residents queued.
+  def queue_wakes_for_busy!(busy_agents, requested_by:, message:)
+    return [] if busy_agents.empty?
+
+    with_lock do
+      busy_agents.each do |agent|
+        PendingWake.queue!(chat: self, agent: agent, requested_by: requested_by, message: message)
+      end
+    end
+  end
+
   # The room's only resident, or nil when it has none or several.
   def sole_resident
     residents = agents.limit(2).to_a
     residents.one? ? residents.first : nil
   end
 
+  # The residents a human message asks for, in mention order: eligible and not
+  # already responding. Resolved once, when the message is accepted (#94 B,
+  # step 4b-ii); an edit never re-resolves them.
   def mentioned_agent_ids(content)
+    mentioned_agents(content).reject { |agent| agent_response_active?(agent) }.map(&:id)
+  end
+
+  # Resolve duplicate names before deciding whether to wake now or queue.
+  # Humans are not mention targets; only eligible residents in this chat count.
+  # Keep the existing mention syntax and order, choosing the lowest database ID
+  # for each case-insensitive name regardless of when it was created.
+  def mentioned_agents(content)
     return [] if content.blank? || !manual_responses?
 
-    agents.select { |agent|
-      content.match?(/@#{Regexp.escape(agent.name)}\b/i)
-    }.reject { |agent|
-      !agent.eligible_for_conversation? || agent_response_active?(agent)
+    agents.sort_by(&:id).select { |agent|
+      agent.eligible_for_conversation? && content.match?(/@#{Regexp.escape(agent.name)}\b/i)
+    }.uniq { |agent|
+      agent.name.downcase
     }.sort_by { |agent|
       content.index(/@#{Regexp.escape(agent.name)}\b/i)
-    }.map(&:id)
+    }
   end
+  private :mentioned_agents
 
   # The conversation's recent runtime interactions, oldest first, with
   # in-flight live runs reconciled first so a lost run doesn't show as
@@ -372,6 +475,17 @@ class Chat < ApplicationRecord
       .exists?
   end
 
+  # The last message a run of this resident here was shown, counting only
+  # runs that reached the runtime, as the transcript delta does; nil with none.
+  # A held wake with nothing past it is dropped (PendingWake#unseen_messages?),
+  # and a handoff at or below it was delivered (MessageHandoff).
+  def agent_transcript_cursor(agent)
+    agent_runtime_interactions
+      .where(agent: agent, trigger_kind: "conversation")
+      .where(transport_status: 200...300, runtime_status: "ok")
+      .maximum(:last_included_message_id)
+  end
+
   # Queue moderation for all unmoderated messages with content
   def queue_moderation_for_all_messages
     unmoderated = messages.where(moderated_at: nil).where.not(content: [ nil, "" ])
@@ -380,6 +494,10 @@ class Chat < ApplicationRecord
   end
 
   private
+
+  def room_belongs_to_account
+    errors.add(:room, "must belong to this account") if room && room.account_id != account_id
+  end
 
   def visual_tag_belongs_to_account
     if visual_tag && visual_tag.account_id != account_id

@@ -1,0 +1,64 @@
+{
+  "note": "Synthetic room (no real conversation text). recorded_answers are from live Jev on prompt v3.",
+  "snapshot_id": "synthetic:mixed_merge_owed_and_question",
+  "expected": {
+    "wake": [
+      "Lume"
+    ],
+    "person_holds": true
+  },
+  "state": {
+    "now": "2026-10-01T12:00:00+00:00",
+    "minutes_since_last_message": 100,
+    "residents_in_room": [
+      {
+        "name": "Lume",
+        "paused": false,
+        "run_in_progress": false
+      },
+      {
+        "name": "Mira",
+        "paused": false,
+        "run_in_progress": false
+      }
+    ],
+    "recent_messages": [
+      {
+        "id": "eee002",
+        "author": "Mira",
+        "author_kind": "resident",
+        "at": "2026-10-01T10:00:00+00:00",
+        "content": "Lume, #12 approved at abc123 with green CI. You can merge it.",
+        "handoffs": [
+          {
+            "to": "Lume",
+            "state": "delivered"
+          }
+        ]
+      },
+      {
+        "id": "eee003",
+        "author": "Lume",
+        "author_kind": "resident",
+        "at": "2026-10-01T10:10:00+00:00",
+        "content": "Dana, separate question for later: do you want CSV only, or CSV and JSON for the next export slice? No rush, that one waits on you."
+      }
+    ],
+    "recent_messages_truncated": false,
+    "last_human_message_after_last_resident_message": false,
+    "follow_through_nudges_since_last_human_message": 0,
+    "last_human_message_at": "2026-10-01T09:00:00+00:00",
+    "last_human_message_before_window": {
+      "id": "aaa001",
+      "author": "Dana",
+      "author_kind": "person",
+      "at": "2026-10-01T09:00:00+00:00",
+      "content": "Please add the export button to the settings page. Lume builds, Mira reviews."
+    }
+  },
+  "recorded_answers": {
+    "can_act:1": 0.94,
+    "can_act:2": 0.16,
+    "person_holds": 0.84
+  }
+}

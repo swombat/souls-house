@@ -12,6 +12,9 @@
   let error = $state('');
 
   const score = $derived(recognition.confidence != null ? Math.round(recognition.confidence) : null);
+  // A voice that hasn't passed its check against other recordings yet only
+  // hints: "maybe Anna?", said as a hint. Confirming it teaches it the same way.
+  const checked = $derived(recognition.checked !== false);
 
   function send(speaker) {
     busy = true;
@@ -29,10 +32,20 @@
   }
 </script>
 
-<div class="rounded-md border border-dashed px-2 py-1.5 text-sm space-y-1" data-testid="speaker-recognition">
+<div
+  class="rounded-md border border-dashed px-2 py-1.5 text-sm space-y-1 {checked ? '' : 'opacity-80'}"
+  data-testid="speaker-recognition"
+  data-checked={checked}>
   <p>
-    <span class="font-medium">{recognition.name}?</span>
-    <span class="text-muted-foreground">sounds like the {recognition.name} this Field remembers</span>
+    {#if checked}
+      <span class="font-medium">{recognition.name}?</span>
+      <span class="text-muted-foreground">sounds like the {recognition.name} this Field remembers</span>
+    {:else}
+      <span class="font-medium">Maybe {recognition.name}?</span>
+      <span class="text-muted-foreground"
+        >sounds a bit like {recognition.name}. This voice hasn't been checked against other recordings yet, so it's only
+        a hint.</span>
+    {/if}
     {#if score != null}
       <span class="text-xs text-muted-foreground" title="How closely the voices match, out of 100">({score})</span>
     {/if}

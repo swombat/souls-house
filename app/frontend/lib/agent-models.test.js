@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { findModelLabel, firstModelId, groupModelsByProvider, modelSupportsThinking } from './agent-models';
+import {
+  filterGroupedModels,
+  findModelLabel,
+  firstModelId,
+  groupModelsByProvider,
+  modelSupportsThinking,
+} from './agent-models';
 
 describe('agent model helpers', () => {
   const groupedModels = {
@@ -34,5 +40,15 @@ describe('agent model helpers', () => {
     expect(grouped.groupOrder).toEqual(['OpenAI', 'Anthropic', 'Other']);
     expect(grouped.groups.OpenAI.map((model) => model.model_id)).toEqual(['a', 'c']);
     expect(grouped.groups.Other.map((model) => model.model_id)).toEqual(['d']);
+  });
+
+  it('filters grouped models by every typed word across label, id and group', () => {
+    expect(filterGroupedModels(groupedModels, '')).toBe(groupedModels);
+    expect(filterGroupedModels(groupedModels, 'mini')).toEqual({ OpenAI: [groupedModels.OpenAI[1]] });
+    expect(filterGroupedModels(groupedModels, 'GPT 5 MINI')).toEqual({ OpenAI: [groupedModels.OpenAI[1]] });
+    expect(filterGroupedModels(groupedModels, 'anthropic')).toEqual({ Anthropic: groupedModels.Anthropic });
+    expect(filterGroupedModels(groupedModels, 'openai/gpt-5-mini')).toEqual({ OpenAI: [groupedModels.OpenAI[1]] });
+    expect(filterGroupedModels(groupedModels, 'opüs')).toEqual({ Anthropic: groupedModels.Anthropic });
+    expect(filterGroupedModels(groupedModels, 'nothing like this')).toEqual({});
   });
 });

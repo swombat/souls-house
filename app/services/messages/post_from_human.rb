@@ -4,7 +4,7 @@
 # concerns (auth, audit, response shape) stay with the caller.
 class Messages::PostFromHuman
 
-  Result = Struct.new(:status, :message, keyword_init: true) do
+  Result = Struct.new(:status, :message, :sole_resident, keyword_init: true) do
     def created? = status == :created
     def duplicate? = status == :duplicate
     def invalid? = status == :invalid
@@ -29,8 +29,8 @@ class Messages::PostFromHuman
   end
 
   # draft: the author's ConversationDraft and the revision the client sent.
-  # Only the web sends one; a native send never clears a web draft.
-  def initialize(chat:, user:, content:, files: nil, audio_signed_id: nil, client_message_id: nil, draft: nil, draft_revision: nil)
+  # The web and general API can send one; a native send never clears a web draft.
+  def initialize(chat:, user:, content:, files: nil, audio_signed_id: nil, client_message_id: nil, draft: nil, draft_revision: nil, stone_revisions: [])
     @chat = chat
     @draft = draft
     @draft_revision = draft_revision
@@ -39,6 +39,7 @@ class Messages::PostFromHuman
     @files = files
     @audio_signed_id = audio_signed_id
     @client_message_id = client_message_id
+    @stone_revisions = stone_revisions
   end
 
   # Acceptance is one primary transaction: the message, the caller's audit
@@ -57,6 +58,7 @@ class Messages::PostFromHuman
   # activity is off, since there is then no durable run to reserve.
   def call(on_persisted: nil)
     message = @chat.messages.build(content: @content, user: @user, role: "user")
+    message.stone_revisions = @stone_revisions
     if @client_message_id
       message.client_message_id = @client_message_id
       message.submission_digest = self.class.submission_digest(content: @content, blobs: app_blobs)
@@ -66,13 +68,13 @@ class Messages::PostFromHuman
       # A file with no caption is a message, as in Chat#create_with_message.
       message.skip_content_validation = @content.blank?
     end
-    attach_audio(message) if @audio_signed_id.present?
 
     # A room with one resident wakes it automatically (Message writes that
     # dispatch), so a mention there would be a second wake.
-    target_ids = @chat.sole_resident ? [] : @chat.mentioned_agent_ids(@content.to_s)
+    sole_resident = @chat.sole_resident.present?
+    target_ids = sole_resident ? [] : @chat.mentioned_agent_ids(@content.to_s)
     if target_ids.any? && !AgentRuntimeInteraction.live_activity_enabled?
-      return Result.new(status: :dispatch_unavailable, message: message)
+      return Result.new(status: :dispatch_unavailable, message: message, sole_resident: sole_resident)
     end
 
     dispatch = nil
@@ -82,10 +84,16 @@ class Messages::PostFromHuman
       Message.transaction do
         next claimed = false unless claim_uploads
 
+        attach_audio(message) if @audio_signed_id.present?
+
         next false unless @draft ? @draft.accept_send!(message, revision: @draft_revision) { message.save } : message.save
 
         on_persisted&.call(message)
         dispatch = MessageDispatch.accept!(message: message, target_agent_ids: target_ids) if target_ids.any?
+        # A mention of a resident already responding here waits for that run.
+        unless sole_resident
+          @chat.queue_wakes_for_busy!(@chat.busy_mentioned_agents(@content.to_s), requested_by: "a mention from #{message.author_name}", message: message)
+        end
         saved_id = message.id
         true
       end
@@ -99,14 +107,14 @@ class Messages::PostFromHuman
     end
 
     if !claimed
-      Result.new(status: :attachment_claimed, message: message)
+      Result.new(status: :attachment_claimed, message: message, sole_resident: sole_resident)
     elsif saved
       enqueue(dispatch) if dispatch
-      Result.new(status: :created, message: message)
+      Result.new(status: :created, message: message, sole_resident: sole_resident)
     elsif message.errors.added?(:base, :duplicate_message)
-      Result.new(status: :duplicate, message: message)
+      Result.new(status: :duplicate, message: message, sole_resident: sole_resident)
     else
-      Result.new(status: :invalid, message: message)
+      Result.new(status: :invalid, message: message, sole_resident: sole_resident)
     end
   end
 
@@ -125,12 +133,16 @@ class Messages::PostFromHuman
     blobs = app_blobs
     return true if blobs.empty?
 
-    ids = blobs.map(&:id)
-    ActiveStorage::Blob.where(id: ids).order(:id).lock.pluck(:id)
+    ids = blobs.map(&:id).uniq.sort
+    locked = ActiveStorage::Blob.where(id: ids).order(:id).lock.to_a
+    # A cleanup may have removed a blob after the controller resolved its
+    # signed ID. A stale object is not a claim on a row that no longer exists.
+    return false unless locked.map(&:id) == ids
     return false if ActiveStorage::Attachment.where(blob_id: ids).exists?
 
+    locked_by_id = locked.index_by(&:id)
     blobs.each_with_index do |blob, position|
-      metadata = blob.metadata.merge("position" => position)
+      metadata = locked_by_id.fetch(blob.id).metadata.merge("position" => position)
       blob.update_column(:metadata, metadata)
     end
     true
@@ -142,11 +154,18 @@ class Messages::PostFromHuman
     Rails.logger.warn "[PostFromHuman] dispatch #{dispatch.id} enqueue failed, wake will lapse: #{e.class}: #{e.message}"
   end
 
+  # Inside the send's transaction: the recording stays locked until commit, so
+  # a discard or sweep either finished first (the message keeps its text and
+  # goes without audio) or waits and then finds it attached.
   def attach_audio(message)
-    message.audio_recording.attach(@audio_signed_id)
+    blob = VoiceNote.lock_for_send(@audio_signed_id)
+    unless blob
+      Rails.logger.warn "Invalid or removed audio_signed_id for message in chat #{@chat.id}"
+      return
+    end
+
+    message.audio_recording.attach(blob)
     message.audio_source = true
-  rescue ActiveSupport::MessageVerifier::InvalidSignature
-    Rails.logger.warn "Invalid audio_signed_id for message in chat #{@chat.id}"
   end
 
 end

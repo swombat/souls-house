@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1.7  # keep this at the very top of the Dockerfile
 
 ########################
-# BASE (from ruby:4.0.6-slim)
+# BASE (from ruby:4.0.9-slim)
 ########################
 
 # Keep these runtime versions in sync with mise.toml and .ruby-version.
-ARG RUBY_VERSION=4.0.6
+ARG RUBY_VERSION=4.0.9
 ARG BUN_VERSION=1.4.0
 
 FROM registry.docker.com/oven/bun:$BUN_VERSION AS bun
@@ -52,7 +52,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       build-essential git openssh-client pkg-config \
       libvips libpq-dev libicu-dev libyaml-dev libssl-dev libreadline-dev libffi-dev zlib1g-dev \
       passwd vim neovim \
-      postgresql-client-16 ffmpeg poppler-utils docker-cli; \
+      postgresql-client-16 ffmpeg poppler-utils docker-cli python3; \
     docker --version; \
     rm -rf /var/lib/apt/lists/*
 
@@ -84,6 +84,8 @@ COPY public public
 COPY Rakefile config.ru VERSION ./
 COPY config/ config/
 COPY agent-runtime/command_preview_policy.json agent-runtime/command_preview_policy.json
+COPY host-runner/souls_house_runner.py host-runner/souls_house_runner.py
+COPY host-runner/backup_proxy.py host-runner/backup_proxy.py
 COPY bin/ bin/
 COPY *.config.js .
 COPY vite.config.ts .
@@ -118,6 +120,7 @@ COPY --from=build --chown=rails:rails /rails/app     /rails/app
 COPY --from=build --chown=rails:rails /rails/bin     /rails/bin
 COPY --from=build --chown=rails:rails /rails/config  /rails/config
 COPY --from=build --chown=rails:rails /rails/agent-runtime /rails/agent-runtime
+COPY --from=build --chown=rails:rails /rails/host-runner /rails/host-runner
 COPY --from=build --chown=rails:rails /rails/db      /rails/db
 COPY --from=build --chown=rails:rails /rails/lib     /rails/lib
 COPY --from=build --chown=rails:rails /rails/public  /rails/public

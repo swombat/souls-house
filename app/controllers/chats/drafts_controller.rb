@@ -11,7 +11,7 @@ class Chats::DraftsController < ApplicationController
     @conversation_draft ||= begin
       # No site-admin widening for private writing.
       account = Current.user.confirmed_accounts.find(params[:account_id])
-      chat = account.chats.find(params[:chat_id])
+      chat = account.chats.kept.find(params[:chat_id])
       ConversationDraft.for(chat: chat, user: Current.user)
     end
   end

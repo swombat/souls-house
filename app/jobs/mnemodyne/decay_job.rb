@@ -5,6 +5,7 @@ class Mnemodyne::DecayJob < ApplicationJob
       next unless vault.agent.externally_hosted? && vault.agent.active? && !vault.agent.account.disabled?
       vault.with_lock do
         next if vault.erasure_requested_at? || vault.suspended_at?
+        next if Backup::VmResident.held?(vault.agent)
         next if vault.last_decay_on == Date.current
         rate = vault.decay_rate
         vault.nodes.active.find_each do |node|

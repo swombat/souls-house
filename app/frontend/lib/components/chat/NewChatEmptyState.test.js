@@ -36,3 +36,27 @@ test('shows fewer than three conversations and a fallback for untitled chats', (
   expect(screen.getAllByRole('link')).toHaveLength(1);
   expect(screen.getByRole('link')).toHaveTextContent('New Conversation');
 });
+
+test('spins a ring for each resident working in a recent conversation', () => {
+  render(NewChatEmptyState, {
+    accountId: 'account',
+    chats: [
+      {
+        id: 'busy',
+        title: 'Busy',
+        activity_at: '2026-09-25',
+        working_agent_ids: ['l', 'm'],
+        participants_json: [
+          { type: 'human', name: 'Daniel' },
+          { type: 'agent', id: 'm', name: 'Mira', colour: 'violet' },
+          { type: 'agent', id: 'l', name: 'Lume', colour: 'orange' },
+        ],
+      },
+      { id: 'quiet', title: 'Quiet', activity_at: '2026-09-24', working_agent_ids: [] },
+    ],
+  });
+  const spinners = screen.getAllByTestId('room-working');
+  expect(spinners).toHaveLength(1);
+  expect(spinners[0]).toHaveAttribute('title', 'Lume and Mira working');
+  expect(screen.getAllByTestId('room-working-ring').map((ring) => ring.dataset.colour)).toEqual(['orange', 'violet']);
+});

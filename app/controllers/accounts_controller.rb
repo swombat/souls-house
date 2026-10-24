@@ -48,9 +48,12 @@ class AccountsController < ApplicationController
     {
       account: @account,
       can_be_personal: @account.can_be_personal?,
-      members: account_members_json,
+      members: -> { account_members_json },
       can_manage: @account.manageable_by?(Current.user),
-      current_user_id: Current.user.id
+      current_user_id: Current.user.id,
+      resident_handoff_cap: @account.resident_handoff_cap,
+      reflexes_enabled: @account.reflexes_enabled,
+      reflexes_site_scope: Setting.instance.reflexes_scope
     }
   end
 
@@ -113,8 +116,12 @@ class AccountsController < ApplicationController
     @account = find_current_user_account!(params[:id])
   end
 
+  # The resident handoff cap (MessageHandoff) and the reflexes switch
+  # (ReflexCheck) are changed only by someone who can manage the account.
   def account_params
-    params.require(:account).permit(:name)
+    permitted = [ :name ]
+    permitted.push(:resident_handoff_cap, :reflexes_enabled) if @account.manageable_by?(Current.user)
+    params.require(:account).permit(permitted)
   end
 
   def create_account_params

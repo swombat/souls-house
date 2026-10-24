@@ -1,16 +1,13 @@
 <script>
   import { page } from '@inertiajs/svelte';
   import { Toaster } from '$lib/components/shadcn/sonner/index.js';
-  import { toast } from 'svelte-sonner';
+  import { showFlashToasts } from '$lib/flash-toasts.js';
   import Navbar from '$lib/components/navigation/navbar.svelte'; // Adjust the path as necessary
 
   let { children } = $props();
 
   $effect(() => {
-    let flash = $page.props?.flash || {};
-
-    flash.notice && toast.success(flash.notice);
-    flash.alert && toast.error(flash.alert);
+    showFlashToasts($page.props?.flash);
   });
 </script>
 

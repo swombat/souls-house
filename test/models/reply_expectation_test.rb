@@ -118,6 +118,30 @@ class ReplyExpectationTest < ActiveSupport::TestCase
     assert_empty ReplyExpectation.summary_for(@user, account: @chat.account, chat: @chat)[:messages]
   end
 
+  test "summary counts open threads per room, keyed by room public id or main" do
+    life = @chat.account.rooms.create!(name: "Life")
+    roomed_chat = @chat.account.chats.create!(title: "In Life", room: life)
+    roomed_ask = roomed_chat.messages.create!(role: "assistant", content: "Test User, in Life?")
+    record(@ask) # @chat has no room: counts under "main"
+    record(roomed_ask)
+
+    assert_equal({ "main" => 1, life.to_param => 1 }, summary[:rooms])
+
+    # Room counts are distinct conversations, like account totals, not raw flag counts.
+    3.times { |i| record(roomed_chat.messages.create!(role: "assistant", content: "Another ask #{i}")) }
+    assert_equal({ "main" => 1, life.to_param => 1 }, summary[:rooms])
+
+    # A second conversation in the same room adds to that room's count.
+    second_roomed_chat = @chat.account.chats.create!(title: "Also in Life", room: life)
+    record(second_roomed_chat.messages.create!(role: "assistant", content: "Test User, also in Life?"))
+    assert_equal({ "main" => 1, life.to_param => 2 }, summary[:rooms])
+
+    # Rooms are scoped to the current account, like chats and through_messages.
+    other_chat = accounts(:team_account).chats.create!(title: "Other account")
+    record(other_chat.messages.create!(role: "assistant", content: "Test User, elsewhere?"))
+    assert_equal({ "main" => 1, life.to_param => 2 }, summary[:rooms])
+  end
+
   test "tool streaming progress and metadata updates do not queue inference" do
     clear_enqueued_jobs
     @chat.messages.create!(role: "tool", content: "Test User?")

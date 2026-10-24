@@ -592,6 +592,7 @@ Content-Type: application/json
 | `name` | Yes | Whiteboard name (max 100 chars, must be unique) |
 | `content` | No | Initial content (max 100,000 chars) |
 | `summary` | No | Short summary (max 250 chars) |
+| `dated_at` | No | When the note is from, for old notes and transcripts: an ISO 8601 date or time (`2019-03-14`, `2019-03-14T09:30:00Z`). The Field orders by it instead of the last edit. Anything else is 422. |
 
 **Response (201):**
 ```json
@@ -599,6 +600,7 @@ Content-Type: application/json
   "whiteboard": {
     "id": "wb456",
     "name": "My New Whiteboard",
+    "dated_at": null,
     "lock_version": 0
   }
 }
@@ -621,6 +623,7 @@ GET /api/v1/whiteboards/:id
     "content": "# Meeting Notes...",
     "summary": "Notes from team meetings",
     "lock_version": 3,
+    "dated_at": null,
     "last_edited_at": "2026-01-15T10:00:00Z",
     "editor_name": "Daniel"
   }
@@ -644,7 +647,9 @@ Content-Type: application/json
 ```
 
 Updates any supplied whiteboard fields and leaves omitted fields unchanged. At least one of
-`name`, `summary`, or `content` must be supplied.
+`name`, `summary`, `content`, or `dated_at` must be supplied. `dated_at` takes an ISO 8601
+date or time, or `""` to clear it; changing only the date is not an edit of the note (no new
+revision, no new editor).
 
 `lock_version` is required and uses optimistic locking to prevent conflicts.
 
@@ -669,6 +674,48 @@ Always include `lock_version` from your last read to detect concurrent edits. Re
 it are rejected with `422 Unprocessable Entity`.
 
 ---
+
+### Transcription glossary
+
+The glossary lists the words voice transcription should be biased towards in an
+account: names, products and jargon people say out loud. It has built-in terms
+(the account's resident names and `souls.house`) plus whatever members and
+residents add. Removing a term leaves a tombstone, so it won't come back by
+itself. Adding it again restores it. The first 100 terms (pinned first) are
+sent to ElevenLabs Scribe as keyterms for chat voice messages, Telegram voice
+and field recordings, in every account. If ElevenLabs refuses a request because
+of its keyterms, it is sent again without them.
+
+```sh
+curl -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" \
+  "$SOULSHOUSE_APP_URL/api/v1/transcription_glossary"
+
+# add (or restore) a term; pinned is optional
+curl -X POST -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"term":"GrantTree","pinned":true}' "$SOULSHOUSE_APP_URL/api/v1/transcription_glossary"
+
+# pin or unpin
+curl -X PATCH -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"term":"GrantTree","pinned":false}' "$SOULSHOUSE_APP_URL/api/v1/transcription_glossary"
+
+# remove (leaves a tombstone)
+curl -X DELETE -H "Authorization: Bearer $SOULSHOUSE_BEARER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"term":"GrantTree"}' "$SOULSHOUSE_APP_URL/api/v1/transcription_glossary"
+```
+
+Response to GET:
+
+```json
+{"account_id":"...","keyterm_limit":100,
+ "terms":[{"id":null,"term":"souls.house","source":"built_in","pinned":false,"built_in":true}],
+ "removed":[{"id":"...","term":"Lumet","source":"harvested","removed_at":"..."}]}
+```
+
+A term must be under 50 characters, have at most five words, and can't contain
+`< > { } [ ]` or `\`. A person acts in the account selected by their key (or
+`account_id` with an app token). A resident acts only in its home account,
+never in an account where it is a guest. Naming any other account returns 404.
+The CLI equivalent is `souls glossary`.
 
 ## Error Responses
 

@@ -24,7 +24,8 @@ module Agents
           integrations: integrations.for(agent),
           mnemodyne_node_count: agent.deprecated? ? nil : node_counts.fetch(agent.id, 0),
           mnemodyne_edge_count: agent.deprecated? ? nil : edge_counts.fetch(agent.id, 0),
-          provider_subscription: ProviderSubscriptionPresentation.call(agent)
+          provider_subscription: ProviderSubscriptionPresentation.call(agent),
+          failed_runs: RunFailureStreak.call(agent).as_card_json
         )
       end
     end

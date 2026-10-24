@@ -49,6 +49,28 @@ class GithubResidentImportJobTest < ActiveSupport::TestCase
     assert_nil request.agent
   end
 
+  test "switch turned on during the checkout refuses before a home is made" do
+    request = import_request
+    approve_fixture(request)
+    Setting.instance.update!(new_residents_on_vm: false)
+    source = Object.new
+    source.define_singleton_method(:with_checkout) do |branch:, commit_sha: nil, &block|
+      Setting.instance.update!(new_residents_on_vm: true, vm_resident_limit: 5)
+      block.call("/synthetic-home", { "identity_id" => request.portable_home_id }, commit_sha || "a" * 40, branch.presence || "main")
+    end
+    Agents::GithubImportSource.stub(:new, source) do
+      Agents::Volume.stub(:new, ->(*) { flunk "must not seed a home on the house" }) do
+        assert_no_difference "Agent.count" do
+          GithubResidentImportJob.perform_now(request.id)
+        end
+      end
+    end
+    request.reload
+    assert_equal "failed", request.status
+    assert_equal Agents::VmBirthPolicy::IMPORT_REFUSAL, request.last_error
+    assert_nil request.agent
+  end
+
   test "seed failures preserve record and never make resident available" do
     request = import_request
     approve_fixture(request)

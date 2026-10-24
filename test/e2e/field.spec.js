@@ -94,3 +94,283 @@ test('a member brings a file into the Field, writes a note, and deletes the file
     await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
   }
 });
+
+test("a failed recording's meeting notes can still be opened, read whole and edited", async ({
+  page,
+  request,
+}, testInfo) => {
+  const runId = `field-notes-${Date.now()}`;
+  const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });
+  expect(response.ok()).toBe(true);
+  const setup = await response.json();
+  const shot = (name) => page.screenshot({ path: testInfo.outputPath(`${name}.png`), fullPage: true });
+
+  try {
+    const lines = Array.from({ length: 12 }, (_, i) => `- Action ${i + 1}`).join('\n');
+    const fixture = await request.post('/test/e2e/field_recording_fixture', {
+      data: {
+        account_id: setup.account_id,
+        title: 'Failed standup',
+        notes: `# Standup\n\n${lines}\n\nLast line of the notes`,
+      },
+    });
+    expect(fixture.ok()).toBe(true);
+    const { recording_param: recordingParam } = await fixture.json();
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto('/login');
+    await page.getByLabel(/email/i).fill(setup.primary_user.email);
+    await page.getByLabel(/password/i).fill(setup.password);
+    await page.getByRole('button', { name: /log in/i }).click();
+    await expect(page).toHaveURL(/\/$/);
+
+    const base = `/accounts/${setup.account_param}`;
+    await page.goto(`${base}/field?tab=recordings&item=recording-${recordingParam}`);
+    const viewer = page.getByTestId('field-recording-viewer');
+    await expect(viewer.getByTestId('field-recording-notes')).toContainText('Action 1');
+    await expect(viewer.getByTestId('open-transcript')).toHaveCount(0);
+    await shot('notes-1-viewer');
+
+    // Double-clicking the title opens the same form as Edit, title ready to type over.
+    await viewer.getByTestId('field-recording-title').dblclick();
+    const titleInput = page.locator('#recording-edit-title');
+    await expect(titleInput).toBeFocused();
+    await expect(titleInput).toHaveValue('Failed standup');
+    await expect(page.locator('#recording-edit-note')).toBeVisible();
+    await page.keyboard.type('Failed standup, renamed');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(viewer.getByTestId('field-recording-title')).toHaveText('Failed standup, renamed');
+    await shot('notes-1b-renamed');
+
+    await viewer.getByTestId('open-recording-notes').click();
+    await expect(page).toHaveURL(new RegExp(`/field/recordings/${recordingParam}$`));
+    const notes = page.getByTestId('recording-notes');
+    await expect(notes).toContainText('Last line of the notes');
+    await expect(notes.getByRole('heading', { name: 'Standup' })).toBeVisible();
+    await shot('notes-2-page');
+
+    await notes.getByRole('button', { name: 'Edit' }).click();
+    await page.getByLabel(/^Notes/).fill('# Standup\n\nMoved to Wednesday.');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByTestId('recording-notes')).toContainText('Moved to Wednesday.');
+    await expect(page).toHaveURL(new RegExp(`/field/recordings/${recordingParam}$`));
+    await page.reload();
+    await expect(page.getByTestId('recording-notes')).toContainText('Moved to Wednesday.');
+    await shot('notes-3-edited');
+
+    // A recording that turned out to be garbage can be thrown away from its
+    // own page: back to the list, and it is gone from it.
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByTestId('delete-recording').click();
+    await expect(page).toHaveURL(new RegExp(`${base}/field\\?tab=recordings`));
+    await expect(page.getByText('Deleted from the Field.')).toBeVisible();
+    await expect(page.getByText('Failed standup, renamed')).toHaveCount(0);
+    await shot('notes-4-deleted');
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
+  }
+});
+
+test("on a touch screen, pressing and holding a recording's title opens its edit form", async ({
+  browser,
+  request,
+}, testInfo) => {
+  const runId = `field-title-hold-${Date.now()}`;
+  const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });
+  expect(response.ok()).toBe(true);
+  const setup = await response.json();
+  const context = await browser.newContext({
+    baseURL: testInfo.project.use.baseURL,
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  const shot = (name) => page.screenshot({ path: testInfo.outputPath(`${name}.png`), fullPage: true });
+
+  try {
+    const fixture = await request.post('/test/e2e/field_recording_fixture', {
+      data: { account_id: setup.account_id, title: 'Held standup', notes: 'Some notes' },
+    });
+    expect(fixture.ok()).toBe(true);
+    const { recording_param: recordingParam } = await fixture.json();
+
+    await page.goto('/login');
+    await page.getByLabel(/email/i).fill(setup.primary_user.email);
+    await page.getByLabel(/password/i).fill(setup.password);
+    await page.getByRole('button', { name: /log in/i }).click();
+    await expect(page).toHaveURL(/\/$/);
+
+    await page.goto(`/accounts/${setup.account_param}/field?tab=recordings&item=recording-${recordingParam}`);
+    const title = page.getByTestId('field-recording-title');
+    await expect(title).toHaveText('Held standup');
+    const box = await title.boundingBox();
+    const at = { pointerType: 'touch', isPrimary: true, clientX: box.x + 10, clientY: box.y + 5 };
+
+    // A tap is not a hold.
+    await title.dispatchEvent('pointerdown', at);
+    await title.dispatchEvent('pointerup', at);
+    await page.waitForTimeout(700);
+    await expect(page.locator('#recording-edit-title')).toHaveCount(0);
+
+    // A press that turns into a scroll is not a hold either.
+    await title.dispatchEvent('pointerdown', at);
+    await title.dispatchEvent('pointermove', { ...at, clientY: at.clientY + 40 });
+    await page.waitForTimeout(700);
+    await expect(page.locator('#recording-edit-title')).toHaveCount(0);
+
+    await title.dispatchEvent('pointerdown', at);
+    await expect(page.locator('#recording-edit-title')).toBeVisible();
+    await expect(page.locator('#recording-edit-title')).toHaveValue('Held standup');
+    await expect(page.locator('#recording-edit-note')).toBeVisible();
+    await expect(page.locator('#recording-edit-recorded-on')).toBeVisible();
+    await shot('title-hold-form');
+
+    await page.locator('#recording-edit-title').fill('Held and renamed');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByTestId('field-recording-title')).toHaveText('Held and renamed');
+  } finally {
+    await context.close();
+    await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
+  }
+});
+
+test('a full Field turns compact and pages through fifty at a time', async ({ page, request }, testInfo) => {
+  const runId = `field-pages-${Date.now()}`;
+  const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });
+  expect(response.ok()).toBe(true);
+  const setup = await response.json();
+  const shot = (name) => page.screenshot({ path: testInfo.outputPath(`${name}.png`), fullPage: true });
+
+  try {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto('/login');
+    await page.getByLabel(/email/i).fill(setup.primary_user.email);
+    await page.getByLabel(/password/i).fill(setup.password);
+    await page.getByRole('button', { name: /log in/i }).click();
+    await expect(page).toHaveURL(/\/$/);
+
+    const base = `/accounts/${setup.account_param}`;
+    await page.goto(`${base}/field?tab=notes`);
+    await expect(page.getByTestId('field-compact-list')).toHaveCount(0);
+
+    // Sixty notes, written the way the New note form writes them.
+    await page.evaluate(async (base) => {
+      const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      for (let i = 1; i <= 60; i++) {
+        const body = new FormData();
+        body.append('whiteboard[name]', `Pile note ${String(i).padStart(2, '0')}`);
+        body.append('whiteboard[content]', `Note ${i}`);
+        await fetch(`${base}/whiteboards`, { method: 'POST', body, headers: { 'X-CSRF-Token': token } });
+      }
+    }, base);
+
+    await page.goto(`${base}/field?tab=notes`);
+    await expect(page.getByTestId('field-compact-list')).toBeVisible();
+    await expect(page.getByTestId('field-item')).toHaveCount(50);
+    await expect(page.getByTestId('field-item').first()).toContainText('Pile note 60');
+    await expect(page.getByTestId('field-pager-status').first()).toContainText('page 1 of 2');
+    await shot('6-compact-page-1');
+
+    await page.getByRole('button', { name: 'Next page' }).first().click();
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.getByTestId('field-pager-status').first()).toContainText('page 2 of 2');
+    const second = page.getByTestId('field-item').filter({ hasText: 'Pile note 01' });
+    await expect(second).toBeVisible();
+
+    // Opening an item keeps the page; the note reads in full.
+    await second.click();
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.getByText('Note 1', { exact: true })).toBeVisible();
+    await shot('7-compact-page-2-open');
+
+    await page.getByRole('tab', { name: /Files/ }).click();
+    await expect(page).not.toHaveURL(/page=/);
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
+  }
+});
+
+test('on a phone the Field fits the screen and an open item takes it over', async ({ page, request }, testInfo) => {
+  const runId = `field-phone-${Date.now()}`;
+  const response = await request.post('/test/e2e/setup', { data: { run_id: runId } });
+  expect(response.ok()).toBe(true);
+  const setup = await response.json();
+  const shot = (name) => page.screenshot({ path: testInfo.outputPath(`${name}.png`), fullPage: true });
+  const fitsWidth = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+  const scrollY = () => page.evaluate(() => window.scrollY);
+
+  try {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.goto('/login');
+    await page.getByLabel(/email/i).fill(setup.primary_user.email);
+    await page.getByLabel(/password/i).fill(setup.password);
+    await page.getByRole('button', { name: /log in/i }).click();
+    await expect(page).toHaveURL(/\/$/);
+
+    const base = `/accounts/${setup.account_param}`;
+    await page.goto(`${base}/field`);
+    // Enough notes for two pages, with titles long enough to truncate.
+    await page.evaluate(async (base) => {
+      const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+      for (let i = 1; i <= 64; i++) {
+        const body = new FormData();
+        body.append(
+          'whiteboard[name]',
+          `Phone note ${String(i).padStart(2, '0')} with a rather long title to truncate`
+        );
+        body.append('whiteboard[content]', `Phone body ${i}`);
+        await fetch(`${base}/whiteboards`, { method: 'POST', body, headers: { 'X-CSRF-Token': token } });
+      }
+    }, base);
+
+    await page.goto(`${base}/field`);
+    await expect(page.getByTestId('field-compact-list')).toBeVisible();
+    await expect(page.getByTestId('field-add-recording')).toBeInViewport();
+    await expect(page.getByTestId('field-reader')).toBeHidden();
+    expect(await fitsWidth()).toBe(true);
+    await shot('8-phone-list');
+
+    await page.getByRole('button', { name: 'Next page' }).first().click();
+    await expect(page).toHaveURL(/page=2/);
+    const row = page.getByTestId('field-item').filter({ hasText: 'Phone note 03' });
+    await row.scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollBy(0, 40));
+    const listY = await scrollY();
+    expect(listY).toBeGreaterThan(100);
+
+    // Open: the item gets the screen, from its top.
+    await row.click();
+    await expect(page.getByText('Phone body 3', { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.getByTestId('field-compact-list')).toBeHidden();
+    await expect(page.getByTestId('field-back')).toBeInViewport();
+    expect(await scrollY()).toBe(0);
+    expect(await fitsWidth()).toBe(true);
+    await shot('9-phone-open-item');
+
+    // Back to the Field: same page, same place in the list.
+    await page.getByTestId('field-back').click();
+    await expect(page).not.toHaveURL(/item=/);
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.getByTestId('field-compact-list')).toBeVisible();
+    await expect(page.getByTestId('field-reader')).toBeHidden();
+    await expect.poll(scrollY).toBeGreaterThan(listY - 5);
+    expect(await scrollY()).toBeLessThan(listY + 5);
+
+    // Browser Back then Forward recreates the page; the return place survives.
+    await row.click();
+    await expect(page.getByText('Phone body 3', { exact: true })).toBeVisible();
+    await page.goBack();
+    await expect(page.getByTestId('field-compact-list')).toBeVisible();
+    await page.goForward();
+    await expect(page.getByText('Phone body 3', { exact: true })).toBeVisible();
+    await page.getByTestId('field-back').click();
+    await expect(page).not.toHaveURL(/item=/);
+    await expect(page).toHaveURL(/page=2/);
+    await expect.poll(scrollY).toBeGreaterThan(listY - 5);
+    expect(await scrollY()).toBeLessThan(listY + 5);
+  } finally {
+    await request.post('/test/e2e/cleanup', { data: { run_id: runId } });
+  }
+});

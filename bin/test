@@ -1,0 +1,18 @@
+#!/usr/bin/env ruby
+# Run the Rails test suite with padded_cell, under the same checkout-local test
+# lock as `bin/rails test`. Arguments go to padded_cell: paths, file:line, -n,
+# --timeout, --asylum, ... (see `bin/test --help`).
+#
+# PARALLEL_WORKERS keeps its Rails meaning and becomes padded_cell's -j unless
+# -j/--jobs is given before any `--` (after `--`, arguments are paths, so a file
+# named `--jobs` is not a worker count). `bin/rails test` remains available as
+# the fallback runner.
+args = ARGV.dup
+workers = ENV["PARALLEL_WORKERS"].to_s
+options = args.take_while { |arg| arg != "--" }
+if workers.match?(/\A[1-9]\d*\z/) && options.none? { |arg| arg.match?(/\A(-j|--jobs)(=|\d|\z)/) }
+  args.unshift("--jobs", workers)
+end
+
+exec({ "RAILS_ENV" => "test" }, File.expand_path("instance", __dir__), "exec", "test", "--",
+  "bundle", "exec", "padded_cell", *args)

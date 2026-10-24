@@ -15,6 +15,7 @@ from gate import ROOT, OPERATIONS, atomic
 CONFIG = Path("/etc/house-deploy")
 CODE = Path("/opt/house-deploy")
 SHA = re.compile(r"[0-9a-f]{40}")
+IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
 
 
 def github(path):
@@ -55,10 +56,20 @@ def migration_blobs(tree):
             and entry["path"].endswith(".sql")}
 
 
-def verify_migrations(before, after):
+class MigrationsChanged(RuntimeError):
+    def __init__(self, changes):
+        super().__init__("Existing runtime migrations changed; operator review required")
+        self.changes = changes
+
+
+def verify_migrations(before, after, accepted=()):
+    """Refuse any applied migration that is edited, renamed or deleted upstream,
+    unless the owner accepted that exact path at the exact blob residents have."""
     old, new = migration_blobs(before), migration_blobs(after)
-    if any(new.get(path) != sha for path, sha in old.items()):
-        raise RuntimeError("Existing runtime migrations changed; operator review required")
+    changes = sorted(f"{path}@{sha}" for path, sha in old.items() if new.get(path) != sha)
+    refused = [change for change in changes if change not in set(accepted)]
+    if refused:
+        raise MigrationsChanged(refused)
 
 
 class Worker:
@@ -110,6 +121,13 @@ class Worker:
         revision = self.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture=True)
         if not SHA.fullmatch(revision):
             raise RuntimeError("Invalid master revision")
+        expected = self.data.get("expected_revision")
+        if expected and revision != expected:
+            # Master moved on after the caller checked it. Deploy nothing; the
+            # newer commit's own request will deploy it once it has passed CI.
+            self.report("master moved on; nothing deployed", state="superseded",
+                        rails_revision=revision)
+            return
         self.report("master resolved", rails_revision=revision)
         # Kamal executes only after checkout; service scripts remain root-installed
         # and cannot silently change through a web deployment.
@@ -152,6 +170,45 @@ class Worker:
         self.rails("RefreshTelegramWebhooksJob.perform_later; puts({ok:true}.to_json)")
         self.report("Rails healthy")
 
+    def container_exists(self, name):
+        result = subprocess.run(["docker", "container", "inspect", "--format", "{{.Id}}", name],
+                                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                timeout=60)
+        self.log.write(result.stdout + result.stderr)
+        self.log.flush()
+        if result.returncode and "No such container" not in result.stderr:
+            raise RuntimeError("Subprocess failed; private diagnostics retained")
+        return result.returncode == 0
+
+    def present_residents(self, residents):
+        """An inactive agent whose container was never made (or was removed) has
+        nothing to roll: leave it alone and say so. Its image tag, if it is a
+        stock alias, still moves with the fleet. A missing container on an
+        ACTIVE resident is real damage, so that still stops the run.
+
+        A resident on its own VM has its container there, not on this host, so
+        it is never probed here or counted as missing. An active one is
+        returned separately and rolled through its runner (roll_vm_residents);
+        an inactive one (a retired throwaway) is left alone and reported."""
+        present, absent, elsewhere, on_vm = [], [], [], []
+        for resident in residents:
+            if resident.get("on_vm"):
+                if resident["active"]:
+                    on_vm.append(resident)
+                else:
+                    elsewhere.append(resident["id"])
+            elif self.container_exists(resident["container_name"]):
+                present.append(resident)
+            elif resident["active"]:
+                raise RuntimeError("Active resident has no container; operator review required")
+            else:
+                absent.append(resident["id"])
+        if absent:
+            self.report("inactive residents without containers left alone", absent=absent)
+        if elsewhere:
+            self.report("inactive residents on their own servers left alone", on_vm=elsewhere)
+        return present, on_vm
+
     def inspect_image(self, image):
         return json.loads(self.run(["docker", "image", "inspect", image], capture=True))[0]
 
@@ -173,23 +230,45 @@ class Worker:
             self.report("Chaos resolved", chaos_revision=revision)
         residents = self.rails(
             "raise 'Async admission required' unless ResidentTurn.enabled?; "
-            "puts({residents:Agent.hosted.where.not(container_name:[nil,''])"
-            ".order(:id).map{|a| a.attributes.slice('id','container_name','container_image','active','paused')}}.to_json)"
+            "puts({residents:Agent.hosted.where.not(container_name:[nil,'']).includes(:placement)"
+            ".order(:id).map{|a| a.attributes.slice('id','container_name','container_image','active','paused')"
+            ".merge('on_vm'=>a.placement&.backend=='hetzner_cloud')}}.to_json)"
         )["residents"]
-        if not residents:
+        residents, vm_residents = self.present_residents(residents)
+        if not residents and not vm_residents:
             raise RuntimeError("No resident containers")
-        atomic(self.directory / "previous-residents.json", residents)
+        atomic(self.directory / "previous-residents.json", residents + vm_residents)
         previous_refs = set()
-        for resident in residents:
+        for resident in residents + vm_residents:
             profile = self.settings["custom_residents"].get(str(resident["id"]))
+            if profile is not None and resident.get("on_vm"):
+                raise RuntimeError("Custom runtime on a VM; operator review required")
             repository = resident["container_image"].rsplit(":", 1)[0]
             if profile != "development" and repository not in self.settings["stock_repositories"]:
                 raise RuntimeError("Unrecognised custom image; operator review required")
-            info = self.inspect_image(resident["container_image"])
+        # What a VM resident runs is the image its runner last confirmed, not
+        # what its tag on this host points at now. One it can't be reached on
+        # is skipped, and the run ends partial.
+        vm_running, unreachable = [], []
+        for resident in vm_residents:
+            state = self.rails(self.vm_script(), {"DEPLOY_VM_MODE": "inspect",
+                                                  "DEPLOY_RESIDENT_ID": str(resident["id"])})
+            if state.get("running") and IMAGE_ID.fullmatch(state.get("image") or ""):
+                vm_running.append(dict(resident, running_image=state["image"]))
+            else:
+                unreachable.append(resident["id"])
+        if unreachable:
+            self.report("residents on unreachable servers left unchanged", skipped=list(unreachable))
+        for resident in residents + vm_running:
+            # A VM's running image is still on this host: it was built here and
+            # handed over by ID, and deploys never prune.
+            info = self.inspect_image(resident.get("running_image") or resident["container_image"])
             before_ref = info["Config"].get("Labels", {}).get("house.souls.chaos-ref", "")
             if not SHA.fullmatch(before_ref):
                 raise RuntimeError("Previous runtime has no source label")
             previous_refs.add(before_ref)
+        if not previous_refs:
+            raise RuntimeError("No reachable residents; operator review required")
         if pinned:
             # Never pick a winner between residents: one running revision or none.
             if len(previous_refs) != 1:
@@ -202,7 +281,14 @@ class Worker:
             comparison = github(f"compare/{old}...{revision}")
             if comparison["status"] not in ("ahead", "identical"):
                 raise RuntimeError("Refusing runtime downgrade or divergent release")
-            verify_migrations(github(f"git/trees/{old}?recursive=1"), target_tree)
+            try:
+                verify_migrations(github(f"git/trees/{old}?recursive=1"), target_tree,
+                                  self.data.get("accepted_migrations", []))
+            except MigrationsChanged as error:
+                # Public on purpose: these upstream paths are what the owner reviews
+                # and pastes into accept_migrations to let this release through.
+                self.report("migrations changed upstream", migration_changes=error.changes)
+                raise
 
         tag = f"deploy-{self.data['id']}"
         stock = self.settings["stock_repository"] + ":" + tag
@@ -227,6 +313,9 @@ class Worker:
                                     "--version"], capture=True)
                 if running != version:
                     raise RuntimeError("Rebuilt Chaos differs from the running one")
+            for resident in vm_running:
+                if self.image_version(resident["running_image"]) != version:
+                    raise RuntimeError("Rebuilt Chaos differs from the running one")
         development = None
         if any(str(r["id"]) in self.settings["custom_residents"] for r in residents):
             development = self.settings["development_repository"] + ":" + tag
@@ -235,7 +324,10 @@ class Worker:
                       "-f", str(self.repo / "agent-runtime/Dockerfile.mira-dev"),
                       "-t", development, str(self.repo / "agent-runtime")], timeout=7200)
             self.check_runtime_permissions(development)
-        skipped = []
+        skipped = list(unreachable)
+        # Residents now running the stock image this run built. Births use the
+        # stock alias, so it moves once one of them proves the image runs.
+        proven = []
         script = (CODE / "roll-resident.rb").read_text()
         for resident in residents:
             resident_id = resident["id"]
@@ -253,6 +345,8 @@ class Worker:
                 if result["result"] in ("healthy", "current"):
                     atomic(self.directory / f"resident-{resident_id}.json", result)
                     self.report("resident healthy", resident_id=resident_id)
+                    if image == stock:
+                        proven.append(resident_id)
                     break
                 if result["result"] != "busy":
                     raise RuntimeError("Unexpected restart result")
@@ -261,12 +355,86 @@ class Worker:
                     self.report("busy resident left unchanged", skipped=skipped)
                     break
                 time.sleep(15)
+        if vm_running:
+            self.roll_vm_residents(vm_running, stock, version, skipped, proven)
+        # A partial run still moves the alias: what was skipped was busy or
+        # unreachable, not broken, and new residents (on the host or their own
+        # VM) must be born on the Chaos the house is moving to, not on the last
+        # run that happened to reach everyone. A failed run never gets here.
+        if proven:
+            for alias in self.settings["stock_aliases"]:
+                self.run(["docker", "tag", stock, alias])
         if skipped:
-            self.report("runtime rollout incomplete", state="partial", skipped=skipped)
+            self.report("runtime rollout incomplete", state="partial", skipped=skipped,
+                        births_image_moved=bool(proven))
             return
-        for alias in self.settings["stock_aliases"]:
-            self.run(["docker", "tag", stock, alias])
+        if not proven:
+            # Only custom residents moved: the stock image never ran as one.
+            self.report("all residents healthy", births_image_moved=False)
+            return
         self.report("all residents healthy")
+
+    def vm_script(self):
+        return (CODE / "roll-vm-resident.rb").read_text()
+
+    def image_version(self, image):
+        return self.run(["docker", "run", "--rm", "--network", "none", "--entrypoint",
+                         "chaos", image, "--version"], capture=True)
+
+    def roll_vm_residents(self, vm_running, stock, version, skipped, proven):
+        """Each VM gets the stock image this run built and checked, by image ID,
+        through the same restart its runner does for new credentials. Turns
+        are held from the moment the start is queued until the runner confirms
+        that exact image. A failed restart keeps the hold and stops the run."""
+        target_id = self.run(["docker", "image", "inspect", "--format", "{{.Id}}", stock],
+                             capture=True)
+        if not IMAGE_ID.fullmatch(target_id):
+            raise RuntimeError("Built image has no image ID")
+        script = self.vm_script()
+        for resident in vm_running:
+            resident_id = resident["id"]
+            if version_tuple(version) < version_tuple(self.image_version(resident["running_image"])):
+                raise RuntimeError("Refusing runtime version downgrade")
+            self.report("waiting for idle resident", resident_id=resident_id)
+            deadline = time.monotonic() + self.settings.get("idle_wait_seconds", 600)
+            while True:
+                result = self.rails(script, {
+                    "DEPLOY_VM_MODE": "start", "DEPLOY_RESIDENT_ID": str(resident_id),
+                    "DEPLOY_RESIDENT_IMAGE": stock, "DEPLOY_RESIDENT_IMAGE_ID": target_id})
+                if result["result"] in ("started", "current", "unavailable"):
+                    break
+                if result["result"] != "busy":
+                    raise RuntimeError("Unexpected restart result")
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(15)
+            if result["result"] == "current":
+                atomic(self.directory / f"resident-{resident_id}.json", result)
+                self.report("resident healthy", resident_id=resident_id)
+                proven.append(resident_id)
+                continue
+            if result["result"] != "started":
+                skipped.append(resident_id)
+                self.report("busy resident left unchanged", skipped=skipped)
+                continue
+            self.report("waiting for resident's server", resident_id=resident_id)
+            # The VM fetches the image from the house before it can restart.
+            deadline = time.monotonic() + self.settings.get("vm_restart_wait_seconds", 3600)
+            while True:
+                status = self.rails(script, {
+                    "DEPLOY_VM_MODE": "status", "DEPLOY_RESIDENT_ID": str(resident_id),
+                    "DEPLOY_RESIDENT_IMAGE_ID": target_id,
+                    "DEPLOY_VM_COMMAND_ID": str(result["command_id"])})
+                if status["result"] == "healthy":
+                    atomic(self.directory / f"resident-{resident_id}.json", status)
+                    self.report("resident healthy", resident_id=resident_id)
+                    proven.append(resident_id)
+                    break
+                if status["result"] != "pending":
+                    raise RuntimeError("VM resident restart failed; turns stay held for operator review")
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("VM resident restart did not settle; turns stay held until it does")
+                time.sleep(15)
 
     def check_runtime_permissions(self, image):
         self.run(["docker", "run", "--rm", "--network", "none", "--user", "agent",
@@ -284,6 +452,8 @@ class Worker:
             with (ROOT / "deployment.lock").open("a") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 self.checkout()
+                if self.data["state"] == "superseded":
+                    return
                 if self.data["operation"] in ("rails", "both"):
                     self.deploy_rails()
                 if self.data["operation"] in ("chaos", "both"):
@@ -311,4 +481,4 @@ if __name__ == "__main__":
         fcntl.flock(gate, fcntl.LOCK_EX)
         worker = Worker(sys.argv[1])
     worker.execute()
-    sys.exit(0 if worker.data["state"] == "success" else 1)
+    sys.exit(0 if worker.data["state"] in ("success", "superseded") else 1)

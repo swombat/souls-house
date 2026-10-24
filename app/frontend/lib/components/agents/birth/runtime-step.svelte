@@ -1,12 +1,14 @@
 <script>
   import HouseAllowance from '$lib/components/agents/house-allowance.svelte';
+  import HouseModelChoice from '$lib/components/agents/house-model-choice.svelte';
   import { CardHeader, CardTitle, CardDescription, CardContent } from '$lib/components/shadcn/card';
   import { siteName } from '$lib/branding';
 
   import { Label } from '$lib/components/shadcn/label';
   import { Switch } from '$lib/components/shadcn/switch';
   import AgentModelSelect from '$lib/components/agents/AgentModelSelect.svelte';
-  let { form, grouped_models, selectedModel = $bindable() } = $props();
+  let { form, grouped_models, houseOffered = false, selectedModel = $bindable() } = $props();
+  let houseModels = $derived(grouped_models['On the house'] || []);
 </script>
 
 <CardHeader>
@@ -15,8 +17,12 @@
     >Choose the substrate that wakes and whether {$siteName} offers regular unprompted time.</CardDescription>
 </CardHeader>
 <CardContent class="space-y-6">
+  {#if houseOffered && houseModels.length > 0}
+    <HouseModelChoice models={houseModels} bind:value={selectedModel} />
+  {/if}
+
   <div class="space-y-2">
-    <Label>Model</Label>
+    <Label>{houseOffered ? 'Or any model' : 'Model'}</Label>
     <AgentModelSelect groupedModels={grouped_models} bind:value={selectedModel} triggerClass="w-full" />
     <p class="text-sm text-muted-foreground">
       Changing the model later changes how they think and how they feel to talk to. {$siteName} should never make that change

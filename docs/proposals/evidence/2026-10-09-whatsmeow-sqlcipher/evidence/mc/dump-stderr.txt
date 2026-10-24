@@ -1,0 +1,20 @@
+driver: github.com/jgiannuzzi/go-sqlite3 @ sqlite3mc-2.2.7 (SQLite3 Multiple Ciphers 2.2.7, SQLite 3.51.2) in sqlcipher legacy=4 mode
+integrity_check: ok
+table comms_message                            rows=26402
+table whatsmeow_app_state_mutation_macs        rows=1
+table whatsmeow_app_state_sync_keys            rows=1
+table whatsmeow_app_state_version              rows=1
+table whatsmeow_chat_settings                  rows=1
+table whatsmeow_contacts                       rows=2
+table whatsmeow_device                         rows=1
+table whatsmeow_event_buffer                   rows=1
+table whatsmeow_identity_keys                  rows=501
+table whatsmeow_lid_map                        rows=2
+table whatsmeow_message_secrets                rows=2
+table whatsmeow_nct_salt                       rows=1
+table whatsmeow_pre_keys                       rows=6
+table whatsmeow_privacy_tokens                 rows=1
+table whatsmeow_retry_buffer                   rows=1
+table whatsmeow_sender_keys                    rows=1
+table whatsmeow_sessions                       rows=502
+table whatsmeow_version                        rows=1

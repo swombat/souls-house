@@ -170,6 +170,29 @@ class HetznerCloudClient
     end
   end
 
+  # Mean CPU (percent of one vCPU) over a window, or nil when Hetzner has no
+  # points for it yet. Read-only.
+  def server_cpu(id, start:, finish:)
+    body = request(:get, "/servers/#{Integer(id)}/metrics", nil,
+      type: "cpu", start: start.utc.iso8601, end: finish.utc.iso8601, step: 60)
+    values = body.dig("metrics", "time_series", "cpu", "values") || []
+    numbers = values.filter_map { |_time, value| Float(value, exception: false) }
+    numbers.empty? ? nil : (numbers.sum / numbers.size).round(2)
+  end
+
+  # Gross monthly list price in EUR per location for each server type name:
+  # { "cx23" => { "fsn1" => 4.15, ... } }. Read-only.
+  def server_type_prices(names)
+    Array(names).to_h do |name|
+      body = request(:get, "/server_types", nil, name: name.to_s)
+      type = Array(body["server_types"]).find { |row| row["name"] == name.to_s } || {}
+      prices = Array(type["prices"]).to_h do |price|
+        [ price["location"].to_s, Float(price.dig("price_monthly", "gross"), exception: false)&.round(2) ]
+      end
+      [ name.to_s, prices.compact ]
+    end
+  end
+
   def find_server(id)
     Server.from_api(request(:get, "/servers/#{Integer(id)}").fetch("server"))
   rescue NotFound

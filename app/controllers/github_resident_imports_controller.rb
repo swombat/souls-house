@@ -13,6 +13,10 @@ class GithubResidentImportsController < ApplicationController
   end
 
   def create
+    if (refusal = Agents::VmBirthPolicy.current.refusal(kind: :import))
+      return redirect_to new_account_github_resident_import_path(current_account), inertia: { errors: { base: [ refusal ] } }
+    end
+
     attrs = params.require(:github_resident_import).permit(:name, :model_id, :service_connection_id, :branch, :sync_strategy)
     attrs[:sync_strategy] ||= "existing"
     connection = current_account.service_connections.find_by_public_id!(attrs.delete(:service_connection_id))

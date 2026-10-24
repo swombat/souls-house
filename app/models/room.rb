@@ -1,0 +1,96 @@
+# A place an account's conversations live. Conversations without a room are in
+# Main, which is not a row: it cannot be removed or emptied by mistake. Its name
+# and description are account settings (Account#main_room_label).
+class Room < ApplicationRecord
+
+  include Broadcastable
+  include SyncAuthorizable
+
+  MAIN = "Main".freeze
+
+  belongs_to :account
+  has_many :chats
+  # One by one, not dependent: :nullify, so each move refreshes reply attention.
+  before_destroy :move_chats_to_main
+  broadcasts_to :account
+
+  validates :name, presence: true, length: { maximum: 40 },
+    format: { without: /\0/, message: "must not contain NUL" }
+  validates :name, uniqueness: { scope: :account_id, case_sensitive: false }
+  # "Use this room when…": a guideline for residents, not an instruction.
+  validates :description, length: { maximum: 280 },
+    format: { without: /\0/, message: "must not contain NUL" }
+  validate :name_is_not_main
+  validate :account_cannot_change, on: :update
+  before_validation -> {
+    self.name = name.strip if name.is_a?(String)
+    self.description = description.strip.presence if description.is_a?(String)
+  }
+  before_create -> { self.position = (account.rooms.maximum(:position) || -1) + 1 }
+  after_commit :broadcast_navigation
+
+  scope :ordered, -> { order(:position, :id) }
+
+  # Public writes accept opaque IDs only, not database IDs or coercible values.
+  def self.resolve_for(account, public_id)
+    return if public_id.nil?
+
+    unless public_id.is_a?(String) && public_id.match?(/\A[a-zA-Z]+\z/) &&
+        (id = decode_id(public_id)) && encode_id(id) == public_id
+      raise ActiveRecord::RecordNotFound
+    end
+
+    account.rooms.find(id)
+  end
+
+  def as_json(_options = nil)
+    { "id" => to_param, "name" => name }
+  end
+
+  # The room as a place to choose, with what it is for. Main has no row, so
+  # callers listing destinations put Account#main_room_json first.
+  def directory_json
+    as_json.merge("description" => description)
+  end
+
+  # Swap with the neighbour in the given direction (-1 up, +1 down).
+  def move!(direction)
+    siblings = account.rooms.ordered.to_a
+    index = siblings.index(self)
+    other = siblings[index + direction] if index && (index + direction).between?(0, siblings.size - 1)
+    return unless other
+
+    transaction do |transaction|
+      siblings.each_with_index { |room, i| room.update_column(:position, i) }
+      mine = index
+      update_column(:position, mine + direction)
+      other.update_column(:position, mine)
+      # These position writes bypass model callbacks. Defer the single marker
+      # to the outer commit too, so a rolled-back move never reaches the UI.
+      transaction.after_commit { broadcast_navigation }
+    end
+  end
+
+  private
+
+  def broadcast_navigation
+    return if skip_broadcast
+
+    ActionCable.server.broadcast("RoomNavigation:#{account.to_param}", { action: "refresh" })
+  end
+
+  def move_chats_to_main
+    account.chats.with_discarded.where(room_id: id).find_each { |chat| chat.room = nil; chat.save!(validate: false) }
+  end
+
+  def name_is_not_main
+    return unless name.to_s.casecmp?(MAIN) || (account && name.to_s.casecmp?(account.main_room_label))
+
+    errors.add(:name, "#{account&.main_room_label || MAIN} is the default room")
+  end
+
+  def account_cannot_change
+    errors.add(:account, "cannot be changed") if will_save_change_to_account_id?
+  end
+
+end

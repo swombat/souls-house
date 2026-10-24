@@ -124,6 +124,121 @@ class DeployTemplateTest < ActiveSupport::TestCase
     assert_not_includes secrets, "$(cat "
   end
 
+  # The WhatsApp connector is off until an installation turns it on: master
+  # auto-deploys, and a deploy.yml that demanded its secrets would fail every
+  # deploy before the accessory exists.
+  test "the WhatsApp connector is absent unless HOUSE_COMMS_WHATSAPP_IMAGE is set" do
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST)) do
+      config = YAML.safe_load(render_deploy_yml)
+      assert_not config.fetch("accessories").key?("comms-whatsapp")
+      assert_not config.fetch("env").fetch("clear").key?("COMMS_WHATSAPP_CONNECTOR_URL")
+      assert_not_includes config.fetch("env").fetch("secret"), "COMMS_COMMAND_KEY"
+    end
+  end
+
+  test "turning the WhatsApp connector on wires Rails and the accessory together" do
+    comms = { "HOUSE_COMMS_WHATSAPP_IMAGE" => "registry.example/comms", "HOUSE_COMMS_WHATSAPP_DIGEST" => DUMMY_DIGEST,
+              "HOUSE_COMMS_TLS_DIR" => "/srv/comms-tls" }
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(comms)) do
+      config = YAML.safe_load(render_deploy_yml)
+      accessory = config.fetch("accessories").fetch("comms-whatsapp")
+      assert_equal "registry.example/comms@#{DUMMY_DIGEST}", accessory.fetch("image")
+      assert_includes accessory.fetch("volumes"), "comms:/data"
+      assert_equal "core=0", accessory.fetch("options").fetch("ulimit")
+      assert_equal %w[COMMS_STORE_KEY:COMMS_WHATSAPP_STORE_KEY COMMS_COMMAND_KEY], accessory.fetch("env").fetch("secret")
+      assert_equal "rails", accessory.dig("env", "clear", "COMMS_TLS_CLIENT_NAME")
+
+      runtime = config.fetch("env")
+      assert_equal "https://souls-house-comms-whatsapp:8443", runtime.dig("clear", "COMMS_WHATSAPP_CONNECTOR_URL")
+      assert_includes runtime.fetch("secret"), "COMMS_COMMAND_KEY"
+      # Everything the catalog requires before it offers WhatsApp is supplied.
+      supplied = runtime.fetch("clear").keys + runtime.fetch("secret")
+      assert_empty CommsConnector::WHATSAPP_ENV - supplied
+      %w[web jobs].each do |role|
+        assert_includes config.dig("servers", role, "options", "volume"), "/srv/comms-tls:/rails/comms-tls:ro"
+      end
+    end
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(comms).merge("HOUSE_COMMS_WHATSAPP_DIGEST" => "latest")) do
+      assert_raises(RuntimeError) { render_deploy_yml }
+    end
+  end
+
+  test "the Telegram connector is absent unless HOUSE_COMMS_TELEGRAM_IMAGE is set" do
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST)) do
+      config = YAML.safe_load(render_deploy_yml)
+      assert_not config.fetch("accessories").key?("comms-telegram")
+      assert_not config.fetch("env").fetch("clear").key?("COMMS_CONNECTOR_URL")
+    end
+  end
+
+  test "turning the Telegram connector on wires Rails and its own accessory together" do
+    comms = { "HOUSE_COMMS_TELEGRAM_IMAGE" => "registry.example/telegram", "HOUSE_COMMS_TELEGRAM_DIGEST" => DUMMY_DIGEST,
+              "HOUSE_COMMS_TLS_DIR" => "/srv/comms-tls" }
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(comms)) do
+      config = YAML.safe_load(render_deploy_yml)
+      assert_not config.fetch("accessories").key?("comms-whatsapp")
+      accessory = config.fetch("accessories").fetch("comms-telegram")
+      assert_equal "registry.example/telegram@#{DUMMY_DIGEST}", accessory.fetch("image")
+      assert_includes accessory.fetch("volumes"), "comms_telegram:/data"
+      assert_includes accessory.fetch("volumes"), "/srv/comms-tls:/tls:ro"
+      assert_equal "core=0", accessory.fetch("options").fetch("ulimit")
+      assert_equal true, accessory.fetch("options").fetch("read-only")
+      assert_equal %w[COMMS_STORE_KEY COMMS_COMMAND_KEY TELEGRAM_API_ID TELEGRAM_API_HASH], accessory.fetch("env").fetch("secret")
+      assert_equal "rails", accessory.dig("env", "clear", "COMMS_TLS_CLIENT_NAME")
+      assert_equal "/tls/telegram.pem", accessory.dig("env", "clear", "COMMS_TLS_CERT")
+
+      runtime = config.fetch("env")
+      assert_equal "https://souls-house-comms-telegram:8443", runtime.dig("clear", "COMMS_CONNECTOR_URL")
+      assert_not runtime.fetch("clear").key?("COMMS_WHATSAPP_CONNECTOR_URL")
+      supplied = runtime.fetch("clear").keys + runtime.fetch("secret")
+      assert_empty CommsConnector::TELEGRAM_ENV - supplied, "everything the catalog requires before it offers Telegram"
+      %w[web jobs].each do |role|
+        assert_includes config.dig("servers", role, "options", "volume"), "/srv/comms-tls:/rails/comms-tls:ro"
+      end
+    end
+    both = comms.merge("HOUSE_COMMS_WHATSAPP_IMAGE" => "registry.example/comms", "HOUSE_COMMS_WHATSAPP_DIGEST" => DUMMY_DIGEST)
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(both)) do
+      config = YAML.safe_load(render_deploy_yml)
+      assert config.fetch("accessories").key?("comms-whatsapp")
+      assert config.fetch("accessories").key?("comms-telegram")
+      assert_equal 1, config.dig("servers", "web", "options", "volume").count("/srv/comms-tls:/rails/comms-tls:ro")
+      assert_equal 1, config.fetch("env").fetch("secret").count("COMMS_COMMAND_KEY")
+    end
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(comms).merge("HOUSE_COMMS_TELEGRAM_DIGEST" => "latest")) do
+      assert_raises(RuntimeError) { render_deploy_yml }
+    end
+  end
+
+  test "the voice embeddings service is absent unless HOUSE_VOICE_EMBEDDINGS_IMAGE is set" do
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST)) do
+      config = YAML.safe_load(render_deploy_yml)
+      assert_not config.fetch("accessories").key?("voice-embeddings")
+      assert_not config.fetch("env").fetch("clear").key?("VOICE_EMBEDDING_URL")
+      assert_not_includes config.fetch("env").fetch("secret"), "VOICE_EMBEDDING_TOKEN"
+    end
+  end
+
+  test "turning voice embeddings on wires Rails and a private, read-only accessory together" do
+    voice = { "HOUSE_VOICE_EMBEDDINGS_IMAGE" => "registry.example/voice", "HOUSE_VOICE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST }
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(voice)) do
+      config = YAML.safe_load(render_deploy_yml)
+      accessory = config.fetch("accessories").fetch("voice-embeddings")
+      assert_equal "registry.example/voice@#{DUMMY_DIGEST}", accessory.fetch("image")
+      assert_equal "2g", accessory.fetch("options").fetch("memory")
+      assert_equal 2, accessory.fetch("options").fetch("cpus")
+      assert_equal [ "VOICE_EMBEDDING_TOKEN" ], accessory.fetch("env").fetch("secret")
+      assert_equal true, accessory.fetch("options").fetch("read-only")
+      assert_equal "core=0", accessory.fetch("options").fetch("ulimit")
+      assert_not accessory.key?("port"), "no public port"
+      runtime = config.fetch("env")
+      assert_equal "http://souls-house-voice-embeddings:8080", runtime.dig("clear", "VOICE_EMBEDDING_URL")
+      assert_equal 1, runtime.fetch("secret").count("VOICE_EMBEDDING_TOKEN")
+    end
+    with_env(example_env.merge("HOUSE_EMBEDDINGS_DIGEST" => DUMMY_DIGEST).merge(voice).merge("HOUSE_VOICE_EMBEDDINGS_DIGEST" => "latest")) do
+      assert_raises(RuntimeError) { render_deploy_yml }
+    end
+  end
+
   private
 
   def render_deploy_yml

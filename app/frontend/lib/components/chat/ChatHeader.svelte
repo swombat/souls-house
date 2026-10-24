@@ -126,6 +126,15 @@
     }
   }
 
+  function moveToRoom(key) {
+    if (!chat) return;
+    router.patch(
+      `/accounts/${account.id}/chats/${chat.id}/room`,
+      { room_id: key === 'main' ? null : key },
+      { preserveScroll: true }
+    );
+  }
+
   function dismissReplyRequest() {
     const through = allMessages?.at(-1)?.id;
     if (!chat || !through) return;
@@ -197,6 +206,8 @@
       onFork={forkConversation}
       onWhiteboardOpen={() => onwhiteboardopen?.()}
       onArchive={archiveChat}
+      rooms={$page.props?.rooms || []}
+      onMoveToRoom={moveToRoom}
       onDelete={deleteChat}
       onModerateAll={moderateAllMessages} />
   </div>

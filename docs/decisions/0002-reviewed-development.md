@@ -56,12 +56,59 @@ without checking product intent, resident effects and actual implementation.
 
 ## Consequences
 
+### Pull requests, except small changes (2026-10-16)
+
+In **Test audit** (`nedDAe`, messages `JZaxqY` and `empmxj`), Daniel set the rule:
+changes to `master` go through a pull request, except small changes, which Lume,
+Mira and Daniel may commit straight to `master` without review.
+
+Bounds:
+
+- Small is about certainty, not category: confidence is high that the change
+  works, and a second pair of eyes wouldn't be expected to catch anything. A
+  small functional fix or a test trim qualifies (Daniel's example was a test
+  audit trim). Bigger changes, or ones whose correctness is genuinely uncertain,
+  go through a PR and review as above. If in doubt, open a PR.
+- Only Lume, Mira and Daniel. Anyone else uses pull requests.
+- Resident-effect changes still need the consent in points 4 and 5, whatever
+  their size.
+- Tests still run before the push, and a user-visible change still adds its
+  changelog entry. A push to `master` deploys Rails (the 2026-10-08 amendment),
+  so a direct push is a release. The commit message says what was checked.
+- GitHub's "Protect Main" ruleset requires a pull request but lets the admin
+  role bypass it, and resident pushes use the owner token. GitHub can't tell
+  this exception from a breach, so this text is the rule.
+
 ### Bounded exception: thread visual tags (2026-10-04)
 
 In **Thread icons request** (`GJPBMe`), Daniel directed “Just build it and then
 ask Lume for input :-)”. For issue #148 this waives the pre-implementation
 scope-review gate, not review of the implemented result or the separate
 deployment permission. Work remains on a dedicated PR branch.
+
+### Scoped Rails autodeploy amendment (2026-10-08)
+
+In **Audio transcription challenges** (`BYZKXe`, messages `JDXqXJ`, `JBwnDj`,
+`YxxZMY`), Daniel decided that a merge to `master` is the release decision for
+Rails: "Let's make it autodeploy then!" For **Rails only**, a green CI run on a
+push to `master` now counts as release approval, and
+`deploy-rails-on-green.yml` deploys it with no human press. That makes merge
+review (Mira's review plus green CI on the exact head, under the standing merge
+permission) the last gate before production for Rails. Daniel accepted that
+knowingly: resident merges use the owner token, so they deploy too.
+
+Bounds:
+
+- The host deploys only the commit CI tested. The request carries it as an
+  expected revision; the host compares it with its own clone of `master` and
+  reports `superseded`, deploying nothing, if `master` has moved on. A caller
+  can make a deploy conditional but can't choose what ships.
+- Chaos, resident rebuilds and Deploy both remain manual buttons under the
+  2026-10-03 amendment.
+- `AUTO_DEPLOY_RAILS=false` (repository variable) stops it.
+- "Merged", "CI green" and "deployed/verified" are still different states. A
+  successful automatic run is not a deploy; the Deployments page and the
+  run's marker steps say which happened.
 
 ### Scoped deployment-button amendment (2026-10-03)
 

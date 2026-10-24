@@ -61,6 +61,8 @@ test.describe('Agent integrations', () => {
     await expect(component.getByLabel('Bot username')).toHaveValue('lume_bot');
     await expect(component.getByLabel('Bot token')).not.toHaveAttribute('required', '');
     await expect(component).toContainText('2 subscribers connected');
-    await expect(component).toContainText('https://t.me/lume_bot?start=registration-token');
+    // Even a supplied bearer link stays hidden until the user explicitly requests it.
+    await expect(component).not.toContainText('https://t.me/lume_bot?start=registration-token');
+    await expect(component.getByRole('button', { name: 'Reveal registration link' })).toBeEnabled();
   });
 });

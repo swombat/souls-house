@@ -3,8 +3,8 @@ require 'test_helper'
 class HouseInference::RequestTest < ActiveSupport::TestCase
 
   setup do
-    @offering = HouseInference::Offering.find(HouseInference::Offering::MODEL_ID)
-    @input = { 'model' => HouseInference::Offering::MODEL_ID, 'stream' => true,
+    @offering = HouseInference::Offering.find(HouseInference::Offering::DEEPSEEK_MODEL_ID)
+    @input = { 'model' => HouseInference::Offering::DEEPSEEK_MODEL_ID, 'stream' => true,
       'messages' => [ { 'role' => 'user', 'content' => 'Hello' } ] }
   end
 
@@ -20,6 +20,36 @@ class HouseInference::RequestTest < ActiveSupport::TestCase
     assert_equal @offering[:max_price], body.dig('provider', 'max_price')
     assert_equal 16_384, body['max_tokens']
     assert_equal 'deepseek/deepseek-v4.1-flash', body['model']
+  end
+
+  test 'parallel_tool_calls true is honoured by omission; false and non-booleans are refused' do
+    tool = { 'type' => 'function', 'function' => { 'name' => 'noop', 'parameters' => { 'type' => 'object', 'properties' => {} } } }
+    body = HouseInference::Request.build(@input.merge('tools' => [ tool ], 'parallel_tool_calls' => true), @offering)
+    assert_not body.key?('parallel_tool_calls'), 'parallel_tool_calls must not reach OpenRouter'
+    assert_equal true, body.dig('provider', 'require_parameters')
+    assert_equal [ tool ], body['tools']
+    [ false, nil, 'true', 1 ].each do |value|
+      error = assert_raises(HouseInference::Error, "parallel_tool_calls=#{value.inspect}") do
+        HouseInference::Request.build(@input.merge('tools' => [ tool ], 'parallel_tool_calls' => value), @offering)
+      end
+      assert_equal 422, error.status
+    end
+  end
+
+  test 'Haiku is pinned to Anthropic with its own caps' do
+    offering = HouseInference::Offering.find(HouseInference::Offering::HAIKU_MODEL_ID)
+    body = HouseInference::Request.build(@input.merge('model' => HouseInference::Offering::HAIKU_MODEL_ID, 'max_tokens' => 999_999), offering)
+    assert_equal 'anthropic/claude-haiku-5.5', body['model']
+    assert_equal [ 'anthropic' ], body.dig('provider', 'only')
+    assert_equal false, body.dig('provider', 'allow_fallbacks')
+    assert_equal({ prompt: 0.6, completion: 3.0 }, body.dig('provider', 'max_price'))
+    assert_equal 16_384, body['max_tokens']
+  end
+
+  test 'Haiku input is bounded below its million-token context' do
+    offering = HouseInference::Offering.find(HouseInference::Offering::HAIKU_MODEL_ID)
+    @input['messages'][0]['content'] = 'x' * 1_000_000
+    assert_raises(HouseInference::Error) { HouseInference::Request.build(@input, offering) }
   end
 
   test 'paid extras arbitrary routes and multimodal inputs are refused' do

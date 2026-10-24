@@ -26,7 +26,13 @@ require "bundler/setup"
 
 require_relative "../config/local_instance"
 require_relative "../config/instance_toolchain"
+require_relative "../config/vite_guard"
 LocalInstance::Toolchain.bun!(LocalInstance::ROOT)
 LocalInstance.current.configure!
+ViteGuard.install!
 
-load Gem.bin_path("vite_ruby", "vite")
+begin
+  load Gem.bin_path("vite_ruby", "vite")
+rescue ViteGuard::MissingViteError => error
+  abort "bin/vite: #{error.message}"
+end

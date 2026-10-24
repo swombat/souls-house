@@ -516,12 +516,28 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Select valid residents from this account", flash[:alert]
   end
 
-  test "should destroy chat" do
-    assert_difference "Chat.count", -1 do
+  test "legacy DELETE cannot destroy a chat, its messages or their attached blob" do
+    message = @chat.messages.create!(role: "user", user: @user, content: "Keep this message")
+    message.attachments.attach(
+      io: file_fixture("test_image.png").open,
+      filename: "test_image.png",
+      content_type: "image/png"
+    )
+    blob = message.attachments.first.blob
+
+    assert_no_difference [ "Chat.count", "Message.count", "ActiveStorage::Blob.count" ] do
       delete account_chat_path(@account, @chat)
     end
 
-    assert_redirected_to account_chats_path(@account)
+    assert_response :not_found
+    assert Chat.exists?(@chat.id)
+    assert Message.exists?(message.id)
+    assert ActiveStorage::Blob.exists?(blob.id)
+    assert message.reload.attachments.attached?
+    assert_equal "Keep this message", message.content
+    assert_equal blob.id, message.attachments.first.blob.id
+    assert_equal "Test Conversation", @chat.reload.title
+    assert_not @chat.reload.discarded?
   end
 
   test "should scope chats to current account" do
@@ -643,114 +659,24 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_chat_path(@account, chat)
   end
 
-  test "index should return correct Inertia props" do
-    get account_chats_path(@account)
-
-    assert_response :success
-    # For now, just verify the endpoint works - Inertia testing can be complex in test env
-  end
-
-  test "show should return correct Inertia props" do
-    # Add a message to the chat
-    @chat.messages.create!(
-      content: "Test message",
-      role: "user",
-      user: @user
-    )
-
-    get account_chat_path(@account, @chat)
-
-    assert_response :success
-    # For now, just verify the endpoint works - Inertia testing can be complex in test env
-  end
-
-  test "should handle latest scope in index" do
-    # Empty chats use creation time, not metadata update time.
-    old_chat = @account.chats.create!(
-      model_id: "gpt-4o",
-      title: "Old Chat",
-      created_at: 2.days.ago
-    )
-    new_chat = @account.chats.create!(
-      model_id: "gpt-4o",
-      title: "New Chat",
-      created_at: 1.hour.ago
-    )
-
-    get account_chats_path(@account)
-
-    assert_response :success
-    # Verify that chats are loaded in the correct order by checking the scope
-    chats = @account.chats.latest.to_a
-    # Should include all chats and be in latest order
-    assert_equal 3, chats.count
-    chat_ids = chats.map(&:id)
-    assert_includes chat_ids, new_chat.id
-    assert_includes chat_ids, @chat.id
-    assert_includes chat_ids, old_chat.id
-    assert chats.first.activity_at >= chats.second.activity_at
-  end
-
-  test "should create chat with file uploads" do
-    agent = agents(:research_assistant)
-    # Create a test file
-    file = fixture_file_upload("test.txt", "text/plain")
-
-    assert_difference "Chat.count" do
-      assert_difference "Message.count" do
-        post account_chats_path(@account), params: {
-          message: "Hello with file",
-          files: [ file ],
-          agent_ids: [ agent.to_param ]
-        }
-      end
-    end
-
-    chat = Chat.last
-    message = chat.messages.last
-    assert_equal "Hello with file", message.content
-    assert_equal 1, message.attachments.count
-    assert_redirected_to account_chat_path(@account, chat)
-  end
-
-  test "should update web_access to true" do
+  test "update changes web access and model, and can turn web access back off" do
     assert_not @chat.web_access
+    assert_equal "openrouter/auto", @chat.model_id
 
     patch account_chat_path(@account, @chat), params: {
-      chat: { web_access: true }
+      chat: { model_id: "openai/gpt-4o-mini", web_access: true }
     }
 
-    # Update redirects to the chat page on success
     assert_redirected_to account_chat_path(@account, @chat)
     @chat.reload
-    assert @chat.web_access
-  end
-
-  test "should update web_access to false" do
-    @chat.update!(web_access: true)
+    assert_equal "openai/gpt-4o-mini", @chat.model_id
     assert @chat.web_access
 
-    patch account_chat_path(@account, @chat), params: {
-      chat: { web_access: false }
-    }
+    patch account_chat_path(@account, @chat), params: { chat: { web_access: false } }
 
-    # Update redirects to the chat page on success
     assert_redirected_to account_chat_path(@account, @chat)
-    @chat.reload
-    assert_not @chat.web_access
-  end
-
-  test "update should broadcast refresh automatically" do
-    # Verify that the update succeeds (broadcast happens via after_commit callback)
-    patch account_chat_path(@account, @chat), params: {
-      chat: { web_access: true }
-    }
-
-    # Update redirects to the chat page on success
-    assert_redirected_to account_chat_path(@account, @chat)
-    # The broadcast happens automatically via the Broadcastable concern
-    @chat.reload
-    assert @chat.web_access
+    assert_not @chat.reload.web_access
+    assert_equal "openai/gpt-4o-mini", @chat.model_id
   end
 
   test "update should scope to current account" do
@@ -787,116 +713,53 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_not @chat.web_access
   end
 
-  test "update should allow updating model_id" do
-    assert_equal "openrouter/auto", @chat.model_id
-
-    patch account_chat_path(@account, @chat), params: {
-      chat: { model_id: "openai/gpt-4o-mini" }
-    }
-
-    # Update redirects to the chat page on success
-    assert_redirected_to account_chat_path(@account, @chat)
-    @chat.reload
-    assert_equal "openai/gpt-4o-mini", @chat.model_id
-  end
-
-  test "update should allow updating multiple attributes" do
-    patch account_chat_path(@account, @chat), params: {
-      chat: {
-        model_id: "openai/gpt-4o-mini",
-        web_access: true
-      }
-    }
-
-    # Update redirects to the chat page on success
-    assert_redirected_to account_chat_path(@account, @chat)
-    @chat.reload
-    assert_equal "openai/gpt-4o-mini", @chat.model_id
-    assert @chat.web_access
-  end
-
   # Index ordering tests
 
-  test "index shows active chats before archived chats" do
-    # Create chats with specific states
-    archived_chat = @account.chats.create!(
-      model_id: "gpt-4o",
-      title: "Archived Chat",
-      updated_at: 1.minute.ago # Most recent update
-    )
+  test "index lists active chats before archived ones, even when the archived one is newer" do
+    archived_chat = @account.chats.create!(title: "Archived Chat", last_message_at: 1.minute.ago)
     archived_chat.archive!
-
-    active_chat = @account.chats.create!(
-      model_id: "gpt-4o",
-      title: "Active Chat",
-      updated_at: 1.hour.ago # Older update
-    )
+    active_chat = @account.chats.create!(title: "Active Chat", last_message_at: 1.hour.ago)
 
     get account_chats_path(@account)
-    assert_response :success
+    ids = inertia_shared_props.fetch("chats").pluck("id")
 
-    # Verify ordering: active chats first, then archived
-    active_chats = @account.chats.kept.active.latest
-    archived_chats = @account.chats.kept.archived.latest
-
-    # Active chat should be in active list, archived should be in archived list
-    assert_includes active_chats.map(&:id), active_chat.id
-    assert_includes archived_chats.map(&:id), archived_chat.id
+    assert_includes ids, active_chat.to_param
+    assert_includes ids, archived_chat.to_param
+    assert_operator ids.index(active_chat.to_param), :<, ids.index(archived_chat.to_param)
   end
 
-  test "index excludes discarded chats by default" do
-    discarded_chat = @account.chats.create!(
-      model_id: "gpt-4o",
-      title: "Discarded Chat"
-    )
+  test "index leaves discarded chats out of the sidebar by default" do
+    discarded_chat = @account.chats.create!(title: "Discarded Chat")
     discarded_chat.discard!
 
     get account_chats_path(@account)
-    assert_response :success
+    ids = inertia_shared_props.fetch("chats").pluck("id")
 
-    # Discarded chat should not be in the default view
-    kept_chats = @account.chats.kept
-    assert_not_includes kept_chats.map(&:id), discarded_chat.id
+    assert_includes ids, @chat.to_param
+    assert_not_includes ids, discarded_chat.to_param
   end
 
-  test "index shows discarded chats when member requests show_deleted" do
-    discarded_chat = @account.chats.create!(
-      model_id: "gpt-4o",
-      title: "Discarded Chat"
-    )
+  test "index includes discarded chats when the owner asks for show_deleted" do
+    discarded_chat = @account.chats.create!(title: "Discarded Chat")
     discarded_chat.discard!
 
     get account_chats_path(@account, show_deleted: true)
-    assert_response :success
 
-    # With show_deleted, discarded chat should be findable
-    all_chats = @account.chats.with_discarded
-    assert_includes all_chats.map(&:id), discarded_chat.id
+    assert_includes inertia_shared_props.fetch("chats").pluck("id"), discarded_chat.to_param
   end
 
-  test "show_deleted works for confirmed members" do
-    # team_account has user_1 as owner, and existing_user (user_id: 3) as member via team_member membership
+  test "show_deleted works for confirmed members, not just owners" do
     team_account = accounts(:team_account)
-    member_user = users(:existing_user)  # This user is member via team_member membership
-
-    discarded_chat = team_account.chats.create!(
-      model_id: "gpt-4o",
-      title: "Discarded Chat"
-    )
+    member_user = users(:existing_user) # confirmed member (role: member) via the team_member membership
+    discarded_chat = team_account.chats.create!(title: "Discarded Chat")
     discarded_chat.discard!
 
-    # Sign in as member (not admin)
     delete logout_path
-    post login_path, params: {
-      email_address: member_user.email_address,
-      password: "password123"
-    }
+    post login_path, params: { email_address: member_user.email_address, password: "password123" }
 
     get account_chats_path(team_account, show_deleted: true)
-    assert_response :success
 
-    all_chats = team_account.chats.with_discarded
-    assert_includes all_chats.map(&:id), discarded_chat.id
+    assert_includes inertia_shared_props.fetch("chats").pluck("id"), discarded_chat.to_param
   end
 
   # Pagination tests (now via messages#index)
@@ -910,11 +773,9 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     json = JSON.parse(response.body)
-    assert json.key?("messages")
-    assert json.key?("has_more")
     assert json.key?("oldest_id")
-    assert json["messages"].is_a?(Array)
     assert_equal 30, json["messages"].length  # Default limit is 30
+    assert_equal true, json["has_more"], "19 older messages remain beyond the page"
   end
 
   test "messages index returns messages before specified ID" do
@@ -999,21 +860,6 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  test "messages index indicates has_more correctly when more messages exist" do
-    chat = @account.chats.create!(model_id: "openrouter/auto")
-    # Create 50 messages (0-49)
-    messages = 50.times.map { |i| chat.messages.create!(content: "Message #{i}", role: "user", user: @user) }
-
-    # Request messages before the last one (message 49)
-    # Should get messages 19-48 (30 messages), and there should be more (0-18)
-    get account_chat_messages_path(@account, chat, before_id: messages.last.to_param),
-        headers: { "Accept" => "application/json" }
-
-    assert_response :success
-    json = JSON.parse(response.body)
-    assert_equal true, json["has_more"], "Should indicate more messages exist"
-  end
-
   test "messages index indicates has_more false when no more messages" do
     chat = @account.chats.create!(model_id: "openrouter/auto")
     # Create 5 messages (0-4)
@@ -1031,38 +877,79 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
 
   # Search tests
 
-  test "search returns results matching query" do
-    @chat.messages.create!(content: "Hello world, this is a test message", role: "user", user: @user)
+  test "search finds matching messages case-insensitively and skips the rest" do
+    match = @chat.messages.create!(content: "Ruby on Rails is great", role: "user", user: @user)
     @chat.messages.create!(content: "The AI responds with helpful information", role: "assistant")
 
-    get search_account_chats_path(@account), params: { q: "test message" }
+    get search_account_chats_path(@account), params: { q: "ruby ON rails" }
+
     assert_response :success
+    results = inertia_shared_props.fetch("results")
+    assert_equal [ match.to_param ], results.pluck("id")
+    assert_equal @chat.to_param, results.sole.fetch("chat_id")
+    assert_includes results.sole.fetch("snippet"), "Ruby on Rails"
   end
 
-  test "search is case insensitive" do
-    @chat.messages.create!(content: "Ruby on Rails is great", role: "user", user: @user)
+  test "search paginates matching messages newest first within the current account" do
+    # Search has a fixed limit of 20, so 41 matches exercise a partial third page.
+    newest_at = 1.hour.ago
+    messages = 41.times.map do |i|
+      @chat.messages.create!(
+        content: "Pagy regression match #{i}", role: "user", user: @user,
+        created_at: newest_at - i.minutes, suppress_automatic_dispatch: true
+      )
+    end
+    other_user = User.create!(email_address: "pagedsearchother@example.com")
+    other_chat = other_user.personal_account.chats.create!(model_id: "openrouter/auto")
+    other_chat.messages.create!(
+      content: "Pagy regression match from another account", role: "user", user: other_user,
+      created_at: newest_at + 1.minute, suppress_automatic_dispatch: true
+    )
 
-    get search_account_chats_path(@account), params: { q: "ruby on rails" }
-    assert_response :success
+    [ [ 1, 0, 20, nil, 2 ], [ 2, 20, 20, 1, 3 ], [ 3, 40, 1, 2, nil ] ].each do |page, offset, size, previous_page, next_page|
+      @inertia_props = nil # The helper memoizes props across requests.
+      get search_account_chats_path(@account), params: { q: "Pagy regression match", page: page }
+
+      assert_response :success
+      props = inertia_shared_props
+      assert_equal messages.slice(offset, size).map(&:to_param), props.fetch("results").pluck("id"),
+        "Search page #{page} should contain only its ordered account-scoped matches"
+      assert_equal({
+        "count" => 41, "page" => page, "pages" => 3, "last" => 3,
+        "from" => offset + 1, "to" => offset + size,
+        "prev" => previous_page, "next" => next_page,
+        "series" => [ "1", "2", "3" ], "per_page" => "20"
+      }, props.fetch("pagination"))
+    end
   end
 
   test "search with empty query returns no results" do
-    get search_account_chats_path(@account), params: { q: "" }
+    @chat.messages.create!(content: "Anything at all", role: "user", user: @user)
+
+    get search_account_chats_path(@account), params: { q: "   " }
+
     assert_response :success
+    assert_equal [], inertia_shared_props.fetch("results")
+  end
+
+  test "search excludes discarded chats and other accounts" do
+    @chat.messages.create!(content: "Find me in search", role: "user", user: @user)
+    @chat.discard!
+    other_user = User.create!(email_address: "searchother@example.com")
+    other_user.profile.update!(first_name: "Other", last_name: "User")
+    other_chat = other_user.personal_account.chats.create!(model_id: "openrouter/auto")
+    other_chat.messages.create!(content: "Find me in search too", role: "user", user: other_user)
+
+    get search_account_chats_path(@account), params: { q: "Find me" }
+
+    assert_response :success
+    assert_equal [], inertia_shared_props.fetch("results")
   end
 
   test "search without query param renders page" do
     get search_account_chats_path(@account)
     assert_response :success
     assert_equal({}, inertia_shared_props.fetch("errors"))
-  end
-
-  test "search excludes discarded chats" do
-    @chat.messages.create!(content: "Find me in search", role: "user", user: @user)
-    @chat.discard!
-
-    get search_account_chats_path(@account), params: { q: "Find me" }
-    assert_response :success
   end
 
   test "search requires authentication" do

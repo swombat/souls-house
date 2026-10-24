@@ -38,7 +38,9 @@ module Api
         # a revision, so a row mid-stream is shown with its body withheld and
         # completed: false; stop_streaming saves, bumps the revision, and the
         # finished reply reaches the client through changes.
-        def message(message, viewer:)
+        # attachment_route: :app for /api/app/v1 clients (OAuth only), :v1 for
+        # /api/v1 clients, whose download route accepts every credential.
+        def message(message, viewer:, attachment_route: :app)
           return discarded_marker(message) if message.discarded?
 
           streaming = message.streaming?
@@ -52,7 +54,7 @@ module Api
             author: author(message),
             content: (streaming ? "" : message.content),
             completed: !streaming && message.completed?,
-            attachments: (streaming ? [] : attachments(message)),
+            attachments: (streaming ? [] : attachments(message, route: attachment_route)),
             client_message_id: (message.client_message_id if message.user_id.present? && message.user_id == viewer.id),
             created_at: message.created_at.iso8601(6),
             updated_at: message.updated_at.iso8601(6)
@@ -78,6 +80,14 @@ module Api
           }
         end
 
+        def attachment_download_path(routes, route, message, file)
+          if route == :v1
+            routes.api_v1_conversation_message_attachment_path(message.chat.to_param, message.to_param, file.id)
+          else
+            routes.api_app_v1_conversation_message_attachment_path(message.chat.to_param, message.to_param, file.id)
+          end
+        end
+
         def discarded_marker(message)
           {
             id: message.to_param,
@@ -97,7 +107,7 @@ module Api
         # Files are in submission order: an app send records each file's
         # position on its blob (PostFromHuman#claim_uploads); others go by
         # attachment id, after any positioned file.
-        def attachments(message)
+        def attachments(message, route: :app)
           return [] unless message.attachments.attached?
 
           routes = Rails.application.routes.url_helpers
@@ -108,7 +118,7 @@ module Api
               filename: file.filename.to_s,
               content_type: file.content_type,
               byte_size: file.byte_size,
-              download_path: routes.api_app_v1_conversation_message_attachment_path(message.chat.to_param, message.to_param, file.id)
+              download_path: attachment_download_path(routes, route, message, file)
             }
           end
         end

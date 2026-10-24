@@ -1,10 +1,12 @@
 <script>
   import { Button } from '$lib/components/shadcn/button/index.js';
-  import { Spinner, UsersThree, Warning } from 'phosphor-svelte';
+  import { Spinner, UsersThree } from 'phosphor-svelte';
   import { accountChatAgentTriggerPath, accountChatModelSelectionPath, editAccountAgentPath } from '@/routes';
   import { agentIconFor } from '$lib/agent-icons';
   import AgentUsageName from '$lib/components/chat/AgentUsageName.svelte';
   import AgentModelControl from '$lib/components/chat/AgentModelControl.svelte';
+  import AgentModelProblems from '$lib/components/chat/AgentModelProblems.svelte';
+  import { sortAgentsByAvailability, watchAgentsWeeklyRemaining } from '$lib/agent-subscription-usage';
   import * as Dialog from '$lib/components/shadcn/dialog/index.js';
   import { onDestroy } from 'svelte';
 
@@ -23,15 +25,27 @@
   let triggeringAll = $state(false);
   let waitingForResponse = $state(false);
   let responseMarkerAtTrigger = $state(null);
+  let activeAtTrigger = new Set();
   let timeoutId = null;
   let errorOpen = $state(false);
   let errorTitle = $state('');
   let triggerError = $state('');
   let missingCredentials = $state([]);
+  // Set when the house queued the ask behind a run already in progress.
+  let queuedNotice = $state('');
+  let queuedTimeoutId = null;
   // Selections saved from this bar, kept until the agents prop brings a newer
   // model_selection for that resident (the prop may not reload after a PATCH).
   let savedSelections = $state({});
   let savingModelFor = $state(null);
+  let remainingById = $state({});
+  let sortedAgents = $derived(sortAgentsByAvailability(agents, remainingById));
+
+  $effect(() =>
+    watchAgentsWeeklyRemaining(accountId, agents, (id, value) => {
+      if (remainingById[id] !== value) remainingById = { ...remainingById, [id]: value };
+    })
+  );
 
   function csrfHeaders() {
     return {
@@ -54,6 +68,12 @@
         missingCredentials = data.code === 'missing_credentials' ? data.agents || [] : [];
         throw new Error(data.error || 'Could not ask the resident. Please try again.');
       }
+      const data = (await response.json?.().catch(() => null)) || {};
+      if (data.queued?.length) {
+        // Nothing new starts now, so there is no response to wait for.
+        clearWaitingState();
+        showQueued(data.queued);
+      }
       onTrigger?.();
     } catch (error) {
       clearWaitingState();
@@ -61,6 +81,14 @@
       triggerError = error.message;
       errorOpen = true;
     }
+  }
+
+  function showQueued(queued) {
+    const names = queued.map((agent) => agent.name);
+    const who = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+    queuedNotice = `${who} ${names.length > 1 ? 'are' : 'is'} still responding, and will look again when that finishes.`;
+    if (queuedTimeoutId) clearTimeout(queuedTimeoutId);
+    queuedTimeoutId = setTimeout(() => (queuedNotice = ''), 15_000);
   }
 
   function selectionFor(agent) {
@@ -121,15 +149,18 @@
   function beginWaiting() {
     waitingForResponse = true;
     responseMarkerAtTrigger = responseMarker;
+    activeAtTrigger = new Set(activeRuntimeAgentIds);
     if (timeoutId) clearTimeout(timeoutId);
     timeoutId = setTimeout(() => {
       clearWaitingState();
     }, 120_000);
   }
 
-  // When disabled becomes true (streaming started), clear our waiting state
+  // Stop waiting once the ask is taken up: streaming started (disabled), or a
+  // run started that wasn't running when we asked (busy residents stay askable).
   $effect(() => {
-    if (disabled && waitingForResponse) {
+    if (!waitingForResponse) return;
+    if (disabled || activeRuntimeAgentIds.some((id) => !activeAtTrigger.has(id))) {
       clearWaitingState();
     }
   });
@@ -163,7 +194,6 @@
 
   const isTriggering = $derived(triggeringAgent !== null || triggeringAll || waitingForResponse);
   const activeAgentIds = $derived(new Set(activeRuntimeAgentIds));
-  const anyAgentActive = $derived(activeRuntimeAgentIds.length > 0);
   const anyAgentAvailable = $derived(agents.some((agent) => !agent.unavailability_reason));
   const modelProblems = $derived(
     agents.map((agent) => ({ agent, selection: selectionFor(agent) })).filter(({ selection }) => selection?.problem)
@@ -171,6 +201,7 @@
 
   onDestroy(() => {
     if (timeoutId) clearTimeout(timeoutId);
+    if (queuedTimeoutId) clearTimeout(queuedTimeoutId);
   });
 </script>
 
@@ -178,7 +209,7 @@
   <div class="border-t border-border px-3 md:px-6 py-3 bg-muted/20">
     <div class="flex items-center gap-2 flex-wrap">
       <span class="text-xs text-muted-foreground mr-2 hidden md:inline">Ask resident:</span>
-      {#each agents as agent (agent.id)}
+      {#each sortedAgents as agent (agent.id)}
         {@const IconComponent = agentIconFor(agent.icon)}
         {@const selection = selectionFor(agent)}
         {@const withModel = showsModelControl(selection)}
@@ -187,14 +218,14 @@
             variant="outline"
             size="sm"
             onclick={() => triggerAgent(agent)}
-            disabled={disabled || isTriggering || activeAgentIds.has(agent.id) || Boolean(agent.unavailability_reason)}
+            disabled={disabled || isTriggering || Boolean(agent.unavailability_reason)}
             class="relative gap-2 {withModel ? 'rounded-r-none' : ''} {agent.colour
               ? `border-${agent.colour}-300 dark:border-${agent.colour}-700 hover:bg-${agent.colour}-50 dark:hover:bg-${agent.colour}-950`
               : ''}"
             title={agent.unavailability_reason
               ? `${agent.name} · ${agent.deprecated ? 'Deprecated · ' : ''}Unavailable`
               : activeAgentIds.has(agent.id)
-                ? `${agent.name} is already running`
+                ? `${agent.name} is responding · ask again to have them look once more when they finish`
                 : agent.name}>
             {#if triggeringAgent === agent.id || activeAgentIds.has(agent.id)}
               <Spinner size={14} class="animate-spin" />
@@ -222,7 +253,7 @@
           variant="default"
           size="sm"
           onclick={triggerAllAgents}
-          disabled={disabled || isTriggering || anyAgentActive || !anyAgentAvailable}
+          disabled={disabled || isTriggering || !anyAgentAvailable}
           class="gap-2 ml-2"
           title="Ask All Residents">
           {#if triggeringAll}
@@ -234,22 +265,13 @@
         </Button>
       {/if}
     </div>
-    {#each modelProblems as { agent, selection } (agent.id)}
-      <div
-        role="status"
-        class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-amber-500/60 bg-amber-50 px-2 py-1
-               text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-        <span class="min-w-0"
-          ><Warning size={12} weight="bold" class="inline-block align-[-2px] mr-1" />{agent.name}: {selection.problem}.</span>
-        <button
-          type="button"
-          class="underline underline-offset-2 hover:no-underline disabled:opacity-50"
-          disabled={savingModelFor === agent.id}
-          onclick={() => selectModel(agent, 'default')}>
-          Use resident default ({selection.default_label})
-        </button>
-      </div>
-    {/each}
+    {#if queuedNotice}
+      <div role="status" class="mt-2 text-xs text-muted-foreground">{queuedNotice}</div>
+    {/if}
+    <AgentModelProblems
+      problems={modelProblems}
+      savingFor={savingModelFor}
+      onusedefault={(agent) => selectModel(agent, 'default')} />
   </div>
 {/if}
 

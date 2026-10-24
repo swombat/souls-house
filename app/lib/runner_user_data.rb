@@ -11,6 +11,9 @@
 # key only. Rails stays root-equivalent over the VM through the Hetzner
 # project token (rebuild, rescue, user_data at create); this firewall limits
 # the network, not Rails.
+require "rubygems/package"
+require "open3"
+
 module RunnerUserData
 
   RUNNER_SOURCE_PATH = Rails.root.join("host-runner/souls_house_runner.py")
@@ -57,7 +60,7 @@ module RunnerUserData
 
   SYSTEMD_UNIT = <<~UNIT.freeze
     [Unit]
-    Description=House host runner (enrollment and telemetry only)
+    Description=House host runner (enrollment, telemetry and, when enabled, resident commands)
     After=network-online.target docker.service
     Wants=network-online.target
 
@@ -74,27 +77,32 @@ module RunnerUserData
   UNIT
 
   class TooLarge < StandardError; end
+  class PackagingFailed < StandardError; end
 
   module_function
 
-  def render(enrollment:, token:, rails_url:, runtime_image: nil)
+  def render(enrollment:, token:, rails_url:, runtime_image: nil, commands_enabled: false)
     validate_origin!(rails_url)
 
     config = {
       "rails_url" => rails_url,
       "runner_id" => enrollment.public_id,
       "enrollment_token" => token,
-      "runtime_image" => runtime_image
+      "runtime_image" => runtime_image,
+      # Only a literal true enables the command channel (#238).
+      "commands_enabled" => (true if commands_enabled == true)
     }.compact
 
     document = {
       "package_update" => true,
-      "packages" => %w[docker.io python3-cryptography nftables],
+      "packages" => %w[docker.io docker-cli python3-cryptography nftables xz-utils],
       "write_files" => [
         file("/etc/nftables.d/souls-house-input.nft", NFTABLES, "0644"),
         file("/etc/systemd/system/souls-house-firewall.service", FIREWALL_UNIT, "0644"),
         file("/etc/systemd/system/souls-house-runner.service", SYSTEMD_UNIT, "0644"),
-        file("/opt/souls-house-runner/souls_house_runner.py", runner_source, "0755", encode: true),
+        # AST-checked comment/format compaction plus XZ keeps the complete
+        # runner inside Hetzner's cap without dropping executable behavior.
+        file("/opt/souls-house-runner/source.tar.xz", compressed_source_bundle, "0600", encode: true),
         file("/etc/souls-house-runner/config.json", JSON.generate(config), "0600")
       ],
       "runcmd" => [
@@ -103,6 +111,8 @@ module RunnerUserData
         # wipe the house rules.
         %w[systemctl mask nftables.service],
         %w[systemctl daemon-reload],
+        %w[tar -xJf /opt/souls-house-runner/source.tar.xz -C /opt/souls-house-runner],
+        %w[rm /opt/souls-house-runner/source.tar.xz],
         %w[systemctl enable --now souls-house-firewall],
         %w[systemctl enable --now docker],
         %w[systemctl enable --now souls-house-runner]
@@ -130,13 +140,64 @@ module RunnerUserData
     File.read(RUNNER_SOURCE_PATH)
   end
 
+  def source_bundle
+    io = StringIO.new("".b)
+    { "souls_house_runner.py" => [ compact_source(runner_source), 0755 ],
+      "backup_proxy.py" => [ compact_source(File.read(Rails.root.join("host-runner/backup_proxy.py"))), 0644 ] }.each do |name, (source, mode)|
+      # Explicit mtime: TarWriter otherwise embeds the process's epoch.
+      io.write(Gem::Package::TarHeader.new(name:, prefix: "", mode:, size: source.bytesize, mtime: 1).to_s)
+      io.write(source)
+      io.write("\0" * ((512 - source.bytesize % 512) % 512))
+    end
+    io.write("\0" * 1024)
+    io.string
+  end
+
+  def compact_source(source)
+    script = <<~PYTHON
+      import ast, sys
+      original = ast.parse(sys.stdin.read())
+      compact = ast.unparse(original) + "\\n"
+      if ast.dump(original, include_attributes=False) != ast.dump(ast.parse(compact), include_attributes=False):
+          raise ValueError("runner AST changed")
+      sys.stdout.write(compact)
+    PYTHON
+    output, _error, status = Open3.capture3("timeout", "10", "python3", "-c", script, stdin_data: source)
+    raise PackagingFailed, "Cannot compact runner source safely" unless status.success?
+
+    output
+  end
+
+  def compressed_source_bundle
+    output, _error, status = Open3.capture3("timeout", "10", "xz", "-6", "--stdout",
+      stdin_data: source_bundle, binmode: true)
+    raise PackagingFailed, "Cannot package runner source with xz" unless status.success?
+
+    output
+  end
+
+  # The runner is embedded gzipped: Hetzner caps user_data at 32 KiB, and the
+  # runner alone is near that once base64'd. A fixed gzip mtime keeps the
+  # document identical for identical source.
   def file(path, content, permissions, encode: false)
     entry = { "path" => path, "permissions" => permissions, "owner" => "root:root" }
-    if encode
+    case encode
+    when :gzip
+      entry.merge("encoding" => "gz+b64", "content" => Base64.strict_encode64(gzip(content)))
+    when true
       entry.merge("encoding" => "b64", "content" => Base64.strict_encode64(content))
     else
       entry.merge("content" => content)
     end
+  end
+
+  def gzip(content)
+    io = StringIO.new("".b)
+    writer = Zlib::GzipWriter.new(io, Zlib::BEST_COMPRESSION)
+    writer.mtime = 1
+    writer.write(content)
+    writer.close
+    io.string
   end
 
 end

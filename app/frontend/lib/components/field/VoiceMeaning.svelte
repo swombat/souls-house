@@ -1,34 +1,34 @@
 <script>
-  // "What this means" for remembering a voice (spec §9). This is the only
-  // place the words "voice print" appear. On the transcript page the backup
-  // period isn't known, so it links to the Voices page (voicesUrl); on the
-  // Voices page it states the number of days (backupDays), or leaves the
-  // sentence out when there is no number.
-  import { Link } from '@inertiajs/svelte';
-
-  let { whose = "someone's voice", backupDays = null, voicesUrl = null, onVoicesPage = false } = $props();
+  // "What this means" for voice recognition (spec 2026-10-19). This is the
+  // only place the words "voice print" appear. Backups aren't pruned, so it
+  // promises nothing about how long a forgotten print survives in them
+  // (Daniel, 2026-10-19, KJkkdJ).
+  let { onVoicesPage = false } = $props();
 </script>
 
 <ul class="list-disc pl-5 space-y-1.5 text-sm text-muted-foreground" data-testid="voice-meaning">
-  <li>A short sample of {whose} is turned into a voice print and kept, encrypted, only in this Field.</li>
   <li>
-    It's used only to suggest who's speaking in this Field's recordings. A person always confirms the suggestion.
+    When someone names a speaker, or confirms a guess, this Field takes that person's clear speech from the recording
+    and adds it to their voice print. Each naming changes the print; that usually helps, though it can't promise to.
   </li>
-  <li>Anyone in this Field can forget it at any time on {onVoicesPage ? 'this page' : 'the Voices page'}.</li>
   <li>
-    Forgetting deletes the voice print. Recordings already sent to the voice service can't be called back. That
-    service deletes what it was sent straight after processing, and its results within a day.
+    To look for known voices, the Field also keeps a voice print of each speaker nobody has named yet. It is deleted as
+    soon as someone names that speaker, sets them aside, or turns down a guess about them.
   </li>
-  {#if backupDays != null}
-    <li data-testid="voice-meaning-backups">
-      Backups made before you forget a voice keep it until they expire, after {backupDays}
-      {backupDays === 1 ? 'day' : 'days'}.
-    </li>
-  {:else if voicesUrl}
-    <li>
-      Backups made before a forget keep the voice print until they expire.
-      <Link href={voicesUrl} class="underline underline-offset-2 hover:text-foreground">The Voices page</Link> says how
-      long that is.
-    </li>
-  {/if}
+  <li>
+    All voice prints are kept, encrypted, only in this Field. The audio is processed inside this house and isn't sent
+    to any outside service.
+  </li>
+  <li>
+    A print is used only to suggest who's speaking in this Field's recordings, and only after it has been checked
+    against recordings it wasn't learned from. A person always confirms the suggestion.
+  </li>
+  <li>
+    Anyone in this Field can forget a voice at any time on {onVoicesPage ? 'this page' : 'the Voices page'}. A
+    forgotten voice stops learning until someone chooses to remember it again. Forget all voices also deletes the
+    voice prints of unnamed speakers.
+  </li>
+  <li data-testid="voice-meaning-backups">
+    Backups of this Field may still hold a voice print after it's forgotten, for an indeterminate time.
+  </li>
 </ul>

@@ -1,0 +1,10 @@
+=== mc-created DB opened by mutecomm (SQLCipher 4.4.2)
+driver: github.com/mutecomm/go-sqlcipher/v4 v4.4.2 (SQLCipher 4.4.2 community, SQLite 3.33.0)
+integrity_check: ok
+table comms_message                            rows=2
+table whatsmeow_app_state_mutation_macs        rows=1
+=== mutecomm-created DB opened by mc
+driver: github.com/jgiannuzzi/go-sqlite3 @ sqlite3mc-2.2.7 (SQLite3 Multiple Ciphers 2.2.7, SQLite 3.51.2) in sqlcipher legacy=4 mode
+integrity_check: ok
+table comms_message                            rows=19122
+table whatsmeow_app_state_mutation_macs        rows=1

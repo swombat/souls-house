@@ -1,6 +1,6 @@
 <script>
-  import { router } from '@inertiajs/svelte';
-  import { useSync } from '$lib/use-sync';
+  import { page, router } from '@inertiajs/svelte';
+  import { createDynamicSync } from '$lib/use-sync';
   import { newAccountAgentPath, accountAgentPath, accountAgentPredecessorPath } from '@/routes';
   import { findModelLabel as modelLabelFor } from '$lib/agent-models';
   import AgentEmptyState from '$lib/components/agents/AgentEmptyState.svelte';
@@ -19,14 +19,29 @@
     away_memberships: awayMemberships = [],
     guest_candidates: guestCandidates = [],
     can_end_guest_memberships: canEndGuestMemberships = false,
+    can_manage_provider_subscription: canManageProviderSubscription = false,
   } = $props();
 
   // Subscribe to both:
   // - Account:${id}:agents - individual agent updates (via collection subscription)
   // - Account:${id} - new agent creation (via broadcasts_to :account)
-  useSync({
-    [`Account:${account.id}:agents`]: 'agents',
-    [`Account:${account.id}`]: 'agents',
+  const updateSync = createDynamicSync();
+  $effect(() => {
+    updateSync({
+      [`Account:${account.id}:agents`]: 'agents',
+      [`Account:${account.id}`]: 'agents',
+      [`GuestDirectory:${account.id}`]: [
+        'guest_memberships',
+        'away_memberships',
+        'guest_candidates',
+        'can_end_guest_memberships',
+      ],
+    });
+  });
+  // Discovery belongs to this human, not whichever account is being viewed.
+  const updateDiscoverySync = createDynamicSync();
+  $effect(() => {
+    updateDiscoverySync($page.props?.user?.id ? { [`GuestDiscovery:${$page.props.user.id}`]: 'guest_candidates' } : {});
   });
 
   // Upgrade-with-predecessor modal state.
@@ -90,15 +105,22 @@
   {#if agents.length === 0}
     <AgentEmptyState onCreate={() => router.visit(newAccountAgentPath(account.id))} />
   {:else}
-    <AgentGrid {agents} accountId={account.id} onUpgrade={openUpgradeModal} onDisable={disableAgent} />
+    <AgentGrid
+      {agents}
+      accountId={account.id}
+      {canManageProviderSubscription}
+      onUpgrade={openUpgradeModal}
+      onDisable={disableAgent} />
   {/if}
 
-  <GuestResidents
-    accountId={account.id}
-    guests={guestMemberships}
-    away={awayMemberships}
-    candidates={guestCandidates}
-    canEnd={canEndGuestMemberships} />
+  {#key account.id}
+    <GuestResidents
+      accountId={account.id}
+      guests={guestMemberships}
+      away={awayMemberships}
+      candidates={guestCandidates}
+      canEnd={canEndGuestMemberships} />
+  {/key}
 </div>
 
 <AgentUpgradeDialog

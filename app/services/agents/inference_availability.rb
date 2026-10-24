@@ -35,6 +35,13 @@ module Agents
     end
 
     def self.house_error(agent)
+      entitlement = ResidentEntitlement.find_by(agent: agent)
+      if entitlement&.paid?
+        offering = HouseInference::Offering.find(agent.model_id)
+        entitlement.check_house_call!(agent.model_id, offering.fetch(:reservation_usd))
+        return nil
+      end
+
       grant = HouseInferenceGrant.find_by(agent: agent)
       return HouseInference::Error.new("Select an on-the-house model in the resident settings to claim your allowance.", status: 403) unless grant
       grant.check!(agent.model_id)

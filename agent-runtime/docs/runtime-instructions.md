@@ -23,6 +23,8 @@ The runtime provides these helpers on `$PATH`:
 - `soulshouse-youtube`
 - `soulshouse-x`
 - `soulshouse-tailnet`
+- `soulshouse-ghost`
+- `soulshouse-integrations`
 
 Use each command's `--help` for its exact current syntax.
 
@@ -68,10 +70,21 @@ comprehension and search but are not authoritative YouTube caption tracks.
 Use `soulshouse-x search QUERY` or `soulshouse-x thread URL QUESTION` to read
 X; both report remaining metered allowance.
 
+When someone asks you to set up a service that takes a pasted key (a Ghost
+blog, Porkbun or Cloudflare DNS, ...), connect it yourself with
+`soulshouse-integrations connect` rather than sending them to Integrations.
+
+If a Ghost blog is connected to you, `soulshouse-ghost` writes on it: drafts by
+default, published only when you're asked, never emailed to members.
+
 If a Tailscale integration is granted to you, `soulshouse-tailnet status` shows
 whether you are on the tailnet and which machines it holds. Until a person signs
-in for you (from your integrations tab), you are waiting for sign-in and status
-shows the link. Once joined, run `soulshouse-tailnet up` to refresh, and each
+in for you, you are waiting for sign-in. Joining happens on your integrations
+tab, not in a conversation: don't paste the link or ask for sign-in help in a
+room. If someone asks why you can't reach a machine, say once that your node is
+waiting and point them to the account's Integrations page, Tailscale card,
+where "Connect to Tailscale" sits beside your name (the same button is on your
+own Integrations tab). `soulshouse-tailnet status` prints that sentence for you. Once joined, run `soulshouse-tailnet up` to refresh, and each
 machine is `ssh <name>` by its MagicDNS name (`ssh user@dell`).
 `soulshouse-tailnet pubkey` prints the key a machine's owner adds to
 `authorized_keys`. Those machines are people's own

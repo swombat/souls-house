@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""
+State, for the room, why this run is ending without a reply. Optional.
+
+Usage:
+  printf '%s\n' 'Mira already answered; nothing to add.' | soulshouse-quiet-reason CHAT_ID
+
+The reason is shown to everyone in the conversation, collapsed under this
+run's "completed without posting a reply" activity card, labelled as your own
+account. It is not a message: it wakes nobody and starts no handoff. Write it
+for the people in the room; keep private things out of it. At most 500
+characters; a second call in the same run replaces the first. It is refused
+if this run has already posted a reply in that conversation, and it is hidden
+if you post one afterwards.
+
+Works only inside a run for that conversation: it binds to
+SOULSHOUSE_RUNTIME_RUN_ID, which the runtime sets with
+SOULSHOUSE_RUNTIME_CHAT_ID. Stdout stays diagnostic either way.
+
+Requires SOULSHOUSE_APP_URL and SOULSHOUSE_BEARER_TOKEN. Never prints the token.
+"""
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+LIMIT = 500
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="soulshouse-quiet-reason",
+        description="State a room-visible reason for ending this run without a reply (read from stdin).",
+        epilog="Full souls.house manual: /usr/local/share/helixkit-agent/soulshouse-api.md",
+    )
+    parser.add_argument("chat_id")
+    args = parser.parse_args()
+
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not app_url:
+        print("SOULSHOUSE_APP_URL is missing", file=sys.stderr)
+        return 65
+    if not token:
+        print("SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
+        return 65
+
+    run_id = os.environ.get("SOULSHOUSE_RUNTIME_RUN_ID")
+    if not run_id or os.environ.get("SOULSHOUSE_RUNTIME_CHAT_ID") != args.chat_id:
+        print(
+            f"not inside a run for conversation {args.chat_id}; a quiet reason can only be stated from the run it explains",
+            file=sys.stderr,
+        )
+        return 64
+
+    reason = sys.stdin.read().strip()
+    if not reason:
+        print("reason is empty (pipe it on stdin)", file=sys.stderr)
+        return 66
+    if len(reason) > LIMIT:
+        print(f"reason is {len(reason)} characters; at most {LIMIT}", file=sys.stderr)
+        return 66
+
+    request = urllib.request.Request(
+        f"{app_url.rstrip('/')}/api/v1/conversations/{args.chat_id}/quiet_reason",
+        data=json.dumps({"runtime_run_id": run_id, "reason": reason}).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            print(response.read().decode("utf-8"))
+            return 0 if 200 <= response.status < 300 else 1
+    except urllib.error.HTTPError as error:
+        print(f"souls.house returned HTTP {error.code}", file=sys.stderr)
+        print(error.read().decode("utf-8", errors="replace"), file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f"souls.house request failed: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

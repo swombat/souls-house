@@ -1,4 +1,3 @@
-require "x"
 require "net/http"
 require "json"
 
@@ -12,6 +11,10 @@ module XApi
   SCOPES = %w[tweet.write tweet.read users.read offline.access].freeze
 
   class Error < StandardError; end
+  # The account's X app changed (or was removed, or the handle was
+  # disconnected) while this exchange or refresh was in flight. Tokens are
+  # bound to the app that issued them, so the result is thrown away.
+  class StaleApp < Error; end
 
   included do
     encrypts :access_token
@@ -32,7 +35,15 @@ module XApi
     "#{X_AUTHORIZE_URL}?#{query}"
   end
 
-  def exchange_code!(code:, redirect_uri:, code_verifier:)
+  # app_generation is the generation the authorisation was started under
+  # (kept in the session from the Connect click to the callback). The code is
+  # exchanged with that app's credentials, and the tokens are saved only if
+  # the app is still the same generation when the answer arrives.
+  def exchange_code!(code:, redirect_uri:, code_verifier:, app_generation:)
+    unless app_generation.is_a?(Integer) && self.app_generation == app_generation && app_available?
+      raise StaleApp, "The X app changed after connecting started; connect again"
+    end
+
     response = post_token(
       grant_type: "authorization_code",
       code: code,
@@ -40,8 +51,8 @@ module XApi
       code_verifier: code_verifier
     )
 
-    save_tokens!(response)
-    fetch_username!
+    save_tokens!(response, app_generation:)
+    fetch_username!(app_generation:)
   end
 
   def refresh_tokens!
@@ -52,7 +63,7 @@ module XApi
       refresh_token: refresh_token
     )
 
-    save_tokens!(response)
+    save_tokens!(response, app_generation: self.app_generation)
   end
 
   def token_fresh?
@@ -63,52 +74,30 @@ module XApi
     access_token.present? && refresh_token.present?
   end
 
-  def post_tweet!(text, agent:)
-    raise Error, "X integration not connected" unless connected?
-
-    ensure_fresh_token!
-
-    response = x_client.post("tweets", { text: text }.to_json)
-    tweet_id = response.dig("data", "id")
-    raise Error, "No tweet ID returned" unless tweet_id
-
-    tweet_logs.create!(agent: agent, tweet_id: tweet_id, text: text)
-
-    { tweet_id: tweet_id, text: text, url: "https://x.com/#{x_username}/status/#{tweet_id}" }
-  rescue X::TooManyRequests => e
-    raise Error, "Rate limited. Retry in #{e.reset_in || 900} seconds."
-  rescue X::Error => e
-    raise Error, e.message
-  end
-
   def disconnect!
-    @x_client = nil
-    update!(access_token: nil, refresh_token: nil, token_expires_at: nil, x_username: nil)
+    with_lock { update!(access_token: nil, refresh_token: nil, token_expires_at: nil, x_username: nil, app_generation: self.app_generation + 1) }
   end
 
   private
 
-  def x_credentials(key)
-    Rails.application.credentials.dig(:x, key) ||
-      raise(ArgumentError, "X #{key} not configured in credentials")
-  end
-
-  def ensure_fresh_token!
-    refresh_tokens! unless token_fresh?
-  end
-
-  def save_tokens!(response)
+  def save_tokens!(response, app_generation:)
     raise Error, "Token exchange failed: #{response.code}" unless response.is_a?(Net::HTTPSuccess)
 
     data = JSON.parse(response.body)
-    update!(
-      access_token: data["access_token"],
-      refresh_token: data["refresh_token"],
-      token_expires_at: data["expires_in"].to_i.seconds.from_now
-    )
+    with_lock do
+      raise StaleApp, "The X app changed while its tokens were being fetched; connect again" unless current_app?(app_generation)
+
+      update!(
+        access_token: data["access_token"],
+        refresh_token: data["refresh_token"].presence || refresh_token,
+        token_expires_at: data["expires_in"].to_i.seconds.from_now
+      )
+    end
   end
 
-  def fetch_username!
+  def current_app?(app_generation) = self.app_generation == app_generation && app_available?
+
+  def fetch_username!(app_generation:)
     uri = URI("#{X_API_BASE}/users/me")
     request = Net::HTTP::Get.new(uri)
     request["Authorization"] = "Bearer #{access_token}"
@@ -117,7 +106,7 @@ module XApi
     return unless response.is_a?(Net::HTTPSuccess)
 
     data = JSON.parse(response.body)
-    update!(x_username: data.dig("data", "username"))
+    with_lock { update!(x_username: data.dig("data", "username")) if current_app?(app_generation) && connected? }
   end
 
   def post_token(**params)
@@ -127,14 +116,7 @@ module XApi
     request["Authorization"] = "Basic #{Base64.strict_encode64("#{x_credentials(:client_id)}:#{x_credentials(:client_secret)}")}"
     request["Content-Type"] = "application/x-www-form-urlencoded"
 
-    Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
-  end
-
-  def x_client
-    @x_client ||= X::Client.new(
-      bearer_token: access_token,
-      base_url: "#{X_API_BASE}/"
-    )
+    Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 30) { |http| http.request(request) }
   end
 
 end

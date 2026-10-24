@@ -4,6 +4,8 @@ module Api
     # lists them newest first, GET .../versions/:version_id reads one in full.
     class WhiteboardVersionsController < BaseController
 
+      include ApiHomeAccountOnly
+
       def index
         render json: {
           whiteboard: { id: whiteboard.to_param, name: whiteboard.name, revision: whiteboard.revision }

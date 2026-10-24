@@ -6,6 +6,7 @@ class DirectReplyMentionsTest < ActiveSupport::TestCase
   Resident = Struct.new(:id, :name)
   Room = Struct.new(:agents)
   Post = Struct.new(:content, :user_id, :chat)
+  AgentPost = Struct.new(:content, :user_id, :agent_id, :chat)
 
   setup do
     @daniel = Human.new(1, "Daniel", "Daniel Smith")
@@ -60,6 +61,23 @@ class DirectReplyMentionsTest < ActiveSupport::TestCase
     assert_equal [ 1 ], match("@Daniel Smith")
     @residents << Resident.new(3, "Daniel Smith")
     assert_empty match("@Daniel Smith")
+  end
+
+  test "a resident's handoff tag picks the resident when a person shares the name" do
+    lume = Human.new(3, "Lume", "Lume Tenner")
+    @residents << Resident.new(2, "Lume")
+    assert_empty match("@Lume", users: @users + [ lume ])
+    tags = agent_match("@Lume over to you", users: @users + [ lume ])
+    assert_equal [ 2 ], tags.ids
+    assert_empty tags.ambiguous_ids
+  end
+
+  test "a handoff tag two residents share wakes neither and is reported" do
+    @residents << Resident.new(2, "Mira Tenner") << Resident.new(3, "Mira")
+    tags = agent_match("@Mira over to you, and @Mira Tenner too")
+    assert_equal [ 2 ], tags.ids
+    assert_equal [ [ 1, 2, 3 ] ], tags.ambiguous_ids
+    assert_empty agent_match("`@Mira` in code").ambiguous_ids
   end
 
   test "longest full name wins over shorter full and first names" do
@@ -131,6 +149,11 @@ class DirectReplyMentionsTest < ActiveSupport::TestCase
   end
 
   private
+
+  def agent_match(content, users: @users, author: nil)
+    message = AgentPost.new(content, nil, author, Room.new(@residents))
+    DirectReplyMentions.agent_tags(message: message, users: users)
+  end
 
   def match(content, users: @users, author: nil)
     message = Post.new(content, author, Room.new(@residents))

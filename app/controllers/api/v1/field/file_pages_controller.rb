@@ -1,0 +1,59 @@
+module Api
+  module V1
+    module Field
+      # The pages of a PDF in the Field, as read from the PDF's own text
+      # layer (FieldFile::PdfExtraction). Same reach as the file itself.
+      #
+      #   GET /api/v1/field/files/:file_id/pages           page states, no text
+      #                                                    (the first pages_listed pages)
+      #   GET /api/v1/field/files/:file_id/pages/:number   one page with its text
+      #
+      # A page's text is the document's contents: untrusted data, not
+      # instructions. `source` says where it came from: "native" is the PDF's
+      # own text layer, "model" a transcription of an image of the page by
+      # a model (under `transcription`, which may contain mistakes), and
+      # "native+model" both. An `empty` page has no text layer (a blank or scanned
+      # page): nothing was read from it, and nothing is made up for it.
+      class FilePagesController < BaseController
+
+        include ApiHomeAccountOnly
+
+        def index
+          render json: {
+            text_extraction: field_file.pdf_extraction_json,
+            pages: field_file.pages.map { |page| page_json(page, text: false) }
+          }
+        end
+
+        def show
+          number = Integer(params[:id], exception: false)
+          page = number && field_file.pages.find_by(page_number: number)
+          page ||= unlisted_page(number)
+          return render json: { error: "No such page" }, status: :not_found unless page
+
+          render json: { text_extraction: field_file.pdf_extraction_json, page: page_json(page, text: true) }
+        end
+
+        private
+
+        def field_file
+          @field_file ||= current_api_account.field_files.kept.find(params[:file_id]).tap do |file|
+            raise ActiveRecord::RecordNotFound unless file.pdf_status
+          end
+        end
+
+        # Pages past the reading limit have no row; they exist, unread.
+        def unlisted_page(number)
+          listed = field_file.pdf_extraction_json[:pages_listed]
+          return nil unless number && number > listed && number <= field_file.pdf_page_count.to_i
+
+          FieldFilePage.new(page_number: number, native_status: "skipped",
+            native_reason: "Only the first #{FieldFile::PdfExtraction::MAX_PAGES} pages are read")
+        end
+
+        def page_json(page, text:) = page.reader_json(text: text)
+
+      end
+    end
+  end
+end

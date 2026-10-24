@@ -1,0 +1,21 @@
+--- files just before kill
+total 124164
+drwxr-xr-x 2 agent agent      4096 Oct  9 16:56 .
+drwxr-xr-x 3 agent agent      4096 Oct  9 16:56 ..
+-rw-r--r-- 1 agent agent 122863616 Oct  9 16:56 comms.db
+-rw-r--r-- 1 agent agent     32768 Oct  9 16:56 comms.db-shm
+-rw-r--r-- 1 agent agent   4231272 Oct  9 16:56 comms.db-wal
+loop exit status: 137 (137 = SIGKILL)
+loop iteration 1250
+loop iteration 1300
+--- files after kill (untouched)
+total 124196
+drwxr-xr-x 2 agent agent      4096 Oct  9 16:56 .
+drwxr-xr-x 3 agent agent      4096 Oct  9 16:56 ..
+-rw-r--r-- 1 agent agent 122896384 Oct  9 16:56 comms.db
+-rw-r--r-- 1 agent agent     32768 Oct  9 16:56 comms.db-shm
+-rw-r--r-- 1 agent agent   4231272 Oct  9 16:56 comms.db-wal
+2eb1858aa9c753fe729264f68961784673cb099ad8f152f7722ee871de6dbe92  runs/mc/data/comms.db
+e776d1a82fa5fccb7289f95a5d60481dba518e80f63f326de91af4ae511b2d36  runs/mc/data/comms.db-shm
+6058b894cec7dd69fba9d9240d06da562b6c13d69088105936efa717080cdc60  runs/mc/data/comms.db-wal
+--- core files anywhere under work dir / cwd?

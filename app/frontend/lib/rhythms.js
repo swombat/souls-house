@@ -62,29 +62,52 @@ export function formValues(rhythm = {}, fallbackTimezone = 'UTC') {
     opening: rhythm.opening ?? '',
     append_date: rhythm.append_date ?? true,
     resident_ids: [...(rhythm.resident_ids ?? [])],
+    // resident id -> model id; '' follows that resident's default.
+    resident_models: Object.fromEntries(
+      Object.entries(rhythm.resident_models ?? {}).map(([id, model]) => [id, model ?? ''])
+    ),
     cadence: rhythm.cadence ?? 'weekly',
     time_of_day: rhythm.time_of_day ?? '09:00',
     weekday: rhythm.weekday ?? 1,
     month_day: rhythm.month_day ?? 1,
     month: rhythm.month ?? 1,
     timezone: rhythm.timezone ?? fallbackTimezone,
+    // resident_default follows the account's default room, main is Main on
+    // purpose, room opens in room_id.
+    room_choice: rhythm.room_choice ?? 'resident_default',
+    room_id: rhythm.room_id ?? '',
   };
+}
+
+// The room select's value: one option per choice, a named room as room:<id>.
+export function roomSelectValue(values) {
+  return values.room_choice === 'room' ? `room:${values.room_id ?? ''}` : values.room_choice;
+}
+
+export function roomChoiceFromSelect(value) {
+  if (value.startsWith('room:')) return { room_choice: 'room', room_id: value.slice(5) };
+  return { room_choice: value, room_id: '' };
 }
 
 // Fields that do not apply to the chosen cadence are sent blank, so the
 // server never stores a stale weekday on a daily rhythm.
 export function submittableValues(values) {
   const out = { ...values, resident_ids: [...values.resident_ids] };
+  // Only selected residents carry a model; blank means "default".
+  out.resident_models = Object.fromEntries(
+    out.resident_ids.map((id) => [id, values.resident_models?.[id] || 'default'])
+  );
   if (out.cadence !== 'weekly') out.weekday = null;
   if (out.cadence !== 'monthly' && out.cadence !== 'yearly') out.month_day = null;
   if (out.cadence !== 'yearly') out.month = null;
+  if (out.room_choice !== 'room') out.room_id = null;
   return out;
 }
 
 export function previewQuery(values) {
   const params = new URLSearchParams();
   const submittable = submittableValues(values);
-  for (const field of FORM_FIELDS.filter((field) => !['opening', 'resident_ids'].includes(field))) {
+  for (const field of FORM_FIELDS.filter((field) => !['opening', 'resident_ids', 'resident_models'].includes(field))) {
     const value = submittable[field];
     if (value !== null && value !== undefined) {
       params.append(`rhythm[${field}]`, String(value));

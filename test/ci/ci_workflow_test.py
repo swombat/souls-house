@@ -36,6 +36,15 @@ class CiWorkflowTest(unittest.TestCase):
         self.assertEqual(application["env"]["PARALLEL_WORKERS"], "4")
         self.assertEqual(application["env"]["BUNDLE_FROZEN"], "true")
         self.assertNotIn("ports", application["services"]["postgres"])
+        postgres = application["services"]["postgres"]
+        self.assertRegex(
+            postgres["image"],
+            r"^mirror\.gcr\.io/library/postgres@sha256:[0-9a-f]{64}$",
+        )
+        self.assertNotIn("credentials", postgres)
+        workflow_text = (ROOT / ".github/workflows/ci.yml").read_text()
+        self.assertNotIn("public.ecr.aws", workflow_text)
+        self.assertNotRegex(postgres["image"], r"public\.ecr\.aws|docker\.io")
 
     def test_all_coverage_entrypoints_and_unique_artifacts(self):
         steps = {step.get("name"): step for step in self.jobs["application"]["steps"] if "name" in step}

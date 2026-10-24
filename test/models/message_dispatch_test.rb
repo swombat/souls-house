@@ -108,7 +108,9 @@ class MessageDispatchTest < ActiveSupport::TestCase
       assert_no_enqueued_jobs { MessageDispatchSweepJob.perform_now }
     end
     travel MessageDispatch::EXPIRY + 1.minute do
-      assert_no_enqueued_jobs { MessageDispatchSweepJob.perform_now }
+      # The lapsed run ending enqueues its pending-wake release (a no-op with
+      # no wake held); nothing re-drives the dispatch itself.
+      assert_no_enqueued_jobs(except: PendingWakeJob) { MessageDispatchSweepJob.perform_now }
       assert_equal "cancelled", run.reload.execution_state
       assert_not run.claim_dispatch!
     end

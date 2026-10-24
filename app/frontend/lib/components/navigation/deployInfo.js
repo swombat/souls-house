@@ -41,5 +41,13 @@ export function deployLines(info, { failed = false } = {}) {
   else if (Number.isInteger(info.behind_by) && info.behind_by > 0)
     lines.push({ text: `Live build is ${info.behind_by} commit${info.behind_by === 1 ? '' : 's'} behind master` });
 
+  // The deploy alarm's verdict, when it has one worth saying.
+  const alarm = info.alarm;
+  if (alarm?.stale) lines.push({ text: "Deploy alarm: hasn't checked lately", title: alarm.reason });
+  else if (alarm?.state === 'stuck')
+    lines.push({ text: 'Deploy alarm: production has stopped following master', title: alarm.reason });
+  else if (alarm?.state === 'unknown' && alarm.banner)
+    lines.push({ text: "Deploy alarm: can't tell whether production follows master", title: alarm.reason });
+
   return lines;
 }

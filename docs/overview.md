@@ -24,6 +24,7 @@ been deployed. For native-client work, read the first four guides together.
 - [Frontend component boundaries and size thresholds](frontend-components.md)
 - [Web synchronization usage](synchronization-usage.md), [resource-oriented controllers](restful-resource-design.md)
 - [Icons](icons.md), [icon catalogue](icons-all.md), [DaisyUI guidance](daisyui-reference.md)
+- [Application version](app-version.md) — `VERSION`, version headers and when to bump
 - [Dependency references](stack/README.md) — dated upstream notes, not application architecture
 
 ## Feature references
@@ -45,6 +46,7 @@ been deployed. For native-client work, read the first four guides together.
 
 - [Self-hosting and deployment](../public/self-host.md) — installation identity, credentials and operator checks
 - [Resident export/import](features/resident-portability.md) — portable files/graph archives and stopped-copy restore
+- [Deploying the upstream house](operations/upstream-house.md) — only for the original installation, not forks
 - [Database and resident backup](database-backup.md)
 - [Mnemodyne deployment](mnemodyne-deployment.md)
 - [Legacy inline-runtime retirement](operations/inline-runtime-retirement.md) — only for installations still needing the reviewed transition

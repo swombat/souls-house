@@ -6,10 +6,20 @@ import { resolve } from 'node:path';
 // explicitly rather than recorded in real time. Output: public/feature-clips/<name>.{mp4,jpg}
 // (H.264 only: it plays everywhere, and VP9 came out larger at matching quality.).
 // CLIP_FRAMES=12,90,200 renders only those frames as PNGs (for checking stills) and skips encoding.
-export async function renderClip({ mount, page, Component, name, duration, fps = 30, poster = null }) {
+// `outDir` defaults to the features page's clips; announcement-only clips pass their own.
+export async function renderClip({
+  mount,
+  page,
+  Component,
+  name,
+  duration,
+  fps = 30,
+  poster = null,
+  outDir = 'public/feature-clips',
+}) {
   await page.setViewportSize({ width: 1280, height: 720 });
   const frames = resolve(process.cwd(), 'tmp/clips', name);
-  const out = resolve(process.cwd(), 'public/feature-clips');
+  const out = resolve(process.cwd(), outDir);
   const only = process.env.CLIP_FRAMES ? process.env.CLIP_FRAMES.split(',').map(Number) : null;
   rmSync(frames, { recursive: true, force: true });
   mkdirSync(frames, { recursive: true });

@@ -83,9 +83,14 @@ module Agents
     end
 
     def with_runtime
+      # Checked before the remote branch too: a suspended vault stops a VM
+      # resident's turns exactly as it stops a local one's.
+      ensure_memory_not_suspended!
+      # Started and stopped on its VM by explicit commands, never cold-started.
+      return yield if RemoteRuntime.dispatchable?(agent)
+
       RuntimeLocation.require_local!(agent)
       raise SandboxError, "agent has no supported harness" unless agent.reload.hosted?
-      ensure_memory_not_suspended!
       cold_start = Agents::Config.cold_start?
       return yield unless cold_start
 
@@ -219,6 +224,53 @@ module Agents
       container_exists? && !running?
     end
 
+    # Never starts or recreates a container. Each rename is atomic; updating the
+    # boot source first also preserves the new manifest across a later restart.
+    def refresh_service_manifest!(yaml:)
+      return false unless running?
+
+      verify_resources!
+      script = <<~'SHELL'
+        exec >/dev/null 2>&1
+        set -eu
+        umask 077
+        source_stage=
+        trap 'rm -f -- "$source_stage"' EXIT
+        trap 'exit 1' HUP INT TERM
+        source_stage=$(mktemp /run/.helixkit-source.yml.XXXXXX)
+        cat > "$source_stage"
+        mv -fT -- "$source_stage" /run/helixkit-source.yml
+        # Open the root-owned source before dropping privileges. Root must not
+        # write into the agent-owned live directory, even through a stage.
+        gosu agent sh -c '
+          set -eu
+          umask 077
+          live_stage=
+          trap '\''rm -f -- "$live_stage"'\'' EXIT
+          trap '\''exit 1'\'' HUP INT TERM
+          live_stage=$(mktemp /run/helixkit/.services.yml.XXXXXX)
+          cat > "$live_stage"
+          mv -fT -- "$live_stage" /run/helixkit/services.yml
+        ' < /run/helixkit-source.yml
+      SHELL
+
+      begin
+        _stdout, _stderr, status = Open3.capture3(
+          "docker", "exec", "-i", "-u", "0", agent.container_name,
+          "sh", "-c", script, stdin_data: yaml
+        )
+        raise SandboxError unless status.success?
+      rescue StandardError
+        begin
+          return false unless running?
+        rescue StandardError
+          # An unverifiable state is not a safe stopped-container fallback.
+        end
+        raise SandboxError, "Failed to refresh service manifest", cause: nil
+      end
+      true
+    end
+
     # Verification only. No SQL writes, interactive approvals or project code.
     # A site operator grants trust through Chaos's supported interactive screen.
     def imported_runtime_trusted?
@@ -305,9 +357,39 @@ module Agents
       false
     end
 
+    # How many times the kernel OOM-killed a process in this resident's
+    # container between two times, from Docker's "oom" events. Docker emits
+    # one per kill in the container's cgroup, even when PID 1 survives. The
+    # daemon keeps only its most recent events in memory, so a single kill
+    # early in a long run on a busy host can have scrolled out; nil when
+    # Docker can't answer at all.
+    #
+    # Docker's --since/--until take whole seconds, so the query asks for the
+    # enclosing seconds and the events are then kept only if their
+    # nanosecond time falls inside [from, to]: a kill just before the run
+    # started or just after it ended belongs to some other run.
+    def oom_kills_between(from, to)
+      result = docker_capture(
+        "events", "--since", from.to_i.to_s, "--until", (to.to_i + 1).to_s,
+        "--filter", "container=#{agent.container_name}", "--filter", "event=oom",
+        "--format", "{{.TimeNano}}"
+      )
+      return nil unless result[:ok]
+
+      from_ns, to_ns = epoch_nanoseconds(from), epoch_nanoseconds(to)
+      result[:stdout].lines.count do |line|
+        at = Integer(line.strip, exception: false)
+        at && at >= from_ns && at <= to_ns
+      end
+    end
+
     private :spawn_without_portability_gate!, :start_without_portability_gate!, :recreate_without_portability_gate!
 
     private
+
+    def epoch_nanoseconds(time)
+      (time.to_r * 1_000_000_000).to_i
+    end
 
     def ensure_memory_not_suspended!
       if agent.memory_vault&.suspended_at?
@@ -520,6 +602,7 @@ module Agents
         "--network", Agents::Config.network,
         "--restart", Agents::Config.restart_policy,
         "--memory", "#{agent.container_memory_mb}m",
+        "--pids-limit", agent.container_pids_limit.to_s,
         "--cpu-shares", agent.container_cpu_shares.to_s,
         "-v", "#{Agents::Volume.new(agent).volume_name}:/home/agent/identity",
         "-v", "#{Agents::Resources.new(agent).volumes.fetch(:chaos)}:/home/agent/.chaos",
@@ -591,12 +674,17 @@ module Agents
       agent.update!(endpoint_url: "http://#{host}:#{port}")
     end
 
+    # A resident's first boot on a new image can take ~40s (tailnet, home import,
+    # settings preparation); at 30s Lume's rollout on 2026-10-14 was failed and
+    # left paused although the container came up healthy 11s later.
+    HEALTH_WAIT_SECONDS = 90
+
     def wait_for_health!
-      30.times do
+      HEALTH_WAIT_SECONDS.times do
         return true if healthy?
         sleep 1
       end
-      raise SandboxError, "container did not become healthy within 30s"
+      raise SandboxError, "container did not become healthy within #{HEALTH_WAIT_SECONDS}s"
     end
 
     def agent_slug

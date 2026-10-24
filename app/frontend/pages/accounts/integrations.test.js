@@ -12,6 +12,14 @@ describe('device integrations entry point', () => {
     expect(screen.getByText(/Publish your own device readings/)).toBeInTheDocument();
   });
 
+  it('links to X posting for the selected account', () => {
+    render(Integrations, { account: { id: 'selected-house', name: 'Selected house' }, can_manage_account: false });
+    expect(screen.getByRole('link', { name: /X posting/ })).toHaveAttribute(
+      'href',
+      '/x_integration?account_id=selected-house'
+    );
+  });
+
   it('clearly separates connecting new integrations from existing ones', () => {
     render(Integrations, {
       account: { id: 'selected-house', name: 'Selected house' },

@@ -18,6 +18,7 @@ class PrepareTelegramMediaJob < ApplicationJob
     return enqueue_wake!(telegram_message) if telegram_message.media_status == "ready"
 
     agent = telegram_message.telegram_subscription.agent
+    @glossary_account = agent.account
     file_info = agent.telegram_file_info(file_id)
     downloaded = agent.telegram_download_file(
       file_info.fetch("file_path"),
@@ -111,7 +112,9 @@ class PrepareTelegramMediaJob < ApplicationJob
 
   def transcribe(io, filename, content_type)
     io.rewind
-    ElevenLabsStt.transcribe(Upload.new(io, filename, content_type))
+    # The resident's home account: its members' and residents' vocabulary.
+    ElevenLabsStt.transcribe(Upload.new(io, filename, content_type),
+      keyterms: TranscriptionGlossary.keyterms_for(@glossary_account))
   end
 
   def validate_content_type!(kind, content_type)

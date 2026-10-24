@@ -13,7 +13,7 @@ Avoid tests that merely duplicate implementation details. If a test fails during
 For everyday backend or non-visual changes:
 
 ```bash
-bin/rails test
+bin/test
 ```
 
 For focused frontend logic changes:
@@ -34,18 +34,25 @@ Run narrower commands while iterating, then the relevant full suite before consi
 
 Rails tests are the foundation. They should thoroughly cover models, controllers, integration flows, authorization, Inertia responses, jobs, Action Cable channels, and the server-side behavior behind chat, agents, accounts, whiteboards, and sync.
 
-Use Rails' default Minitest framework:
+Tests use Rails' default Minitest framework. `bin/test` runs them with
+[padded_cell](https://github.com/seuros/padded_cell), which CI also uses;
+`bin/rails test` takes the same arguments and remains the fallback runner.
 
 ```bash
 # Run all Rails tests
-bin/rails test
+bin/test
 
 # Run a specific file
-bin/rails test test/controllers/chats_controller_test.rb
+bin/test test/controllers/chats_controller_test.rb
 
 # Run a specific test by line
-bin/rails test test/models/user_test.rb:15
+bin/test test/models/user_test.rb:15
+
+# Kill and fail anything running longer than 60s; retry failures and report flaky ones
+bin/test --timeout 60 --asylum
 ```
+
+Both runners take the checkout's test lock and honour `PARALLEL_WORKERS`.
 
 ### Ruby Mocking Policy
 

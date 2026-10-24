@@ -1,8 +1,17 @@
 <script>
   import { agentIconFor } from '$lib/agent-icons';
   import AgentUsageName from '$lib/components/chat/AgentUsageName.svelte';
+  import { sortAgentsByAvailability, watchAgentsWeeklyRemaining } from '$lib/agent-subscription-usage';
 
   let { agents = [], accountId, showUsage = false, selectedAgentIds = $bindable([]) } = $props();
+  let remainingById = $state({});
+  let sortedAgents = $derived(sortAgentsByAvailability(agents, remainingById));
+
+  $effect(() =>
+    watchAgentsWeeklyRemaining(accountId, agents, (id, value) => {
+      if (remainingById[id] !== value) remainingById = { ...remainingById, [id]: value };
+    })
+  );
 
   function toggleAgent(agentId) {
     if (selectedAgentIds.includes(agentId)) {
@@ -18,7 +27,7 @@
   <div class="border-b border-border px-4 md:px-6 py-3 bg-muted/5">
     <div class="text-sm font-medium mb-2">Select residents to participate:</div>
     <div class="flex flex-wrap gap-2">
-      {#each agents as agent (agent.id)}
+      {#each sortedAgents as agent (agent.id)}
         {@const IconComponent = agentIconFor(agent.icon)}
         {@const isSelected = selectedAgentIds.includes(agent.id)}
         <button

@@ -7,8 +7,9 @@ module Api
       def models
         return head :forbidden unless current_api_agent
         model = current_api_agent.model_id
-        render json: { object: 'list', data: HouseInference::Offering.find(model) ? [
-          { id: model, object: 'model', owned_by: 'house', context_length: 1_048_576 }
+        offering = HouseInference::Offering.find(model)
+        render json: { object: 'list', data: offering ? [
+          { id: model, object: 'model', owned_by: 'house', context_length: offering.fetch(:context_tokens) }
         ] : [] }
       end
 

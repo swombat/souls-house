@@ -16,16 +16,29 @@ class FieldRecording < ApplicationRecord
   include ObfuscatesId
   include SyncAuthorizable
   include FieldRecording::Transcription
+  include FieldTaggable
+  include FieldActivityBroadcasting
+  include FieldSummarizable
 
   class NotRetryable < StandardError; end
 
   MAX_BYTES = 2.gigabytes # Scribe's limit for a file fetched by URL
   MAX_BYTES_LABEL = "2 GB"
   MAX_NOTE_LENGTH = FieldFile::MAX_NOTE_LENGTH
+  # A meeting's notes (summary, action items), Markdown, kept with the
+  # recording rather than as a separate item. The same bound as a note's content.
+  MAX_NOTES_LENGTH = 100_000
   MAX_SPEAKERS = 32 # Scribe's num_speakers ceiling
   MAX_DISPATCHES = 3
 
+  MAX_SOURCE_PATH_LENGTH = 1000
+  MAX_IMPORT_KEY_LENGTH = 200
+  LANGUAGE_CODE = /\A[a-z]{2,3}(-[A-Za-z0-9]{2,8})*\z/
+
   STATUSES = %w[probing queued transcribing ready rejected failed].freeze
+  # "vendor": transcribed here. "supplied": arrived with its transcript (spec
+  # docs/2026-10-09-field-supplied-transcripts.md), never sent anywhere.
+  TRANSCRIPT_SOURCES = %w[vendor supplied].freeze
   TERMINAL_STATUSES = %w[ready rejected failed].freeze
   RETRYABLE_STATUSES = %w[failed rejected].freeze
 
@@ -37,29 +50,215 @@ class FieldRecording < ApplicationRecord
   has_many :retries, class_name: "FieldRecording", foreign_key: :retried_from_id,
     inverse_of: :retried_from, dependent: :nullify
   has_one :reservation, class_name: "FieldRecordingReservation", dependent: :destroy
+  has_many :shares, class_name: "FieldRecordingShare", dependent: :destroy
 
   has_one_attached :audio
 
   validates :title, presence: true, length: { maximum: 200 }
   validates :note, length: { maximum: MAX_NOTE_LENGTH }
+  validates :notes, length: { maximum: MAX_NOTES_LENGTH }
   validates :status, inclusion: { in: STATUSES }
   validates :expected_speakers, numericality: { only_integer: true, in: 1..MAX_SPEAKERS }, allow_nil: true
+  validates :transcript_source, inclusion: { in: TRANSCRIPT_SOURCES }
+  validates :source_path, length: { maximum: MAX_SOURCE_PATH_LENGTH }
+  validates :import_key, length: { maximum: MAX_IMPORT_KEY_LENGTH }, allow_nil: true
+  # Scribe's own codes are checked by Scribe; a supplied one is the caller's.
+  validates :language_code, format: { with: LANGUAGE_CODE }, allow_nil: true, if: :supplied?
   # Bytes are required when a recording is made. A rejected recording's audio
   # is later purged on purpose (OrphanSweepJob) while the row stays, and its
   # title and note must remain editable.
   validate :audio_present_and_bounded, on: :create
 
   before_validation :default_title_from_filename
+  before_validation :normalise_provenance
 
   broadcasts_to :account
 
-  scope :newest_first, -> { order(created_at: :desc, id: :desc) }
+  # When it was recorded if the upload said so (archive imports), else when it arrived.
+  scope :newest_first, -> { order(Arel.sql("COALESCE(field_recordings.recorded_at, field_recordings.created_at) DESC"), id: :desc) }
+  scope :summary_readable, -> { where(status: "ready").where("transcript_text ~ '[^[:space:]]'") }
+
+  # Summarise once the transcript is ready (FieldSummarizable). The hourly
+  # sweep covers a queue that was missed.
+  after_commit :enqueue_summary, if: -> { saved_change_to_status? && ready? }
 
   STATUSES.each do |name|
     define_method(:"#{name}?") { status == name }
   end
 
   def terminal? = TERMINAL_STATUSES.include?(status)
+  def supplied? = transcript_source == "supplied"
+
+  # Made with its transcript, which arrived with the audio (docs/2026-10-09-
+  # field-supplied-transcripts.md). It lands ready, without passing through
+  # admission or dispatch, so no dispatch guard reaches it; each has a home:
+  #
+  # - size: the upload declaration and the create validation, as for any
+  #   recording (2 GB);
+  # - allowance: not reserved. The weekly allowance meters what is sent to
+  #   the transcriber, and nothing is;
+  # - language: the caller's code, format-checked, not detected;
+  # - speakers: at most SuppliedTranscript::MAX_SPEAKERS distinct labels.
+  #   expected_speakers steers the diarizer and is not kept, since there is
+  #   none;
+  # - retry: never offered (it is never failed or rejected).
+  #
+  # Word timings don't exist, so transcript_words stays empty and speakers
+  # have no talk time or clip; the voice-recognition and suggestion jobs are
+  # never queued for it. Called inside the create transaction.
+  def store_supplied_transcript!(turns)
+    raise ArgumentError, "not a supplied recording" unless supplied?
+
+    FieldRecording::SuppliedTranscript.speakers(turns).each { |attributes| speakers.create!(attributes) }
+    speakers.reset
+    self.transcript_turns = turns
+    self.transcript_words = []
+    self.transcript_text = render_transcript_text
+    update!(status: "ready", ready_at: Time.current, expected_speakers: nil)
+  end
+
+  # A short fingerprint of the stored transcript. The page sends back the one
+  # it was shown, and a correction made against any other is refused. Keys are
+  # sorted first: jsonb hands them back in its own order, not the one written.
+  def transcript_revision
+    entries = (supplied? ? transcript_turns : transcript_words) || []
+    Digest::SHA256.hexdigest(entries.map { |entry| entry.to_h.sort.to_h }.to_json)[0, 16]
+  end
+
+  # One line corrected by hand (FieldRecording::LineCorrection). `line` is
+  # {first:, last:} for timed words or {index:} for a supplied turn. Raises
+  # LineCorrection::Stale if the transcript has changed since `revision` or the
+  # line no longer reads `was`.
+  def correct_line!(line, text:, was:, revision:)
+    with_lock do
+      raise FieldRecording::LineCorrection::Stale unless kept? && ready?
+      raise FieldRecording::LineCorrection::Stale unless revision.present? && revision == transcript_revision
+
+      if supplied?
+        self.transcript_turns = FieldRecording::LineCorrection.replace_turn(
+          transcript_turns || [], index: line[:index], text:, was:
+        )
+      else
+        self.transcript_words = FieldRecording::LineCorrection.replace_words(
+          transcript_words || [], first: line[:first], last: line[:last], text:, was:
+        )
+      end
+      self.transcript_text = render_transcript_text
+      save!
+      schedule_summary_refresh if saved_change_to_transcript_text?
+    end
+  end
+
+  # The transcript as the lines a correction addresses, numbered from 1 in
+  # reading order: a displayed turn of timed words, or a supplied turn. Each
+  # carries its speaker's shown name and its text, and the locator
+  # correct_line! takes. Empty unless the recording is ready.
+  def transcript_lines
+    return [] unless ready?
+
+    list = speakers.includes(:field_voice).to_a
+    names = list.to_h { |speaker| [ speaker.label, speaker.display_name ] }
+    ids = list.to_h { |speaker| [ speaker.label, speaker.to_param ] }
+    if supplied?
+      (transcript_turns || []).each_with_index.map do |turn, index|
+        { line: index + 1, speaker: names[turn["spk"]] || turn["spk"], speaker_id: ids[turn["spk"]], text: FieldRecording::LineCorrection.normalise(turn["t"]),
+          locator: { index: } }
+      end
+    else
+      words = transcript_words || []
+      timed = words.each_index.reject { |n| words[n]["k"] == "s" }
+      FieldRecording::LineCorrection.turn_ranges(words).each_with_index.map do |(first, last), n|
+        spk = words[timed[first]]["spk"]
+        text = words[timed[first]..timed[last]].map { |word| word["t"] }.join
+        { line: n + 1, speaker: names[spk] || spk, speaker_id: ids[spk], text: FieldRecording::LineCorrection.normalise(text),
+          locator: { first:, last: } }
+      end
+    end
+  end
+
+  # correct_line! by line number (transcript_lines), for the API. A number
+  # that doesn't name a line is Stale, like a line that moved.
+  def correct_line_number!(number, text:, was:, revision:)
+    number = Integer(number, exception: false)
+    line = transcript_lines.find { |entry| entry[:line] == number } if number
+    raise FieldRecording::LineCorrection::Stale unless line
+
+    correct_line!(line[:locator], text:, was:, revision:)
+  end
+
+  # reassign_line! by line number, for the API. `to` as for reassign_line!.
+  # Returns the number of the line the moved words are now in: lines on
+  # either side may have joined it, so the old number can name another line.
+  def reassign_line_number!(number, to:, was:, revision:)
+    number = Integer(number, exception: false)
+    line = transcript_lines.find { |entry| entry[:line] == number } if number
+    raise FieldRecording::LineCorrection::Stale unless line
+
+    reassign_line!(line[:locator], to:, was:, revision:)
+    locator = line[:locator]
+    reload.transcript_lines.find do |entry|
+      found = entry[:locator]
+      locator.key?(:index) ? found[:index] == locator[:index] : found[:first].to_i <= locator[:first] && locator[:first] <= found[:last].to_i
+    end&.dig(:line)
+  end
+
+  # One line given to another speaker (FieldRecording::LineSpeaker). `to` is
+  # a speaker of this recording, or :new for someone the transcriber didn't
+  # separate; :new makes an unnamed speaker, which the page then asks a name
+  # for. Speakers' talk time and clips are measured again. A speaker left
+  # with no lines goes. Positions of the others don't change, so nobody's
+  # "Speaker N" is renumbered under them.
+  #
+  # Takes the naming lock order, account → recording, so it is serialized with
+  # every speaker decision. Raises LineCorrection::Stale as correct_line!
+  # does, and when `to` has gone meanwhile; returns the line's speaker.
+  def reassign_line!(line, to:, was:, revision:)
+    FieldVoiceprints::Locks.with(account:, recording: self) do
+      raise FieldRecording::LineCorrection::Stale unless kept? && ready?
+      raise FieldRecording::LineCorrection::Stale unless revision.present? && revision == transcript_revision
+
+      list = speakers.to_a
+      target = to == :new ? nil : list.find { |speaker| speaker.id == to&.id }
+      raise FieldRecording::LineCorrection::Stale unless to == :new || target
+
+      label = target&.label || FieldRecording::LineSpeaker.new_label(list.map(&:label))
+      before = supplied? ? transcript_turns || [] : transcript_words || []
+      if supplied?
+        self.transcript_turns = FieldRecording::LineSpeaker.reassign_turn(
+          transcript_turns || [], index: line[:index], was:, label:
+        )
+      else
+        self.transcript_words = FieldRecording::LineSpeaker.reassign_words(
+          transcript_words || [], first: line[:first], last: line[:last], was:, label:
+        )
+      end
+
+      target ||= begin
+        cap = supplied? ? FieldRecording::SuppliedTranscript::MAX_SPEAKERS : MAX_SPEAKERS
+        raise FieldRecording::LineCorrection::Invalid, "This recording already has #{cap} speakers." if list.size >= cap
+
+        speakers.create!(label:, position: (list.map(&:position).max || -1) + 1)
+      end
+      after = supplied? ? transcript_turns : transcript_words
+      moved_from = before.zip(after).filter_map { |was_entry, now| was_entry["spk"] if was_entry["spk"] != now["spk"] }
+      invalidate_speaker_evidence!((moved_from + [ label ]).uniq) if moved_from.any?
+      remeasure_speakers!
+      self.transcript_text = render_transcript_text
+      save!
+      schedule_summary_refresh if saved_change_to_transcript_text?
+      target
+    end
+  end
+
+  # Probe of a supplied recording: the duration only, for display. Its status
+  # is already final and nothing is reserved.
+  def record_duration!(probed_ms)
+    with_lock do
+      next false unless probed_ms && kept? && supplied? && duration_ms.nil?
+
+      update!(duration_ms: probed_ms)
+    end
+  end
 
   # Probe found a duration: reserve allowance or refuse (§6). Account lock
   # first, then this row, so two probes finishing together are serialised.
@@ -105,7 +304,7 @@ class FieldRecording < ApplicationRecord
       discard!
       settle_reservation_after_discard!(now:)
       true
-    end
+    end.tap { |discarded| FieldVoiceprints::Learning.recording_discarded!(self) if discarded }
   end
 
   def settle_reservation_after_discard!(now: Time.current)
@@ -126,7 +325,7 @@ class FieldRecording < ApplicationRecord
       raise NotRetryable unless kept? && RETRYABLE_STATUSES.include?(status) && audio.attached?
 
       account.field_recordings.create!(
-        title:, note:, expected_speakers:, uploaded_by: by, retried_from: self, audio: audio.blob
+        title:, note:, notes:, expected_speakers:, uploaded_by: by, retried_from: self, audio: audio.blob
       )
     end
   end
@@ -145,10 +344,69 @@ class FieldRecording < ApplicationRecord
     end
   end
 
+  def summary_source = ready? ? transcript_text : nil
+
   def filename = audio.attached? ? audio.filename.to_s : nil
   def byte_size = audio.attached? ? audio.byte_size : nil
 
   private
+
+  # Who said what changed for these speakers, so whatever was decided or
+  # prepared from their old audio and lines no longer stands. Bumping the
+  # decision generation makes every snapshot taken before (learning,
+  # suggestion and recognition jobs) refuse. Suggestions and guesses drawn
+  # from the old lines go too, and so do the speakers' samples and kept
+  # embeddings: the prints they were in are rebuilt without them, and a named
+  # speaker is learned again from the lines they have now. The caller holds
+  # account → recording (reassign_line!); the voices holding their samples
+  # are locked here.
+  def invalidate_speaker_evidence!(labels)
+    affected = speakers.where(label: labels).to_a
+    # account and recording are already held, and this recording has unsaved
+    # changes, so only the voices are locked here, in id order.
+    voice_ids = FieldVoiceprints::Learning.sample_voices(affected.map(&:id)).map(&:id)
+    FieldVoice.where(id: voice_ids).order(:id).lock.to_a
+    FieldVoiceprints::Learning.drop_samples!(affected.map(&:id))
+    affected.each do |speaker|
+      speaker.update!(decision_generation: speaker.decision_generation + 1,
+        **FieldRecordingSpeaker::SUGGESTION_FIELDS, **FieldRecordingSpeaker::RECOGNITION_FIELDS,
+        **FieldRecordingSpeaker::NO_PROBE)
+      FieldVoiceprints::Learning.queue!(speaker) if speaker.training_label?
+    end
+  end
+
+  # After a line moved: talk time and clips from the words as they now are,
+  # and speakers with nothing left to say removed. A supplied
+  # transcript has no timings, only labels to count.
+  def remeasure_speakers!
+    speakers.reset
+    present = if supplied?
+      (transcript_turns || []).filter_map { |turn| turn["spk"] }.to_set
+    else
+      measured = FieldRecording::Transcript.speakers(transcript_words || []).index_by { |entry| entry[:label] }
+      (transcript_words || []).filter_map { |word| word["spk"] if word["k"] != "s" }.to_set
+    end
+
+    speakers.each do |speaker|
+      if !present.include?(speaker.label)
+        speaker.destroy!
+      elsif measured
+        entry = measured[speaker.label]
+        speaker.update!(talk_ms: entry&.dig(:talk_ms) || 0, clip_start_ms: entry&.dig(:clip_start_ms),
+          clip_end_ms: entry&.dig(:clip_end_ms))
+      end
+    end
+    speakers.reset
+  end
+
+  def normalise_provenance
+    self.source_path = source_path.to_s.strip.presence
+    self.import_key = import_key.to_s.strip.presence
+    self.language_code = language_code.to_s.strip.presence
+    # Blank notes are no notes; otherwise kept as written (Markdown can mean
+    # something by its leading spaces).
+    self.notes = nil if notes.blank?
+  end
 
   def default_title_from_filename
     self.title = title.to_s.strip

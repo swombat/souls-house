@@ -8,6 +8,11 @@ require "set"
 module RailsTestShard
   class Error < StandardError; end
 
+  # Per-test limit in CI. The slowest test takes about 18s locally; a test
+  # that runs past this is killed and reported by name, instead of stalling
+  # the shard until the job's 15-minute limit with no clue which test hung.
+  TEST_TIMEOUT_SECONDS = 120
+
   def self.arguments(argv)
     list = argv.first == "--list"
     values = list ? argv.drop(1) : argv
@@ -191,7 +196,8 @@ module RailsTestShard
     out.puts("Rails shard #{shard}/#{total}: #{selected.length} files")
     selected.each { |file| out.puts(file) }
     return 0 if selected.empty?
-    command = [File.join(File.expand_path(root), "bin/rails"), "test", *selected]
+    command = [File.join(File.expand_path(root), "bin/test"),
+      "--timeout", TEST_TIMEOUT_SECONDS.to_s, *selected]
     success = executor ? executor.call(command) : system(*command, chdir: root)
     success ? 0 : ($?&.exitstatus || 1)
   rescue Error, SystemCallError => error

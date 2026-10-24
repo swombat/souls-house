@@ -9,8 +9,8 @@ module FieldRecording::Transcription
 
   included do
     has_many :dispatches, class_name: "FieldRecordingDispatch", dependent: :destroy
-    has_many :speakers, -> { in_order }, class_name: "FieldRecordingSpeaker", dependent: :destroy
-    has_many :identifications, class_name: "FieldRecordingIdentification", dependent: :destroy
+    has_many :speakers, -> { in_order }, class_name: "FieldRecordingSpeaker", dependent: :destroy,
+      inverse_of: :field_recording
   end
 
   # Claim the next dispatch: queued → transcribing with a fresh attempt.
@@ -114,8 +114,26 @@ module FieldRecording::Transcription
   end
 
   def render_transcript_text
-    names = speakers.includes(:field_voice).to_h { |speaker| [ speaker.label, speaker.display_name ] }
-    FieldRecording::Transcript.render(transcript_words || [], names)
+    list = speakers.includes(:field_voice).to_a
+    names = list.to_h { |speaker| [ speaker.label, speaker.display_name ] }
+    if supplied?
+      FieldRecording::SuppliedTranscript.render(transcript_turns || [], names)
+    else
+      FieldRecording::Transcript.render(transcript_words || [], names, list.to_h { |speaker| [ speaker.label, speaker.identity ] })
+    end
+  end
+
+  # The transcript as the lines render_transcript_text writes, structured:
+  # [{clock:, speaker:, text:}], speaker nil where none was given. For the
+  # shared page, which must never guess a speaker from the text.
+  def transcript_display_lines
+    list = speakers.includes(:field_voice).to_a
+    names = list.to_h { |speaker| [ speaker.label, speaker.display_name ] }
+    if supplied?
+      FieldRecording::SuppliedTranscript.lines(transcript_turns || [], names)
+    else
+      FieldRecording::Transcript.lines(transcript_words || [], names, list.to_h { |speaker| [ speaker.label, speaker.identity ] })
+    end
   end
 
   private

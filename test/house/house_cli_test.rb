@@ -223,6 +223,24 @@ class HouseCliTest < ActiveSupport::TestCase
     end
   end
 
+  test "release-voice-embeddings builds services/voice-embeddings and names its own keys" do
+    in_fixture_root do |root|
+      env = { "HOUSE_VOICE_EMBEDDINGS_IMAGE" => "registry.example/voice" }
+      out = StringIO.new
+      assert House::ReleaseEmbeddings.new(root: root, env: env, dry_run: true, out: out,
+                                          service: House::ReleaseEmbeddings::VOICE).run
+      assert_includes out.string, "services/voice-embeddings"
+      assert_includes out.string, "registry.example/voice:"
+      assert_not_includes out.string, "mnemodyne-embeddings"
+
+      error = assert_raises(RuntimeError) do
+        House::ReleaseEmbeddings.new(root: root, env: {}, dry_run: true, out: StringIO.new,
+                                     service: House::ReleaseEmbeddings::VOICE).run
+      end
+      assert_includes error.message, "HOUSE_VOICE_EMBEDDINGS_IMAGE"
+    end
+  end
+
   # --- House::EnvFile digest replacement ---
 
   test "EnvFile.replace_value rewrites only the target line" do

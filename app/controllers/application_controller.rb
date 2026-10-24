@@ -5,7 +5,7 @@ class ApplicationController < ActionController::Base
   include Authentication
   include AccountScoping
   include FeatureToggleable
-  allow_browser versions: :modern
+  include RoomSelection
   # PaperTrail 17 no longer adds this callback itself.
   before_action :set_paper_trail_whodunnit
 
@@ -18,12 +18,21 @@ class ApplicationController < ActionController::Base
         user: Current.user.as_json,
         account: current_account&.as_json,
         visual_tags: -> { current_account ? VisualTag.palette_with_usage_for(current_account) : [] },
-        accounts: Current.user.confirmed_accounts.map(&:as_json),
+        rooms: -> { current_account ? current_account.rooms.map(&:as_json) : [] },
+        main_room_name: -> { current_account&.main_room_label || Room::MAIN },
+        current_room: -> { current_account ? selected_room_key : RoomSelection::MAIN },
+        accounts: -> { Current.user.confirmed_accounts.map(&:as_json) },
         reply_attention: -> { ReplyExpectation.summary_for(Current.user, account: current_account, chat: @chat) },
+        room_activity: -> { RoomActivity.summary_for(current_account) },
+        expired_subscriptions: -> { ExpiredProviderSubscriptions.summary_for(Current.user) },
         theme_preference: Current.user&.theme || cookies[:theme],
         site_settings: shared_site_settings,
         is_account_admin: current_account&.manageable_by?(Current.user) || false,
-        token_thresholds: { amber: 100_000, red: 150_000, critical: 200_000 }
+        token_thresholds: { amber: 100_000, red: 150_000, critical: 200_000 },
+        # Which repositories chat commit badges are measured against (CommitBadges).
+        commit_badges: -> { CommitBadges.config_for(current_account, Current.user) },
+        # Site Admin pages only: whether production still follows master.
+        deploy_alarm: -> { site_admin_page? ? DeployAlarm.payload : nil }
       }
     else
       {
@@ -36,6 +45,10 @@ class ApplicationController < ActionController::Base
   wrap_parameters false # Disable default wrapping of parameters in JSON requests (Helpful with Inertia js)
 
   private
+
+  def site_admin_page?
+    self.class.name.to_s.start_with?("Admin::") && Current.user&.is_site_admin?
+  end
 
   # Who made a versioned change, as "User:12". A Proc, so it is read when the
   # version is written rather than when the callback runs.

@@ -8,8 +8,16 @@ module House
   # production amd64, publishes it, and records its immutable manifest
   # digest in config/house.env. See docs/mnemodyne-deployment.md.
   class ReleaseEmbeddings
-    def initialize(root:, env: ENV, dry_run: false, out: $stdout)
+    # The memory embeddings service by default; VOICE is the Field voiceprints
+    # service (services/voice-embeddings), released the same way.
+    MEMORY = { image_key: "HOUSE_EMBEDDINGS_IMAGE", digest_key: "HOUSE_EMBEDDINGS_DIGEST",
+               context: "services/mnemodyne-embeddings", accessory: "embeddings" }.freeze
+    VOICE = { image_key: "HOUSE_VOICE_EMBEDDINGS_IMAGE", digest_key: "HOUSE_VOICE_EMBEDDINGS_DIGEST",
+              context: "services/voice-embeddings", accessory: "voice-embeddings" }.freeze
+
+    def initialize(root:, env: ENV, dry_run: false, out: $stdout, service: MEMORY)
       @root = root
+      @service = service
       @env = env
       @dry_run = dry_run
       @out = out
@@ -19,9 +27,9 @@ module House
     # published digest didn't look right. Raises if HOUSE_EMBEDDINGS_IMAGE
     # is unset, or if build/push fails.
     def run
-      image = require_env("HOUSE_EMBEDDINGS_IMAGE")
+      image = require_env(@service.fetch(:image_key))
       ref = "#{image}:#{git_short_sha}"
-      context = File.join(@root, "services/mnemodyne-embeddings")
+      context = File.join(@root, @service.fetch(:context))
 
       build_cmd = ["docker", "build", "--platform", "linux/amd64", "-t", ref, context]
       push_cmd = ["docker", "push", ref]
@@ -46,10 +54,12 @@ module House
         return false
       end
 
-      House::EnvFile.replace_value(house_env_path, "HOUSE_EMBEDDINGS_DIGEST", digest)
-      @out.puts "HOUSE_EMBEDDINGS_DIGEST=#{digest}"
-      @out.puts "Next: bin/kamal accessory boot embeddings (first release) " \
-        "or bin/kamal accessory reboot embeddings (redeploying an existing one)."
+      digest_key = @service.fetch(:digest_key)
+      accessory = @service.fetch(:accessory)
+      House::EnvFile.replace_value(house_env_path, digest_key, digest)
+      @out.puts "#{digest_key}=#{digest}"
+      @out.puts "Next: bin/kamal accessory boot #{accessory} (first release) " \
+        "or bin/kamal accessory reboot #{accessory} (redeploying an existing one)."
       true
     end
 

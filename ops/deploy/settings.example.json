@@ -4,8 +4,13 @@
   "tools_image": "house-deploy-tools:1",
   "stock_repository": "house-runtime",
   "development_repository": "house-development",
-  "stock_repositories": ["house-runtime"],
-  "stock_aliases": ["house-runtime:latest"],
+  "stock_repositories": [
+    "house-runtime"
+  ],
+  "stock_aliases": [
+    "house-runtime:latest"
+  ],
   "custom_residents": {},
-  "idle_wait_seconds": 600
+  "idle_wait_seconds": 600,
+  "vm_restart_wait_seconds": 3600
 }

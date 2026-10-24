@@ -1,13 +1,26 @@
 <script>
   import { Button } from '$lib/components/shadcn/button/index.js';
   import { Plus, Trash, X } from 'phosphor-svelte';
+  import RoomSwitcher from './RoomSwitcher.svelte';
 
-  let { canSeeDeleted = false, showDeleted = false, onCreate, onClose, onToggleDeleted } = $props();
+  let {
+    accountId,
+    hasRooms = false,
+    canSeeDeleted = false,
+    showDeleted = false,
+    onCreate,
+    onClose,
+    onToggleDeleted,
+  } = $props();
 </script>
 
 <header class="p-4 border-b border-border bg-muted/30">
   <div class="flex items-center justify-between mb-3">
-    <h2 class="text-lg font-semibold">Chats</h2>
+    {#if hasRooms}
+      <RoomSwitcher {accountId} />
+    {:else}
+      <h2 class="text-lg font-semibold">Chats</h2>
+    {/if}
     <div class="flex items-center gap-2">
       <Button variant="outline" size="sm" onclick={onCreate} class="h-8 w-8 p-0" aria-label="New chat">
         <Plus size={16} />

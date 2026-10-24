@@ -77,6 +77,53 @@ class Membership < ApplicationRecord
   after_update_commit :track_invitation_acceptance, if: :became_confirmed?
   after_commit :disconnect_app_cable, if: :lost_app_authority?
   after_commit -> { ReplyExpectation.refresh_for(user_id) }
+  after_save :refresh_integration_permissions, if: -> {
+    (saved_changes.keys & %w[id account_id user_id role confirmed_at]).any?
+  }
+  after_destroy :refresh_integration_permissions
+  after_save :refresh_directory_presentation, if: -> {
+    (saved_changes.keys & %w[id account_id user_id role confirmed_at]).any?
+  }
+  # Account destruction owns the complete pre-deletion snapshot.
+  after_destroy :refresh_directory_presentation, unless: -> { destroyed_by_association&.active_record == Account }
+  after_save :refresh_guest_discovery, if: -> {
+    (saved_changes.keys & %w[id account_id user_id confirmed_at]).any? &&
+      (confirmed? || confirmed_at_before_last_save.present?)
+  }
+  # Account owns the pre-deletion member snapshot. User deletion only removes
+  # that user's candidate authority; refresh! skips the now-deleted recipient.
+  after_destroy :refresh_guest_discovery, if: -> {
+    confirmed? && destroyed_by_association&.active_record != Account
+  }
+
+  def refresh_guest_discovery
+    user_ids = []
+    user_ids << user_id if confirmed?
+    user_ids << user_id_before_last_save if !destroyed? && confirmed_at_before_last_save.present?
+    GuestDiscovery.refresh!(user_ids)
+  end
+  private :refresh_guest_discovery
+
+  def refresh_directory_presentation
+    account_ids = [ account_id, account_id_before_last_save ].compact.uniq
+    # Ownership changes affect removal controls here, and derived personal
+    # account labels on the opposite side of existing guest relationships.
+    personal_ids = Account.personal.where(id: account_ids).ids
+    GuestDirectory.refresh!(account_ids + GuestDirectory.account_ids_for(personal_ids))
+    # User destruction owns its pre-deletion snapshot, including voice links
+    # that the database nullifies without model callbacks.
+    FieldVoiceActivity.refresh!(account_ids) unless destroyed_by_association&.active_record == User
+  end
+  private :refresh_directory_presentation
+
+  def refresh_integration_permissions
+    account_ids = [ account_id, account_id_before_last_save ].compact.uniq
+    ProviderPresentation.refresh!(account_ids)
+    ActiveRecord.after_all_transactions_commit do
+      IntegrationStatus.refresh!(account_ids)
+    end
+  end
+  private :refresh_integration_permissions
 
   # Scopes
   scope :owners, -> { where(role: "owner") }

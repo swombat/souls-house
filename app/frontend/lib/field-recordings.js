@@ -8,8 +8,10 @@ export const UNATTRIBUTED = 'Unattributed';
 // text, the kind ('w' word, 's' spacing, 'a' audio event) and the speaker
 // label. A turn is consecutive words/events with the same speaker and gaps of
 // at most 1.5 s; spacing between two words of one turn joins them. Every
-// word/event gets `i`, its position among the timed words.
-export function buildTurns(words = []) {
+// word/event gets `i`, its position among the timed words. With `keys`
+// (label → identity, from speakerKeys), two labels for one voice count as one
+// speaker, so their consecutive words join into one turn.
+export function buildTurns(words = [], keys = null) {
   const turns = [];
   let current = null;
   let spacing = null;
@@ -23,7 +25,7 @@ export function buildTurns(words = []) {
     }
     const part = { ...word, spk: word.spk || null, i: index++ };
     const end = part.e ?? part.s;
-    if (current && current.spk === part.spk && part.s - current.end <= TURN_GAP_MS) {
+    if (current && sameSpeaker(current.spk, part.spk, keys) && part.s - current.end <= TURN_GAP_MS) {
       current.parts.push({ k: 's', t: spacing || ' ' });
       current.parts.push(part);
       current.end = Math.max(current.end, end);
@@ -35,6 +37,34 @@ export function buildTurns(words = []) {
   }
 
   return turns.map((turn) => ({ ...turn, text: turn.parts.map((part) => part.t).join('') }));
+}
+
+// A transcript that came with the audio has turns, not timed words: {spk, s,
+// t} with s in ms or null. Each becomes one untimed part, so the page shows it
+// without word highlighting and seeks only where a start was given.
+export function suppliedTurns(turns = []) {
+  return (turns || [])
+    .map((turn, index) => ({ turn, index }))
+    .filter(({ turn }) => turn && turn.t)
+    .map(({ turn, index }) => {
+      const start = Number.isFinite(turn.s) ? turn.s : null;
+      return {
+        spk: turn.spk || null,
+        start,
+        end: start,
+        index,
+        parts: [{ k: 'w', t: turn.t, s: start, i: null, whole: true }],
+        text: turn.t,
+      };
+    });
+}
+
+// What the server needs to find a line again: its first and last timed word,
+// or, for a supplied transcript, the turn's position in the stored list.
+export function lineAddress(turn) {
+  if (turn.index != null) return { index: turn.index };
+  const timed = turn.parts.filter((part) => part.k !== 's');
+  return { first: timed[0].i, last: timed[timed.length - 1].i };
 }
 
 // The timed words across all turns, in order, for finding the one playing.
@@ -62,10 +92,62 @@ export function activeWordIndex(list, ms) {
   return ms < (word.e ?? word.s) ? word.i : -1;
 }
 
+// A null-prototype map: speaker labels come from supplied transcripts too,
+// and a label such as "__proto__" must read as a name, not a property.
 export function speakerNames(speakers = []) {
-  const names = {};
+  const names = Object.create(null);
   for (const speaker of speakers || []) names[speaker.label] = speaker.name || speaker.default_name || speaker.label;
   return names;
+}
+
+function sameSpeaker(a, b, keys) {
+  if (a === b) return true;
+  if (!keys || !a || !b) return false;
+  return (keys[a] ?? a) === (keys[b] ?? b);
+}
+
+// Who a speaker is: the voice a person linked it to, or this diarized speaker
+// alone. Scribe sometimes hears one person as two speakers; once both are
+// linked to one voice they are one person. Never by name equality.
+export function speakerIdentity(speaker) {
+  return speaker.voice_id ? `voice:${speaker.voice_id}` : `speaker:${speaker.label}`;
+}
+
+export function speakerKeys(speakers = []) {
+  const keys = Object.create(null);
+  for (const speaker of speakers || []) keys[speaker.label] = speakerIdentity(speaker);
+  return keys;
+}
+
+// One entry per person, in order of first appearance: `parts` are the
+// diarized speakers, `speaker` stands for them all (the part with the longest
+// clean clip, carrying the summed talk time, or null when any is unknown).
+export function groupSpeakers(speakers = []) {
+  const groups = new Map();
+  const ordered = [...(speakers || [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  for (const speaker of ordered) {
+    const key = speakerIdentity(speaker);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(speaker);
+  }
+  return [...groups].map(([key, parts]) => {
+    const clipped = parts.filter((part) => part.clip_start_ms != null && part.clip_end_ms != null);
+    const representative = clipped.length
+      ? clipped.reduce((best, part) => ((part.talk_ms || 0) > (best.talk_ms || 0) ? part : best))
+      : parts[0];
+    const talk = parts.every((part) => part.talk_ms != null)
+      ? parts.reduce((sum, part) => sum + part.talk_ms, 0)
+      : null;
+    return { key, parts, speaker: { ...representative, talk_ms: talk } };
+  });
+}
+
+// The parts of a card the house named by voice (auto_named), whichever part
+// stands for the card. A merged card may mix a person's naming with an
+// automatic one: the automatic provenance still shows, and "Not them"
+// reaches only these parts, never a person's assignment.
+export function automaticParts(parts = []) {
+  return (parts || []).filter((part) => part.named && part.auto_named);
 }
 
 export function turnSpeakerName(turn, names) {
@@ -100,6 +182,11 @@ export function allowanceLine(allowance) {
   if (!allowance) return '';
   const days = allowance.window_days || 7;
   const used = formatDuration(allowance.used_ms || 0);
+  if (allowance.unlimited) {
+    let open = `${used} used in the last ${days} days (no weekly limit)`;
+    if ((allowance.pending_ms || 0) > 0) open += `, ${formatDuration(allowance.pending_ms)} still transcribing`;
+    return open;
+  }
   const limit = formatDuration(allowance.limit_ms || 0);
   let line = `${used} of ${limit} used in the last ${days} days`;
   if ((allowance.pending_ms || 0) > 0) line += ` (${formatDuration(allowance.pending_ms)} still transcribing)`;
@@ -107,7 +194,7 @@ export function allowanceLine(allowance) {
 }
 
 export function remainingMs(allowance) {
-  if (!allowance) return null;
+  if (!allowance || allowance.unlimited) return null;
   return Math.max(0, (allowance.limit_ms || 0) - (allowance.used_ms || 0));
 }
 
@@ -156,4 +243,20 @@ export function parseNameMatch(value) {
   } catch {
     return null;
   }
+}
+
+// The speaker picker gets a filter box once it lists more than this many
+// people (Daniel, 2026-10-12: past ten, scrolling for a name is too hard).
+export const SPEAKER_FILTER_THRESHOLD = 10;
+
+// Case- and accent-insensitive substring match on a person's name.
+export function speakerQueryMatches(name, query) {
+  const fold = (value) =>
+    String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  const needle = fold(query);
+  return !needle || fold(name).includes(needle);
 }

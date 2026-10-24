@@ -42,7 +42,7 @@ class SessionsControllerTest < ActionDispatch::IntegrationTest
     follow_redirect!
     errors = inertia_shared_props["errors"]
     assert errors.present?
-    assert errors["email_address"].present?
+    assert_includes errors["email_address"], "Invalid email or password."
   end
 
   test "should not login with invalid password" do
@@ -103,17 +103,6 @@ class SessionsControllerTest < ActionDispatch::IntegrationTest
   # Rate limiting test is complex to test in isolation
   # as it requires persistent state across requests
 
-  test "login returns proper inertia response structure" do
-    get login_path
-    assert_response :success
-
-    assert inertia_props.key?("component")
-    assert inertia_props.key?("props")
-    assert inertia_props.key?("url")
-    assert inertia_props.key?("version")
-    assert_equal "sessions/new", inertia_component
-  end
-
   test "successful login creates a session" do
     assert_changes -> { Session.count }, 1 do
       post login_path, params: {
@@ -136,19 +125,6 @@ class SessionsControllerTest < ActionDispatch::IntegrationTest
       delete logout_path
     end
     assert_redirected_to root_path
-  end
-
-  test "login errors are passed via inertia props" do
-    post login_path, params: {
-      email_address: "wrong@example.com",
-      password: "wrongpassword"
-    }
-
-    assert_redirected_to login_path
-    follow_redirect!
-
-    assert inertia_shared_props["errors"].present?
-    assert inertia_shared_props["errors"]["email_address"].include?("Invalid email or password.")
   end
 
 end

@@ -59,6 +59,11 @@ class Agents::PortabilityController < ApplicationController
   def activate
     agent = current_account.agents.find(params[:id])
     raise Agents::Portability::Error, "Confirm service and hook trust review before activation" unless params[:confirmed].to_s == "true"
+    # A copy staged for its own server is never started here: Activate admits
+    # it, and ProvisionVmAgentJob brings it up there
+    # (docs/2026-10-10-vm-imports.md). The confirmation above is its trust
+    # boundary, recorded with who asked.
+    return activate_on_vm!(agent) if agent.placement&.kind == "archive_import"
     raise Agents::Portability::Error, "Only stopped inactive native residents can activate here" unless !agent.imported_home? && agent.externally_hosted? && !agent.active? && agent.paused?
     activation_error = nil
     agent.with_lock do
@@ -67,6 +72,7 @@ class Agents::PortabilityController < ApplicationController
       raise Agents::Portability::Error, "Resident has pending or uncertain execution" if ResidentTurn.pending.where(agent: agent).exists? || agent.agent_runtime_interactions.where(finished_at: nil).exists?
       transport = Agents::Portability::Transport.new(agent)
       transport.stopped!
+      previous_active = agent.active?
       agent.update_columns(active: true)
       begin
         Agents::Sandbox.new(agent).spawn!
@@ -82,6 +88,9 @@ class Agents::PortabilityController < ApplicationController
           activation_error = "Activation failed; resident inactive/paused but runtime exit is UNKNOWN. Operator verification required"
         end
       end
+      # The failure paths intentionally use direct columns, not orientation callbacks.
+      agent.refresh_provider_presentation if activation_error
+      HomeResidentRoster.refresh!([ agent.account_id ]) if agent.active? != previous_active
     end
     raise Agents::Portability::Error, activation_error if activation_error
     redirect_to edit_account_agent_path(current_account, agent, tab: "portability"), status: :see_other
@@ -97,7 +106,12 @@ class Agents::PortabilityController < ApplicationController
     raise Agents::Portability::Error unless params[:confirmed].to_s == "true"
     Agents::Portability::Archive.with_upload(params[:archive]) do |archive|
       agent = Agents::Portability::Import.call(archive, account: current_account, user: Current.user, name: params[:name])
-      redirect_to edit_account_agent_path(current_account, agent, tab: "portability"), status: :see_other, notice: "Separate copy restored inactive and paused. Reconnect and review setup before starting."
+      notice = if agent.placement&.staged?
+        "Separate copy staged inactive and paused for its own server. Nothing is ordered until you activate it. Reconnect and review setup before starting."
+      else
+        "Separate copy restored inactive and paused. Reconnect and review setup before starting."
+      end
+      redirect_to edit_account_agent_path(current_account, agent, tab: "portability"), status: :see_other, notice: notice
     end
   end
 
@@ -118,6 +132,28 @@ class Agents::PortabilityController < ApplicationController
   end
 
   private
+
+  def activate_on_vm!(agent)
+    placement = agent.placement
+    raise Agents::Portability::Error, "This resident is already running on its own server" if placement.state == "ready"
+    if %w[failed retired].include?(placement.state)
+      raise Agents::Portability::Error, "Its last start on its own server failed, and trying again isn't available yet. " \
+                                        "It stays imported, inactive and paused."
+    end
+    raise Agents::Portability::Error, "Only inactive paused residents can activate here" if agent.active? || !agent.paused?
+
+    begin
+      Agents::VmBirthPolicy.current.admit_import!(placement:, requested_by: Current.user)
+    rescue Agents::VmBirthPolicy::Refused => error
+      raise Agents::Portability::Error, error.message
+    end
+    AuditLog.create!(user: Current.user, account: agent.account, action: "vm_import_activation_admitted", auditable: agent,
+      data: { "placement_id" => placement.id, "confirmed_trust_review" => true })
+    agent.update_columns(runtime: "provisioning", health_state: "unknown", sandbox_last_error: nil, sandbox_last_error_at: nil)
+    ProvisionVmAgentJob.perform_later(agent.id)
+    redirect_to edit_account_agent_path(current_account, agent, tab: "portability"), status: :see_other,
+      notice: "Ordering its own server. It starts once its home is seeded and its first backup is verified."
+  end
 
   def private_response
     response.headers["Cache-Control"] = "private, no-store"

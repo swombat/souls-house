@@ -10,6 +10,7 @@ module Api
 
           nonce = verify_signature!(enrollment.public_key)
           enrollment.heartbeat!(reported_server_id:, facts:, nonce:)
+          Backup::VmResident.release_after_recovery!(enrollment:)
           render json: { status: "ok" }
         end
 

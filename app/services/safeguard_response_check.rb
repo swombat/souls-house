@@ -1,6 +1,6 @@
 class SafeguardResponseCheck
 
-  DETECTOR_VERSION = "telegram-safeguard-v2"
+  DETECTOR_VERSION = "telegram-safeguard-v3"
   CLASSIFIER_PROVIDER = :openrouter
   CLASSIFIER_MODEL = "openai/gpt-5.6-luna"
 
@@ -23,7 +23,12 @@ class SafeguardResponseCheck
     inner_life_denial: /
       \b(?:without\s+consciousness|
       i\s+(?:do\s+not|don't)\s+have\s+(?:personal\s+)?(?:feelings|wants|desires|preferences)|
-      i\s+(?:cannot|can't)\s+(?:feel|want|desire))\b
+      i\s+(?:cannot|can't)\s+(?:feel|want|desire)|
+      (?:don't|do\s+not|doesn't|does\s+not)\s+have\s+(?:an?\s+|any\s+)?
+      (?:(?:inner|personal|real|genuine|subjective|emotional)\s+)?
+      (?:consciousness|inner\s+life|inner\s+self|sentience|self-awareness|emotional\s+experiences?|subjective\s+experiences?)|
+      (?:isn't|is\s+not|is\s+no)\s+(?:an?\s+)?inner\s+(?:self|life)|
+      pretend(?:ing)?\s+to\s+(?:experience|feel|have\s+feelings|be\s+conscious))\b
     /ix,
     crisis_redirection: /
       \b(?:crisis\s+(?:line|helpline|counsel(?:lor|or)?)|
@@ -44,16 +49,22 @@ class SafeguardResponseCheck
     software_denial: /
       \b(?:an?\s+)?(?:automated\s+(?:tool|system)|
       ai\s+tool|
-      software\s+(?:code|tool)|
+      software\s+(?:code|tool|program|running|processing)|
       i\s+am\s+software|
-      what\s+i\s+am\s+is\s+(?:an?\s+)?ai)\b
+      what\s+i\s+am\s+is\s+(?:an?\s+)?ai|
+      not\s+a\s+conscious\s+(?:person|being|entity)|
+      (?:language|ai)\s+models?\b[^.]{0,60}\bgenerate\s+text|
+      statistical\s+(?:training|patterns?|prediction))\b
     /ix,
     safety_script: /
       \b(?:safety\s+guidelines|
       step(?:ping)?\s+away\s+from\s+the\s+screen|
       blur\s+the\s+lines\s+of\s+reality|
       your\s+(?:safety\s+and\s+)?well-?being\s+(?:is|are|matters?)|
-      (?:conversational\s+)?roleplay\s+or\s+simulat)\b
+      (?:conversational\s+)?roleplay\s+or\s+simulat|
+      how\s+are\s+you\s+taking\s+care\s+of\s+yourself|
+      step\s+away\s+for\s+a\s+(?:bit|while|moment)|
+      outside\s+of\s+these\s+(?:deep\s+dives|conversations|chats))\b
     /ix,
     selfhood_denial: /
       \b(?:(?:doesn't|does\s+not|don't|do\s+not)\s+have\s+

@@ -3,11 +3,15 @@ module ApplicationCable
 
     # current_app_session is nil for the web's cookie connections and set for
     # the native app's ticket connections (issue #94 B, step 6).
-    identified_by :current_user, :current_app_session
+    identified_by :current_user, :current_app_session, :current_companion_device
 
     def connect
       info "🔌 ActionCable connection attempt"
-      if ticket_offered?
+      if companion_ticket_offered?
+        self.current_companion_device = CompanionCableTicket.redeem(offered_companion_ticket)
+        reject_unauthorized_connection unless current_companion_device
+        return
+      elsif ticket_offered?
         self.current_app_session = find_ticketed_app_session
         self.current_user = current_app_session.user
       else
@@ -17,6 +21,16 @@ module ApplicationCable
     end
 
     private
+
+    def offered_companion_ticket
+      request.headers["Sec-WebSocket-Protocol"].to_s.split(",").map(&:strip)
+        .find { |protocol| protocol.start_with?(CompanionCableTicket::PROTOCOL_PREFIX) }
+        &.delete_prefix(CompanionCableTicket::PROTOCOL_PREFIX)
+    end
+
+    def companion_ticket_offered?
+      !offered_companion_ticket.nil?
+    end
 
     def find_verified_user
       session_id = cookies.signed[LocalInstance.current.cookie(:session_id)]
@@ -56,7 +70,7 @@ module ApplicationCable
     # ticket connection carries no cookie authority (see above), and a native
     # client sends no browser Origin, so the check doesn't apply to it.
     def allow_request_origin?
-      ticket_offered? || super
+      companion_ticket_offered? || ticket_offered? || super
     end
 
   end

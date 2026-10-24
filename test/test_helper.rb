@@ -127,3 +127,10 @@ class ActionDispatch::IntegrationTest
 end
 
 require "support/vcr_setup"
+
+# Field summaries run wherever a house key exists, and test credentials carry
+# one. Off here so a test that performs every queued job never calls out; the
+# summary tests turn it back on.
+FieldSummaries.live = false
+FieldOcr.live = false
+FieldSwarm.reader = ->(**) { raise "No live Field swarm reader calls in tests" }

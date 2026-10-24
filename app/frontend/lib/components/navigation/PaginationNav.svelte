@@ -26,7 +26,7 @@
 </script>
 
 {#if pagination.last > 1}
-  <div class="flex justify-between items-center p-4 border-t {className}">
+  <div class="flex flex-wrap justify-between items-center gap-x-4 gap-y-2 p-4 border-t {className}">
     <span class="text-sm text-base-content/60 whitespace-nowrap">
       Showing {pagination.from || 0} to {pagination.to || 0} of {pagination.count} entries
     </span>

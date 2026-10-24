@@ -25,6 +25,17 @@ class Api::App::V1::WriteApiTest < ActionDispatch::IntegrationTest
 
   # --- create ----------------------------------------------------------------
 
+  test "a phone human mention dispatches only the lowest-ID namesake" do
+    duplicate = @account.agents.create!(name: "grok", system_prompt: "Test", runtime: "external")
+    @chat.agents << duplicate
+
+    assert_enqueued_jobs 1, only: MessageDispatchJob do
+      send_message("namesake-0001", "Hey @GROK")
+    end
+    assert_response :created
+    assert_equal [ @agent.id ], @chat.messages.last.message_dispatch.target_agent_ids
+  end
+
   test "a first send is 201, wakes the residents it mentions, and is audited" do
     assert_enqueued_jobs 1, only: MessageDispatchJob do
       send_message("key-00000001", "Hey @Grok, from the phone")

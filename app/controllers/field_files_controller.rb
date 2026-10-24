@@ -1,7 +1,7 @@
 class FieldFilesController < ApplicationController
 
   require_feature_enabled :agents
-  before_action :set_field_file, only: %i[update destroy]
+  before_action :set_field_file, only: %i[update destroy resummarize]
 
   def create
     attributes = field_file_params
@@ -10,7 +10,15 @@ class FieldFilesController < ApplicationController
         inertia: { errors: { file: "Choose a file to upload." } }
     end
 
-    field_file = current_account.field_files.new(attributes.merge(uploaded_by: Current.user))
+    # dated_at (optional): when the file is from, for old material.
+    dated_at = attributes.delete(:dated_at)
+    begin
+      dated_at = dated_at.present? ? FieldDate.parse(dated_at, param: "dated_at") : nil
+    rescue FieldDate::Invalid => e
+      return redirect_to account_field_path(current_account, tab: "files"), inertia: { errors: { dated_at: e.message } }
+    end
+
+    field_file = current_account.field_files.new(attributes.merge(dated_at:, uploaded_by: Current.user))
 
     if field_file.save
       redirect_to account_field_path(current_account, tab: "files", item: "file-#{field_file.to_param}"),
@@ -35,6 +43,21 @@ class FieldFilesController < ApplicationController
     redirect_to account_field_path(current_account, tab: "files"), notice: "Deleted from the Field."
   end
 
+  # Write the summary again, e.g. after correcting what it was written from.
+  # The page stays where it is; the new summary arrives by refresh.
+  def resummarize
+    item_path = account_field_path(current_account, tab: "files", item: "file-#{@field_file.to_param}")
+    unless FieldSummaries.enabled?
+      return redirect_back_or_to item_path, inertia: { errors: { summary: "Summaries aren't available right now." } }
+    end
+
+    if @field_file.request_resummary!
+      redirect_back_or_to item_path
+    else
+      redirect_back_or_to item_path, inertia: { errors: { summary: "A summary is already being written." } }
+    end
+  end
+
   private
 
   def set_field_file
@@ -42,7 +65,7 @@ class FieldFilesController < ApplicationController
   end
 
   def field_file_params
-    params.require(:field_file).permit(:title, :note, :file)
+    params.require(:field_file).permit(:title, :note, :file, :dated_at)
   end
 
 end

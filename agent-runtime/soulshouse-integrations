@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""Set up a service yourself, for the person you work with.
+
+  soulshouse-integrations providers
+  soulshouse-integrations list
+  soulshouse-integrations connect PROVIDER --conversation CHAT_ID [--label TEXT] [--field KEY=VALUE | --field KEY=@FILE]... [--json -]
+  soulshouse-integrations grant CONNECTION_ID RESIDENT_ID --conversation CHAT_ID
+  soulshouse-integrations revoke CONNECTION_ID RESIDENT_ID --conversation CHAT_ID
+  soulshouse-integrations label CONNECTION_ID TEXT
+  soulshouse-integrations disconnect CONNECTION_ID --conversation CHAT_ID
+
+Only services connected from pasted keys (Ghost, Porkbun, Cloudflare, ...).
+The connection is recorded as set up by you for the person whose key you
+run with, and you can manage only connections you set up. Every connect,
+grant and disconnect posts a line in --conversation, the room you were asked
+in, linking to Integrations, where people can disconnect it.
+
+Secrets: pass them with --field KEY=@FILE or as JSON on stdin (--json -),
+not on the command line, and never in a message.
+"""
+
+import argparse
+import json
+import os
+from pathlib import Path
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+BASE = "/api/v1/resident/service_connections"
+
+
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: every request carries this resident's bearer
+    token (and connect carries the service's secrets), and urllib would send
+    them on to whatever origin the Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        raise SystemExit(f"soulshouse-integrations: souls.house answered with a redirect ({code}) to {target}; "
+                         "not following it with your key. Check SOULSHOUSE_APP_URL.")
+
+
+OPENER = urllib.request.build_opener(RefuseRedirects)
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog="soulshouse-integrations", description=__doc__.split("\n\n")[0],
+                                     epilog="Full manual: /usr/local/share/helixkit-agent/soulshouse-api.md")
+    parser.add_argument("--json-output", action="store_true", help="print the complete JSON response")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("providers", help="services you can connect")
+    sub.add_parser("list", help="connections you set up")
+
+    connect = sub.add_parser("connect", help="connect a service for your person")
+    connect.add_argument("provider")
+    connect.add_argument("--conversation", required=True, help="the conversation you were asked in")
+    connect.add_argument("--label")
+    connect.add_argument("--field", action="append", default=[], metavar="KEY=VALUE",
+                         help="a credential field; KEY=@FILE reads the value from a file")
+    connect.add_argument("--json", dest="json_input", metavar="-", help="read credential fields as a JSON object from stdin")
+
+    for name, help_text in (("grant", "give a resident access"), ("revoke", "take a resident's access away")):
+        command = sub.add_parser(name, help=help_text)
+        command.add_argument("connection_id")
+        command.add_argument("resident_id")
+        command.add_argument("--conversation", required=True)
+
+    label = sub.add_parser("label", help="rename a connection you set up")
+    label.add_argument("connection_id")
+    label.add_argument("text")
+
+    disconnect = sub.add_parser("disconnect", help="disconnect a connection you set up")
+    disconnect.add_argument("connection_id")
+    disconnect.add_argument("--conversation", required=True)
+    return parser
+
+
+def credentials(args):
+    values = {}
+    if args.json_input:
+        if args.json_input != "-":
+            raise SystemExit("--json takes '-' (stdin)")
+        data = json.load(sys.stdin)
+        if not isinstance(data, dict):
+            raise SystemExit("--json needs a JSON object of credential fields")
+        values.update({str(k): str(v) for k, v in data.items()})
+    for index, item in enumerate(args.field, 1):
+        if "=" not in item:
+            # Never echo the argument: it may be a secret typed without KEY=.
+            raise SystemExit(f"--field number {index} needs KEY=VALUE or KEY=@FILE")
+        key, value = item.split("=", 1)
+        if value.startswith("@"):
+            value = Path(value[1:]).expanduser().read_text().strip()
+        values[key] = value
+    return values
+
+
+def call(method, path, payload=None):
+    app_url = os.environ.get("SOULSHOUSE_APP_URL") or os.environ.get("HELIXKIT_APP_URL")
+    token = os.environ.get("SOULSHOUSE_BEARER_TOKEN") or os.environ.get("HELIXKIT_BEARER_TOKEN")
+    if not app_url or not token:
+        raise SystemExit("SOULSHOUSE_APP_URL or SOULSHOUSE_BEARER_TOKEN is missing")
+    body = json.dumps(payload).encode() if payload is not None else None
+    request = urllib.request.Request(f"{app_url.rstrip('/')}{path}", data=body, method=method, headers={
+        "Authorization": f"Bearer {token}", "Accept": "application/json", "Content-Type": "application/json",
+    })
+    try:
+        with OPENER.open(request, timeout=60) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        try:
+            message = json.load(error).get("error") or f"HTTP {error.code}"
+        except ValueError:
+            message = f"HTTP {error.code}"
+        raise SystemExit(f"soulshouse-integrations: {message} (HTTP {error.code})")
+
+
+def describe(connection):
+    residents = ", ".join(r["name"] for r in connection.get("residents", [])) or "no resident"
+    return f"{connection['id']}  {connection['label']}  [{connection['status']}]  by {connection['connected_by_name']}; used by {residents}"
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    q = urllib.parse.quote
+    if args.command == "providers":
+        result = call("GET", f"{BASE}/providers")
+        text = "\n".join(f"{p['key']}: {p['name']} — fields: {', '.join(f['key'] for f in p['credential_fields'])}"
+                         for p in result["providers"])
+    elif args.command == "list":
+        result = call("GET", BASE)
+        text = "\n".join(describe(c) for c in result["service_connections"]) or "You haven't set up any connections."
+    elif args.command == "connect":
+        payload = {"provider": args.provider, "conversation_id": args.conversation, "credentials": credentials(args)}
+        if args.label:
+            payload["label"] = args.label
+        result = call("POST", BASE, payload)
+        text = "Connected.\n" + describe(result["service_connection"])
+    elif args.command in ("grant", "revoke"):
+        result = call("PATCH", f"{BASE}/{q(args.connection_id)}/residents/{q(args.resident_id)}",
+                      {"enabled": args.command == "grant", "conversation_id": args.conversation})
+        text = describe(result["service_connection"])
+    elif args.command == "label":
+        result = call("PATCH", f"{BASE}/{q(args.connection_id)}", {"label": args.text})
+        text = describe(result["service_connection"])
+    else:
+        result = call("DELETE", f"{BASE}/{q(args.connection_id)}", {"conversation_id": args.conversation})
+        text = f"Disconnected. {result.get('provider_side', '')}".strip()
+    print(json.dumps(result, indent=2) if args.json_output else text)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -168,6 +168,60 @@ class ResidentPortabilityTest < ActiveSupport::TestCase
       assert failure.cleaned
     end
   end
+  test "switch turned on during archive validation stages the copy for its own server and restores nothing here" do
+    Setting.instance.update!(new_residents_on_vm: false)
+    vault = @source.create_memory_vault!
+    vault.nodes.create!(node_type: "memory", content: "Staged graph", disclosure: "never_automatic")
+    with_export do |archive, _|
+      archive.define_singleton_method(:validate!) do
+        result = super()
+        Setting.instance.update!(new_residents_on_vm: true, vm_resident_limit: 0)
+        result
+      end
+      transport = FakeTransport.new
+      imported = nil
+      Agents::Config.stub(:default_image, "synthetic:image") do
+        assert_no_difference [ "CloudProcurementOperation.count", "RunnerCommand.count" ] do
+          imported = Import.call(archive, account: accounts(:team_account), user: @user, name: "Staged", transport_factory: ->(_) { flunk "a staged import must not touch local volumes" })
+        end
+      end
+      assert_empty transport.restored
+      placement = imported.placement
+      assert_equal [ "hetzner_cloud", "archive_import", "staged" ], [ placement.backend, placement.kind, placement.state ]
+      assert_nil placement.provider_server_id
+      assert_nil placement.admitted_by_setting_at
+      assert_nil placement.birth_deadline_at
+      assert_equal 0, Agents::VmBirthPolicy.current.vm_count
+      refute imported.active?
+      assert imported.paused?
+      refute imported.scheduled_wakes_enabled?
+      assert_equal "offline", imported.runtime
+      assert_nil imported.identity_seeded_at
+      assert_nil imported.sandbox_host
+      assert_equal "hk-agent-#{imported.uuid}", imported.container_name
+      assert imported.outbound_api_key
+      assert_equal %w[identity repo work], imported.import_stages.order(:role).pluck(:role)
+      # The graph is imported into the house now, once; Activate won't redo it.
+      assert imported.memory_vault.nodes.exists?(content: "Staged graph")
+      # Placement is the authority: nothing local will run a staged copy.
+      refute Agents::RuntimeLocation.local?(imported)
+      assert_raises(Agents::RuntimeLocation::Unavailable) { Agents::RuntimeLocation.require_local!(imported) }
+    end
+  end
+
+  test "a failed staged import leaves no resident, placement or stage" do
+    Setting.instance.update!(new_residents_on_vm: true, vm_resident_limit: 5)
+    with_export do |archive, _|
+      Agents::Config.stub(:default_image, "synthetic:image") do
+        Agents::Portability::Stage.stub(:max_role_unpacked, 1) do
+          assert_no_difference [ "Agent.count", "ApiKey.count", "AgentPlacement.count", "AgentImportStage.count", "Mnemodyne::Vault.count" ] do
+            assert_raises(Error) { Import.call(archive, account: accounts(:team_account), user: @user, name: "Too big", transport_factory: ->(_) { flunk "no local volumes" }) }
+          end
+        end
+      end
+    end
+  end
+
   def with_limit(name, value)
     old = Archive.const_get(name)
     Archive.send(:remove_const, name)

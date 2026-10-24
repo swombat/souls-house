@@ -11,6 +11,8 @@ module AgentRuntimeInteraction::LiveActivity
     has_many :linked_messages, class_name: "Message", foreign_key: :runtime_interaction_id, dependent: :nullify
     attr_accessor :enqueue_dispatch
     belongs_to :message_dispatch, optional: true
+    has_one :released_pending_wake, class_name: "PendingWake", foreign_key: :released_interaction_id, inverse_of: :released_interaction
+    has_many :message_handoffs, foreign_key: :runtime_interaction_id, inverse_of: :runtime_interaction
     after_create_commit :enqueue_live_dispatch, if: :enqueue_dispatch
   end
 
@@ -21,25 +23,31 @@ module AgentRuntimeInteraction::LiveActivity
 
     # A deadline (a message dispatch's expiry) caps the preparation window, so
     # a run reserved late cannot start later than its request allowed.
-    def reserve!(agent:, chat:, enqueue: false, response_chain_agent_ids: [], message_dispatch: nil, deadline: nil, follow_through_of: nil)
+    def reserve!(agent:, chat:, enqueue: false, response_chain_agent_ids: [], message_dispatch: nil, deadline: nil, follow_through_of: nil,
+      stalled_thread_sweep: nil, wake_source_kinds: [])
       chat.with_lock do
         raise ArgumentError, "Conversation unavailable" unless chat.respondable? && chat.manual_responses? && chat.agents.exists?(agent.id)
         agent.reload.require_conversation_runtime!
         chat.agent_runtime_interactions.where(agent: agent, finished_at: nil).each(&:reconcile_activity!)
         raise Chat::AlreadyResponding, "#{agent.name} is already responding" if chat.agent_response_active?(agent)
 
-        create!(
-          agent: agent, chat: chat, trigger_kind: "conversation",
-          conversation_obfuscated_id: chat.to_param, requested_by: "souls.house",
-          session_id: "#{agent.uuid}-#{chat.id}", started_at: Time.current,
-          run_id: SecureRandom.uuid, execution_state: "queued",
-          execution_deadline_at: [ PREPARATION_WINDOW.from_now, deadline ].compact.min,
-          message_dispatch: message_dispatch,
-          narration_shared: agent.share_working_narration?,
-          response_chain_agent_ids: response_chain_agent_ids,
-          follow_through_of: follow_through_of,
-          enqueue_dispatch: enqueue
-        )
+        agent.with_lock do
+          raise Agent::RuntimeAvailability::Unavailable, "Resident backup is pending" if Backup::VmResident.held?(agent)
+          create!(
+            agent: agent, chat: chat, trigger_kind: "conversation",
+            conversation_obfuscated_id: chat.to_param, requested_by: "souls.house",
+            session_id: "#{agent.uuid}-#{chat.id}", started_at: Time.current,
+            run_id: SecureRandom.uuid, execution_state: "queued",
+            execution_deadline_at: [ PREPARATION_WINDOW.from_now, deadline ].compact.min,
+            message_dispatch: message_dispatch,
+            narration_shared: agent.share_working_narration?,
+            response_chain_agent_ids: response_chain_agent_ids,
+            follow_through_of: follow_through_of,
+            stalled_thread_sweep: stalled_thread_sweep,
+            wake_source_kinds: wake_source_kinds,
+            enqueue_dispatch: enqueue
+          )
+        end
       end
     end
   end
@@ -54,12 +62,80 @@ module AgentRuntimeInteraction::LiveActivity
   # the run is queued. Once a claim wins, the run may reach the runtime and
   # nothing here can recall it.
   def claim_dispatch!
+    return claim_released_wake! if released_pending_wake
+    return claim_handoff! if message_handoffs.exists?
+    return claim_stalled_sweep! if stalled_thread_sweep_id
     return claim_dispatch_unchecked! unless message_dispatch
 
     message_dispatch.with_lock do
       next claim_dispatch_unchecked! if message_dispatch.deliverable!
 
       with_lock { finish_execution!("cancelled") if dispatch_claimed_at.nil? }
+      false
+    end
+  end
+
+  # A run released from a PendingWake starts only if the wake would still be
+  # released now (PendingWake#claim_refusal_reason), checked under the wake's
+  # lock. Lock order: wake, then this interaction.
+  def claim_released_wake!
+    wake = released_pending_wake
+    wake.with_lock do
+      reason = wake.claim_refusal_reason
+      unless reason
+        update!(wake_source_kinds: wake.standing_source_kinds) if dispatch_claimed_at.nil?
+        next claim_dispatch_unchecked!
+      end
+
+      # A run already claimed (a duplicate delivery) is left alone.
+      refused = with_lock do
+        next false unless dispatch_claimed_at.nil? && !execution_state.in?(TERMINAL_STATES)
+
+        finish_execution!("cancelled")
+        true
+      end
+      wake.update!(dropped_at: Time.current, drop_reason: "claim_refused:#{reason}") if refused
+      false
+    end
+  end
+
+  # A run a resident's handoff woke at once (MessageHandoff#dispatch!) starts
+  # only while the request still stands, as a held one's release would:
+  # message kept, author and recipient still in the room, recipient not
+  # paused. Checked under the rows a withdrawal writes
+  # (MessageHandoff#claim_refusal_reason), then this interaction.
+  def claim_handoff!
+    handoffs = message_handoffs.order(:id).to_a
+    MessageHandoff.transaction do
+      reasons = handoffs.map(&:claim_refusal_reason)
+      next claim_dispatch_unchecked! if reasons.any?(&:nil?)
+
+      refused = with_lock do
+        next false unless dispatch_claimed_at.nil? && !execution_state.in?(TERMINAL_STATES)
+
+        finish_execution!("cancelled")
+        true
+      end
+      handoffs.zip(reasons).each { |handoff, reason| handoff.refuse_claim!(reason) } if refused
+      false
+    end
+  end
+
+  # A run the stalled-thread sweeper woke starts only while every gate that
+  # allowed it still stands (StalledThreadWake.refusal_reason): waking and the
+  # sweep switched on, the account opted in, the resident seated, available
+  # and not paused. The agent row is locked for the check, so a pause either
+  # lands first and stops the run, or lands after the claim. Lock order:
+  # agent, then this interaction.
+  def claim_stalled_sweep!
+    agent.with_lock do
+      next claim_dispatch_unchecked! unless StalledThreadWake.refusal_reason(chat: chat, agent: agent)
+
+      with_lock do
+        next false unless dispatch_claimed_at.nil? && !execution_state.in?(TERMINAL_STATES)
+
+        finish_execution!("cancelled")
+      end
       false
     end
   end
@@ -154,9 +230,11 @@ module AgentRuntimeInteraction::LiveActivity
         "failed" => "finished with an error", "timed_out" => "timed out",
         "cancelled" => "was cancelled", "busy" => "is already busy",
         "outcome_unknown" => "lost contact; outcome unconfirmed"
-      }[state],
+      }[state].then { |label| !ongoing && ran_out_of_memory? ? "ran out of memory" : label },
       reporter_health: health, snapshot: snapshot,
       narration_shared: helpers_shared,
+      server_time: Time.current.iso8601(3),
+      last_resident_post_at: (last_resident_post_at&.iso8601(3) if ongoing),
       last_report_at: latest&.last_report_at&.iso8601,
       reply_count: replies, reply_label: replies.positive? ? "#{replies} #{'reply'.pluralize(replies)} posted" : "No linked reply",
       detail_dropped: attempts.sum(&:dropped_count),
@@ -177,7 +255,7 @@ module AgentRuntimeInteraction::LiveActivity
 
   private
 
-  private :prepare_activity_configuration!, :claim_dispatch_unchecked!
+  private :prepare_activity_configuration!, :claim_dispatch_unchecked!, :claim_released_wake!
 
   def enqueue_live_dispatch
     ManualAgentResponseJob.perform_later(chat, agent, runtime_interaction_id: id)

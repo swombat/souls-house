@@ -83,6 +83,37 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Focused Work", @personal_account.reload.name
   end
 
+  test "the resident handoff cap is shown and can be changed, within range" do
+    get account_path(@team_account)
+    assert_response :success
+
+    patch account_path(@team_account), params: { account: { resident_handoff_cap: "3" } }
+    assert_redirected_to @team_account
+    assert_equal 3, @team_account.reload.resident_handoff_cap
+
+    patch account_path(@team_account), params: { account: { resident_handoff_cap: "500" } }
+    assert_redirected_to @team_account
+    assert_equal 3, @team_account.reload.resident_handoff_cap
+  end
+
+  test "the reflexes switch saves under any site scope and the page carries the site scope" do
+    %w[disabled enabled account_choice].each do |scope|
+      Setting.instance.update!(reflexes_scope: scope)
+      get account_path(@team_account)
+      @inertia_props = nil
+      assert_equal scope, inertia_props.dig("props", "reflexes_site_scope")
+    end
+
+    Setting.instance.update!(reflexes_scope: "disabled")
+    patch account_path(@team_account), params: { account: { reflexes_enabled: true } }
+    assert_redirected_to @team_account
+    assert @team_account.reload.reflexes_enabled?
+
+    Setting.instance.update!(reflexes_scope: "enabled")
+    patch account_path(@team_account), params: { account: { reflexes_enabled: false } }
+    assert_not @team_account.reload.reflexes_enabled?
+  end
+
   test "account owners cannot change shared AI credential fallback" do
     @team_account.update!(use_system_ai_credentials: true)
 

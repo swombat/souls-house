@@ -13,6 +13,9 @@ class RhythmPresentation
     holds = @rhythm.persisted? ? @rhythm.open_holds.includes(:user, :agent).to_a : []
     at = @rhythm.next_run_at
     selected = @rhythm.agents.to_a
+    seat_models = @rhythm.persisted? ? @rhythm.rhythm_agents.pluck(:agent_id, :model_id).to_h : {}
+    # A form re-rendered after a rejected save shows what was asked for.
+    seat_models = seat_models.merge(@rhythm.pending_resident_models.to_h)
     present = @agent && @rhythm.account.conversation_agents.exists?(@agent.id)
     {
       id: @rhythm.persisted? ? @rhythm.to_param : nil,
@@ -25,17 +28,27 @@ class RhythmPresentation
       next_run_at: at&.iso8601,
       preview_title: at ? @rhythm.preview_title(at: at) : @rhythm.title,
       schedule_description: schedule_description, state: holds.empty? ? "active" : "paused",
+      # resident_default follows the account's resident default room, main is
+      # Main on purpose, room is the named room. opens_in is where the next
+      # occurrence opens; room_removed says a named room has gone and the
+      # rhythm is falling back to the account default.
+      room_choice: @rhythm.room_choice, room_id: own_room&.to_param,
+      room_name: own_room&.name, room_removed: @rhythm.room_removed?,
+      opens_in: room_json(@rhythm.occurrence_room),
       creator: {
         id: (@rhythm.creator_agent || @rhythm.creator)&.to_param,
         name: @rhythm.creator_agent&.name || display_name(@rhythm.creator),
         type: @rhythm.creator_agent ? "agent" : (@rhythm.creator ? "user" : nil)
       },
       resident_ids: selected.map(&:to_param),
-      residents: selected.map { |resident| { id: resident.to_param, name: resident.name, colour: resident.colour } },
+      # nil follows the resident's default; a model id pins the model the
+      # rhythm's conversations open with.
+      resident_models: selected.to_h { |resident| [ resident.to_param, seat_models[resident.id] ] },
+      residents: selected.map { |resident| resident_payload(resident, seat_models[resident.id]) },
       can_manage: manageable, can_resume: holds.any? { |hold| can_release?(hold) },
       can_join: !!(present && @agent.eligible_for_conversation? && !selected.include?(@agent)),
       can_leave: !!(present && selected.include?(@agent)),
-      start_request_key: SecureRandom.uuid, errors: @rhythm.errors.to_hash(true),
+      errors: @rhythm.errors.to_hash(true),
       holds: holds.map { |hold| hold_payload(hold) },
       occurrences: history ? @rhythm.occurrences.includes(:chat, message: :message_dispatch)
         .order(created_at: :desc).limit(30).map { |occurrence| occurrence_payload(occurrence) } : [],
@@ -56,6 +69,24 @@ class RhythmPresentation
   end
 
   private
+
+  # Never show a room of another account, even one an invalid edit named.
+  def own_room
+    room = @rhythm.room
+    room if room && room.account_id == @rhythm.account_id
+  end
+
+  def room_json(room)
+    room ? room.as_json : @rhythm.account.main_room_json.slice("id", "name")
+  end
+
+  def resident_payload(resident, model_id)
+    {
+      id: resident.to_param, name: resident.name, colour: resident.colour,
+      model_id: model_id, model_label: Agent.label_for_model(model_id.presence || resident.model_id),
+      model_selected: model_id.present?
+    }
+  end
 
   # The last few conversations, shown inline on the Rhythms page. Quiet runs
   # are off the conversation list (Chat::QuietRhythmRun), so this is where

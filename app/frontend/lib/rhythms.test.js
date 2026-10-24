@@ -6,11 +6,29 @@ import {
   needsShortMonthNote,
   previewQuery,
   rhythmActionPath,
+  roomChoiceFromSelect,
+  roomSelectValue,
   zoneIdentifier,
   submittableValues,
 } from './rhythms.js';
 
 describe('rhythms helpers', () => {
+  it('follows the account default room unless told otherwise, and sends a room only when one is named', () => {
+    const values = formValues({});
+    expect(values).toMatchObject({ room_choice: 'resident_default', room_id: '' });
+    expect(roomSelectValue(values)).toBe('resident_default');
+    expect(submittableValues(values).room_id).toBeNull();
+
+    const named = { ...values, ...roomChoiceFromSelect('room:abcXYZ') };
+    expect(named).toMatchObject({ room_choice: 'room', room_id: 'abcXYZ' });
+    expect(roomSelectValue(named)).toBe('room:abcXYZ');
+    expect(submittableValues(named).room_id).toBe('abcXYZ');
+
+    const main = { ...named, ...roomChoiceFromSelect('main') };
+    expect(main).toMatchObject({ room_choice: 'main', room_id: '' });
+    expect(submittableValues(main).room_id).toBeNull();
+  });
+
   it('defaults a new rhythm to a weekly morning with the date appended', () => {
     const values = formValues({}, 'Europe/Madrid');
     expect(values).toMatchObject({ cadence: 'weekly', append_date: true, timezone: 'Europe/Madrid', resident_ids: [] });
@@ -63,5 +81,15 @@ describe('rhythms helpers', () => {
     expect(zoneIdentifier('Madrid', zones)).toBe('Europe/Madrid');
     expect(formatWhen('2026-10-05T07:00:00Z', zoneIdentifier('Madrid', zones))).toContain('09:00');
     expect(zoneIdentifier('Europe/Madrid', [])).toBe('Europe/Madrid');
+  });
+
+  it('sends a model for each selected resident, blank meaning default', () => {
+    const values = formValues({
+      resident_ids: ['a', 'b', 'c'],
+      resident_models: { a: 'anthropic/claude-fable-5.1', b: null, z: 'x' },
+    });
+    values.resident_ids = ['a', 'b'];
+    expect(submittableValues(values).resident_models).toEqual({ a: 'anthropic/claude-fable-5.1', b: 'default' });
+    expect(previewQuery(values)).not.toContain('resident_models');
   });
 });

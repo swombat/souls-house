@@ -8,6 +8,7 @@ class ChatsController < ApplicationController
   before_action :require_available_agents, only: [ :index, :new ]
 
   def index
+    select_room_from_params
     @chats = sidebar_chats
 
     render inertia: "chats/new", props: {
@@ -20,6 +21,7 @@ class ChatsController < ApplicationController
   end
 
   def new
+    select_room_from_params
     @chats = sidebar_chats
 
     render inertia: "chats/new", props: {
@@ -32,6 +34,9 @@ class ChatsController < ApplicationController
   end
 
   def show
+    # A conversation opens in its own room. Only a click from the All chats
+    # list (which carries room=all) keeps All chats; a bare link never does.
+    select_room!(params[:room] == RoomSelection::ALL ? :all : @chat.room)
     props = {
       account: current_account.as_json,
       show_usage_in_chat: Setting.instance.show_usage_in_chat
@@ -82,7 +87,7 @@ class ChatsController < ApplicationController
     end
 
     @chat = current_account.chats.create_with_message!(
-      chat_create_params.merge(manual_responses: true),
+      chat_create_params.merge(manual_responses: true, room: room_for_new_chat),
       message_content: params[:message],
       user: Current.user,
       files: params[:files],
@@ -95,25 +100,19 @@ class ChatsController < ApplicationController
       flash[:draft_submission_id] = submission_id
     end
     audit("create_chat", @chat, **chat_create_params.to_h)
-    redirect_to account_chat_path(current_account, @chat)
+    redirect_to chat_view_path(@chat)
   rescue ActiveRecord::RecordNotFound
     redirect_to new_account_chat_path(current_account), alert: "Select valid residents from this account"
   end
 
   def update
-    @chat = current_account.chats.find(params[:id])
+    @chat = current_account.chats.kept.find(params[:id])
 
     if @chat.update(chat_params)
-      redirect_to account_chat_path(current_account, @chat)
+      redirect_to chat_view_path(@chat)
     else
-      redirect_back_or_to account_chat_path(current_account, @chat), alert: @chat.errors.full_messages.to_sentence
+      redirect_back_or_to chat_view_path(@chat), alert: @chat.errors.full_messages.to_sentence
     end
-  end
-
-  def destroy
-    audit("destroy_chat", @chat)
-    @chat.destroy!
-    redirect_to account_chats_path(current_account)
   end
 
   def search
@@ -132,8 +131,21 @@ class ChatsController < ApplicationController
 
   private
 
+  def select_room_from_params
+    select_room!(room_from_key(params[:room])) if params[:room].is_a?(String)
+  end
+
+  # An explicit choice from the form wins; otherwise the room being viewed.
+  def room_for_new_chat
+    if params.key?(:room_id)
+      Room.resolve_for(current_account, params[:room_id].presence)
+    else
+      selected_room == :all ? nil : selected_room
+    end
+  end
+
   def sidebar_chats
-    base_scope = current_account.chats.includes(:visual_tag)
+    base_scope = current_account.chats.in_room(selected_room).includes(:visual_tag)
 
     if params[:show_deleted].present? && can_manage_account?
       chats = base_scope.with_discarded
@@ -151,8 +163,7 @@ class ChatsController < ApplicationController
   end
 
   def set_chat
-    # Use with_discarded to allow admins to find discarded chats for restore
-    @chat = current_account.chats.with_discarded.find(params[:id])
+    @chat = current_account.chats.kept.find(params[:id])
   end
 
   def chat_params
@@ -282,6 +293,7 @@ class ChatsController < ApplicationController
       id: message.to_param,
       chat_id: message.chat.to_param,
       chat_title: message.chat.title_or_default,
+      room_name: message.chat.room&.name,
       snippet: snippet_around(message.content, query),
       author_name: message.author_name,
       role: message.role,

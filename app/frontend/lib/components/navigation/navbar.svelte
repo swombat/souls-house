@@ -6,11 +6,20 @@
   import * as DropdownMenu from '$lib/components/shadcn/dropdown-menu/index.js';
   import { Button, buttonVariants } from '$lib/components/shadcn/button/index.js';
   import { cn } from '$lib/utils.js';
-  import { loginPath, signupPath, logoutPath, searchAccountChatsPath, accountAgentsPath } from '@/routes';
+  import {
+    loginPath,
+    signupPath,
+    logoutPath,
+    accountChatsPath,
+    searchAccountChatsPath,
+    accountAgentsPath,
+  } from '@/routes';
   import { setMode, resetMode } from 'mode-watcher';
   import MobileNavMenu from '$lib/components/navigation/MobileNavMenu.svelte';
   import SiteAdminMenu from '$lib/components/navigation/SiteAdminMenu.svelte';
   import UserAccountMenu from '$lib/components/navigation/UserAccountMenu.svelte';
+  import AccountHoverSwitcher from '$lib/components/navigation/AccountHoverSwitcher.svelte';
+  import ChatRoomsNavMenu from '$lib/components/navigation/ChatRoomsNavMenu.svelte';
   import * as logging from '$lib/logging';
   import { DEFAULT_SITE_NAME } from '$lib/branding';
   import { clearLocalDrafts } from '$lib/conversation-draft';
@@ -19,7 +28,41 @@
   const updateAttentionSync = createDynamicSync();
   $effect(() => {
     const id = $page.props?.user?.id;
-    updateAttentionSync(id ? { [`ReplyAttention:${id}`]: 'reply_attention' } : {});
+    const accountId = $page.props?.account?.id;
+    const subs = {};
+    // Membership changes already invalidate this private stream. Refresh the
+    // subscription set too, including newly confirmed or removed accounts.
+    if (id) subs[`ReplyAttention:${id}`] = ['reply_attention', 'accounts', 'expired_subscriptions'];
+    // The room switchers' working spinners, here so they update on any page.
+    if (accountId) subs[`RoomActivity:${accountId}`] = 'room_activity';
+    updateAttentionSync(subs);
+  });
+
+  const updateSubscriptionSync = createDynamicSync();
+  $effect(() => {
+    const subs = {};
+    if ($page.props?.user?.id) {
+      // Subscribe even when an account has no expiries yet. The summary spans
+      // every confirmed account, not only the account currently being viewed.
+      for (const account of $page.props?.accounts || []) {
+        subs[`Account:${account.id}`] = ['accounts', 'expired_subscriptions'];
+        if (account.id === $page.props?.account?.id) {
+          subs[`Account:${account.id}`].push('account', 'is_account_admin');
+        }
+      }
+    }
+    updateSubscriptionSync(subs);
+  });
+
+  const updateRoomNavigationSync = createDynamicSync();
+  $effect(() => {
+    const accountId = $page.props?.account?.id;
+    const subs = {};
+    // Watch even an empty account: its first room turns Chats into a menu.
+    if ($page.props?.user?.id && accountId) {
+      subs[`RoomNavigation:${accountId}`] = ['rooms', 'current_room', 'main_room_name'];
+    }
+    updateRoomNavigationSync(subs);
   });
 
   function handleLogout(event) {
@@ -40,6 +83,9 @@
   const currentAccount = $derived($page.props?.account);
   const accounts = $derived($page.props?.accounts || []);
   const siteSettings = $derived($page.props?.site_settings);
+  const accountNameHref = $derived(
+    currentAccount?.id && siteSettings?.allow_chats ? accountChatsPath(currentAccount.id) : '/'
+  );
 
   const links = $derived([
     {
@@ -122,22 +168,41 @@
 <nav>
   <div class="flex items-center justify-between p-4 px-4 md:px-10 border-b gap-2 md:gap-4">
     <div class="flex min-w-0 items-center gap-4 md:gap-8">
-      <Link href="/" class="flex min-w-0 items-center gap-2">
-        <Logo class="h-8 w-8 shrink-0 md:h-10 md:w-10" />
-        {#if currentUser && currentAccount?.name}
-          <!-- The logo already names the site; signed in, this slot names the account you are in. -->
-          <span
-            class="truncate max-w-[45vw] md:max-w-[16rem]"
-            title={currentAccount.name}
-            data-testid="nav-account-name">{currentAccount.name}</span>
-        {:else}
+      {#if currentUser && currentAccount?.name}
+        <!-- The logo already names the site; signed in, the name beside it is the account you are in.
+             The logo goes home; the account name goes straight to that account's chats. -->
+        <div class="flex min-w-0 items-center gap-2">
+          <Link href="/" aria-label="Home" data-testid="nav-home-logo">
+            <Logo class="h-8 w-8 shrink-0 md:h-10 md:w-10" />
+          </Link>
+          <!-- Remount when the destination changes, like the account-scoped links below, so the click handler cannot keep the previous account's URL. -->
+          <!-- On a computer, hovering the name lists the other accounts; clicking it still opens this account's chats. -->
+          <AccountHoverSwitcher
+            {currentAccount}
+            {accounts}
+            replyAttention={$page.props?.reply_attention || {}}
+            expiredSubscriptions={$page.props?.expired_subscriptions || {}}>
+            {#key accountNameHref}
+              <Link
+                href={accountNameHref}
+                class="block truncate max-w-[45vw] md:max-w-[16rem]"
+                title={accounts.length > 1 ? undefined : currentAccount.name}
+                data-testid="nav-account-name">{currentAccount.name}</Link>
+            {/key}
+          </AccountHoverSwitcher>
+        </div>
+      {:else}
+        <Link href="/" class="flex min-w-0 items-center gap-2">
+          <Logo class="h-8 w-8 shrink-0 md:h-10 md:w-10" />
           <span class="hidden sm:inline">{siteSettings?.site_name || DEFAULT_SITE_NAME}</span>
-        {/if}
-      </Link>
+        </Link>
+      {/if}
       <div class="hidden md:flex items-center">
         <!-- Remount Inertia links when their account-scoped href changes so the click handler cannot retain the previous URL. -->
         {#each links as link (`${link.label}:${link.href}`)}
-          {#if link.show}
+          {#if link.show && link.label === 'Chats' && $page.props?.rooms?.length && currentAccount?.id}
+            <ChatRoomsNavMenu accountId={currentAccount.id} label={link.label} />
+          {:else if link.show}
             <Link
               href={link.href}
               class={cn(buttonVariants({ variant: 'ghost' }), 'rounded-full text-muted-foreground')}>{link.label}</Link>
@@ -188,6 +253,7 @@
       {/if}
       <UserAccountMenu
         replyAttention={$page.props?.reply_attention || {}}
+        expiredSubscriptions={$page.props?.expired_subscriptions || {}}
         allowAccountCreation={siteSettings?.allow_account_creation !== false}
         {currentUser}
         {currentAccount}

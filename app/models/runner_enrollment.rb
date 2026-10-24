@@ -27,6 +27,7 @@ class RunnerEnrollment < ApplicationRecord
 
   belongs_to :agent_placement
   has_many :request_nonces, class_name: "RunnerRequestNonce", dependent: :delete_all
+  has_many :commands, class_name: "RunnerCommand", dependent: :restrict_with_exception
 
   validates :public_id, :token_digest, :expires_at, presence: true
   validates :expected_provider_server_id, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
@@ -120,8 +121,117 @@ class RunnerEnrollment < ApplicationRecord
 
   def enrolled? = enrolled_at.present?
 
+  # The runner asks for its next command (#238). Same rule as heartbeat!:
+  # every check under the row lock first, then the nonce, then the change.
+  # Returns the command envelope or nil. A command issued under an older
+  # placement generation is refused here and never handed out.
+  def poll!(nonce:, now: Time.current)
+    with_lock do
+      placement = require_live!
+      consume_nonce!(nonce, now)
+      generation = placement.generation
+      while (command = RunnerCommand.next_for(self, now:))
+        if command.generation < generation
+          command.refuse_locally!("stale generation", now:)
+          next
+        end
+        if withdrawn_before_handoff?(command)
+          command.refuse_locally!("turn withdrawn before delivery", now:)
+          next
+        end
+        return command.deliver!(now:)
+      end
+      nil
+    end
+  end
+
+  # The runner answers a command. Only a command this enrollment was given
+  # can be answered, and only once; a repeated answer is accepted and ignored.
+  # A command from an older placement generation can't be answered: a late
+  # result must not settle anything for a placement that has moved on.
+  def report_command_result!(public_id:, result:, nonce:, now: Time.current)
+    with_lock do
+      placement = require_live!
+      command = commands.find_by(public_id: public_id.to_s) || raise(Refused.new(:unknown_command, 404))
+      raise Refused.new(:not_delivered, 409) if command.state == "queued"
+      raise Refused.new(:stale_generation, 409) if command.generation < placement.generation
+
+      consume_nonce!(nonce, now)
+      command.record_result!(result, now:)
+      command
+    end
+  end
+
+  # The runner asks for a resident image (#238 part 3). The house hands it
+  # over only while this enrollment holds a delivered, unanswered
+  # start_resident naming exactly that image ID. Same rule as the other
+  # endpoints: every check under the lock before the nonce is consumed.
+  IMAGE_ID = /\Asha256:[0-9a-f]{64}\z/
+
+  def authorize_image!(image_id:, nonce:, now: Time.current)
+    with_lock do
+      placement = require_live!
+      raise Refused.new(:bad_image, 404) unless IMAGE_ID.match?(image_id.to_s)
+
+      wanted = commands.where(kind: "start_resident", state: "delivered")
+        .where(generation: placement.generation).any? do |command|
+          JSON.parse(command.payload_json.to_s)["image"] == image_id
+        rescue JSON::ParserError
+          false
+        end
+      raise Refused.new(:image_not_requested, 404) unless wanted
+
+      consume_nonce!(nonce, now)
+      image_id
+    end
+  end
+
   def healthy?(now: Time.current)
     enrolled? && revoked_at.nil? && last_heartbeat_at.present? && last_heartbeat_at > now - HEALTHY_WITHIN
+  end
+
+  def authorize_backup!(nonce:, now: Time.current)
+    with_lock do
+      placement = require_live!
+      raise Refused.new(:placement_unavailable, 409) if placement.state == "failed"
+      wanted = commands.where(kind: "backup_resident", state: "delivered", generation: placement.generation).exists?
+      raise Refused.new(:backup_not_requested, 404) unless wanted
+      consume_nonce!(nonce, now)
+      placement.agent
+    end
+  end
+
+  # The runner asks for its resident's first home (#246 slice 3). Same rule
+  # as images: only while this enrollment holds a delivered, unanswered
+  # seed_home of the current generation naming exactly that digest, and only
+  # the archive stored on this enrollment's own placement. Returns the bytes.
+  SEED_DIGEST = /\A[0-9a-f]{64}\z/
+
+  def authorize_seed!(sha256:, nonce:, now: Time.current)
+    with_lock do
+      placement = require_live!
+      raise Refused.new(:bad_seed, 404) unless SEED_DIGEST.match?(sha256.to_s)
+
+      wanted = commands.where(kind: "seed_home", state: "delivered")
+        .where(generation: placement.generation).any? do |command|
+          JSON.parse(command.payload_json.to_s)["sha256"] == sha256
+        rescue JSON::ParserError
+          false
+        end
+      raise Refused.new(:seed_not_requested, 404) unless wanted
+
+      archive = AgentPlacement.uncached { AgentPlacement.where(id: placement.id).pick(:seed_sha256, :seed_archive) }
+      bytes = archive[1] if archive && archive[0] == sha256
+      # An archive import's role homes are staged on its resident
+      # (AgentImportStage), each named by its own digest.
+      if bytes.blank? && placement.kind == "archive_import"
+        bytes = AgentImportStage.uncached { AgentImportStage.where(agent_id: placement.agent_id, sha256:).pick(:archive) }
+      end
+      raise Refused.new(:seed_not_requested, 404) if bytes.blank?
+
+      consume_nonce!(nonce, now)
+      bytes
+    end
   end
 
   def revoke!(now: Time.current)
@@ -129,6 +239,36 @@ class RunnerEnrollment < ApplicationRecord
   end
 
   private
+
+  # The no-new-starts boundary, carried across the queue: a submission that
+  # has never been handed out is checked again here, at the last moment it
+  # can still be stopped. A withdrawn turn's submit is refused locally; the
+  # poll job then finds the resident never saw it and sends a cancellation
+  # instead. A submit that was already delivered keeps its uncertainty: the
+  # runner may have it, so it is never refused here.
+  def withdrawn_before_handoff?(command)
+    return false unless command.kind == "submit_turn" && command.state == "queued"
+
+    turn = command.resident_turn
+    return true unless turn
+
+    turn.withdraw_unless_deliverable!
+    turn.reload
+    turn.cancel_requested_at? || turn.finished_at?
+  end
+
+  # Returns the placement, read fresh under the enrollment lock. A retired
+  # placement gets no commands and settles no results, whatever the state of
+  # its enrollment.
+  def require_live!
+    raise Refused.new(:revoked, 403) if revoked_at
+    raise Refused.new(:not_enrolled, 409) unless enrolled_at
+
+    placement = AgentPlacement.uncached { AgentPlacement.find(agent_placement_id) }
+    raise Refused.new(:placement_retired, 410) if placement.state == "retired"
+
+    placement
+  end
 
   # Inside the caller's transaction. A duplicate nonce violates the unique
   # index; the raise rolls the whole transaction back.

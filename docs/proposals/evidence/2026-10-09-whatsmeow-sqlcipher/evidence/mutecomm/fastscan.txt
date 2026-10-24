@@ -1,0 +1,22 @@
+1032 binary patterns + 2 tokens (CANARY, 'SQLite format 3'); 0 needles had no >=10-byte newline-free segment
+=== POSITIVE CONTROL
+patterns: 1034 lines; paths: control
+regular files scanned: 1, bytes: 91516928
+grep exit: 0 (0=match, 1=no match, 2=error)
+FILES WITH HITS:
+control/plaintext-control.db
+=== REAL: post-kill snapshot + /tmp + $TMPDIR
+patterns: 1034 lines; paths: runs/mutecomm/snapshot /tmp /home/agent/work/.tmp
+regular files scanned: 41314, bytes: 1777297446
+grep exit: 0 (0=match, 1=no match, 2=error)
+FILES WITH HITS:
+/home/agent/work/.tmp/playwright_chromiumdev_profile-l3T82k/Default/Shared Dictionary/db
+
+real	0m25.298s
+user	0m24.778s
+sys	0m0.523s
+=== verify the one prefilter hit
+20685 needles total, 1032 without the CANARY token searched individually
+HIT /home/agent/work/.tmp/playwright_chromiumdev_profile-l3T82k/Default/Shared Dictionary/db (45056 bytes): 0 binary-needle hits; tokens: ['plain-sqlite-header@0']
+    plain-sqlite-header @ 0
+scanned 1 files, 1032 needles, 1 hits

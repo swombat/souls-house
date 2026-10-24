@@ -8,6 +8,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class CiImageTest(unittest.TestCase):
+    def test_ruby_pins_match_local_development(self):
+        version = (ROOT / ".ruby-version").read_text().strip()
+        self.assertRegex((ROOT / "mise.toml").read_text(), rf'(?m)^ruby = "{re.escape(version)}"$')
+        for path in ("Dockerfile", ".github/ci/Dockerfile"):
+            self.assertIn(f"ARG RUBY_VERSION={version}\n", (ROOT / path).read_text())
+        for path in ("agent-runtime/Dockerfile.mira-dev", "ops/deploy/Dockerfile"):
+            self.assertIn(f"FROM ruby:{version}-slim-trixie", (ROOT / path).read_text())
+
     def test_image_matches_application_pins(self):
         dockerfile = (ROOT / ".github/ci/Dockerfile").read_text()
         pins = dict(re.findall(r"^ARG (\w+)=([^\n]+)$", dockerfile, re.M))
@@ -43,7 +51,7 @@ class CiImageTest(unittest.TestCase):
             self.assertRegex(dockerfile, r"\b" + re.escape(package) + r"\b")
         self.assertIn("import sys, yaml, tomllib", workflow)
         self.assertIn("sys.version_info >= (3, 11)", workflow)
-        self.assertIn("python3 git ssh-keygen /usr/bin/script ffmpeg ffprobe sh date sleep", workflow)
+        self.assertIn("python3 git ssh-keygen /usr/bin/script ffmpeg ffprobe pdfinfo pdftotext pdftoppm sh date sleep", workflow)
 
 
 if __name__ == "__main__":

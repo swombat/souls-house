@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Search X or read one X thread through the metered souls.house service."""
+"""Search X, read one X thread, or post to your account's connected X handle through souls.house."""
 
 import argparse
 import json
@@ -7,6 +7,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+import uuid
 
 
 WINDOW_LABELS = {
@@ -19,7 +20,7 @@ WINDOW_LABELS = {
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="soulshouse-x",
-        description="Search X or inspect one public X thread through souls.house.",
+        description="Search X, inspect one public X thread, or post to your account's connected X handle.",
         epilog=(
             "Every attempted upstream read counts against rolling request and spend "
             "limits. Full manual: /usr/local/share/helixkit-agent/soulshouse-api.md"
@@ -43,6 +44,32 @@ def build_parser():
     thread.add_argument("url")
     thread.add_argument("question", nargs="*")
     thread.add_argument("--json", action="store_true", help="print the complete JSON response")
+
+    post = subparsers.add_parser(
+        "post",
+        help="publish one post to your account's connected X handle",
+        description=(
+            "Publish one public post to the X handle connected to your own account. "
+            "Every post carries an idempotency key; retrying with the same --key never "
+            "posts twice. If the outcome is unknown, check the handle and use "
+            "'soulshouse-x resolve' instead of posting again."
+        ),
+    )
+    post.add_argument("text", nargs="+")
+    post.add_argument("--reply-to", help="numeric id of the post to reply to")
+    post.add_argument("--key", help="idempotency key; reuse it to retry the same post safely (default: a new random key)")
+    post.add_argument("--json", action="store_true", help="print the complete JSON response")
+
+    resolve = subparsers.add_parser(
+        "resolve",
+        help="settle a post whose outcome was unknown",
+        description="Record whether a post whose outcome was unknown actually reached X. Nothing is posted.",
+    )
+    resolve.add_argument("id", help="the post id souls.house returned")
+    outcome = resolve.add_mutually_exclusive_group(required=True)
+    outcome.add_argument("--posted", metavar="URL_OR_ID", help="it was published: its x.com URL or numeric id")
+    outcome.add_argument("--not-posted", action="store_true", help="it was not published")
+    resolve.add_argument("--json", action="store_true", help="print the complete JSON response")
 
     return parser
 
@@ -70,16 +97,18 @@ def request_payload(args):
     return payload
 
 
-def fetch(payload, app_url, token):
+def fetch(payload, app_url, token, path="/api/v1/x_reads", method="POST", extra_headers=None):
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    headers.update(extra_headers or {})
     request = urllib.request.Request(
-        f"{app_url.rstrip('/')}/api/v1/x_reads",
+        f"{app_url.rstrip('/')}{path}",
         data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        },
-        method="POST",
+        headers=headers,
+        method=method,
     )
     with urllib.request.urlopen(request, timeout=150) as response:
         return json.load(response)
@@ -113,6 +142,9 @@ def main():
         print("SOULSHOUSE_APP_URL or SOULSHOUSE_BEARER_TOKEN is missing", file=sys.stderr)
         return 65
 
+    if args.operation in ("post", "resolve"):
+        return run_posting(args, app_url, token)
+
     try:
         result = fetch(request_payload(args), app_url, token)
     except urllib.error.HTTPError as error:
@@ -136,6 +168,70 @@ def main():
         print(result.get("content", ""))
         print_allowance(result)
     return 0
+
+
+def run_posting(args, app_url, token):
+    if args.operation == "post":
+        key = args.key or str(uuid.uuid4())
+        payload = {"text": " ".join(args.text)}
+        if args.reply_to:
+            payload["reply_to"] = args.reply_to
+        call = dict(path="/api/v1/x_posts", method="POST", extra_headers={"Idempotency-Key": key})
+        # Disclose the key before anything is sent: if this process is
+        # interrupted mid-request, the key is the only safe way to retry.
+        print(f"[idempotency key: {key}] (retry only with --key {key})", file=sys.stderr, flush=True)
+    else:
+        key = None
+        if args.not_posted:
+            payload = {"resolution": "not_posted"}
+        elif args.posted.isdigit():
+            payload = {"resolution": "posted", "tweet_id": args.posted}
+        else:
+            payload = {"resolution": "posted", "tweet_url": args.posted}
+        call = dict(path=f"/api/v1/x_posts/{args.id}", method="PATCH")
+
+    try:
+        result = fetch(payload, app_url, token, **call)
+        failed = False
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")
+        try:
+            result = json.loads(body)
+        except json.JSONDecodeError:
+            result = None
+        if not isinstance(result, dict):
+            result = {"error": body}
+        result.setdefault("http_status", error.code)
+        failed = True
+    except BaseException as error:
+        # The request may have reached souls.house and X; only the same key is a safe retry.
+        print(f"souls.house X request failed: {error!r}", file=sys.stderr, flush=True)
+        if key:
+            print(f"Outcome unknown. Retry only with --key {key} so it cannot post twice.", file=sys.stderr, flush=True)
+        if isinstance(error, KeyboardInterrupt):
+            return 130
+        if not isinstance(error, Exception):
+            raise
+        return 1
+
+    if not isinstance(result, dict):
+        result = {"error": f"unexpected response: {result!r}"}
+        failed = True
+
+    if args.json:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    elif result.get("url"):
+        print(result["url"])
+    if result.get("status") in ("outcome_unknown", "pending"):
+        print(
+            f"Outcome unknown for post {result.get('id')}. Check the handle on X, then run "
+            f"'soulshouse-x resolve {result.get('id')} --posted <url>' or '--not-posted'. "
+            "Do not post it again with a new key.",
+            file=sys.stderr,
+        )
+    elif failed:
+        print(f"souls.house returned HTTP {result.get('http_status')}: {result.get('error')}", file=sys.stderr)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

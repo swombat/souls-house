@@ -10,12 +10,27 @@ class ChangelogTest < ActiveSupport::TestCase
     assert_equal dates.sort.reverse, dates
   end
 
+  test "every clip an entry names exists, with its poster" do
+    clips = Changelog.entries.filter_map { |entry| entry[:clip] }
+    assert clips.any?
+    clips.each do |clip|
+      assert_match(/\A[a-z0-9-]+\z/, clip[:name])
+      [ clip[:src], clip[:poster] ].each { |path| assert Rails.root.join("public#{path}").file?, "missing #{path}" }
+    end
+  end
+
   test "recent keeps the last fourteen days and drops older entries" do
     newest = Date.iso8601(Changelog.entries.first[:date])
     assert_equal Changelog.entries.size, Changelog.recent(today: Date.iso8601(Changelog.entries.last[:date])).size
     later = Changelog.recent(today: newest + 14)
     assert_empty later
     assert_includes Changelog.recent(today: newest + 13).map { |e| e[:date] }, newest.iso8601
+  end
+
+  test "clipped keeps only entries with a clip, newest first, up to the limit" do
+    with_clip = Changelog.entries.select { |entry| entry[:clip] }
+    assert_equal with_clip.first(3), Changelog.clipped(3)
+    assert_equal with_clip, Changelog.clipped(with_clip.size + 5)
   end
 
 end

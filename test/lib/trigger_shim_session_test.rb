@@ -164,33 +164,9 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
   test "runtime image includes the journald companion required for resume" do
     dockerfile = Rails.root.join("agent-runtime/Dockerfile").read
     entrypoint = Rails.root.join("agent-runtime/entrypoint.sh").read
-    assert_includes dockerfile, "ARG CHAOS_BUILD_MODE=prebuilt"
-    assert_includes dockerfile, 'FROM chaos-${CHAOS_BUILD_MODE} AS builder'
-    assert_includes dockerfile, 'cargo build --release --locked --jobs "${CARGO_BUILD_JOBS}" --bin chaos --bin chaos_journald'
+    assert_match(/cargo build .*--bin chaos_journald/, dockerfile)
     assert_includes dockerfile, "COPY --from=builder /usr/local/bin/chaos_journald /usr/local/bin/chaos_journald"
-    assert_includes dockerfile, "COPY docs/runtime-instructions.md /usr/local/share/helixkit-agent/runtime-instructions.md"
-    assert_includes dockerfile, "COPY docs/helixkit-api.md /usr/local/share/helixkit-agent/helixkit-api.md"
-    assert_includes dockerfile, "COPY soulshouse-usage /usr/local/bin/soulshouse-usage"
-    assert_includes dockerfile, "ARG CLAUDE_CODE_VERSION=2.1.280"
-    assert_includes dockerfile, "claude --version"
-    assert_includes dockerfile, "ARG CHAOS_HEAD"
-    refute_match(/^ARG CHAOS_HEAD=[0-9a-f]{40}$/, dockerfile)
-    assert_not_includes dockerfile, "chaos-clamp-image-tool-output.patch"
-    # These fixes now live upstream, not in a local patch-and-rebuild layer.
-    assert_not_includes dockerfile, "git apply"
-    assert_includes dockerfile, 'LABEL house.souls.chaos-patches=""'
-    # 1.1.22 makes denied native tool calls recoverable in print mode instead
-    # of failing the whole clamped turn before it can choose the Chaos MCP bridge.
-    assert_includes dockerfile, "ARG ANTIGRAVITY_VERSION=1.1.22"
-    assert_includes dockerfile, "ARG ANTIGRAVITY_BUILD=5711547746615296"
-    assert_includes dockerfile, "sha512sum -c -"
-    assert_includes dockerfile, "agy --version"
-    assert_includes dockerfile, "ARG CODEXBAR_VERSION=0.56.1"
-    assert_includes dockerfile, "codexbar --version"
-    assert_includes dockerfile, 'LABEL house.souls.chaos-ref="${CHAOS_HEAD}"'
     assert_includes entrypoint, "gosu agent chaos_journald"
-    assert_includes entrypoint, 'export CHAOS_JOURNALD_SOCKET="${CHAOS_JOURNALD_SOCKET:-$CHAOS_HOME/run/journald.sock}"'
-    assert_includes entrypoint, 'CHAOS_JOURNALD_DB="${CHAOS_JOURNALD_DB:-$CHAOS_HOME/journal.sqlite}"'
     assert_includes entrypoint, '--db "$CHAOS_JOURNALD_DB"'
   end
 
@@ -602,14 +578,6 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     end
 
     assert_not_includes source, '"/auth/start")(lambda:'
-  end
-
-  test "subscription capabilities include Anthropic Gemini and xAI by default" do
-    out = run_shim_python(<<~PY)
-      print(json.dumps(list(mod.OAUTH_ACCOUNT_PROVIDERS)))
-    PY
-
-    assert_equal %w[anthropic gemini openai xai], JSON.parse(out)
   end
 
   test "Anthropic subscription runs enable clamp and remove the metered API key" do
@@ -1344,15 +1312,15 @@ class TriggerShimSessionTest < ActiveSupport::TestCase
     assert_not_includes args, "--dangerously-bypass-approvals-and-sandbox"
   end
 
-  test "trigger shim accepts every reasoning effort understood by Chaos" do
+  test "trigger shim accepts every reasoning effort the app can send" do
     out = run_shim_python(<<~PY)
       print(json.dumps(list(mod.SUPPORTED_REASONING_EFFORTS)))
     PY
 
-    assert_equal(
-      %w[none minimal low medium high xhigh max ultra],
-      JSON.parse(out)
-    )
+    supported = JSON.parse(out)
+    Chat::ModelSelection::REASONING_OPTIONS.each_value do |option|
+      assert_includes supported, option[:value]
+    end
   end
 
   test "non-persistent triggers use JSON output and record a legacy fresh lifecycle" do

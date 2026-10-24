@@ -81,7 +81,7 @@ module Agents
 
     test "a house-funded resident gets no API-key providers" do
       @agent.account.openrouter_api_key = "sk-or-test"
-      @agent.model_id = HouseInference::Offering::MODEL_ID
+      @agent.model_id = HouseInference::Offering::DEEPSEEK_MODEL_ID
 
       catalog = SubagentCatalog.new(@agent)
 

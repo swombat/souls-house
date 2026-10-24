@@ -48,6 +48,12 @@ unreadable on the page.
 - Dynamic Tailwind classes (`bg-${colour}-100`) only exist if the class string appears somewhere in a scanned file.
   The clips mention the ones they need in a comment.
 
+## Announcement clips
+
+`announce.clip.js` holds clips made for posts rather than the features page (for example the site dashboard, which
+visitors never see). They use the same machinery but render to `tmp/announcements/`, which isn't committed:
+`bun run clips playwright/clips/announce.clip.js`.
+
 ## Adding a clip
 
 1. Write `playwright/clips/<Name>Clip.svelte` taking `t`. Use `loopFade(t, DURATION)` on the outer layer, so the

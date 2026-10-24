@@ -17,6 +17,15 @@ describe('House allowance', () => {
     expect(screen.getByText(/One funded resident per user/)).toBeTruthy();
   });
   it('does not label personal models as funded', () => {
+    render(HouseAllowance, { selectedModel: 'anthropic/claude-haiku-5.5' });
+    expect(screen.queryByLabelText('House inference allowance')).toBeNull();
+  });
+  it('discloses the Anthropic route for Haiku', () => {
+    render(HouseAllowance, { selectedModel: 'house/claude-haiku-5.5' });
+    expect(screen.getByText(/pinned to Anthropic’s own API/)).toBeTruthy();
+    expect(screen.queryByText(/Fireworks/)).toBeNull();
+  });
+  it('does not label personal DeepSeek as funded', () => {
     render(HouseAllowance, { selectedModel: 'deepseek/deepseek-v4.1-flash' });
     expect(screen.queryByLabelText('House inference allowance')).toBeNull();
   });

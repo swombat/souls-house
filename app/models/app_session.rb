@@ -46,7 +46,8 @@ class AppSession < ApplicationRecord
   # Closes this device's cable connections. Best effort: a lost disconnect is
   # caught by AppSyncChannel's periodic recheck.
   def disconnect_cable(reconnect: true)
-    ActionCable.server.remote_connections.where(current_user: user, current_app_session: self).disconnect(reconnect: reconnect)
+    ActionCable.server.remote_connections.where(current_user: user, current_app_session: self,
+      current_companion_device: nil).disconnect(reconnect: reconnect)
   rescue StandardError => error
     Rails.logger.warn("app cable disconnect failed for app session #{id}: #{error.class}")
   end

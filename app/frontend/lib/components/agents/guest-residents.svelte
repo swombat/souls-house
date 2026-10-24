@@ -12,8 +12,12 @@
 
   let selected = $state('');
 
+  $effect(() => {
+    if (selected && !candidates.some((candidate) => candidate.id === selected)) selected = '';
+  });
+
   function addGuest() {
-    if (!selected) return;
+    if (!selected || !candidates.some((candidate) => candidate.id === selected)) return;
     router.post(
       accountGuestMembershipsPath(accountId),
       { agent_id: selected },

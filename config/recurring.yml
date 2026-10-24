@@ -10,25 +10,85 @@
 #     schedule: at 5am every day
 
 production:
-  field_voice_enrolment_sweep:
-    class: FieldVoices::EnrolmentSweepJob
+  abandoned_app_uploads:
+    class: AbandonedAppUploadsJob
     queue: default
-    schedule: every 15 minutes
+    schedule: every hour at minute 20
+
+  companion_sweep:
+    class: CompanionSweepJob
+    queue: default
+    schedule: every minute
+
+  # Says when production stops following master (DeployAlarm).
+  deploy_alarm_check:
+    class: DeployAlarmCheckJob
+    queue: default
+    schedule: every 5 minutes
+
+  vm_birth_sweep:
+    class: VmBirthSweepJob
+    queue: default
+    schedule: every minute
+
+  # Xero refresh tokens die after 60 days unused (Services::XeroAdapter).
+  xero_keep_alive:
+    class: Services::XeroKeepAliveJob
+    queue: default
+    schedule: every day at 4:40am
 
   field_recordings_stuck_sweep:
     class: FieldRecordings::StuckSweepJob
     queue: default
     schedule: every 10 minutes
 
+  # Queues tweet stream runs that are due (FieldTweets::Sync). Does nothing
+  # while Setting#field_tweets_enabled is off.
+  # Judges quiet rooms for the stalled-thread sweeper (StalledThreadSweeper).
+  # Does nothing while Setting#stalled_sweep_minutes is 0. Shadow only: it
+  # records verdicts and wakes nobody.
+  stalled_thread_sweep:
+    class: StalledThreadSweepJob
+    queue: default
+    schedule: every 5 minutes
+
+  field_tweets_sweep:
+    class: FieldTweets::SweepJob
+    queue: default
+    schedule: every 5 minutes
+
+  field_summary_sweep:
+    class: FieldItems::SummarySweepJob
+    queue: default
+    schedule: every hour at minute 37
+
   field_recordings_orphan_sweep:
     class: FieldRecordings::OrphanSweepJob
     queue: default
     schedule: every hour at minute 23
 
+  # Retries unfinished Stripe events and imposes lapsed grace deadlines.
+  billing_sweep:
+    class: Billing::SweepJob
+    queue: default
+    schedule: every 5 minutes
+
+  # Retries WhatsApp disconnects the comms connector has not confirmed
+  # (ServiceConnection#unpair_pending?).
+  comms_unpair_retry:
+    class: CommsUnpairJob
+    queue: default
+    schedule: every 5 minutes
+
   rhythms:
     class: RhythmSweepJob
     queue: default
     schedule: every minute
+
+  repository_watch_sweep:
+    class: RepositoryWatchSweepJob
+    queue: default
+    schedule: every 5 minutes
 
   message_dispatch_sweep:
     class: MessageDispatchSweepJob
@@ -54,6 +114,14 @@ production:
   agent_storage_usage:
     class: CollectAgentStorageUsageJob
     schedule: every hour at minute 45
+
+  house_host_sample:
+    class: HouseHostSampleJob
+    schedule: every 5 minutes
+
+  house_storage_sample:
+    class: HouseStorageSampleJob
+    schedule: every day at 4:40am
 
   clear_solid_queue_finished_jobs:
     command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"

@@ -15,10 +15,14 @@ class AgentHealthCheckJob < ApplicationJob
   private
 
   def intentionally_cold?(agent)
+    return false if Agents::RemoteRuntime.remote?(agent)
+
     Agents::Config.cold_start? && Agents::Sandbox.new(agent).stopped?
   end
 
   def healthy?(agent)
+    return Agents::RemoteRuntime.healthy?(agent) if Agents::RemoteRuntime.remote?(agent)
+
     uri = URI("#{Agents::Endpoint.url_for(agent).to_s.delete_suffix('/')}/health")
     response = Net::HTTP.get_response(uri)
     if (request = agent.github_resident_import) && request.sync_strategy == "standard"

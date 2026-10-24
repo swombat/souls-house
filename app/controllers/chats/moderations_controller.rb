@@ -10,7 +10,7 @@ class Chats::ModerationsController < ApplicationController
     audit("moderate_all_messages", @chat, count: count)
 
     respond_to do |format|
-      format.html { redirect_back_or_to account_chat_path(current_account, @chat), notice: "Queued moderation for #{count} messages" }
+      format.html { redirect_back_or_to chat_view_path(@chat), notice: "Queued moderation for #{count} messages" }
       format.json { render json: { queued: count } }
     end
   end

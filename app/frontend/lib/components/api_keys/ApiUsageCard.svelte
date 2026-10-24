@@ -40,5 +40,8 @@
     <a href="/ai/api.md" target="_blank" class="text-sm text-primary hover:underline">
       View full API documentation →
     </a>
+    <a href="/ai/cli.md" target="_blank" class="text-sm text-primary hover:underline">
+      Command-line client →
+    </a>
   </div>
 </div>

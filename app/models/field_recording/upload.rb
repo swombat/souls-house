@@ -30,8 +30,10 @@ module FieldRecording::Upload
 
   # Returns the new recording, or nil when the upload can't be used (wrong
   # owner, expired, already attached, never a recording upload). The caller
-  # says nothing more specific about the blob.
-  def claim!(account:, user:, signed_id:, attributes:)
+  # says nothing more specific about the blob. With supplied_turns (see
+  # FieldRecording::SuppliedTranscript) the recording is made ready with that
+  # transcript, in the same transaction.
+  def claim!(account:, user:, signed_id:, attributes:, supplied_turns: nil)
     found = ActiveStorage::Blob.find_signed(signed_id.to_s)
     return nil unless found
 
@@ -40,7 +42,15 @@ module FieldRecording::Upload
       next nil unless blob && pinned_to?(blob, account:, user:)
       next nil if ActiveStorage::Attachment.exists?(blob_id: blob.id)
 
-      account.field_recordings.create!(attributes.merge(uploaded_by: user, audio: blob))
+      if supplied_turns
+        recording = account.field_recordings.create!(
+          attributes.merge(uploaded_by: user, audio: blob, transcript_source: "supplied")
+        )
+        recording.store_supplied_transcript!(supplied_turns)
+        recording
+      else
+        account.field_recordings.create!(attributes.merge(uploaded_by: user, audio: blob))
+      end
     end
   end
 

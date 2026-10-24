@@ -14,15 +14,28 @@ class AgentServiceAccess < ApplicationRecord
   after_update_commit :schedule_reconciliation_after_update!, if: :saved_change_to_enabled?
   after_destroy_commit :schedule_reconciliation_after_destroy!
 
+  after_save :refresh_integration_status, if: :integration_status_changed?
+  after_destroy :refresh_integration_status
+
+  INTEGRATION_STATUS_COLUMNS = %w[
+    agent_id service_connection_id enabled follows_default
+    provisioning_status provisioning_error_code
+  ].freeze
+
   def schedule_reconciliation!
     return unless agent&.externally_hosted? && agent.container_name.present?
 
-    update_columns(
-      provisioning_status: enabled? ? "pending" : "removal_pending",
-      provisioning_error_code: nil,
-      updated_at: Time.current
-    ) if persisted?
-    AccountAgentCredentialsRefreshJob.perform_later(agent.account_id, agent.id)
+    if persisted?
+      status = enabled? ? "pending" : "removal_pending"
+      changed = provisioning_status != status || provisioning_error_code.present?
+      written = update_columns(
+        provisioning_status: status,
+        provisioning_error_code: nil,
+        updated_at: Time.current
+      )
+      refresh_integration_status if written && changed
+    end
+    AccountAgentCredentialsRefreshJob.perform_later(agent.account_id, agent.id, manifest_only: true)
   end
 
   def mark_provisioned!
@@ -35,6 +48,19 @@ class AgentServiceAccess < ApplicationRecord
   end
 
   private
+
+  def integration_status_changed?
+    previously_new_record? || (saved_changes.keys & INTEGRATION_STATUS_COLUMNS).any?
+  end
+
+  def refresh_integration_status
+    agent_ids = [ agent_id, *saved_change_to_agent_id ].compact
+    connection_ids = [ service_connection_id, *saved_change_to_service_connection_id ].compact
+    IntegrationStatus.refresh!(
+      Agent.where(id: agent_ids).pluck(:account_id) +
+        ServiceConnection.where(id: connection_ids).pluck(:account_id)
+    )
+  end
 
   def schedule_reconciliation_after_create!
     schedule_reconciliation!

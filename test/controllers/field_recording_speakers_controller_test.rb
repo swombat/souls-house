@@ -72,6 +72,114 @@ class FieldRecordingSpeakersControllerTest < ActionDispatch::IntegrationTest
     assert_match "Speaker 1: hello", @recording.reload.transcript_text
   end
 
+  test "a card for one voice heard as two speakers names and un-names them together" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    [ @first, @second ].each { |speaker| speaker.name_as!(ioan, by: @user) }
+    daniel = @account.field_voices.create!(name: "Daniel")
+
+    name_speaker(@first, voice_id: daniel.to_param, with: [ @second.to_param ])
+    assert_equal [ daniel, daniel ], [ @first.reload.field_voice, @second.reload.field_voice ]
+
+    name_speaker(@first, unname: true, with: [ @second.to_param ])
+    assert_nil @first.reload.field_voice
+    assert_nil @second.reload.field_voice
+  end
+
+  test "with reaches only speakers linked to the same voice on this recording" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    @first.name_as!(ioan, by: @user)
+    other = ready_recording(account: @account, user: @user, title: "Other call").speakers.first
+    other.name_as!(ioan, by: @user)
+
+    name_speaker(@first, unname: true, with: [ @second.to_param, other.to_param ])
+    assert_nil @first.reload.field_voice
+    assert_equal ioan, other.reload.field_voice, "another recording is out of reach"
+    assert_nil @second.reload.field_voice_id
+  end
+
+  test "transcript text joins consecutive turns of one voice heard as two speakers" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    [ @first, @second ].each { |speaker| speaker.name_as!(ioan, by: @user) }
+    assert_equal 1, @recording.reload.transcript_text.lines.size
+  end
+
+  # Runs `correction` once, just before the merged request takes its locks:
+  # another request that finished while this one was on its way.
+  def with_correction_before_locks(correction)
+    original = FieldVoiceprints::Locks.method(:with)
+    pending = correction
+    FieldVoiceprints::Locks.stub(:with, ->(**args, &block) {
+      if pending
+        run, pending = pending, nil
+        run.call
+      end
+      original.call(**args, &block)
+    }) { yield }
+  end
+
+  test "a merged rename keeps a part someone corrected while it was on its way" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    [ @first, @second ].each { |speaker| speaker.name_as!(ioan, by: @user) }
+    daniel = @account.field_voices.create!(name: "Daniel")
+    charlie = @account.field_voices.create!(name: "Charlie")
+
+    with_correction_before_locks(-> { FieldRecordingSpeaker.find(@second.id).name_as!(charlie, by: @user) }) do
+      name_speaker(@first, voice_id: daniel.to_param, with: [ @second.to_param ])
+    end
+
+    assert_equal daniel, @first.reload.field_voice
+    assert_equal charlie, @second.reload.field_voice, "the newer correction stands"
+  end
+
+  test "a merged unlink keeps a part someone corrected while it was on its way" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    [ @first, @second ].each { |speaker| speaker.name_as!(ioan, by: @user) }
+    charlie = @account.field_voices.create!(name: "Charlie")
+
+    with_correction_before_locks(-> { FieldRecordingSpeaker.find(@second.id).name_as!(charlie, by: @user) }) do
+      name_speaker(@first, unname: true, with: [ @second.to_param ])
+    end
+
+    assert_nil @first.reload.field_voice
+    assert_equal charlie, @second.reload.field_voice
+  end
+
+  test "a merged rename changes nothing when the card itself changed underneath it" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    [ @first, @second ].each { |speaker| speaker.name_as!(ioan, by: @user) }
+    daniel = @account.field_voices.create!(name: "Daniel")
+    charlie = @account.field_voices.create!(name: "Charlie")
+
+    with_correction_before_locks(-> { FieldRecordingSpeaker.find(@first.id).name_as!(charlie, by: @user) }) do
+      name_speaker(@first, voice_id: daniel.to_param, with: [ @second.to_param ])
+    end
+
+    assert_equal charlie, @first.reload.field_voice
+    assert_equal ioan, @second.reload.field_voice
+    assert_redirected_to account_field_recording_path(@account, @recording)
+  end
+
+  test "a merged rename is all or nothing" do
+    ioan = @account.field_voices.create!(name: "Ioan")
+    [ @first, @second ].each { |speaker| speaker.name_as!(ioan, by: @user) }
+    daniel = @account.field_voices.create!(name: "Daniel")
+    calls = 0
+    original = FieldRecordingSpeaker.instance_method(:name_as!)
+    FieldRecordingSpeaker.define_method(:name_as!) do |*args, **kw|
+      calls += 1
+      raise ActiveRecord::RecordInvalid, self if calls == 2
+
+      original.bind_call(self, *args, **kw)
+    end
+    begin
+      name_speaker(@first, voice_id: daniel.to_param, with: [ @second.to_param ])
+    ensure
+      FieldRecordingSpeaker.define_method(:name_as!, original)
+    end
+
+    assert_equal [ ioan, ioan ], [ @first.reload.field_voice, @second.reload.field_voice ]
+  end
+
   test "a discard that lands first stops a later un-name" do
     @first.name_as!(@account.field_voices.create!(name: "Priya"), by: @user)
     stale = FieldRecordingSpeaker.find(@first.id) # loaded before the discard
@@ -140,13 +248,35 @@ class FieldRecordingSpeakersControllerTest < ActionDispatch::IntegrationTest
     assert_equal priya, @second.reload.field_voice
   end
 
+  test "after a merge keeping the merged-away name, accepting a suggestion links the kept voice and makes no duplicate" do
+    hiron = @account.field_voices.create!(name: "Ant Hiron")
+    ants = @account.field_voices.create!(name: "Ants")
+    suggest!(@second, "Ant Hiron")
+    @second.update!(suggested_voice: hiron)
+    other = long_ready_recording(account: @account, user: @user)
+    name_only = other.speakers.first
+    suggest!(name_only, "ant hiron")
+
+    ants.merge_into!(hiron, name: "Ants") # the merged-away voice's name is kept
+    assert ants.reload.discarded?
+    assert_equal [ hiron, "Ants" ], [ @second.reload.suggested_voice, @second.suggested_name ]
+    assert_equal "Ants", name_only.reload.suggested_name
+
+    name_speaker(@second, confirm_suggestion: true, link_existing: true, suggestion_generation: 0)
+    name_speaker(name_only, recording: other, confirm_suggestion: true, link_existing: true, suggestion_generation: 0)
+    assert_equal hiron, @second.reload.field_voice
+    assert_equal hiron, name_only.reload.field_voice
+    assert_equal 1, @account.field_voices.kept.named_like("Ant Hiron").count +
+      @account.field_voices.kept.named_like("Ants").count
+  end
+
   test "the transcript page carries words, speakers and voices, and the 'you' hint once" do
     @account.field_voices.create!(name: "Tomás")
     get account_field_recording_path(@account, @recording)
     props = inertia_props["props"]
 
     assert_equal "field/recordings/show", inertia_props["component"]
-    assert_equal 3, props.dig("recording", "words").size, "two words and the spacing between them"
+    assert_equal 3, props.dig("transcript", "words").size, "two words and the spacing between them"
     assert_equal [ "Speaker 1", "Speaker 2" ], props["speakers"].map { |s| s["name"] }
     assert_equal [ "Tomás" ], props["voices"].map { |v| v["name"] }
     assert_not_includes props["members_without_voice"].map { |m| m["user_id"] }, @user.id, "you are offered as 'You', not by name"
@@ -157,6 +287,67 @@ class FieldRecordingSpeakersControllerTest < ActionDispatch::IntegrationTest
     get account_field_recording_path(@account, @recording)
     @inertia_props = nil # the helper memoises the first page
     assert_not inertia_props["props"]["show_you_hint"]
+  end
+
+
+  test "just noise sets a speaker aside, and undo asks for a name again" do
+    @first.update_columns(suggested_name: "Priya", suggestion_generation: 0, suggested_at: Time.current)
+    name_speaker(@first, ignore: true)
+
+    assert_redirected_to account_field_recording_path(@account, @recording)
+    @first.reload
+    assert @first.ignored?
+    assert_equal @user, @first.ignored_by
+    assert_not @first.unnamed?
+    assert_nil @first.suggested_name, "a suggestion shown for noise goes"
+    assert_equal 1, FieldItems.recording_json(@recording.reload)[:unnamed_speakers]
+
+    name_speaker(@first, unignore: true)
+    assert_not @first.reload.ignored?
+    assert @first.unnamed?
+    assert_equal 2, FieldItems.recording_json(@recording.reload)[:unnamed_speakers]
+  end
+
+  test "stay anonymous sets a person aside without calling them noise, and the reason can change" do
+    name_speaker(@first, ignore: true, ignore_as: "anonymous")
+
+    assert_redirected_to account_field_recording_path(@account, @recording)
+    @first.reload
+    assert @first.ignored?
+    assert @first.anonymous?
+    assert_not @first.unnamed?
+    assert_equal "Speaker 1", @first.display_name
+    json = FieldItems.recording_json(@recording.reload)
+    assert_equal 1, json[:unnamed_speakers]
+
+    generation = @first.decision_generation
+    name_speaker(@first, ignore: true, ignore_as: "noise")
+    @first.reload
+    assert @first.ignored?
+    assert_not @first.anonymous?
+    assert_equal "noise", @first.ignored_as
+    assert_equal generation, @first.decision_generation, "changing only the reason is not a new decision"
+
+    name_speaker(@first, ignore: true, ignore_as: "whatever")
+    assert_equal "noise", @first.reload.ignored_as
+
+    name_speaker(@first, unignore: true)
+    assert_not @first.reload.ignored?
+    assert_not @first.anonymous?
+  end
+
+  test "naming an ignored speaker takes the mark off; a named speaker can't be ignored" do
+    @first.ignore!(by: @user)
+    name_speaker(@first, name: "Priya")
+    assert_not @first.reload.ignored?
+    assert_nil @first.ignored_at
+
+    name_speaker(@first, ignore: true)
+    follow_redirect!
+    @inertia_props = nil
+    assert_equal "This speaker was named since the page loaded. Please look again.", inertia_props.dig("props", "errors", "name")
+    assert_nil @first.reload.ignored_at
+    assert_equal "Priya", @first.display_name
   end
 
 end

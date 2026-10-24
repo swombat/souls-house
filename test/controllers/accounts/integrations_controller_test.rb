@@ -50,6 +50,76 @@ class Accounts::IntegrationsControllerTest < ActionDispatch::IntegrationTest
     )
   end
 
+  test "a retired resident is offered only while it still holds the grant" do
+    @disabled_agent.update!(active: false)
+    @enabled_agent.update!(active: false)
+
+    get account_integrations_path(@account)
+
+    connection = inertia_shared_props.fetch("connections").find { |item| item.fetch("id") == @connection.public_id }
+    ids = connection.fetch("residents").map { |resident| resident.fetch("id") }
+    assert_not_includes ids, @disabled_agent.to_param, "a discarded resident with no grant is not offered"
+    assert_includes ids, @enabled_agent.to_param, "a granted one stays so the grant can be taken away"
+  end
+
+  test "a Tailscale connection lists each granted resident's sign-in panel" do
+    tailnet = @account.service_connections.create!(
+      connected_by_user: @user,
+      provider: "tailscale",
+      external_subject_id: "tailnet-sign-in",
+      external_identity: "Tailnet",
+      label: "Tailnet",
+      management_scope: "personal",
+      credential_kind: "none",
+      credential_fingerprint: "tailnet-sign-in-fingerprint",
+      credential_payload_hash: {},
+      credential_metadata: {}
+    )
+    @enabled_agent.agent_service_accesses.create!(service_connection: tailnet, enabled: true, provisioning_status: "provisioned")
+
+    get account_integrations_path(@account)
+
+    residents = inertia_shared_props.fetch("connections").find { |item| item.fetch("id") == tailnet.public_id }.fetch("residents")
+    enabled = residents.find { |resident| resident.fetch("id") == @enabled_agent.to_param }
+    disabled = residents.find { |resident| resident.fetch("id") == @disabled_agent.to_param }
+    assert_equal account_agent_tailnet_path(@account, @enabled_agent), enabled.fetch("tailnet_url")
+    assert_equal edit_account_agent_path(@account, @enabled_agent, tab: "integrations"), enabled.fetch("integrations_url")
+    assert_nil disabled.fetch("tailnet_url"), "no node to sign in until the resident is granted Tailscale"
+
+    github = inertia_shared_props.fetch("connections").find { |item| item.fetch("id") == @connection.public_id }
+    assert github.fetch("residents").all? { |resident| resident["tailnet_url"].nil? }
+  end
+
+  test "a member who can neither provision nor manage the tailnet gets no sign-in panels" do
+    account = accounts(:team_account)
+    member = users(:existing_user)
+    tailnet = account.service_connections.create!(
+      connected_by_user: @user,
+      provider: "tailscale",
+      external_subject_id: "team-tailnet",
+      external_identity: "Tailnet",
+      label: "Tailnet",
+      management_scope: "account_managed",
+      credential_kind: "none",
+      credential_fingerprint: "team-tailnet-fingerprint",
+      credential_payload_hash: {},
+      credential_metadata: {}
+    )
+    agent = agents(:other_account_agent)
+    agent.agent_service_accesses.create!(service_connection: tailnet, enabled: true, provisioning_status: "provisioned")
+    sign_in member
+
+    get account_integrations_path(account)
+
+    assert_response :success
+    connection = inertia_shared_props.fetch("connections").find { |item| item.fetch("id") == tailnet.public_id }
+    assert_equal false, connection.fetch("can_provision")
+    assert_equal false, connection.fetch("can_manage")
+    resident = connection.fetch("residents").find { |item| item.fetch("id") == agent.to_param }
+    assert_nil resident.fetch("tailnet_url"), "the tailnet endpoint would refuse this member, so no panel"
+    assert_nil resident.fetch("integrations_url")
+  end
+
   test "exposes one focused provider setup when requested" do
     get account_integrations_path(@account), params: { connect: "google_workspace" }
 
@@ -124,6 +194,106 @@ class Accounts::IntegrationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal true, connections.fetch(shared.public_id).fetch("can_provision")
     assert_equal false, connections.fetch(shared.public_id).fetch("can_delegate")
     assert props.fetch("services").any? { |service| service.fetch("management_scopes").include?("account_managed") }
+  end
+
+  test "count catch-up partials keep personal scope and reject revoked account membership" do
+    account = accounts(:team_account)
+    member = users(:existing_user)
+    own = create_connection(account, member, "personal", "count-catch-up-own")
+    other = create_connection(account, @user, "personal", "count-catch-up-private")
+    [ own, other ].each do |connection|
+      connection.update!(provider: "telegram", credential_kind: "session",
+        credential_metadata: { credential_strategy: "connector" })
+      connection.comms_chats.create!(provider_chat_id: "synthetic-count-chat", sync_state: {})
+    end
+    sign_in member
+    headers = {
+      "X-Inertia" => "true", "X-Inertia-Version" => ViteRuby.digest,
+      "X-Inertia-Partial-Component" => "accounts/integrations",
+      "X-Inertia-Partial-Data" => "connections,can_manage_account,services"
+    }
+    2.times do |index|
+      get account_integrations_path(account), headers: headers
+      assert_response :success
+      connections = response.parsed_body.fetch("props").fetch("connections")
+      assert_equal [ own.public_id ], connections.map { |connection| connection.fetch("id") }
+      assert_equal index + 1, connections.first.fetch("comms").fetch("chats")
+      own.comms_chats.create!(provider_chat_id: "next-count-chat") if own.comms_chats.count == 1
+    end
+    account.memberships.find_by!(user: member).destroy!
+    get account_integrations_path(account), headers: headers
+    assert_response :not_found
+    assert_not response.body.include?(own.public_id)
+    assert_not response.body.include?(other.public_id)
+  end
+
+  test "a GitHub card lists its connected repositories and their watches" do
+    account = accounts(:team_account)
+    github = account.service_connections.create!(
+      connected_by_user: @user, provider: "github", external_subject_id: "github-repositories",
+      external_identity: "owner", label: "owner", management_scope: "personal", status: "connected",
+      credential_kind: "token", credential_fingerprint: "github-repositories-fingerprint",
+      credential_payload_hash: { "token" => "github_pat_test" }, credential_metadata: { "credential_strategy" => "static" }
+    )
+    repository = WatchedRepository.create!(
+      account: account, service_connection: github, created_by_user: @user,
+      owner: "owner", name: "site", full_name: "owner/site", hook_status: "manual"
+    )
+    WatchedRepository.create!(
+      account: account, service_connection: github, created_by_user: @user, owner: "owner", name: "gone",
+      full_name: "owner/gone", hook_status: "removed", removed_at: Time.current
+    )
+    chat = account.chats.create!(model_id: "openrouter/auto", title: "Release room")
+    armed = RepositoryWatch.create!(
+      account: account, watched_repository: repository, chat: chat, created_by_user: @user,
+      event_kind: "workflow_run", filter: { "head_sha" => "c" * 40 }, expires_at: 1.day.from_now
+    )
+    done = RepositoryWatch.create!(
+      account: account, watched_repository: repository, chat: chat, created_by_user: @user, state: "fulfilled",
+      event_kind: "deployment_status", filter: { "environment" => "production" }, expires_at: 1.day.from_now
+    )
+
+    previous_public_url = Rails.configuration.x.public_url
+    Rails.configuration.x.public_url = "https://house.example.test"
+    begin
+      get account_integrations_path(account)
+    ensure
+      Rails.configuration.x.public_url = previous_public_url
+    end
+
+    card = inertia_shared_props.fetch("connections").find { |item| item.fetch("id") == github.public_id }
+    assert_equal true, card.fetch("can_manage_repositories")
+    assert_equal account_watched_repositories_path(account), card.fetch("repositories_url")
+    assert_equal [ "owner/site" ], card.fetch("repositories").map { |item| item.fetch("full_name") }, "removed repositories are not listed"
+    listed = card.fetch("repositories").sole
+    assert_equal "manual", listed.fetch("hook_status")
+    assert_equal account_watched_repository_path(account, repository), listed.fetch("url")
+    assert_equal "https://house.example.test/webhooks/repositories/#{repository.receiver_token}", listed.dig("setup", "url")
+    assert_equal repository.hook_secret, listed.dig("setup", "secret")
+    watches = listed.fetch("watches").index_by { |watch| watch.fetch("id") }
+    assert_equal [ armed.to_param, done.to_param ], listed.fetch("watches").map { |watch| watch.fetch("id") }, "armed first"
+    assert_equal "Release room", watches.fetch(armed.to_param).fetch("chat_title")
+    assert_equal account_chat_path(account, chat), watches.fetch(armed.to_param).fetch("chat_url")
+    assert_equal account_repository_watch_path(account, armed), watches.fetch(armed.to_param).fetch("cancel_url")
+    assert_nil watches.fetch(done.to_param).fetch("cancel_url")
+
+    # GitHub connections are personal: only their owner (who can always
+    # manage them) sees the card, so another member sees no secret at all.
+    reset!
+    @inertia_props = nil
+    sign_in users(:existing_user)
+    get account_integrations_path(account)
+
+    assert_not inertia_shared_props.fetch("connections").any? { |item| item.fetch("id") == github.public_id }
+  end
+
+  test "other providers carry no repositories" do
+    dropbox = create_connection(@account, @user, "personal", "no-repositories")
+    get account_integrations_path(@account)
+    card = inertia_shared_props.fetch("connections").find { |item| item.fetch("id") == dropbox.public_id }
+    assert_not card.key?("repositories")
+    github = inertia_shared_props.fetch("connections").find { |item| item.fetch("id") == @connection.public_id }
+    assert_equal [], github.fetch("repositories")
   end
 
   private

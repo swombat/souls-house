@@ -5,9 +5,15 @@ class UtilityInference
   class MissingCredentials < Error; end
   class InvalidResponse < Error; end
   class InputTooLong < Error; end
+  class RateLimited < InvalidResponse; end
 
   MAX_INPUT_LENGTH = 32_000
+  # Field swarm readers take one part of an item (FieldSwarm::PART_CHARS)
+  # plus the question and the wrapper.
+  MAX_READ_INPUT_LENGTH = 64_000
   REQUEST_TIMEOUT = 20
+  # A page transcription writes up to a few thousand tokens.
+  VISION_TIMEOUT = 60
   TITLE_MODEL = "google/gemini-2.5-flash"
   MODERATION_MODEL = "omni-moderation-latest"
 
@@ -25,8 +31,9 @@ class UtilityInference
     )
   end
 
-  # Jev is a typed decision model, not a chat-completion model.
-  def self.decide(state:, questions:)
+  # Jev is a typed decision model, not a chat-completion model. `timeout`
+  # bounds each socket wait; a caller on a request path passes a short one.
+  def self.decide(state:, questions:, timeout: REQUEST_TIMEOUT)
     payload = { model: "typesafe/jev-1.13", state: state, questions: questions }.to_json
     validate_input!(payload)
     key = Account.system_ai_api_key(:openrouter)
@@ -35,8 +42,8 @@ class UtilityInference
     response = Faraday.post("https://openrouter.ai/api/alpha/decisions") do |request|
       request.headers["Authorization"] = "Bearer #{key}"
       request.headers["Content-Type"] = "application/json"
-      request.options.timeout = REQUEST_TIMEOUT
-      request.options.open_timeout = REQUEST_TIMEOUT
+      request.options.timeout = timeout
+      request.options.open_timeout = timeout
       request.body = payload
     end
     raise InvalidResponse, "Decision provider returned HTTP #{response.status}" unless response.success?
@@ -89,6 +96,92 @@ class UtilityInference
     scores
   end
 
+  # House-paid: the house inference key (HouseInference::Offering.key), pinned
+  # to one provider with no fallback, as the on-the-house resident models are.
+  # data_collection "deny" rules out providers that train on prompts; it does
+  # not stop a provider retaining them (Anthropic: up to 30 days). Not metered
+  # in the per-resident house ledger. Returns the text of the answer.
+  #
+  # Reasoning is off: OpenRouter's max_tokens includes it, and with it on Haiku
+  # 5.5 sometimes spent the whole budget thinking and answered nothing
+  # (finish_reason "length", empty content; seen on live Field summaries,
+  # 2026-10-10).
+  def self.house_chat(model:, provider:, system:, user:, max_tokens: 1_000)
+    validate_input!("#{system}#{user}")
+    response = client(key: HouseInference::Offering.key, openrouter: true).chat(
+      parameters: {
+        model: model, max_tokens: max_tokens, reasoning: { effort: "none" },
+        messages: [ { role: "system", content: system }, { role: "user", content: user } ],
+        provider: { only: [ provider ], allow_fallbacks: false, data_collection: "deny" }
+      }
+    )
+    content = response.is_a?(Hash) && response.dig("choices", 0, "message", "content")
+    raise InvalidResponse, "Empty house utility response" unless content.is_a?(String) && content.present?
+
+    content
+  rescue Faraday::Error => error
+    # Never include transport exception text: it can contain request bodies/keys.
+    raise InvalidResponse, "House utility request failed (#{error.class})"
+  end
+
+  # One image and a short instruction, on the house's key, pinned to one
+  # provider with no fallback and data_collection "deny", as house_chat.
+  # Used for Field page transcription (FieldOcr). => { text:, usage:, id: };
+  # usage is OpenRouter's, for HouseInference::UsageCost. Raises
+  # InvalidResponse without echoing transport details.
+  def self.house_vision(model:, provider:, system:, text:, image_png:, max_tokens:, timeout: VISION_TIMEOUT)
+    validate_input!("#{system}#{text}")
+    image = "data:image/png;base64,#{Base64.strict_encode64(image_png)}"
+    response = client(key: HouseInference::Offering.key, openrouter: true, timeout: timeout).chat(
+      parameters: {
+        model: model, max_tokens: max_tokens, reasoning: { effort: "none" },
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: [ { type: "text", text: text }, { type: "image_url", image_url: { url: image } } ] }
+        ],
+        provider: { only: [ provider ], allow_fallbacks: false, data_collection: "deny" }
+      }
+    )
+    raise InvalidResponse, "Empty house vision response" unless response.is_a?(Hash)
+
+    content = response.dig("choices", 0, "message", "content")
+    raise InvalidResponse, "House vision response has no text" unless content.is_a?(String)
+
+    { text: content, usage: response["usage"], id: response["id"], finish_reason: response.dig("choices", 0, "finish_reason") }
+  rescue Faraday::Error => error
+    raise InvalidResponse, "House vision request failed (#{error.class})"
+  end
+
+  # One Field swarm reader (FieldSwarm): a system prompt and one part of an
+  # item, on the house's key, pinned to one provider with no fallback and
+  # data_collection "deny", as house_chat. => { text:, usage:, id:,
+  # finish_reason: }; usage is OpenRouter's, for HouseInference::UsageCost.
+  # `text` is nil when the response carried no text: the call may still have
+  # been billed, so its usage and id come back for the ledger rather than
+  # being raised away. Raises RateLimited on HTTP 429 so the swarm can report
+  # it apart from other failures; never echoes transport details. The
+  # timeout is the client's socket timeout only; the caller bounds the call's
+  # total time (FieldSwarm#read).
+  def self.house_read(model:, provider:, system:, user:, max_tokens:, timeout: REQUEST_TIMEOUT)
+    raise InputTooLong, "Utility input exceeds limit" if "#{system}#{user}".length > MAX_READ_INPUT_LENGTH
+
+    response = client(key: HouseInference::Offering.key, openrouter: true, timeout: timeout).chat(
+      parameters: {
+        model: model, max_tokens: max_tokens, reasoning: { effort: "none" },
+        messages: [ { role: "system", content: system }, { role: "user", content: user } ],
+        provider: { only: [ provider ], allow_fallbacks: false, data_collection: "deny" }
+      }
+    )
+    raise InvalidResponse, "Empty house read response" unless response.is_a?(Hash)
+
+    content = response.dig("choices", 0, "message", "content")
+    { text: (content if content.is_a?(String)), usage: response["usage"], id: response["id"], finish_reason: response.dig("choices", 0, "finish_reason") }
+  rescue Faraday::TooManyRequestsError
+    raise RateLimited, "House read was rate limited"
+  rescue Faraday::Error => error
+    raise InvalidResponse, "House read request failed (#{error.class})"
+  end
+
   def self.chat(key:, model:, user:, system: nil)
     validate_input!("#{system}#{user}")
     messages = []
@@ -105,13 +198,13 @@ class UtilityInference
     content
   end
 
-  def self.client(key:, openrouter: false)
+  def self.client(key:, openrouter: false, timeout: REQUEST_TIMEOUT)
     raise MissingCredentials, "Utility inference credentials unavailable" if key.blank? || key.start_with?("<")
 
     OpenAI::Client.new(
       access_token: key,
       uri_base: openrouter ? "https://openrouter.ai/api/v1" : "https://api.openai.com/v1",
-      request_timeout: REQUEST_TIMEOUT,
+      request_timeout: timeout,
       log_errors: false
     )
   end

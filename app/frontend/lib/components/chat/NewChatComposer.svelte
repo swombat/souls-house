@@ -6,6 +6,7 @@
   let {
     selectedFiles = $bindable([]),
     accountId,
+    userId,
     onTranscription,
     onError,
     message = $bindable(''),
@@ -45,6 +46,7 @@
     <div class="col-start-3 row-start-1">
       <MicButton
         {accountId}
+        {userId}
         disabled={processing || (isGroupChat && selectedAgentIds.length === 0)}
         onsuccess={onTranscription}
         onerror={onError} />

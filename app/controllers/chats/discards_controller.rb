@@ -20,6 +20,12 @@ class Chats::DiscardsController < ApplicationController
 
   private
 
+  # Only the discard/restore operation reaches discarded parents. Ordinary
+  # conversation controllers must never expose their retained children.
+  def set_chat
+    @chat = current_account.chats.with_discarded.find(params[:chat_id])
+  end
+
   def require_admin
     unless current_account.manageable_by?(Current.user)
       redirect_back_or_to account_chats_path(current_account), alert: "You don't have permission to perform this action"

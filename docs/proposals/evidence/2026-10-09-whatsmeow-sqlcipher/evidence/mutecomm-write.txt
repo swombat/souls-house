@@ -1,0 +1,5 @@
+driver: github.com/mutecomm/go-sqlcipher/v4 v4.4.2 (SQLCipher 4.4.2 community, SQLite 3.33.0)
+journal_mode=wal temp_store=2 cipher_version="4.4.2 community" sqlite_version=3.33.0
+device saved: canaryown:7@s.whatsapp.net
+prekeys: one=1 batch=5 uploaded=6 (random keys, generated inside whatsmeow)
+write: all store interfaces exercised OK

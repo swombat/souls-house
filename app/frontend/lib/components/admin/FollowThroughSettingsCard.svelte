@@ -43,7 +43,7 @@
     </CardDescription>
   </CardHeader>
   <CardContent class="space-y-4">
-    <div role="radiogroup" aria-label="Follow-through check" class="inline-flex rounded-md border p-1 gap-1">
+    <div role="radiogroup" aria-label="Follow-through scope" class="inline-flex rounded-md border p-1 gap-1">
       {#each scopes as scope}
         <button
           type="button"

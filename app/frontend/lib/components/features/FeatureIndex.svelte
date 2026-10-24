@@ -14,7 +14,12 @@
           <span class="flex-1 text-sm font-medium">{feature.title}</span>
           <CaretDown size={16} class="shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
         </summary>
-        <p class="px-4 pb-4 pl-[3.25rem] text-sm leading-relaxed text-muted-foreground">{feature.description}</p>
+        <p class="px-4 pb-4 pl-[3.25rem] text-sm leading-relaxed text-muted-foreground">
+          {feature.description}
+          {#if feature.link}
+            <a href={feature.link} class="ml-1 font-medium text-foreground underline underline-offset-4">Read more</a>
+          {/if}
+        </p>
       </details>
     </li>
   {/each}

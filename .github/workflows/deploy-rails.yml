@@ -1,6 +1,11 @@
 name: Deploy Rails
 on:
   workflow_dispatch:
+    inputs:
+      acknowledge_failed_job:
+        description: "Clear the latch of this exact failed host job first (32-character id from its summary)"
+        required: false
+        default: ""
 permissions:
   contents: read
 jobs:
@@ -9,3 +14,4 @@ jobs:
     secrets: inherit
     with:
       operation: rails
+      acknowledge_failed_job: ${{ inputs.acknowledge_failed_job }}

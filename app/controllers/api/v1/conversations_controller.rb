@@ -12,7 +12,11 @@ module Api
       TITLE_MAX_LENGTH = 255
       MODEL_ID_MAX_LENGTH = 255
       LIST_FILTERS = %w[active archived deleted].freeze
-      UPDATABLE_FIELDS = %w[title visual_tag_id model_id web_access].freeze
+      rescue_from RoomSelectorError do |error|
+        render json: { error: error.message, code: "invalid_room_selector" }, status: :unprocessable_entity
+      end
+
+      UPDATABLE_FIELDS = %w[title visual_tag_id room_id room model_id web_access].freeze
       # The web's chats#update also changes these; a resident's key may not.
       HUMAN_ONLY_FIELDS = %w[model_id web_access].freeze
 
@@ -63,7 +67,7 @@ module Api
       end
 
       def show
-        chat = conversations_scope.find(params[:id])
+        chat = conversations_scope.kept.find(params[:id])
         render json: {
           conversation: {
             id: chat.to_param,
@@ -75,7 +79,7 @@ module Api
             created_at: chat.created_at.iso8601,
             updated_at: chat.updated_at.iso8601,
             transcript: chat.transcript_for_api(after_message_id: resolved_after_message_id, since: params[:since])
-          }
+          }.merge(conversation_room_json(chat))
         }
       end
 
@@ -94,13 +98,14 @@ module Api
               group_chat: chat.group_chat?,
               agents: chat.agents.map { |a| { id: a.to_param, name: a.name } },
               created_at: chat.created_at.iso8601
-            }
+            }.merge(conversation_room_json(chat))
           }, status: :created
           return
         end
 
         chat_attrs = {
           account: @destination,
+          room: room_selector_given?(params) ? resolve_room_selector(@destination, params) : nil,
           model_id: params[:model_id] || "openrouter/auto",
           title: params[:title],
           manual_responses: true
@@ -120,7 +125,7 @@ module Api
             group_chat: chat.group_chat?,
             agents: chat.group_chat? ? chat.agents.map { |a| { id: a.to_param, name: a.name } } : [],
             created_at: chat.created_at.iso8601
-          }
+          }.merge(conversation_room_json(chat))
         }, status: :created
       rescue ActiveRecord::RecordInvalid => error
         # A guest that departed between the account check and the insert is
@@ -167,6 +172,15 @@ module Api
             return
           end
           changes["title"] = title.strip
+        end
+        if room_selector_given?(changes)
+          unless rooms_visible_in?(chat.account)
+            render json: { error: "Only the account's own people and residents can move conversations between rooms" }, status: :forbidden
+            return
+          end
+          room = resolve_room_selector(chat.account, changes)
+          changes.delete("room_id")
+          changes["room"] = room
         end
         if changes.key?("visual_tag_id")
           tag_id = changes.delete("visual_tag_id")
@@ -284,6 +298,16 @@ module Api
         Message.decode_id(params[:after_message_id])
       end
 
+      # A resident, at home or seated as a guest, may choose a room;
+      # otherwise the conversation lands in the account's resident default.
+      def room_for_resident_conversation
+        if room_selector_given?(params) && rooms_visible_in?(@destination)
+          resolve_room_selector(@destination, params)
+        else
+          @destination.resident_room
+        end
+      end
+
       def create_agent_scoped_conversation!(invited_agent_ids)
         agent_ids = ([ current_api_agent.id ] + invited_agent_ids).uniq
         # The safeguard check is a network call: run it before the transaction.
@@ -297,7 +321,8 @@ module Api
             title: params[:title],
             manual_responses: true,
             initiated_by_agent: current_api_agent,
-            initiation_reason: params[:reason]
+            initiation_reason: params[:reason],
+            room: room_for_resident_conversation
           )
           chat.agent_ids = agent_ids
           chat.save!
@@ -308,6 +333,8 @@ module Api
               agent: current_api_agent,
               content: params[:message]
             )
+            # An @Name tag of an invited resident hands off to them, as in any post.
+            opening.handoff_recipient_ids = []
             SafeguardConversationPost.save(opening, check: safeguard_check) or
               raise ActiveRecord::RecordInvalid, opening
           end

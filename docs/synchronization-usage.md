@@ -43,6 +43,33 @@ Allowed models/collections are explicit in `SyncChannel`. Broad `Account:all` an
 server-side checks, not client convention. A `/collection` suffix in the frontend
 helper is not a wildcard subscription to arbitrary associations.
 
+Rhythm index/detail readers use the account-authorised, content-free
+`RhythmActivity:<account-id>` stream, mapped only to `rhythms` / `rhythm`.
+Core changes, bulk hold releases and displayed dispatch/runtime transitions
+invalidate after commit. Recent-run chat title/discard changes and actual
+quiet/listed transitions invalidate too; ordinary message touches and token
+telemetry do not. Existing reconnect catch-up and coalescing apply.
+New/edit forms stay unsubscribed. Detail refreshes retain pause drafts and the
+client-owned manual-start key, rotating it only after a successful start POST.
+Authorized partial detail reloads represent deletion as `rhythm: null`; full
+missing-record navigation and account authorization retain their normal checks.
+
+The Field uses the account-authorised, content-free `FieldActivity:<account-id>`
+stream. It covers committed item/tag mutations, including new arrivals; it does
+not expand a collection into whichever records existed when the socket connected.
+Do not substitute the broad Account stream: unrelated chat writes also reach it.
+Field list/count/selected-item props refresh together, while an open search keeps
+its requested result window until the reader searches or navigates again. Note
+drafts retain both their text and the revision they started editing.
+
+Room metadata uses the account-authorised, content-free
+`RoomNavigation:<account-id>` stream, including committed reorders whose position
+writes bypass ordinary model callbacks. The navbar watches the current account
+even when it has no rooms yet. Room settings keep conversation counts separate
+from room metadata, so unrelated chat activity need not reload room names/order.
+Do not map room metadata to all confirmed accounts or the run-state
+`RoomActivity` stream.
+
 ## Conversation state
 
 Chat connection/reconnection schedules a prop refresh to catch changes missed

@@ -56,6 +56,7 @@ class AgentRuntimeInteractionCost
     [ /(?:openai\/)?gpt-4o-mini(?:-\d{4}-\d{2}-\d{2})?\z/, "openai/gpt-4o-mini", 0.15, 0.6 ],
     [ /(?:openai\/)?gpt-4o(?:-\d{4}-\d{2}-\d{2})?\z/, "openai/gpt-4o", 2.5, 10 ],
 
+    [ /\A(?:google\/)?gemini-4-argon\z/, "google/gemini-4-argon", 2, 10 ],
     [ /\A(?:google\/)?gemini-3\.8-flash\z/, "google/gemini-3.8-flash", 0.75, 3.75 ],
     [ /(?:google\/)?gemini-3\.7-flash\z/, "google/gemini-3.7-flash", 0.75, 3.75 ],
     [ /(?:google\/)?gemini-3\.5-flash\z/, "google/gemini-3.5-flash", 1.5, 9 ],
@@ -72,9 +73,15 @@ class AgentRuntimeInteractionCost
     [ /(?:x-ai\/)?grok-4\.3\z/, "x-ai/grok-4.3", 1.25, 2.5 ],
 
     [ /deepseek\/deepseek-v4-pro\z/, "deepseek/deepseek-v4-pro", 0.435, 0.87 ],
+    [ /\A(?:deepseek\/)?deepseek-v4\.1-flash-1017\z/, "deepseek/deepseek-v4.1-flash-1017", 0.15, 0.6 ],
     [ /mistralai\/mistral-large-2512\z/, "mistralai/mistral-large-2512", 0.5, 1.5 ],
+    [ /\A(?:meta\/)?muse-wonder\z/, "meta/muse-wonder", 4, 20 ],
+    [ /\A(?:meta\/)?muse-spark-open\z/, "meta/muse-spark-open", 1.25, 4.25 ],
     [ /meta-llama\/llama-4-maverick\z/, "meta-llama/llama-4-maverick", 0.2, 0.8 ],
+    [ /\A(?:minimax\/)?minimax-m3\.1-flash\z/, "minimax/minimax-m3.1-flash", 0.15, 0.6 ],
+    [ /\A(?:inception\/)?mercury-3\z/, "inception/mercury-3", 0.1, 0.35 ],
     [ /minimax\/minimax-m3\z/, "minimax/minimax-m3", 0.3, 1.2 ],
+    [ /\A(?:moonshotai\/)?kimi-k3\.1-pro\z/, "moonshotai/kimi-k3.1-pro", 2, 10 ],
     [ /moonshotai\/kimi-k2\.7-code\z/, "moonshotai/kimi-k2.7-code", 0.82, 3.75 ],
     [ /qwen\/qwen3\.7-max\z/, "qwen/qwen3.7-max", 1.475, 4.425 ],
     [ /qwen\/qwen3\.8-omni-flash\z/, "qwen/qwen3.8-omni-flash", 0.15, 0.47 ],
@@ -89,6 +96,7 @@ class AgentRuntimeInteractionCost
   end.freeze
 
   CACHE_READ_RATES = {
+    "google/gemini-4-argon" => 0.1,
     "anthropic/claude-opus-5.5" => 0.2,
     "google/gemini-3.8-flash" => 0.075,
     "openai/gpt-4.1" => 0.5,
@@ -105,8 +113,14 @@ class AgentRuntimeInteractionCost
     "google/gemini-2.5-flash" => 0.03,
     "google/gemini-2.5-flash-lite" => 0.01,
     "deepseek/deepseek-v4-pro" => 0.003625,
+    "deepseek/deepseek-v4.1-flash-1017" => 0.003,
     "mistralai/mistral-large-2512" => 0.05,
+    "meta/muse-wonder" => 0.2,
+    "meta/muse-spark-open" => 0.15,
     "minimax/minimax-m3" => 0.06,
+    "minimax/minimax-m3.1-flash" => 0.015,
+    "inception/mercury-3" => 0.01,
+    "moonshotai/kimi-k3.1-pro" => 0.2,
     "moonshotai/kimi-k2.7-code" => 0.16,
     "qwen/qwen3.7-max" => 0.295,
     "qwen/qwen3.8-omni-flash" => 0.016,
@@ -167,6 +181,11 @@ class AgentRuntimeInteractionCost
     price = PRICE_RULES.find { |rule| model.to_s.match?(rule[:pattern]) }
     # Use the interaction date, not today's date, so historical promotional
     # usage retains its rate. Storage time is not present in token telemetry.
+    if price && price[:model] == "google/gemini-4-argon" &&
+        interaction.started_at.to_date >= Date.new(2026, 12, 1)
+      price = price.merge(input: price[:input] * 2, output: price[:output] * 2,
+        cache_read: BigDecimal("0.2"))
+    end
     if price && price[:model] == "google/gemini-3.8-flash" &&
         interaction.started_at.to_date >= Date.new(2027, 1, 1)
       price = price.merge(input: price[:input] * 2, output: price[:output] * 2,
@@ -184,6 +203,12 @@ class AgentRuntimeInteractionCost
       # The routed catalogue quotes a token write rate; the direct API instead
       # documents storage by token-hour. Do not apply one route's rate to both.
       return BigDecimal("0.0416666666666667") * (price[:input] / BigDecimal("0.75"))
+    end
+
+    if interaction.provider == "openrouter" && price[:model] == "google/gemini-4-argon"
+      # Routed catalogue write rate at launch ($0.1875 at $2 input), scaled
+      # with the scheduled December price change like Gemini 3.8 Flash.
+      return BigDecimal("0.1875") * (price[:input] / BigDecimal("2"))
     end
 
     if anthropic?

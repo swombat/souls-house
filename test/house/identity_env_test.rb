@@ -52,8 +52,9 @@ class IdentityEnvTest < ActiveSupport::TestCase
 
   test "public_url falls back to credentials.app.url when env is absent" do
     with_env("SOULSHOUSE_PUBLIC_URL" => nil) do
-      reload_house_initializer
-      assert_equal Rails.application.credentials.dig(:app, :url), Rails.configuration.x.public_url
+      credentials_dig = ->(*keys) { keys == [ :app, :url ] ? "https://credentials.example" : nil }
+      Rails.application.credentials.stub(:dig, credentials_dig) { reload_house_initializer }
+      assert_equal "https://credentials.example", Rails.configuration.x.public_url
     end
   ensure
     reload_house_initializer

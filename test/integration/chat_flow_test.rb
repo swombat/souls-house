@@ -70,8 +70,7 @@ class ChatFlowTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_chat_path(@account, chat)
   end
 
-  test "chat deletion flow" do
-    # Create a chat with messages
+  test "chat discard and restore preserve its messages and files" do
     chat = @account.chats.create!(
       model_id: "gpt-4o",
       title: "Test Chat"
@@ -81,18 +80,31 @@ class ChatFlowTest < ActionDispatch::IntegrationTest
       role: "user",
       user: @user
     )
+    message.attachments.attach(
+      io: StringIO.new("retained bytes"),
+      filename: "note.txt",
+      content_type: "text/plain"
+    )
+    blob = message.attachments.first.blob
 
-    # Delete the chat
-    assert_difference "Chat.count", -1 do
-      assert_difference "Message.count", -1 do  # Messages should be deleted too
-        delete account_chat_path(@account, chat)
-      end
-    end
+    post account_chat_discard_path(@account, chat)
 
-    # Should redirect to chats index
     assert_redirected_to account_chats_path(@account)
-    assert_not Chat.exists?(chat.id)
-    assert_not Message.exists?(message.id)
+    assert chat.reload.discarded?
+    assert Chat.exists?(chat.id)
+    assert Message.exists?(message.id)
+    assert ActiveStorage::Blob.exists?(blob.id)
+    assert_equal "retained bytes", blob.download
+    assert_equal "Test message", message.reload.content
+
+    delete account_chat_discard_path(@account, chat)
+
+    assert_redirected_to account_chats_path(@account)
+    assert_not chat.reload.discarded?
+    assert Message.exists?(message.id)
+    assert ActiveStorage::Blob.exists?(blob.id)
+    assert_equal blob.id, message.reload.attachments.first.blob_id
+    assert_equal "retained bytes", blob.download
   end
 
   test "account scoping prevents access to other accounts chats" do
@@ -117,7 +129,7 @@ class ChatFlowTest < ActionDispatch::IntegrationTest
     }
     assert_response :not_found
 
-    # Should not be able to delete other account's chat
+    # The legacy hard-delete URL is no longer routed.
     delete account_chat_path(@account, other_chat)
     assert_response :not_found
 

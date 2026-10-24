@@ -13,6 +13,21 @@ module Api
         @chat = @account.chats.create!(model_id: "openrouter/auto", title: "Test Chat")
       end
 
+      test "a general API human mention dispatches only the lowest-ID namesake" do
+        first = @account.agents.create!(name: "Namesake", system_prompt: "Test", runtime: "external")
+        second = @account.agents.create!(name: "namesake", system_prompt: "Test", runtime: "external")
+        @chat.update!(manual_responses: true)
+        @chat.agents = [ second, first ]
+
+        assert_enqueued_jobs 1, only: MessageDispatchJob do
+          post api_v1_conversation_messages_url(@chat),
+            params: { content: "@NAMESAKE hello" },
+            headers: { "Authorization" => "Bearer #{@token}" }
+        end
+        assert_response :created
+        assert_equal [ first.id ], @chat.messages.last.message_dispatch.target_agent_ids
+      end
+
       test "human API message wakes the only resident and reports the trigger" do
         resident = @account.agents.create!(name: "Solo", system_prompt: "Test", runtime: "external")
         @chat.agents << resident

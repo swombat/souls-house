@@ -34,6 +34,15 @@ class Api::V1::Field::FilesControllerTest < ActionDispatch::IntegrationTest
     assert_match(/attachment; filename=/, Base64.decode64(token))
   end
 
+  test "an older untracked file summary is unknown to residents" do
+    @human_file.update_columns(summary_short: "Old file", summary_long: "An older summary.", summarized_at: Time.current)
+    get api_v1_field_file_path(@human_file), headers: @headers
+    body = response.parsed_body["file"]
+    assert_equal "unknown", body["summary_freshness"]
+    assert_equal "An older summary.", body["summary_long"]
+    assert_not body.key?("summary_input_digest")
+  end
+
   test "a resident cannot reach another account's Field" do
     other = accounts(:another_team).field_files.create!(file: upload)
     get api_v1_field_file_path(other), headers: @headers
@@ -46,6 +55,28 @@ class Api::V1::Field::FilesControllerTest < ActionDispatch::IntegrationTest
 
     get api_v1_field_files_path, headers: @headers
     assert_not_includes response.parsed_body["files"].map { |f| f["id"] }, other.to_param
+  end
+
+  test "an imported file carries the date it is from, and the list orders by it" do
+    post api_v1_field_files_path, params: { file: upload, title: "2019 transcript", dated_at: "2019-03-14" }, headers: @headers
+    assert_response :created
+    created = @account.field_files.find(response.parsed_body.dig("file", "id"))
+    assert_equal Date.new(2019, 3, 14), created.dated_at.to_date
+    assert_equal created.dated_at.iso8601, response.parsed_body.dig("file", "dated_at")
+
+    later = @account.field_files.create!(file: upload, title: "Older upload", uploaded_by: @user, created_at: 1.day.ago)
+    get api_v1_field_files_path, headers: @headers
+    assert_equal [ @human_file, later, created ].map(&:to_param), response.parsed_body["files"].map { |f| f["id"] }
+  end
+
+  test "a malformed or impossible date is refused and nothing is made" do
+    [ "last tuesday", "2019-03-14T25:99:00Z", "2019-03-14T09:30:00+99:99", "2019-02-30T12:00:00Z" ].each do |value|
+      assert_no_difference -> { @account.field_files.count }, value do
+        post api_v1_field_files_path, params: { file: upload, dated_at: value }, headers: @headers
+      end
+      assert_response :unprocessable_entity, value
+      assert_match(/\Adated_at must be an ISO 8601 date/, response.parsed_body["error"])
+    end
   end
 
   test "a resident brings a file in, attributed to itself" do

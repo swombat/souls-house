@@ -41,6 +41,7 @@ class House::Cli
       when "init" then cmd_init(argv)
       when "doctor" then cmd_doctor(argv)
       when "release-embeddings" then cmd_release_embeddings(argv)
+      when "release-voice-embeddings" then cmd_release_embeddings(argv, service: House::ReleaseEmbeddings::VOICE)
       when "release-runtime" then cmd_release_runtime(argv)
       when nil, "help", "-h", "--help" then cmd_help
       else
@@ -122,9 +123,12 @@ class House::Cli
     #
     # Builds and publishes services/mnemodyne-embeddings, then records its
     # manifest digest in config/house.env. See House::ReleaseEmbeddings.
-    def cmd_release_embeddings(argv)
+    #
+    # bin/house release-voice-embeddings [--dry-run] does the same for
+    # services/voice-embeddings (HOUSE_VOICE_EMBEDDINGS_IMAGE/_DIGEST).
+    def cmd_release_embeddings(argv, service: House::ReleaseEmbeddings::MEMORY)
       dry_run = !!argv.delete("--dry-run")
-      exit(House::ReleaseEmbeddings.new(root: House::ROOT, env: ENV, dry_run: dry_run).run ? 0 : 1)
+      exit(House::ReleaseEmbeddings.new(root: House::ROOT, env: ENV, dry_run: dry_run, service: service).run ? 0 : 1)
     rescue => e
       warn e.message
       exit 1
@@ -167,6 +171,8 @@ class House::Cli
           doctor                     Check config/house.env against the host it names
           release-embeddings [--dry-run]
                                       Build, publish, and record the embeddings image digest
+          release-voice-embeddings [--dry-run]
+                                      The same for the Field voice embeddings image
           release-runtime [SHA_TAG] [--dry-run]
                                       Build the hosted-agent runtime image
 

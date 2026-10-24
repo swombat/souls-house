@@ -51,6 +51,12 @@
       </div>
     {/if}
 
+    {#if interaction.out_of_memory_message}
+      <div class="rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
+        {interaction.out_of_memory_message}
+      </div>
+    {/if}
+
     {#if interaction.error_message}
       <div class="rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
         {interaction.error_class}: {interaction.error_message}

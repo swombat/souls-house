@@ -37,6 +37,7 @@ class Mnemodyne::Checkpoint
     raise Invalid if JSON.generate(payload).bytesize > MAX_BYTES
     vault.with_lock do
       raise Invalid if vault.erasure_requested_at?
+      raise Invalid if Backup::VmResident.held?(vault.agent)
       if replace
         raise Invalid unless vault.suspended_at?
         Mnemodyne::Use.where(vault_id: vault.id).delete_all

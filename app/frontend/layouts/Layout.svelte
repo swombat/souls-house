@@ -2,9 +2,10 @@
   import { chatViewport } from '$lib/chat-viewport';
   import { page } from '@inertiajs/svelte';
   import { Toaster } from '$lib/components/shadcn/sonner/index.js';
-  import { toast } from 'svelte-sonner';
+  import { showFlashToasts } from '$lib/flash-toasts.js';
   import Navbar from '$lib/components/navigation/navbar.svelte'; // Adjust the path as necessary
   import Footer from '$lib/components/navigation/Footer.svelte';
+  import DeployAlarmBanner from '$lib/components/admin/DeployAlarmBanner.svelte';
   import { ModeWatcher, setMode, resetMode, mode } from 'mode-watcher';
   import { applyPersonalTint, applyAccountColour, browserChromeColours } from '$lib/theme';
 
@@ -25,10 +26,7 @@
   });
 
   $effect(() => {
-    let flash = $page.props?.flash || {};
-
-    flash.notice && toast.success(flash.notice);
-    flash.alert && toast.error(flash.alert);
+    showFlashToasts($page.props?.flash);
   });
 
   // Apply user's theme preference on initial load only
@@ -52,6 +50,9 @@
   class:chat-viewport={!showFooter}
   class="flex flex-col bg-background {showFooter ? 'min-h-dvh' : 'overflow-hidden'}">
   <div class="shrink-0"><Navbar /></div>
+  {#if $page.props?.deploy_alarm}
+    <div class="shrink-0"><DeployAlarmBanner alarm={$page.props.deploy_alarm} /></div>
+  {/if}
   <main class={showFooter ? 'flex-1' : 'flex min-h-0 flex-1 flex-col'}>{@render children?.()}</main>
   {#if showFooter}
     <Footer />

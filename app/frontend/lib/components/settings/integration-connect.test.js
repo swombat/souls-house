@@ -28,7 +28,41 @@ const github = {
   ],
 };
 
+const twitterapi = {
+  key: 'twitterapi_io',
+  name: 'TwitterAPI.io',
+  management_scopes: ['account_managed'],
+  connection_method: 'credentials',
+  authority_groups: [],
+  access_profiles: [],
+  credential_fields: [{ key: 'api_key', label: 'API key', type: 'password' }],
+};
+
 describe('integration scope and connection flow', () => {
+  it('retains unsent credentials and ownership when read-only service props refresh', async () => {
+    const props = { account, focusedService: github, canManageAccount: true };
+    const view = render(IntegrationConnect, props);
+    await fireEvent.input(screen.getByLabelText('Token'), { target: { value: 'synthetic-unsent-token' } });
+    await fireEvent.input(screen.getByLabelText('Repository'), { target: { value: 'example/unfinished' } });
+    await view.rerender({ ...props, focusedService: { ...github }, account: { ...account } });
+    expect(screen.getByLabelText('Token')).toHaveValue('synthetic-unsent-token');
+    expect(screen.getByLabelText('Repository')).toHaveValue('example/unfinished');
+  });
+
+  it('says an account-only key belongs to the account, and connects it as account-managed', async () => {
+    render(IntegrationConnect, { account, focusedService: twitterapi, canManageAccount: true });
+    expect(screen.getByText(/TwitterAPI.io is connected for the whole account/)).toBeInTheDocument();
+    expect(screen.queryByText(/connected personally/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/will belong to you/)).not.toBeInTheDocument();
+    await fireEvent.input(screen.getByLabelText('API key'), { target: { value: 'test-only-key' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Connect TwitterAPI.io' }));
+    expect(router.post).toHaveBeenCalledWith('/accounts/selected-house/service_connections', {
+      provider: 'twitterapi_io',
+      management_scope: 'account_managed',
+      credentials: { api_key: 'test-only-key' },
+    });
+  });
+
   it('lets admins choose account scope for a supported OAuth provider', async () => {
     render(IntegrationConnect, { account, focusedService: dropbox, canManageAccount: true });
     expect(screen.getByLabelText('Integration scope')).toBeInTheDocument();

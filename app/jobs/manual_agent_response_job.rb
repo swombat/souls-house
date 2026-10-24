@@ -1,6 +1,6 @@
 class ManualAgentResponseJob < ApplicationJob
 
-  def perform(chat, agent, initiation_reason: nil, runtime_interaction_id: nil)
+  def perform(chat, agent, initiation_reason: nil, runtime_interaction_id: nil, wake_source_kinds: [])
     interaction = if runtime_interaction_id
       chat.agent_runtime_interactions.find_by!(id: runtime_interaction_id, agent: agent)
     end
@@ -9,16 +9,24 @@ class ManualAgentResponseJob < ApplicationJob
       return
     end
     agent.reload
-    # A follow-through nudge is an automatic wake: a pause after it was
-    # reserved still stops it before it reaches the runtime.
-    if interaction&.follow_through_of_id && agent.paused?
+    # A follow-through nudge, a stalled-thread wake and a released pending
+    # wake are deferred wakes:
+    # a pause after either was reserved still stops it before it reaches the
+    # runtime. (The wake's claim checks this again, with its sources.)
+    if (interaction&.follow_through_of_id || interaction&.stalled_thread_sweep_id || interaction&.released_pending_wake) && agent.paused?
+      cancel_unclaimed(interaction)
+      return
+    end
+    # A stalled-thread wake also stops if waking, the sweep or the account's
+    # opt-in was switched off since it was reserved (checked again at claim).
+    if interaction&.stalled_thread_sweep_id && StalledThreadWake.refusal_reason(chat: chat, agent: agent)
       cancel_unclaimed(interaction)
       return
     end
     agent.require_conversation_runtime!
     ExternalAgentResponseRequest.new(
       agent: agent, chat: chat, requested_by: "souls.house",
-      initiation_reason: initiation_reason, interaction: interaction
+      initiation_reason: initiation_reason, interaction: interaction, wake_source_kinds: wake_source_kinds
     ).call
   rescue Agent::RuntimeAvailability::Unavailable => error
     cancel_unclaimed(interaction)

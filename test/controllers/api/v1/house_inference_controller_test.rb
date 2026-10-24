@@ -5,7 +5,7 @@ class Api::V1::HouseInferenceControllerTest < ActionDispatch::IntegrationTest
   setup do
     @agent = agents(:research_assistant)
     @user = users(:user_1)
-    @agent.update!(model_id: HouseInference::Offering::MODEL_ID)
+    @agent.update!(model_id: HouseInference::Offering::DEEPSEEK_MODEL_ID)
     HouseInferenceGrant.assign!(@agent, @user)
     @key = ApiKey.generate_for(@user, name: 'house synthetic', agent: @agent)
     @headers = { 'Authorization' => "Bearer #{@key.raw_token}", 'SERVER_PROTOCOL' => 'HTTP/1.1' }
@@ -22,6 +22,14 @@ class Api::V1::HouseInferenceControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
     post @path, params: @input, as: :json
     assert_response :unauthorized
+  end
+
+  test 'model discovery reports the selected offering’s own context window' do
+    get '/api/v1/house_inference/models', headers: @headers
+    assert_equal [ 1_048_576 ], response.parsed_body['data'].pluck('context_length')
+    @agent.update!(model_id: HouseInference::Offering::HAIKU_MODEL_ID)
+    get '/api/v1/house_inference/models', headers: @headers
+    assert_equal [ [ 'house/claude-haiku-5.5', 1_000_000 ] ], response.parsed_body['data'].map { |m| [ m['id'], m['context_length'] ] }
   end
 
   test 'another resident cannot spend the sponsor allowance' do

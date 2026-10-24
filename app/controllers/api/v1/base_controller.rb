@@ -12,7 +12,9 @@ module Api
         render json: { error: error.message, code: error.code }, status: :conflict
       end
 
-      rescue_from ActiveRecord::RecordNotFound do
+      # Hashids::InputError: a malformed obfuscated id is a missing record, not a 500
+      # (same rule as Api::App::V1::BaseController).
+      rescue_from ActiveRecord::RecordNotFound, Hashids::InputError do
         render json: { error: "Not found" }, status: :not_found
       end
 
@@ -39,6 +41,42 @@ module Api
         reachable = Account.where(id: current_api_account.id)
         reachable = reachable.or(Account.where(id: current_api_agent.guest_memberships.select(:account_id))) if current_api_agent
         reachable.find(params[:account_id])
+      end
+
+      # Room names and ids belong to an account's own people and residents,
+      # and to residents seated there as guests. A guest who leaves loses
+      # them with its membership.
+      def rooms_visible_in?(account)
+        return true if current_api_agent.nil? || current_api_agent.account_id == account.id
+
+        current_api_agent.guest_memberships.exists?(account_id: account.id)
+      end
+
+      class RoomSelectorError < StandardError; end
+
+      def room_selector_given?(source)
+        source.key?("room_id") || source.key?("room")
+      end
+
+      # Two selectors that never shadow each other: `room_id` is a stable
+      # public id (null for Main); `room` is a name ("Main", any case, for
+      # Main). Unknown ids and names raise RecordNotFound.
+      def resolve_room_selector(account, source)
+        raise RoomSelectorError, "Give either room_id or room, not both" if source.key?("room_id") && source.key?("room")
+
+        if source.key?("room_id")
+          value = source["room_id"]
+          return nil if value.nil?
+          raise RoomSelectorError, "room_id must be a public room ID string or null" unless value.is_a?(String) && value.present?
+
+          Room.resolve_for(account, value)
+        else
+          name = source["room"]
+          raise RoomSelectorError, "room must be a room name" unless name.is_a?(String) && name.strip.present?
+          return nil if account.main_room_named?(name)
+
+          account.rooms.find_by!("lower(name) = ?", name.strip.downcase)
+        end
       end
 
       # Rooms a key may act in: its account's rooms and, for a resident key,

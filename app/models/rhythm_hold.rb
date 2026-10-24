@@ -12,4 +12,12 @@ class RhythmHold < ApplicationRecord
 
   scope :open, -> { where(released_at: nil) }
 
+  after_commit :broadcast_rhythm_activity, on: [ :create, :update, :destroy ]
+
+  private
+
+  def broadcast_rhythm_activity
+    RhythmActivity.broadcast_for(rhythm&.account)
+  end
+
 end

@@ -3,15 +3,24 @@ require "uri"
 class AgentPlacement < ApplicationRecord
 
   BACKENDS = %w[local hetzner_cloud].freeze
-  STATES = %w[pending ready failed retired].freeze
+  # staged: an archive import's VM intent, waiting for Activate. It has no
+  # server, no admission and no cap slot, and as a VM placement it is never
+  # run by the local runtime (RuntimeLocation).
+  STATES = %w[staged pending ready failed retired].freeze
+  KINDS = %w[birth archive_import github_import].freeze
 
   belongs_to :agent, inverse_of: :placement
+  # Who created the resident whose birth admitted this placement (#246).
+  belongs_to :birth_requested_by, class_name: "User", optional: true
   # Purchases are history: a placement that has had one is never deleted.
   has_many :cloud_procurement_operations, dependent: :restrict_with_exception
 
   validates :agent_id, uniqueness: true
   validates :backend, inclusion: { in: BACKENDS }
   validates :state, inclusion: { in: STATES }
+  validates :kind, inclusion: { in: KINDS }, allow_nil: true
+  validates :kind, absence: true, if: -> { backend == "local" }
+  validate :staged_holds_nothing, if: -> { state == "staged" }
   # Confirmed hosting geography, set when procurement verifies a server.
   validates :location, inclusion: { in: CloudProcurementOperation::EU_LOCATIONS }, allow_nil: true
   validates :location, absence: true, if: -> { backend == "local" }
@@ -20,11 +29,30 @@ class AgentPlacement < ApplicationRecord
   validates :provider_server_id,
     numericality: { only_integer: true, greater_than: 0 }, uniqueness: true, allow_nil: true
   validates :provider_server_id, :runtime_endpoint, absence: true, if: -> { backend == "local" }
-  validates :provider_server_id, :runtime_endpoint, presence: true,
-    if: -> { backend == "hetzner_cloud" && state == "ready" }
+  # A ready VM placement needs its server. It needs no endpoint: the house
+  # never calls the VM, whose runner polls for commands (#238).
+  validates :provider_server_id, presence: true, if: -> { backend == "hetzner_cloud" && state == "ready" }
   validate :runtime_endpoint_is_https
 
+  def vm_birth? = backend == "hetzner_cloud" && admitted_by_setting_at.present?
+  def staged? = state == "staged"
+  def cleanup_requested? = cleanup_requested_at.present?
+
+  # Records why this placement's server must go. Never deletes anything
+  # itself; VmCleanupJob does that, until the provider confirms.
+  def request_cleanup!(reason, now: Time.current)
+    with_lock do
+      update!(cleanup_requested_at: now, cleanup_reason: reason.to_s.first(255)) unless cleanup_requested?
+    end
+  end
+
   private
+
+  def staged_holds_nothing
+    errors.add(:state, "staged is only for a VM archive import") unless backend == "hetzner_cloud" && kind == "archive_import"
+    errors.add(:state, "staged holds no server") if provider_server_id.present? || location.present?
+    errors.add(:state, "staged is not admitted") if admitted_by_setting_at.present? || birth_deadline_at.present?
+  end
 
   def runtime_endpoint_is_https
     return if runtime_endpoint.nil?

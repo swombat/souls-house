@@ -86,6 +86,57 @@ class Api::App::V1::SendConcurrencyTest < ActionDispatch::IntegrationTest
     assert_equal 0, AgentRuntimeInteraction.where(chat: @chat).count
   end
 
+  test "same-key twin committed before repeat validation resolves as a retry despite a cached miss" do
+    @release = Queue.new
+    paused = Queue.new
+    original_new = Messages::PostFromHuman.method(:new)
+    first = true
+    lock = Mutex.new
+    pausing_new = lambda do |**options|
+      service = original_new.call(**options)
+      pause = lock.synchronize { first.tap { first = false } }
+      if pause
+        original_call = service.method(:call)
+        release = @release
+        service.define_singleton_method(:call) do |**arguments|
+          # The request has already looked up its identity and cached nil, but
+          # it has not opened its acceptance transaction or validated content.
+          paused << true
+          raise "twin was never released" unless release.pop(timeout: 10)
+
+          original_call.call(**arguments)
+        end
+      end
+      service
+    end
+
+    answers = Queue.new
+    path = "/api/app/v1/conversations/#{@chat.to_param}/messages"
+    headers = bearer(@tokens)
+    Messages::PostFromHuman.stub(:new, pausing_new) do
+      in_thread do |_test|
+        post path, params: { client_message_id: "key-cache001", content: "Hey @Grok" }, headers: headers
+        answers << [ response.status, response.parsed_body ]
+      end
+      assert_equal true, paused.pop(timeout: 10), "first request never reached the cached miss"
+
+      # This independent request commits while the first still has its cached
+      # miss. The first then sees the duplicate validator, not the unique index.
+      twin = open_session
+      twin.post path, params: { client_message_id: "key-cache001", content: "Hey @Grok" }, headers: headers
+      assert_equal 201, twin.response.status, twin.response.body
+      @release.push(true)
+      @threads.each { |thread| assert thread.join(10), "paused send did not finish" }
+    end
+
+    status, body = answers.pop(timeout: 5)
+    assert_equal 200, status, body.inspect
+    message = @chat.messages.sole
+    assert_equal 1, AuditLog.where(action: "create_message", auditable: message).count
+    assert_equal 1, MessageDispatch.where(message: message).count
+    assert_equal 0, AgentRuntimeInteraction.where(chat: @chat).count
+  end
+
   private
 
   def in_thread(&block)

@@ -4,11 +4,6 @@ class Admin::JobsController < ApplicationController
   before_action :require_site_admin
 
   AVAILABLE_JOBS = {
-    "cleanup_orphaned_messages" => {
-      job_class: CleanupOrphanedMessagesJob,
-      name: "Cleanup Orphaned Messages",
-      description: "Removes assistant messages that were never properly finalized (from failed streaming retries or tool call splits)."
-    },
     "hosted_agent_runtime_reconcile" => {
       job_class: HostedAgentRuntimeReconcileJob,
       name: "Reconcile Hosted Resident Runtime",

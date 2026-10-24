@@ -4,6 +4,8 @@
   import { ArrowUp, Spinner } from 'phosphor-svelte';
   import FileUploadInput from '$lib/components/chat/FileUploadInput.svelte';
   import MicButton from '$lib/components/chat/MicButton.svelte';
+  import { holdForRecording } from '$lib/recording-guard';
+  import { withTranscript } from '$lib/voice-note-recovery';
   import { accountChatMessagesPath } from '@/routes';
   import * as logging from '$lib/logging';
 
@@ -26,6 +28,19 @@
   let textareaRef = $state(null);
   let draft;
   let draftState = $state({ content: '', status: 'Loading draft…', recoveries: [] });
+
+  // A transcribed voice note's audio is attached only in memory until its message is sent; keep
+  // background refreshes (and the reload a deploy turns them into) off until then. Taken before
+  // the mic button lets go of its own hold, so there is no gap for a refresh to slip through.
+  let releaseAudioHold = null;
+  function setPendingAudio(signedId) {
+    pendingAudioSignedId = signedId;
+    if (signedId) releaseAudioHold ??= holdForRecording({ warn: false });
+    else {
+      releaseAudioHold?.();
+      releaseAudioHold = null;
+    }
+  }
 
   onMount(() => {
     draft = new ConversationDraft({
@@ -68,6 +83,7 @@
       window.removeEventListener('online', refresh);
       document.removeEventListener('visibilitychange', refresh);
       draft.dispose();
+      setPendingAudio(null);
     };
   });
 
@@ -125,7 +141,7 @@
       logging.debug('Message sent successfully');
       submitting = false;
       selectedFiles = [];
-      pendingAudioSignedId = null;
+      setPendingAudio(null);
       // Reset textarea height
       autoResize();
 
@@ -140,13 +156,20 @@
       logging.error('Message send failed:', error);
       draft.failed();
       submitting = false;
-      pendingAudioSignedId = null;
+      // The draft keeps the text for a retry; keep the voice note's audio (and its hold) too.
       onerror?.(error?.message || 'Failed to send message');
     }
   }
 
-  function handleTranscription(text, audioSignedId) {
-    pendingAudioSignedId = audioSignedId || null;
+  function handleTranscription(text, audioSignedId, { retry = false } = {}) {
+    setPendingAudio(audioSignedId || null);
+    // A retried voice note fills the composer and waits for the person to send it: they may
+    // have typed meanwhile, or come back after a reload. Their text is kept ahead of it.
+    if (retry) {
+      draft.edit(withTranscript(draftState.content, text));
+      tick().then(autoResize);
+      return;
+    }
     draft.edit(text);
     sendMessage();
   }
@@ -199,6 +222,7 @@
         disabled={submitting || disabled}
         {accountId}
         {chatId}
+        {userId}
         onsuccess={handleTranscription}
         onerror={handleTranscriptionError} />
     </div>

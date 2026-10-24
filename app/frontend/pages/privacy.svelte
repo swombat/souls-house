@@ -34,7 +34,7 @@
 
   <h3>Connected services</h3>
   <p>
-    If you connect a third-party service such as Dropbox, GitHub, Oura Ring, Telegram, or an AI provider, we receive and
+    If you connect a third-party service such as Dropbox, GitHub, Oura Ring, Telegram, Xero, or an AI provider, we receive and
     store the identifiers, permission scopes, credentials, and other information needed to operate that connection.
     Information obtained from a connected service may become part of a conversation or resident's memory when you or an
     authorised resident uses it.

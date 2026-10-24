@@ -1,25 +1,34 @@
 <script>
   import { Link, page, router } from '@inertiajs/svelte';
   import { createDynamicSync } from '$lib/use-sync';
+  import { reloadProps } from '$lib/cable';
   import * as Card from '$lib/components/shadcn/card/index.js';
   import { Button } from '$lib/components/shadcn/button/index.js';
   import SpeakerCard from '$lib/components/field/SpeakerCard.svelte';
+  import RecordingNotes from '$lib/components/field/RecordingNotes.svelte';
   import TranscriptTurns from '$lib/components/field/TranscriptTurns.svelte';
+  import ShareTranscript from '$lib/components/field/ShareTranscript.svelte';
+  import { transcriptPlainText } from '$lib/transcript-share';
   import { formatWhen } from '$lib/field';
   import {
     activeWordIndex,
     buildTurns,
     formatDuration,
+    groupSpeakers,
     recordingStatusLine,
     recordingsTabPath,
+    speakerKeys,
     speakerNames,
+    suppliedTurns,
     timedWords,
   } from '$lib/field-recordings';
-  import { ArrowClockwise, ArrowLeft, X } from 'phosphor-svelte';
+  import { ArrowClockwise, ArrowLeft, Trash, X } from 'phosphor-svelte';
 
   let {
     recording,
+    transcript = { revision: null, words: [] },
     speakers = [],
+    shares = [],
     voices = [],
     members_without_voice = [],
     my_voice_id = null,
@@ -29,16 +38,43 @@
     account,
   } = $props();
 
+  // The transcript's words travel in their own prop, `transcript`, with the
+  // revision they belong to, so the recording's refreshes never resend them (a
+  // long meeting is tens of thousands of words: 2.2 MB on 2026-10-20). While
+  // the recording reports a revision the page doesn't hold the words for (it
+  // finished transcribing, or someone corrected a line), the page asks for
+  // them once straight away, and every recording refresh until they arrive
+  // carries them too: a request lost to a disconnect is retried by the
+  // reconnect's catch-up. A full visit brings both at once.
+  const transcriptPending = $derived((recording.transcript_revision ?? null) !== (transcript?.revision ?? null));
+  const words = $derived(transcript?.words ?? []);
+
   const updateSync = createDynamicSync();
   $effect(() => {
-    updateSync({ [`FieldRecording:${recording.id}`]: ['recording', 'speakers'] });
+    updateSync({
+      [`FieldRecording:${recording.id}`]: transcriptPending
+        ? ['recording', 'speakers', 'transcript']
+        : ['recording', 'speakers'],
+      [`FieldVoiceActivity:${account.id}`]: ['voices', 'members_without_voice', 'my_voice_id', 'recognition_enabled'],
+    });
+  });
+  $effect(() => {
+    if (transcriptPending) reloadProps(['transcript']);
   });
 
   const ready = $derived(recording.status === 'ready');
   const troubled = $derived(recording.status === 'rejected' || recording.status === 'failed');
-  const turns = $derived(buildTurns(recording.words));
-  const wordList = $derived(timedWords(turns));
+  // Supplied transcripts (brought in with the audio) have turns, not timed
+  // words: no word highlighting, talk time, clips or voice samples.
+  const supplied = $derived(recording.transcript_source === 'supplied');
+  const turns = $derived(supplied ? suppliedTurns(recording.turns) : buildTurns(words, speakerKeys(speakers)));
+  // One card per person: diarized speakers linked to one voice share a card.
+  const groups = $derived(groupSpeakers(speakers));
+  const speakerUrl = (speaker) => `/accounts/${account.id}/field/recordings/${recording.id}/speakers/${speaker.id}`;
+  const wordList = $derived(supplied ? [] : timedWords(turns));
   const names = $derived(speakerNames(speakers));
+  // What "Copy transcript" copies: the lines as shown, with today's names.
+  const plainText = $derived(transcriptPlainText(turns, names));
   const totalTalkMs = $derived(speakers.reduce((sum, speaker) => sum + (speaker.talk_ms || 0), 0));
   const me = $derived($page.props?.user);
   const myName = $derived(me?.full_name || me?.first_name || '');
@@ -46,6 +82,8 @@
   const meta = $derived(
     [
       recording.duration_ms != null ? formatDuration(recording.duration_ms) : null,
+      recording.recorded_at ? `Recorded ${formatWhen(recording.recorded_at)}` : null,
+      supplied ? 'Transcript brought with it' : null,
       recording.uploader_name ? `Brought by ${recording.uploader_name}` : null,
       formatWhen(recording.created_at),
     ]
@@ -78,7 +116,7 @@
   }
 
   function seek(ms) {
-    if (!audio) return;
+    if (!audio || ms == null) return;
     clip = null;
     audio.currentTime = ms / 1000;
     audio.play().catch(() => {});
@@ -91,8 +129,93 @@
     audio.play().catch(() => {});
   }
 
+  // One line corrected by hand. Resolves {ok} only when the server took it;
+  // a refusal (the transcript changed meanwhile, an empty line) or a failed
+  // request resolves {ok: false} with why, and the editor keeps the text.
+  function saveLine(edit, text) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (result) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+      router.patch(
+        `${recording.show_url}/line`,
+        { line: { ...edit.address, text, was: edit.was, revision: edit.revision } },
+        {
+          preserveScroll: true,
+          preserveState: true,
+          onSuccess: () => settle({ ok: true }),
+          onError: (errors) => settle({ ok: false, error: errors?.line }),
+          onFinish: () => settle({ ok: false }),
+        }
+      );
+    });
+  }
+
+  // One line given to another speaker (or "new"). Resolves like saveLine.
+  function reassignLine(edit, speakerId) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const settle = (result) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
+      router.patch(
+        `${recording.show_url}/line_speaker`,
+        { line: { ...edit.address, was: edit.was, revision: edit.revision, speaker: speakerId } },
+        {
+          preserveScroll: true,
+          preserveState: true,
+          onSuccess: () => settle({ ok: true }),
+          onError: (errors) => settle({ ok: false, error: errors?.line_speaker }),
+          onFinish: () => settle({ ok: false }),
+        }
+      );
+    });
+  }
+
+  // Who a line can be given to: one entry per person, as the cards show them.
+  const speakerChoices = $derived(
+    groups.map((group) => ({
+      id: group.speaker.id,
+      name: group.speaker.name || group.speaker.default_name || group.speaker.label,
+      labels: group.parts.map((part) => part.label),
+    }))
+  );
+
   function retry() {
     router.post(`${recording.show_url}/retry`);
+  }
+
+  // The passes that ran when the transcript landed, run again: voices this
+  // Field has remembered since, and names it has learned. Only speakers nobody
+  // has decided about get a guess, and a guess waits for a person to confirm.
+  let lookingAgain = $state(false);
+  function identifyAgain() {
+    lookingAgain = true;
+    router.post(
+      `${recording.show_url}/identify_again`,
+      {},
+      {
+        preserveScroll: true,
+        onFinish: () => (lookingAgain = false),
+      }
+    );
+  }
+
+  // The same discard as the Field list's Delete: the recording leaves the
+  // index, search and residents' reads; the server sends us back to the list.
+  function remove() {
+    const message =
+      `Delete "${recording.title}" from the Field? It disappears for everyone, people and residents. ` +
+      'Deleting does not reach anything a resident has already read: quotes in chats and things kept in ' +
+      'memory stay where they are.' +
+      (recording.dispatched ? " It has started transcribing, so deleting it doesn't give its minutes back." : '');
+    if (!confirm(message)) return;
+    router.delete(recording.show_url);
   }
 
   // The server answers 204, not an Inertia page, so this is a plain request.
@@ -116,10 +239,27 @@
     <Link href={backPath} class="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
       <ArrowLeft class="size-4" /> Recordings
     </Link>
-    <h1 class="text-3xl font-bold mt-2 break-words">{recording.title}</h1>
+    <div class="flex items-start justify-between gap-3 mt-2">
+      <h1 class="text-3xl font-bold break-words min-w-0">{recording.title}</h1>
+      <Button
+        variant="ghost"
+        size="sm"
+        class="shrink-0 text-muted-foreground hover:text-destructive"
+        onclick={remove}
+        title="Delete recording"
+        aria-label="Delete recording"
+        data-testid="delete-recording">
+        <Trash class="size-4" /> Delete
+      </Button>
+    </div>
     <p class="text-muted-foreground mt-1">{meta}</p>
     {#if recording.note}
       <p class="mt-3 whitespace-pre-wrap">{recording.note}</p>
+    {/if}
+    {#if recording.source_path}
+      <p class="mt-1 text-xs text-muted-foreground break-all" data-testid="recording-source">
+        From {recording.source_path}
+      </p>
     {/if}
   </div>
 
@@ -134,6 +274,8 @@
       onseeking={seeking}
       data-testid="recording-audio"></audio>
   {/if}
+
+  <RecordingNotes {recording} />
 
   {#if !ready}
     <Card.Root>
@@ -161,30 +303,45 @@
           </button>
         </div>
       {/if}
-      {#if suggestions_enabled}
+      {#if suggestions_enabled && !supplied}
         <p class="text-xs text-muted-foreground" data-testid="suggestions-disclosure">
           Names may be suggested from what's said: the transcript, title and note, with the names of this Field's voices
           and members, are sent to Google Gemini (through OpenRouter) for that. A suggestion is only ever shown here,
           for a person to confirm or dismiss.
         </p>
       {/if}
-      <div class="flex justify-end">
+      <div class="flex items-center justify-end gap-3">
+        {#if (recognition_enabled || suggestions_enabled) && !supplied}
+          <Button
+            variant="ghost"
+            size="sm"
+            class="text-muted-foreground"
+            onclick={identifyAgain}
+            disabled={lookingAgain}
+            title="Look for voices and names this Field has learned since this transcript was made"
+            data-testid="identify-again">
+            <ArrowClockwise class="size-4" /> Look for known voices again
+          </Button>
+        {/if}
         <Link
           href={`/accounts/${account.id}/field/voices`}
           class="text-sm text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
           >Voices this Field knows</Link>
       </div>
       <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {#each speakers as speaker (speaker.id)}
+        {#each groups as group (group.key)}
           <SpeakerCard
-            {speaker}
+            speaker={group.speaker}
+            parts={group.parts}
+            {speakerUrl}
             {totalTalkMs}
             onPlayClip={playClip}
             onSeek={seek}
-            recognitionEnabled={recognition_enabled}
+            recognitionEnabled={recognition_enabled && !supplied}
             accountId={account.id}
             recordingId={recording.id}
-            url={`/accounts/${account.id}/field/recordings/${recording.id}/speakers/${speaker.id}`}
+            url={speakerUrl(group.speaker)}
+            with={group.parts.filter((part) => part.id !== group.speaker.id).map((part) => part.id)}
             {voices}
             members={members_without_voice}
             myVoiceId={my_voice_id}
@@ -197,7 +354,19 @@
     {#if turns.length}
       <Card.Root>
         <Card.Content class="p-6">
-          <TranscriptTurns {turns} {names} {activeIndex} onSeek={seek} />
+          <div class="flex items-center justify-between gap-3 mb-4">
+            <h2 class="text-lg font-semibold">Transcript</h2>
+            <ShareTranscript text={plainText} sharesUrl={`${recording.show_url}/shares`} {shares} />
+          </div>
+          <TranscriptTurns
+            {turns}
+            {names}
+            {activeIndex}
+            onSeek={seek}
+            onSave={saveLine}
+            onReassign={reassignLine}
+            choices={speakerChoices}
+            revision={transcript.revision} />
         </Card.Content>
       </Card.Root>
     {:else}

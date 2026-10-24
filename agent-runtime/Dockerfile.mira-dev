@@ -1,6 +1,6 @@
 # Opt-in development layer; never used for the default resident fleet.
 ARG MIRA_BASE_IMAGE=souls-house-mira-pilot:1eb4207
-FROM ruby:4.0.6-slim-trixie AS ruby
+FROM ruby:4.0.9-slim-trixie AS ruby
 FROM rust:1.98-bookworm AS rust
 FROM ${MIRA_BASE_IMAGE}
 USER root

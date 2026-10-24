@@ -9,20 +9,43 @@
   import AccountTypeCard from '$lib/components/accounts/AccountTypeCard.svelte';
   import PendingInvitationsCard from '$lib/components/accounts/PendingInvitationsCard.svelte';
   import TeamMembersCard from '$lib/components/accounts/TeamMembersCard.svelte';
+  import ResidentHandoffCapCard from '$lib/components/accounts/ResidentHandoffCapCard.svelte';
+  import ReflexesCard from '$lib/components/accounts/ReflexesCard.svelte';
   import FlashMessages from '$lib/components/FlashMessages.svelte';
-  import { useSync } from '$lib/use-sync';
+  import { createDynamicSync } from '$lib/use-sync';
+  import { createAccountSettingDraft } from '$lib/account-setting-draft.svelte.js';
 
-  let { account, can_be_personal, members = [], can_manage = false, current_user_id } = $props();
+  let {
+    account,
+    can_be_personal,
+    members = [],
+    can_manage = false,
+    current_user_id,
+    resident_handoff_cap = 6,
+    reflexes_enabled = false,
+    reflexes_site_scope = 'account_choice',
+  } = $props();
 
-  // Subscribe to real-time updates for this account and its members
-  useSync({
-    [`Account:${account.id}`]: ['account', 'members'],
+  const updateSync = createDynamicSync();
+  $effect(() => {
+    updateSync({
+      [`Account:${account.id}`]: [
+        'account',
+        'members',
+        'can_be_personal',
+        'can_manage',
+        'resident_handoff_cap',
+        'reflexes_enabled',
+      ],
+    });
   });
 
   let showInviteForm = $state(false);
-  let accountName = $state(account.name || '');
-  let savingName = $state(false);
-  const nameChanged = $derived(accountName.trim() !== '' && accountName.trim() !== account.name);
+  const nameDraft = createAccountSettingDraft(
+    () => account.id,
+    () => account.name
+  );
+  const nameChanged = $derived(nameDraft.value.trim() !== '' && nameDraft.value.trim() !== account.name);
 
   function formatDate(dateString) {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -34,13 +57,11 @@
 
   function saveName(event) {
     event.preventDefault();
-    if (!nameChanged || savingName) return;
+    if (!nameChanged || nameDraft.saving) return;
 
-    savingName = true;
-    router.put(
-      accountPath(account.id),
-      { account: { name: accountName.trim() } },
-      { preserveScroll: true, onFinish: () => (savingName = false) }
+    nameDraft.save(
+      (value, options) => router.put(accountPath(account.id), { account: { name: value.trim() } }, options),
+      (response) => response.props.account.name
     );
   }
 
@@ -64,9 +85,10 @@
     showInviteForm = false;
   }
 
+  let inviteAccount = account.id;
   $effect(() => {
-    // Close invite form on successful submission or error
-    if ($page.props.flash?.success || $page.props.flash?.errors) {
+    if (inviteAccount !== account.id) {
+      inviteAccount = account.id;
       showInviteForm = false;
     }
   });
@@ -91,9 +113,10 @@
       <form class="flex flex-col gap-3 sm:flex-row sm:items-end" onsubmit={saveName}>
         <div class="flex-1 space-y-2">
           <Label for="account-name">Account name</Label>
-          <Input id="account-name" bind:value={accountName} required />
+          <Input id="account-name" bind:value={nameDraft.value} required />
         </div>
-        <Button type="submit" disabled={!nameChanged || savingName}>{savingName ? 'Saving…' : 'Save name'}</Button>
+        <Button type="submit" disabled={!nameChanged || nameDraft.saving}
+          >{nameDraft.saving ? 'Saving…' : 'Save name'}</Button>
       </form>
       <dl class="mt-4 flex flex-wrap gap-x-8 gap-y-1 text-xs text-muted-foreground">
         <div class="flex gap-1">
@@ -107,6 +130,14 @@
       </dl>
     </Card.Content>
   </Card.Root>
+
+  <ResidentHandoffCapCard accountId={account.id} cap={resident_handoff_cap} canManage={can_manage} />
+
+  <ReflexesCard
+    accountId={account.id}
+    enabled={reflexes_enabled}
+    canManage={can_manage}
+    siteScope={reflexes_site_scope} />
 
   <AccountTypeCard
     {account}

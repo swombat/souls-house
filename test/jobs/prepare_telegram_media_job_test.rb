@@ -87,7 +87,7 @@ class PrepareTelegramMediaJobTest < ActiveSupport::TestCase
     stub_telegram_download("voice/file.webm", file_fixture("test_audio.webm").binread)
     received = nil
 
-    ElevenLabsStt.stub :transcribe, ->(upload) {
+    ElevenLabsStt.stub :transcribe, ->(upload, **) {
       received = [ upload.original_filename, upload.content_type ]
       "Machine words"
     } do
@@ -98,6 +98,22 @@ class PrepareTelegramMediaJobTest < ActiveSupport::TestCase
     assert_equal [ "telegram-voice-#{message.id}.webm", "audio/webm" ], received
     assert_equal "Machine words", message.transcription
     assert_equal "Listen\n\nTranscription: Machine words", message.text
+  end
+
+  test "voice transcription gets the resident's home account glossary, not another account's" do
+    TranscriptionGlossary.new(@agent.account).add!("Homeword", by: users(:user_1))
+    other = Account.where.not(id: @agent.account_id).first
+    TranscriptionGlossary.new(other).add!("Elsewhere-term", by: users(:user_1))
+    message = create_media_message("voice")
+    stub_telegram_download("voice/file.webm", file_fixture("test_audio.webm").binread)
+    received = nil
+
+    ElevenLabsStt.stub :transcribe, ->(_upload, keyterms:) { received = keyterms; "Words" } do
+      PrepareTelegramMediaJob.perform_now(message, "voice-file")
+    end
+
+    assert_includes received, "Homeword"
+    assert_not_includes received, "Elsewhere-term"
   end
 
   test "empty successful voice transcription remains absent rather than failed" do

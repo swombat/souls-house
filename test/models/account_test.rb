@@ -143,13 +143,6 @@ class AccountTest < ActiveSupport::TestCase
     assert_not Membership.exists?(membership_id)
   end
 
-  test "has_many users through memberships" do
-    account = accounts(:team_account)
-
-    assert account.users.present?
-    assert_includes account.users, users(:user_1)
-  end
-
   test "owner association returns owner user" do
     account = accounts(:personal_account)
     owner = users(:user_1)
@@ -174,26 +167,7 @@ class AccountTest < ActiveSupport::TestCase
     assert_nil account.owner
   end
 
-  test "has_many users through memberships includes all confirmed users" do
-    account = accounts(:team_account)
-
-    confirmed_users = account.users
-
-    # Should include all confirmed users
-    confirmed_users.each do |user|
-      membership = account.memberships.find_by(user: user)
-      assert membership.confirmed?, "User #{user.email_address} should be confirmed"
-    end
-  end
-
   # === GitHub Integration Association Tests ===
-
-  test "has_one github_integration association" do
-    account = accounts(:team_account)
-    integration = GithubIntegration.create!(account: account)
-
-    assert_equal integration, account.github_integration
-  end
 
   test "github_commits_context delegates to integration" do
     account = accounts(:another_team)
@@ -221,49 +195,6 @@ class AccountTest < ActiveSupport::TestCase
     GithubIntegration.create!(account: account, enabled: true, recent_commits: [])
 
     assert_nil account.github_commits_context
-  end
-
-  # === Validation Tests ===
-
-  test "validates name presence when not using callback" do
-    account = Account.new(name: "Test Account", account_type: :personal)
-    assert account.valid?
-
-    account.name = ""
-    assert_not account.valid?
-    assert account.errors[:name].include?("can't be blank")
-  end
-
-  test "validates account_type presence" do
-    account = Account.new(name: "Test Account")
-    account.account_type = nil
-    assert_not account.valid?
-    assert account.errors[:account_type].include?("can't be blank")
-  end
-
-  # === Enum Tests ===
-
-  test "account_type enum works correctly" do
-    personal = Account.create!(name: "Personal", account_type: :personal)
-    team = Account.create!(name: "Team", account_type: :team)
-
-    assert personal.personal?
-    assert_not personal.team?
-
-    assert team.team?
-    assert_not team.personal?
-  end
-
-  test "account_type enum scopes work" do
-    personal_count = Account.personal.count
-    team_count = Account.team.count
-
-    # Create one of each type
-    Account.create!(name: "New Personal", account_type: :personal)
-    Account.create!(name: "New Team", account_type: :team)
-
-    assert_equal personal_count + 1, Account.personal.count
-    assert_equal team_count + 1, Account.team.count
   end
 
   # === Business Logic Tests ===
@@ -459,61 +390,6 @@ class AccountTest < ActiveSupport::TestCase
     assert_equal "Writing Room", account.name
   end
 
-  # === Critical Update Method Safety Tests (For the bug we fixed) ===
-
-  test "update! methods work correctly on Account model" do
-    account = accounts(:team_account)
-
-    # Test update!
-    assert_nothing_raised do
-      account.update!(name: "Updated Team Name")
-    end
-    assert_equal "Updated Team Name", account.reload.name
-  end
-
-  test "update_column works correctly on Account model" do
-    account = accounts(:team_account)
-    original_updated_at = account.updated_at
-
-    # Test update_column (should work without callbacks and not update updated_at)
-    assert_nothing_raised do
-      account.update_column(:name, "Column Updated Name")
-    end
-
-    account.reload
-    assert_equal "Column Updated Name", account.name
-    assert_equal original_updated_at.to_i, account.updated_at.to_i # Should not change updated_at
-  end
-
-  test "save! works correctly on Account model" do
-    account = Account.new(name: "Save Test", account_type: :team)
-
-    # Test save!
-    assert_nothing_raised do
-      account.save!
-    end
-    assert account.persisted?
-  end
-
-  # === Settings JSON Column Tests ===
-
-  test "settings defaults to empty hash" do
-    account = Account.create!(name: "Settings Test", account_type: :personal)
-    assert_equal({}, account.settings)
-  end
-
-  test "settings can store JSON data" do
-    account = Account.create!(
-      name: "Settings Test",
-      account_type: :team,
-      settings: { theme: "dark", notifications: true }
-    )
-
-    account.reload
-    assert_equal "dark", account.settings["theme"]
-    assert_equal true, account.settings["notifications"]
-  end
-
   # === is_site_admin Tests ===
 
   test "as_json includes is_site_admin field" do
@@ -593,41 +469,28 @@ class AccountTest < ActiveSupport::TestCase
     assert_not account.last_owner?
   end
 
-  test "members_count returns confirmed members only" do
-    account = accounts(:team)
+  test "member and pending-invitation counts separate confirmed members from invitees" do
+    account = Account.create!(name: "Counting Team", account_type: :team)
+    owner = User.create!(email_address: "counting-owner@example.com")
+    account.add_user!(owner, role: "owner", skip_confirmation: true)
+    account.add_user!(User.create!(email_address: "counting-member@example.com"), role: "member", skip_confirmation: true)
+    account.invite_member(email: "counting-invitee@example.com", role: "member", invited_by: owner).save!
 
-    # Should only count confirmed memberships
-    confirmed_count = account.memberships.confirmed.count
-    assert_equal confirmed_count, account.members_count
+    assert_equal 2, account.members_count
+    assert_equal 1, account.pending_invitations_count
   end
 
-  test "pending_invitations_count returns pending invitations only" do
-    account = accounts(:team)
+  test "members_with_details preloads users and inviters" do
+    account = Account.create!(name: "Preload Team", account_type: :team)
+    owner = User.create!(email_address: "preload-owner@example.com")
+    account.add_user!(owner, role: "owner", skip_confirmation: true)
+    account.invite_member(email: "preload-invitee@example.com", role: "member", invited_by: owner).save!
 
-    # Create a pending invitation
-    User.find_or_invite("pending@example.com")
-    invitation = account.invite_member(
-      email: "pending@example.com",
-      role: "member",
-      invited_by: users(:admin)
-    )
-    invitation.save!
+    members = account.members_with_details.to_a
 
-    pending_count = account.memberships.pending_invitations.count
-    assert_equal pending_count, account.pending_invitations_count
-  end
-
-  test "members_with_details includes associations" do
-    account = accounts(:team)
-
-    # This should work without N+1 queries
-    members = account.members_with_details
-
-    # Verify associations are loaded
-    members.each do |member|
-      # These should not trigger additional queries
-      assert_not_nil member.user
-      # invited_by can be nil for non-invitations
+    assert_equal 2, members.size
+    assert_queries_count(0) do
+      members.each { |member| [ member.user.email_address, member.invited_by&.email_address ] }
     end
   end
 

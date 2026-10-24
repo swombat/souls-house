@@ -15,8 +15,15 @@ class RhythmOccurrence < ApplicationRecord
   # database is touched. A lost enqueue remains visible as pending, then expired;
   # it does not start a fresh run from recovery or promise exactly-once output.
   after_create_commit :enqueue_dispatch
+  after_commit :broadcast_rhythm_activity, on: [ :create, :update, :destroy ]
 
   private
+
+  def broadcast_rhythm_activity
+    # Parent deletion nullifies occurrences without callbacks and broadcasts
+    # its own invalidation. Retained snapshots need no rhythm stream.
+    RhythmActivity.broadcast_for(rhythm&.account)
+  end
 
   def enqueue_dispatch
     MessageDispatchJob.perform_later(message_dispatch) if message_dispatch

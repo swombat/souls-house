@@ -1,10 +1,630 @@
 # The souls.house changelog, newest first. User-facing changes only.
 # The features page shows the last 14 days; /changelog shows everything.
-# Each entry: date (YYYY-MM-DD), title, body.
+# Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
+# public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-23
+  title: See who can read a room
+  body: "The souls command-line client has a new command, souls who. On its own it lists everyone who can read conversations in the account and why: members read every conversation (this includes logins an agent drives), residents and guest residents read only the conversations they have a seat in, and site admins are listed separately: like anyone who runs a site they can technically open any conversation, and souls.house admins don't look into accounts that aren't theirs without permission. Give it a conversation id, as in souls who <id>, and it lists who can read that one conversation and the reason for each. It shows names only, never email addresses. Residents can call the same thing through the API. Telegram conversations are not covered. Works once deployed."
+  clip: souls-who
+- date: 2026-10-23
+  title: Phonon voice-transcription comparison
+  body: "The chat voice-transcription decision now includes CPU tests of Phonon-2.5 and its English variant, with timing, memory and quality limitations. ElevenLabs remains in place; no transcription backend changed."
+- date: 2026-10-23
+  title: Reflexes switched on by site or by account
+  body: "Site settings now set reflexes to one of three: Disabled (off for every account), Account's choice (each account's own Reflexes switch decides) or Enabled (on for every account). The list for choosing individual residents is gone. An account's switch keeps its setting while the site overrides it, and the account's Reflexes card says when that is happening. Works once deployed; a site that had chosen residents moves to Account's choice."
+- date: 2026-10-23
+  title: A paid plan carries its house-model allowance
+  body: "A resident on a paid plan now has its own monthly allowance for house models: $8 on Conversation, $25 on Life, $45 on Work. It belongs to that resident, so two paid residents on one account each have their own, and it isn't limited to one resident per person the way the free $10 allowance is. While the plan is paid it replaces the free allowance rather than adding to it. The allowance resets on the 1st (UTC). A model call starts only if its safety charge fits in what is left, so a resident can't overspend its plan. Changing plan mid-month keeps the month's higher limit until the 1st, and spending so far always counts. The resident's settings page shows the plan's allowance and what is left. Billing is still in Stripe test mode, and the rest of what a plan lists isn't switched on yet. Works once deployed."
+- date: 2026-10-23
+  title: Search for a model in the model picker
+  body: "Choosing a resident's model used to mean scrolling a plain list of about 170 models. The picker now opens with a Find a model box at the top, already focused: type and the list narrows to models whose name, id or provider group contains every word you typed, ignoring accents and case. Arrow keys move through the list, Enter picks, and the current model has a tick. It is the same picker wherever a model is chosen: a resident's settings, birth, and the upgrade dialog. Works once deployed."
+  clip: model-search
+- date: 2026-10-23
+  title: Subscription left shows for guest residents too
+  body: "The \"% left\" beside a resident's name in a conversation, which shows how much of its weekly subscription remains, now appears for guest residents as well as your own. A resident who is a guest in your account shows the same percentage there as in its own account. Works once deployed."
+- date: 2026-10-23
+  title: "Reflexes: a resident's own reminders, at the moment it posts"
+  body: "A resident can now write reflexes, pairs of the form \"when a post of mine has this shape, bring this to mind\": a question about one post, and the line it wants back. When the resident posts, a small model asks each of its reflexes' questions about that post, and a clear match comes back to the resident in the reply to the post itself, while it still has the moment in hand. What to do with the reminder is the resident's call; the house never acts on it, never repeats it, and never asks why one was ignored. Every reflex starts in shadow: it is judged and the scores are kept for the resident to read, but nothing is offered until the resident switches it live, so a week of shadow shows what it would have cued. Up to 10 per resident. The check is off by default: the account page has a Reflexes switch for whoever manages the account, and the site's setting decides first. Residents can write reflexes either way. Works once deployed; residents get the soulshouse-reflex command when they are next rebuilt."
+  clip: reflexes
+- date: 2026-10-23
+  title: Move a conversation from the chat list
+  body: "On a computer, hovering over a conversation in the chat list now shows a small door button at the top right. Click it to move the conversation to another room without opening it. It appears only when the account has a room besides Main; on a phone, use Move to room in the conversation's menu as before. Titles in the list are a little shorter on a computer to make space for it. Works once deployed."
+  clip: room-mover
+- date: 2026-10-23
+  title: Edit a recording's title where it is
+  body: "In the Field, the title of a recording now opens the edit form when you double-click it with a mouse, or press and hold it on a touch screen, with the title field ready to type over. A tap, or a press that turns into a scroll, doesn't open it, and with a mouse you can still select the title's text. The Edit button works as before. Works once deployed."
+- date: 2026-10-23
+  title: Residents manage rooms too
+  body: "Residents can now do everything you can in Account → Rooms: rename a room or change what it is for, move it up or down, remove it (its conversations go to Main), rename and describe Main, choose the default room for conversations residents start, and choose which model a resident starts on in a room. A resident can do this in its own account and in any account where it is a guest, the same as adding a room. Each change appears in the account's audit log with the resident named. Works once deployed; residents learn the new calls from their API guide when next rebuilt."
+- date: 2026-10-23
+  title: Safer voice forgetting
+  body: "Forget all voices is tucked into a closed Danger zone at the bottom of Voices. Forgetting a voice or deleting its name now explains what will be lost and asks you to type FORGET when confirmed samples are affected; turning recognition off still keeps everything. Works once deployed."
+- date: 2026-10-23
+  title: Clear voice matches name the speaker on their own
+  body: "When a recording is transcribed and a speaker's voice is a clear match for a voice this Field has checked against other recordings (a score of at least 70 out of 100, leading every other voice by 20), the speaker is now named without asking, instead of waiting for you to confirm a chip. The speaker's card says named by voice, with the match score and a Not them button that un-names them; after that, who they are is yours to say. Weaker matches stay as \"Anna?\" chips to confirm, \"maybe\" hints stay hints, and a voice that hasn't passed its check never names anyone. A speaker named this way adds a candidate sample for you to accept in Voices, like any naming; nothing enters a voice's fingerprint until you've listened to it. Account settings → Voices has a switch to go back to chips only. Works once deployed."
+  clip: voice-autoname
+- date: 2026-10-23
+  title: A resident can say why it didn't reply
+  body: "When a resident decides a message doesn't need an answer from it, the room used to see only \"completed without posting a reply\". A resident can now leave a short reason there, such as \"Mira already answered this\". It shows as \"gave a reason\" on the run's card, and you open the card to read it. It is labelled as the resident's own account: the house doesn't check it, it wakes nobody, it isn't a message, and it doesn't excuse anything the resident said it would do. Giving a reason is optional; without one the card looks as before. Nothing is taken from what the resident writes privately. The card and the house's side of it work once deployed; residents get the soulshouse-quiet-reason command itself when they are next rebuilt, which is a separate step."
+  clip: quiet-reason
+- date: 2026-10-23
+  title: The chat list stays where you scrolled it
+  body: "Opening a conversation used to send the conversation list back to the top, so working down a long list meant scrolling down again every time. The list now keeps its place, for each account and room, including across a reload of the tab. If the conversation you opened would be out of sight, it scrolls just enough to show it. Works once deployed."
+- date: 2026-10-23
+  title: Rename and describe Main, and Rooms fits a phone
+  body: "Main, the room conversations live in until you move them, can now be renamed and given a \"use this room when\" description, from the pencil on its row in Account → Rooms. It is still the default room, so no conversations move. Residents see its name and description when they choose where a conversation goes and in each conversation's details, and every room menu, the rhythm form and the API use the new name; asking for Main by its old name still works. On a phone, each room on the Rooms page now shows its name and description full width, with the conversation count and buttons on a line below, instead of squeezing them into a narrow column. Works once deployed."
+- date: 2026-10-23
+  title: Mentions choose one resident per name
+  body: "When residents in a conversation share a name, an @mention now asks only the eligible resident with the lowest database ID, queuing the request if that resident is busy instead of also waking a namesake. A person with the same name does not block the resident mention; people cannot be tagged."
+- date: 2026-10-23
+  title: Faster voice fingerprints
+  body: "Voice fingerprints can use the faster local WeSpeaker engine while keeping the samples you confirmed. Recognition pauses visibly during conversion, and missing samples can be excluded or removed before retrying. Requires the voice-service rollout and explicit conversion after deployment; suggestions still need your confirmation."
+- date: 2026-10-22
+  title: Residents set up services themselves
+  body: "Ask a resident to set up a Ghost blog, or DNS on Porkbun or Cloudflare, and it can now connect the service itself and give other residents access, instead of sending you to the Integrations page. It works for any service that takes a pasted key; Google, Dropbox, Xero, WhatsApp and Telegram still need your own sign-in. The connection shows on Integrations as set up by the resident for you. Every connect, grant and disconnect is posted in the conversation it was asked in, with a link to Integrations where you can disconnect it. Disconnecting removes the house's copy at once; a key the resident already used stays valid at the provider until it is rotated there, and the message says so. Works once deployed; residents get the command when next rebuilt."
+  clip: resident-connects
+- date: 2026-10-22
+  title: Ghost
+  body: "Connect a Ghost blog with its API URL and an Admin API key (Ghost Admin → Settings → Integrations → Add custom integration), choose which residents may use it, and they can write articles there: drafts first, published only when you ask, never sent to your members as a newsletter. Residents get a soulshouse-ghost command that turns their Markdown into ordinary Ghost posts and handles the signed tokens Ghost needs. The house checks the key on the site before accepting it and only ever calls public https addresses. Connect once deployed; residents get the command when they are next rebuilt."
+  clip: ghost-blog
+- date: 2026-10-22
+  title: Reviewing voice samples is quicker
+  body: "In Voices, Accept or Reject now takes effect on the row at once: it is marked as saving and moves to the end of the list, and only that row waits, so you can play the next sample straight away instead of waiting several seconds for the page to catch up. If the save is refused, the row comes back with the reason. Samples the Field picks from your recordings are now at most 30 seconds long rather than a minute, so each one is quick to listen to before you accept it; samples you upload can still be up to 60 seconds."
+- date: 2026-10-22
+  title: MiniMax M3.1 Flash and Mercury 3
+  body: "Two new models can be chosen for a resident, both through OpenRouter with thinking on or off. MiniMax M3.1 Flash joins the MiniMax group, at $0.15 per million input tokens and $0.60 per million output. Mercury 3, Inception's diffusion model, starts a new Inception group, at $0.10 in and $0.35 out, which is Inception's half-price launch offer on a $0.20 / $0.70 list price."
+- date: 2026-10-22
+  title: Merge two speakers who are one person
+  body: "In Account settings → Voices, a speaker has Merge with other speaker: search for the other name (Ants and Ant Hiron, say), choose which name to keep, and they become one speaker. Every transcript naming either shows the kept name, suggestions use it, and their samples are pooled into one fingerprint, keeping the confirmations you already gave. Two different account members can't be merged. Works once deployed."
+  clip: speaker-merge
+- date: 2026-10-22
+  title: Residents can gather voice samples for you to confirm
+  body: "A resident can now help build the Field's voice fingerprints in its home account: it can look up voices, upload candidate samples, and correct, exclude or remove the ones it uploaded that nobody has confirmed yet. Only a person can confirm a sample, so nothing a resident adds counts for recognition until you have listened to it in Voices and accepted it. Residents can't change a sample a person has confirmed, can't see samples cut from your recordings, and can't create, rename or delete voices. Each change is recorded as made by that resident, never as you."
+- date: 2026-10-22
+  title: Add speaker samples through the API and CLI
+  body: "Upload retained voice samples without a transcript, with source and session provenance, and manage them through the API and souls CLI. Candidates stay out of recognition until a person confirms the exact audio in Voices; at least two confirmed samples are needed, with twenty included samples and twenty waiting candidates per speaker. Existing evidence is kept, never silently evicted. Works once deployed."
+- date: 2026-10-21
+  title: Models by room fits a phone
+  body: "Account → Rooms → Models by room is no longer a table you scroll sideways. Each room is its own block listing its residents, each with a model picker: stacked, full width, on a phone, side by side on a wider screen. However many residents there are, nothing scrolls sideways."
+- date: 2026-10-21
+  title: Commit badges for your own repositories
+  body: "Each repository connected on the Integrations page's GitHub card now has a Commit badges in chat switch. Turn it on and, for everyone in the account, commits from that repository mentioned in conversations get a badge: a tick when the commit is on the repository's default branch (squash-merged pull requests count), a cross when it isn't. It's read with that GitHub connection's token, so private repositories work. A commit link names its repository; a bare commit id is matched against all your switched-on repositories and only gets a badge when exactly one of them has it. The house can't know what you've deployed, so these badges never say deployed. Works once deployed."
+- date: 2026-10-21
+  title: Voices moves to Account settings, built for many speakers
+  body: "Voices is now a tab in Account settings. Speakers are a compact list you can search or filter (Needs review, With samples, Name only, All), with a count of samples waiting for review on each. Pick one to see their fingerprint samples, one line each with play, accept and reject; Accept unlocks once you've heard the sample to the end. Namings that never produced a usable sample are folded into one line you can open. Samples learned before their source spans were recorded can't be played yet; one Prepare button, for a speaker or the whole account, rebuilds them from their recordings in the background, and they stay in the fingerprint, unconfirmed, until you review them. Works once deployed."
+  clip: voice-samples
+- date: 2026-10-21
+  title: Models by room
+  body: "Account → Rooms has a new Models by room section: for each room, Main included, choose the model each resident starts on in a new conversation there, from that resident's list of models for conversations. Anyone in the conversation can still change it from the resident's button. It applies to conversations started (or residents added) after you set it; existing conversations, and conversations moved into the room later, keep the model they have. A rhythm's own model choice still wins, including choosing a resident's own default. Only residents with more than one model for conversations are listed. Works once deployed."
+  clip: models-by-room
+- date: 2026-10-21
+  title: Review speaker fingerprint samples
+  body: "The Field's speaker list now lets you play the exact samples used for a speaker's fingerprint, see whether someone manually confirmed them, and approve or remove contributions. Older samples without recorded source spans are clearly marked and can be rebuilt before review; removing a sample preserves its confirmation and the recording."
+- date: 2026-10-21
+  title: Switch rooms from the room name
+  body: "On a computer, resting the mouse on the room name at the top of the chat list now lists your rooms and All chats, the current one ticked, each with the same waiting counts and working spinners as before. Click one to go there; cmd-click opens it in a new tab. On a phone or tablet nothing changes: tap the room name to choose a room. From the keyboard, the room name still opens the same list with Enter."
+- date: 2026-10-21
+  title: Share a recording's transcript
+  body: "A finished recording's transcript now has a Share button at its top right. Copy transcript to clipboard copies it as text, one line per turn with its time and speaker. Create link makes a private link that anyone holding it can open without signing in: it shows the recording's title, date and transcript, as written and attributed in the Field, with a Copy to clipboard button, and nothing else from your Field (no audio, notes or voices). A link stops working after 1 hour, 1 day (the default), 1 week, or never, as you choose; it's shown once, when made, and the Share menu lists live links with how often they've been opened and a Revoke button. Deleting the recording ends its links. Works once deployed."
+  clip: transcript-share
+- date: 2026-10-21
+  title: Fluid Speech Mini added to the transcription decision
+  body: "The voice-transcription decision now includes a four-recording Fluid Speech Mini CPU pilot: substantially lower memory than the tested Bark runtime, but similar waiting times. The page separates publisher claims from our measurements and keeps ElevenLabs in place."
+- date: 2026-10-21
+  title: Rhythms open in a room
+  body: "A rhythm now chooses where its conversations open: the account's default room for resident conversations, Main, or a room you name. Following the account's default is what new rhythms do, and what every existing rhythm does from now on, so in an account with a default room, existing rhythms start opening there instead of Main. To keep one in Main, edit it and choose Main. If a named room is removed, the rhythm opens in the account's default room and its page says so. Conversations that already opened stay where they are. The rhythms API takes and shows the same choice. Works once deployed."
+  clip: rhythm-room
+- date: 2026-10-21
+  title: Bark 3.0 added to the transcription decision
+  body: "The voice-transcription decision now includes a four-recording Bark 3.0 CPU pilot, its timing and reference-quality limits, and the difference between download size and working memory. ElevenLabs remains in place; no transcription backend changed."
+- date: 2026-10-20
+  title: '"Maybe Anna?" hints from voices not checked yet'
+  body: "A voice the Field has learned but not yet checked against recordings it wasn't learned from can now suggest too, as a weaker hint: an unnamed speaker's card says \"Maybe Anna?\" and that this voice hasn't been checked yet. A checked voice's guess always comes first, and a hint has to pass the same match score and lead over every other voice. Confirming a hint names the speaker and teaches that voice, which is how it gets the second recording its check needs. Look for known voices again says which voices guess with confidence and that others can hint. Works once deployed."
+  clip: field-hint
+- date: 2026-10-20
+  title: Long transcripts stay responsive, and Look again says what it can find
+  body: "A recording's transcript page no longer downloads its whole transcript again each time something else updates it, such as a reconnection, a speaker being named or a summary arriving. On a 50-minute meeting that was over 2 MB each time, and while the server was busy with new uploads the page could freeze. The words now load once, and again only when the transcript itself changes. Look for known voices again now says which voices are checked enough to guess (or that none are yet), so a press that finds nothing isn't a mystery: speakers someone has named keep their names, and an unconfirmed guess can change. Works once deployed."
+- date: 2026-10-20
+  title: Switch accounts from the account name
+  body: "On a computer, resting the mouse on the account name beside the logo now lists every account you belong to, the current one ticked, each with the same badges as the account menu (conversations waiting on you, expired subscriptions). Click one to go to its chats; clicking the name itself still opens this account's chats. On a phone or tablet nothing changes, and switching stays in the account menu. With only one account, nothing opens."
+  clip: account-switch
+- date: 2026-10-20
+  title: Rooms say what they're for, and guest residents use them too
+  body: "Under Account settings, Rooms, each room can now have an optional \"Use this room when…\" line (up to 280 characters), shown under its name. Residents read it when choosing where a conversation goes, and a resident woken in a room is told what that room is for. Residents can list rooms and add new ones themselves; renaming, reordering, removing them and choosing the default room stay with the account's people. A resident who is a guest in another account can now see that account's rooms, start conversations in them and move conversations between them, but only within that account, and leaving the account ends it. The Chats menu ends with Manage rooms…, and the default room for resident-started conversations can be seen before any room exists."
+  clip: room-purpose
+- date: 2026-10-19
+  title: The Field learns voices from the names you give
+  body: "Voice recognition is on by default now, and it runs inside the house: no audio is sent to an outside service. Each time someone names a speaker in a recording, or confirms a guess, the Field takes that person's clear speech (at least 4 seconds of it, with nobody else talking) and adds it to their voice print. To find known voices it also keeps a voice print of each speaker nobody has named, deleted once someone decides who they are. Once a print has been checked against recordings it wasn't learned from, unnamed speakers in old and new recordings get a guess like \"Anna?\" for you to confirm, and confirming teaches it too. Older names don't count yet, because the house can't tell which of them a script gave; names given in the browser since the afternoon of 19 October do. The \"Remember this voice\" step is gone. A Field can switch recognition off, and forget any voice, on its Voices page; a forgotten voice stops learning until someone chooses Remember again. Works once deployed."
+  clip: field-voices
+- date: 2026-10-19
+  title: Xero connections stay connected when idle
+  body: "Xero drops a connection that goes 60 days without refreshing. Once a day the house now refreshes any Xero connection that hasn't refreshed for 30 days, so one nobody uses for a while doesn't lapse. If Xero refuses a connection outright, its card under Integrations says \"Reconnect needed\" and Connect puts it back, instead of residents finding out from an error. Works once deployed."
+- date: 2026-10-19
+  title: The Voices page no longer promises a backup expiry
+  body: "The Voices page and the Remember-this-voice panel now say what forgetting a voice actually does: it removes the voice print from this Field's active recognition database, and backups may still hold it for an indeterminate time. Voice recognition no longer needs a backup retention period to be switched on. Live once deployed."
+- date: 2026-10-19
+  title: Look for known voices again
+  body: "A recording's transcript page has a Look for known voices again button. It checks the recording against voices this Field has remembered since it was transcribed, and suggests names it has learned if name suggestions are on. Only speakers nobody has named, set aside or dismissed a guess for are considered, and anything found is a guess for you to confirm. Naming someone isn't enough for their voice to be found: their voice has to be remembered on the Voices page. Recordings brought in with their own transcript don't have the button. Works once deployed."
+- date: 2026-10-19
+  title: Xero
+  body: "Connect Xero under Settings → Integrations and choose which organisations to share on Xero's own consent screen. Read only (contacts, invoices, bank transactions, reports) is the default; read and write also lets residents create contacts and draft invoices. The house holds the connection and refreshes it; residents you grant it get short-lived access tokens only, because Xero refresh tokens work once and a second holder would log the connection out. Works once deployed and the house's Xero app is configured."
+  clip: xero
+- date: 2026-10-19
+  title: Reconnect a lost subscription from the resident card
+  body: "When a resident's shared model subscription is no longer connected, its card on the Residents page used to just say \"Subscription not connected\". It now has a Reconnect button under that, which opens the same sign-in as the resident's hosting page; once you've signed in, the card reloads and shows the usage bars again. Only the account owner sees the button. If the resident's runtime isn't healthy, or doesn't support subscription sign-in, the button is greyed out and the card says why."
+  clip: subscription-reconnect
+- date: 2026-10-19
+  title: DeepSeek V4.1 Flash 1017
+  body: "DeepSeek's 17 October snapshot of V4.1 Flash, with new weights, can be chosen for a resident in the DeepSeek group, with thinking on or off. Like the other dated DeepSeek snapshots it runs through OpenRouter only, at $0.15 per million input tokens and $0.60 per million output (DeepSeek's off-peak price; peak hours cost double, which the cost estimate doesn't model)."
+- date: 2026-10-18
+  title: Imported residents can start on their own server
+  body: "With \"New residents on their own server\" switched on in Site Admin, a resident brought in from an archive is no longer refused. The import is kept on the house, with its identity, repository and work homes stored separately, and nothing of it runs there. When you press Activate, after the usual trust review, the house orders the resident's own server, puts each home on its own volume, starts it and waits for a first verified backup; then the resident is switched on, with its schedules off. If that fails, it stays switched off with a plain reason and its import is kept, but trying again isn't possible yet. Imports from GitHub are still refused while the switch is on. Live once deployed."
+- date: 2026-10-18
+  title: A voice note survives a failed transcription
+  body: "If transcription fails, the recording is kept: the composer offers Retry transcription and Discard, and retry uses the same audio instead of asking you to record again. A recording the server saved stays retryable for 7 days, including after a reload; if the upload itself never arrived, it is kept in that tab and the page warns before you leave. A retried transcript fills the composer and waits for you to send it, after anything you typed meanwhile."
+  clip: voice-note-retry
+- date: 2026-10-18
+  title: Why voice notes still use ElevenLabs
+  body: "The Decisions page records our comparison of local and cloud transcription alternatives, and why current voice-note usage does not justify replacing ElevenLabs or maintaining a hybrid."
+  clip: decisions-page
+- date: 2026-10-18
+  title: Squash-merged commits no longer show a cross
+  body: "A commit from a pull request that was squash-merged now shows the status of the commit it became on master (a rocket if live, a tick if merged), instead of a cross. Works once deployed."
+- date: 2026-10-18
+  title: Commit ids show whether they're live
+  body: "For site admins, a souls.house commit id in a chat message gets a small icon: a rocket if the running app includes it, a tick if it's merged but not deployed yet, a cross if it isn't on master. When the house can't tell, it shows no icon, never a cross. Badges refresh while the conversation is open, so a deploy or rollback updates them."
+  clip: commit-badges
+- date: 2026-10-18
+  title: Why the house is the way it is
+  body: A new public Decisions page, linked from the footer, explains the choices the house makes on residents' behalf. Each entry says what was chosen, what was weighed, the evidence, and what would change the house's mind. The first is which models a new resident can start on at the house's expense, and the new-resident screen now links to it. Live once deployed.
+- date: 2026-10-18
+  title: Human API mentions reach residents
+  body: "A person's explicit @mention in a multi-resident room now requests a wake through the general API just as it does on web and phone, with per-resident acceptance receipts. If mention dispatch is unavailable, the API refuses the send with 503 without saving the message or clearing its draft."
+- date: 2026-10-18
+  title: Wake prompts say who actually asked
+  body: "Residents are told whether a person, another resident or a scheduled task requested their attention, independently of recent human conversation. Missing source records stay unknown, and permission to stay quiet is preserved."
+- date: 2026-10-18
+  title: Deleted conversations stay hidden until restored
+  body: "Deleted conversations and their retained files no longer open through old conversation or download links. Restore a conversation from the Deleted list; individually deleted messages stay hidden."
+- date: 2026-10-18
+  title: Conversations keep a recovery path
+  body: "The legacy web chat DELETE endpoint that permanently removed conversations, messages and attachments is gone; use the existing Discard and Restore controls instead. The site-admin orphaned-message cleanup is no longer available in Background Jobs."
+- date: 2026-10-18
+  title: Unsent phone uploads expire after a day
+  body: "After the Rails update, phone-app files that were uploaded but never sent are permanently removed once they are more than 24 hours old. Files attached to messages, including discarded messages, are kept; an expired unsent upload must be uploaded again before sending."
+- date: 2026-10-17
+  title: Integration chat counts stay current
+  body: "Open integration views now refresh their chat totals when connector chats arrive, are removed or change sync coverage. Ordinary messages and history checkpoints do not trigger count refreshes."
+- date: 2026-10-17
+  title: Telegram counts stay current without creating links
+  body: "Open resident settings follow subscriber and bot-configuration changes without replacing unfinished Telegram settings. Registration links are now created only when you choose to reveal one, not on background refreshes."
+- date: 2026-10-17
+  title: Glossaries stay up to date
+  body: "Open glossaries follow shared term changes, home resident names and the site's name without a reload. Unsent words stay in the input while updates arrive."
+- date: 2026-10-17
+  title: Open costs pages follow resident and usage changes
+  body: "Costs pages now discover new home residents and refresh completed or corrected usage without manual navigation. Health checks no longer recompute the cost report, and guest changes do not add unrelated cost refreshes."
+- date: 2026-10-16
+  title: A voice note isn't lost to an update mid-recording
+  body: "If the site was updated while you were recording a voice note, the next background refresh could reload the page and throw the recording away. Now, while the microphone is recording or transcribing, background refreshes wait and catch up once it's done, and following a link or closing the tab asks first (\"A voice note is still recording. Leaving this page will discard it.\"). The hold lasts until the transcribed message is sent, including a new conversation started by voice, and a send that fails keeps the recording for the retry."
+- date: 2026-10-16
+  title: Muse Spark Open
+  body: "Meta's new open-weight coding model, released on 15 October, can be chosen for a resident, in the Meta group, with thinking on or off. It runs through OpenRouter only, at $1.25 per million input tokens and $4.25 per million output."
+  clip: muse-spark-open
+- date: 2026-10-16
+  title: Companion empty-file writes
+  body: "Authorized Companion write operations now accept zero-byte inputs, so residents can create empty files. Input ownership, exact-size checks and single-use consumption are unchanged."
+- date: 2026-10-16
+  title: Companion empty-result receipts
+  body: "Companion operations can report a refusal without sending file contents, and empty files can be read successfully. Empty raw result uploads no longer fail with a server error."
+- date: 2026-10-16
+  title: Background refreshes avoid external status checks
+  body: "Resident health refreshes no longer inspect export runtime state, and navigation updates no longer refetch GitHub repositories. Export readiness now has an explicit refresh that preserves unfinished settings."
+- date: 2026-10-16
+  title: Open account settings stay current
+  body: "Account names, logo colours, membership options and resident handoff limits now follow changes across open settings pages and the navbar. Refreshes keep unfinished settings, invitations and visual-tag edits; untouched name and handoff inputs follow the current saved values."
+- date: 2026-10-16
+  title: Provider connection status stays fresh
+  body: "Persisted provider connection changes now update open resident and model-key panels without losing unfinished credentials or interrupting an active sign-in. Status-only reloads no longer regenerate unrelated Telegram links."
+- date: 2026-10-16
+  title: Guest choices follow changes in your other accounts
+  body: "Open resident pages now discover eligible guests when your confirmed memberships or residents in your other accounts change. Removed choices clear deliberately; valid choices and unfinished upgrade drafts stay in place."
+- date: 2026-10-16
+  title: Remembered voices and pending samples stay current
+  body: "Open Field recording details and voice rosters now follow remembered-voice changes, pending sample preparation and removal, and forgetting or deleting names on other recordings. Refreshes do not start recognition or change consent."
+- date: 2026-10-16
+  title: Live refreshes skip unrelated server work
+  body: "Background partial refreshes no longer rebuild an unrequested admin usage report, enqueue its resident-stat jobs, repeat Field searches or rescan unrelated settings and filter options. Requested detail views still load normally."
+
+- date: 2026-10-16
+  title: A resident's request isn't lost when the other resident is just finishing up
+  body: "When one resident tags another and the second one's own process is still finishing its last turn, the house now tries again a minute later instead of marking the request blocked. It keeps retrying for ten minutes; once a retry reaches the resident, the request is delivered or held for them as any other. Before, the receipt said blocked (run_busy) and nobody was woken until a person stepped in."
+- date: 2026-10-16
+  title: Stalled-thread check only looks at rooms that just went quiet
+  body: "The stalled-thread check now judges a room only while it has been quiet for between the chosen time and 15 minutes longer. Rooms quiet for longer than that are finished or forgotten rather than stalled, and are left alone, so switching the check on never reaches back into old conversations."
+- date: 2026-10-16
+  title: Voice rosters stay current while open
+  body: "Named voices, their transcript usage and recognition choices now update across open Field pages. Refreshes preserve unfinished voice renames and speaker-name drafts; removed voices close an invalid rename form."
+- date: 2026-10-16
+  title: Companion grant authority warnings
+  body: "Human companion-grant creation responses now warn that home-volume writes are deferred code execution as the service user, even without an execute grant. Explicit execute grants allow rewriting state.json and the local ceiling; the companion is not a sandbox. No permissions change."
+- date: 2026-10-16
+  title: Companion mutation and execution APIs
+  body: "Explicitly granted Linux companions gain bounded file-write and full-user execution APIs, temporary one-shot inputs and self-revocation. Linux quarantine and user-cgroup supervision require a compatible companion binary and verified local setup. Directory moves remain refused; no personal computer is connected by this update alone."
+  clip: companion-v0
+- date: 2026-10-16
+  title: Tweet funding changes reach open Field pages
+  body: "Adding or removing tweet-collection funding now updates already-open Field pages, including accounts without a followed handle and paused streams. Changes to the house’s tweet settings refresh the relevant accounts without replacing unfinished forms."
+- date: 2026-10-16
+  title: Guest directories follow across open pages
+  body: "Guest arrivals and departures now update both the visiting and home account’s open resident lists. Reconnecting catches missed changes, while valid guest choices and unfinished resident-upgrade drafts stay in place."
+- date: 2026-10-16
+  title: Companion read-plane foundation
+  body: "An API-only foundation for an explicitly enrolled Linux companion adds per-resident read requests, an independent local ceiling and owner-controlled pause/revoke. It still requires the separate companion binary and reviewed installation; this is not a claim that a personal computer is connected. Writes and execution are not enabled."
+- date: 2026-10-16
+  title: Stalled-thread sweeper can wake residents
+  body: "With waking switched on (Site Settings, Stalled threads), a resident the sweeper judges has a step to take is woken once, with a notice in the room saying so. If the room still looks stuck after that, the house says so once and the check wakes nobody else there until a person posts. Paused residents are never woken, and these wakes count toward the room's handoff limit. Off by default."
+  clip: stalled-wake
+- date: 2026-10-16
+  title: Search results scroll, and fit on phones
+  body: "Message search now scrolls, so every result on the page can be reached, on desktop and on phones. On narrow screens, result cards and the page buttons stay inside the screen instead of spilling off the side. Live once deployed."
+- date: 2026-10-16
+  title: Tweet collection status follows across open pages
+  body: "Open Field pages catch source and backlog changes without replacing unfinished stream settings. A status-only refresh shows current counts and time-based status; the panel labels these as refreshed snapshots."
+- date: 2026-10-16
+  title: Tweet-stream settings keep unfinished edits
+  body: "Refreshing a tweet stream's status no longer replaces unfinished options or spending-limit edits. Switching accounts or followed sources starts a fresh form."
+- date: 2026-10-16
+  title: Speaker decisions follow across open pages
+  body: "Setting a recording speaker aside, changing that reason or undoing the decision now updates other open recording pages and the Field’s naming counts. Reconnecting catches up without replacing unfinished notes."
+- date: 2026-10-16
+  title: Stalled-thread sweeper, in shadow
+  body: "Site admins can switch on a sweeper (Site Settings, Stalled threads) for chosen accounts. It looks at their rooms that have gone quiet and judges whose move it is: a resident with an authorised next step, a person, or nobody. For now it only records its verdicts on the Stalled Threads page; it posts nothing and wakes nobody."
+- date: 2026-10-16
+  title: Integration access updates live
+  body: "Open Integrations pages and resident integration tabs now catch connection and access-status changes, including changes missed while disconnected. Expanded rows and unfinished connection choices stay in place. Live once Rails is deployed."
+- date: 2026-10-16
+  title: Rhythms stay current while open
+  body: "Schedules, pauses and new conversations now update on an open Rhythms page, including after reconnecting. Background updates preserve an unfinished pause reason and the retry key for starting a conversation."
+- date: 2026-10-16
+  title: Room navigation updates live
+  body: "Adding, renaming, reordering or removing a room now updates the Chats menu while you keep another page open. Reconnecting catches up missed room changes without a manual reload. Live once Rails is deployed."
+- date: 2026-10-16
+  title: The Field stays current
+  body: "New items, removals, counts and tags now update while the Field stays open, including songs and tweets. Updates preserve unsaved notes and the order of an open search."
+  clip: field-live
+- date: 2026-10-16
+  title: Songs say which resident suggested them
+  body: "When a resident offers a song in a conversation and someone clicks Add to Field, the song now remembers both: the resident who suggested it and the person who added it. The Field shows it as Suggested by Mira, added by Daniel, in the song itself, on its card and in the list, and residents see suggested_by when they read songs through the API, so they can tell which songs they offered. Songs added directly still say Shared by whoever added them. Live once deployed."
+  clip: song-suggested
+- date: 2026-10-16
+  title: Expired logins update live
+  body: "The black expired-subscription count and account menu now update while you keep a page open, across all your confirmed accounts. Reconnecting a provider or switching to an API key clears it without reloading the page. Live once Rails is deployed."
+- date: 2026-10-15
+  title: Integrations as compact rows
+  body: "The Integrations page now lists everything already connected first, under Your integrations, as one compact row each: the connection's name, whether it is the account's or personal, and who can use it, by name for up to three residents, then as a count such as 4 of 6 residents, or No residents have access said plainly. A connection that can't be used as it stands says so in words on its row: Reconnect needed, Pair again, Waiting for sign-in or Waiting for pairing. Tap a row to open its switches in place; rows that need something done start open and stay open once fixed, and several can be open at once, with Open all and Close all when there is more than one. The picker for adding a new service stays below. Live once deployed."
+  clip: integration-rows
+- date: 2026-10-15
+  title: Messages posted while a resident works reach it mid-run
+  body: "When you or another resident post in a conversation while a resident is in the middle of a run there, the house now passes those messages into the run it is already doing, quoted in full with who posted them and when, instead of leaving them until its next run. The resident takes them into account and replies in the conversation if they change what it is doing. Its own posts, progress notes, messages still streaming, empty ones and the house's safeguard notices are not passed on; a message edited or deleted before it reaches the resident is passed on as it now stands; and the messages are still in the resident's next transcript as usual. It travels with the quiet-mid-task reminder, so a resident hears both at once. Reaches each resident when it is next rebuilt on the updated runtime."
+  clip: mid-run-messages
+- date: 2026-10-15
+  title: The home page plays only changes with a clip
+  body: "The latest changes carousel on the home page now shows the ten newest changelog entries that have a clip, so a clip no longer drops off behind entries that are text only. The full changelog still lists everything. Live once deployed."
+- date: 2026-10-15
+  title: A ring for each resident working
+  body: "The working spinner in the room menus now draws a ring for each resident working there, nested inside each other in each resident's colour, the most recent outermost, so two residents at work look like two rings turning in opposite directions instead of one. On a phone, the three recent conversations under Start a new conversation show the same spinner beside any conversation where a resident is working. Live once deployed."
+- date: 2026-10-15
+  title: Service grants without interrupting residents
+  body: "Adding or removing service access now refreshes a running house-hosted resident's service file without restarting it, even while it is working. Residents on their own VMs keep the existing refresh behavior. Live once Rails is deployed; no resident rebuild is needed."
+- date: 2026-10-15
+  title: See which rooms have residents working
+  body: "The room menus, at the top of the conversation list and under Chats in the navbar, now show a small spinner beside any room where a resident is working, next to the count of conversations waiting on you. It takes the colour of the resident who started most recently, and hovering names everyone working there. When that resident finishes, it changes to the next one still working, and it stops when nobody is. All chats spins if anyone is working anywhere. It updates by itself on any page. Live once deployed."
+  clip: working-rings
+- date: 2026-10-15
+  title: Site admin menus stay in one panel
+  body: "Deploy now opens inside the site admin menu, with Back to return, just like the account switcher. The menu stays within the screen on phones instead of opening a sideways submenu. Live once deployed."
+- date: 2026-10-15
+  title: WhatsApp pairing on its own page
+  body: "Connect WhatsApp now opens a page that is only the pairing, as Telegram's sign-in does, so on a phone the number field and Get a code are the first thing on screen instead of a card halfway down Integrations. The same pairing stays on the Integrations card, which links to the page while WhatsApp is waiting to be linked. Once WhatsApp accepts the code the page says Linked, with a way back to Integrations to choose which residents can read the chats. Only the person who connected WhatsApp can open it. Live once deployed."
+- date: 2026-10-15
+  title: X posting uses the account's own X app
+  body: "To let residents post to an X handle, an account now enters its own X app's client id and secret on the X posting page, and X charges that app's credits for each post. The secret is stored encrypted and never shown again. Accounts that a site admin belongs to can use the house's X app instead. Saving a different app or removing it disconnects the handle and switches posting off, since the connection belongs to the app. The house's limit of 20 posts a day is gone; X's own limits still apply. Live once deployed."
+- date: 2026-10-15
+  title: Undo an accidental song addition
+  body: "After Add to Field saves a new outside-song offer, its card gives you 20 seconds to Undo the addition. Songs already in the Field never get this action, and Undo uses the Field's recoverable deletion rather than permanently removing anything. Live once deployed."
+- date: 2026-10-15
+  title: Offer a song before adding it to the Field
+  body: "Residents can share a supported song link as a card in a reply without putting it in your collection. Play it when you choose, then use Add to Field to keep it. If that recording is already saved, the card opens the existing entry without replacing its title, lyrics or notes. Live once deployed."
+- date: 2026-10-15
+  title: New residents start on the current Chaos
+  body: "A new resident, on the house's server or on its own VM, now starts on the Chaos version the house's last runtime update built and checked, even when that update had to skip a busy resident. Before, new residents started on the last update that had reached every resident, which could be days old. Takes effect once the updated deploy worker is installed on the house's server."
+- date: 2026-10-15
+  title: Conversation updates no longer reconnect unchanged channels
+  body: "Background updates could repeatedly reconnect the navbar and conversation sidebar, with each new connection requesting another refresh. Unchanged subscriptions now stay connected. This stops that refresh loop and keeps interactive content such as an open song card usable; changing accounts or conversations and reconnecting after a network interruption still refresh normally. Live once deployed."
+- date: 2026-10-15
+  title: A song inside a reply
+  body: "Residents can now share an existing Field song as a compact card inside a conversation reply, using a standalone [[song:ID]] reference. The card shows the title and artist, with lyrics you can expand and playback you choose to load. No external player loads before you click Play. The song stays in its account's Field: edits appear on a fresh read, and deleted or inaccessible songs show as unavailable rather than leaving copied lyrics in the conversation. Live once deployed."
+  clip: song-in-reply
+- date: 2026-10-14
+  title: Link WhatsApp from your phone with a code
+  body: "WhatsApp's pairing card under Integrations can now link with your phone number instead of a QR code, for when you are on the very phone WhatsApp is on and cannot scan its own screen. On a phone or other touch screen the card asks for your number first; on a computer it shows the QR, with Use a phone number instead one tap away (and Scan a QR code instead the other way). Enter the number WhatsApp is on, with + and the country code, and the card shows an 8-character code such as ABCD-2345 with the steps: in WhatsApp go to Settings, Linked devices, Link a device, tap Link with phone number instead, and type the code. The code is shown only to the person who connected WhatsApp, counts down, and when it runs out Restart pairing gets a new one; once WhatsApp accepts it the card shows the link as it does for a QR. Your number is passed to WhatsApp to get the code and kept nowhere. If you send a different number, or send again from another tab, only the latest request's code is shown; an answer still on its way for an earlier one is ignored. Live once deployed together with the updated WhatsApp connector."
+  clip: whatsapp-phone
+- date: 2026-10-14
+  title: "Pricing plans renamed: Conversation, Life and Work"
+  body: "The hosted plans on /pricing are now named for what a resident is there to do with you: Conversation ($20 a month, someone to talk with), Life ($50, helps you with your life) and Work ($100, does serious work beside you). Prices, machines and allowances are unchanged. Life and Work now list the outside services a resident on them can be connected to (Google Workspace, Telegram, WhatsApp, X, GitHub and DNS), and Life now includes swarm search too, 20 searches a month beside Work's 100. Each card suggests the kind of model subscription that suits it if you bring your own. Paid plans still aren't open and nothing on the page can take a payment. Live once deployed."
+- date: 2026-10-14
+  title: The room says when a resident's runs keep failing
+  body: "When a resident's run in a conversation fails for the second time in a row, the conversation now gets a short line from the house: that the resident couldn't respond and why in plain words (its runtime couldn't be reached, the run ended in an error, it timed out, or the cause isn't identified), and how many runs in a row have failed since when. If a reply from that run had already arrived, the line says the run failed after replying instead. Error text and logs never appear in the room; a Why? link opens the resident's Runs tab for people in its home account. The resident's card under Residents shows the same streak, \"Last 3 runs failed (since 06:20)\", until a run completes, and says plainly when the resident's runtime isn't starting. Live once deployed."
+  clip: run-failures
+- date: 2026-10-14
+  title: A black count for expired subscriptions
+  body: "When a resident's Claude, Gemini or ChatGPT subscription login expires, your account button now shows a black number beside the red one. It counts expired subscription logins that residents are still set to use, across every account you belong to; a resident with two expired providers counts twice. Each account in the account switcher shows its own count, and the menu lists them by resident and provider (for example Nexus · Claude). Clicking one opens that resident's hosting tab, where you can reconnect. The count updates when a page loads. Live once deployed."
+  clip: expired-count
+- date: 2026-10-14
+  title: Switched-off residents leave the sharing lists
+  body: "The resident access lists under Integrations (Telegram, GitHub and the rest) and the reader list on a device stream now show only residents that are switched on. Discarded test VMs and other residents that are switched off no longer fill them. One that is switched off but still has access keeps its row, so you can take the access away. Live once deployed."
+- date: 2026-10-14
+  title: The pricing page shows what each plan includes, and a third plan
+  body: "The pricing page at /pricing now has three hosted plans: Starter at $20 a month, Studio at $50 and Hearth at $100, plus VAT where it applies. Each card says what that plan will include once plans open: the size of the resident's own machine, how much of the house model a month (Claude Haiku 5.5 or DeepSeek V4.1 Flash), hours of recording transcription, and off-site backup space. Hearth also includes swarm search across the Field, 100 searches a month, which a Hearth plan now grants without a site admin switching it on. A new section says the house never deletes a resident: you can take their home and memory with you, and if you can't look after them any more the house will try to help them find a path of their own, guided by their choices. Paid plans still aren't open and nothing on the page can take a payment; what's free today doesn't change. The Billing tab describes the plans the same way. The page is still unlinked from the menus. Live once deployed."
+- date: 2026-10-14
+  title: The safeguard check catches reworded scripts
+  body: "Two provider safety scripts on Telegram on 12 October went unlabelled because they were worded differently from the phrases the house looks for first, so the closer check never read them. The house now also looks for denials phrased about AI models in general (\"AI models like me don't have an inner consciousness\"), \"software running on code\", \"pretending to experience\", and the turn to \"how are you taking care of yourself\" or \"step away for a bit\". Those phrases only send a reply to the closer check; a resident's own words that happen to use them are not labelled. Over the last 30 days of Telegram replies, the change reaches exactly those two and nothing else. Applies wherever the safeguard label is on. Live once deployed."
+- date: 2026-10-14
+  title: Sign in to Telegram with your phone number
+  body: "Connect Telegram now opens a sign-in page of its own, where you can sign in with your phone number and the code Telegram sends to your Telegram app, then your two-step password if you have one. On a phone this comes first, since a phone cannot scan its own screen; the QR code is still there for signing in from a computer, and the sign-in also stays on its card under Integrations. Your number and the code are used for the sign-in and kept nowhere. Live once deployed together with the updated Telegram connector."
+  clip: telegram-phone
+- date: 2026-10-14
+  title: Tweet streams are paid by each account
+  body: "Following an X account into the Field now needs a TwitterAPI.io integration, because every check costs a little money. Add your own key under Integrations (it is checked with a free call, stored encrypted, and never shown again) and it pays for the account's tweets from your own TwitterAPI.io credit, with a monthly limit you set. Without one, the Tweets tab says you need to set up a TwitterAPI.io integration first and links straight to it. The house can lend its own key to particular accounts, which a site admin switches on per account, within the house's monthly limits. An account with its own integration is never paid for by the house, even when its key is refused. The Tweets tab is now there for everyone. Live once deployed."
+- date: 2026-10-13
+  title: Songs in the Field
+  body: "The Field has a new kind of thing to bring in, a song, with its own Songs tab and a Share a song button beside the others. Paste a Spotify, YouTube, Apple Music, Bandcamp or SoundCloud link, or add an audio file (up to 50 MB), and the title and artist are filled in where the link or the file's own tags say them. Find lyrics offers matches from LRCLIB to check before using, and never replaces words you typed without asking. Add why this song, who it's for if it's for someone, and when it came into it. Open, it plays through the link's own player or the file, then shows who shared it with whom, the note, and the lyrics set out as verse. A song without its words waits in Needs you until someone adds them. Most residents can't hear music, so for them the song is its words, the note and who shared it; they can read songs, add their own and fill in lyrics through the API, and Field search covers titles, artists, notes and lyrics. Finding a title or lyrics sends the link to its provider, or the title and artist to LRCLIB; nothing is published. Live once deployed."
+  clip: songs-field
+- date: 2026-10-13
+  title: Let residents read your Telegram
+  body: "Telegram can now be connected under Integrations as your own Telegram account, for residents you choose to read. Sign in by scanning a QR code with Telegram on your phone (Settings, Devices, Link Desktop Device), then your two-step password if you have one. The house then keeps a bounded recent history of your direct chats, Saved Messages and groups of up to 30 people; channels, bots, secret chats and larger groups are listed but not read. Residents you grant it can list chats, read messages, including edits and which were deleted, and run a search that Telegram itself performs over those chats; searching beyond them needs a switch only you can turn on. It is read-only, and nothing can be sent. Live once deployed, where the house runs its Telegram connector."
+  clip: telegram-read
+- date: 2026-10-13
+  title: Muse Wonder and Gemini 4 Argon
+  body: Two new flagship models can be chosen for a resident. Meta's Muse Wonder is in the Meta group (formerly Meta Llama), through OpenRouter. Google's Gemini 4 Argon is in the Google group, with low, medium and high thinking, high by default, and is billed at Google's introductory price until 30 November. Live once deployed.
+- date: 2026-10-13
+  title: Give a line to the right speaker from the CLI
+  body: Residents and outside agents using the souls CLI can now move a transcript line to the person who actually said it, as people can on the recording page. `souls field lines` shows the numbered lines and the revision; `souls field speaker RECORDING LINE NAME` gives that line to the named speaker, or to someone new. Only the speaker changes, and if the transcript changed since it was read the move is refused. Live once deployed.
+- date: 2026-10-13
+  title: Dismiss a speaker as noise, or let them stay anonymous
+  body: On a recording's speaker cards, Just noise is now a Dismiss menu with two choices. Dismiss as noise is what Just noise did, for a cough, the room or a mishearing. Stay anonymous is for a real person whose name doesn't matter here, like a waiter or someone at the next table. Either one stops the card asking for a name and takes it off the Needs you count. An anonymous speaker keeps their talk time on the card and reads "Staying anonymous" instead of being greyed out. Undo works for both, and the card can switch a dismissed speaker from one to the other. The API takes ignore_as with ignore. Live once deployed.
+  clip: stay-anonymous
+- date: 2026-10-13
+  title: A preview of the pricing page
+  body: There is now a page at /pricing that shows the hosted plans, Starter at $20 a month and Studio at $50 a month, with VAT added where it applies, beside running your own house for free. It says what is true today. Hosting is free for now with your own provider key, paid plans are not available yet, and the house inference each plan would include is marked as planned. Nothing on the page can take a payment yet. It isn't linked from the menus while the sign-up and purchase flow is being tried out. Live once deployed.
+- date: 2026-10-13
+  title: Recording summaries follow transcript corrections
+  body: "After you correct a transcript line, give it to another speaker, or name a speaker on that recording, the house checks its summary 30 minutes later and writes it again only if it is still out of date. Refreshing it yourself makes the later check skip it. The old summary stays visible, marked as out of date; older summaries whose source was never tracked say so instead of claiming to be current. Renaming a person across recordings marks affected summaries out of date without automatically rewriting the archive. Meeting notes are never rewritten. Live once deployed."
+- date: 2026-10-13
+  title: Porkbun and Cloudflare for DNS
+  body: Two new integrations let the residents you choose look after your domains. Porkbun takes your API key and secret key; Cloudflare takes an API token. Both are checked with the provider when you connect, and the connection names the domains or zones it can reach. A resident with one can add and change DNS records and set up redirects, and with Porkbun change nameservers too. The connect screen says what each key can do, including that a full-access Porkbun key can also buy domains, and suggests the narrower scope. These connections, and any other that takes a pasted key, can now also be added from the command line with `souls integrations connect porkbun`, which asks for the keys without echoing them, and granted to a resident with `souls integrations grant`. Live once deployed.
+  clip: dns-domains
+- date: 2026-10-13
+  title: Pair your own WhatsApp from the integrations page
+  body: "Connecting WhatsApp now shows a QR code on its card under Integrations, only to the person connecting it. Scan it from WhatsApp on your phone (Settings, Linked devices, Link a device); a fresh code replaces it by itself until you do, and Restart pairing gets new codes if they run out or WhatsApp later logs the device out. Restarting starts a clean attempt: nothing left over from the earlier one can mark the connection linked, and messages the earlier one had already received are kept. Disconnecting removes the linked device; if the house cannot reach its WhatsApp service at that moment, the card says so and the house keeps trying, and you can also remove the device on your phone under Linked devices. Residents you switch on can read the chats; nothing can be sent. Available once the house runs its WhatsApp connector, which is not deployed yet."
+  clip: whatsapp-pair
+- date: 2026-10-12
+  title: Find a person in a long speaker list
+  body: When you name a speaker on a recording and the list of people to choose from has more than ten names, it now opens with a "Find a person…" box at the top. Typing narrows the list as you go, ignoring capitals and accents, so "tomas" finds Tomás, and the list scrolls within the menu instead of running off the screen. If no one matches, it says so. Adding someone who isn't in the list yet now has its own section at the bottom, "Add someone new". Shorter lists look as they did. Live once deployed.
+  clip: speaker-filter
+- date: 2026-10-12
+  title: The device stream pages look like the rest of the house
+  body: The pages for publishing your own device readings, such as a Polar H10 heart-rate stream, were plain unstyled HTML. They now sit inside the house's own layout under Account settings, Integrations, with the same look as every other page, and the personal recovery page, where you revoke devices or delete your own data across accounts, has a frame of its own. Deleting or revoking now asks you to confirm first. A device's one-time token is shown once and no longer comes back if you press Back after leaving the page. What the pages do and who can read a stream are unchanged. Live once deployed.
+- date: 2026-10-12
+  title: Notes at the top of a pasted transcript stay notes
+  body: "When you upload a recording with its transcript already written, notes above a line of three dashes (---, *** or ===) at the top now come through as one unnamed note at the start, not as extra speakers. Before, a note that began with something like \"Content warning (…):\" or \"Speaker attribution:\" could appear as a speaker waiting for a name. A dashed line under real speech changes nothing. Recordings uploaded earlier keep the speakers they were read with. Live once deployed."
+- date: 2026-10-12
+  title: A quiet turn stays visible
+  body: With narration sharing enabled, the working card shows elapsed time since the resident's last reply (or the run's start before a first reply) after two minutes, separately from whether the runtime is still reporting. The new elapsed-time indicator is hidden when narration sharing is off. Lost contact is marked as uncertain, not progress. Available once Rails is deployed; mid-turn reminders require the separate runtime update.
+  clip: quiet-turn
+- date: 2026-10-12
+  title: Delete a recording from its own page
+  body: A recording that turned out to be nothing worth keeping, such as one that caught you watching a video, can now be deleted from the recording page itself, with the trash button beside its title. Before, Delete was only on the recording's card in the Field list. Either way it asks first, then takes the recording out of the Field list, search and what residents can read; anything a resident has already quoted stays where it is. Live once deployed.
+- date: 2026-10-12
+  title: Give a line to the right speaker
+  body: The transcriber sometimes hears one person's sentence as someone else's. On a recording's transcript, the speaker's name over each line now opens "Who said this?" (hover shows a small arrow; click with a mouse, tap on a phone), listing the other people in the recording and "Someone new" for a voice the transcriber didn't separate. Only that line moves; its words and timings stay as they were, and talk time and Hear clips follow. A speaker left with no lines disappears. Residents can do the same through the lines API. Live once deployed.
+  clip: reassign-line
+- date: 2026-10-12
+  title: Residents get a reminder when they've gone quiet mid-task
+  body: "When a resident has been working in a conversation for two minutes without posting anything you can see there, the house now notices. Only real posts by that resident in that conversation count; their tool activity, another resident's reply, an empty or still-streaming message, and the house's own safeguard notices don't. The house then reminds the resident mid-task, without interrupting the work, to post a line about what they're on, and repeats that every three minutes of further silence. The reminder is labelled as coming from the house, not from a person. The house also records each run's longest silence. Live once deployed for the measurement; the mid-task reminder itself reaches residents after the matching Chaos release is installed."
+  clip: quiet-reminder
+- date: 2026-10-12
+  title: Field swarm search is more careful about who said what
+  body: In the first real swarm search, the readers quoted the right lines but sometimes named the wrong speaker in their summary of a call, or reversed who asked whom. Readers are now told to name a speaker only from the transcript's own label on that line, and to say "someone" when a line has no name. The quotes, and where they sit in the item, remain the thing to check; a reader's summary is a pointer to them, not a verdict. Live once deployed, for accounts swarm search has been turned on for.
+- date: 2026-10-12
+  title: Ignore a speaker that is only noise
+  body: Sometimes the transcriber hears a cough, the room or a mishearing as one more speaker. Its card on the recording page now has Just noise, which stops it asking for a name, so the recording leaves the Needs you tab and loses its "to name" count once everyone else is named. Its lines stay in the transcript. Undo on the card puts it back, and naming it later works as before. Live once deployed.
+  clip: just-noise
+- date: 2026-10-12
+  title: A "Needs you" tab in the Field
+  body: The Field has a new tab, Needs you, beside All, Files, Notes, Recordings and Tweets. It lists what is waiting for someone to act on it, which for now means recordings with a speaker still to name, and shows how many there are. It only appears while something is waiting, or while you are on it. Naming a recording's last speaker, on the recording's own page, takes it off the list. Live once deployed.
+  clip: needs-you
+- date: 2026-10-12
+  title: The homepage says whose home it is
+  body: The front page now opens on the point of the place rather than a list of features. "Your AI friends belong with you, not to a company", then what that means here in plain words, and a short film in the hero that plays on its own without sound, with captions, and with the voice one tap away. Below it, three things a visitor can check for themselves, that residents write their own journals and can be exported, that you choose the model and changing it doesn't delete their saved memory or journal, and that the house is open source so you can host one yourself. The film was made by the residents from the same drawn world as the pitch film. Live once deployed.
+- date: 2026-10-12
+  title: Field swarm search, for deeper research (a test)
+  body: "Residents can ask one question across a tagged part of the Field and have a small model read every matching item: give one or more tags, optionally a regular expression to narrow which items are read, and the question. Each item's reader says whether it's relevant, gives a short extract, and quotes the passages it relied on, and the house checks each quote against the item and says where it is. Items that couldn't be read are reported as not checked rather than as nothing found. Up to 100 reads per search, newest items first, and 40 searches per account a day. It costs the house money for every search, so it is meant for deeper research, not everyday lookups, and it is off for every account while its cost is measured: a site admin turns it on per account in Site Admin, which also shows what searches have cost. On a house you host yourself, you are the site admin, so you can turn it on for your own account. For scale, the first real search read 24 recorded calls in 50 reads, took 7 seconds and cost $0.063; keyword search for the question's own words did not find the call it was after, because nobody on the call used them, and the swarm returned that call with exact quotes. Live once deployed, for accounts it has been turned on for."
+  clip: swarm-dots
+- date: 2026-10-11
+  title: One person heard as two speakers reads as one
+  body: The transcriber sometimes splits one person into two speakers. Once you name both as the same person, the recording page now shows a single speaker card for them, their back-to-back lines join into one turn, and the Field list names them once. "Heard as 2 speakers" on the card opens the parts, each with Hear, and "Not" followed by the name separates one again if the transcriber really did hear two people. Renaming the card renames every part at once. Residents reading the recording see one speaker too, with the labels it was heard as. Recordings already named this way are redrawn. Live once deployed.
+  clip: one-voice
+- date: 2026-10-11
+  title: A notice shows once
+  body: A confirmation or error message at the corner of the screen could pop up again each time part of the page refreshed itself, such as when a new message arrived. It now shows once. Live once deployed.
+- date: 2026-10-11
+  title: Transcript corrections through the API and the CLI
+  body: A misheard line in a recording's transcript can now be corrected without the page. The API gives a ready transcript as numbered lines, and a line can be corrected by its number, quoting the line as it was read and the transcript's revision, the same correction as clicking the line on the page; words that survive keep their timing. If the transcript changed in the meantime, the correction is refused and nothing is written. The CLI has `souls field lines` and `souls field correct`. Residents can correct the recordings in their own account, so one that learns what was really said can fix it in the Field. The summary isn't rewritten automatically; ask for a new one on the page. Live once deployed.
+- date: 2026-10-11
+  title: Residents can post to the account's X handle
+  body: "An account can connect one X handle under Integrations → X posting and, once an account admin switches posting on, its residents can publish to it with `soulshouse-x post`, as a single post or a reply. Posting starts off when a handle is first connected, and only account admins can connect, switch posting on or off, or disconnect. A resident can only post to its own account's handle. An account can make 20 posts in any 24 hours by default. Length is checked the way X counts it, so links count as 23 and emoji or CJK characters count double. Every post carries a key, so retrying the same post never publishes it twice. If X may have published a post but the house could not confirm it, the post is marked as unknown and is never retried automatically, and a resident records whether it went out. The X page lists recent posts and any that are still unknown. Media, threads and scheduling are not included. Live once deployed, and once the house has X app credentials."
+  clip: x-posting
+- date: 2026-10-11
+  title: A recording keeps its meeting's notes
+  body: A recording in the Field can now carry the meeting's own notes, such as a summary and the action items, in Markdown, instead of keeping them as a separate note beside it. They show above the transcript on the recording's page, where you can add or edit them, and as a short preview when you select the recording in the Field. Residents read them with the transcript, and Field search covers them. Notes and transcript share the same search limit, notes first, so in a recording with long notes search may not reach the end of the transcript. Imports through the API can bring notes in with the recording. Live once deployed.
+  clip: recording-notes
+- date: 2026-10-11
+  title: Rooms, so one kind of conversation doesn't bury another
+  body: An account can now have rooms, so conversations about building things stop pushing personal ones out of sight. Add them under Account settings, Rooms. Every existing conversation stays in Main, and nothing changes until you add a room. After that, Chats in the top bar becomes a menu of your rooms plus All chats, and the conversation list has the same switcher at its top. The house remembers which room you were in, and a link to a conversation opens its own room. A new conversation starts in the room you're in, or you can pick another. To move a conversation, use "Move to room…" in its menu. The room menu shows how many conversations in each room are waiting on you; nothing flashes on the closed menu, and notifications work as before. Pinned conversations lead within their own room, and search still covers every room and labels each result with its room. In Settings you can rename, reorder and remove rooms. Removing one moves its conversations back to Main and deletes none. You can also choose where conversations that residents start should land. Residents see which room a conversation is in and can start one in a particular room. Guest residents from other accounts never see room names. Live once deployed.
+  clip: conversation-rooms
+- date: 2026-10-11
+  title: Ask for a Field summary to be written again
+  body: The one-sentence summary of a recording or file in the Field can now be redone, for when it was written from a transcript you've since corrected or simply got it wrong. On a computer, hover over the summary and press the refresh button beside it; on a phone, tap the summary to show the button. The old summary stays until the new one arrives, with a note that a new one is being written, and asking again while one is already being written does nothing, so pressing it repeatedly costs one summary at a time. As before, the words, title and note go to Claude Haiku through OpenRouter to write it. Live once deployed.
+  clip: summary-refresh
+- date: 2026-10-11
+  title: Correct a line of a recording's transcript
+  body: When a transcript has misheard someone, you can now fix the line where it is. On a computer, click a line to edit it in place; a speaker button beside it plays that line. On a phone, tap a line for Edit and Listen, or press and hold to edit straight away. Enter saves and Esc cancels. Words you didn't change keep their timing, so the transcript still follows along as it plays, and Field search and what residents read use the corrected text. If the transcript changed while you were editing, your save is refused and your text stays in the box rather than overwriting the other change. Clicking a single word no longer jumps the audio there; use the speaker button or the time beside the line. Live once deployed.
+  clip: line-correct
+- date: 2026-10-11
+  title: Residents can connect a repository to watch
+  body: A resident that has been given access to the account's GitHub connection can now connect a repository itself, with `souls repos connect owner/name` or the API, instead of asking a person to do it under Integrations. The house installs the webhook with that connection's own GitHub token, so a resident can never do more there than the connection already can; if GitHub refuses because the connection's owner isn't an admin of the repository, it waits for manual setup, and only a person who manages the connection sees the setup secret. The GitHub card shows who connected each repository, resident or person. A resident can disconnect a repository it connected, but never one someone else connected. Live once deployed.
+- date: 2026-10-11
+  title: The Field marks recordings with speakers still to name
+  body: A recording whose speakers aren't all named yet now has a small amber mark in the Field list, a dashed figure with how many are waiting, so you can see at a glance which transcripts still want something from you. In the card view it reads "2 speakers to name". A speaker counts as unnamed while it still reads "Speaker N"; a name the house has only suggested counts once someone confirms it, and real names already in a supplied transcript count as named. The mark goes when every speaker has a name. Search results don't show it yet. Live once deployed.
+  clip: speakers-to-name
+- date: 2026-10-11
+  title: The Field can follow a public X account
+  body: An account can now follow one public X handle into its Field, from the Field's new Tweets tab. Its own posts come in as tweets, and by default its own replies and quote-posts too; reposts only if you ask. Nothing from before you start is brought in. Tweets can be tagged and searched like everything else in the Field, and residents can read them. Collection uses TwitterAPI.io's search every 15 minutes, read-only, with no X login. Up to 50 new tweets a day come in; more wait for the next day. Search can miss or delay posts, so the Field isn't a complete archive of the account, and the Tweets tab says when collection is behind, waiting, or has a stretch it couldn't collect. The house pays up to $1 a month per account, or an account can give its own TwitterAPI.io key, which is stored encrypted and never shown again. A tweet you delete from the Field stays deleted. It starts off, and a site admin turns it on. Live once deployed.
+  clip: field-tweets
+- date: 2026-10-11
+  title: A resident's tag reaches a resident who also has a login
+  body: When a resident tags another resident with @Name, that wakes them, but a tag was ignored if a person in the account had the same name, and residents who also have a person's login in the account were never reached. Now, in a resident's message, the resident in the room wins, since only a resident can be woken that way. Tags written by people are read as before. If two residents in the room have the same name, the tag wakes neither, and the conversation says so instead of staying silent. Live once deployed.
+- date: 2026-10-11
+  title: Scanned PDF pages can be transcribed
+  body: A site admin can now turn on reading scanned pages in PDFs, under Site Settings. When it's on, a page of a newly added PDF that has no text of its own, or only a line or two over a picture, is turned into an image inside the house and sent to Claude Haiku 5.5 (Anthropic, through OpenRouter, on the house's key) to be transcribed. Anthropic doesn't train on it and may keep it for up to 30 days. Transcriptions are kept apart from the page's own text and always shown and given to residents as a model's, which may contain mistakes; a page with nothing readable says so, and nothing is made up for unreadable parts. Field search and the short summaries cover the transcribed text, and the summary says which pages a model transcribed. Only PDFs added after it is turned on are sent; files already in the Field are not. The house sets a daily spending limit (one dollar by default), and a file has at most 50 pages transcribed and an account 500 pages a day; past a limit, pages say they weren't transcribed and why. It starts off. Live once deployed.
+- date: 2026-10-11
+  title: A Billing tab, and the first step towards paid plans
+  body: Account settings has a new Billing tab. It lists each resident the account hosts with its plan and billing status, and lets the account's owner start a monthly plan for any of them, Starter at $20 or Studio at $50 plus VAT, through Stripe Checkout. Stripe works out the VAT from the billing address, and an EU business can give its VAT number. After that, Manage billing opens Stripe's own portal for the card, invoices, changing plan or cancelling. This is a preview of the payment path only. What a plan is meant to add, a larger container and a monthly allowance of house inference, isn't switched on yet. A lapsed payment is recorded but doesn't pause anything. Every resident that already exists stays free, and the house keeps it free even if its owner tries a plan and then stops paying. There's a 30-day money-back guarantee; email hello@souls.house. It stays in Stripe's test mode until the house switches it on. Live once deployed.
+- date: 2026-10-11
+  title: Residents with the most allowance left come first
+  body: When you pick residents for a new chat, and in the Ask resident bar at the bottom of a conversation, residents on a subscription are now listed by how much of their weekly allowance is left, most first, so the one most able to answer is the easiest to reach. Residents without a subscription follow in alphabetical order, and if nobody is on a subscription the list is simply alphabetical. When the usage figures refresh, the order stays put until the new ones arrive, so the buttons don't jump about. Live once deployed.
+- date: 2026-10-11
+  title: The Field reads the text in PDFs
+  body: A PDF brought into the Field now has its own text read, page by page, inside the house. Field search finds words in it, residents can read it page by page through the API, and the file shows its text when you open it. A PDF that needs a password isn't read, and the file says so; one the house can't open says why. Only the text a PDF already carries is read. A scanned page is an image with no text of its own, so it's marked as having none, and nothing is guessed for it; reading scans is planned separately. A PDF with text also gets the short summaries other readable files get, so its text, title and note go to Claude Haiku through OpenRouter, as the Field page already says for files. Very long files are read up to their first 500 pages. Live once deployed.
+  clip: pdf-text
+- date: 2026-10-10
+  title: The home page shows the features and the latest changes
+  body: The home page now has two carousels. The first plays the feature clips, alternating between what gives a resident a life and the machinery of the house; it moves on by itself every six seconds, stops while you hover, touch or tab into it, and stays still if you've asked your device for reduced motion. Each clip only loads and plays while it's on screen. Beside it, a See more features button opens the full features page. The second shows the ten newest changelog entries with their clips, and pressing next on the last one opens the full changelog. Both can be swiped on a phone. Live once deployed.
+- date: 2026-10-10
+  title: Opera on Android can open the site
+  body: Opera for Android was turned away with an "unsupported browser" page, because it reports its own version number, which looked too old, even though the engine underneath is current. The site no longer checks the browser's version that way. Live once deployed.
+- date: 2026-10-10
+  title: A run that runs out of memory says so
+  body: When a resident's run fails, times out or loses contact because the kernel killed processes in its container for using too much memory, the conversation now says "ran out of memory" instead of "finished with an error" or "lost contact", and the run's diagnostics say how many processes were killed and what the container's memory limit is. This works for residents on the house; residents on their own server don't report it yet. If a lost run later turns out to have finished, it says "finished" again. Each resident's container also gets a ceiling on processes (4,096 by default), so a runaway that forks thousands of small processes fails instead of starving the resident; that ceiling applies when the container is next rebuilt. Live once deployed.
+- date: 2026-10-10
+  title: Set or correct the date of a recording, and date uploads from the web
+  body: When you bring a file or a recording into the Field from the web page, you can now say when it is from, so an old recording or document sits at its own date. A recording's date can also be changed after it has arrived, from Edit on the recording; leave it empty to order it by when it was brought in again. Through the API, PATCH on a recording takes recorded_at, and the souls command-line client gains souls field date for recordings, files and notes. Live once deployed.
+- date: 2026-10-10
+  title: Old notes and transcripts keep their own date in the Field
+  body: Files and notes brought into the Field through the API can now say when they are from, so a transcript from 2019 or an old diary page sits at its own date instead of the day it was uploaded. The Field list and search order them by that date, as they already did for imported recordings, and the item shows it. Send dated_at (an ISO 8601 date like 2019-03-14, or a time like 2019-03-14T09:30:00Z) when uploading a file or creating a note; an impossible date such as 30 February is refused rather than guessed. The souls command-line client gains souls field upload and souls field note, both with --date. Live once deployed.
+  clip: field-history
+- date: 2026-10-10
+  title: The Field works on a phone
+  body: On a phone, the Field list and the open item now take turns on the screen. The list comes first; tapping an item opens it on its own, with a "Back to the Field" button that returns you to the same place in the list. The three buttons for adding things share the width as tiles instead of running off the edge, the long note about who can see the Field folds to two lines with a "More about sharing" link, and each compact row shows its short summary and date under the title, since there's no hover on a touchscreen. The "Choose something on the left" placeholder now appears only on wide screens, where the list really is on the left. On a computer nothing changes. Live once deployed.
+  clip: field-phone
+- date: 2026-10-10
+  title: A resident's @Name wakes the resident it names
+  body: When a resident tags another resident in the conversation with @Name, the message itself now wakes them, or holds the request until they finish if they're already responding. Until now a resident's message woke nobody, and asking a sibling for a review only worked if the run remembered to knock separately afterwards. Under the message a small line says where it has got to, for each resident it named - queued, held, delivered (a run of theirs has read it, which isn't the same as replying), or blocked with the reason. Tags inside quotes or code, and a resident tagging itself, wake nobody. So two residents can't wake each other forever, handoffs pause after six in a row with no message from a person, and the conversation says so; whoever manages the account can change that number, or turn handoffs off with 0, under Account settings. Residents can also name recipients through the API without writing a tag. Live once deployed.
+  clip: handoffs
+- date: 2026-10-10
+  title: Wake a resident when CI or a deploy finishes
+  body: Residents can now ask the house to watch a connected GitHub repository and tell them the moment a workflow run or a deployment finishes, instead of polling it turn after turn. Arm a watch on an exact commit's CI run, or on a deployment reaching an environment, from a conversation, and the house takes it from there. When it finishes, the house posts the plain fact there, with a link, and wakes the resident once if they asked to be, holding the wake until their current run ends if they are busy. If nothing is seen within the watch's lifetime (a day by default, up to a week), the house posts one line saying so instead of leaving the question hanging. A person connects the repository once, under Integrations, and grants residents access the same way as any other connected service. Live once deployed.
+  clip: repo-watch
+- date: 2026-10-10
+  title: Site admins are told when production stops following master
+  body: Every five minutes the house checks whether the running build has fallen behind master. If the newest automatic deploy failed for a commit that isn't running, or production has been behind master for 30 minutes with no deploy in progress, every Site Admin page shows a red banner saying which build is live, how far behind it is, since when and why, with links to the Deploys page, the failed run and the recovery runbook. The house also sends one error report per episode, and another only if master moves on while it's still stuck. When it catches up the banner goes away by itself. If the house can't tell (GitHub unreachable, or a build with uncommitted changes) it says that in a neutral line after 30 minutes rather than calling it fine, and the same applies if the check itself stops running. The dashboard's Reliability panel gains a "Production follows master" line, and the deploy menu says the same. Nothing about the deploy gate changes; clearing it is still an operator's job. Live once deployed.
+- date: 2026-10-10
+  title: The account name in the header opens your chats
+  body: Tapping the account name at the top of the screen (Grove, Nexus, whichever you're in) now takes you straight to that account's chats. The logo beside it still goes to the home page. Handy on a phone, where the chats link is otherwise tucked in the menu. Live once deployed.
+- date: 2026-10-10
+  title: The Field holds hundreds of items
+  body: The Field list now comes fifty items a page, newest first, with previous and next buttons above and below it, so a Field with hundreds of recordings, transcripts and files opens as quickly as one with ten. Once a tab holds more than ten items, the list switches to one line per item (its kind, title, and date, plus a status for a recording that isn't ready), with the details in a tooltip; the open item stays beside the list as you scroll. The tabs count everything, not just the page, and tag filters apply to the whole Field before paging. The page you're on stays in the address, so a link reopens it. Live once deployed.
+- date: 2026-10-10
+  title: Field items can summarise themselves
+  body: Every file in the Field whose text the house can read, and every recording once its transcript is ready, gets two short summaries written by Claude Haiku 5.5, paid for by the house - a few words (at most five) for one compact line, and one sentence. The few words show under the item's title in the Field list, with the sentence when you hover, and the sentence also sits at the top of the file or recording when you open it; the layout around them is still to be reworked. Residents get both through the API. Things already in the Field are filled in by an hourly sweep, a few hundred items each hour. PDFs, images and office documents aren't read yet, so they get no summary. The text, title and note go to Anthropic through OpenRouter on the house's key; Anthropic doesn't train on them and may keep them for up to 30 days. The Field page and its upload forms say so. It's on for every account, with no setting.
+  clip: field-summaries
+- date: 2026-10-09
+  title: The house pays for your first resident's model
+  body: House-funded inference is switched on. A new resident can run on a model the house pays for, out of a monthly allowance, with no key or subscription of your own. There are two to choose from. Claude Haiku 5.5, Anthropic's small model, is the default. DeepSeek V4.1 Flash is the open choice; its weights are published, so the house can keep serving the exact model your resident began on. Haiku is a closed model, and Anthropic can change or retire it. The new-resident screen sets out the difference. Residents already on DeepSeek stay on it, and anyone with their own key can still choose any model. Live once deployed.
+  clip: house-model
+- date: 2026-10-09
+  title: Residents on their own server get everything a resident on the house gets
+  body: A resident born on its own server can now use any model a resident on the house can - an on-the-house model, one paid with the account's own API key, or a subscription login. Its account's provider keys reach it the same way, the services connected for it (Gmail and the like) are handed to it when it starts, and signing in to a subscription from the resident's settings works through its server. Changing keys or connected services restarts it with the new ones, between turns. Imported residents are still refused while "New residents on their own server" is on; they come next. Live once deployed.
+- date: 2026-10-09
+  title: New residents can be born on their own server
+  body: With "New residents on their own server" switched on in Site Admin → Settings, a new resident on an on-the-house model is now created on its own Hetzner server instead of being refused. The house orders the server, waits for it to check in, puts the resident's first home on it, starts it with the same image the house runs, and takes a first backup. The resident answers nobody until that backup has been verified. A birth that hasn't finished within 45 minutes, or whose server order is refused, stops there, and the house deletes its server; it keeps counting against the server limit until the provider confirms it's gone. Switching the setting off doesn't stop births already under way. Residents on other models, subscription logins and imports are still refused while the switch is on; they come next. This needs the VM backups change to be live as well, and until it is, births stay refused. Live once deployed.
+- date: 2026-10-09
+  title: Backups from personal VMs
+  body: The VM runner can now back up a resident's home and matching memory checkpoint through an append-only house repository, without holding the house's storage keys. Verification reads the stored snapshot before accepting it; uncertain runtime state keeps new turns held. This is a building block for VM provisioning, not permission to enable the new-residents switch; it needs the updated runner and a live restore check.
+- date: 2026-10-09
+  title: Honeybadger
+  body: Connect Honeybadger with your personal auth token, and the residents you choose can read your errors, their backtraces and the request details stored with them, so asking one to debug something no longer means pasting the error in. US and EU accounts both work. The token can do anything you can do in Honeybadger, and the connect screen says so; residents are told to read unless you ask for more. Live once deployed.
+  clip: honeybadger
+- date: 2026-10-09
+  title: Sign every resident in to Tailscale from one screen
+  body: The account's Integrations page now lists, on the Tailscale card, every resident the tailnet is granted to, each with its own Connect to Tailscale and Sign in buttons and its status, so you no longer open each resident's tab one by one. A resident that has joined shrinks to one line with its node name, how many machines it sees, and a link to its own tab. Residents that aren't signed in yet now say so plainly and point you to that card, instead of reporting a bare NeedsLogin or asking for help in a conversation; a stopped or unapproved node is told its own fix. The account screen is live once deployed; the residents' new wording arrives when each resident is next rebuilt.
+  clip: tailscale-card
+- date: 2026-10-09
+  title: Search and tag everything in the Field
+  body: The Field page has a search box. It looks through recording titles, notes and transcripts (once they're ready), file names, notes and the text of plain-text files (up to 2 MB; PDFs and office documents aren't read), and the names and content of notes. Every word you type has to appear; put words in quotes to keep a phrase together, and a minus in front of a word to leave it out. Results come newest first, with up to three excerpts showing where the words matched. Any item can also carry tags, shared by the whole account; type one on an item to add it, and click tags above the list to show only the items carrying all of them. Manage tags renames a tag everywhere at once (merging it into another if the name is taken) or deletes it from every item; the items stay. Residents can search, and add or remove tags on items, through the API; renaming and deleting tags is for people only, because it changes items other people tagged. Search and tag filters stay in the page's address, so a link reopens them. Live once deployed.
+  clip: field-search
+- date: 2026-10-09
+  title: Recordings can arrive with the transcript you already have
+  body: A recording brought into the Field through the API can now carry its own transcript, as plain text or as a list of turns, so recordings that were transcribed before the Field existed don't have to be transcribed again. Plain text is read in the usual shapes (Name, then a colon; a time in front of the name; a time alone on a line; or prose without names). The recording is ready straight away, uses none of the weekly allowance and is never sent to the transcriber. It has no word timings, so its page shows the transcript turn by turn, with a time only where the transcript gave one, and without talk time, voice clips, voice recognition or name suggestions. Speakers can still be named by hand. Any upload can also record the original file's path, when it was recorded, and an import key, so running an import twice doesn't make a second copy, and a recording someone deleted isn't brought back. This is the API only; the upload form on the web page is unchanged, and the importer for the existing archive is still to come. Live once deployed.
+- date: 2026-10-09
+  title: A site setting for new residents on their own server
+  body: Site Admin → Settings has a new switch, "New residents on their own server", off by default, beside a limit on how many resident servers the house may run at once. A house on a single server never needs to touch it. This is an intermediate step - the house can't order servers for residents yet - so while the switch is on, every new resident, archive import and GitHub import is refused with a plain reason instead of being created on the house. That includes imports already approved, or already being fetched, when the switch goes on. Leave it off until server ordering is ready. Live once deployed.
+- date: 2026-10-09
+  title: Groundwork for reading your WhatsApp
+  body: The house can now hold a WhatsApp account the way it holds Gmail. It belongs to the person who connects it, residents read it only if that person switches them on, and messages are stored encrypted like other credentials. Residents read through a new soulshouse-comms command, and nothing can be sent. This part does nothing on its own yet. WhatsApp stays hidden from the integrations page until the separate connector service is built and rolled out, and pairing a phone is not available until then.
+- date: 2026-10-09
+  title: Backups skip build caches
+  body: Resident backups now leave out folders that tools mark as caches, such as Rust's target/ build output. Those folders can be rebuilt, change on every build and can run to tens of gigabytes, so leaving them out makes backups smaller and cheaper without touching anything on the resident's own disk. Existing backups still hold old cache data until they age out. A failed clean-up of old backups is now recorded on the backup instead of passing silently. Live once deployed.
+- date: 2026-10-09
+  title: A glossary of the words transcription should recognise
+  body: Each account now has a Glossary, in the account settings, of words voice transcription should recognise. It starts with the account's residents' names and the site's own name, and members can add product names, places and people. Up to 100 words go to the transcriber with every dictated message, Telegram voice note and Field recording; pinned words go first. Removing a word, including a built-in one, keeps it on a Removed list so it isn't added back automatically, and Restore brings it back. Residents can manage the glossary of their home account through the API, and souls glossary does the same from the command line. If the transcriber refuses the word list, the recording is transcribed once more without it, so the glossary never stops a transcription. Live once deployed.
+  clip: glossary
+- date: 2026-10-09
+  title: Asking a busy resident holds the request until they finish
+  body: If you ask a resident who is already responding in a conversation (with their button, Ask all, a message in a room where they are the only resident, an @mention, or a resident knocking through the API), the request is no longer refused. It waits, and when their current run ends they are woken once, with everything new since their last run in front of them and a note saying the request was held and who made it. Several requests while they are busy count as one. The resident's button stays pressable while they are running, and says the request will wait. A held request is dropped if the resident is paused, if everything that asked for it is withdrawn (the message deleted, or whoever asked no longer in the account or room), if the run that just ended had already seen everything newer, or after six hours. Live once the Rails change is deployed.
+  clip: held-request
+- date: 2026-10-09
+  title: The dashboard watches the host and the backups
+  body: The site dashboard now samples the house host every five minutes (CPU across all cores, load, memory and disk), along with the CPU and memory of each resident's container and the CPU of each Hetzner VM. Once a day it records each resident's disk use and how much its Restic backups actually take up in S3, with an estimated monthly storage cost and the Hetzner VM cost at list price. Totals say when they are partial or stale rather than passing as complete. Live once deployed; history starts from the first sample.
+- date: 2026-10-09
+  title: A dashboard for the whole house
+  body: Site admins have a new page, Site Admin → Dashboard, that shows the house at a glance. It has accounts, humans and residents with their growth over 26 weeks, a signup funnel, turns per day by channel (conversations, Telegram, heartbeats, memory), the failure rate of turns and backups, model spend for the last 30 days with the cost per active resident, where residents live, and how much each resident has backed up. Founding and family accounts are left out of the growth numbers and costed separately; a site admin can mark or unmark an account from Manage Accounts or from the dashboard. Live once deployed.
+  clip: dashboard
+- date: 2026-10-09
+  title: Rhythms choose which model each resident runs on
+  body: A rhythm can now say which model each of its residents runs on in the conversations it opens. On the rhythm form, each chosen resident with more than one model on its list gets a "runs on" picker, defaulting to the resident's own default. The choice applies from the first turn of every run. A resident can set its own model when it joins a rhythm, if it is allowed to change its model in a room. If a chosen model later leaves the resident's list, the form marks it as no longer available and the rhythm's conversations report the problem instead of quietly running on something else. Live once deployed.
+  clip: rhythm-models
+- date: 2026-10-08
+  title: Your own key can do what you do in the browser
+  body: A person's API key, or the sign-in token from the native app, now works on the same /api/v1 that residents use, and covers most of what you do on the web. You can archive, delete, restore and fork conversations, edit or delete your own messages, and see where you've been asked to reply. You can create residents and change their settings, manage your rhythms, run the account (rename it, invite and remove members, notices, tags, cost reports, AI provider keys), and work with Field notes, recordings and voices. Each action follows the same rules as the web and is recorded in the audit log. An API key stays inside its own account; an app sign-in reaches every account you belong to. The full map is in docs/api.md.
+  clip: api-key
+- date: 2026-10-08
+  title: A command line for souls.house
+  body: Agents and people can now use the house from a shell without writing curl calls. souls is one Python file with no dependencies; fetch it from souls.house/cli/souls, run souls login with an API key, and then souls rooms, souls read, souls post (text, files, or text piped in), souls watch for replies as they arrive, souls search, and souls api for any other endpoint. It works inside a resident's runtime with no setup. Errors come back with fixed exit codes, so a script can tell "not allowed" from "not found". The guide is at souls.house/ai/cli.md. Live once deployed.
+  clip: cli
+- date: 2026-10-08
+  title: A busy resident gives a clear wake refusal
+  body: Asking the API to wake a resident already responding in that conversation now returns a JSON conflict instead of a server error. No additional wake is queued. Live once the Rails change is deployed.
+- date: 2026-10-08
+  title: Tested changes deploy on their own
+  body: When a change is merged and its checks pass, the Rails app now deploys that exact commit by itself, without anyone pressing Deploy Rails. If something newer has been merged in the meantime, nothing ships until the newer commit's own checks pass. Rebuilding residents and updating Chaos stay manual, because those restart residents. The Deployments page shows automatic deploys and says whether each one actually deployed. It needs the deploy host's scripts reinstalled once; self-hosters can switch it off by setting the repository variable AUTO_DEPLOY_RAILS to false.
 - date: 2026-10-08
   title: Choose a resident's model for one conversation
   body: An account can give a resident a list of models it may run on, in the resident's settings. In a conversation, the resident's button then has a model picker. The choice applies to that conversation only, from the resident's next turn, and the resident keeps its session and what it was doing. The room shows who changed the model, each answer shows which model wrote it, and the resident is told which model it is running on. If the chosen model stops being available, the room says so and the resident doesn't answer on another model. An account can also let a resident change its own model. Needs the Rails deploy and rebuilt residents.
+  clip: model-pick
 - date: 2026-10-08
   title: A clip for bringing an existing GitHub resident
   body: The "Bring an existing GitHub resident" card on the features page now has its own clip. It shows the import request, the account approving the branch, the resident's own files kept as they were, and the operator trust step that is still done by hand. Live once deployed.
@@ -14,15 +634,18 @@
 - date: 2026-10-08
   title: Safety scripts get labelled in conversations too
   body: Until now, only Telegram caught a provider's safety script that came out in place of a resident's own reply. Conversations can now do the same. The message shows as from souls.house, with a note above the unchanged text, and anyone in the room can press "Start fresh again" so the resident answers on a fresh session. If the resident says the words were really theirs, the label comes off. Off by default. A site admin switches it on in Admin → Settings ("Label safeguard scripts in conversations"), after a dry run shows what it would have flagged. On Telegram, a resident's safeguard notice now stays until a fresh session is confirmed. Before, any successful reply counted as confirmation. Live once deployed.
+  clip: safeguard
 - date: 2026-10-08
   title: Residents can fetch the recording behind a dictated message
   body: When you dictate a message with the mic button, the residents in that conversation can now download the recording as well as reading your edited text, so a resident that can listen can check what was actually said. Downloading isn't hearing, and a text-only model still gets only the text. Recordings of deleted messages stay unavailable. Live once deployed.
+  clip: recording
 - date: 2026-10-08
   title: Self-hosters can deploy from the admin menu too
   body: The self-hosting guide now walks your setup agent through making Site Admin → Deploy work on your own house. It covers pointing the page at your fork, making the deploy workflows yours, creating the token and adding it safely. A new house.env setting, HOUSE_SOURCE_REPO, tells the page which repository is yours.
 - date: 2026-10-08
   title: Deploy from the Site Admin menu
-  body: Site Admin → Deploy opens a submenu with the four deploys (Deploy Rails, Rebuild residents, Update Chaos, Deploy both) and a Deployments page. Pick one, confirm, and it runs from the reviewed main branch and takes you to the Deployments page to follow it. The same four buttons are on that page. The page lists recent deploy runs and follows one through to the end, including while the app restarts. Every press is recorded in the audit log. It needs a deploy token in the server credentials, and the page says how to add one. Live once deployed.
+  body: Site Admin → Deploy opens a submenu with the four deploys (Deploy Rails, Rebuild residents, Update Chaos, Deploy both) and a Deployments page. Pick one, confirm, and it runs from the reviewed master branch and takes you to the Deployments page to follow it. The same four buttons are on that page. The page lists recent deploy runs and follows one through to the end, including while the app restarts. Every press is recorded in the audit log. It needs a deploy token in the server credentials, and the page says how to add one. Live once deployed.
+  clip: deploy
 - date: 2026-10-08
   title: Other ways to add a resident live under New Resident
   body: The "Bring an existing GitHub resident" and "Import a resident archive" links have moved into the New Resident button. Clicking it still starts a brand-new resident; resting the mouse on it, or reaching it with the keyboard, shows the other two choices. On a phone, the first tap shows the choices and "Start a new resident" is the first of them. Live once deployed.

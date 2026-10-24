@@ -5,7 +5,7 @@ class Chats::AgentAssignmentsController < ApplicationController
   # POST /accounts/:account_id/chats/:chat_id/agent_assignment
   def create
     if @chat.manual_responses?
-      redirect_back_or_to account_chat_path(current_account, @chat),
+      redirect_back_or_to chat_view_path(@chat),
         alert: "This chat is already assigned to a resident"
       return
     end
@@ -14,7 +14,7 @@ class Chats::AgentAssignmentsController < ApplicationController
     @chat.assign_agent!(agent)
 
     audit("assign_agent_to_chat", @chat, agent_id: agent.id)
-    redirect_to account_chat_path(current_account, @chat)
+    redirect_to chat_view_path(@chat)
   end
 
 end

@@ -20,6 +20,7 @@ class Mnemodyne::Erasure
     raise Invalid unless data && data["vault_id"] == vault.id
     vault.with_lock do
       raise Invalid if vault.suspended_at?
+      raise Invalid if Backup::VmResident.held?(vault.agent)
       current = fingerprint(Mnemodyne::Checkpoint.export(vault))
       raise Invalid unless data["fingerprint"] == current
       raise Invalid if vault.nodes.where(integration_state: "constitutional").exists? && !include_constitutional
@@ -34,6 +35,7 @@ class Mnemodyne::Erasure
 
   def self.cancel(vault)
     vault.with_lock do
+      raise Invalid if Backup::VmResident.held?(vault.agent)
       vault.update!(erasure_requested_at: nil, erase_after: nil, erasure_fingerprint: nil, erase_constitutional: false)
     end
   end
@@ -43,6 +45,7 @@ class Mnemodyne::Erasure
     # being enabled concurrently with the final purge.
     vault.agent.with_lock do
       vault.with_lock do
+        return false if Backup::VmResident.held?(vault.agent)
         return false unless vault.erase_after && vault.erase_after <= Time.current
         if vault.suspended_at?
           Rails.logger.warn("Mnemodyne erasure held: vault suspended")
