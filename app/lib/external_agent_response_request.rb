@@ -1,12 +1,14 @@
 class ExternalAgentResponseRequest
 
   # How a transcript names a message's author. Shared with the mid-run
-  # messages a running resident is shown (AgentRuntimeInteraction).
-  def self.speaker_for(message)
+  # messages a running resident is shown (AgentRuntimeInteraction). Humans are
+  # named by profile name, never by email (ResidentFacingName); pass the
+  # conversation's `labels` so namesakes are told apart.
+  def self.speaker_for(message, labels: nil)
     if message.agent
       message.agent.name
     elsif message.user
-      message.user.email_address
+      labels&.dig(message.user_id) || ResidentFacingName.for(message.user)
     elsif message.role == "system"
       "souls.house (platform)"
     else
@@ -347,7 +349,7 @@ class ExternalAgentResponseRequest
 
   def conversation_metadata
     agents = chat.agents.order(:name).pluck(:name)
-    humans = chat.messages.kept.includes(:user).where(role: "user").filter_map { |message| message.user&.email_address }.uniq.sort
+    humans = human_labels.values.uniq.sort
 
     <<~TEXT.strip
       Conversation metadata:
@@ -357,6 +359,12 @@ class ExternalAgentResponseRequest
       - humans_seen_in_transcript: #{humans.any? ? humans.join(", ") : "_none in stored messages_"}
       #{account_line}
     TEXT
+  end
+
+  # The conversation's humans by name, namesakes disambiguated; one map for the
+  # metadata line and every transcript line so they agree.
+  def human_labels
+    @human_labels ||= ResidentFacingName.labels_for_chat(chat)
   end
 
   # The room is a hint about what the conversation is for, not an instruction.
@@ -423,7 +431,7 @@ class ExternalAgentResponseRequest
   def format_transcript_line(message)
     return format_safeguard_transcript_line(message) if message.safeguard_labelled?
 
-    speaker = self.class.speaker_for(message)
+    speaker = self.class.speaker_for(message, labels: human_labels)
 
     # IDs distinguish stored turns from ordinary "Name:" addresses in a body
     # and let residents verify attribution through the conversation API.

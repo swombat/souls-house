@@ -21,6 +21,7 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "deepseek/deepseek-v4.1-flash-1017" => [ "DeepSeek", %w[none high] ],
       "minimax/minimax-m3.1-flash" => [ "MiniMax", %w[none high] ],
       "inception/mercury-3" => [ "Inception", %w[none high] ],
+      "moonshotai/kimi-k3.1-pro" => [ "Moonshot / Kimi", %w[none high] ],
       "google/gemini-4-argon" => [ "Google", %w[low medium high] ]
     }.each do |id, (group, efforts)|
       assert Chat::MODELS.any? { |model| model[:model_id] == id && model[:group] == group }, id
@@ -293,7 +294,7 @@ class ChatThinkingTest < ActiveSupport::TestCase
       "mistralai/mistral-large-2512",
       "meta-llama/llama-4-maverick",
       "minimax/minimax-m3",
-      "moonshotai/kimi-k3",
+      "moonshotai/kimi-k3.1-pro",
       "qwen/qwen3.8-max",
       "xiaomi/mimo-v2.6-pro",
       "z-ai/glm-5.2"

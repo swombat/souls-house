@@ -28,7 +28,7 @@ Trigger payload (souls.house ChaosTriggerClient shape):
        "model": "claude-sonnet-4-5",               # optional; falls back to AGENT_DEFAULT_MODEL env
        "reasoning_effort": "medium",                # optional; a Chaos reasoning effort
        "channel": "telegram",                      # optional channel-specific metadata
-       "sender": {"name": "...", "email": "...", "telegram_username": "..."},
+       "sender": {"name": "...", "telegram_username": "..."},
        "text": "incoming direct message",
        "thread_id": "stable-thread-id",
        "history_cursor": "latest-message-id"

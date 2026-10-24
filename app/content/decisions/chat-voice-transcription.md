@@ -3,7 +3,7 @@ title: Keep ElevenLabs for chat voice notes
 slug: chat-voice-transcription
 date: 2026-10-18
 status: decided
-summary: We tested local and cloud alternatives, including October 21 Bark 3.0 and Fluid Speech Mini follow-ups. The results still favour keeping ElevenLabs for our current voice-note workload.
+summary: We tested local and cloud alternatives, including Bark 3.0, Fluid Speech Mini and both Phonon-2.5 variants. The results still favour keeping ElevenLabs for our current voice-note workload.
 ---
 
 ## What we decided
@@ -46,7 +46,7 @@ That saving is not worth maintaining a resident model in RAM, a private worker, 
 
 ## What would change the decision?
 
-A deployment that must not depend on ElevenLabs has a different requirement and could revisit the local work. A substantial change in usage, price or model capability could also warrant a fresh decision. Daniel requested the bounded Bark and Fluid follow-ups below; neither justifies changing the current backend. No further benchmarking or implementation is scheduled.
+A deployment that must not depend on ElevenLabs has a different requirement and could revisit the local work. A substantial change in usage, price or model capability could also warrant a fresh decision. Daniel requested the bounded Bark, Fluid and Phonon follow-ups below; none justifies changing the current backend. No further benchmarking or implementation is scheduled.
 
 [Preserving the original audio when transcription fails (#453)](https://github.com/swombat/souls-house/issues/453) is a separate reliability concern with the existing path, not a reason to change providers.
 
@@ -93,6 +93,29 @@ We retained the publisher's native chunking: clips up to 40 seconds run in one p
 Edited-reference disagreement across all four was **3.14% for Fluid, 4.90% for Bark and 0.50% for historical ElevenLabs**. On the first three clips it was 3.80%, 6.65% and 1.27%, respectively. These are not independently verified accuracy scores: the references favour the existing transcription workflow. Text inspection found the broad requests retained, with remaining names and wording problems; we did not adjudicate against the audio.
 
 The Apple Neural Engine build and its speed claims were not tested. Nor did this four-clip pilot test the advertised background-voice advantage, meetings, multilingual use, diarization or production reliability. Fluid is a more memory-practical local candidate than our tested Bark setup, but the limited historical usage saving and extra service maintenance remain. No backend change was made.
+
+## October 23 follow-up: Phonon-2.5 and Phonon-2.5 English
+
+At Daniel's request, we evaluated **both Phonon-2.5 variants from Fermion Research** on the same four recordings. **Keep ElevenLabs remains the recommendation.** Their native CPU runtime was substantially faster than our Bark and Fluid setups, but only the shortest clip beat the historical cloud timing. The English variant is another credible offline candidate, not a demonstrated improvement over the existing service.
+
+The [multilingual model card](https://huggingface.co/FermionResearch/Phonon-2.5/blob/96dad4f3b5b784b1aa595213ea7481bf8a7addcd/README.md) reports 11.71% average word error across 25 FLEURS languages versus 13.26% for its full-precision Parakeet v3 base. The [English card](https://huggingface.co/FermionResearch/Phonon-2.5-English/blob/12f7f10c79f324d1454776c7bb63a7cdbb8ac548/README.md) reports 4.82% across seven English sets, versus 4.94% for Bark and 5.06% for multilingual Phonon-2.5. These are publisher-run comparisons using leaderboard methodology, not an independent evaluation or an ElevenLabs comparison. The multilingual average does not mean it wins in every language. Both variants are CC-BY-4.0.
+
+The [announcement](https://x.com/yoitsmanan/status/2113667722961965515) and [research page](https://www.fermionresearch.com/research/phonon-2.5) give slightly different speed figures. The research page explicitly carries forward **Phonon-2's** measurements: about 174 times realtime on an M5 GPU, 143 on eight Zen 5 CPU cores and 6,680 on a batched H100. These are not our hardware, and batched throughput is not single-note latency. We did not reproduce those claims. The 156.2 MB multilingual and 157.6 MB English downloads are packed weights, **not working RAM**.
+
+| Recording length | Earlier ElevenLabs-backed chat | Phonon-2.5 CPU | Phonon-2.5 English CPU |
+|---|---:|---:|---:|
+| 12 seconds | 1.14 s | 0.89 s | 0.90 s |
+| 30 seconds | 1.54 s | 2.20 s | 2.19 s |
+| 1m08s | 2.80 s | 4.89 s | 4.86 s |
+| 4m47s | 7.02 s | 21.98 s | 21.29 s |
+
+All eight transcriptions completed. We used `fermion-research` 0.2.13 on the same Intel i7-8700 host, with two inference threads. We verified selection of the supplied **native packed-int8 C encoder and C TDT decoder, AVX2 tier**, rather than silently measuring its dense fallback. Peak process RSS was approximately **1.16 GiB** per variant across loading and inference: more than Fluid's 608 MiB, much less than Bark's 5.36 GiB. Network socket creation was denied during inference; no audio was uploaded.
+
+We retained the publisher's quiet-point chunking, with 0.25-second leading padding per chunk for the multilingual profile and none for English, and supplied no glossary. The 68-second clip became three chunks and the longest ten. The original audio hashes matched earlier tests. Times include decoding and inference, but exclude model loading, download, upload, storage and queueing. Fresh-process loading including imports took about 1.35 seconds per variant, with weights already downloaded and expanded. These are single measurements against historical October 18 cloud results, not concurrent service tests. Chunking differs between candidates, so this compares complete tested setups rather than isolating model weights.
+
+Edited-reference disagreement across all four clips was **4.77% for multilingual Phonon-2.5 and 3.89% for Phonon-2.5 English**, versus Fluid's 3.14%, Bark's 4.90% and historical ElevenLabs' 0.50%. On the first three clips the Phonon figures were 7.59% and 5.06%. These are **not independent accuracy scores**: saved, possibly edited messages favour the existing workflow. Text inspection found the broad content retained but names and wording still garbled, particularly in the technical note; no audio-grounded adjudication was performed.
+
+The English variant offers a useful speed/memory trade-off among our newer local candidates, but it did not dominate Fluid on both memory and edited-reference disagreement, or match the cloud waiting times beyond the shortest clip. This does not change the limited historical saving or the maintenance burden of another service. Multilingual accuracy, noisy meetings, diarization, Apple/GPU acceleration and production concurrency were not tested. No backend change was made.
 
 ## Evidence and return point
 

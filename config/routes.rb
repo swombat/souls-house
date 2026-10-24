@@ -313,6 +313,7 @@ Rails.application.routes.draw do
         patch :founding
         patch :field_swarm
         patch :field_tweets_house_key
+        patch :x_posting_house_app
         post :refresh_storage
       end
       resources :memberships, only: [ :create, :destroy ], controller: "account_memberships"
@@ -470,6 +471,7 @@ Rails.application.routes.draw do
         resources :messages, only: [ :create, :update, :destroy ] do
           resources :attachments, only: :show
           resource :safeguard_reset, only: :create
+          resource :restore, only: :create, controller: "message_restores"
         end
         resource :agent_trigger, only: :create
         resource :quiet_reason, only: :create
@@ -482,8 +484,10 @@ Rails.application.routes.draw do
         resource :reply_dismissal, only: :create
         get :changes, to: "conversation_changes#index"
         get :activity, to: "conversation_changes#activity"
+        get :who, to: "who#show"
       end
       resource :session, only: [ :show, :destroy ]
+      get "who", to: "who#index"
       resource :cable_ticket, only: :create
       resources :invitations, only: :index do
         post :accept, on: :member

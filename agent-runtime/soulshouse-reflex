@@ -27,12 +27,28 @@ accepted). Never prints the token.
 """
 
 import argparse
+import io
 import json
 import os
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+
+
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the request carries the house credential, and
+    urllib would re-send it to whatever origin the Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        message = (f"refused to follow a redirect ({code}) to {target} with the house credential; "
+                   "check SOULSHOUSE_APP_URL")
+        # The message is the body too, so handlers that print error.read() show it.
+        raise urllib.error.HTTPError(req.full_url, code, message, headers, io.BytesIO(message.encode()))
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(RefuseRedirects)
 
 TIMEOUT = 60
 
@@ -54,7 +70,7 @@ def _request(app_url, token, path, method, payload=None):
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        with NO_REDIRECT_OPENER.open(request, timeout=TIMEOUT) as response:
             body = response.read().decode("utf-8")
             print(body)
             return 0 if 200 <= response.status < 300 else 1
@@ -82,7 +98,7 @@ def _get_json(app_url, token, path):
     url = f"{app_url.rstrip('/')}{path}"
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     request = urllib.request.Request(url, headers=headers, method="GET")
-    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+    with NO_REDIRECT_OPENER.open(request, timeout=TIMEOUT) as response:
         return json.loads(response.read().decode("utf-8"))
 
 

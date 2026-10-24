@@ -21,11 +21,28 @@ Requires SOULSHOUSE_APP_URL and SOULSHOUSE_BEARER_TOKEN. Never prints the token.
 """
 
 import argparse
+import io
 import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
+
+
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the request carries the house credential, and
+    urllib would re-send it to whatever origin the Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        message = (f"refused to follow a redirect ({code}) to {target} with the house credential; "
+                   "check SOULSHOUSE_APP_URL")
+        # The message is the body too, so handlers that print error.read() show it.
+        raise urllib.error.HTTPError(req.full_url, code, message, headers, io.BytesIO(message.encode()))
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(RefuseRedirects)
 
 LIMIT = 500
 
@@ -75,7 +92,7 @@ def main() -> int:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with NO_REDIRECT_OPENER.open(request, timeout=60) as response:
             print(response.read().decode("utf-8"))
             return 0 if 200 <= response.status < 300 else 1
     except urllib.error.HTTPError as error:

@@ -103,7 +103,7 @@ class SoulshouseUsageHelperTest < ActiveSupport::TestCase
                   "SOULSHOUSE_BEARER_TOKEN": "synthetic",
               }, clear=True), patch.object(mod.sys, "argv", ["soulshouse-usage"] + args), \\
                   patch.object(mod, "datetime", Clock), \\
-                  patch.object(mod.urllib.request, "urlopen", fake_urlopen), \\
+                  patch.object(mod.NO_REDIRECT_OPENER, "open", fake_urlopen), \\
                   contextlib.redirect_stdout(output):
                   assert mod.main() == 0
               outputs.append(output.getvalue())

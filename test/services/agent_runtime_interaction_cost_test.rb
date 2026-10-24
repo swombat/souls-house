@@ -238,6 +238,17 @@ class AgentRuntimeInteractionCostTest < ActiveSupport::TestCase
     assert_equal "0.015", cost.dig(:components_usd, :cache_read_input)
   end
 
+  test "Kimi K3.1 Pro is priced from the Moonshot AI standard endpoint" do
+    cost = build_interaction(
+      provider: "openrouter", model: "moonshotai/kimi-k3.1-pro",
+      uncached_input_tokens: 1_000_000, cache_creation_input_tokens: 0,
+      cache_read_input_tokens: 1_000_000, output_tokens: 1_000_000
+    ).estimated_cost
+    assert_equal "estimated", cost[:status]
+    assert_equal "12.2", cost[:amount_usd]
+    assert_equal "0.2", cost.dig(:components_usd, :cache_read_input)
+  end
+
   test "Mercury 3 is priced at Inception's launch rate" do
     cost = build_interaction(
       provider: "openrouter", model: "inception/mercury-3",

@@ -4,13 +4,31 @@ The Rails approval is the authority, not an editable project-trust database.
 This guard runs before repository hooks/sync. It does not kill existing code
 or promise that resident-held credentials can be recalled.
 """
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
+import urllib.error
+import urllib.parse
 import urllib.request
 
 import imported_home
+
+
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the request carries the house credential, and
+    urllib would re-send it to whatever origin the Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        message = (f"refused to follow a redirect ({code}) to {target} with the house credential; "
+                   "check SOULSHOUSE_APP_URL")
+        # The message is the body too, so handlers that print error.read() show it.
+        raise urllib.error.HTTPError(req.full_url, code, message, headers, io.BytesIO(message.encode()))
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(RefuseRedirects)
 
 
 def fetch_approval():
@@ -22,7 +40,7 @@ def fetch_approval():
         base + "/api/v1/agent/github_import_approval",
         headers={"Authorization": "Bearer " + token},
     )
-    with urllib.request.urlopen(request, timeout=15) as response:
+    with NO_REDIRECT_OPENER.open(request, timeout=15) as response:
         raw = response.read(65537)
     if len(raw) > 65536:
         raise ValueError("Oversized approval response")

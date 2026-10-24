@@ -89,6 +89,56 @@ class XIntegrationTest < ActiveSupport::TestCase
     with_house_x_app { assert_nil integration.app_source }
   end
 
+  test "a site admin's grant opens the house app for an account without a site admin" do
+    integration = XIntegration.create!(account: @account)
+
+    with_house_x_app do
+      assert_nil integration.app_source
+      @account.update!(x_posting_house_app: true)
+      assert integration.reload.house_app_allowed?
+      assert_equal "house", integration.app_source
+      assert_equal "granted", integration.house_app_reason
+    end
+  end
+
+  test "withdrawing the grant disconnects a handle on the house app and invalidates an exchange in flight" do
+    @account.update!(x_posting_house_app: true)
+    integration = XIntegration.create!(account: @account, enabled: true,
+      access_token: "t", refresh_token: "rt", token_expires_at: 1.hour.from_now, x_username: "bot")
+    generation = integration.app_generation
+
+    @account.update!(x_posting_house_app: false)
+    XIntegration.house_app_access_changed!(@account)
+
+    integration.reload
+    assert_not integration.connected?
+    assert_not integration.enabled?
+    assert_nil integration.x_username
+    assert_equal generation + 1, integration.app_generation
+  end
+
+  test "withdrawing the grant leaves an account's own app, or an account with a site admin, connected" do
+    @account.update!(x_posting_house_app: true)
+    own = XIntegration.create!(account: @account, enabled: true, client_id: "cid", client_secret: "sec",
+      access_token: "t", refresh_token: "rt", token_expires_at: 1.hour.from_now)
+
+    @account.update!(x_posting_house_app: false)
+    XIntegration.house_app_access_changed!(@account)
+    assert own.reload.connected?
+    assert own.enabled?
+
+    own.destroy!
+    @account.memberships.create!(user: users(:site_admin_user), role: "member", confirmed_at: Time.current)
+    @account.update!(x_posting_house_app: true)
+    house = XIntegration.create!(account: @account.reload, enabled: true,
+      access_token: "t", refresh_token: "rt", token_expires_at: 1.hour.from_now)
+
+    @account.update!(x_posting_house_app: false)
+    XIntegration.house_app_access_changed!(@account)
+    assert house.reload.connected?
+    assert_equal "site_admin", house.house_app_reason
+  end
+
   test "the client secret is encrypted at rest" do
     integration = XIntegration.create!(account: @account, client_id: "cid", client_secret: "very-secret")
 

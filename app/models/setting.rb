@@ -3,7 +3,7 @@ class Setting < ApplicationRecord
   include Broadcastable
 
   FOLLOW_THROUGH_SCOPES = %w[off selected all].freeze
-  REFLEXES_SCOPES = %w[off selected all].freeze
+  REFLEXES_SCOPES = %w[disabled account_choice enabled].freeze
   TWEET_STREAM_COLUMNS = %w[
     field_tweets_enabled field_tweets_daily_import_cap
     field_tweets_account_monthly_usd_ceiling field_tweets_poll_minutes
@@ -53,14 +53,15 @@ class Setting < ApplicationRecord
     end
   end
 
-  # Reflex checks (ReflexCheck) run only where both switches allow: the site
-  # scope here (off, residents an admin picked via agents.reflexes_chosen,
-  # or all) and the resident's account (accounts.reflexes_enabled).
+  # Reflex checks (ReflexCheck) run where the site scope says (#520):
+  # disabled is off everywhere and enabled is on everywhere, whatever an
+  # account says; under account_choice the resident's account switch
+  # (accounts.reflexes_enabled) decides.
   def reflexes_enabled_for?(agent)
-    return false if agent.nil? || !agent.account&.reflexes_enabled?
+    return false if agent.nil?
     case reflexes_scope
-    when "all" then true
-    when "selected" then agent.reflexes_chosen?
+    when "enabled" then true
+    when "account_choice" then agent.account&.reflexes_enabled? || false
     else false
     end
   end

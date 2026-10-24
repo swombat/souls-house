@@ -67,7 +67,19 @@ class Chats::AgentTriggersControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ { "id" => @agent.to_param, "name" => @agent.name } ], response.parsed_body["queued"]
     wake = PendingWake.open.sole
     assert_equal [ @chat, @agent ], [ wake.chat, wake.agent ]
-    assert_equal @user.full_name.presence || @user.email_address.split("@").first, wake.requested_by
+    assert_equal @user.full_name, wake.requested_by
+  end
+
+  test "a requester with no profile name is a member id in the wake, not their email or its local part" do
+    @user.profile.update_columns(first_name: nil, last_name: nil)
+    @chat.agent_runtime_interactions.create!(agent: @agent, trigger_kind: "conversation", started_at: 1.minute.ago)
+
+    post account_chat_agent_trigger_path(@account, @chat), params: { agent_id: @agent.to_param }, as: :json
+
+    assert_response :success
+    requested_by = PendingWake.open.sole.requested_by
+    assert_equal "Member #{@user.obfuscated_id}", requested_by
+    refute_includes requested_by, @user.email_address.split("@").first
   end
 
   test "allows a specific agent trigger when an unfinished interaction is stale" do

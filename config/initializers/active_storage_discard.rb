@@ -1,4 +1,5 @@
 Rails.application.config.to_prepare do
+  ActiveStorage::PurgeJob.prepend(RetainsStoneHtml)
   ActiveStorage::DiskController.prepend(HidesStoneDiskFiles)
   [
     ActiveStorage::Blobs::RedirectController,

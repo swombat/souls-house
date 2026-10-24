@@ -272,6 +272,36 @@ class ReadingTest(CliTestCase):
         self.assertEqual([json.loads(line)["id"] for line in out.splitlines()], ["m2"])
 
 
+class WhoTest(CliTestCase):
+    def test_who_lists_the_account_with_reasons(self):
+        self.house.route("GET", "/api/v1/who", body={
+            "account": {"id": "a1", "name": "Nexus"},
+            "people": [{"name": "Daniel", "kind": "person", "role": "owner",
+                        "reads": "every conversation in this account", "site_admin": True}],
+            "residents": [{"id": "r1", "name": "Claude", "kind": "resident",
+                           "reads": "only the conversations it has a seat in", "seats": 12, "paused": False}],
+            "site_admins": [],
+            "not_covered": "Telegram conversations are separate."})
+        code, out, _ = self.run_cli("who", "--account", "a1")
+        self.assertEqual(code, 0)
+        self.assertIn("account_id=a1", self.house.requests[-1]["query"])
+        self.assertIn("- Daniel (owner): every conversation in this account · site admin", out)
+        self.assertIn("- Claude (resident): only the conversations it has a seat in (12 seats)", out)
+        self.assertIn("Telegram", out)
+
+    def test_who_for_one_conversation_and_json(self):
+        body = {"conversation": {"id": "c1", "title": "Build"}, "account": {"name": "Nexus"},
+                "readers": [{"name": "Mira", "kind": "resident", "why": "seat in this conversation",
+                             "closed_for_initiation": True}]}
+        self.house.route("GET", "/api/v1/conversations/c1/who", body=body)
+        code, out, _ = self.run_cli("who", "c1")
+        self.assertEqual(code, 0)
+        self.assertIn("# Who can read Build (c1) in Nexus", out)
+        self.assertIn("- Mira (resident): seat in this conversation · won't start conversations here", out)
+        code, out, _ = self.run_cli("who", "c1", "--json")
+        self.assertEqual(json.loads(out), body)
+
+
 class ApiEscapeHatchTest(CliTestCase):
     def test_api_sends_json_query_and_relative_paths(self):
         self.house.route("POST", "/api/v1/conversations/c1/stones", body={"stone": {"id": "s1"}})

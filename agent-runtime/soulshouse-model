@@ -13,12 +13,28 @@ session, so what came before stays in your context.
 """
 
 import argparse
+import io
 import json
 import os
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+
+
+class RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the request carries the house credential, and
+    urllib would re-send it to whatever origin the Location names."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl).netloc or newurl
+        message = (f"refused to follow a redirect ({code}) to {target} with the house credential; "
+                   "check SOULSHOUSE_APP_URL")
+        # The message is the body too, so handlers that print error.read() show it.
+        raise urllib.error.HTTPError(req.full_url, code, message, headers, io.BytesIO(message.encode()))
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(RefuseRedirects)
 
 
 def main() -> int:
@@ -47,7 +63,7 @@ def main() -> int:
     request = urllib.request.Request(url, data=data, headers=headers, method="POST" if data else "GET")
 
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with NO_REDIRECT_OPENER.open(request, timeout=30) as response:
             payload = json.load(response)
     except urllib.error.HTTPError as error:
         body = error.read().decode("utf-8", errors="replace")

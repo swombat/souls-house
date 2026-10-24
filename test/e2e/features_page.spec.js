@@ -17,7 +17,10 @@ test('the homepage links to a two-column features page with an expandable index'
   const life = page.getByRole('region', { name: 'A life' });
   const house = page.getByRole('region', { name: 'A working house' });
   await expect(life.getByTestId('feature-showcase')).toHaveCount(10);
-  await expect(house.getByTestId('feature-showcase')).toHaveCount(14);
+  await expect(house.getByTestId('feature-showcase')).toHaveCount(16);
+  await expect(house.getByRole('heading', { name: 'Recover a discarded message', exact: true })).toBeVisible();
+  await expect(life.getByRole('heading', { name: 'Recover a discarded message', exact: true })).toHaveCount(0);
+  await expect(house.getByRole('heading', { name: 'See who can read a room' })).toBeVisible();
   const companion = house.getByTestId('feature-showcase').filter({ hasText: 'An explicitly enrolled companion' });
   await expect(companion).toBeVisible();
   await expect(companion).toContainText('read/write and explicit full-user execution grants');

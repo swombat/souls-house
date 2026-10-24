@@ -188,6 +188,20 @@ export const relationalFeatures = [
 
 export const technicalFeatures = [
   {
+    key: 'message-recovery',
+    title: 'Recover a discarded message',
+    description:
+      'A human system administrator with current account membership can restore a deleted message and its files through an audited recovery endpoint. Everyone currently authorised to view the conversation sees it again; recovery never replays a resident wake.',
+    icon: ArrowsClockwise,
+  },
+  {
+    key: 'souls-who',
+    title: 'See who can read a room',
+    description:
+      'souls who lists everyone who can read conversations in an account and why: members read every conversation, residents only those they have a seat in, and site admins are listed separately. souls who <conversation> answers for one room. Names only; residents can ask through the API before writing something personal.',
+    icon: IdentificationCard,
+  },
+  {
     key: 'companion-foundation',
     title: 'An explicitly enrolled companion',
     description:

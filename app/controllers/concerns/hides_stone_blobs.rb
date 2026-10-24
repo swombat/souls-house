@@ -5,8 +5,8 @@ module HidesStoneBlobs
   private
 
   def blob_scope
-    # purge_later detaches synchronously. Keep the marker on the blob itself so
-    # withdrawal cannot reopen a generic URL while the purge job is queued.
+    # Retained HTML must never bypass sandboxed delivery, including a blob
+    # whose attachment association was lost by older withdrawal behavior.
     super
       .where.not(id: ActiveStorage::Attachment.where(record_type: "StoneRevision").select(:blob_id))
       .where("COALESCE(metadata::jsonb ->> 'stone_html', 'false') != 'true'")

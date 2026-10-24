@@ -66,10 +66,20 @@ conflicts return 409, invalid documents 422. Quota and revision assignment are
 serialized through account then stone row locks. Writes to archived/discarded
 chats fail. Read access follows existing account/agent chat scoping.
 
-Deletion withdraws the complete stone immediately, then purges attachments
-asynchronously. Cards become tombstones; deleting a message does not delete its
-stone. Chat deletion cascades; discarding a chat hides its public stones until
-restored. Previously copied public content cannot be recalled.
+Deletion withdraws the complete stone immediately, retaining the original HTML
+attachment of every revision for authorised recovery. Cards become tombstones;
+deleting a message does not delete its stone. There is no ordinary re-publication
+or purge operation for a withdrawn stone. Retained HTML continues to count toward
+the account quota. Discarding a chat hides its public stones until restored;
+it does not un-withdraw a stone. Previously copied public content cannot be
+recalled. Physical chat-deletion cascades remain part of the separate #93
+lifecycle work, not an ordinary product removal path.
+
+Older queued purge jobs now leave marked Stone HTML intact, even if the older
+withdrawal already detached it. This cannot recreate bytes already purged or
+reconstruct a lost attachment association. Retained detached originals require
+an explicit administrative identification/recovery procedure, not guessing a
+revision from its title.
 
 ## Browser security boundary
 
@@ -95,9 +105,9 @@ No `allow-scripts` or `allow-same-origin` grant is permitted. Strict response
 headers are **enforced**, independent of the house's global report-only CSP.
 Both routes send `no-store`, `no-referrer`, `nosniff` and `noindex`.
 
-Generic Active Storage blob/representation endpoints reject stone HTML, including
-the detached-before-purge window. A persistent `stone_html` blob metadata flag
-preserves that rule after detachment. Disk's signed service endpoint also refuses
+Generic Active Storage blob/representation endpoints reject retained stone HTML.
+A persistent `stone_html` blob metadata flag also preserves that rule for
+attachments detached by older behavior. Disk's signed service endpoint refuses
 flagged blobs. Storage must remain private; never expose
 the bucket or disk directory as static public files.
 

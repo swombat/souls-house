@@ -108,7 +108,7 @@ module Api
       def requester_label
         return current_api_agent.name if current_api_agent
 
-        current_api_user.full_name.presence || current_api_user.email_address.split("@").first
+        ResidentFacingName.for(current_api_user)
       end
 
     end

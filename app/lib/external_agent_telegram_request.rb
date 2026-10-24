@@ -22,7 +22,7 @@ class ExternalAgentTelegramRequest
       chat: nil,
       trigger_kind: "telegram",
       conversation_id: subscription.to_param,
-      requested_by: subscription.user.email_address,
+      requested_by: subscriber_label,
       session_id: "#{agent.uuid}-telegram-#{subscription.id}",
       endpoint_url: endpoint_url,
       request_text: request,
@@ -33,7 +33,7 @@ class ExternalAgentTelegramRequest
         interaction: interaction,
         completion_context: { telegram_subscription_id: subscription.id, safeguard_roll_id: pending_safeguard_detection&.id },
         conversation_id: subscription.to_param,
-        requested_by: subscription.user.email_address,
+        requested_by: subscriber_label,
         session_id: "#{agent.uuid}-telegram-#{subscription.id}",
         trigger_kind: "telegram",
         request: request,
@@ -66,6 +66,11 @@ class ExternalAgentTelegramRequest
     @provider ||= Agents::Sandbox.chaos_provider_for(agent)
   end
 
+  # The subscriber as the resident sees them: by name, never by email.
+  def subscriber_label
+    ResidentFacingName.for(subscription.user)
+  end
+
   def surface_runtime_failure!(result)
     case result.dig(:body, "error_kind")
     when "auth_expired"
@@ -85,8 +90,7 @@ class ExternalAgentTelegramRequest
     payload = {
       channel: "telegram",
       sender: {
-        name: subscription.subscriber_name,
-        email: subscription.user.email_address,
+        name: subscriber_label,
         telegram_username: subscription.telegram_username
       },
       text: telegram_messages.map(&:text).join("\n\n"),
@@ -111,7 +115,7 @@ class ExternalAgentTelegramRequest
       Channel: telegram
       Thread ID: #{subscription.to_param}
       History cursor: #{last_message.to_param}
-      Sender: #{subscription.subscriber_name} <#{subscription.user.email_address}>
+      Sender: #{subscriber_label}
       Telegram username: #{subscription.telegram_username.presence || "_unknown_"}
       New messages (#{telegram_messages.size}, oldest first):
       #{messages_prompt}
@@ -134,7 +138,7 @@ class ExternalAgentTelegramRequest
       Notices::Renderer.section_for(agent),
       SubagentPolicyRenderer.section_for(agent),
       <<~TEXT
-      New Telegram DMs from #{subscription.subscriber_name} (thread #{subscription.to_param}), oldest first:
+      New Telegram DMs from #{subscriber_label} (thread #{subscription.to_param}), oldest first:
       #{messages_prompt}
 
       Reply by piping stdin to `soulshouse-send-telegram --reply-to #{subscription.to_param}` if appropriate. Stdout is diagnostic only.

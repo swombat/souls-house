@@ -26,7 +26,8 @@ class AgentRuntimeInteraction::MessagesSinceTranscriptTest < ActiveSupport::Test
     messages = @run.messages_since_transcript
     assert_equal [ first.obfuscated_id, second.obfuscated_id ], messages.map { |m| m[:id] }
     assert_equal "Also check the changelog.", messages.first[:text]
-    assert_equal @user.email_address, messages.first[:author]
+    assert_equal @user.full_name, messages.first[:author]
+    refute_includes messages.first[:author], @user.email_address
     assert_equal "human", messages.first[:author_type]
     assert_equal @other.name, messages.second[:author]
     assert_equal "agent", messages.second[:author_type]

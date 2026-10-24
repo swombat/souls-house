@@ -18,7 +18,7 @@ class Agents::RuntimeChecksController < ApplicationController
     end
     chat.agents << @agent unless chat.agents.exists?(@agent.id)
     result = ExternalAgentResponseRequest.new(
-      agent: @agent, chat: chat, requested_by: Current.user.email_address,
+      agent: @agent, chat: chat, requested_by: ResidentFacingName.for(Current.user),
       initiation_reason: "Owner-requested runtime test", wake_source_kinds: WakeProvenance.for(user: Current.user)
     ).call
     render json: {
@@ -39,7 +39,7 @@ class Agents::RuntimeChecksController < ApplicationController
 
     @agent.update!(orientation_requested_at: Time.current)
     result = ExternalAgentOrientationRequest.new(
-      agent: @agent, requested_by: Current.user.email_address
+      agent: @agent, requested_by: ResidentFacingName.for(Current.user)
     ).call
     ok = result[:status].to_i.between?(200, 299)
     @agent.update!(orientation_completed_at: Time.current) if ok

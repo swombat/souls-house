@@ -223,3 +223,21 @@ test('reflexes switch saves immediately and the readonly text reflects the accou
   await view.rerender({ ...props, can_manage: false, reflexes_enabled: true });
   expect(screen.getByTestId('reflexes-enabled-readonly')).toHaveTextContent('Reflexes are on for this account.');
 });
+
+test('reflexes card says when the site overrides the account switch, and keeps the switch usable', async () => {
+  const view = render(General, { ...props, reflexes_site_scope: 'account_choice' });
+  expect(screen.queryByTestId('reflexes-site-override')).toBeNull();
+
+  await view.rerender({ ...props, reflexes_site_scope: 'disabled', reflexes_enabled: true });
+  expect(screen.getByTestId('reflexes-site-override')).toHaveTextContent('The site has reflexes off for every account');
+  expect(screen.getByTestId('reflexes-enabled')).not.toBeDisabled();
+
+  await view.rerender({ ...props, reflexes_site_scope: 'enabled', reflexes_enabled: false });
+  expect(screen.getByTestId('reflexes-site-override')).toHaveTextContent('The site has reflexes on for every account');
+  await fireEvent.click(screen.getByTestId('reflexes-enabled'));
+  const [, data] = router.put.mock.calls.at(-1);
+  expect(data).toEqual({ account: { reflexes_enabled: true } });
+
+  await view.rerender({ ...props, can_manage: false, reflexes_site_scope: 'enabled' });
+  expect(screen.getByTestId('reflexes-site-override')).toBeVisible();
+});

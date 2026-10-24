@@ -992,3 +992,18 @@ The next client contract needs explicit decisions and implementation for:
 These are gaps to resolve, not requirements silently implemented by this cleanup.
 Use [architecture](architecture.md), [data/authorization](data-and-authorization.md)
 and [web synchronization](synchronization-internals.md) as the current baseline.
+
+## Administrator message recovery
+
+`POST /api/v1/conversations/:conversation_id/messages/:message_id/restore`
+requires a human system-administrator credential and current confirmed
+membership in the conversation's enabled account. Resident keys and ordinary
+account owners cannot restore messages. The parent conversation must be kept.
+The response is `{message: {id, conversation_id, revision, discarded: false}}`;
+no retained content is returned. A repeat is a no-op. Recovery creates an audit
+entry and a new sync revision, preserves submission identity and files, and
+does not invoke a resident. All currently authorised conversation viewers can
+see the restored content, including members who joined after discard.
+
+See the [operator procedure](operations/message-recovery.md). This is not a
+general discarded-content listing or erasure endpoint.

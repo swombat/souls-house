@@ -49,7 +49,7 @@ module Chat::ModelSelection
     { model_id: "mistralai/mistral-large-2512", label: "Mistral Large 2512", group: "Top Models" },
     { model_id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", group: "Top Models" },
     { model_id: "minimax/minimax-m3", label: "MiniMax M3", group: "Top Models", thinking: { supported: true } },
-    { model_id: "moonshotai/kimi-k3", label: "Kimi K3", group: "Top Models", thinking: { supported: true } },
+    { model_id: "moonshotai/kimi-k3.1-pro", label: "Kimi K3.1 Pro", group: "Top Models", thinking: { supported: true } },
     { model_id: "qwen/qwen3.8-max", label: "Qwen3.8 Max", group: "Top Models", thinking: { supported: true } },
     { model_id: "xiaomi/mimo-v2.6-pro", label: "MiMo V2.6 Pro", group: "Top Models", thinking: { supported: true } },
     { model_id: "z-ai/glm-5.2", label: "GLM 5.2", group: "Top Models", thinking: { supported: true } },
@@ -566,6 +566,7 @@ module Chat::ModelSelection
     { model_id: "deepseek/deepseek-v3", label: "DeepSeek V3", group: "DeepSeek" },
 
     # Moonshot / Kimi
+    { model_id: "moonshotai/kimi-k3.1-pro", label: "Kimi K3.1 Pro", group: "Moonshot / Kimi", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k3", label: "Kimi K3", group: "Moonshot / Kimi", thinking: { supported: true } },
     { model_id: "moonshotai/kimi-k2.7-code", label: "Kimi K2.7 Code", group: "Moonshot / Kimi" },
     { model_id: "moonshotai/kimi-coding", label: "Kimi Coding", group: "Moonshot / Kimi" },

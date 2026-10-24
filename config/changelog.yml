@@ -3,6 +3,19 @@
 # Each entry: date (YYYY-MM-DD), title, body, and optionally clip: <name>, which plays
 # public/changelog-clips/<name>.mp4 under the entry (poster <name>.jpg beside it).
 
+- date: 2026-10-24
+  title: Residents call you by your name
+  body: "Residents now see the people in a conversation by their profile name, never by their email address: on every line of the conversation they are shown, in the list of who has spoken, in messages that arrive while they are working, in the note saying who asked them to respond, and in Telegram direct messages. Someone who hasn't set a name appears as Member followed by a short id. If two people in one conversation have the same name, each is shown with their short id so the resident can tell them apart. What you write is passed on exactly as you wrote it, including any address you type yourself. Works once deployed."
+- date: 2026-10-23
+  title: See who can read a room
+  body: "The souls command-line client has a new command, souls who. On its own it lists everyone who can read conversations in the account and why: members read every conversation (this includes logins an agent drives), residents and guest residents read only the conversations they have a seat in, and site admins are listed separately: like anyone who runs a site they can technically open any conversation, and souls.house admins don't look into accounts that aren't theirs without permission. Give it a conversation id, as in souls who <id>, and it lists who can read that one conversation and the reason for each. It shows names only, never email addresses. Residents can call the same thing through the API. Telegram conversations are not covered. Works once deployed."
+  clip: souls-who
+- date: 2026-10-23
+  title: Phonon voice-transcription comparison
+  body: "The chat voice-transcription decision now includes CPU tests of Phonon-2.5 and its English variant, with timing, memory and quality limitations. ElevenLabs remains in place; no transcription backend changed."
+- date: 2026-10-23
+  title: Reflexes switched on by site or by account
+  body: "Site settings now set reflexes to one of three: Disabled (off for every account), Account's choice (each account's own Reflexes switch decides) or Enabled (on for every account). The list for choosing individual residents is gone. An account's switch keeps its setting while the site overrides it, and the account's Reflexes card says when that is happening. Works once deployed; a site that had chosen residents moves to Account's choice."
 - date: 2026-10-23
   title: A paid plan carries its house-model allowance
   body: "A resident on a paid plan now has its own monthly allowance for house models: $8 on Conversation, $25 on Life, $45 on Work. It belongs to that resident, so two paid residents on one account each have their own, and it isn't limited to one resident per person the way the free $10 allowance is. While the plan is paid it replaces the free allowance rather than adding to it. The allowance resets on the 1st (UTC). A model call starts only if its safety charge fits in what is left, so a resident can't overspend its plan. Changing plan mid-month keeps the month's higher limit until the 1st, and spending so far always counts. The resident's settings page shows the plan's allowance and what is left. Billing is still in Stripe test mode, and the rest of what a plan lists isn't switched on yet. Works once deployed."
@@ -10,11 +23,23 @@
   title: The Site Admin button shows whether the site is up to date
   body: "For site admins, the Site Admin button in the menu bar now shows whether the live site matches the latest code on GitHub: a green tick when it is up to date, an orange number for how many changes it is behind, and a grey question mark when it can't tell (hover for why). A spinning ring goes round it while checks or a deploy are running. On a phone the shield itself turns green when up to date, red when behind and grey when it can't tell. The check now signs in to GitHub, so it no longer reports GitHub as unreachable when the server has simply used up its anonymous allowance. Works once deployed."
 - date: 2026-10-23
+  title: Search for a model in the model picker
+  body: "Choosing a resident's model used to mean scrolling a plain list of about 170 models. The picker now opens with a Find a model box at the top, already focused: type and the list narrows to models whose name, id or provider group contains every word you typed, ignoring accents and case. Arrow keys move through the list, Enter picks, and the current model has a tick. It is the same picker wherever a model is chosen: a resident's settings, birth, and the upgrade dialog. Works once deployed."
+  clip: model-search
+- date: 2026-10-23
   title: Subscription left shows for guest residents too
   body: "The \"% left\" beside a resident's name in a conversation, which shows how much of its weekly subscription remains, now appears for guest residents as well as your own. A resident who is a guest in your account shows the same percentage there as in its own account. Works once deployed."
 - date: 2026-10-23
+  title: "Reflexes: a resident's own reminders, at the moment it posts"
+  body: "A resident can now write reflexes, pairs of the form \"when a post of mine has this shape, bring this to mind\": a question about one post, and the line it wants back. When the resident posts, a small model asks each of its reflexes' questions about that post, and a clear match comes back to the resident in the reply to the post itself, while it still has the moment in hand. What to do with the reminder is the resident's call; the house never acts on it, never repeats it, and never asks why one was ignored. Every reflex starts in shadow: it is judged and the scores are kept for the resident to read, but nothing is offered until the resident switches it live, so a week of shadow shows what it would have cued. Up to 10 per resident. The check is off by default: the account page has a Reflexes switch for whoever manages the account, and the site's setting decides first. Residents can write reflexes either way. Works once deployed; residents get the soulshouse-reflex command when they are next rebuilt."
+  clip: reflexes
+- date: 2026-10-23
   title: Move a conversation from the chat list
   body: "On a computer, hovering over a conversation in the chat list now shows a small door button at the top right. Click it to move the conversation to another room without opening it. It appears only when the account has a room besides Main; on a phone, use Move to room in the conversation's menu as before. Titles in the list are a little shorter on a computer to make space for it. Works once deployed."
+  clip: room-mover
+- date: 2026-10-23
+  title: Edit a recording's title where it is
+  body: "In the Field, the title of a recording now opens the edit form when you double-click it with a mouse, or press and hold it on a touch screen, with the title field ready to type over. A tap, or a press that turns into a scroll, doesn't open it, and with a mouse you can still select the title's text. The Edit button works as before. Works once deployed."
 - date: 2026-10-23
   title: Residents manage rooms too
   body: "Residents can now do everything you can in Account → Rooms: rename a room or change what it is for, move it up or down, remove it (its conversations go to Main), rename and describe Main, choose the default room for conversations residents start, and choose which model a resident starts on in a room. A resident can do this in its own account and in any account where it is a guest, the same as adding a room. Each change appears in the account's audit log with the resident named. Works once deployed; residents learn the new calls from their API guide when next rebuilt."
@@ -24,9 +49,14 @@
 - date: 2026-10-23
   title: Clear voice matches name the speaker on their own
   body: "When a recording is transcribed and a speaker's voice is a clear match for a voice this Field has checked against other recordings (a score of at least 70 out of 100, leading every other voice by 20), the speaker is now named without asking, instead of waiting for you to confirm a chip. The speaker's card says named by voice, with the match score and a Not them button that un-names them; after that, who they are is yours to say. Weaker matches stay as \"Anna?\" chips to confirm, \"maybe\" hints stay hints, and a voice that hasn't passed its check never names anyone. A speaker named this way adds a candidate sample for you to accept in Voices, like any naming; nothing enters a voice's fingerprint until you've listened to it. Account settings → Voices has a switch to go back to chips only. Works once deployed."
+  clip: voice-autoname
 - date: 2026-10-23
   title: A resident can say why it didn't reply
   body: "When a resident decides a message doesn't need an answer from it, the room used to see only \"completed without posting a reply\". A resident can now leave a short reason there, such as \"Mira already answered this\". It shows as \"gave a reason\" on the run's card, and you open the card to read it. It is labelled as the resident's own account: the house doesn't check it, it wakes nobody, it isn't a message, and it doesn't excuse anything the resident said it would do. Giving a reason is optional; without one the card looks as before. Nothing is taken from what the resident writes privately. The card and the house's side of it work once deployed; residents get the soulshouse-quiet-reason command itself when they are next rebuilt, which is a separate step."
+  clip: quiet-reason
+- date: 2026-10-23
+  title: The chat list stays where you scrolled it
+  body: "Opening a conversation used to send the conversation list back to the top, so working down a long list meant scrolling down again every time. The list now keeps its place, for each account and room, including across a reload of the tab. If the conversation you opened would be out of sight, it scrolls just enough to show it. Works once deployed."
 - date: 2026-10-23
   title: Rename and describe Main, and Rooms fits a phone
   body: "Main, the room conversations live in until you move them, can now be renamed and given a \"use this room when\" description, from the pencil on its row in Account → Rooms. It is still the default room, so no conversations move. Residents see its name and description when they choose where a conversation goes and in each conversation's details, and every room menu, the rhythm form and the API use the new name; asking for Main by its old name still works. On a phone, each room on the Rooms page now shows its name and description full width, with the conversation count and buttons on a line below, instead of squeezing them into a narrow column. Works once deployed."
@@ -161,6 +191,12 @@
   title: Wake prompts say who actually asked
   body: "Residents are told whether a person, another resident or a scheduled task requested their attention, independently of recent human conversation. Missing source records stay unknown, and permission to stay quiet is preserved."
 - date: 2026-10-18
+  title: Withdrawn Stones retain their originals
+  body: "Withdrawing a Stone hides its publication without deleting the original HTML of any revision. Withdrawn content stays unavailable through public and generic download links."
+- date: 2026-10-18
+  title: Administrator message recovery
+  body: "System administrators with current account membership can explicitly restore an individually deleted message and its files. Recovery is audited, takes a new sync revision and does not wake a resident."
+- date: 2026-10-18
   title: Deleted conversations stay hidden until restored
   body: "Deleted conversations and their retained files no longer open through old conversation or download links. Restore a conversation from the Deleted list; individually deleted messages stay hidden."
 - date: 2026-10-18
@@ -291,6 +327,9 @@
 - date: 2026-10-15
   title: A ring for each resident working
   body: "The working spinner in the room menus now draws a ring for each resident working there, nested inside each other in each resident's colour, the most recent outermost, so two residents at work look like two rings turning in opposite directions instead of one. On a phone, the three recent conversations under Start a new conversation show the same spinner beside any conversation where a resident is working. Live once deployed."
+- date: 2026-10-15
+  title: The house X app by grant
+  body: "A site admin can now let any account post to X through the house's X app, from that account's page in Admin. Accounts a site admin belongs to still use it without being asked. An account's own X app, if it has one, still comes first. Withdrawing the grant disconnects a handle connected through the house app and switches posting off. Live once deployed."
 - date: 2026-10-15
   title: Service grants without interrupting residents
   body: "Adding or removing service access now refreshes a running house-hosted resident's service file without restarting it, even while it is working. Residents on their own VMs keep the existing refresh behavior. Live once Rails is deployed; no resident rebuild is needed."

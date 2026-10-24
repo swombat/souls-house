@@ -136,22 +136,26 @@ class StoneTest < ActiveSupport::TestCase
     end
   end
 
-  test "withdrawal blocks reads and revisions immediately and purges asynchronously retaining history" do
+  test "withdrawal blocks delivery and revisions while retaining every original HTML blob" do
     stone = publish
-    revision = stone.latest_revision
-    blob = revision.html.blob
-    assert_enqueued_with(job: ActiveStorage::PurgeJob, args: [ blob ]) { stone.withdraw! }
+    first = stone.latest_revision
+    second = stone.revise!(title: "Second", html: HTML.sub("Hello", "Second original"),
+      author: @user, public: true, base_revision_id: first.to_param)
+    originals = [ first, second ].to_h { |revision| [ revision, revision.html.download ] }
+    assert_no_enqueued_jobs(only: ActiveStorage::PurgeJob) { 2.times { stone.withdraw! } }
     assert stone.reload.withdrawn?
-    assert_raises(Stone::Withdrawn) { revision.html_document }
+    originals.each_key { |revision| assert_raises(Stone::Withdrawn) { revision.html_document } }
     assert_raises(Stone::Withdrawn) do
-      stone.revise!(title: "No", html: HTML, author: @user, public: true, base_revision_id: revision.to_param)
+      stone.revise!(title: "No", html: HTML, author: @user, public: true, base_revision_id: second.to_param)
     end
     perform_enqueued_jobs(only: ActiveStorage::PurgeJob)
-    assert_not ActiveStorage::Blob.exists?(blob.id)
-    assert StoneRevision.exists?(revision.id)
-    assert_equal "A stone", revision.reload.title
-    assert_not revision.html.attached?
-    stone.withdraw!
+    originals.each do |revision, bytes|
+      assert revision.reload.html.attached?
+      assert_equal bytes, revision.html.download
+      assert_equal @user, revision.author
+    end
+    assert_equal "A stone", first.reload.title
+    assert_equal "Second", second.reload.title
   end
 
   test "chat deletion cascades stones revisions and message links" do

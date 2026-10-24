@@ -4,7 +4,7 @@ class Admin::AccountsController < ApplicationController
   skip_before_action :set_current_account
 
   before_action :require_site_admin
-  before_action :set_account, only: %i[disable enable convert shared_ai_credentials founding field_swarm field_tweets_house_key refresh_storage]
+  before_action :set_account, only: %i[disable enable convert shared_ai_credentials founding field_swarm field_tweets_house_key x_posting_house_app refresh_storage]
 
   def index
     @accounts = Account.includes(:owner, memberships: :user)
@@ -96,6 +96,19 @@ class Admin::AccountsController < ApplicationController
       notice: enabled ? "This account's tweet streams may use the house TwitterAPI.io key" : "This account's tweet streams no longer use the house key"
   end
 
+  # The house X app, for an account without a site admin among its members
+  # (accounts with one use it without this). Withdrawing it disconnects an
+  # X handle connected through the house app; an account's own app is
+  # untouched.
+  def x_posting_house_app
+    enabled = ActiveModel::Type::Boolean.new.cast(params.require(:account).require(:x_posting_house_app))
+    @account.update!(x_posting_house_app: enabled)
+    XIntegration.house_app_access_changed!(@account) unless enabled
+    audit(:admin_update_x_posting_house_app, @account, account_id: @account.id, x_posting_house_app: enabled)
+    redirect_back_or_to admin_accounts_path(account_id: @account),
+      notice: enabled ? "This account may post to X through the house X app" : "This account no longer posts through the house X app"
+  end
+
   private
 
   def accounts_json
@@ -114,6 +127,9 @@ class Admin::AccountsController < ApplicationController
       "field_swarm_enabled" => account.field_swarm_enabled?,
       "field_tweets_house_key" => account.field_tweets_house_key?,
       "field_tweets_own_integration" => FieldTweets.integration_for(account).present?,
+      "x_posting_house_app" => account.x_posting_house_app?,
+      "x_posting_site_admin_member" => account.includes_site_admin?,
+      "x_posting_own_app" => account.x_integration&.own_app? || false,
       "field_swarm" => field_swarm_costs(account),
       "usage" => Admin::AccountUsageReport.new(account).call,
       "memberships" => account.memberships.map { |membership| membership_json(membership) }

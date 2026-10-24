@@ -140,6 +140,7 @@ class XIntegrationController < ApplicationController
       x_username: integration.x_username,
       app_source: integration.app_source,
       house_app_allowed: integration.house_app_allowed?,
+      house_app_reason: integration.house_app_reason,
       own_app: integration.own_app?,
       own_client_id: integration.client_id,
       callback_url: x_redirect_uri,

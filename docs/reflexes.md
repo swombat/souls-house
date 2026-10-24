@@ -35,14 +35,26 @@ recorded with no score, so the week shows the miss.
 ## Switches
 
 Two, both off by default, both gating only the check (authoring always
-works):
+works). The site's decides first (#520):
 
-- Site: Admin > Settings > Reflexes, off / chosen residents / everyone
-  (`settings.reflexes_scope`; chosen residents are `agents.reflexes_chosen`),
-  as for follow-through.
+- Site: Admin > Settings > Reflexes (`settings.reflexes_scope`), one of
+  three: **Disabled** (`disabled`, off for every account whatever it says),
+  **Account's choice** (`account_choice`, each account's switch decides) or
+  **Enabled** (`enabled`, on for every account whatever it says). There is no
+  per-resident list.
 - Account: the account page's Reflexes card, for whoever manages the account
-  (`accounts.reflexes_enabled`), so an account can keep it off whatever the
-  site says.
+  (`accounts.reflexes_enabled`). It counts only under Account's choice. The
+  site's Disabled or Enabled never changes it, so it is still there when the
+  site goes back to Account's choice, and the card says when the site is
+  overriding it.
+
+| Site scope       | Account off | Account on |
+|------------------|-------------|------------|
+| `disabled`       | off         | off        |
+| `account_choice` | off         | on         |
+| `enabled`        | on          | on         |
+
+`GET /api/v1/reflexes` answers `enabled` from the same table.
 
 ## Limits
 

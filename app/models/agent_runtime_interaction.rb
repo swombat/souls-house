@@ -287,10 +287,11 @@ class AgentRuntimeInteraction < ApplicationRecord
       .where("messages.agent_id IS DISTINCT FROM ?", agent_id)
       .without_safeguard_label
     with_attachments = ActiveStorage::Attachment.where(record_type: "Message", name: "attachments").select(:record_id)
-    scope.where("messages.content ~ '[^[:space:]]'").or(scope.where(id: with_attachments))
+    messages = scope.where("messages.content ~ '[^[:space:]]'").or(scope.where(id: with_attachments))
       .includes(:user, :agent, attachments_attachments: :blob)
       .order(id: :desc).limit(MID_RUN_MESSAGE_LIMIT).to_a.reverse
-      .map { |message| mid_run_message_json(message) }
+    labels = messages.any?(&:user) ? ResidentFacingName.labels_for_chat(chat) : {}
+    messages.map { |message| mid_run_message_json(message, labels:) }
   end
 
   def ran_out_of_memory?
@@ -565,8 +566,8 @@ class AgentRuntimeInteraction < ApplicationRecord
     end
   end
 
-  def mid_run_message_json(message)
-    author = ExternalAgentResponseRequest.speaker_for(message)
+  def mid_run_message_json(message, labels: {})
+    author = ExternalAgentResponseRequest.speaker_for(message, labels:)
     text = message.content.to_s.strip
     truncated = text.length > MID_RUN_MESSAGE_CHARS
     {

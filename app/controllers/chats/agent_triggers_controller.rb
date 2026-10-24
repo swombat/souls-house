@@ -7,7 +7,7 @@ class Chats::AgentTriggersController < ApplicationController
   # Triggers AI response from agent(s) in this chat.
   # Pass agent_id to trigger a specific agent, omit to trigger all.
   def create
-    requested_by = Current.user.full_name.presence || Current.user.email_address.split("@").first
+    requested_by = ResidentFacingName.for(Current.user)
     queued = []
     if params[:agent_id].present?
       agent = @chat.agents.find(params[:agent_id])

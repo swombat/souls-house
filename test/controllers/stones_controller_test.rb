@@ -78,8 +78,9 @@ class StonesControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  test "withdrawal hides both viewer and raw content before purge" do
+  test "withdrawal hides viewer raw content and generic URLs without purging bytes" do
     generic_url = rails_blob_url(@revision.html)
+    bytes = @revision.html.download
     @stone.withdraw!
     get stone_url(@stone.public_token)
     assert_response :not_found
@@ -87,6 +88,7 @@ class StonesControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     get generic_url
     assert_response :not_found
+    assert_equal bytes, @revision.reload.html.download
   end
 
   test "discarded conversations hide all their public stones" do

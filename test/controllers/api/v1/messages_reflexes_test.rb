@@ -14,7 +14,7 @@ module Api
         @chat.update!(manual_responses: true)
         @resident = { "Authorization" => "Bearer #{ApiKey.generate_for(@user, name: "Reflex postback", agent: @agent).raw_token}" }
         @human = { "Authorization" => "Bearer #{ApiKey.generate_for(@user, name: "Human").raw_token}" }
-        Setting.instance.update!(reflexes_scope: "all")
+        Setting.instance.update!(reflexes_scope: "account_choice")
         @account.update!(reflexes_enabled: true)
         @reflex = @agent.reflexes.create!(name: "Follow-up", shape: "Does the post promise a follow-up?", reminder: "Write the follow-up down.", live: true)
       end

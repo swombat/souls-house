@@ -64,13 +64,13 @@ class Stone < ApplicationRecord
     end
   end
 
-  # Keep the stone and its authored history as a tombstone. Delivery must check
-  # withdrawn_at before accessing any attachment, even while purge is pending.
+  # Withdrawal removes publication, not authored history. Keep every revision
+  # and its original HTML attached for authorised recovery; delivery checks
+  # withdrawn_at rather than relying on destruction of the bytes.
   def withdraw!
     with_lock do
       update!(withdrawn_at: Time.current) unless withdrawn?
     end
-    stone_revisions.includes(html_attachment: :blob).find_each { |revision| revision.html.purge_later }
     self
   end
 

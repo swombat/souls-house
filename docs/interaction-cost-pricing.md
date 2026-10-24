@@ -70,6 +70,15 @@ discount ends, the row should move to the list price. No cache-write price is
 listed, so cache writes fall back to the input rate. OpenRouter only; Inception
 is a new group in souls.house.
 
+Kimi K3.1 Pro (added October 24, 2026, the day Moonshot AI released it,
+kimi.com/en/blog/kimi-k3-1-pro): input 2, cache read 0.20, output 10, from the
+OpenRouter standard endpoint for `moonshotai/kimi-k3.1-pro` (Moonshot AI
+provider, `moonshotai/kimi-k3.1-pro-20261023`, mxfp4) on 2026-10-24. The same
+provider also lists a "Highspeed" priority tier at 4 in / 20 out; souls.house
+requests no service tier, so the standard rate applies. No cache-write price is
+listed, so cache writes fall back to the input rate. OpenRouter only, like Kimi
+K3, which it replaces in Top Models as Moonshot's flagship.
+
 DeepSeek V4.1 Flash 1017 (added October 19, 2026, two days after DeepSeek
 released the snapshot): input 0.15, cache read 0.003, output 0.6, from the
 OpenRouter endpoint for `deepseek/deepseek-v4.1-flash-1017` (DeepSeek provider)

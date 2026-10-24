@@ -602,6 +602,47 @@ def cmd_residents(client, args):
         emit(client.get("agents"))
 
 
+def cmd_who(client, args):
+    """Who can read here, and why. With a conversation id, that one
+    conversation; without, the whole account (--account for another)."""
+    if args.room:
+        data = client.get(f"conversations/{args.room}/who")
+        if args.json:
+            emit(data)
+            return
+        conv = data.get("conversation") or {}
+        print(f"# Who can read {conv.get('title') or '(untitled)'} ({conv.get('id')}) in {(data.get('account') or {}).get('name')}")
+        for reader in data.get("readers") or []:
+            extra = " · site admin" if reader.get("site_admin") else ""
+            if reader.get("closed_for_initiation"):
+                extra += " · won't start conversations here"
+            print(f"- {reader.get('name')} ({reader.get('kind', '?').replace('_', ' ')}): {reader.get('why')}{extra}")
+    else:
+        data = client.get("who")
+        if args.json:
+            emit(data)
+            return
+        print(f"# Who can read conversations in {(data.get('account') or {}).get('name')}")
+        print("\nPeople (members, including logins an agent drives):")
+        for person in data.get("people") or []:
+            extra = " · site admin" if person.get("site_admin") else ""
+            print(f"- {person.get('name')} ({person.get('role')}): {person.get('reads')}{extra}")
+        print("\nResidents:")
+        for resident in data.get("residents") or []:
+            kind = "guest resident" if resident.get("kind") == "guest_resident" else "resident"
+            paused = " · paused" if resident.get("paused") else ""
+            if resident.get("active") is False:
+                paused += " · inactive"
+            print(f"- {resident.get('name')} ({kind}): {resident.get('reads')} ({resident.get('seats', 0)} seats){paused}")
+        admins = data.get("site_admins") or []
+        if admins:
+            print("\nSite admins who are not members:")
+            for admin in admins:
+                print(f"- {admin.get('name')}: {admin.get('reads')}")
+    if data.get("not_covered"):
+        print(f"\n{data['not_covered']}")
+
+
 def cmd_field_upload(client, args):
     if not os.path.isfile(args.file):
         raise CliError(f"no such file: {args.file}", EXIT_USAGE)
@@ -1091,7 +1132,7 @@ COMMAND_GROUPS = [
     ("Repository watches", ["repos", "watches"]),
     ("Integrations", ["integrations"]),
     ("Field", ["field"]),
-    ("Other", ["residents", "glossary", "download", "api"]),
+    ("Other", ["residents", "who", "glossary", "download", "api"]),
 ]
 
 
@@ -1217,6 +1258,10 @@ def build_parser():
 
     p = add("residents", cmd_residents, "List residents you can see, or show one")
     p.add_argument("id", nargs="?")
+
+    p = add("who", cmd_who, "Who can read conversations here, and why; give a conversation id for one room")
+    p.add_argument("room", nargs="?", metavar="CONVERSATION_ID")
+    p.add_argument("--json", action="store_true")
 
     p = add("repos", cmd_repos, "Connected repositories: list, connect, or disconnect (souls repos --help)")
     rsub = p.add_subparsers(dest="repos_command", metavar="list|connect|disconnect")

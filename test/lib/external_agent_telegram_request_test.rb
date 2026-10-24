@@ -59,7 +59,7 @@ class ExternalAgentTelegramRequestTest < ActiveSupport::TestCase
           body["channel"] == "telegram" &&
           body["thread_id"] == @subscription.to_param &&
           body["history_cursor"] == @message.to_param &&
-          body.dig("sender", "email") == users(:user_1).email_address &&
+          !body["sender"].key?("email") &&
           body["text"] == "Can you hear me?" &&
           body["request"].include?("RECENT TELEGRAM TRANSCRIPT FROM DATABASE") &&
           body["request"].include?("Can you hear me?")
